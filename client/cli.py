@@ -85,16 +85,17 @@ def render(game: Game) -> str:
     st = game.state
     active = st.players[st.active]
     lines = [f"===== 当前玩家第 {active.turn_count} 回合（总第 {st.turn - 1} 回合）| {active.name} 行动中 ====="]
+    all_rows = []
+    player_rows = []
     for pi, p in enumerate(st.players):
-        marker = ">" if pi == st.active else " "
-        lines.append(
-            f"{marker} {p.name} HP {p.health}(护甲{p.shield}) "
-            f"鬼火 {p.orb} 手牌 {len(p.hand)} 牌库 {len(p.deck)} 墓地 {len(p.graveyard)}"
-        )
+        rows = []
         for i, s in enumerate(p.shikigami):
             if s.despawned:
-                continue  # 已离场召唤物不显示（坑位保留，下标稳定）
+                continue
             sd = game.db.shikigami[s.id]
+            name = sd.name
+            if s.form is not None:
+                name = f"{name}[{game.db.cards[s.form.id].name}]"
             kind = "·召唤物" if s.kind == "summon" else ""
             if s.defeated:
                 status = f"气绝(倒计时{s.revive_countdown})"
@@ -111,7 +112,33 @@ def render(game: Game) -> str:
                     mods.append(f"护甲{s.shield}")
                 extra = f" ({' '.join(mods)})" if mods else ""
                 status = f"攻{s.eff_power} 血{s.health}/{s.max_health}{extra} {zone}"
-            lines.append(f"    [{i}] {sd.name}{kind} Lv{s.level} [{s.faction}] {status}")
+            rows.append((i, name, kind, s.level, s.faction, status))
+        all_rows.extend(rows)
+        player_rows.append((pi, rows))
+
+    idx_w = max((_display_width(str(i)) for i, _, _, _, _, _ in all_rows), default=1)
+    name_w = max((_display_width(name) for _, name, _, _, _, _ in all_rows), default=0)
+    kind_w = max((_display_width(kind) for _, _, kind, _, _, _ in all_rows), default=0)
+    level_w = max((_display_width(f"Lv{lv}") for _, _, _, lv, _, _ in all_rows), default=0)
+    faction_w = max((_display_width(f"[{f}]") for _, _, _, _, f, _ in all_rows), default=0)
+
+    for pi, rows in player_rows:
+        p = st.players[pi]
+        marker = ">" if pi == st.active else " "
+        lines.append(
+            f"{marker} {p.name} HP {p.health}(护甲{p.shield}) "
+            f"鬼火 {p.orb} 手牌 {len(p.hand)} 牌库 {len(p.deck)} 墓地 {len(p.graveyard)}"
+        )
+        for i, name, kind, lv, faction, status in rows:
+            line = (
+                f"    [{_pad(str(i), idx_w)}] "
+                f"{_pad(name, name_w)}"
+                f"{_pad(kind, kind_w)} "
+                f"{_pad(f'Lv{lv}', level_w)} "
+                f"{_pad(f'[{faction}]', faction_w)} "
+                f"{status}"
+            )
+            lines.append(line)
     p = st.players[st.active]
     lines.append("")
     lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）：")
