@@ -56,9 +56,24 @@ def ref_code(ref: Ref, active: int) -> str:
     return f"{side}p" if ref.shikigami is None else f"{side}{ref.shikigami}"
 
 
+def _hand_sorted(game: Game, p) -> list:
+    """按式神座位、卡牌序号、入手顺序升序排列后的手牌（显示/选择用）。"""
+    seat = {}
+    for i, s in enumerate(p.shikigami):
+        seat[s.id] = i
+
+    def key(c):
+        cd = game.db.cards[c.id]
+        shiki_idx = seat.get(cd.shikigami, 99) if cd.shikigami is not None else 99
+        return (shiki_idx, c.id % 100, c.hand_seq)
+
+    return sorted(p.hand, key=key)
+
+
 def render(game: Game) -> str:
     st = game.state
-    lines = [f"===== 第 {st.turn} 半回合 | {st.players[st.active].name} 行动中 ====="]
+    active = st.players[st.active]
+    lines = [f"===== 当前玩家第 {active.turn_count} 回合（总第 {st.turn - 1} 回合）| {active.name} 行动中 ====="]
     for pi, p in enumerate(st.players):
         marker = ">" if pi == st.active else " "
         lines.append(
@@ -88,7 +103,7 @@ def render(game: Game) -> str:
             lines.append(f"    [{i}] {sd.name}{kind} Lv{s.level} [{s.faction}] {status}")
     p = st.players[st.active]
     lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）:")
-    for i, c in enumerate(p.hand):
+    for i, c in enumerate(_hand_sorted(game, p)):
         cd = game.db.cards[c.id]
         kw = f" [{'/'.join(cd.keywords)}]" if cd.keywords else ""
         mods = f" 强化{len(c.mods)}" if c.mods else ""
@@ -243,7 +258,8 @@ def main() -> None:
                     game.apply(dcmd)
                     print(render(game))
             elif cmd == "play":
-                card = game.current.hand[int(args[0])]
+                hand = _hand_sorted(game, game.current)
+                card = hand[int(args[0])]
                 cdef = db.cards[card.id]
                 cmd_dict: dict = {"op": "play_card", "uid": card.uid}
                 rest = args[1:]

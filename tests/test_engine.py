@@ -48,15 +48,17 @@ def test_upgrade_phase_gating(make_game):
 
 
 def test_mulligan_flow(db, make_game):
-    """游戏开始阶段：调度 → 双方确认 → 入场升级 → 先手抽 1。"""
+    """游戏开始阶段：调度 → 双方确认 → 入场升级 → 先手抽 1；换入牌继承换出牌的 hand_seq。"""
     g = make_game(mulligan=True)
     assert g.state.phase == "mulligan"
     with pytest.raises(IllegalAction):
         g.apply({"op": "end_turn"})   # 调度阶段不能用对战指令
     a, b = g.state.players
     assert len(a.hand) == 5 and a.mulligans_left == 3
+    old_seq = a.hand[0].hand_seq
     g.apply({"op": "mulligan", "player": 0, "uid": a.hand[0].uid})
     assert len(a.hand) == 5 and a.mulligans_left == 2   # 返回 1 张再随机抽 1
+    assert a.hand[0].hand_seq == old_seq                # 新牌继承原位置顺序编号
     g.apply({"op": "ready", "player": 0})
     assert g.state.phase == "mulligan"                  # B 未确认
     g.apply({"op": "ready", "player": 1})

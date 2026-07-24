@@ -108,7 +108,10 @@ class Game:
         for pi, p in enumerate(self.state.players):
             self.rng.shuffle(p.deck)
             for _ in range(min(self.cfg(pi, "starting_hand"), len(p.deck))):
-                p.hand.append(p.deck.pop(0))  # 起始手牌静默发放，不发事件
+                card = p.deck.pop(0)
+                card.hand_seq = p.next_hand_seq
+                p.next_hand_seq += 1
+                p.hand.append(card)  # 起始手牌静默发放，不发事件
             p.mulligans_left = self.config.mulligan_count
         if self.state.phase == "mulligan":
             self._log("对局开始：调度阶段（双方确认后式神入场）")
@@ -198,9 +201,13 @@ class Game:
         card = next((c for c in p.hand if c.uid == uid), None)
         if card is None:
             raise IllegalAction("手牌中没有这张牌")
-        p.hand.remove(card)
+        idx = p.hand.index(card)
+        old_seq = card.hand_seq
+        p.hand.pop(idx)
         p.deck.insert(self.rng.randint(0, len(p.deck)), card)      # 返回牌库
-        p.hand.append(p.deck.pop(self.rng.randint(0, len(p.deck) - 1)))  # 再随机抽一张
+        new_card = p.deck.pop(self.rng.randint(0, len(p.deck) - 1))  # 再随机抽一张
+        new_card.hand_seq = old_seq                                 # 换入牌继承换出牌的顺序编号
+        p.hand.insert(idx, new_card)
         p.mulligans_left -= 1
         self._log(f"{p.name} 调度了一张手牌（剩余 {p.mulligans_left} 次）")
         if p.mulligans_left == 0:
@@ -290,17 +297,78 @@ class Game:
                     z.remove(card)
                     break
             self._attach_form(p, si, card, cdef)
+        elif cdef.card_type == "combat":
+            # 战斗牌：以完整战斗事件流程结算（移入战斗区、战力/一次性护甲、
+            # 战斗前/后时机、战斗伤害），结算完后进入墓地。
+            if si is None:
+                raise IllegalAction("战斗牌必须有所属式神")
+            self._resolve_combat_card(p, si, card, cdef, method)
         else:
             self.move_card(p, card, "graveyard")
-        ctx = ExecContext(
-            controller=self.state.active,
-            source=Ref(player=self.state.active, shikigami=si) if si is not None else None,
-            card=card,
-            chosen=chosen,
-        )
-        block = method.effects if (method and method.effects is not None) else cdef.effects
-        self._resolve_block(block, ctx)
+            ctx = ExecContext(
+                controller=self.state.active,
+                source=Ref(player=self.state.active, shikigami=si) if si is not None else None,
+                card=card,
+                chosen=chosen,
+            )
+            block = method.effects if (method and method.effects is not None) else cdef.effects
+            self._resolve_block(block, ctx)
         self.emit("on_card_played", player=self.state.active, uid=uid)
+
+    def _combat_card_stats(self, block: EffectBlock) -> tuple[int, int]:
+        """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。"""
+        power = 0
+        shield = 0
+        for step in block.steps:
+            if step.target is not None and step.target.kind != "self":
+                continue
+            amount = (step.model_extra or {}).get("amount", 0)
+            if step.op == "buff_power":
+                power += amount
+            elif step.op == "gain_shield":
+                shield += amount
+        return power, shield
+
+    def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
+                             cdef: CardDef, method: PlayMethod | None) -> None:
+        """战斗牌完整事件流程：移入战斗区、获得战力/一次性护甲、战斗前、战斗伤害、战斗后、进墓地。"""
+        s = p.shikigami[si]
+        if not s.in_play:
+            raise IllegalAction("该式神未在场，无法使用战斗牌")
+        block = method.effects if (method and method.effects is not None) else cdef.effects
+        power, shield = self._combat_card_stats(block)
+        self._enter_combat(p, si)
+        if power:
+            s.combat_power += power
+        if shield:
+            s.combat_shield += shield
+        atk_ref = Ref(player=self.state.active, shikigami=si)
+        defender_idx = 1 - self.state.active
+        d = self.state.players[defender_idx]
+        self.emit(
+            "on_before_assault",
+            attacker=atk_ref,
+            victim=Ref(player=defender_idx, shikigami=d.combat_index),
+        )
+        self._drain_queue()
+        if s.defeated or s.despawned:
+            self._log("攻击方在战斗牌结算前气绝/离场，战斗中止")
+        else:
+            vic_idx = d.combat_index
+            if vic_idx is None:
+                self.deal_to_player(defender_idx, s.eff_power, atk_ref)
+            else:
+                vic_ref = Ref(player=defender_idx, shikigami=vic_idx)
+                vic_s = d.shikigami[vic_idx]
+                a_eff, d_eff = s.eff_power, vic_s.eff_power
+                self._hurt_shikigami(atk_ref, d_eff, vic_ref)
+                self._hurt_shikigami(vic_ref, a_eff, atk_ref)
+                self.check_defeated(atk_ref, source=vic_ref, reason="战斗")
+                self.check_defeated(vic_ref, source=atk_ref, reason="战斗")
+        self.emit("on_after_assault", attacker=atk_ref)
+        s.combat_power = 0
+        s.combat_shield = 0
+        self.move_card(p, card, "graveyard")
 
     def legal_targets(self, player_index: int, card: CardInstance) -> list[Ref]:
         """一张 choose 目标卡牌当前的合法目标列表（供客户端展示/校验；不含方式覆盖）。"""
@@ -315,11 +383,15 @@ class Game:
         Phase 1 简化：直接变更区域，不触发卡牌移动后灵咒效果，不检查区域上限。
         完整规则见 docs/rules.md「卡牌移动事件流程」。
         若 card 不在任何已知区域（如测试直接注入手牌），直接追加到目标区域。
+        移入手牌时分配 hand_seq（调度换入牌由调用方覆盖）。
         """
         for z in p.zones.values():
             if card in z:
                 z.remove(card)
                 break
+        if to_zone == "hand" and card.hand_seq == 0:
+            card.hand_seq = p.next_hand_seq
+            p.next_hand_seq += 1
         p.zones.setdefault(to_zone, []).append(card)
 
     # ---------- 出击 / 移动 ----------
@@ -638,6 +710,10 @@ class Game:
         if amount <= 0:
             return  # 伤害值不大于 0：终止结算
         remaining = amount
+        if s.combat_shield > 0:
+            absorbed = min(s.combat_shield, remaining)
+            s.combat_shield -= absorbed
+            remaining -= absorbed
         if s.shield > 0:
             absorbed = min(s.shield, remaining)
             s.shield -= absorbed
