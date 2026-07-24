@@ -1,0 +1,5 @@
+# 自定义 / DIY 事件声明。核心事件见 core/events.py，无需在此重复。
+# DIY 卡牌通过动作 {op: emit, event: <name>} 触发这里声明的事件；
+# 触发器（式神被动 / 响应牌）的 when 也可以引用这些名字。
+- name: on_custom_demo
+  description: 示例自定义事件，占位展示 DIY 事件扩展方式

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# IDE / local tooling
+.idea/
+.vscode/
+
+# Claude Code local cache
+.tokensave/
