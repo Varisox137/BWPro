@@ -195,3 +195,10 @@ def cmd_set_turn(game, ctx, *, active: int | None = None, turn: int | None = Non
     if turn is not None:
         game.state.turn = turn
     game._log(f"[调试] 设置 active={game.state.active}, turn={game.state.turn}")
+
+
+@debug_command("skip_upgrade")
+def cmd_skip_upgrade(game, ctx) -> None:
+    """调试：跳过当前升级阶段（仅用于测试）。"""
+    game._cmd_skip_upgrade({})
+    game._log("[调试] 跳过升级阶段")

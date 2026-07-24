@@ -14,11 +14,10 @@ from core.model import Ref
 from core.setup import new_game
 from db.test_data import TEST_IDS, make_test_db, make_test_deck
 
-HELP = """指令（括号内为 alias）：
-  play (p)   <手牌序号> [目标] [方式]   使用手牌；如 play 0 e1 或 p 0 e1 burst
+HELP = """指令（括号内为 alias，序号从 1 开始）：
+  play (p)   <手牌序号> [目标] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
   assault (a) <式神序号>               式神出击（耗 1 鬼火 + 每回合 1 次次数）
   upgrade (u) <式神序号>               升级式神（只能升己方当前最低级）
-  skip (s)                             跳过剩余升级机会
   end (e)                              结束回合
   state (st)                           重印场面
   log (l) [n]                          查看最近 n 条日志（默认 10）
@@ -32,7 +31,6 @@ COMMAND_ALIASES = {
     "p": "play",
     "a": "assault",
     "u": "upgrade",
-    "s": "skip",
     "e": "end",
     "st": "state",
     "l": "log",
@@ -130,7 +128,7 @@ def render(game: Game) -> str:
         all_rows.extend(rows)
         player_rows.append((pi, rows))
 
-    idx_w = max((_display_width(str(i)) for i, _, _, _, _, _ in all_rows), default=1)
+    idx_w = max((_display_width(str(i + 1)) for i, _, _, _, _, _ in all_rows), default=1)
     name_w = max((_display_width(name) for _, name, _, _, _, _ in all_rows), default=0)
     kind_w = max((_display_width(kind) for _, _, kind, _, _, _ in all_rows), default=0)
     level_w = max((_display_width(f"Lv{lv}") for _, _, _, lv, _, _ in all_rows), default=0)
@@ -147,7 +145,7 @@ def render(game: Game) -> str:
         )
         for i, name, kind, lv, faction, status in rows:
             line = (
-                f"    [{_pad(str(i), idx_w)}] "
+                f"    [{_pad(str(i + 1), idx_w)}] "
                 f"{_pad(name, name_w)}"
                 f"{_pad(kind, kind_w)} "
                 f"{_pad(f'Lv{lv}', level_w)} "
@@ -159,30 +157,32 @@ def render(game: Game) -> str:
     p = st.players[st.active]
     lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）：")
     hand = _hand_sorted(game, p)
-    # 计算各列（除卡牌描述外）的显示宽度
-    idx_w = max((_display_width(str(i)) for i in range(len(hand))), default=1)
-    name_w = max((_display_width(f"《{game.db.cards[c.id].name}》") for c in hand), default=0)
+    # 新格式：[1-based] 【卡牌名】 #uid ctype[subtype] level cost [data] {description}
+    def _ctype_label(cd):
+        base = cd.card_type
+        if cd.subtype:
+            return f"{base}[{cd.subtype}]"
+        return base
+
+    idx_w = max((_display_width(str(i + 1)) for i in range(len(hand))), default=1)
+    name_w = max((_display_width(f"【{game.db.cards[c.id].name}】") for c in hand), default=0)
     uid_w = max((_display_width(f"#{c.uid}") for c in hand), default=0)
-    cost_w = max((_display_width(f"{game.db.cards[c.id].cost}费") for c in hand), default=0)
-    level_w = max((_display_width(f"Lv{game.db.cards[c.id].level}") for c in hand), default=0)
-    kw_w = max((_display_width(f"[{'/'.join(game.db.cards[c.id].keywords)}]") for c in hand), default=0)
-    mods_w = max((_display_width(f"强化{len(c.mods)}") for c in hand), default=0)
-    methods_w = max((_display_width(f"方式:{','.join(m.id for m in game.db.cards[c.id].methods)}") for c in hand), default=0)
+    ctype_w = max((_display_width(_ctype_label(game.db.cards[c.id])) for c in hand), default=0)
+    level_w = max((_display_width(str(game.db.cards[c.id].level)) for c in hand), default=0)
+    cost_w = max((_display_width(str(game.db.cards[c.id].cost)) for c in hand), default=0)
+    data_w = max((_display_width(f"[{'/'.join(game.db.cards[c.id].keywords)}]") for c in hand), default=0)
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
-        kw = f"[{'/'.join(cd.keywords)}]" if cd.keywords else ""
-        mods = f"强化{len(c.mods)}" if c.mods else ""
-        methods = f"方式:{','.join(m.id for m in cd.methods)}" if cd.methods else ""
+        data = f"[{'/'.join(cd.keywords)}]" if cd.keywords else ""
         line = (
-            f"    [{_pad(str(i), idx_w)}] "
-            f"{_pad(f'《{cd.name}》', name_w)} "
+            f"    [{_pad(str(i + 1), idx_w)}] "
+            f"{_pad(f'【{cd.name}】', name_w)} "
             f"{_pad(f'#{c.uid}', uid_w)} "
-            f"{_pad(f'{cd.cost}费', cost_w)} "
-            f"{_pad(f'Lv{cd.level}', level_w)} "
-            f"{_pad(kw, kw_w)} "
-            f"{_pad(mods, mods_w)} "
-            f"{_pad(methods, methods_w)} "
-            f"— {cd.text}"
+            f"{_pad(_ctype_label(cd), ctype_w)} "
+            f"{_pad(str(cd.level), level_w)} "
+            f"{_pad(str(cd.cost), cost_w)} "
+            f"{_pad(data, data_w)} "
+            f"{{{cd.text}}}"
         )
         lines.append(line)
     lines.append("")
@@ -197,7 +197,7 @@ def run_mulligan(game: Game) -> None:
     for pi in (0, 1):
         p = game.state.players[pi]
         while not p.mulligan_done:
-            hand = "  ".join(f"[{i}]《{game.db.cards[c.id].name}》" for i, c in enumerate(p.hand))
+            hand = "  ".join(f"[{i + 1}]《{game.db.cards[c.id].name}》" for i, c in enumerate(p.hand))
             print(f"{p.name} 手牌：{hand}")
             try:
                 line = input(f"[{p.name}] 调度（剩 {p.mulligans_left} 次）> ").strip().lower()
@@ -207,7 +207,7 @@ def run_mulligan(game: Game) -> None:
                 game.apply({"op": "ready", "player": pi})
                 continue
             try:
-                card = p.hand[int(line)]
+                card = p.hand[int(line) - 1]
                 game.apply({"op": "mulligan", "player": pi, "uid": card.uid})
             except (ValueError, IndexError):
                 print("序号有误")
@@ -337,7 +337,7 @@ def main() -> None:
                     print(render(game))
             elif cmd == "play":
                 hand = _hand_sorted(game, game.current)
-                card = hand[int(args[0])]
+                card = hand[int(args[0]) - 1]
                 cdef = db.cards[card.id]
                 cmd_dict: dict = {"op": "play_card", "uid": card.uid}
                 rest = args[1:]
@@ -355,10 +355,7 @@ def main() -> None:
                 game.apply(cmd_dict)
                 print(render(game))
             elif cmd in ("assault", "upgrade"):
-                game.apply({"op": cmd, "index": int(args[0])})
-                print(render(game))
-            elif cmd in ("skip", "skip_upgrade"):
-                game.apply({"op": "skip_upgrade"})
+                game.apply({"op": cmd, "index": int(args[0]) - 1})
                 print(render(game))
             elif cmd == "end":
                 game.apply({"op": "end_turn"})

@@ -154,7 +154,6 @@ class Game:
             "play_card": self._cmd_play_card,
             "assault": self._cmd_assault,
             "upgrade": self._cmd_upgrade,
-            "skip_upgrade": self._cmd_skip_upgrade,
             "end_turn": self._cmd_end_turn,
             "mulligan": self._cmd_mulligan,
             "ready": self._cmd_ready,
@@ -164,8 +163,8 @@ class Game:
             raise IllegalAction(f"未知指令: {op}")
         if self.state.phase == "mulligan" and op not in ("mulligan", "ready"):
             raise IllegalAction("调度阶段：请先完成调度（mulligan/ready）")
-        if self.state.phase == "upgrade" and op not in ("upgrade", "skip_upgrade"):
-            raise IllegalAction("升级阶段：请先完成升级或跳过（upgrade/skip_upgrade）")
+        if self.state.phase == "upgrade" and op not in ("upgrade",):
+            raise IllegalAction("升级阶段：请先完成升级")
         if self.state.phase == "battle" and op == "upgrade":
             raise IllegalAction("当前不在升级阶段")
         handler(cmd)
@@ -582,7 +581,7 @@ class Game:
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
         self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level)
-        if p.upgrades == 0:
+        if p.upgrades == 0 or not self._has_upgrade_target(p):
             self.state.phase = "battle"
 
     def _cmd_skip_upgrade(self, cmd: dict) -> None:
@@ -684,12 +683,21 @@ class Game:
         self.state.phase = "battle" if p.upgrades == 0 else "upgrade"
         self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
 
+    def _has_upgrade_target(self, p: PlayerState) -> bool:
+        """当前玩家是否还有可升级的式神（用于自动判断升级阶段是否可跳过）。"""
+        return any(
+            s.kind == "shikigami" and not s.defeated and not s.despawned
+            and s.level < self.config.max_level
+            for s in p.shikigami
+        )
+
     def _upgrade_phase(self, p: PlayerState) -> None:
         """式神升级阶段：按规则赋予本回合升级机会。
 
         后手第 3 回合 / 先手第 7 回合各 +1 次（当回合共 2 次）。
         升级阶段本身只赋予机会，不自动升级；玩家通过 upgrade 指令消耗机会。
         当配置 auto_skip_upgrade=True 时（测试便利），不赋予机会并直接进入主要阶段。
+        若本回合虽然有机会但已没有可升级的目标，也自动进入主要阶段。
         """
         cfg = self.config
         if cfg.auto_skip_upgrade:
@@ -700,6 +708,8 @@ class Game:
         pi = self.state.active
         if (pi == 0 and p.turn_count == e_first) or (pi == 1 and p.turn_count == e_second):
             p.upgrades += 1
+        if p.upgrades > 0 and not self._has_upgrade_target(p):
+            p.upgrades = 0
 
     # ==================== 伤害 / 抽牌 / 气绝（动作层共用管线） ====================
 
