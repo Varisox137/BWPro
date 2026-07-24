@@ -4,7 +4,7 @@
 """
 import pytest
 
-from core.model import CardInstance
+from core.model import CardInstance, GameConfig
 from core.setup import new_game
 from db.test_data import TEST_IDS, make_test_db, make_test_deck
 
@@ -21,6 +21,7 @@ def _give(game, player_index: int, defn_id: int) -> CardInstance:
 def _make_game(seed: int = 42, **kw):
     db = make_test_db()
     deck = make_test_deck()
+    config = GameConfig(auto_skip_upgrade=kw.pop("auto_skip_upgrade", True))
     return new_game(
         db,
         ("A", list(TEST_IDS), list(deck)),
@@ -29,6 +30,7 @@ def _make_game(seed: int = 42, **kw):
         first=0,
         shuffle_team=False,
         mulligan=False,
+        config=config,
         **kw,
     )
 

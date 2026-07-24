@@ -21,13 +21,30 @@ def test_game_start_setup(make_game):
 
 
 def test_first_turn_economy(make_game):
-    g = make_game()
+    g = make_game(auto_skip_upgrade=False)
     a, b = g.state.players
     assert a.orb == 1                 # 先手第 1 回合 1 鬼火
     assert a.upgrades == 1            # 每个己方回合均有 1 次升级机会（含第 1 回合）
     assert a.assaults_left == 1
+    g.apply({"op": "skip_upgrade"})   # 跳过升级阶段进入主要阶段
     g.apply({"op": "end_turn"})
     assert b.orb == 2 and b.upgrades == 1 and b.turn_count == 1
+
+
+def test_upgrade_phase_gating(make_game):
+    """升级阶段：只能执行 upgrade / skip_upgrade；跳过或升级耗尽后进入主要阶段。"""
+    g = make_game(auto_skip_upgrade=False)
+    a = g.state.players[0]
+    assert g.state.phase == "upgrade"
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "assault", "index": 0})
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "end_turn"})
+    g.apply({"op": "upgrade", "index": 1})      # 0 级里升 1 级
+    assert g.state.phase == "battle"
+    assert a.upgrades == 0
+    # 主要阶段才能使用非升级指令
+    g.apply({"op": "end_turn"})
 
 
 def test_mulligan_flow(db, make_game):
@@ -68,9 +85,11 @@ def test_level_zero_not_in_play(make_game):
 
 
 def test_upgrade_lowest_rule(make_game):
-    g = make_game()
-    g.apply({"op": "end_turn"})
-    g.apply({"op": "end_turn"})                   # A 第 2 回合，1 次升级机会
+    g = make_game(auto_skip_upgrade=False)
+    g.apply({"op": "skip_upgrade"})
+    g.apply({"op": "end_turn"})                  # B 第 1 回合
+    g.apply({"op": "skip_upgrade"})
+    g.apply({"op": "end_turn"})                  # A 第 2 回合，1 次升级机会
     a = g.state.players[0]
     with pytest.raises(IllegalAction):
         g.apply({"op": "upgrade", "index": 0})    # 已 1 级，不是己方最低
@@ -82,12 +101,16 @@ def test_upgrade_lowest_rule(make_game):
 
 def test_extra_upgrade_turns(make_game):
     """先手第 7 / 后手第 4 个己方回合各 +1 升级机会。"""
-    g = make_game()
+    g = make_game(auto_skip_upgrade=False)
     a, b = g.state.players
     for _ in range(7):                            # 推进到 B 的第 4 回合
+        if g.state.phase == "upgrade":
+            g.apply({"op": "skip_upgrade"})
         g.apply({"op": "end_turn"})
     assert b.turn_count == 4 and b.upgrades == 2
     for _ in range(5):                            # 推进到 A 的第 7 回合
+        if g.state.phase == "upgrade":
+            g.apply({"op": "skip_upgrade"})
         g.apply({"op": "end_turn"})
     assert a.turn_count == 7 and a.upgrades == 2
 

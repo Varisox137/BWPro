@@ -17,6 +17,7 @@ HELP = """指令：
   play <手牌序号> [目标] [方式]   使用手牌；如 play 0 e1 或 play 0 e1 burst（爆能）
   assault <式神序号>              式神出击（耗 1 鬼火 + 每回合 1 次出击次数，驻留战斗区）
   upgrade <式神序号>              升级式神（只能升己方当前最低级）
+  skip                            跳过剩余升级机会
   end                             结束回合
   state                           重印场面
   log [n]                         查看最近 n 条日志（默认 10）
@@ -59,7 +60,7 @@ def render(game: Game) -> str:
     st = game.state
     lines = [f"===== 第 {st.turn} 半回合 | {st.players[st.active].name} 行动中 ====="]
     for pi, p in enumerate(st.players):
-        marker = "▶" if pi == st.active else " "
+        marker = ">" if pi == st.active else " "
         lines.append(
             f"{marker} {p.name} HP {p.health}(护甲{p.shield}) "
             f"鬼火 {p.orb} 手牌 {len(p.hand)} 牌库 {len(p.deck)} 墓地 {len(p.graveyard)}"
@@ -215,8 +216,11 @@ def main() -> None:
         run_mulligan(game)
     print(render(game))
     while game.state.winner is None:
+        prompt = f"[{game.current.name}]"
+        if game.state.phase == "upgrade":
+            prompt = f"[{game.current.name} 升级阶段（剩 {game.current.upgrades} 次）]"
         try:
-            line = input(f"[{game.current.name}] > ").strip()
+            line = input(f"{prompt} > ").strip()
         except EOFError:
             break
         if not line:
@@ -258,6 +262,9 @@ def main() -> None:
                 print(render(game))
             elif cmd in ("assault", "upgrade"):
                 game.apply({"op": cmd, "index": int(args[0])})
+                print(render(game))
+            elif cmd in ("skip", "skip_upgrade"):
+                game.apply({"op": "skip_upgrade"})
                 print(render(game))
             elif cmd == "end":
                 game.apply({"op": "end_turn"})

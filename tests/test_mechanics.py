@@ -440,7 +440,7 @@ def test_move_card_to_custom_zone(db, make_game):
 
 
 def test_form_changes_base_stats(db, make_game):
-    """形态牌结附后替换式神基础身材，当前生命重置为新的生命上限。"""
+    """形态牌结附后替换式神基础身材，当前生命重置为新的生命上限；该牌离开手牌/区域。"""
     db.cards[10010151] = F.card(10010151, card_type="form", level=1,
                                 form_power=5, form_health=7, token=True)
     g = make_game()
@@ -451,6 +451,8 @@ def test_form_changes_base_stats(db, make_game):
     assert s.base_power == 5 and s.base_health == 7
     assert s.health == 7 and s.max_health == 7
     assert s.form is c
+    assert c not in a.hand
+    assert c not in a.graveyard
 
 
 def test_form_replaces_old_form(db, make_game):

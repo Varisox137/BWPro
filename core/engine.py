@@ -152,6 +152,7 @@ class Game:
             "play_card": self._cmd_play_card,
             "assault": self._cmd_assault,
             "upgrade": self._cmd_upgrade,
+            "skip_upgrade": self._cmd_skip_upgrade,
             "end_turn": self._cmd_end_turn,
             "mulligan": self._cmd_mulligan,
             "ready": self._cmd_ready,
@@ -161,6 +162,10 @@ class Game:
             raise IllegalAction(f"未知指令: {op}")
         if self.state.phase == "mulligan" and op not in ("mulligan", "ready"):
             raise IllegalAction("调度阶段：请先完成调度（mulligan/ready）")
+        if self.state.phase == "upgrade" and op not in ("upgrade", "skip_upgrade"):
+            raise IllegalAction("升级阶段：请先完成升级或跳过（upgrade/skip_upgrade）")
+        if self.state.phase == "battle" and op == "upgrade":
+            raise IllegalAction("当前不在升级阶段")
         handler(cmd)
         self._drain_queue()
 
@@ -276,9 +281,14 @@ class Game:
         how = f"（{method.text or method.id}）" if method else ""
         self._log(f"{p.name} 使用了《{cdef.name}》{how}")
         if cdef.card_type == "form":
-            # 形态牌：结附到所属式神；旧形态先消灭，新形态替换基础身材
+            # 形态牌：从手牌/原区域移除（不进入任何区域），以该卡牌数据给式神结附形态；
+            # 形态离场时变为卡牌并置入墓地。此过程不是“卡牌移动事件”。
             if si is None:
                 raise IllegalAction("形态牌必须有所属式神")
+            for z in p.zones.values():
+                if card in z:
+                    z.remove(card)
+                    break
             self._attach_form(p, si, card, cdef)
         else:
             self.move_card(p, card, "graveyard")
@@ -439,6 +449,9 @@ class Game:
     # ---------- 升级 / 结束回合 ----------
 
     def _cmd_upgrade(self, cmd: dict) -> None:
+        """升级指令：仅在升级阶段可用。消耗 1 次升级机会，升级完成后若机会用尽则进入主要阶段。"""
+        if self.state.phase != "upgrade":
+            raise IllegalAction("当前不在升级阶段")
         p = self.current
         i = cmd.get("index")
         if p.upgrades < 1:
@@ -467,6 +480,14 @@ class Game:
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
         self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level)
+        if p.upgrades == 0:
+            self.state.phase = "battle"
+
+    def _cmd_skip_upgrade(self, cmd: dict) -> None:
+        """跳过剩余升级机会，直接进入主要阶段。"""
+        if self.state.phase != "upgrade":
+            raise IllegalAction("当前不在升级阶段")
+        self.state.phase = "battle"
 
     def _cmd_end_turn(self, cmd: dict) -> None:
         """结束回合：触发 on_turn_end，结算完后切换回合方并进入对方回合开始阶段。"""
@@ -558,6 +579,7 @@ class Game:
             self.draw_cards(pi, self.cfg(pi, "draw_per_turn"))
         # 15. 进入式神升级阶段
         self._upgrade_phase(p)
+        self.state.phase = "battle" if p.upgrades == 0 else "upgrade"
         self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
 
     def _upgrade_phase(self, p: PlayerState) -> None:
@@ -565,8 +587,12 @@ class Game:
 
         后手第 3 回合 / 先手第 7 回合各 +1 次（当回合共 2 次）。
         升级阶段本身只赋予机会，不自动升级；玩家通过 upgrade 指令消耗机会。
+        当配置 auto_skip_upgrade=True 时（测试便利），不赋予机会并直接进入主要阶段。
         """
         cfg = self.config
+        if cfg.auto_skip_upgrade:
+            p.upgrades = 0
+            return
         p.upgrades = 1
         e_first, e_second = cfg.extra_upgrade_turns
         pi = self.state.active

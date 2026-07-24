@@ -32,6 +32,7 @@ class GameConfig(BaseModel):
     second_player_shield: int = 5  # 后手补偿：牌手护甲
     extra_upgrade_turns: tuple[int, int] = (7, 4)  # 先手第 7 / 后手第 4 个己方回合各 +1 升级机会
     enable_debug_commands: bool = True  # 是否启用 debug_ 指令（服务端可关闭）
+    auto_skip_upgrade: bool = False  # 测试便利：升级阶段自动跳过（生产/CLI 保持 False）
     hand_cap: int = 12  # 手牌上限；超出时卡牌先进入目标区域再移至墓地（Phase 3+ 完整流程）
     deck_cap: int = 99  # 牌库上限；预留，Phase 1 不强制
 

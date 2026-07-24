@@ -5,6 +5,7 @@ db/ 目录下的 YAML 只存放经确认的正式数据。
 """
 from __future__ import annotations
 
+from core.model import GameConfig
 from core.setup import new_game
 from db.loader import CardDatabase
 from db.schema import (
@@ -99,10 +100,17 @@ def deck_of(*sids: int) -> list[int]:
 
 
 def mk_game(db: CardDatabase, seed: int = 1, team=None, **kw):
-    """确定性测试对局：固定先后手/式神顺序，跳过调度（可用 kw 覆盖）。"""
+    """确定性测试对局：固定先后手/式神顺序，跳过调度（可用 kw 覆盖）。
+
+    默认启用 auto_skip_upgrade，让测试不必每回合手动跳过升级阶段；
+    需要测试升级阶段的用例可传 auto_skip_upgrade=False。
+    """
     team = team or TEAM
     deck = deck_of(*team)
     kw.setdefault("shuffle_team", False)
     kw.setdefault("mulligan", False)
+    if "config" not in kw:
+        skip = kw.pop("auto_skip_upgrade", True)
+        kw["config"] = GameConfig(auto_skip_upgrade=skip)
     return new_game(db, ("A", list(team), list(deck)), ("B", list(team), list(deck)),
                     seed=seed, first=0, **kw)
