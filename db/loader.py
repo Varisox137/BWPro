@@ -18,6 +18,7 @@ from db.schema import (
     KEYWORDS,
     NEUTRAL_PREFIX,
     RARITIES,
+    SUBTYPES,
     CardDef,
     EffectBlock,
     ShikigamiDef,
@@ -116,6 +117,8 @@ class CardDatabase:
                 errors.append(f"{where}: 仅协战牌可以有 shikigami2")
             if c.card_type not in CARD_TYPES:
                 errors.append(f"{where}: 未知主类型 {c.card_type}")
+            if c.subtype is not None and c.subtype not in SUBTYPES:
+                errors.append(f"{where}: 未知子类型 {c.subtype}")
             if c.rarity is not None and c.rarity not in RARITIES:
                 errors.append(f"{where}: 未知稀有度 {c.rarity}（R/SR/SSR）")
             for kw in c.keywords:

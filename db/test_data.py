@@ -68,23 +68,22 @@ def make_test_db() -> CardDatabase:
             power: int = 0, shield: int = 0,
             form_power: int | None = None, form_health: int | None = None,
             perm_power: int = 0, perm_health: int = 0,
-            text: str = "") -> None:
+            subtype: str | None = None, text: str = "") -> None:
         cid = sid * 100 + no
         kw = keywords or []
-        tags: list[str] = []
         effects = EffectBlock(steps=[])
         if ctype == "combat":
             effects = _stat_steps(power=power, shield=shield)
         elif ctype == "spell" and (perm_power or perm_health):
-            tags.append("awaken")
+            subtype = "awaken"
             effects = _perm_steps(power=perm_power, health=perm_health)
         elif ctype == "spell" and (power or shield):
             effects = _stat_steps(power=power, shield=shield)
         # form 的身材由 form_power/form_health 提供，不通过 effects
         cards[cid] = CardDef(
             id=cid, version=VER, name=name, shikigami=sid,
-            card_type=ctype, level=level, cost=cost, keywords=kw,
-            tags=tags, form_power=form_power, form_health=form_health,
+            card_type=ctype, subtype=subtype, level=level, cost=cost, keywords=kw,
+            form_power=form_power, form_health=form_health,
             effects=effects, text=text,
         )
 

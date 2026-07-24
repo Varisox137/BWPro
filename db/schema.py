@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 卡牌主类型：法术 / 战斗 / 形态 / 幻境（预留） / 协战（预留）
 CARD_TYPES = frozenset({"spell", "combat", "form", "field", "reinforce"})
+SUBTYPES = frozenset({"awaken"})  # 子类型：awaken=觉醒牌；保留扩展
 KEYWORDS = frozenset({"fast", "trigger"})  # 瞬发 / 响应；其他关键词机制未实现前不放进数据，避免静默失效（rules.md:270）
 FACTIONS = frozenset({"红莲", "紫岩", "青岚", "苍叶", "无相"})  # 无相 = 无派系
 FACTION_COLORS = {"红莲": "red", "紫岩": "purple", "青岚": "blue", "苍叶": "green", "无相": "white"}  # Phase 5 UI 展示预留，代码侧暂无消费方
@@ -107,7 +108,8 @@ class CardDef(BaseModel):
     shikigami: int | None = None  # 所属式神 id；None = 中立牌；协战牌为两位所属中较小者
     shikigami2: int | None = None  # 协战牌：另一位所属式神 id（仅 card_type=reinforce 使用）
     card_type: str
-    tags: list[str] = Field(default_factory=list)  # 自由标记：觉醒 awaken、式神专属标记等
+    subtype: str | None = None  # 子类型：awaken=觉醒牌；保留扩展（如式神专属子类型）
+    tags: list[str] = Field(default_factory=list)  # 自由标记；机制未实现前不放进数据，避免静默失效
     rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）
     token: bool = False  # 衍生卡：对局中由系统/效果生成，不可编入卡组
     playable_when_defeated: bool = False  # 气绝时可用（与是否响应牌无关）

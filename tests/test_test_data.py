@@ -75,7 +75,7 @@ def test_awaken_card_perm_buff():
     assert s.perm_power == 2
     assert s.perm_health == 2
     assert s.health == s.max_health  # 当前生命同步增加
-    assert "awaken" in g.db.cards[card.id].tags
+    assert g.db.cards[card.id].subtype == "awaken"
 
 
 def test_zero_cost_card_playable_at_zero_orb():

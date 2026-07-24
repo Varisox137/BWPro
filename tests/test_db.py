@@ -95,9 +95,9 @@ def test_validate_token_suffix(db):
     assert any("01-08" in e for e in errors)
 
 
-def test_awaken_is_tag_not_card_type(db):
-    """觉醒牌 = 任意主类型 + awaken tag；card_type 不再接受 awaken。"""
-    db.cards[10010196] = F.card(10010196, card_type="form", tags=["awaken"], token=True)
+def test_awaken_is_subtype_not_card_type(db):
+    """觉醒牌 = 任意主类型 + subtype=awaken；card_type 不再接受 awaken。"""
+    db.cards[10010196] = F.card(10010196, card_type="form", subtype="awaken", token=True)
     assert db.validate() == []
     db.cards[10010197] = F.card(10010197, card_type="awaken", token=True)
     assert any("主类型" in e for e in db.validate())
