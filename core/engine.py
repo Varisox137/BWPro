@@ -97,10 +97,6 @@ class Game:
             cost = 0
         return cost
 
-    def _exec_context(self, **kwargs) -> ExecContext:
-        """构造一个 ExecContext；供调试指令和内部复用。"""
-        return ExecContext(**kwargs)
-
     # ==================== 对局初始化 ====================
 
     def start(self) -> None:
@@ -176,7 +172,7 @@ class Game:
         fn = debug.DEBUG_COMMANDS.get(name)
         if fn is None:
             raise IllegalAction(f"未知调试指令: {name}")
-        ctx = self._exec_context(controller=cmd.get("player", self.state.active))
+        ctx = ExecContext(controller=cmd.get("player", self.state.active))
         fn(self, ctx, **cmd.get("args", {}))
 
     # ---------- 调度（游戏开始阶段） ----------
@@ -210,7 +206,8 @@ class Game:
         self._log(f"{p.name} 调度了一张手牌（剩余 {p.mulligans_left} 次）")
         if p.mulligans_left == 0:
             p.mulligan_done = True
-        self._check_battle_start()
+        if all(p.mulligan_done for p in self.state.players):
+            self._begin_battle()
 
     def _cmd_ready(self, cmd: dict) -> None:
         """确认完成调度（可以不用满次数）。双方均确认后进入对战阶段。"""
@@ -219,17 +216,14 @@ class Game:
         p = self.state.players[self._mulligan_player(cmd)]
         p.mulligan_done = True
         self._log(f"{p.name} 完成调度")
-        self._check_battle_start()
+        if all(p.mulligan_done for p in self.state.players):
+            self._begin_battle()
 
     def _mulligan_player(self, cmd: dict) -> int:
         pi = cmd.get("player")
         if pi not in (0, 1):
             raise IllegalAction("调度指令需要 player（0/1）")
         return pi
-
-    def _check_battle_start(self) -> None:
-        if all(p.mulligan_done for p in self.state.players):
-            self._begin_battle()
 
     # ---------- 出牌 ----------
 
@@ -356,29 +350,7 @@ class Game:
                 reason="combat_card",
             )
         atk_ref = Ref(player=self.state.active, shikigami=si)
-        defender_idx = 1 - self.state.active
-        d = self.state.players[defender_idx]
-        self.emit(
-            "on_before_assault",
-            attacker=atk_ref,
-            victim=Ref(player=defender_idx, shikigami=d.combat_index),
-        )
-        self._drain_queue()
-        if s.defeated or s.despawned:
-            self._log("攻击方在战斗牌结算前气绝/离场，战斗中止")
-        else:
-            vic_idx = d.combat_index
-            if vic_idx is None:
-                self.deal_to_player(defender_idx, s.eff_power, atk_ref)
-            else:
-                vic_ref = Ref(player=defender_idx, shikigami=vic_idx)
-                vic_s = d.shikigami[vic_idx]
-                a_eff, d_eff = s.eff_power, vic_s.eff_power
-                self._hurt_shikigami(atk_ref, d_eff, vic_ref)
-                self._hurt_shikigami(vic_ref, a_eff, atk_ref)
-                self.check_defeated(atk_ref, source=vic_ref, reason="战斗")
-                self.check_defeated(vic_ref, source=atk_ref, reason="战斗")
-        self.emit("on_after_assault", attacker=atk_ref)
+        self._resolve_combat(atk_ref, s)
         s.combat_power = 0
         self.move_card(p, card, "graveyard")
 
@@ -425,6 +397,35 @@ class Game:
 
     # ---------- 出击 / 移动 ----------
 
+    def _resolve_combat(self, atk_ref: Ref, attacker: ShikigamiState) -> None:
+        """通用战斗伤害结算：发出 on_before_assault、结算即时效果、造成伤害、发出 on_after_assault。
+
+        复用于出击指令与战斗牌；攻击方状态（attacker）由调用方传入。
+        """
+        defender_idx = 1 - atk_ref.player
+        d = self.state.players[defender_idx]
+        self.emit(
+            "on_before_assault",
+            attacker=atk_ref,
+            victim=Ref(player=defender_idx, shikigami=d.combat_index),
+        )
+        self._drain_queue()
+        if attacker.defeated or attacker.despawned:
+            self._log("攻击方在伤害结算前气绝/离场，战斗中止")
+            return
+        vic_idx = d.combat_index
+        if vic_idx is None:
+            self.deal_to_player(defender_idx, attacker.eff_power, atk_ref)
+        else:
+            vic_ref = Ref(player=defender_idx, shikigami=vic_idx)
+            vic_s = d.shikigami[vic_idx]
+            a_eff, d_eff = attacker.eff_power, vic_s.eff_power
+            self._hurt_shikigami(atk_ref, d_eff, vic_ref)
+            self._hurt_shikigami(vic_ref, a_eff, atk_ref)
+            self.check_defeated(atk_ref, source=vic_ref, reason="战斗")
+            self.check_defeated(vic_ref, source=atk_ref, reason="战斗")
+        self.emit("on_after_assault", attacker=atk_ref)
+
     def _cmd_assault(self, cmd: dict) -> None:
         """出击指令：耗 1 鬼火 + 消耗出击次数，将攻击者移入战斗区并发起战斗。
 
@@ -446,34 +447,7 @@ class Game:
         p.assaults_left -= 1
         self._enter_combat(p, i)
         atk_ref = Ref(player=self.state.active, shikigami=i)
-        defender_idx = 1 - self.state.active
-        d = self.state.players[defender_idx]
-        self.emit(
-            "on_before_assault",
-            attacker=atk_ref,
-            victim=Ref(player=defender_idx, shikigami=d.combat_index),
-        )
-        self._drain_queue()  # 出击宣言触发的 insert 效果必须在伤害结算前执行完
-        # 攻击者可能被前述 insert 效果气绝/离场；同一列表元素，复用 s 检查最新状态
-        if s.defeated or s.despawned:
-            self._log("攻击方在伤害结算前气绝/离场，出击中止")
-            return
-        vic_idx = d.combat_index  # 结算前重新读取（可能被前置效果改变）
-        if vic_idx is None:
-            # 敌方战斗区无人：直接攻击牌手
-            self.deal_to_player(defender_idx, s.eff_power, atk_ref)
-        else:
-            vic_ref = Ref(player=defender_idx, shikigami=vic_idx)
-            vic_s = d.shikigami[vic_idx]
-            # 战斗伤害并行结算：按（反击，攻击）顺序生成伤害事件，气绝判定同序。
-            # 反击 = 被攻击者对攻击者；攻击 = 攻击者对被攻击者；数值均等于自身有效力量。
-            a_eff, d_eff = s.eff_power, vic_s.eff_power
-            self._hurt_shikigami(atk_ref, d_eff, vic_ref)
-            self._hurt_shikigami(vic_ref, a_eff, atk_ref)
-            self.check_defeated(atk_ref, source=vic_ref, reason="战斗")
-            self.check_defeated(vic_ref, source=atk_ref, reason="战斗")
-        # 攻击方存活则驻留战斗区（充当"墙"）；若已气绝/离场，_enter_combat 已处理
-        self.emit("on_after_assault", attacker=atk_ref)
+        self._resolve_combat(atk_ref, s)
 
     def _enter_combat(self, p: PlayerState, i: int) -> None:
         """进入战斗区；若已有其它式神驻留，则其退回准备区。"""
@@ -584,12 +558,6 @@ class Game:
         if p.upgrades == 0 or not self._has_upgrade_target(p):
             self.state.phase = "battle"
 
-    def _cmd_skip_upgrade(self, cmd: dict) -> None:
-        """跳过剩余升级机会，直接进入主要阶段。"""
-        if self.state.phase != "upgrade":
-            raise IllegalAction("当前不在升级阶段")
-        self.state.phase = "battle"
-
     def _cmd_end_turn(self, cmd: dict) -> None:
         """结束回合：触发 on_turn_end，结算完后切换回合方并进入对方回合开始阶段。"""
         if self.state.winner is not None:
@@ -624,20 +592,37 @@ class Game:
         p = self.current
         pi = self.state.active
         cfg = self.config
-        # 先手首个回合判断：turn==1 表示这是游戏开始后的第一个半回合
+        # 1. 回合计数 +1；长对局平局检查
         first = self.state.turn == 1
         p.turn_count += 1
         self.state.turn += 1
-        # 1. 长对局平局：总回合计数 >=256 强制结束
         if self.state.turn >= 256:
             self._log("对局超过 255 个半回合，按长对局平局结算")
-            self._declare_draw()
+            self._set_pending_end(loser=-1)
             return
-        # 2. 移除己方所有角色（牌手及式神）的护甲（破甲/战力/乏力 Phase 3）
+        # 2-15. 按步骤执行回合开始阶段
+        self._turn_start_clear_shield(p)
+        self._turn_start_revive(p, pi)
+        self._turn_start_gain_orb(p, first, pi)
+        pending_retreat = self._turn_start_schedule_retreat(p)
+        self.emit("on_turn_start", player=pi)
+        self._turn_start_reset_assaults(p, pi)
+        if pending_retreat is not None:
+            self._retreat(p, pending_retreat)
+        self._drain_queue()
+        self._turn_start_draw(p, pi)
+        self._upgrade_phase(p)
+        self.state.phase = "battle" if p.upgrades == 0 else "upgrade"
+        self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
+
+    def _turn_start_clear_shield(self, p: PlayerState) -> None:
+        """回合开始阶段 step 2：移除己方所有角色护甲/破甲（Phase 1 仅清护甲）。"""
         p.shield = 0
         for s in p.shikigami:
             s.shield = 0
-        # 3. 已气绝己方式神按从左到右顺序：倒计时 -1，归零复活
+
+    def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
+        """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
         for i, s in enumerate(p.shikigami):
             if s.defeated and not s.despawned and s.level >= 1:
                 s.revive_countdown -= 1
@@ -647,7 +632,10 @@ class Game:
                     self._log(f"{self.db.shikigami[s.id].name} 复活")
                     self.emit("on_shikigami_revived",
                               shikigami=Ref(player=pi, shikigami=i), source=None, reason="倒计时")
-        # 4-5. 鬼火重置为 0 后再获得；触发鬼火变化时机
+
+    def _turn_start_gain_orb(self, p: PlayerState, first: bool, pi: int) -> None:
+        """回合开始阶段 steps 4-5：鬼火重置为 0 再获得；emit on_orb_changed。"""
+        cfg = self.config
         gain = cfg.first_turn_orb if first else self.cfg(pi, "orb_per_turn")
         if cfg.orb_cap is not None:
             gain = min(gain, cfg.orb_cap)
@@ -656,32 +644,26 @@ class Game:
         p.orb += gain
         if p.orb != old_orb:
             self.emit("on_orb_changed", player=pi, old=old_orb, new=p.orb, reason="回合开始")
-        # 6. 战斗区的非召唤物式神：登记延时退回（召唤物留在战斗区）
-        pending_retreat = None
+
+    def _turn_start_schedule_retreat(self, p: PlayerState) -> int | None:
+        """回合开始阶段 step 6：登记战斗区非召唤物式神延时移回（召唤物留在战斗区）。"""
         if p.combat_index is not None and p.shikigami[p.combat_index].kind != "summon":
-            pending_retreat = p.combat_index
-        # 7. 己方所有"回合开始时"能力：触发并延时执行
-        self.emit("on_turn_start", player=pi)
-        # 8-9. （Phase 3 预留）非灵咒倒计时 → 灵咒倒计时
-        # 10. 重置己方出击次数；瞬发名额双方各自每半回合刷新；触发出击次数变化时机
+            return p.combat_index
+        return None
+
+    def _turn_start_reset_assaults(self, p: PlayerState, pi: int) -> None:
+        """回合开始阶段 step 10：重置出击次数与瞬发名额；emit on_assaults_changed。"""
         old_assaults = p.assaults_left
         p.assaults_left = 1
         for q in self.state.players:
             q.fast_used = False
         if p.assaults_left != old_assaults:
             self.emit("on_assaults_changed", player=pi, old=old_assaults, new=p.assaults_left, reason="回合开始")
-        # 11-12. （Phase 3 预留）移除"直到上回合结束时"效果；敌方"回合外"能力生效
-        # 13. 执行延时的"战斗区式神移回准备区"与回合开始时效果
-        if pending_retreat is not None:
-            self._retreat(p, pending_retreat)
-        self._drain_queue()
-        # 14. 抽 1：后手玩家第 1 回合也抽；先手玩家从第 2 回合开始抽。
+
+    def _turn_start_draw(self, p: PlayerState, pi: int) -> None:
+        """回合开始阶段 step 14：抽 1（后手第 1 回合也抽；先手从第 2 回合开始抽）。"""
         if p.turn_count > 1 or self.state.active == 1:
             self.draw_cards(pi, self.cfg(pi, "draw_per_turn"))
-        # 15. 进入式神升级阶段
-        self._upgrade_phase(p)
-        self.state.phase = "battle" if p.upgrades == 0 else "upgrade"
-        self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
 
     def _has_upgrade_target(self, p: PlayerState) -> bool:
         """当前玩家是否还有可升级的式神（用于自动判断升级阶段是否可跳过）。
@@ -735,9 +717,8 @@ class Game:
             return  # 伤害值不大于 0：终止结算（不扣减生命、不触发受伤后时机）
         remaining = amount
         if p.shield > 0:
-            absorbed = min(p.shield, remaining)
+            absorbed, remaining = self._absorb_with_shield(p.shield, remaining)
             p.shield -= absorbed
-            remaining -= absorbed
         if remaining <= 0:
             return  # 护甲完全吸收：终止（不触发受伤后时机）
         p.health -= remaining
@@ -745,7 +726,7 @@ class Game:
         self.emit("on_player_damaged", player=player_index, amount=amount, source=source)
         if p.health <= 0:
             # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
-            self._declare_loser(player_index, defeat=True)
+            self._set_pending_end(loser=player_index, defeat=True)
 
     def _hurt_shikigami(self, ref: Ref, amount: int, source: Ref | None) -> None:
         """扣血并发出 on_damage，但不判定气绝（战斗同时结算用）。"""
@@ -754,15 +735,20 @@ class Game:
             return  # 伤害值不大于 0：终止结算
         remaining = amount
         if s.shield > 0:
-            absorbed = min(s.shield, remaining)
+            absorbed, remaining = self._absorb_with_shield(s.shield, remaining)
             s.shield -= absorbed
-            remaining -= absorbed
         if remaining <= 0:
             return  # 护甲完全吸收：终止（不触发 on_damage）
         s.health -= remaining
         name = self.db.shikigami[s.id].name
         self._log(f"{name} 受到 {amount} 点伤害（剩余生命 {s.health}）")
         self.emit("on_damage", victim=ref, amount=amount, source=source)
+
+    @staticmethod
+    def _absorb_with_shield(target_shield: int, amount: int) -> tuple[int, int]:
+        """护甲吸收：返回 (被吸收的伤害, 剩余伤害)。"""
+        absorbed = min(target_shield, amount)
+        return absorbed, amount - absorbed
 
     def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:
         """生成并结算式神气绝事件（要素：来源、气绝者、原因）。
@@ -794,27 +780,18 @@ class Game:
             self._log(f"{name} 气绝")
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason)
 
-    def _declare_loser(self, player_index: int, defeat: bool = False) -> None:
-        """标记失败方。
+    def _set_pending_end(self, loser: int | None = None, defeat: bool = False) -> None:
+        """把游戏标记为"待结束"。
 
-        完整规则：牌手气绝事件应先把游戏标记为"待结束"，已入队触发能力不再执行、
-        此后非系统操作不再触发；当前事件结算完成后进入游戏结束阶段，记录结果、
-        发送消息并解散房间。Phase 1 效果队列已空或 trivial，待 `_drain_queue` 末尾
-        自动把 pending_end 转为 winner。
+        loser=-1 表示长对局平局；loser>=0 表示该玩家判负；defeat=True 时额外标记牌手气绝。
+        当前事件结算完成后由 `_drain_queue` 把 pending_end 正式转为 winner。
         """
         if self.state.winner is not None or self.state.pending_end:
             return
-        if defeat:
-            self.state.players[player_index].defeated = True  # 气绝的牌手不再受到伤害和治疗
+        if defeat and loser is not None and loser >= 0:
+            self.state.players[loser].defeated = True  # 气绝的牌手不再受到伤害和治疗
         self.state.pending_end = True
-        self.state.pending_loser = player_index
-
-    def _declare_draw(self) -> None:
-        """标记长对局平局：总回合计数超过上限时强制结束，无获胜方。"""
-        if self.state.winner is not None or self.state.pending_end:
-            return
-        self.state.pending_end = True
-        self.state.pending_loser = -1  # -1 表示平局
+        self.state.pending_loser = loser
 
     def draw_cards(self, player_index: int, count: int) -> None:
         """效果抽牌（Phase 1 简化版）。
@@ -829,7 +806,7 @@ class Game:
                 # 牌库为空时执行抽牌立即落败（可能有效果改变此判定；判负非气绝）
                 if self.state.winner is None:
                     self._log(f"{p.name} 牌库抽空，判负")
-                self._declare_loser(player_index)
+                self._set_pending_end(loser=player_index)
                 return
             self.move_card(p, p.deck[0], "hand")
         self.emit("on_draw", player=player_index, count=count)
@@ -873,55 +850,68 @@ class Game:
         """
         out: list[_Pending] = []
         for pi in (self.state.active, 1 - self.state.active):
-            p = self.state.players[pi]
-            # ---- 式神被动能力 ----
-            for si, s in enumerate(p.shikigami):
-                ability = self.db.shikigami[s.id].ability
-                if ability is None or ability.when != event["name"]:
-                    continue
-                if not s.in_play:
-                    # 0 级未在场能力不触发；个别能力标记为未升级也可触发（书翁/三尾狐类）
-                    if s.defeated or s.despawned or not ability.trigger_when_not_in_play:
-                        continue
-                if self._match(ability.condition, event, pi):
-                    out.append(_Pending(ability, ExecContext(
-                        controller=pi, source=Ref(player=pi, shikigami=si), event=event)))
-            # ---- 响应牌（仅非回合方） ----
+            out.extend(self._collect_abilities(event, pi))
             if pi != self.state.active and self._response_used_emit != event["_emit"]:
-                # 响应 = 敌方回合满足条件则必定使用（引擎自动结算，不询问玩家）。
-                # 同一时机（一次事件生成）至多成功结算一张；式神气绝不影响其手牌中响应牌的队列位置。
-                candidates: list[tuple[int, CardInstance, EffectBlock, int | None]] = []
-                for card in p.hand:
-                    cdef = self.db.cards[card.id]
-                    eb = cdef.effects
-                    if "trigger" not in cdef.keywords or eb.when != event["name"]:
-                        continue
-                    si = self._find_shikigami(p, cdef.shikigami) if cdef.shikigami is not None else None
-                    if cdef.shikigami is not None:
-                        if si is None:
-                            continue  # 对应式神未出战
-                        s = p.shikigami[si]
-                        if s.defeated and not cdef.playable_when_defeated:
-                            continue  # 对应式神气绝且无"气绝时可用"
-                        if s.level < cdef.level:
-                            continue  # 响应其余要求照常：等级不足不可用
-                    # 瞬发：每（半）回合各自第一张免费，其余照常支付（含 mods.cost_delta）
-                    cost = self._effective_cost(p, cdef, card=card)
-                    if p.orb < cost:
-                        continue  # 没留住鬼火
-                    if not self._match(eb.condition, event, pi):
-                        continue
-                    # 按所属式神从左往右排序（中立响应牌排在最后）；同式神保持手牌顺序
-                    order = si if si is not None else len(p.shikigami)
-                    candidates.append((order, card, eb, si))
-                # 注意：Phase 1 响应牌的目标自动选择未实现——带 choose 目标的响应牌按无目标结算
-                # （符合 rules.md："如果没有目标会自动使用而没有效果"）。
-                candidates.sort(key=lambda c: c[0])
-                for _, card, eb, si in candidates:
-                    out.append(_Pending(eb, ExecContext(
-                        controller=pi,
-                        source=Ref(player=pi, shikigami=si) if si is not None else None,
-                        card=card, event=event, triggered=True)))
+                out.extend(self._collect_responses(event, pi))
+        return out
+
+    def _collect_abilities(self, event: dict, pi: int) -> list[_Pending]:
+        """收集玩家 pi 的式神被动能力。"""
+        out: list[_Pending] = []
+        p = self.state.players[pi]
+        for si, s in enumerate(p.shikigami):
+            ability = self.db.shikigami[s.id].ability
+            if ability is None or ability.when != event["name"]:
+                continue
+            if not s.in_play:
+                # 0 级未在场能力不触发；个别能力标记为未升级也可触发（书翁/三尾狐类）
+                if s.defeated or s.despawned or not ability.trigger_when_not_in_play:
+                    continue
+            if self._match(ability.condition, event, pi):
+                out.append(_Pending(ability, ExecContext(
+                    controller=pi, source=Ref(player=pi, shikigami=si), event=event)))
+        return out
+
+    def _collect_responses(self, event: dict, pi: int) -> list[_Pending]:
+        """收集玩家 pi 的响应牌（调用方需已确认其为非回合方且本时机未占用名额）。
+
+        响应 = 敌方回合满足条件则必定使用（引擎自动结算，不询问玩家）。
+        同一时机（一次事件生成）至多成功结算一张；式神气绝不影响其手牌中响应牌的队列位置。
+        """
+        out: list[_Pending] = []
+        p = self.state.players[pi]
+        candidates: list[tuple[int, CardInstance, EffectBlock, int | None]] = []
+        for card in p.hand:
+            cdef = self.db.cards[card.id]
+            eb = cdef.effects
+            if "trigger" not in cdef.keywords or eb.when != event["name"]:
+                continue
+            si = self._find_shikigami(p, cdef.shikigami) if cdef.shikigami is not None else None
+            if cdef.shikigami is not None:
+                if si is None:
+                    continue  # 对应式神未出战
+                s = p.shikigami[si]
+                if s.defeated and not cdef.playable_when_defeated:
+                    continue  # 对应式神气绝且无"气绝时可用"
+                if s.level < cdef.level:
+                    continue  # 响应其余要求照常：等级不足不可用
+            # 瞬发：每（半）回合各自第一张免费，其余照常支付（含 mods.cost_delta）
+            cost = self._effective_cost(p, cdef, card=card)
+            if p.orb < cost:
+                continue  # 没留住鬼火
+            if not self._match(eb.condition, event, pi):
+                continue
+            # 按所属式神从左往右排序（中立响应牌排在最后）；同式神保持手牌顺序
+            order = si if si is not None else len(p.shikigami)
+            candidates.append((order, card, eb, si))
+        # 注意：Phase 1 响应牌的目标自动选择未实现——带 choose 目标的响应牌按无目标结算
+        # （符合 rules.md："如果没有目标会自动使用而没有效果"）。
+        candidates.sort(key=lambda c: c[0])
+        for _, card, eb, si in candidates:
+            out.append(_Pending(eb, ExecContext(
+                controller=pi,
+                source=Ref(player=pi, shikigami=si) if si is not None else None,
+                card=card, event=event, triggered=True)))
         return out
 
     @staticmethod

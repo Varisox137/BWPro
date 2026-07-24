@@ -202,8 +202,10 @@ def run_mulligan(game: Game) -> None:
     for pi in (0, 1):
         p = game.state.players[pi]
         while not p.mulligan_done:
-            hand = "  ".join(f"[{i + 1}]《{game.db.cards[c.id].name}》" for i, c in enumerate(p.hand))
+            hand = "  ".join(f"[{i + 1}]【{game.db.cards[c.id].name}】" for i, c in enumerate(p.hand))
+            print("")
             print(f"{p.name} 手牌：{hand}")
+            print("")
             try:
                 line = input(f"[{p.name}] 调度（剩 {p.mulligans_left} 次）> ").strip().lower()
             except EOFError:

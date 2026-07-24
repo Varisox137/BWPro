@@ -114,7 +114,9 @@ def cmd_play_card(game, ctx, *, player: int, uid: int, target: dict | None = Non
     how = f"（{method.text or method.id}）" if method else ""
     game._log(f"[调试] {p.name} 强制使用《{cdef.name}》{how}")
     block = method.effects if (method and method.effects is not None) else cdef.effects
-    game._resolve_block(block, game._exec_context(controller=player, source=source, card=card, chosen=chosen))
+    from core.engine import ExecContext
+
+    game._resolve_block(block, ExecContext(controller=player, source=source, card=card, chosen=chosen))
     game.emit("on_card_played", player=player, uid=uid)
 
 
@@ -200,5 +202,9 @@ def cmd_set_turn(game, ctx, *, active: int | None = None, turn: int | None = Non
 @debug_command("skip_upgrade")
 def cmd_skip_upgrade(game, ctx) -> None:
     """调试：跳过当前升级阶段（仅用于测试）。"""
-    game._cmd_skip_upgrade({})
+    from core.engine import IllegalAction
+
+    if game.state.phase != "upgrade":
+        raise IllegalAction("当前不在升级阶段")
+    game.state.phase = "battle"
     game._log("[调试] 跳过升级阶段")
