@@ -124,3 +124,28 @@ def test_form_with_fast_keyword():
     assert a.orb == 1  # 第一张瞬发免费
     assert s.base_power == 6
     assert s.base_health == 9
+
+
+def test_play_events_and_zones():
+    """各类型卡牌打出后均发出 on_card_played，并进入正确区域/状态。"""
+    g = _make_game()
+    a = g.state.players[0]
+    a.orb = 10
+    a.shikigami[0].level = 3  # 满足觉醒牌等级
+
+    spell = _give(g, 0, 10010101)    # 起弓：法术瞬发
+    combat = _give(g, 0, 10010102)   # 文射：战斗
+    form = _give(g, 0, 10010103)     # 残心：形态
+    awaken = _give(g, 0, 10010107)   # 觉醒·白狼：觉醒
+
+    for card, in_graveyard, attached_form in (
+        (spell, True, None),
+        (combat, True, None),
+        (form, False, form),
+        (awaken, True, form),  # 觉醒是法术，不会替换已结附的形态
+    ):
+        before = len(g.history)
+        g.apply({"op": "play_card", "uid": card.uid})
+        assert "on_card_played" in g.history[before:]
+        assert (card in a.graveyard) is in_graveyard
+        assert a.shikigami[0].form is attached_form
