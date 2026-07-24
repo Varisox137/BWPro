@@ -136,6 +136,6 @@ def make_test_db() -> CardDatabase:
 
 
 def make_test_deck(shikigami_ids: list[int] | None = None) -> list[int]:
-    """合法测试卡组：每式神取前 4 种卡各 ×2（共 32 张）。"""
+    """合法测试卡组：4 位式神各 8 种不同名卡牌各带 1（共 32 张）。"""
     ids = shikigami_ids or TEST_IDS
-    return [sid * 100 + n for sid in ids for n in range(1, 5) for _ in range(2)]
+    return [sid * 100 + n for sid in ids for n in range(1, 9)]

@@ -373,8 +373,6 @@ def main() -> None:
             print(f"无效操作: {e}")
         except (ValueError, IndexError):
             print("参数有误，输入 help 查看帮助")
-    if game.state.winner is not None:
-        print(render(game))
 
 
 if __name__ == "__main__":
