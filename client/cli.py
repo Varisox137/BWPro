@@ -96,7 +96,11 @@ def _hand_sorted(game: Game, p) -> list:
 def render(game: Game) -> str:
     st = game.state
     active = st.players[st.active]
-    lines = [f"===== 当前玩家第 {active.turn_count} 回合（总第 {st.turn - 1} 回合）| {active.name} 行动中 ====="]
+    lines = [
+        "",
+        f"===== 当前玩家第 {active.turn_count} 回合（总第 {st.turn - 1} 回合）| {active.name} 行动中 =====",
+        "",
+    ]
     all_rows = []
     player_rows = []
     for pi, p in enumerate(st.players):
@@ -135,13 +139,11 @@ def render(game: Game) -> str:
     faction_w = max((_display_width(f"[{f}]") for _, _, _, _, f, _ in all_rows), default=0)
 
     for pi, rows in player_rows:
-        if pi > 0:
-            lines.append("")
         p = st.players[pi]
         marker = ">" if pi == st.active else " "
         lines.append(
-            f"{marker} {p.name} HP {p.health}(护甲{p.shield}) "
-            f"鬼火 {p.orb} 手牌 {len(p.hand)} 牌库 {len(p.deck)} 墓地 {len(p.graveyard)}"
+            f"{marker} {p.name} 生命{p.health}[护甲{p.shield}] "
+            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}"
         )
         for i, name, kind, lv, faction, status in rows:
             line = (
@@ -155,7 +157,7 @@ def render(game: Game) -> str:
             lines.append(line)
         lines.append("")
     p = st.players[st.active]
-    lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）：")
+    lines.append(f"{p.name} 手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）：")
     hand = _hand_sorted(game, p)
     # 新格式：[1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [keywords] {description}
     CTYPE_NAMES = {"spell": "法术", "combat": "战斗", "form": "形态",
