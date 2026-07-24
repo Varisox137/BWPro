@@ -824,21 +824,28 @@ class Game:
     # ==================== 事件与触发 ====================
 
     def emit(self, name: str, **payload: Any) -> None:
-        """发出事件并收集触发效果。结算时机：EffectBlock.timing 覆盖优先，
-        否则跟随时机类别（core.events.EVENT_TIMING：即时=insert 立即执行 /
-        延时=queue 加入当前队列，效果结算完后执行）。
-        对局已进入"待结束"（winner 已定）后，非系统操作不再触发（事件仍记入 history）。"""
+        """发出事件并收集触发效果。
+
+        结算时机：EffectBlock.timing 覆盖优先，否则跟随 core.events.EVENT_TIMING。
+        即时时机（insert）会形成临时队列：同一事件触发的全部能力先被收集，
+        收集完成后再依次执行；延时时机（queue）则加入当前效果队列，由外层 _drain_queue
+        在合适时机统一结算。
+        对局已进入"待结束"（winner 已定）后，非系统操作不再触发（事件仍记入 history）。
+        """
         self.history.append(name)
         if self.state.winner is not None:
             return
         seq = self.state.next_emit_seq()
         event = {"name": name, "_emit": seq, **payload}
+        insert_queue: list[_Pending] = []
         for pend in self._collect(event):
             timing = pend.block.timing or EVENT_TIMING.get(name, "queue")
             if timing == "insert":
-                self._resolve_block(pend.block, pend.ctx)
+                insert_queue.append(pend)
             else:
                 self.queue.append(pend)
+        for pend in insert_queue:
+            self._resolve_block(pend.block, pend.ctx)
 
     def _collect(self, event: dict) -> list[_Pending]:
         """收集监听该事件的触发效果，并按规则顺序排序。
