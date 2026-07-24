@@ -560,13 +560,15 @@ class Game:
         s = self._own_shikigami(p, i)
         if s.kind != "shikigami":
             raise IllegalAction("召唤物不能升级")
+        if s.defeated or s.stunned:
+            raise IllegalAction("气绝或眩晕的式神不能升级")
         if s.level >= self.config.max_level:
             raise IllegalAction("已达最高等级")
         rule = self.config.upgrade_rule
         if rule in ("lowest", "ordered"):
             candidates = [
                 x for x in p.shikigami
-                if not x.defeated and not x.despawned and x.kind == "shikigami" and x.level < self.config.max_level
+                if not x.defeated and not x.stunned and not x.despawned and x.kind == "shikigami" and x.level < self.config.max_level
             ]
             if rule == "lowest" and candidates:
                 # 标准规则：选一名未满级且等级同为己方最低的式神
@@ -686,7 +688,7 @@ class Game:
     def _has_upgrade_target(self, p: PlayerState) -> bool:
         """当前玩家是否还有可升级的式神（用于自动判断升级阶段是否可跳过）。"""
         return any(
-            s.kind == "shikigami" and not s.defeated and not s.despawned
+            s.kind == "shikigami" and not s.defeated and not s.stunned and not s.despawned
             and s.level < self.config.max_level
             for s in p.shikigami
         )

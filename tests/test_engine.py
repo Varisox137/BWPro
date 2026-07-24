@@ -118,15 +118,15 @@ def test_upgrade_lowest_rule(make_game):
 
 
 def test_extra_upgrade_turns(make_game):
-    """先手第 7 / 后手第 4 个己方回合各 +1 升级机会。"""
+    """先手第 7 / 后手第 3 个己方回合各 +1 升级机会。"""
     g = make_game(auto_skip_upgrade=False)
     a, b = g.state.players
-    for _ in range(7):                            # 推进到 B 的第 4 回合
+    for _ in range(5):                            # 推进到 B 的第 3 回合
         if g.state.phase == "upgrade":
             g.apply({"op": "debug_skip_upgrade"})
         g.apply({"op": "end_turn"})
-    assert b.turn_count == 4 and b.upgrades == 2
-    for _ in range(5):                            # 推进到 A 的第 7 回合
+    assert b.turn_count == 3 and b.upgrades == 2
+    for _ in range(7):                            # 推进到 A 的第 7 回合
         if g.state.phase == "upgrade":
             g.apply({"op": "debug_skip_upgrade"})
         g.apply({"op": "end_turn"})

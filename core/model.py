@@ -30,7 +30,7 @@ class GameConfig(BaseModel):
     revive_countdown: int = 3     # 气绝复活所需己方回合数
     upgrade_rule: str = "lowest"  # 升级规则：lowest=只能升己方最低级 / ordered=按上阵顺序 / free=任选
     second_player_shield: int = 5  # 后手补偿：牌手护甲
-    extra_upgrade_turns: tuple[int, int] = (7, 4)  # 先手第 7 / 后手第 4 个己方回合各 +1 升级机会
+    extra_upgrade_turns: tuple[int, int] = (7, 3)  # 先手第 7 / 后手第 3 个己方回合各 +1 升级机会
     enable_debug_commands: bool = True  # 是否启用 debug_ 指令（服务端可关闭）
     auto_skip_upgrade: bool = False  # 测试便利：升级阶段自动跳过（生产/CLI 保持 False）
     hand_cap: int = 12  # 手牌上限；超出时卡牌先进入目标区域再移至墓地（Phase 3+ 完整流程）
@@ -76,6 +76,7 @@ class ShikigamiState(BaseModel):
                     # 注意：破甲 fragile 是独立结算流程（见 docs/rules.md 第六章），
                     # Phase 3 才引入，不要简单地用负护甲表示。
     defeated: bool = False  # 气绝
+    stunned: bool = False  # 眩晕（Phase 3）：不能主动行动/被指定/升级，但能力仍可触发
     despawned: bool = False  # 召唤物离场标记（不进复活流程；保留坑位稳定下标）
     revive_countdown: int = 0
     form: CardInstance | None = None  # 当前结附的形态牌（card_type=form）
