@@ -11,7 +11,7 @@ from __future__ import annotations
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
-from db.dummy import DUMMY_IDS, dummy_deck, make_dummy_db
+from db.test_data import TEST_IDS, make_test_db, make_test_deck
 
 HELP = """指令：
   play <手牌序号> [目标] [方式]   使用手牌；如 play 0 e1 或 play 0 e1 burst（爆能）
@@ -202,14 +202,13 @@ def run_debug(game: Game, args: list[str]) -> dict:
 
 
 def main() -> None:
-    # Phase 1 CLI 热座始终使用 db/dummy.py 的空白占位数据。
-    # 真实卡牌数据暂不入库（见 thoughts.txt）；待真实数据接入后再从 db/ 加载并构造合法牌组。
-    db = make_dummy_db()
-    deck = dummy_deck()
+    # Phase 1 CLI 热座使用维护者给出的测试数据。
+    db = make_test_db()
+    deck = make_test_deck()
     game = new_game(
         db,
-        ("玩家A", list(DUMMY_IDS), list(deck)),
-        ("玩家B", list(DUMMY_IDS), list(deck)),
+        ("玩家A", list(TEST_IDS), list(deck)),
+        ("玩家B", list(TEST_IDS), list(deck)),
         seed=42,
     )
     if game.state.phase == "mulligan":

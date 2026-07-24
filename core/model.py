@@ -67,6 +67,7 @@ class ShikigamiState(BaseModel):
     perm_power: int = 0  # 永久增减益修正（气绝后复活保留）
     perm_health: int = 0
     temp_power: int = 0  # 临时增减益修正（气绝时清除）
+    temp_health: int = 0  # 临时生命上限修正（气绝时清除）
     keywords: list[str] = Field(default_factory=list)  # 式神词条（屏障/不屈等，Phase 3）
     health: int  # 当前生命
     shield: int = 0  # 护甲：被伤害时优先消耗；己方回合开始阶段清除（可因效果改变）。
@@ -84,7 +85,7 @@ class ShikigamiState(BaseModel):
 
     @property
     def max_health(self) -> int:
-        return self.base_health + self.perm_health
+        return self.base_health + self.perm_health + self.temp_health
 
     @property
     def in_play(self) -> bool:

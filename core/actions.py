@@ -71,6 +71,24 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
                 s.temp_power += amount
 
 
+@action("buff_health")
+def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False) -> None:
+    """生命上限增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。"""
+    for ref in targets:
+        if ref.shikigami is not None:
+            s = game.state.players[ref.player].shikigami[ref.shikigami]
+            if not s.in_play:
+                continue
+            if perm:
+                s.perm_health += amount
+                s.health += amount
+            else:
+                s.temp_health += amount
+                # 临时增加上限时，当前生命同步增加等量数值（不超过新上限）
+                if amount > 0:
+                    s.health = min(s.max_health, s.health + amount)
+
+
 @action("gain_shield")
 def gain_shield(game, ctx, *, targets: list[Ref], amount: int) -> None:
     """获得护甲（式神与牌手均可）。0 级未在场式神不能获得护甲/增益。"""

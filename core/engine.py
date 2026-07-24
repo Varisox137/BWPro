@@ -231,8 +231,9 @@ class Game:
         if card is None:
             raise IllegalAction(f"区域 {play_from} 中没有这张牌")
         cdef = self.db.cards[card.id]
-        # Phase 1 实现法术牌与形态牌；战斗牌/幻境/协战在规则/引擎落地方可打出
-        if cdef.card_type in ("combat", "field", "reinforce"):
+        # Phase 1 实现法术牌、形态牌、战斗牌（测试数据限定为数值修正）；
+        # 幻境/协战在规则/引擎落地方可打出。
+        if cdef.card_type in ("field", "reinforce"):
             raise IllegalAction(f"《{cdef.name}》的卡牌类型 {cdef.card_type} 尚未实现")
         # 使用方式（多择子选项，仅保留核心方式、参数可变；按 id 匹配，param 为数据预留）
         method: PlayMethod | None = None
@@ -635,6 +636,7 @@ class Game:
         s.defeated = True
         s.shield = 0
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
+        s.temp_health = 0
         owner = self.state.players[ref.player]
         # 气绝流程包含消灭当前结附的形态牌（rules.md 第七章）
         if s.form is not None:
