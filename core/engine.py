@@ -557,27 +557,25 @@ class Game:
         i = cmd.get("index")
         if p.upgrades < 1:
             raise IllegalAction("本回合已没有升级机会")
-        s = self._own_shikigami(p, i)
+        if not (0 <= i < len(p.shikigami)):
+            raise IllegalAction("式神序号无效")
+        s = p.shikigami[i]
         if s.kind != "shikigami":
             raise IllegalAction("召唤物不能升级")
-        if s.defeated or s.stunned:
-            raise IllegalAction("气绝或眩晕的式神不能升级")
         if s.level >= self.config.max_level:
             raise IllegalAction("已达最高等级")
         rule = self.config.upgrade_rule
-        if rule in ("lowest", "ordered"):
+        if rule == "lowest":
             candidates = [
                 x for x in p.shikigami
-                if not x.defeated and not x.stunned and not x.despawned and x.kind == "shikigami" and x.level < self.config.max_level
+                if x.kind == "shikigami" and not x.despawned and x.level < self.config.max_level
             ]
-            if rule == "lowest" and candidates:
+            if candidates:
                 # 标准规则：选一名未满级且等级同为己方最低的式神
                 lowest = min(x.level for x in candidates)
                 if s.level != lowest:
                     raise IllegalAction("只能升级当前等级最低的式神")
-            if rule == "ordered" and candidates and s is not candidates[0]:
-                raise IllegalAction("须按上阵顺序升级")
-        # rule == "free"：无限制（不进入任何分支）
+        # rule == "free"：无限制
         s.level += 1
         p.upgrades -= 1
         name = self.db.shikigami[s.id].name
@@ -686,9 +684,12 @@ class Game:
         self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
 
     def _has_upgrade_target(self, p: PlayerState) -> bool:
-        """当前玩家是否还有可升级的式神（用于自动判断升级阶段是否可跳过）。"""
+        """当前玩家是否还有可升级的式神（用于自动判断升级阶段是否可跳过）。
+
+        气绝或眩晕不影响升级资格（仍可升级）。
+        """
         return any(
-            s.kind == "shikigami" and not s.defeated and not s.stunned and not s.despawned
+            s.kind == "shikigami" and not s.despawned
             and s.level < self.config.max_level
             for s in p.shikigami
         )
