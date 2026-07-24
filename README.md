@@ -72,5 +72,6 @@ uv run pytest -q tests/
 
 - `docs/rules.md` — 已确认规则细节全集
 - `docs/terminology.md` — 术语与代码命名对照
+- `docs/enhance-design.md` — "增强"机制设计结论（触发器/监测/即时装配；下一阶段实施依据）
 - `questions.md` — 待确认问题与 Phase 3+ 预留机制
 - `thoughts.txt` — 维护者想法与规则答复

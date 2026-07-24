@@ -10,6 +10,9 @@ BWPro 是一个受《阴阳师百闻牌》启发的数字化卡牌对战游戏�
 
 ## 常用命令
 
+本机装有 rtk（命令输出压缩代理）：跑 shell 命令时优先用 `rtk` 前缀省 token，
+如 `rtk git status`、`rtk grep <pat>`、`rtk test <cmd>`、`rtk diff`、`rtk find`、`rtk ls`。
+
 ```bash
 uv sync                              # 安装/同步依赖
 uv run python -m client.cli          # 本地热座对战（真实数据为空时自动用 db/dummy.py 占位数据）
@@ -71,6 +74,9 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 - 瞬发：每个半回合双方各自第一张瞬发卡免费（仅免鬼火，其余条件照常；可改"前 x 张"）；双方回合都可瞬发（0 火可响应瞬发）
 - 响应 = 敌方回合满足条件必发，其余要求与 cost 照常；气绝可用性看卡牌"气绝时可用"标记（与是否响应无关）；非回合方无任何带选择的操作
 
+**增强与卡牌修饰（设计已定，待实现）**
+- "增强"不实现统一机制：卡面话术 → 卡牌触发器（triggers，全库注册的游离触发块）+ 实时监测（monitors，谓词+修饰，读取/打出装配时求值）；写入三目标 hand/persistent/turn；即时装配，效果块共享不可变。完整设计见 `docs/enhance-design.md`
+
 **数据与构筑**
 - id：统一 6 位式神 id（1xxxyy = 1+3 位卡包 cardpack+2 位序号）+ 2 位序号；可构筑卡 01-08、衍生卡从 51 递增、衍生物从 99 递减；中立牌 9999zzzz、无等级；衍生必须有从属式神；**协战牌双从属：id 前六位为两所属中较小者、序号 21 起（shikigami+shikigami2 记录）**；数据 id 叫 `id`，局内对象 id 叫 `uid`
 - 实体 entity = 所有在场对象（non-card：牌手、式神、在场幻境）；以此区分实体关键字与卡牌关键字
@@ -87,6 +93,7 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 ## Roadmap
 
 1. **Phase 1 ✅→进行中** 核心规则与数据模型（引擎 + db + CLI 热座；规则按 thoughts.txt 持续校准）
+   - 下一板块：4 式神 × 8 卡原版完整效果（战斗上下文、形态能力/形态实体、关键字补全）+ 增强设计落地（`docs/enhance-design.md`）+ CLI 修饰状态显示
 2. **Phase 2** 联机服务端：FastAPI/websockets、房间匹配、断线重连、回放、回合计时（100s）
 3. **Phase 3** 进阶机制：形态/觉醒/战斗牌、持续效果与光环、出击增减益、爆能/赐能/起源/连引/连锁/戏法
 4. **Phase 4** 自定义卡牌：DSL 编译器、校验、平衡工具（契约见 diy/README.md）

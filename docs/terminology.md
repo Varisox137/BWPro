@@ -122,3 +122,15 @@
 | 目标 | `target` / `Ref` | Ref(player, shikigami?) | ✅ |
 | 调度 | `mulligan` | 游戏开始阶段：返回 1 张起始手牌再随机抽 1，双方各 3 次 | ✅ |
 | 半回合 | `turn` | GameState.turn，双方交替 +1 | ✅ |
+
+## 增强与修饰（设计已定，待实现；见 `docs/enhance-design.md`）
+
+| 中文 | 代码标识 | 说明 | 状态 |
+|---|---|---|---|
+| 卡牌触发器 | `triggers` / CardTrigger | 卡面"增强"等的实现机制之一：游离触发块（when/condition/steps），游戏开始按全库注册 | 🔧 |
+| 实时监测 | `monitors` / Monitor | 卡面"增强"等的实现机制之一：状态谓词 + 修饰，读取/打出装配时求值，不存储 | 🔧 |
+| 即时装配 | materialize | 打出/读取时由"定义块 ⊕ 活跃修饰"装配本次实际效果，用完即弃 | 🔧 |
+| 修饰 | `mods` | 实例级（`CardInstance.mods`）或 (玩家, card_id) 级（card_mods/turn_mods）的修饰数据：数值/关键词/追加块索引 | 🔧 |
+| 追加块 | `pre_grants` / `grants` | 可被监测/触发器按索引注入结算的候选效果块（前置/后置） | 🔧 |
+| 临时触发 | `temp_grants` | 一次性注册的延时触发（如"本次战斗结束后……"），结算后递减移除 | 🔧 |
+| 写入目标 | `to`（hand/persistent/turn） | 写入原语的修饰存储目标：手牌实例 / 持久 store / 回合 store | 🔧 |
