@@ -109,8 +109,7 @@ class Game:
             self.rng.shuffle(p.deck)
             for _ in range(min(self.cfg(pi, "starting_hand"), len(p.deck))):
                 card = p.deck.pop(0)
-                card.hand_seq = p.next_hand_seq
-                p.next_hand_seq += 1
+                self._assign_hand_seq(p, card)
                 p.hand.append(card)  # 起始手牌静默发放，不发事件
             p.mulligans_left = self.config.mulligan_count
         if self.state.phase == "mulligan":
@@ -292,9 +291,12 @@ class Game:
             # 形态离场时变为卡牌并置入墓地。此过程不是“卡牌移动事件”。
             if si is None:
                 raise IllegalAction("形态牌必须有所属式神")
-            for z in p.zones.values():
+            for zname, z in p.zones.items():
                 if card in z:
+                    removed_seq = card.hand_seq
                     z.remove(card)
+                    if zname == "hand":
+                        self._compact_hand_seq(p, removed_seq)
                     break
             self._attach_form(p, si, card, cdef)
         elif cdef.card_type == "combat":
@@ -331,7 +333,11 @@ class Game:
 
     def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
                              cdef: CardDef, method: PlayMethod | None) -> None:
-        """战斗牌完整事件流程：移入战斗区、获得战力/一次性护甲、战斗前、战斗伤害、战斗后、进墓地。"""
+        """战斗牌完整事件流程：移入战斗区、获得战力/护甲、战斗前、战斗伤害、战斗后、进墓地。
+
+        战斗牌提供的力量（战力）在战斗后清除；提供的护甲/破甲会保留，并按即时时机
+        发出 on_shield_changed 事件。
+        """
         s = p.shikigami[si]
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
@@ -341,7 +347,15 @@ class Game:
         if power:
             s.combat_power += power
         if shield:
-            s.combat_shield += shield
+            old = s.shield
+            s.shield += shield
+            self.emit(
+                "on_shield_changed",
+                target=Ref(player=self.state.active, shikigami=si),
+                old=old,
+                new=s.shield,
+                reason="combat_card",
+            )
         atk_ref = Ref(player=self.state.active, shikigami=si)
         defender_idx = 1 - self.state.active
         d = self.state.players[defender_idx]
@@ -367,7 +381,6 @@ class Game:
                 self.check_defeated(vic_ref, source=atk_ref, reason="战斗")
         self.emit("on_after_assault", attacker=atk_ref)
         s.combat_power = 0
-        s.combat_shield = 0
         self.move_card(p, card, "graveyard")
 
     def legal_targets(self, player_index: int, card: CardInstance) -> list[Ref]:
@@ -377,21 +390,38 @@ class Game:
             return []
         return targets.pool_refs(self, cdef.target.pool, player_index)
 
+    @staticmethod
+    def _assign_hand_seq(p: PlayerState, card: CardInstance) -> None:
+        """为加入手牌的卡牌分配一个连续的顺序编号（1..N）。"""
+        card.hand_seq = 0
+        max_seq = max((c.hand_seq for c in p.hand), default=0)
+        card.hand_seq = max_seq + 1
+
+    @staticmethod
+    def _compact_hand_seq(p: PlayerState, removed_seq: int) -> None:
+        """手牌中一张顺序编号为 removed_seq 的牌离开后，大于它的编号均 -1。"""
+        for c in p.hand:
+            if c.hand_seq > removed_seq:
+                c.hand_seq -= 1
+
     def move_card(self, p: PlayerState, card: CardInstance, to_zone: str) -> None:
         """把卡牌移动到指定区域；区域不存在则创建（区域系统保留扩展空间）。
 
         Phase 1 简化：直接变更区域，不触发卡牌移动后灵咒效果，不检查区域上限。
         完整规则见 docs/rules.md「卡牌移动事件流程」。
         若 card 不在任何已知区域（如测试直接注入手牌），直接追加到目标区域。
-        移入手牌时分配 hand_seq（调度换入牌由调用方覆盖）。
+        移入手牌时（重新）分配 hand_seq；从手牌移出时压缩剩余编号。
         """
-        for z in p.zones.values():
+        from_zone = None
+        for zname, z in p.zones.items():
             if card in z:
+                from_zone = zname
                 z.remove(card)
                 break
-        if to_zone == "hand" and card.hand_seq == 0:
-            card.hand_seq = p.next_hand_seq
-            p.next_hand_seq += 1
+        if from_zone == "hand":
+            self._compact_hand_seq(p, card.hand_seq)
+        if to_zone == "hand":
+            self._assign_hand_seq(p, card)
         p.zones.setdefault(to_zone, []).append(card)
 
     # ---------- 出击 / 移动 ----------
@@ -710,10 +740,6 @@ class Game:
         if amount <= 0:
             return  # 伤害值不大于 0：终止结算
         remaining = amount
-        if s.combat_shield > 0:
-            absorbed = min(s.combat_shield, remaining)
-            s.combat_shield -= absorbed
-            remaining -= absorbed
         if s.shield > 0:
             absorbed = min(s.shield, remaining)
             s.shield -= absorbed

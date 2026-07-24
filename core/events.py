@@ -28,9 +28,11 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_summon",            # 召唤物进场 {shikigami: Ref}
     "on_form_attached",     # 形态牌结附 {player, shikigami, uid}
     "on_form_destroyed",    # 形态牌消灭 {player, shikigami, uid, reason}
+    "on_shield_changed",    # 式神/牌手护甲或破甲数值变化后 {target: Ref, old, new, reason}
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）
 EVENT_TIMING: dict[str, str] = {
     "on_before_assault": "insert",  # （被）攻击时：同时机能力全部触发后依次执行
+    "on_shield_changed": "insert",  # 护甲/破甲变化：即时时机，便于插入结算响应
 }

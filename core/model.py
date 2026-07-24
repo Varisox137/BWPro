@@ -70,7 +70,6 @@ class ShikigamiState(BaseModel):
     temp_power: int = 0  # 临时增减益修正（气绝时清除）
     temp_health: int = 0  # 临时生命上限修正（气绝时清除）
     combat_power: int = 0  # 本次战斗的战力加成（战斗后清除）
-    combat_shield: int = 0  # 本次战斗获得的一次性护甲（战斗后清除；优先消耗）
     keywords: list[str] = Field(default_factory=list)  # 式神词条（屏障/不屈等，Phase 3）
     health: int  # 当前生命
     shield: int = 0  # 护甲：被伤害时优先消耗；己方回合开始阶段清除（可因效果改变）。
@@ -137,7 +136,6 @@ class PlayerState(BaseModel):
     fast_used: bool = False  # 本（半）回合是否已使用过免费瞬发（双方各自计算）
     mulligans_left: int = 0  # 调度阶段剩余调度次数
     mulligan_done: bool = False  # 调度阶段：该玩家已确认完成
-    next_hand_seq: int = 1  # 下一张加入手牌的顺序编号
     config: dict[str, Any] = Field(default_factory=dict)  # 对 GameConfig 的玩家级覆盖
     summon_legacy: dict[int, dict[str, int]] = Field(default_factory=dict)  # 同名召唤物再召时保留的永久增减益（key=召唤物定义 id）
 

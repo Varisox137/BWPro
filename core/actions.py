@@ -91,14 +91,22 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
 
 @action("gain_shield")
 def gain_shield(game, ctx, *, targets: list[Ref], amount: int) -> None:
-    """获得护甲（式神与牌手均可）。0 级未在场式神不能获得护甲/增益。"""
+    """获得护甲（式神与牌手均可）。0 级未在场式神不能获得护甲/增益。
+
+    护甲变化按即时时机发出 on_shield_changed 事件。
+    """
     for ref in targets:
         if ref.shikigami is None:
-            game.state.players[ref.player].shield += amount
+            p = game.state.players[ref.player]
+            old = p.shield
+            p.shield += amount
+            game.emit("on_shield_changed", target=ref, old=old, new=p.shield, reason="gain_shield")
         else:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
             if s.in_play:
+                old = s.shield
                 s.shield += amount
+                game.emit("on_shield_changed", target=ref, old=old, new=s.shield, reason="gain_shield")
 
 
 @action("summon")

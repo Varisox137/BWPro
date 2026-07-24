@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import unicodedata
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
@@ -56,6 +57,16 @@ def ref_code(ref: Ref, active: int) -> str:
     return f"{side}p" if ref.shikigami is None else f"{side}{ref.shikigami}"
 
 
+def _display_width(s: str) -> int:
+    """计算字符串在等宽终端中的显示宽度（CJK 字符计为 2）。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("F", "W") else 1 for ch in s)
+
+
+def _pad(s: str, width: int) -> str:
+    """按显示宽度补齐到指定宽度。"""
+    return s + " " * max(0, width - _display_width(s))
+
+
 def _hand_sorted(game: Game, p) -> list:
     """按式神座位、卡牌序号、入手顺序升序排列后的手牌（显示/选择用）。"""
     seat = {}
@@ -102,13 +113,36 @@ def render(game: Game) -> str:
                 status = f"攻{s.eff_power} 血{s.health}/{s.max_health}{extra} {zone}"
             lines.append(f"    [{i}] {sd.name}{kind} Lv{s.level} [{s.faction}] {status}")
     p = st.players[st.active]
-    lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）:")
-    for i, c in enumerate(_hand_sorted(game, p)):
+    lines.append("")
+    lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）：")
+    hand = _hand_sorted(game, p)
+    # 计算各列（除卡牌描述外）的显示宽度
+    idx_w = max((_display_width(str(i)) for i in range(len(hand))), default=1)
+    name_w = max((_display_width(f"《{game.db.cards[c.id].name}》") for c in hand), default=0)
+    uid_w = max((_display_width(f"#{c.uid}") for c in hand), default=0)
+    cost_w = max((_display_width(f"{game.db.cards[c.id].cost}费") for c in hand), default=0)
+    level_w = max((_display_width(f"Lv{game.db.cards[c.id].level}") for c in hand), default=0)
+    kw_w = max((_display_width(f"[{'/'.join(game.db.cards[c.id].keywords)}]") for c in hand), default=0)
+    mods_w = max((_display_width(f"强化{len(c.mods)}") for c in hand), default=0)
+    methods_w = max((_display_width(f"方式:{','.join(m.id for m in game.db.cards[c.id].methods)}") for c in hand), default=0)
+    for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
-        kw = f" [{'/'.join(cd.keywords)}]" if cd.keywords else ""
-        mods = f" 强化{len(c.mods)}" if c.mods else ""
-        methods = " 方式:" + ",".join(m.id for m in cd.methods) if cd.methods else ""
-        lines.append(f"    [{i}] 《{cd.name}》#{c.uid} {cd.cost}费 Lv{cd.level}{kw}{mods}{methods} — {cd.text}")
+        kw = f"[{'/'.join(cd.keywords)}]" if cd.keywords else ""
+        mods = f"强化{len(c.mods)}" if c.mods else ""
+        methods = f"方式:{','.join(m.id for m in cd.methods)}" if cd.methods else ""
+        line = (
+            f"    [{_pad(str(i), idx_w)}] "
+            f"{_pad(f'《{cd.name}》', name_w)} "
+            f"{_pad(f'#{c.uid}', uid_w)} "
+            f"{_pad(f'{cd.cost}费', cost_w)} "
+            f"{_pad(f'Lv{cd.level}', level_w)} "
+            f"{_pad(kw, kw_w)} "
+            f"{_pad(mods, mods_w)} "
+            f"{_pad(methods, methods_w)} "
+            f"— {cd.text}"
+        )
+        lines.append(line)
+    lines.append("")
     if st.winner is not None:
         lines.append(f"***** {st.players[st.winner].name} 获胜！*****")
     return "\n".join(lines)

@@ -10,11 +10,14 @@ from db.test_data import TEST_IDS, make_test_db, make_test_deck
 
 
 def _give(game, player_index: int, defn_id: int) -> CardInstance:
-    """直接发一张牌到玩家手牌。"""
+    """直接发一张牌到玩家手牌，并分配连续的 hand_seq。"""
     st = game.state
     card = CardInstance(uid=st.next_uid, id=defn_id)
     st.next_uid += 1
-    st.players[player_index].hand.append(card)
+    p = st.players[player_index]
+    p.hand.append(card)
+    max_seq = max((c.hand_seq for c in p.hand if c is not card), default=0)
+    card.hand_seq = max_seq + 1
     return card
 
 
@@ -36,7 +39,7 @@ def _make_game(seed: int = 42, **kw):
 
 
 def test_combat_card_buffs_power_and_shield():
-    """战斗牌：按完整战斗事件流程结算（移入战斗区、战力/一次性护甲、造成伤害）。"""
+    """战斗牌：按完整战斗事件流程结算；战力战斗后清除，护甲保留。"""
     g = _make_game()
     a, b = g.state.players
     # 文射：10010102，1 费，-2 力量 / +2 护甲
@@ -45,7 +48,8 @@ def test_combat_card_buffs_power_and_shield():
     s = a.shikigami[0]
     g.apply({"op": "play_card", "uid": card.uid})
     assert a.combat_index == 0                      # 使用战斗牌会移入战斗区
-    assert s.combat_power == 0 and s.combat_shield == 0  # 战斗后清除
+    assert s.combat_power == 0                      # 战力战斗后清除
+    assert s.shield == 2                            # 战斗牌给予的护甲保留
     assert card in a.graveyard
     assert b.shield == 4                            # 3 - 2 = 1 战力打脸，后手 5 甲剩 4
     assert b.health == 30

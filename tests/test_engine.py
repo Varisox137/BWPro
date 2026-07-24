@@ -67,6 +67,22 @@ def test_mulligan_flow(db, make_game):
     assert a.shikigami[0].level == 1                    # 入场后最左升 1 级
 
 
+def test_hand_seq_compacts_on_leave(make_game):
+    """手牌顺序编号始终 1..N；卡牌离开手牌后大于它的编号均 -1。"""
+    g = make_game()
+    a = g.state.players[0]
+    # 找一张当前可打出的手牌（所属式神已 1 级且费用足够）
+    starter_id = a.shikigami[0].id
+    card = next(c for c in a.hand if g.db.cards[c.id].shikigami == starter_id)
+    old_seq = card.hand_seq
+    g.apply({"op": "play_card", "uid": card.uid})
+    assert card not in a.hand
+    assert all(c.hand_seq != old_seq for c in a.hand)
+    # 剩余编号连续
+    seqs = sorted(c.hand_seq for c in a.hand)
+    assert seqs == list(range(1, len(a.hand) + 1))
+
+
 def test_assault_costs_orb_and_action(make_game):
     g = make_game()
     a, b = g.state.players

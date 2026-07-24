@@ -19,9 +19,12 @@ def make_game(db):
 
 
 def give(game, player_index: int, defn_id: int) -> CardInstance:
-    """测试辅助：直接发一张牌到玩家手牌。"""
+    """测试辅助：直接发一张牌到玩家手牌，并分配连续的 hand_seq。"""
     st = game.state
     card = CardInstance(uid=st.next_uid, id=defn_id)
     st.next_uid += 1
-    st.players[player_index].hand.append(card)
+    p = st.players[player_index]
+    p.hand.append(card)
+    max_seq = max((c.hand_seq for c in p.hand if c is not card), default=0)
+    card.hand_seq = max_seq + 1
     return card
