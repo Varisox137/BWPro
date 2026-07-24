@@ -14,19 +14,33 @@ from core.model import Ref
 from core.setup import new_game
 from db.test_data import TEST_IDS, make_test_db, make_test_deck
 
-HELP = """指令：
-  play <手牌序号> [目标] [方式]   使用手牌；如 play 0 e1 或 play 0 e1 burst（爆能）
-  assault <式神序号>              式神出击（耗 1 鬼火 + 每回合 1 次出击次数，驻留战斗区）
-  upgrade <式神序号>              升级式神（只能升己方当前最低级）
-  skip                            跳过剩余升级机会
-  end                             结束回合
-  state                           重印场面
-  log [n]                         查看最近 n 条日志（默认 10）
-  debug <子命令> [参数...]        调试命令（见 debug help）
-  help / quit
+HELP = """指令（括号内为 alias）：
+  play (p)   <手牌序号> [目标] [方式]   使用手牌；如 play 0 e1 或 p 0 e1 burst
+  assault (a) <式神序号>               式神出击（耗 1 鬼火 + 每回合 1 次次数）
+  upgrade (u) <式神序号>               升级式神（只能升己方当前最低级）
+  skip (s)                             跳过剩余升级机会
+  end (e)                              结束回合
+  state (st)                           重印场面
+  log (l) [n]                          查看最近 n 条日志（默认 10）
+  debug (d) <子命令> [参数...]          调试命令（见 debug help）
+  help (h) / quit (q)
 
 目标代码：e=敌方 f=己方；e0=敌方 0 号式神，f1=己方 1 号式神，ep=敌方牌手，fp=己方牌手
 """
+
+COMMAND_ALIASES = {
+    "p": "play",
+    "a": "assault",
+    "u": "upgrade",
+    "s": "skip",
+    "e": "end",
+    "st": "state",
+    "l": "log",
+    "d": "debug",
+    "h": "help",
+    "q": "quit",
+    "exit": "quit",
+}
 
 DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
   give_card <player> <card_id> [zone=hand] [count=1]   生成卡牌到区域
@@ -123,6 +137,8 @@ def render(game: Game) -> str:
     faction_w = max((_display_width(f"[{f}]") for _, _, _, _, f, _ in all_rows), default=0)
 
     for pi, rows in player_rows:
+        if pi > 0:
+            lines.append("")
         p = st.players[pi]
         marker = ">" if pi == st.active else " "
         lines.append(
@@ -139,8 +155,8 @@ def render(game: Game) -> str:
                 f"{status}"
             )
             lines.append(line)
+        lines.append("")
     p = st.players[st.active]
-    lines.append("")
     lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）：")
     hand = _hand_sorted(game, p)
     # 计算各列（除卡牌描述外）的显示宽度
@@ -303,6 +319,7 @@ def main() -> None:
             continue
         parts = line.split()
         cmd, args = parts[0].lower(), parts[1:]
+        cmd = COMMAND_ALIASES.get(cmd, cmd)
         try:
             if cmd in ("quit", "exit"):
                 break
