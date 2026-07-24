@@ -157,9 +157,12 @@ def render(game: Game) -> str:
     p = st.players[st.active]
     lines.append(f"{p.name} 手牌（升级机会 {p.upgrades}，出击次数 {p.assaults_left}）：")
     hand = _hand_sorted(game, p)
-    # 新格式：[1-based] 【卡牌名】 #uid ctype[subtype] level cost [data] {description}
+    # 新格式：[1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [keywords] {description}
+    CTYPE_NAMES = {"spell": "法术", "combat": "战斗", "form": "形态",
+                   "field": "幻境", "reinforce": "协战"}
+
     def _ctype_label(cd):
-        base = cd.card_type
+        base = CTYPE_NAMES.get(cd.card_type, cd.card_type)
         if cd.subtype:
             return f"{base}[{cd.subtype}]"
         return base
@@ -168,8 +171,8 @@ def render(game: Game) -> str:
     name_w = max((_display_width(f"【{game.db.cards[c.id].name}】") for c in hand), default=0)
     uid_w = max((_display_width(f"#{c.uid}") for c in hand), default=0)
     ctype_w = max((_display_width(_ctype_label(game.db.cards[c.id])) for c in hand), default=0)
-    level_w = max((_display_width(str(game.db.cards[c.id].level)) for c in hand), default=0)
-    cost_w = max((_display_width(str(game.db.cards[c.id].cost)) for c in hand), default=0)
+    level_w = max((_display_width(f"等级{game.db.cards[c.id].level}") for c in hand), default=0)
+    cost_w = max((_display_width(f"费用{game.db.cards[c.id].cost}") for c in hand), default=0)
     data_w = max((_display_width(f"[{'/'.join(game.db.cards[c.id].keywords)}]") for c in hand), default=0)
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
@@ -179,8 +182,8 @@ def render(game: Game) -> str:
             f"{_pad(f'【{cd.name}】', name_w)} "
             f"{_pad(f'#{c.uid}', uid_w)} "
             f"{_pad(_ctype_label(cd), ctype_w)} "
-            f"{_pad(str(cd.level), level_w)} "
-            f"{_pad(str(cd.cost), cost_w)} "
+            f"{_pad(f'等级{cd.level}', level_w)} "
+            f"{_pad(f'费用{cd.cost}', cost_w)} "
             f"{_pad(data, data_w)} "
             f"{{{cd.text}}}"
         )
