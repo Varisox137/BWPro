@@ -1,0 +1,28 @@
+id: 10012308
+version: 20260724
+name: 觉醒·妖刀姬
+shikigami: 100123
+card_type: spell
+subtype: awaken
+rarity: SSR
+level: 3
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+    - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+abilities:
+  # 觉醒能力每次进场时（觉醒替换 / 复活），获得一个一次性[迅捷]
+  - when: on_awakened
+    condition: {target_shikigami: self}
+    steps:
+      - {op: grant_keyword, keyword: haste, target: {kind: self}}
+  - when: on_shikigami_revived
+    condition: {shikigami_shikigami: self}
+    steps:
+      - {op: grant_keyword, keyword: haste, target: {kind: self}}
+  - when: on_player_damaged
+    condition: {source_shikigami: self, kind: combat}
+    steps:
+      - {op: card_aura, shikigami: self, card_type: combat, cost_zero: true}
+text: "[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌不消耗鬼火。}"

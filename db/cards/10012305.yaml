@@ -1,0 +1,19 @@
+id: 10012305
+version: 20260724
+name: 禁锢之刀
+shikigami: 100123
+card_type: combat
+rarity: SR
+level: 2
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: {enhance: true, base: 0}, target: {kind: self}}
+    - {op: gain_shield, amount: 2, target: {kind: self}}
+triggers:
+  # source_side 限定己方式神为来源：镜像对局中敌方妖刀姬的击杀不计入本方计数
+  - when: on_shikigami_defeated
+    condition: {victim_side: enemy, victim_kind: shikigami, source_side: friendly, source_shikigami: 100123}
+    steps:
+      - {op: add_mod, to: persistent, key: enhance, amount: 2}
+text: "[增强]：{本局游戏中，妖刀姬每消灭过一名敌方式神，此牌便获得+2力量}"

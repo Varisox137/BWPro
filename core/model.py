@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from db.schema import EffectBlock
+
 
 class GameConfig(BaseModel):
     """对局基础设定：随对局状态序列化。
@@ -145,6 +147,9 @@ class PlayerState(BaseModel):
     mulligan_done: bool = False  # 调度阶段：该玩家已确认完成
     config: dict[str, Any] = Field(default_factory=dict)  # 对 GameConfig 的玩家级覆盖
     summon_legacy: dict[int, dict[str, int]] = Field(default_factory=dict)  # 同名召唤物再召时保留的永久增减益（key=召唤物定义 id）
+    card_mods: dict[int, dict[str, Any]] = Field(default_factory=dict)  # 持久修饰 store：card_id → 修饰（"本局游戏每……"类，打出时装配快照）
+    card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
+    # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
 
     @property
     def deck(self) -> list[CardInstance]:
@@ -159,6 +164,20 @@ class PlayerState(BaseModel):
         return self.zones.setdefault("graveyard", [])
 
 
+class TempGrant(BaseModel):
+    """一次性临时触发（docs/enhance-design.md 修饰词汇表）：注册进状态、结算后 uses-1、归零移除。
+
+    战斗牌的 temp_grants 在发起战斗时注册并绑定该次战斗（battle=bid，战斗终止点移除未用者）；
+    holder 供条件迷你语言的 self 形式匹配（如 source_shikigami: self）。
+    """
+
+    block: EffectBlock
+    controller: int  # 效果归属玩家
+    holder: Ref | None = None  # 能力持有者（条件 self 匹配基准）
+    battle: int | None = None  # 绑定的战斗 id；None = 不绑定
+    uses: int = 1  # 剩余触发次数
+
+
 class GameState(BaseModel):
     players: list[PlayerState]
     active: int = 0  # 当前回合玩家下标
@@ -171,6 +190,7 @@ class GameState(BaseModel):
     emit_seq: int = 0  # 事件编号：每次 emit 递增，持久化到状态以支持回放/断线重连
     config: GameConfig = Field(default_factory=GameConfig)
     log: list[str] = Field(default_factory=list)
+    temp_grants: list[TempGrant] = Field(default_factory=list)  # 一次性临时触发注册表
 
     def next_emit_seq(self) -> int:
         """取下一个事件编号并递增。"""

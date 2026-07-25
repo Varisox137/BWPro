@@ -94,8 +94,8 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 ## Roadmap
 
 1. **Phase 1 ✅→进行中** 核心规则与数据模型（引擎 + db + CLI 热座；规则按 thoughts.txt 持续校准）
-   - 已落地：战斗关键字（连击/先攻/贯通/穿刺/远程/不屈/迅捷/屏障）+ 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫；攻击后到期强化（attack_buffs/keep_attack_buffs）+ 法术觉醒替换（awakened/abilities/keep_shield）+ 白狼基础能力；YAML 已录 10 卡（文射/战意/一闪/妖刀万华/起弓/残心/离/无我/觉醒·白狼/觉醒·兵俑）
-   - 后续批次：击杀标记与增强装配（`docs/enhance-design.md`）→ 倒计时与投射/鼓舞 → 生成牌/延迟触发/伤害上限/激怒/响应战斗牌插入规则 → CLI 修饰状态显示
+   - 已落地：战斗关键字（连击/先攻/贯通/穿刺/远程/不屈/迅捷/屏障）+ 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫；攻击后到期强化（attack_buffs/keep_attack_buffs）+ 法术觉醒替换（awakened/abilities/keep_shield）；增强装配管线（卡牌触发器 triggers、打出装配 _materialize、enhance 数值、卡牌光环 card_auras、战斗绑定临时触发 temp_grants）+ 白狼/妖刀姬基础能力；YAML 已录 14 卡（含起弓/残心/离/无我/觉醒·白狼/觉醒·兵俑/不祥之刃/禁锢之刀/冲撞/觉醒·妖刀姬）
+   - 后续批次：倒计时与投射/鼓舞（一目连全卡、罡风）→ 生成牌/延迟触发/伤害上限/激怒/响应战斗牌插入规则 → CLI 修饰状态显示
 2. **Phase 2** 联机服务端：FastAPI/websockets、房间匹配、断线重连、回放、回合计时（100s）
 3. **Phase 3** 进阶机制：形态/觉醒/战斗牌、持续效果与光环、出击增减益、爆能/赐能/起源/连引/连锁/戏法
 4. **Phase 4** 自定义卡牌：DSL 编译器、校验、平衡工具（契约见 diy/README.md）

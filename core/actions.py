@@ -172,6 +172,71 @@ def keep_shield(game, ctx, *, targets: list[Ref]) -> None:
         game.state.players[ref.player].shikigami[ref.shikigami].keep_shield = True
 
 
+@action("add_mod")
+def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
+            amount: int = 1, cap: int | None = None) -> None:
+    """写入修饰（docs/enhance-design.md 写入三目标；targets 忽略）。
+
+    - to=persistent：写入控制者的持久 store `card_mods[ctx.card_id]`（"本局游戏每……"类，
+      跨回合累积，打出时装配快照；需要 ctx.card_id，即卡牌触发器场景）。
+    - to=hand：写入控制者手牌中所有同 id 实例的 `card.mods[key]`（按实例隔离，
+      之后才抽到的同名复制不受影响）。
+    cap 为累积上限（如"最多+3"）。
+    """
+    p = game.state.players[ctx.controller]
+
+    def _bump(store: dict, k: str) -> None:
+        store[k] = store.get(k, 0) + amount
+        if cap is not None:
+            store[k] = min(store[k], cap)
+
+    if to == "persistent":
+        if ctx.card_id is None:
+            raise ValueError("add_mod(to=persistent) 需要 ctx.card_id（卡牌触发器来源卡）")
+        _bump(p.card_mods.setdefault(ctx.card_id, {}), key)
+    elif to == "hand":
+        if ctx.card_id is None:
+            raise ValueError("add_mod(to=hand) 需要 ctx.card_id（卡牌触发器来源卡）")
+        for c in p.hand:
+            if c.id == ctx.card_id:
+                _bump(c.mods, key)
+    else:
+        raise ValueError(f"未知 add_mod 写入目标: {to}")
+
+
+@action("card_aura")
+def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
+              card_type: str | None = None, keywords: list[str] | None = None,
+              cost_zero: bool = False, scope: str = "turn") -> None:
+    """登记卡牌光环（targets 忽略）：谓词匹配的卡牌获得 keywords / 不耗鬼火。
+
+    覆盖谓词命中的全部卡牌（任何区域，含之后新生成的）——读取时求值而非写入实例。
+    scope 为失效时机："turn" = 己方回合开始清除（"本回合"类）；其余 scope 随需要扩展。
+    """
+    if shikigami == "self":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("card_aura(shikigami=self) 需要来源式神")
+        sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+    else:
+        sid = int(shikigami)
+    game.state.players[ctx.controller].card_auras.append({
+        "shikigami": sid, "card_type": card_type,
+        "keywords": list(keywords or []), "cost_zero": cost_zero, "scope": scope,
+    })
+    game._log(f"{game.db.shikigami[sid].name} 的卡牌光环生效（{scope}）")
+
+
+@action("grant_keyword")
+def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str) -> None:
+    """授予目标式神一个关键字（按关键字的天然持久性类别入列，见 engine._grant_keyword）。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if s.in_play:
+            game._grant_keyword(s, keyword)
+
+
 @action("battle_immunity")
 def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> None:
     """作用域战斗伤害免疫：免疫 kind ∈ (combat, counter) 的伤害（法术/能力等 effect 伤害不免疫）。

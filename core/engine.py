@@ -28,7 +28,14 @@ from typing import Any
 
 from core import actions, debug, targets
 from core.events import EVENT_TIMING
-from core.model import CardInstance, GameState, PlayerState, Ref, ShikigamiState
+from core.model import (
+    CardInstance,
+    GameState,
+    PlayerState,
+    Ref,
+    ShikigamiState,
+    TempGrant,
+)
 from db.schema import EffectBlock, PlayMethod, Step
 
 
@@ -68,12 +75,14 @@ class ExecContext:
     event: dict[str, Any] | None = None  # 触发来源事件 payload
     chosen: list[Ref] | None = None  # 玩家选择的目标
     triggered: bool = False  # 是否为响应牌触发（结算时支付鬼火并消耗手牌）
+    card_id: int | None = None  # 游离触发器的来源卡 id（add_mod 写入目标定位用）
 
 
 @dataclass
 class _Pending:
     block: EffectBlock
     ctx: ExecContext
+    temp_grant: TempGrant | None = None  # 来自一次性临时触发的待结算项（结算后 uses-1）
 
 
 class Game:
@@ -139,6 +148,7 @@ class Game:
 
         规则：基础费用可被使用方式覆盖/增减，再加上实例修饰（mods.cost_delta）。
         瞬发：每（半）回合各自第一张瞬发卡费用为 0，其余条件照常。
+        命中 cost_zero 卡牌光环（觉醒·妖刀姬"不消耗鬼火"）费用为 0，且不占用瞬发名额。
         结果不小于 0。
         """
         base = method.cost if (method and method.cost is not None) else cdef.cost
@@ -146,9 +156,62 @@ class Game:
         if card is not None:
             delta += int(card.mods.get("cost_delta", 0))
         cost = max(0, base + delta)
-        if "fast" in cdef.keywords and not p.fast_used:
+        if self._cost_zero_aura(p, cdef):
+            return 0
+        if "fast" in self._card_keywords(p, cdef, card) and not p.fast_used:
             cost = 0
         return cost
+
+    def _match_auras(self, p: PlayerState, cdef: CardDef) -> list[dict]:
+        """命中该卡牌的卡牌光环（card_auras 注册表，读取时求值，覆盖已有与新生成的牌）。"""
+        return [
+            a for a in p.card_auras
+            if cdef.shikigami == a["shikigami"]
+            and (a.get("card_type") is None or a["card_type"] == cdef.card_type)
+        ]
+
+    def _cost_zero_aura(self, p: PlayerState, cdef: CardDef) -> bool:
+        """是否有命中光环使该牌不消耗鬼火。"""
+        return any(a.get("cost_zero") for a in self._match_auras(p, cdef))
+
+    def _card_keywords(self, p: PlayerState, cdef: CardDef,
+                       card: CardInstance | None = None) -> set[str]:
+        """一张卡当前实际具有的关键字：定义 ∪ 实例修饰 ∪ 命中光环（瞬发判定等的统一读取点）。"""
+        kws = set(cdef.keywords)
+        if card is not None:
+            kws |= set(card.mods.get("keywords_add", []))
+        for aura in self._match_auras(p, cdef):
+            kws |= set(aura.get("keywords", []))
+        return kws
+
+    def _materialize(self, p: PlayerState, card: CardInstance, cdef: CardDef) -> None:
+        """打出装配（docs/enhance-design.md 即时装配模型）：卡牌付费后、效果结算前，
+        把持久 store（card_mods）中的修饰合并进该实例 mods 作为本次打出的快照——
+        快照后计数再变也不影响本次结算。装配产物只在实例上，定义块永不改写。
+
+        锚点：弹回手牌后再次打出会重复合并（现无弹回机制，出现时按实例去重）。
+        """
+        store = p.card_mods.get(cdef.id)
+        if not store:
+            return
+        if store.get("enhance"):
+            card.mods["enhance"] = card.mods.get("enhance", 0) + store["enhance"]
+        if store.get("keywords_add"):
+            merged = set(card.mods.get("keywords_add", [])) | set(store["keywords_add"])
+            card.mods["keywords_add"] = sorted(merged)
+
+    @staticmethod
+    def _step_amount(step: Step, card: CardInstance | None) -> int:
+        """解析步骤的 amount 参数：支持 {"enhance": true, "base": n} 形式
+        （base + 实例已装配的 enhance 修饰，docs/enhance-design.md 数值解析流水线）。
+        """
+        raw = (step.model_extra or {}).get("amount", 0)
+        if isinstance(raw, dict):
+            base = int(raw.get("base", 0))
+            if raw.get("enhance") and card is not None:
+                base += int(card.mods.get("enhance", 0))
+            return base
+        return int(raw)
 
     # ==================== 对局初始化 ====================
 
@@ -327,9 +390,10 @@ class Game:
             if want not in targets.pool_refs(self, eff_target.pool, self.state.active):
                 raise IllegalAction("目标不合法")
             chosen = [want]
-        if "fast" in cdef.keywords:
+        if "fast" in self._card_keywords(p, cdef, card):
             p.fast_used = True
         p.orb -= cost
+        self._materialize(p, card, cdef)  # 打出装配：付费后、效果结算前快照持久修饰
         how = f"（{method.text or method.id}）" if method else ""
         self._log(f"{p.name} 使用了《{cdef.name}》{how}")
         if cdef.card_type == "form":
@@ -365,17 +429,23 @@ class Game:
             if cdef.subtype == "awaken" and si is not None:
                 p.shikigami[si].awakened = cdef.id
                 self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
-                self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid)
+                self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid,
+                          target=Ref(player=self.state.active, shikigami=si))
         self.emit("on_card_played", player=self.state.active, uid=uid)
 
-    def _combat_card_stats(self, block: EffectBlock) -> tuple[int, int]:
-        """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。"""
+    def _combat_card_stats(self, block: EffectBlock,
+                           card: CardInstance | None = None) -> tuple[int, int]:
+        """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。
+
+        amount 支持 {"enhance": true, "base": n} 形式（禁锢之刀/冲撞）：base + 实例已装配的
+        enhance 修饰（打出装配快照，见 _materialize）。
+        """
         power = 0
         shield = 0
         for step in block.steps:
             if step.target is not None and step.target.kind != "self":
                 continue
-            amount = (step.model_extra or {}).get("amount", 0)
+            amount = self._step_amount(step, card)
             if step.op == "buff_power":
                 power += amount
             elif step.op == "gain_shield":
@@ -393,7 +463,7 @@ class Game:
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
         block = method.effects if (method and method.effects is not None) else cdef.effects
-        power, shield = self._combat_card_stats(block)
+        power, shield = self._combat_card_stats(block, card)
         if power:
             s.combat_power += power
         if shield:
@@ -412,7 +482,8 @@ class Game:
         imms = tuple(bool((st.model_extra or {}).get("nested", False))
                      for st in block.steps if st.op == "battle_immunity")
         atk_ref = Ref(player=self.state.active, shikigami=si)
-        self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms)
+        self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
+                             temp_grants=tuple(cdef.temp_grants))
         s.combat_power = 0
         self.move_card(p, card, "graveyard")
 
@@ -462,12 +533,14 @@ class Game:
     def _resolve_combat(self, atk_ref: Ref, attacker: ShikigamiState, *,
                         move: bool = True,
                         grant_keywords: tuple[str, ...] = (),
-                        immunities: tuple[bool, ...] = ()) -> None:
+                        immunities: tuple[bool, ...] = (),
+                        temp_grants: tuple[EffectBlock, ...] = ()) -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
         （终止点按实例移除，不误删式神原有同名关键字）；immunities 为作用域战斗伤害
-        免疫（元素 = nested：是否覆盖本战斗内的嵌套战斗）。
+        免疫（元素 = nested：是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
+        一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）。
         """
         self._battle_seq += 1
         bid = self._battle_seq
@@ -479,6 +552,9 @@ class Game:
             grants.append((atk_ref, kw, cls))
         for nested in immunities:
             attacker.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
+        for block in temp_grants:
+            self.state.temp_grants.append(TempGrant(
+                block=block, controller=atk_ref.player, holder=atk_ref, battle=bid))
         try:
             self._battle_flow(atk_ref, attacker, move=move)
         finally:
@@ -490,6 +566,8 @@ class Game:
             for pl in self.state.players:
                 for st in pl.shikigami:
                     st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
+            # 移除本战斗绑定的一次性临时触发（已触发完的已随 uses 归零移除）
+            self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
             self._battle_stack.pop()
             # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
             if attacker.attack_buffs and not self._has_keyword(attacker, "keep_attack_buffs"):
@@ -774,6 +852,8 @@ class Game:
             return
         # 2-15. 按步骤执行回合开始阶段
         self._turn_start_clear_shield(p)
+        # "本回合"类卡牌光环（scope="turn"）在己方回合开始失效；其余 scope 条目不受影响
+        p.card_auras[:] = [a for a in p.card_auras if a.get("scope") != "turn"]
         self._turn_start_revive(p, pi)
         self._turn_start_gain_orb(p, first, pi)
         pending_retreat = self._turn_start_schedule_retreat(p)
@@ -1043,7 +1123,8 @@ class Game:
                 owner.combat_index = None  # 气绝者移动至准备区
             s.revive_countdown = self.config.revive_countdown
             self._log(f"{name} 气绝")
-        self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason)
+        self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
+                  battle=self._battle_stack[-1] if self._battle_stack else None)
 
     def _set_pending_end(self, loser: int | None = None, defeat: bool = False) -> None:
         """把游戏标记为"待结束"。
@@ -1100,7 +1181,7 @@ class Game:
             else:
                 self.queue.append(pend)
         for pend in insert_queue:
-            self._resolve_block(pend.block, pend.ctx)
+            self._resolve_pending(pend)
 
     def _collect(self, event: dict) -> list[_Pending]:
         """收集监听该事件的触发效果，并按规则顺序排序。
@@ -1116,9 +1197,57 @@ class Game:
         out: list[_Pending] = []
         for pi in (self.state.active, 1 - self.state.active):
             out.extend(self._collect_abilities(event, pi))
+            # 第三收集来源（式神能力之后、响应牌之前，docs/enhance-design.md 第一节）：
+            # 卡牌触发器（全库游离触发块）与一次性临时触发（按注册顺序，只收一次）
+            out.extend(self._collect_card_triggers(event, pi))
+            if pi == self.state.active:
+                out.extend(self._collect_temp_grants(event))
             if pi != self.state.active and self._response_used_emit != event["_emit"]:
                 out.extend(self._collect_responses(event, pi))
         return out
+
+    def _collect_card_triggers(self, event: dict, pi: int) -> list[_Pending]:
+        """收集卡牌触发器（CardDef.triggers）：不依附在场式神的游离触发块，
+
+        每次 emit 全库扫描（覆盖生成牌/未入手牌，enhance-design"按数据库全量注册"语义）。
+        双方各自以 controller=pi 匹配一次（victim_side 等相对条件决定归属哪方）。
+        """
+        out: list[_Pending] = []
+        for cdef in self.db.cards.values():
+            for block in cdef.triggers:
+                if block.when != event["name"]:
+                    continue
+                if self._match(block.condition, event, pi):
+                    out.append(_Pending(block, ExecContext(
+                        controller=pi, event=event, card_id=cdef.id)))
+        return out
+
+    def _collect_temp_grants(self, event: dict) -> list[_Pending]:
+        """收集一次性临时触发（state.temp_grants）：战斗绑定者只响应本战斗内的事件。"""
+        out: list[_Pending] = []
+        for grant in self.state.temp_grants:
+            if grant.block.when != event["name"]:
+                continue
+            if grant.battle is not None and event.get("battle") != grant.battle:
+                continue
+            if self._match(grant.block.condition, event, grant.controller, holder=grant.holder):
+                out.append(_Pending(grant.block, ExecContext(
+                    controller=grant.controller, source=grant.holder, event=event),
+                    temp_grant=grant))
+        return out
+
+    def _resolve_pending(self, pend: _Pending) -> None:
+        """结算一个待触发项；一次性临时触发结算后 uses-1，归零移除（按对象身份比较）。"""
+        self._resolve_block(pend.block, pend.ctx)
+        grant = pend.temp_grant
+        if grant is None:
+            return
+        idx = next((i for i, g in enumerate(self.state.temp_grants) if g is grant), None)
+        if idx is None:
+            return  # 已在结算期间被移除（如所属战斗的终止点清理）
+        grant.uses -= 1
+        if grant.uses <= 0:
+            self.state.temp_grants.pop(idx)
 
     def _collect_abilities(self, event: dict, pi: int) -> list[_Pending]:
         """收集玩家 pi 的式神被动能力（已觉醒的式神改读觉醒牌的觉醒能力块）。"""
@@ -1191,7 +1320,9 @@ class Game:
         - {字段_side: friendly|enemy|any} ：事件中的 Ref 相对 controller 的归属
         - {字段_kind: shikigami|player}   ：Ref 指向式神还是牌手
         - {字段_shikigami: self}   ：事件中的 Ref 与能力持有者（holder）同式神
+        - {字段_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id（游离触发器用）
         - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
+        - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
         - 其余按键值相等比较
         """
         if not condition:
@@ -1199,6 +1330,11 @@ class Game:
         for key, want in condition.items():
             if key == "active":
                 if (want == "self") != (self.state.active == controller):
+                    return False
+            elif key == "shikigami_in_combat":
+                cp = self.state.players[controller]
+                ci = cp.combat_index
+                if ci is None or cp.shikigami[ci].id != want:
                     return False
             elif key.endswith("_side"):
                 ref = event.get(key[:-5])
@@ -1216,10 +1352,18 @@ class Game:
                     return False
             elif key.endswith("_shikigami"):
                 ref = event.get(key[:-10])
-                if (not isinstance(ref, Ref) or holder is None
-                        or holder.shikigami is None or ref.shikigami is None):
-                    return False
-                if ref.player != holder.player or ref.shikigami != holder.shikigami:
+                if want == "self":
+                    if (not isinstance(ref, Ref) or holder is None
+                            or holder.shikigami is None or ref.shikigami is None):
+                        return False
+                    if ref.player != holder.player or ref.shikigami != holder.shikigami:
+                        return False
+                elif isinstance(want, int):
+                    if not isinstance(ref, Ref) or ref.shikigami is None:
+                        return False
+                    if self.state.players[ref.player].shikigami[ref.shikigami].id != want:
+                        return False
+                else:
                     return False
             elif want == "self":
                 if event.get(key) != controller:
@@ -1308,7 +1452,7 @@ class Game:
                 self.queue.clear()
                 raise RuntimeError("效果队列疑似死循环，已强制清空")
             pend = self.queue.popleft()
-            self._resolve_block(pend.block, pend.ctx)
+            self._resolve_pending(pend)
         # 待结束状态 → 正式结束
         if self.state.pending_end and self.state.winner is None:
             if self.state.pending_loser == -1:

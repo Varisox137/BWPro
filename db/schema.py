@@ -132,6 +132,10 @@ class CardDef(BaseModel):
     target: TargetSpec = Field(default_factory=TargetSpec)
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段
     abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）
+    triggers: list[EffectBlock] = Field(default_factory=list)  # 卡牌触发器：游离触发块（when≠on_play），
+    # 不依附在场式神，每次 emit 全库扫描匹配；修饰写入目标由写入动作（add_mod 等）指定
+    temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、
+    # 绑定该次战斗的一次性触发（uses=1，战斗终止点移除未用者）
     methods: list[PlayMethod] = Field(default_factory=list)  # 使用方式（多择子选项）
     text: str = ""
 

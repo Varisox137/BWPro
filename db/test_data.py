@@ -5,8 +5,9 @@
 - 卡牌：2位id 稀有度 名称 等级 类型 [数值] [关键字]
 
 约定：
-- 已落地的机制在此同步（供 CLI 热座试玩）：白狼/兵俑的基础能力、文射/妖刀万华的[连击]、
-  起弓/离/无我（攻击后到期强化）、残心、觉醒·白狼/觉醒·兵俑；
+- 已落地的机制在此同步（供 CLI 热座试玩）：白狼/兵俑/妖刀姬的基础能力、文射/妖刀万华的[连击]、
+  起弓/离/无我（攻击后到期强化）、残心、觉醒·白狼/觉醒·兵俑、
+  不祥之刃/禁锢之刀/冲撞（击杀标记与增强装配）、觉醒·妖刀姬；
   正式数据以 db/cards、db/shikigami 的 YAML 为准，本文件与其保持一致的部分逐步移交。
 - 未落地的机制仅以数值/瞬发/cost=0 占位：战斗牌简化为力量/护甲修正，
   形态牌按给定数值覆盖基础身材，觉醒牌为永久修正 + awaken tag。
@@ -75,6 +76,13 @@ def make_test_db() -> CardDatabase:
         steps=[Step(op="gain_shield", amount=2, target=_self_target())],
     )
     shikigami[100102].text = "己方回合开始时，兵俑获得2护甲"
+    shikigami[100123].ability = EffectBlock(
+        when="on_player_damaged",
+        condition={"source_shikigami": "self", "kind": "combat"},
+        steps=[Step(op="card_aura", shikigami="self", card_type="combat",
+                    keywords=["fast"])],
+    )
+    shikigami[100123].text = "当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌具有[瞬发]"
     cards: dict[int, CardDef] = {}
 
     def add(sid: int, no: int, rarity: str, name: str, level: int, ctype: str,
@@ -140,7 +148,17 @@ def make_test_db() -> CardDatabase:
     add(100102, 1, "R", "尘刀", 1, "combat", text="")
     add(100102, 2, "R", "古尘之盾", 1, "spell", text="")
     add(100102, 3, "R", "不动如山", 2, "form", form_power=1, form_health=9, text="1力量/9生命")
-    add(100102, 4, "SR", "冲撞", 2, "combat", power=2, shield=2, text="+2力量/+2护甲")
+    add(100102, 4, "SR", "冲撞", 2, "combat",
+        text="[增强]：{己方回合开始时，若兵俑在战斗区，此牌获得+1力量/+1护甲}")
+    cards[10010204].effects = EffectBlock(steps=[
+        Step(op="buff_power", amount={"enhance": True, "base": 2}, target=_self_target()),
+        Step(op="gain_shield", amount={"enhance": True, "base": 2}, target=_self_target()),
+    ])
+    cards[10010204].triggers = [EffectBlock(
+        when="on_turn_start",
+        condition={"player": "self", "shikigami_in_combat": 100102},
+        steps=[Step(op="add_mod", to="hand", key="enhance", amount=1)],
+    )]
     add(100102, 5, "SR", "森罗之阵", 2, "form", form_power=4, form_health=7, text="4力量/7生命")
     add(100102, 6, "SSR", "觉醒·兵俑", 2, "spell", subtype="awaken",
         text="兵俑获得3护甲。[觉醒]：{己方回合开始时，兵俑获得3护甲。"
@@ -158,16 +176,51 @@ def make_test_db() -> CardDatabase:
     add(100102, 8, "R", "尘缚之阵", 3, "form", form_power=5, form_health=9, text="5力量/9生命")
 
     # 100123 妖刀姬
-    add(100123, 1, "R", "不祥之刃", 1, "combat", power=0, shield=1, text="+0力量/+1护甲")
+    add(100123, 1, "R", "不祥之刃", 1, "combat", power=0, shield=1,
+        text="若妖刀姬于此战斗牌所发起的战斗中消灭了敌方式神，抽一张牌")
+    cards[10012301].temp_grants = [EffectBlock(
+        when="on_shikigami_defeated",
+        condition={"victim_side": "enemy", "victim_kind": "shikigami",
+                   "source_shikigami": "self"},
+        steps=[Step(op="draw", count=1, target=TargetSpec(kind="all", pool="self_player"))],
+    )]
     add(100123, 2, "SR", "见切", 1, "combat", power=1, shield=0, text="+1力量/+0护甲")
     add(100123, 3, "R", "战意", 2, "combat", power=2, shield=2, text="+2力量/+2护甲")
     add(100123, 4, "R", "一闪", 2, "combat", cost=0, power=0, shield=0, text="+0力量/+0护甲，不消耗鬼火")
-    add(100123, 5, "SR", "禁锢之刀", 2, "combat", power=0, shield=2, text="+0力量/+2护甲")
+    add(100123, 5, "SR", "禁锢之刀", 2, "combat",
+        text="[增强]：{本局游戏中，妖刀姬每消灭过一名敌方式神，此牌便获得+2力量}")
+    cards[10012305].effects = EffectBlock(steps=[
+        Step(op="buff_power", amount={"enhance": True, "base": 0}, target=_self_target()),
+        Step(op="gain_shield", amount=2, target=_self_target()),
+    ])
+    cards[10012305].triggers = [EffectBlock(
+        when="on_shikigami_defeated",
+        condition={"victim_side": "enemy", "victim_kind": "shikigami",
+                   "source_side": "friendly", "source_shikigami": 100123},
+        steps=[Step(op="add_mod", to="persistent", key="enhance", amount=2)],
+    )]
     add(100123, 6, "R", "妖刀万华", 3, "form", keywords=["combo"],
         form_power=3, form_health=8, text="3力量/8生命，[连击]")
     add(100123, 7, "SR", "杀念", 3, "spell", text="")
     add(100123, 8, "SSR", "觉醒·妖刀姬", 3, "spell",
-        perm_power=1, perm_health=1, text="觉醒：+1永久力量/+1永久生命上限")
+        perm_power=1, perm_health=1,
+        text="[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌不消耗鬼火。}")
+    cards[10012308].abilities = [
+        EffectBlock(
+            when="on_awakened", condition={"target_shikigami": "self"},
+            steps=[Step(op="grant_keyword", keyword="haste", target=_self_target())],
+        ),
+        EffectBlock(
+            when="on_shikigami_revived", condition={"shikigami_shikigami": "self"},
+            steps=[Step(op="grant_keyword", keyword="haste", target=_self_target())],
+        ),
+        EffectBlock(
+            when="on_player_damaged",
+            condition={"source_shikigami": "self", "kind": "combat"},
+            steps=[Step(op="card_aura", shikigami="self", card_type="combat",
+                        cost_zero=True)],
+        ),
+    ]
 
     # 100125 一目连
     add(100125, 1, "R", "风符·破", 1, "form", form_power=3, form_health=6, text="3力量/6生命")
