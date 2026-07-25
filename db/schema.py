@@ -23,7 +23,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # 卡牌主类型：法术 / 战斗 / 形态 / 幻境（预留） / 协战（预留）
 CARD_TYPES = frozenset({"spell", "combat", "form", "field", "reinforce"})
 SUBTYPES = frozenset({"awaken"})  # 子类型：awaken=觉醒牌；保留扩展
-KEYWORDS = frozenset({"fast", "trigger"})  # 瞬发 / 响应；其他关键词机制未实现前不放进数据，避免静默失效（rules.md:270）
+KEYWORDS = frozenset({
+    "fast", "trigger",          # 瞬发 / 响应（卡牌级）
+    "combo", "initiative",      # 连击 / 先攻
+    "piercing", "pierce",       # 贯通 / 穿刺
+    "remote",                   # 远程
+    "unyielding", "haste",      # 不屈 / 迅捷
+    "barrier",                  # 屏障
+})  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
+# 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
+# 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
+# 天然持久性类别入列（见 core.model.ShikigamiState 与 docs/terminology.md）。
 FACTIONS = frozenset({"红莲", "紫岩", "青岚", "苍叶", "无相"})  # 无相 = 无派系
 FACTION_COLORS = {"红莲": "red", "紫岩": "purple", "青岚": "blue", "苍叶": "green", "无相": "white"}  # Phase 5 UI 展示预留，代码侧暂无消费方
 RARITIES = frozenset({"R", "SR", "SSR"})  # 良 / 优 / 极（抽卡/账号系统预留，见 thoughts.txt）

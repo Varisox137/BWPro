@@ -139,3 +139,21 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int) -> None:
 def emit_event(game, ctx, *, targets: list[Ref], event: str, payload: dict | None = None) -> None:
     """触发自定义事件（须在 db/events.yaml 中声明）。DIY 扩展入口。"""
     game.emit(event, controller=ctx.controller, **(payload or {}))
+
+
+@action("battle_immunity")
+def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> None:
+    """作用域战斗伤害免疫：免疫 kind ∈ (combat, counter) 的伤害（法术/能力等 effect 伤害不免疫）。
+
+    作用域由授予效果指定：nested=False = 仅本张战斗牌发起的战斗；nested=True = 该战斗
+    及其内的嵌套战斗。战斗牌流程会提取本步并绑定该次战斗上下文；作为普通动作执行时
+    登记到当前战斗（无战斗上下文则不生效）。
+    """
+    if not game._battle_stack:
+        return
+    bid = game._battle_stack[-1]
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        s.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})

@@ -39,7 +39,8 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 - `EffectBlock.mode`：`interleaved`=步骤之间允许其它效果结算；`atomic`=不允许（保证无"同时"平局）
 - 触发顺序：回合方优先 → 式神上阵顺序 → 响应牌按所属式神从左往右（中立响应牌最后）
 - 响应牌：同一时机（每次事件生成 emit 即一个时机实例）至多成功结算一张，不同时机可各响应一张；结算时复查条件/鬼火/消耗/使用者，复查失败不占名额（能力则执行时不再检测、触发者气绝仍有效）；响应使用与主动使用生成同样的使用事件（on_card_played）
-- 交战伤害按（反击，攻击）并行顺序生成事件，气绝判定同序；伤害值 ≤0 时终止结算（不扣血、不触发受伤后时机）
+- 战斗流程阶段化（`_battle_flow`：战斗准备前/准备/攻击时/先攻/交战/战斗后）；伤害走全量时点批次管线（`_run_damage_queue`：伤害开始时→贯通修正→护甲计算前（屏障）→护甲计算→护甲计算后→扣减生命前→合并→扣减生命（不屈）→伤害后），并行伤害/贯通溢出/伤害合并同队列；伤害值 ≤0 时终止结算（不扣血、不触发受伤后时机）
+- 关键字持久性三类（均为可重复多重集）：一次性 `one_shot_keywords`（触发后移除：迅捷/不屈/屏障）、持续性 `keywords`（触发后不移除：远程/贯通/连击/穿刺/先攻）、永久 `perm_keywords`（气绝不清除=复活自动重获）；战斗牌/形态牌 keywords（fast/trigger 除外）授予式神，终止点/离场按实例移除不误删原有同名；战斗伤害免疫为带作用域的 `immunities` 条目（`battle_immunity` 动作），仅免疫 combat/counter 伤害
 - 牌手气绝 → "待结束"：已入队的触发能力不再执行、此后不再触发，气绝牌手不再受伤/治疗，当前事件结算完游戏结束（`_declare_loser`；牌库抽空判负非气绝）
 - 卡牌效果只能由 `core/actions.py` 注册表中的 op 组合而成；DIY DSL（Phase 4）也只编译到这些原语
 - `GameState` 纯数据可序列化（含内嵌 `GameConfig`）；回合计数 = active + turn（合计半回合）+ 各自 turn_count
@@ -88,12 +89,13 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 - 卡牌区域 zones 可扩展；墓地仅 UI 层隐藏（引擎可查看、保留对象引用）；同名卡靠 uid 区分，实例差异放 mods
 - 使用位置（play_from）与使用方式（play_method/PlayMethod，可覆盖 cost/level/card_type/target）保留扩展；多择牌仅保留核心方式、参数可变（PlayMethod.param）；对局中可动态赋予卡牌效果（预留）
 - 数据兼容：字段只增不改、未知字段保留、加载即校验
-- 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位
+- 真实卡牌数据按机制落地批次录入 `db/cards`、`db/shikigami` 的 YAML（数据源：thoughts.txt 4 式神 32 卡；机制未落地的字段不录入）；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位
 
 ## Roadmap
 
 1. **Phase 1 ✅→进行中** 核心规则与数据模型（引擎 + db + CLI 热座；规则按 thoughts.txt 持续校准）
-   - 下一板块：4 式神 × 8 卡原版完整效果（战斗上下文、形态能力/形态实体、关键字补全）+ 增强设计落地（`docs/enhance-design.md`）+ CLI 修饰状态显示
+   - 已落地：战斗关键字（连击/先攻/贯通/穿刺/远程/不屈/迅捷/屏障）+ 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫 + 首批 YAML（4 式神、文射/战意/一闪/妖刀万华）
+   - 后续批次：临时强化到期与觉醒 → 击杀标记与增强装配（`docs/enhance-design.md`）→ 倒计时与投射/鼓舞 → 生成牌/延迟触发/伤害上限/激怒/响应战斗牌插入规则 → CLI 修饰状态显示
 2. **Phase 2** 联机服务端：FastAPI/websockets、房间匹配、断线重连、回放、回合计时（100s）
 3. **Phase 3** 进阶机制：形态/觉醒/战斗牌、持续效果与光环、出击增减益、爆能/赐能/起源/连引/连锁/戏法
 4. **Phase 4** 自定义卡牌：DSL 编译器、校验、平衡工具（契约见 diy/README.md）

@@ -70,7 +70,10 @@ class ShikigamiState(BaseModel):
     temp_power: int = 0  # 临时增减益修正（气绝时清除）
     temp_health: int = 0  # 临时生命上限修正（气绝时清除）
     combat_power: int = 0  # 本次战斗的战力加成（战斗后清除）
-    keywords: list[str] = Field(default_factory=list)  # 式神词条（屏障/不屈等，Phase 3）
+    keywords: list[str] = Field(default_factory=list)  # 持续性关键字实例（可重复多重集；触发后不移除；气绝时清除）
+    one_shot_keywords: list[str] = Field(default_factory=list)  # 一次性关键字实例（迅捷/不屈/屏障等；触发后移除；气绝时清除）
+    perm_keywords: list[str] = Field(default_factory=list)  # 永久关键字实例（气绝时不清除 = 复活后自动重新获得）
+    immunities: list[dict[str, Any]] = Field(default_factory=list)  # 作用域免疫条目，如 {"kind": "combat_damage", "battle": int, "nested": bool}；战斗结束/气绝时清除
     health: int  # 当前生命
     shield: int = 0  # 护甲：被伤害时优先消耗；己方回合开始阶段清除（可因效果改变）。
                     # 注意：破甲 fragile 是独立结算流程（见 docs/rules.md 第六章），

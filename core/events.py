@@ -31,6 +31,11 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_shield_changed",    # 式神/牌手护甲或破甲数值变化后 {target: Ref, old, new, reason}
     "on_orb_changed",       # 鬼火变化 {player, old, new, reason}
     "on_assaults_changed",  # 出击次数变化 {player, old, new, reason}
+    # ---- 伤害事件时点批次（docs/rules.md 第五章；payload 含 damage 可变对象，监听者可改伤害值）----
+    "on_damage_start",      # 造成/受到伤害开始时 {damage, victim, source, amount, kind}
+    "on_before_shield",     # 护甲计算前 {damage, victim, source, amount, kind}（批次3=屏障，引擎内建）
+    "on_after_shield",      # 护甲计算后 {damage, victim, source, amount, kind}
+    "on_before_health",     # 扣减生命前 {damage, victim, source, amount, kind}（此后伤害值锁定）
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）
@@ -42,4 +47,8 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_assault": "insert",   # （被）攻击时：同时机能力全部触发后依次执行
     "on_after_assault": "insert",    # 攻击后：清除战力等，需即时完成
     "on_shield_changed": "insert",   # 护甲/破甲变化：即时时机，便于插入结算响应
+    "on_damage_start": "insert",     # 造成/受到伤害开始时：即时时机
+    "on_before_shield": "insert",    # 护甲计算前：即时时机
+    "on_after_shield": "insert",     # 护甲计算后：即时时机
+    "on_before_health": "insert",    # 扣减生命前：即时时机
 }

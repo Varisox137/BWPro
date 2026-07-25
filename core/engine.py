@@ -38,6 +38,27 @@ class IllegalAction(Exception):
 
 MAX_QUEUE_ITERATIONS = 1000  # 效果队列死循环保护（DIY 安全网）
 
+# 天然类别为"一次性"的关键字（触发后移除）；其余战斗关键字默认持续性（触发后不移除）。
+# "永久"是授予方式而非关键字属性，由授予方显式指定 cls="perm"。
+ONE_SHOT_KEYWORDS = frozenset({"haste", "unyielding", "barrier"})
+
+
+@dataclass
+class _DamageEvent:
+    """伤害事件要素（docs/rules.md 第五章）：来源、受伤者、伤害值、原因、是否贯通。
+
+    kind: "combat"（攻击方战斗伤害）/ "counter"（反击战斗伤害）/ "effect"（法术、能力等）。
+    skip_early: 贯通溢出产生的新事件跳过早期流程，从"护甲计算前"开始结算（rules.md:199③）。
+    时点批次监听者可通过事件 payload 中的 damage 引用直接修改 amount（扣减生命前锁定）。
+    """
+
+    source: Ref | None
+    victim: Ref  # shikigami 字段为 None 表示牌手
+    amount: int
+    kind: str = "effect"
+    piercing: bool = False
+    skip_early: bool = False
+
 
 @dataclass
 class ExecContext:
@@ -65,6 +86,38 @@ class Game:
         # 已消耗响应名额的时机实例序号：同一时机至多成功结算一张响应牌（原版"每空闲点
         # 限一张"已取消——不同时机可各响应一张；复查失败不占名额，同时机下一张可继续）
         self._response_used_emit: int | None = None
+        # 战斗上下文（最小版）：每次 _resolve_combat 压栈新 battle id，终止点弹栈并
+        # 清理本战斗授予的关键字实例与免疫条目。为嵌套战斗/响应战斗牌（Phase 3+）打底。
+        self._battle_seq: int = 0
+        self._battle_stack: list[int] = []
+        self._battle_grants: dict[int, list[tuple[Ref, str, str]]] = {}  # battle id → [(式神 Ref, 关键字, 类别)]
+
+    # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
+
+    @staticmethod
+    def _has_keyword(s: ShikigamiState, keyword: str) -> bool:
+        return (keyword in s.keywords or keyword in s.one_shot_keywords
+                or keyword in s.perm_keywords)
+
+    def _grant_keyword(self, s: ShikigamiState, keyword: str, cls: str | None = None) -> str:
+        """授予一个关键字实例，返回实际入列的类别（one_shot/continuous/perm）。
+
+        cls 缺省按关键字天然类别：ONE_SHOT_KEYWORDS 内为一次性，其余为持续性。
+        """
+        cls = cls or ("one_shot" if keyword in ONE_SHOT_KEYWORDS else "continuous")
+        target = {"one_shot": s.one_shot_keywords, "perm": s.perm_keywords}.get(cls, s.keywords)
+        target.append(keyword)
+        return cls
+
+    @staticmethod
+    def _remove_keyword(s: ShikigamiState, keyword: str, cls: str | None = None) -> None:
+        """按实例移除一个关键字（不存在则跳过，兼容气绝已清空的场景）。"""
+        lists = {"one_shot": [s.one_shot_keywords], "perm": [s.perm_keywords],
+                 "continuous": [s.keywords]}.get(cls, [s.one_shot_keywords, s.keywords, s.perm_keywords])
+        for lst in lists:
+            if keyword in lst:
+                lst.remove(keyword)
+                return
 
     @property
     def current(self) -> PlayerState:
@@ -336,7 +389,6 @@ class Game:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
         block = method.effects if (method and method.effects is not None) else cdef.effects
         power, shield = self._combat_card_stats(block)
-        self._enter_combat(p, si)
         if power:
             s.combat_power += power
         if shield:
@@ -349,8 +401,13 @@ class Game:
                 new=s.shield,
                 reason="combat_card",
             )
+        # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
+        # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）
+        grants = tuple(k for k in cdef.keywords if k not in ("fast", "trigger"))
+        imms = tuple(bool((st.model_extra or {}).get("nested", False))
+                     for st in block.steps if st.op == "battle_immunity")
         atk_ref = Ref(player=self.state.active, shikigami=si)
-        self._resolve_combat(atk_ref, s)
+        self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms)
         s.combat_power = 0
         self.move_card(p, card, "graveyard")
 
@@ -397,33 +454,123 @@ class Game:
 
     # ---------- 出击 / 移动 ----------
 
-    def _resolve_combat(self, atk_ref: Ref, attacker: ShikigamiState) -> None:
-        """通用战斗伤害结算：发出 on_before_assault、结算即时效果、造成伤害、发出 on_after_assault。
+    def _resolve_combat(self, atk_ref: Ref, attacker: ShikigamiState, *,
+                        move: bool = True,
+                        grant_keywords: tuple[str, ...] = (),
+                        immunities: tuple[bool, ...] = ()) -> None:
+        """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
-        复用于出击指令与战斗牌；攻击方状态（attacker）由调用方传入。
+        战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
+        （终止点按实例移除，不误删式神原有同名关键字）；immunities 为作用域战斗伤害
+        免疫（元素 = nested：是否覆盖本战斗内的嵌套战斗）。
         """
-        defender_idx = 1 - atk_ref.player
-        d = self.state.players[defender_idx]
-        self.emit(
-            "on_before_assault",
-            attacker=atk_ref,
-            victim=Ref(player=defender_idx, shikigami=d.combat_index),
-        )
+        self._battle_seq += 1
+        bid = self._battle_seq
+        self._battle_stack.append(bid)
+        grants: list[tuple[Ref, str, str]] = []
+        self._battle_grants[bid] = grants
+        for kw in grant_keywords:
+            cls = self._grant_keyword(attacker, kw)
+            grants.append((atk_ref, kw, cls))
+        for nested in immunities:
+            attacker.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
+        try:
+            self._battle_flow(atk_ref, attacker, move=move)
+        finally:
+            # 终止点（rules.md:174）：移除本战斗授予的关键字实例与免疫条目
+            for ref, kw, cls in grants:
+                st = self.state.players[ref.player].shikigami[ref.shikigami]
+                self._remove_keyword(st, kw, cls)
+            self._battle_grants.pop(bid, None)
+            for pl in self.state.players:
+                for st in pl.shikigami:
+                    st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
+            self._battle_stack.pop()
+
+    def _battle_flow(self, atk_ref: Ref, attacker: ShikigamiState, *, move: bool) -> None:
+        """战斗步骤：战斗准备前 → 战斗准备（移动）→（被）攻击时 → 先攻阶段 → 交战阶段 → 战斗后。
+
+        锚点（未实现）：激怒移除、战斗结界中的嵌套战斗、被攻击者气绝后复活不终止战斗。
+        """
+        p = self.state.players[atk_ref.player]
+        def_pi = 1 - atk_ref.player
+        d = self.state.players[def_pi]
+        remote = self._has_keyword(attacker, "remote")
+        piercing = self._has_keyword(attacker, "piercing")
+        combo = self._has_keyword(attacker, "combo")
+        initiative = self._has_keyword(attacker, "initiative")
+        # ---- 战斗准备前（即时时机）：穿刺——移除被攻击者的所有护甲/屏障 ----
+        # （激怒移除锚点：第五批；屏障由伤害管线批次 3 消耗，此处仅清护甲）
+        if self._has_keyword(attacker, "pierce"):
+            vic_ref = Ref(player=def_pi, shikigami=d.combat_index)
+            holder = d.shikigami[d.combat_index] if d.combat_index is not None else d
+            if holder.shield > 0:
+                old = holder.shield
+                holder.shield = 0
+                self.emit("on_shield_changed", target=vic_ref, old=old, new=0, reason="穿刺")
+        self._drain_queue()
+        # ---- 战斗准备：移动攻击者（具有远程则不移动）；攻击者气绝则终止 ----
+        if move and not remote and p.combat_index != atk_ref.shikigami:
+            self._enter_combat(p, atk_ref.shikigami)
+        if attacker.defeated or attacker.despawned:
+            self._log("攻击方在战斗准备阶段气绝/离场，战斗中止")
+            return
+        # ---- （被）攻击时（即时时机）----
+        self.emit("on_before_assault", attacker=atk_ref,
+                  victim=Ref(player=def_pi, shikigami=d.combat_index))
         self._drain_queue()
         if attacker.defeated or attacker.despawned:
             self._log("攻击方在伤害结算前气绝/离场，战斗中止")
             return
+        # ---- 确定被攻击者：敌方战斗区式神，否则敌方牌手 ----
         vic_idx = d.combat_index
-        if vic_idx is None:
-            self.deal_to_player(defender_idx, attacker.eff_power, atk_ref)
-        else:
-            vic_ref = Ref(player=defender_idx, shikigami=vic_idx)
-            vic_s = d.shikigami[vic_idx]
-            a_eff, d_eff = attacker.eff_power, vic_s.eff_power
-            self._hurt_shikigami(atk_ref, d_eff, vic_ref)
-            self._hurt_shikigami(vic_ref, a_eff, atk_ref)
-            self.check_defeated(atk_ref, source=vic_ref, reason="战斗")
-            self.check_defeated(vic_ref, source=atk_ref, reason="战斗")
+
+        def attack_event() -> _DamageEvent:
+            return _DamageEvent(source=atk_ref, victim=Ref(player=def_pi, shikigami=vic_idx),
+                                amount=attacker.eff_power, kind="combat", piercing=piercing)
+
+        def counter_event() -> _DamageEvent:
+            vs = d.shikigami[vic_idx]
+            return _DamageEvent(source=Ref(player=def_pi, shikigami=vic_idx),
+                                victim=atk_ref, amount=vs.eff_power, kind="counter")
+
+        # ---- 先攻阶段：拥有连击/先攻的角色对对方造成战斗伤害，按（反击，攻击）并行 ----
+        atk_first = combo or initiative
+        def_first = vic_idx is not None and (
+            self._has_keyword(d.shikigami[vic_idx], "combo")
+            or self._has_keyword(d.shikigami[vic_idx], "initiative"))
+        if atk_first or def_first:
+            events: list[_DamageEvent] = []
+            if def_first and not remote:
+                events.append(counter_event())
+            if atk_first:
+                events.append(attack_event())
+            self._run_damage_queue(events)
+            if self.state.pending_end:
+                return
+            # 被攻击者气绝：攻击者具有贯通则被攻击者改为对方牌手，否则终止战斗
+            if vic_idx is not None and d.shikigami[vic_idx].defeated:
+                if piercing:
+                    vic_idx = None
+                else:
+                    self._log("被攻击方气绝，战斗终止")
+                    return
+            if attacker.defeated or attacker.despawned:
+                self._log("攻击方在先攻阶段气绝/离场，战斗终止")
+                return
+        # ---- 交战阶段：具有先攻（非连击）的角色不再造成战斗伤害；远程不受反击 ----
+        events = []
+        if vic_idx is not None and not remote:
+            vs = d.shikigami[vic_idx]
+            def_init_only = (self._has_keyword(vs, "initiative")
+                             and not self._has_keyword(vs, "combo"))
+            if not def_init_only:
+                events.append(counter_event())
+        if not (initiative and not combo):
+            events.append(attack_event())
+        if events:
+            self._run_damage_queue(events)
+        # ---- 战斗后 ----
         self.emit("on_after_assault", attacker=atk_ref)
 
     def _cmd_assault(self, cmd: dict) -> None:
@@ -441,11 +588,16 @@ class Game:
             raise IllegalAction("该式神未在场（0 级），不能出击")
         if p.assaults_left < 1:
             raise IllegalAction("本回合已没有出击次数")
-        if p.orb < 1:
-            raise IllegalAction("出击需要 1 点鬼火")
-        p.orb -= 1
+        # 迅捷：出击事件的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷（永久迅捷不移除）
+        if self._has_keyword(s, "haste"):
+            if "haste" in s.one_shot_keywords:
+                s.one_shot_keywords.remove("haste")
+            self._log(f"{self.db.shikigami[s.id].name} 的【迅捷】生效，本次出击不消耗鬼火")
+        else:
+            if p.orb < 1:
+                raise IllegalAction("出击需要 1 点鬼火")
+            p.orb -= 1
         p.assaults_left -= 1
-        self._enter_combat(p, i)
         atk_ref = Ref(player=self.state.active, shikigami=i)
         self._resolve_combat(atk_ref, s)
 
@@ -497,6 +649,10 @@ class Game:
         if cdef.form_health is not None:
             s.base_health = cdef.form_health
         s.health = s.max_health
+        # 形态牌 keywords（fast/trigger 为卡牌级除外）结附期间授予式神
+        for kw in cdef.keywords:
+            if kw not in ("fast", "trigger"):
+                self._grant_keyword(s, kw)
         self._log(f"{self.db.shikigami[s.id].name} 结附形态《{cdef.name}》")
         self.emit("on_form_attached", player=self.state.active, shikigami=i, uid=card.uid)
 
@@ -512,6 +668,10 @@ class Game:
             return
         cdef = self.db.cards[old.id]
         s.form = None
+        # 移除形态授予的关键字实例（气绝已清空时跳过）
+        for kw in cdef.keywords:
+            if kw not in ("fast", "trigger"):
+                self._remove_keyword(s, kw)
         self.move_card(p, old, "graveyard")
         d = self.db.shikigami[s.id]
         s.base_power = d.power
@@ -698,57 +858,144 @@ class Game:
 
     # ==================== 伤害 / 抽牌 / 气绝（动作层共用管线） ====================
 
-    def deal_to_shikigami(self, ref: Ref, amount: int, source: Ref | None) -> None:
-        """对式神造成伤害并检查气绝。
+    def deal_to_shikigami(self, ref: Ref, amount: int, source: Ref | None,
+                          *, kind: str = "effect", piercing: bool = False) -> None:
+        """对式神造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
+        self._run_damage_queue([_DamageEvent(source=source, victim=ref,
+                                             amount=amount, kind=kind, piercing=piercing)])
 
-        终止规则与 _hurt_shikigami 一致：伤害值 ≤0 或护甲完全吸收时不扣血、不触发 on_damage。
+    def deal_to_player(self, player_index: int, amount: int, source: Ref | None,
+                       *, kind: str = "effect") -> None:
+        """对牌手造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
+        self._run_damage_queue([_DamageEvent(source=source, victim=Ref(player=player_index),
+                                             amount=amount, kind=kind)])
+
+    def _run_damage_queue(self, events: list[_DamageEvent]) -> None:
+        """伤害事件队列：并行伤害、贯通溢出、伤害合并都在同一队列结算（rules.md 第五章）。
+
+        每个事件依次经过时点批次：伤害开始时 → 贯通修正 → 护甲计算前（屏障）→ 护甲计算 →
+        护甲计算后 → 扣减生命前 → 合并 → 扣减生命（不屈）→ 伤害后。队列清空后按受伤顺序
+        生成气绝事件（rules.md:207）。子优先级批次（0/1/2/3）暂不拆事件名，待首个有
+        优先级需求的监听者出现再拆。
         """
-        s = self.state.players[ref.player].shikigami[ref.shikigami]
-        if s.defeated:
-            return
-        self._hurt_shikigami(ref, amount, source)
-        self.check_defeated(ref, source=source, reason="伤害")
+        dq: deque[_DamageEvent] = deque(events)
+        victims: list[tuple[Ref, Ref | None, str]] = []  # (受伤式神, 来源, 气绝原因) 按受伤顺序
+        while dq:
+            ev = dq.popleft()
+            self._damage_event_flow(ev, dq, victims)
+            if self.state.winner is not None:
+                return
+        for ref, source, reason in victims:
+            self.check_defeated(ref, source=source, reason=reason)
 
-    def deal_to_player(self, player_index: int, amount: int, source: Ref | None) -> None:
-        p = self.state.players[player_index]
-        if p.defeated:
-            return  # 气绝的牌手不会再受到伤害
-        if amount <= 0:
-            return  # 伤害值不大于 0：终止结算（不扣减生命、不触发受伤后时机）
-        remaining = amount
-        if p.shield > 0:
-            absorbed, remaining = self._absorb_with_shield(p.shield, remaining)
-            p.shield -= absorbed
-        if remaining <= 0:
-            return  # 护甲完全吸收：终止（不触发受伤后时机）
-        p.health -= remaining
-        self._log(f"{p.name} 受到 {amount} 点伤害（剩余生命 {p.health}）")
-        self.emit("on_player_damaged", player=player_index, amount=amount, source=source)
-        if p.health <= 0:
-            # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
-            self._set_pending_end(loser=player_index, defeat=True)
+    def _emit_damage_batch(self, name: str, ev: _DamageEvent) -> None:
+        """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。"""
+        self.emit(name, damage=ev, victim=ev.victim, source=ev.source,
+                  amount=ev.amount, kind=ev.kind)
 
-    def _hurt_shikigami(self, ref: Ref, amount: int, source: Ref | None) -> None:
-        """扣血并发出 on_damage，但不判定气绝（战斗同时结算用）。"""
-        s = self.state.players[ref.player].shikigami[ref.shikigami]
-        if amount <= 0:
+    def _damage_event_flow(self, ev: _DamageEvent, dq: deque[_DamageEvent],
+                           victims: list[tuple[Ref, Ref | None, str]]) -> None:
+        p = self.state.players[ev.victim.player]
+        s = p.shikigami[ev.victim.shikigami] if ev.victim.shikigami is not None else None
+        if ev.amount <= 0:
             return  # 伤害值不大于 0：终止结算
-        remaining = amount
-        if s.shield > 0:
-            absorbed, remaining = self._absorb_with_shield(s.shield, remaining)
-            s.shield -= absorbed
-        if remaining <= 0:
-            return  # 护甲完全吸收：终止（不触发 on_damage）
-        s.health -= remaining
-        name = self.db.shikigami[s.id].name
-        self._log(f"{name} 受到 {amount} 点伤害（剩余生命 {s.health}）")
-        self.emit("on_damage", victim=ref, amount=amount, source=source)
+        if s is not None and (s.defeated or s.despawned):
+            return
+        if s is None and p.defeated:
+            return  # 气绝的牌手不再受到伤害
+        # 批次 1：造成/受到伤害开始时（即时时机）
+        if not ev.skip_early:
+            self._emit_damage_batch("on_damage_start", ev)
+            if ev.amount <= 0 or (s is not None and s.defeated):
+                return
+            # 作用域战斗伤害免疫：仅免疫 combat/counter，且须命中授予时指定的作用域
+            if ev.kind in ("combat", "counter") and s is not None and self._combat_immune(s):
+                self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
+                return
+        skip_shield_calc = False
+        skip_before_health = False
+        # 批次 2：贯通修正（非反击战斗伤害、伤害原因具有贯通、受伤者是式神）
+        if ev.kind == "combat" and ev.piercing and s is not None:
+            skip_shield_calc = True
+            if s.shield > 0:
+                absorbed = min(s.shield, ev.amount)
+                s.shield -= absorbed
+                ev.amount -= absorbed
+                self.emit("on_shield_changed", target=ev.victim,
+                          old=s.shield + absorbed, new=s.shield, reason="贯通修正")
+            if ev.amount > s.health:
+                # 伤害值改为当前生命，溢出量以同来源同原因新事件加入本队列（从护甲计算前开始）
+                overflow = ev.amount - s.health
+                ev.amount = s.health
+                dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
+                                       amount=overflow, kind=ev.kind, skip_early=True))
+            # 提前结算"扣减生命前"批次，后续不再结算该批次
+            self._emit_damage_batch("on_before_health", ev)
+            skip_before_health = True
+            if ev.amount <= 0:
+                return
+        # 批次 3：护甲计算前（批次 3 = 关键字"屏障"）
+        self._emit_damage_batch("on_before_shield", ev)
+        if s is not None and ev.amount > 0 and "barrier" in s.one_shot_keywords:
+            ev.amount = 0
+            s.one_shot_keywords.remove("barrier")
+            self._log(f"{self.db.shikigami[s.id].name} 的屏障抵消了伤害")
+        if ev.amount <= 0:
+            return
+        # 批次 4：护甲计算（破甲 fragile 为独立流程，未引入，见 model.py 注释）
+        if not skip_shield_calc:
+            holder = s if s is not None else p
+            if holder.shield > 0:
+                absorbed = min(holder.shield, ev.amount)
+                holder.shield -= absorbed
+                ev.amount -= absorbed
+                self.emit("on_shield_changed", target=ev.victim,
+                          old=holder.shield + absorbed, new=holder.shield, reason="护甲计算")
+            if ev.amount <= 0:
+                return  # 护甲完全吸收：终止结算
+        # 批次 5：护甲计算后（伤害转移/改为非伤害能力锚点）
+        self._emit_damage_batch("on_after_shield", ev)
+        # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
+        if not skip_before_health:
+            self._emit_damage_batch("on_before_health", ev)
+        if ev.amount <= 0:
+            return
+        # 批次 7：合并——队列中 (来源, 受伤者, 原因) 均相同的伤害事件合并进最前者
+        for other in list(dq):
+            if other.source == ev.source and other.victim == ev.victim and other.kind == ev.kind:
+                ev.amount += other.amount
+                dq.remove(other)
+        # 批次 8：扣减生命
+        if s is not None:
+            # 不屈：生命 > 1 且伤害 >= 当前生命 → 保留 1 点生命，消耗全部一次性不屈
+            # （生命 = 1 时不触发；持续/永久不屈不移除，回血后可再次触发）
+            if ev.amount >= s.health > 1 and self._has_keyword(s, "unyielding"):
+                ev.amount = s.health - 1
+                s.one_shot_keywords[:] = [k for k in s.one_shot_keywords if k != "unyielding"]
+                self._log(f"{self.db.shikigami[s.id].name} 的【不屈】生效，保留 1 点生命")
+            s.health -= ev.amount
+            self._log(f"{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害（剩余生命 {s.health}）")
+            victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
+            self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source)
+        else:
+            p.health -= ev.amount
+            self._log(f"{p.name} 受到 {ev.amount} 点伤害（剩余生命 {p.health}）")
+            self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount, source=ev.source)
+            if p.health <= 0:
+                # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
+                self._set_pending_end(loser=ev.victim.player, defeat=True)
 
-    @staticmethod
-    def _absorb_with_shield(target_shield: int, amount: int) -> tuple[int, int]:
-        """护甲吸收：返回 (被吸收的伤害, 剩余伤害)。"""
-        absorbed = min(target_shield, amount)
-        return absorbed, amount - absorbed
+    def _combat_immune(self, s: ShikigamiState) -> bool:
+        """式神在当前战斗上下文中是否免疫战斗伤害（作用域由授予效果指定）。"""
+        if not self._battle_stack:
+            return False
+        current = self._battle_stack[-1]
+        for e in s.immunities:
+            if e.get("kind") != "combat_damage":
+                continue
+            if e.get("battle") == current or (e.get("nested") and e.get("battle") in self._battle_stack):
+                return True
+        return False
 
     def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:
         """生成并结算式神气绝事件（要素：来源、气绝者、原因）。
@@ -764,6 +1011,9 @@ class Game:
         s.shield = 0
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
         s.temp_health = 0
+        s.keywords.clear()  # 持续/一次性关键字与免疫条目气绝时清除；永久关键字保留（复活自动重新获得）
+        s.one_shot_keywords.clear()
+        s.immunities.clear()
         owner = self.state.players[ref.player]
         # 气绝流程包含消灭当前结附的形态牌（rules.md 第七章）
         if s.form is not None:

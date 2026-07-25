@@ -1,0 +1,8 @@
+id: 100123
+version: 20260724
+name: 妖刀姬
+faction: 苍叶
+power: 3
+health: 4
+# 能力所需机制（回合级卡牌修饰 turn_mods，见 docs/enhance-design.md）未落地，暂缺省
+text: 当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌具有[瞬发]
