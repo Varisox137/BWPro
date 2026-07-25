@@ -1,0 +1,14 @@
+id: 10010103
+version: 20260724
+name: 残心
+shikigami: 100101
+card_type: form
+rarity: SR
+level: 1
+cost: 1
+form_power: 3
+form_health: 5
+keywords: [remote, keep_attack_buffs]
+effects:
+  steps: []
+text: "[远程]。白狼的法术强化效果（'起弓''离''无我'）不会在攻击后移除"

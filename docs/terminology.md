@@ -45,6 +45,8 @@
 | 乏力 | `weak` | 战力的负向对应 | 🔧 |
 | 永久修正 | `perm_power` / `perm_health` | 气绝后复活保留 | ✅ |
 | 临时修正 | `temp_power` | 气绝时清除（临时/永久的区分 = 复活能否保留）；光环类 Phase 3 | ✅ |
+| 攻击后到期强化 | `attack_buffs` / `attack_buff`（动作） | 挂账式临时强化（临时力量 + 授予关键字）：自身作为攻击者的战斗终止点核销（rules.md:176"直到攻击后"）；气绝清空 | ✅ |
+| 护甲保留 | `keep_shield` | `ShikigamiState.keep_shield`：护甲不再于己方回合开始移除（觉醒·兵俑） | ✅ |
 
 ## 卡牌数据
 
@@ -55,7 +57,9 @@
 | 形态牌 | `form` | card_type | 🔧 Phase 3 |
 | 幻境牌 | `field` | card_type（预留） | 🔧 |
 | 协战牌 | `reinforce` | card_type（预留；暂不考虑） | 🔧 |
-| 觉醒牌 | tag `awaken` | **不是主类型**：任意 card_type + `tags` 含 awaken | ✅ |
+| 觉醒牌 | `subtype = "awaken"` | **不是主类型**：任意 card_type + subtype（rules.md:502）；打出后替换式神能力并发出 `on_awakened` | ✅ |
+| 觉醒（状态） | `awakened` | `ShikigamiState.awakened` = 觉醒牌 id；能力改读该牌 `abilities` 块；气绝/复活保留 | ✅ |
+| 觉醒能力 | `abilities` | `CardDef.abilities`：觉醒牌携带的能力块（替换式神基础能力） | ✅ |
 | 标签 | `tags` | 自由字符串标记（觉醒、式神专属标记等） | ✅ |
 | 稀有度 | `rarity` | R/SR/SSR（良/优/极；抽卡/账号系统预留） | 🔧 |
 | 卡包 | `cardpack` | 式神所属版本卡包，即 id 的 xxx 段（1xxxyy） | ✅ |
@@ -100,6 +104,7 @@
 | 远程 | `remote` | 不进入战斗区、不受先攻及交战阶段的反击伤害 | ✅ |
 | 连击 | `combo` | 先攻阶段与交战阶段各造成一次战斗伤害 | ✅ |
 | 暴击 | `critical` | | 🔧 |
+| （引擎级） | `keep_attack_buffs` | 攻击后到期强化不因攻击移除（残心；卡面不出现此关键字） | ✅ |
 
 **关键字持久性三类**（每类均为可重复多重集，存于 `ShikigamiState`）：
 

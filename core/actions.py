@@ -141,6 +141,37 @@ def emit_event(game, ctx, *, targets: list[Ref], event: str, payload: dict | Non
     game.emit(event, controller=ctx.controller, **(payload or {}))
 
 
+@action("attack_buff")
+def attack_buff(game, ctx, *, targets: list[Ref], power: int = 0,
+                keywords: list[str] | None = None) -> None:
+    """攻击后到期临时强化（起弓/离/无我）：立即生效并挂账 attack_buffs。
+
+    在目标式神自身作为攻击者的战斗终止点统一核销（rules.md:174"直到攻击后"）；
+    持有 keep_attack_buffs（残心）时跳过核销。气绝时随临时修正一并清空。
+    """
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        entry: dict = {"power": power, "keywords": []}
+        if power:
+            s.temp_power += power
+        for kw in keywords or []:
+            cls = game._grant_keyword(s, kw)
+            entry["keywords"].append((kw, cls))
+        s.attack_buffs.append(entry)
+        game._log(f"{game.db.shikigami[s.id].name} 获得强化（直到其下一次攻击后）")
+
+
+@action("keep_shield")
+def keep_shield(game, ctx, *, targets: list[Ref]) -> None:
+    """目标式神的护甲不再于己方回合开始阶段移除（觉醒·兵俑）。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        game.state.players[ref.player].shikigami[ref.shikigami].keep_shield = True
+
+
 @action("battle_immunity")
 def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> None:
     """作用域战斗伤害免疫：免疫 kind ∈ (combat, counter) 的伤害（法术/能力等 effect 伤害不免疫）。

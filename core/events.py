@@ -18,8 +18,8 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_card_played",       # 卡牌使用后 {player, uid}
     "on_before_assault",    # 出击宣言后、伤害结算前 {attacker: Ref, victim: Ref}
     "on_after_assault",     # 出击结算完毕 {attacker: Ref}
-    "on_damage",            # 式神受到伤害后 {victim: Ref, amount, source}
-    "on_player_damaged",    # 牌手受到伤害后 {player, amount, source}
+    "on_damage",            # 式神受到伤害后 {victim: Ref, amount, source, kind}
+    "on_player_damaged",    # 牌手受到伤害后 {player, amount, source, kind}
     "on_shikigami_defeated",  # 式神气绝（气绝后/消灭后，延时时机）{victim: Ref, source, reason}
     "on_shikigami_revived",  # 式神复活（复活后，延时时机）{shikigami: Ref, source, reason}
     "on_draw",              # 抽牌后 {player, count}
@@ -36,6 +36,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_before_shield",     # 护甲计算前 {damage, victim, source, amount, kind}（批次3=屏障，引擎内建）
     "on_after_shield",      # 护甲计算后 {damage, victim, source, amount, kind}
     "on_before_health",     # 扣减生命前 {damage, victim, source, amount, kind}（此后伤害值锁定）
+    "on_awakened",          # 式神觉醒（能力替换为觉醒能力）{player, shikigami, uid}
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）

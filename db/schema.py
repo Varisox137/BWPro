@@ -30,6 +30,7 @@ KEYWORDS = frozenset({
     "remote",                   # 远程
     "unyielding", "haste",      # 不屈 / 迅捷
     "barrier",                  # 屏障
+    "keep_attack_buffs",        # 引擎级：攻击后到期强化不因攻击移除（残心；卡面不出现）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
@@ -130,6 +131,7 @@ class CardDef(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     target: TargetSpec = Field(default_factory=TargetSpec)
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段
+    abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）
     methods: list[PlayMethod] = Field(default_factory=list)  # 使用方式（多择子选项）
     text: str = ""
 

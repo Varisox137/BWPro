@@ -83,6 +83,9 @@ class ShikigamiState(BaseModel):
     despawned: bool = False  # 召唤物离场标记（不进复活流程；保留坑位稳定下标）
     revive_countdown: int = 0
     form: CardInstance | None = None  # 当前结附的形态牌（card_type=form）
+    attack_buffs: list[dict[str, Any]] = Field(default_factory=list)  # 攻击后到期强化挂账：{"power": int, "keywords": [(kw, cls)]}；自身作为攻击者的战斗终止点核销（keep_attack_buffs 跳过）；气绝清空
+    awakened: int | None = None  # 已觉醒：觉醒牌数据 id（能力替换为觉醒能力；气绝/复活保留）
+    keep_shield: bool = False  # 护甲不在己方回合开始阶段移除（觉醒·兵俑）
 
     @property
     def eff_power(self) -> int:

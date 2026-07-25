@@ -5,7 +5,8 @@
 - 卡牌：2位id 稀有度 名称 等级 类型 [数值] [关键字]
 
 约定：
-- 已落地的机制在此同步（供 CLI 热座试玩）：文射/妖刀万华的[连击]、兵俑的基础能力；
+- 已落地的机制在此同步（供 CLI 热座试玩）：白狼/兵俑的基础能力、文射/妖刀万华的[连击]、
+  起弓/离/无我（攻击后到期强化）、残心、觉醒·白狼/觉醒·兵俑；
   正式数据以 db/cards、db/shikigami 的 YAML 为准，本文件与其保持一致的部分逐步移交。
 - 未落地的机制仅以数值/瞬发/cost=0 占位：战斗牌简化为力量/护甲修正，
   形态牌按给定数值覆盖基础身材，觉醒牌为永久修正 + awaken tag。
@@ -61,6 +62,13 @@ def make_test_db() -> CardDatabase:
         for sid, name, faction, atk, hp in TEST_SHIKIGAMI
     }
     # 已落地的式神能力（与 db/shikigami YAML 一致）
+    shikigami[100101].ability = EffectBlock(
+        when="on_damage", timing="insert",
+        condition={"source_shikigami": "self", "victim_side": "enemy",
+                   "victim_kind": "shikigami", "kind": "combat", "active": "self"},
+        steps=[Step(op="damage", amount=2, target=TargetSpec(kind="all", pool="enemy_player"))],
+    )
+    shikigami[100101].text = "己方回合，每当白狼对敌方式神造成战斗伤害时（即时时机），对敌方牌手造成2点伤害"
     shikigami[100102].ability = EffectBlock(
         when="on_turn_start",
         condition={"player": "self"},
@@ -94,16 +102,39 @@ def make_test_db() -> CardDatabase:
         )
 
     # 100101 白狼
-    add(100101, 1, "R", "起弓", 1, "spell", keywords=["fast"], text="瞬发")
+    add(100101, 1, "R", "起弓", 1, "spell", keywords=["fast"],
+        text="[瞬发]。抽一张牌，白狼获得+1力量以及[穿刺]，直到白狼的下一次攻击后")
+    cards[10010101].effects = EffectBlock(steps=[
+        Step(op="draw", count=1, target=TargetSpec(kind="all", pool="self_player")),
+        Step(op="attack_buff", power=1, keywords=["pierce"], target=_self_target()),
+    ])
     add(100101, 2, "R", "文射", 1, "combat", keywords=["combo"], power=-2, shield=2,
         text="-2力量/+2护甲，[连击]")
-    add(100101, 3, "SR", "残心", 1, "form", form_power=3, form_health=5, text="3力量/5生命")
-    add(100101, 4, "R", "离", 2, "spell", keywords=["fast"], text="瞬发")
+    add(100101, 3, "SR", "残心", 1, "form", form_power=3, form_health=5,
+        keywords=["remote", "keep_attack_buffs"],
+        text="[远程]。白狼的法术强化效果不会在攻击后移除")
+    add(100101, 4, "R", "离", 2, "spell", keywords=["fast"],
+        text="[瞬发]。白狼获得+3力量，直到白狼的下一次攻击后")
+    cards[10010104].effects = EffectBlock(steps=[
+        Step(op="attack_buff", power=3, target=_self_target()),
+    ])
     add(100101, 5, "R", "会", 2, "spell", text="")
     add(100101, 6, "SR", "援护", 2, "spell", text="")
     add(100101, 7, "SR", "觉醒·白狼", 3, "spell",
-        perm_power=2, perm_health=2, text="觉醒：+2永久力量/+2永久生命上限")
-    add(100101, 8, "SSR", "无我", 3, "spell", keywords=["fast"], text="瞬发")
+        perm_power=2, perm_health=2,
+        text="[觉醒]：{己方回合，每当白狼对敌方式神造成伤害时，对敌方牌手造成4点伤害}")
+    cards[10010107].abilities = [EffectBlock(
+        when="on_damage", timing="insert",
+        condition={"source_shikigami": "self", "victim_side": "enemy",
+                   "victim_kind": "shikigami", "active": "self"},
+        steps=[Step(op="damage", amount=4, target=TargetSpec(kind="all", pool="enemy_player"))],
+    )]
+    add(100101, 8, "SSR", "无我", 3, "spell", keywords=["fast"],
+        text="[瞬发]。白狼获得+3力量、[不屈]、[贯通]、[迅捷]，直到白狼的下一次攻击后")
+    cards[10010108].effects = EffectBlock(steps=[
+        Step(op="attack_buff", power=3, keywords=["unyielding", "piercing", "haste"],
+             target=_self_target()),
+    ])
 
     # 100102 兵俑
     add(100102, 1, "R", "尘刀", 1, "combat", text="")
@@ -111,8 +142,18 @@ def make_test_db() -> CardDatabase:
     add(100102, 3, "R", "不动如山", 2, "form", form_power=1, form_health=9, text="1力量/9生命")
     add(100102, 4, "SR", "冲撞", 2, "combat", power=2, shield=2, text="+2力量/+2护甲")
     add(100102, 5, "SR", "森罗之阵", 2, "form", form_power=4, form_health=7, text="4力量/7生命")
-    add(100102, 6, "SSR", "觉醒·兵俑", 2, "spell",
-        perm_power=0, perm_health=0, text="觉醒")
+    add(100102, 6, "SSR", "觉醒·兵俑", 2, "spell", subtype="awaken",
+        text="兵俑获得3护甲。[觉醒]：{己方回合开始时，兵俑获得3护甲。"
+             "他的护甲不会在己方回合开始时移除。}")
+    cards[10010206].effects = EffectBlock(steps=[
+        Step(op="gain_shield", amount=3, target=_self_target()),
+        Step(op="keep_shield", target=_self_target()),
+    ])
+    cards[10010206].abilities = [EffectBlock(
+        when="on_turn_start",
+        condition={"player": "self"},
+        steps=[Step(op="gain_shield", amount=3, target=_self_target())],
+    )]
     add(100102, 7, "SR", "古尘之壁", 3, "form", form_power=5, form_health=10, text="5力量/10生命")
     add(100102, 8, "R", "尘缚之阵", 3, "form", form_power=5, form_health=9, text="5力量/9生命")
 

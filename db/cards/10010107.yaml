@@ -1,0 +1,20 @@
+id: 10010107
+version: 20260724
+name: 觉醒·白狼
+shikigami: 100101
+card_type: spell
+subtype: awaken
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 2, perm: true, target: {kind: self}}
+    - {op: buff_health, amount: 2, perm: true, target: {kind: self}}
+abilities:
+  - when: on_damage
+    timing: insert
+    condition: {source_shikigami: self, victim_side: enemy, victim_kind: shikigami, active: self}
+    steps:
+      - {op: damage, amount: 4, target: {kind: all, pool: enemy_player}}
+text: "[觉醒]：{己方回合，每当白狼对敌方式神造成伤害时，对敌方牌手造成4点伤害}"

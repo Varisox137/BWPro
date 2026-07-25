@@ -361,6 +361,11 @@ class Game:
             )
             block = method.effects if (method and method.effects is not None) else cdef.effects
             self._resolve_block(block, ctx)
+            # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活保留觉醒状态）
+            if cdef.subtype == "awaken" and si is not None:
+                p.shikigami[si].awakened = cdef.id
+                self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
+                self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid)
         self.emit("on_card_played", player=self.state.active, uid=uid)
 
     def _combat_card_stats(self, block: EffectBlock) -> tuple[int, int]:
@@ -486,6 +491,13 @@ class Game:
                 for st in pl.shikigami:
                     st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
             self._battle_stack.pop()
+            # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
+            if attacker.attack_buffs and not self._has_keyword(attacker, "keep_attack_buffs"):
+                for entry in attacker.attack_buffs:
+                    attacker.temp_power -= entry.get("power", 0)
+                    for kw, cls in entry.get("keywords", []):
+                        self._remove_keyword(attacker, kw, cls)
+                attacker.attack_buffs.clear()
 
     def _battle_flow(self, atk_ref: Ref, attacker: ShikigamiState, *, move: bool) -> None:
         """战斗步骤：战斗准备前 → 战斗准备（移动）→（被）攻击时 → 先攻阶段 → 交战阶段 → 战斗后。
@@ -776,10 +788,11 @@ class Game:
         self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
 
     def _turn_start_clear_shield(self, p: PlayerState) -> None:
-        """回合开始阶段 step 2：移除己方所有角色护甲/破甲（Phase 1 仅清护甲）。"""
+        """回合开始阶段 step 2：移除己方所有角色护甲/破甲（破甲 Phase 3；keep_shield 保留）。"""
         p.shield = 0
         for s in p.shikigami:
-            s.shield = 0
+            if not s.keep_shield:
+                s.shield = 0
 
     def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
@@ -976,11 +989,12 @@ class Game:
             s.health -= ev.amount
             self._log(f"{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害（剩余生命 {s.health}）")
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
-            self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source)
+            self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source, kind=ev.kind)
         else:
             p.health -= ev.amount
             self._log(f"{p.name} 受到 {ev.amount} 点伤害（剩余生命 {p.health}）")
-            self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount, source=ev.source)
+            self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
+                      source=ev.source, kind=ev.kind)
             if p.health <= 0:
                 # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
                 self._set_pending_end(loser=ev.victim.player, defeat=True)
@@ -1014,6 +1028,7 @@ class Game:
         s.keywords.clear()  # 持续/一次性关键字与免疫条目气绝时清除；永久关键字保留（复活自动重新获得）
         s.one_shot_keywords.clear()
         s.immunities.clear()
+        s.attack_buffs.clear()  # 攻击后到期强化挂账随临时修正一并清空（keep_shield/awakened 保留）
         owner = self.state.players[ref.player]
         # 气绝流程包含消灭当前结附的形态牌（rules.md 第七章）
         if s.form is not None:
@@ -1106,20 +1121,25 @@ class Game:
         return out
 
     def _collect_abilities(self, event: dict, pi: int) -> list[_Pending]:
-        """收集玩家 pi 的式神被动能力。"""
+        """收集玩家 pi 的式神被动能力（已觉醒的式神改读觉醒牌的觉醒能力块）。"""
         out: list[_Pending] = []
         p = self.state.players[pi]
         for si, s in enumerate(p.shikigami):
-            ability = self.db.shikigami[s.id].ability
-            if ability is None or ability.when != event["name"]:
-                continue
-            if not s.in_play:
-                # 0 级未在场能力不触发；个别能力标记为未升级也可触发（书翁/三尾狐类）
-                if s.defeated or s.despawned or not ability.trigger_when_not_in_play:
+            if s.awakened is not None:
+                blocks = self.db.cards[s.awakened].abilities
+            else:
+                base = self.db.shikigami[s.id].ability
+                blocks = [base] if base is not None else []
+            for ability in blocks:
+                if ability.when != event["name"]:
                     continue
-            if self._match(ability.condition, event, pi):
-                out.append(_Pending(ability, ExecContext(
-                    controller=pi, source=Ref(player=pi, shikigami=si), event=event)))
+                if not s.in_play:
+                    # 0 级未在场能力不触发；个别能力标记为未升级也可触发（书翁/三尾狐类）
+                    if s.defeated or s.despawned or not ability.trigger_when_not_in_play:
+                        continue
+                if self._match(ability.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
+                    out.append(_Pending(ability, ExecContext(
+                        controller=pi, source=Ref(player=pi, shikigami=si), event=event)))
         return out
 
     def _collect_responses(self, event: dict, pi: int) -> list[_Pending]:
@@ -1164,18 +1184,23 @@ class Game:
                 card=card, event=event, triggered=True)))
         return out
 
-    @staticmethod
-    def _match(condition: dict | None, event: dict, controller: int) -> bool:
+    def _match(self, condition: dict | None, event: dict, controller: int,
+               holder: Ref | None = None) -> bool:
         """条件迷你语言（扩展点，后续按需加操作符）：
         - {字段: self|opponent}    ：标量玩家下标与 controller 比较
         - {字段_side: friendly|enemy|any} ：事件中的 Ref 相对 controller 的归属
         - {字段_kind: shikigami|player}   ：Ref 指向式神还是牌手
+        - {字段_shikigami: self}   ：事件中的 Ref 与能力持有者（holder）同式神
+        - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
         - 其余按键值相等比较
         """
         if not condition:
             return True
         for key, want in condition.items():
-            if key.endswith("_side"):
+            if key == "active":
+                if (want == "self") != (self.state.active == controller):
+                    return False
+            elif key.endswith("_side"):
                 ref = event.get(key[:-5])
                 if not isinstance(ref, Ref):
                     return False
@@ -1188,6 +1213,13 @@ class Game:
                     return False
                 kind = "shikigami" if ref.shikigami is not None else "player"
                 if kind != want:
+                    return False
+            elif key.endswith("_shikigami"):
+                ref = event.get(key[:-10])
+                if (not isinstance(ref, Ref) or holder is None
+                        or holder.shikigami is None or ref.shikigami is None):
+                    return False
+                if ref.player != holder.player or ref.shikigami != holder.shikigami:
                     return False
             elif want == "self":
                 if event.get(key) != controller:
