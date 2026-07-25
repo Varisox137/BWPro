@@ -1,15 +1,14 @@
-"""维护者给出的 Phase 1 初期测试数据。
+"""维护者给出的初期测试数据（4 式神 × 8 卡，数据源 thoughts.txt）。
 
 数据格式（来自 thoughts.txt）：
 - 式神：6位id 名称 派系 基础力量/基础生命
 - 卡牌：2位id 稀有度 名称 等级 类型 [数值] [关键字]
 
-Phase 1 测试约定：
-- 式神无能力。
-- 卡牌仅含数值修正、【瞬发】关键字、cost=0 表示【不消耗鬼火】。
-- 战斗牌简化为给使用者临时力量/护甲修正，不展开完整战斗流程。
-- 形态牌按给定数值覆盖基础身材。
-- 觉醒牌按给定数值施加永久力量/生命修正，并标记 awaken tag。
+约定：
+- 已落地的机制在此同步（供 CLI 热座试玩）：文射/妖刀万华的[连击]、兵俑的基础能力；
+  正式数据以 db/cards、db/shikigami 的 YAML 为准，本文件与其保持一致的部分逐步移交。
+- 未落地的机制仅以数值/瞬发/cost=0 占位：战斗牌简化为力量/护甲修正，
+  形态牌按给定数值覆盖基础身材，觉醒牌为永久修正 + awaken tag。
 """
 from __future__ import annotations
 
@@ -61,6 +60,13 @@ def make_test_db() -> CardDatabase:
                           power=atk, health=hp, text="")
         for sid, name, faction, atk, hp in TEST_SHIKIGAMI
     }
+    # 已落地的式神能力（与 db/shikigami YAML 一致）
+    shikigami[100102].ability = EffectBlock(
+        when="on_turn_start",
+        condition={"player": "self"},
+        steps=[Step(op="gain_shield", amount=2, target=_self_target())],
+    )
+    shikigami[100102].text = "己方回合开始时，兵俑获得2护甲"
     cards: dict[int, CardDef] = {}
 
     def add(sid: int, no: int, rarity: str, name: str, level: int, ctype: str,
@@ -89,7 +95,8 @@ def make_test_db() -> CardDatabase:
 
     # 100101 白狼
     add(100101, 1, "R", "起弓", 1, "spell", keywords=["fast"], text="瞬发")
-    add(100101, 2, "R", "文射", 1, "combat", power=-2, shield=2, text="-2力量/+2护甲")
+    add(100101, 2, "R", "文射", 1, "combat", keywords=["combo"], power=-2, shield=2,
+        text="-2力量/+2护甲，[连击]")
     add(100101, 3, "SR", "残心", 1, "form", form_power=3, form_health=5, text="3力量/5生命")
     add(100101, 4, "R", "离", 2, "spell", keywords=["fast"], text="瞬发")
     add(100101, 5, "R", "会", 2, "spell", text="")
@@ -115,7 +122,8 @@ def make_test_db() -> CardDatabase:
     add(100123, 3, "R", "战意", 2, "combat", power=2, shield=2, text="+2力量/+2护甲")
     add(100123, 4, "R", "一闪", 2, "combat", cost=0, power=0, shield=0, text="+0力量/+0护甲，不消耗鬼火")
     add(100123, 5, "SR", "禁锢之刀", 2, "combat", power=0, shield=2, text="+0力量/+2护甲")
-    add(100123, 6, "R", "妖刀万华", 3, "form", form_power=3, form_health=8, text="3力量/8生命")
+    add(100123, 6, "R", "妖刀万华", 3, "form", keywords=["combo"],
+        form_power=3, form_health=8, text="3力量/8生命，[连击]")
     add(100123, 7, "SR", "杀念", 3, "spell", text="")
     add(100123, 8, "SSR", "觉醒·妖刀姬", 3, "spell",
         perm_power=1, perm_health=1, text="觉醒：+1永久力量/+1永久生命上限")

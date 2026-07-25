@@ -122,33 +122,32 @@ def cmd_play_card(game, ctx, *, player: int, uid: int, target: dict | None = Non
 
 @debug_command("assault")
 def cmd_assault(game, ctx, *, player: int, index: int) -> None:
-    """强制模拟一次出击：跳过鬼火、出击次数、0 级等检查。
-
-    直接把攻击者移入战斗区并按（反击，攻击）顺序造成战斗伤害。
-    """
+    """强制模拟一次出击：跳过鬼火、出击次数、0 级等检查，走完整战斗流程。"""
     if not (0 <= player < len(game.state.players)):
         raise ValueError(f"玩家下标越界: {player}")
     p = game.state.players[player]
     if not (0 <= index < len(p.shikigami)):
         raise ValueError(f"式神下标越界: {index}")
     s = p.shikigami[index]
-    game._enter_combat(p, index)
-    atk_ref = Ref(player=player, shikigami=index)
-    defender_idx = 1 - player
-    d = game.state.players[defender_idx]
     game._log(f"[调试] {p.name} 强制让 {game.db.shikigami[s.id].name} 出击")
-    vic_idx = d.combat_index
-    if vic_idx is None:
-        game.deal_to_player(defender_idx, s.eff_power, atk_ref)
+    game._resolve_combat(Ref(player=player, shikigami=index), s)
+
+
+@debug_command("grant_keyword")
+def cmd_grant_keyword(game, ctx, *, target: dict, keyword: str,
+                      cls: str | None = None, remove: bool = False) -> None:
+    """授予/移除式神一个关键字实例（cls: one_shot/continuous/perm，缺省按天然类别）。"""
+    ref = Ref(**target)
+    if ref.shikigami is None:
+        raise ValueError("grant_keyword 的目标必须是式神")
+    s = game.state.players[ref.player].shikigami[ref.shikigami]
+    name = game.db.shikigami[s.id].name
+    if remove:
+        game._remove_keyword(s, keyword, cls)
+        game._log(f"[调试] 移除了 {name} 的关键字 {keyword}")
     else:
-        vic_ref = Ref(player=defender_idx, shikigami=vic_idx)
-        vic_s = d.shikigami[vic_idx]
-        a_eff, d_eff = s.eff_power, vic_s.eff_power
-        game._hurt_shikigami(atk_ref, d_eff, vic_ref)
-        game._hurt_shikigami(vic_ref, a_eff, atk_ref)
-        game.check_defeated(atk_ref, source=vic_ref, reason="战斗")
-        game.check_defeated(vic_ref, source=atk_ref, reason="战斗")
-    game.emit("on_after_assault", attacker=atk_ref)
+        actual = game._grant_keyword(s, keyword, cls)
+        game._log(f"[调试] 给 {name} 授予了关键字 {keyword}（{actual}）")
 
 
 @debug_command("move")

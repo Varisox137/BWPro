@@ -4,7 +4,8 @@
 非回合方没有任何输入机会——响应牌由引擎自动结算（规则：敌方回合零选择、响应必发）。
 
 运行：uv run python -m client.cli
-当前真实卡牌数据为空（见 thoughts.txt），自动使用 db/dummy.py 的空白占位数据。
+热座数据为 db/test_data.py（4 式神 × 8 卡；已落地机制与 db/cards、db/shikigami 的
+正式 YAML 保持同步，如文射/妖刀万华的[连击]、兵俑的基础能力）。
 """
 from __future__ import annotations
 
@@ -43,6 +44,8 @@ COMMAND_ALIASES = {
 DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
   give_card <player> <card_id> [zone=hand] [count=1]   生成卡牌到区域
   set_stat <target> <key> <value>                      直接修改实体属性
+  grant <target> <keyword> [cls]                       授予式神关键字（cls: one_shot/continuous/perm，缺省按天然类别）
+  ungrant <target> <keyword>                           移除一个关键字实例
   play_card <player> <uid> [target] [method]           强制使用牌
   assault <player> <index>                             强制出击
   draw <player> [count=1]                              强制抽牌
@@ -50,6 +53,7 @@ DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
 
   key 示例：health, orb, shield, level, defeated, despawned
   value 为 bool 时：true/false
+  keyword 示例：combo, initiative, piercing, pierce, remote, unyielding, haste, barrier
 """
 
 
@@ -126,6 +130,9 @@ def render(game: Game) -> str:
                     mods.append(f"临+{s.temp_power}")
                 if s.shield:
                     mods.append(f"护甲{s.shield}")
+                kws = s.keywords + s.one_shot_keywords + s.perm_keywords
+                if kws:
+                    mods.append(f"[{'/'.join(kws)}]")
                 extra = f" ({' '.join(mods)})" if mods else ""
                 status = f"攻{s.eff_power} 血{s.health}/{s.max_health}{extra} {zone}"
             rows.append((i, name, kind, s.level, s.faction, status))
@@ -285,6 +292,17 @@ def run_debug(game: Game, args: list[str]) -> dict:
             "op": "debug_assault",
             "args": {"player": int(rest[0]), "index": int(rest[1])},
         }
+    if sub in ("grant", "ungrant"):
+        need(2)
+        args_out: dict = {
+            "target": parse_ref(rest[0], game.state.active).model_dump(),
+            "keyword": rest[1],
+        }
+        if sub == "grant" and len(rest) > 2:
+            args_out["cls"] = rest[2]
+        if sub == "ungrant":
+            args_out["remove"] = True
+        return {"op": "debug_grant_keyword", "args": args_out}
     if sub == "draw":
         need(1)
         return {

@@ -42,7 +42,7 @@ def test_combat_card_buffs_power_and_shield():
     """战斗牌：按完整战斗事件流程结算；战力战斗后清除，护甲保留。"""
     g = _make_game()
     a, b = g.state.players
-    # 文射：10010102，1 费，-2 力量 / +2 护甲
+    # 文射：10010102，1 费，-2 力量 / +2 护甲，[连击]
     card = _give(g, 0, 10010102)
     a.orb = 1
     s = a.shikigami[0]
@@ -51,7 +51,7 @@ def test_combat_card_buffs_power_and_shield():
     assert s.combat_power == 0                      # 战力战斗后清除
     assert s.shield == 2                            # 战斗牌给予的护甲保留
     assert card in a.graveyard
-    assert b.shield == 4                            # 3 - 2 = 1 战力打脸，后手 5 甲剩 4
+    assert b.shield == 3                            # 连击两击：3 - 2 = 1 战力 × 2 打脸，后手 5 甲剩 3
     assert b.health == 30
 
 
