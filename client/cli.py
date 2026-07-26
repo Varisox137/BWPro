@@ -255,8 +255,16 @@ def render(game: Game) -> str:
         lines.append("")
     p = st.players[st.active]
     lines.append(f"{p.name} 手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）：")
-    hand = _hand_sorted(game, p)
-    # 新格式：[1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [keywords] {description}
+    lines.extend(_format_hand_lines(game, p, _hand_sorted(game, p)))
+    lines.append("")
+    if st.winner is not None:
+        lines.append(f"***** {st.players[st.winner].name} 获胜！*****")
+    return "\n".join(lines)
+
+
+def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
+    """手牌逐行格式（render 与调度阶段共用）：
+    [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] {描述}"""
     CTYPE_NAMES = {"spell": "法术", "combat": "战斗", "form": "形态",
                    "field": "幻境", "reinforce": "协战"}
 
@@ -289,6 +297,7 @@ def render(game: Game) -> str:
     level_w = max((_display_width(f"等级{game.db.cards[c.id].level}") for c in hand), default=0)
     cost_w = max((_display_width(_cost_label(c)) for c in hand), default=0)
     data_w = max((_display_width(_data_label(c)) for c in hand), default=0)
+    out = []
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
         text = f"{{{cd.text}}}" if cd.text else ""
@@ -302,11 +311,8 @@ def render(game: Game) -> str:
             f"{_pad(_data_label(c), data_w)} "
             f"{text}"
         )
-        lines.append(line)
-    lines.append("")
-    if st.winner is not None:
-        lines.append(f"***** {st.players[st.winner].name} 获胜！*****")
-    return "\n".join(lines)
+        out.append(line)
+    return out
 
 
 def run_mulligan(game: Game) -> None:
@@ -322,12 +328,11 @@ def run_mulligan(game: Game) -> None:
             for i, s in enumerate(p.shikigami))
         print(f"{p.name}（{'先手' if pi == 0 else '后手'}）座位：{seats}")
         while not p.mulligan_done:
-            hand = "  ".join(
-                f"[{i + 1}]" + _colored(f"【{game.db.cards[c.id].name}】",
-                                        _card_color(game, p, c))
-                for i, c in enumerate(p.hand))
             print("")
-            print(f"{p.name} 手牌：{hand}")
+            print(f"{p.name} 手牌{len(p.hand)}：")
+            # 与回合内手牌同一格式；顺序保持手牌实际顺序（调度替换逻辑），不按式神/cid 排序
+            for line in _format_hand_lines(game, p, p.hand):
+                print(line)
             print("")
             try:
                 line = input(f"[{p.name}] 调度（剩 {p.mulligans_left} 次）> ").strip().lower()

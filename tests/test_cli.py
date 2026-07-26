@@ -69,6 +69,22 @@ def test_mulligan_shows_first_second_and_seats(db, make_game, monkeypatch, capsy
     assert "1.式神100101" in out and "4.式神100104" in out
 
 
+def test_mulligan_hand_uses_battle_format(db, make_game, monkeypatch, capsys):
+    """调度阶段手牌与回合内同一逐行格式（含 uid/类型/等级/费用），
+    但顺序保持手牌实际顺序（不调 _hand_sorted）。"""
+    def no_input(prompt=""):
+        raise EOFError
+    monkeypatch.setattr("builtins.input", no_input)
+    g = make_game(mulligan=True)
+    cli.run_mulligan(g)
+    out = capsys.readouterr().out
+    assert re.search(r"\[1\] 【卡\d+】 #\d+ 法术 等级\d 费用\d", out)
+    # 序号与 p.hand 实际顺序一一对应（调度输入按此序号索引）
+    first = g.state.players[0].hand[0] if g.state.players[0].hand else None
+    assert first is None or f"【{g.db.cards[first.id].name}】" in out.splitlines()[
+        next(i for i, l in enumerate(out.splitlines()) if "A 手牌" in l) + 1]
+
+
 def test_color_does_not_break_alignment(db, make_game, monkeypatch):
     """颜色不影响排版：开色输出剥离 ANSI 后与关色输出逐行相等。"""
     g = make_game()
