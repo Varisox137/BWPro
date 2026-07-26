@@ -855,7 +855,7 @@ class Game:
         4-5. 鬼火重置为 0 再获得；emit on_orb_changed。
         6. 登记战斗区非召唤物式神延时移回。
         7. 触发 on_turn_start（延时时机）。
-        8-9. （Phase 3+ 预留）非灵咒/灵咒倒计时 -1。
+        8-9. 非灵咒倒计时 -1（锚点版已实现：形态倒计时，归零重置并触发）；灵咒倒计时随灵咒机制引入。
         10. 重置出击次数与瞬发名额；emit on_assaults_changed（若有能力监听）。
         11-12. （Phase 3+ 预留）直到回合结束时效果 / 敌方回合外效果。
         13. 执行延时战斗区移回与回合开始时效果（_drain_queue）。
@@ -1146,6 +1146,11 @@ class Game:
         s = self.state.players[ref.player].shikigami[ref.shikigami]
         if s.defeated or s.health > 0:
             return
+        owner = self.state.players[ref.player]
+        # 气绝流程 step 3（rules.md 第七章）：先消灭形态牌——此时能力尚未离场（step 6），
+        # 一目连类"形态离场时触发"能力仍会收集（先触发后执行，结算时不再复查持有者状态）
+        if s.form is not None:
+            self._destroy_form(owner, ref.shikigami, reason="defeat")
         s.defeated = True
         s.shield = 0
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
@@ -1154,10 +1159,6 @@ class Game:
         s.one_shot_keywords.clear()
         s.immunities.clear()
         s.attack_buffs.clear()  # 攻击后到期强化挂账随临时修正一并清空（keep_shield/awakened 保留）
-        owner = self.state.players[ref.player]
-        # 气绝流程包含消灭当前结附的形态牌（rules.md 第七章）
-        if s.form is not None:
-            self._destroy_form(owner, ref.shikigami, reason="defeat")
         s.health = 0
         name = self.db.shikigami[s.id].name
         if s.kind == "summon":

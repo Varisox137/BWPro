@@ -114,6 +114,8 @@ def render(game: Game) -> str:
                 continue
             sd = game.db.shikigami[s.id]
             name = sd.name
+            if s.awakened is not None:
+                name = f"觉醒·{name}"
             if s.form is not None:
                 name = f"{name}[{game.db.cards[s.form.id].name}]"
             kind = "·召唤物" if s.kind == "summon" else ""
@@ -128,6 +130,10 @@ def render(game: Game) -> str:
                     mods.append(f"永{s.perm_power:+d}")
                 if s.temp_power:
                     mods.append(f"临+{s.temp_power}")
+                if s.perm_health:
+                    mods.append(f"永血{s.perm_health:+d}")
+                if s.temp_health:
+                    mods.append(f"临血{s.temp_health:+d}")
                 if s.shield:
                     mods.append(f"护甲{s.shield}")
                 kws = s.keywords + s.one_shot_keywords + s.perm_keywords

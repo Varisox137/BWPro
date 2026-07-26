@@ -182,19 +182,20 @@ def test_replace_form_triggers_countdown(db, make_game):
     assert b.health == 1         # 破离场时投射 3
 
 
-def test_defeat_clears_countdown_no_trigger(db, make_game):
-    """一目连气绝：形态随之消灭并清除倒计时；持有者已气绝，离场不触发能力。"""
+def test_defeat_form_destruction_still_triggers(db, make_game):
+    """一目连气绝：形态随之消灭并清除倒计时；消灭形态早于能力离场（rules.md ch7 step 3/6），
+    倒计时效果仍触发。"""
     _po(db)
     g, pa, s = _setup(db, make_game, level=1)
-    pl = g.state.players[1]
-    pl.shield = 0
+    b = g.state.players[1].shikigami[0]
     _play(g, 0, PO)
+    _move(g, 1, 0)               # 敌方战斗区驻留（A 回合内不移除）
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     g._drain_queue()  # 直调伤害管线后手动排空（on_form_destroyed/on_shikigami_defeated 为延时时机）
     assert s.defeated
     assert s.form is None
     assert s.countdown is None
-    assert pl.health == 30       # 无投射：能力随持有者气绝不触发
+    assert b.health == 1         # 形态被气绝消灭仍触发投射 3
 
 
 # ---------- 湮 / 龙 / 瞬 ----------
