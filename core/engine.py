@@ -27,16 +27,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from core import actions, debug, targets
-from core.events import EVENT_TIMING
+from core.events import CORE_EVENTS, EVENT_TIMING
 from core.model import (
     CardInstance,
+    ExecContext,
     GameState,
     PlayerState,
     Ref,
     ShikigamiState,
     TempGrant,
 )
-from db.schema import EffectBlock, PlayMethod, Step
+from db.schema import CardDef, EffectBlock, PlayMethod, Step
 
 
 class IllegalAction(Exception):
@@ -65,17 +66,6 @@ class _DamageEvent:
     kind: str = "effect"
     piercing: bool = False
     skip_early: bool = False
-
-
-@dataclass
-class ExecContext:
-    controller: int  # 效果归属玩家
-    source: Ref | None = None  # 来源式神（中立牌无来源，为 None）
-    card: CardInstance | None = None  # 来源卡牌实例
-    event: dict[str, Any] | None = None  # 触发来源事件 payload
-    chosen: list[Ref] | None = None  # 玩家选择的目标
-    triggered: bool = False  # 是否为响应牌触发（结算时支付鬼火并消耗手牌）
-    card_id: int | None = None  # 游离触发器的来源卡 id（add_mod 写入目标定位用）
 
 
 @dataclass
@@ -176,6 +166,12 @@ class Game:
     def _cost_zero_aura(self, p: PlayerState, cdef: CardDef) -> bool:
         """是否有命中光环使该牌不消耗鬼火。"""
         return any(a.get("cost_zero") for a in self._match_auras(p, cdef))
+
+    def _fast_applies(self, p: PlayerState, cdef: CardDef,
+                      card: CardInstance | None = None) -> bool:
+        """该牌本次使用是否占用瞬发名额：具有瞬发（含光环/修饰授予）且未命中 cost_zero 光环
+        （光环免费不占用瞬发名额，见 _effective_cost）。"""
+        return "fast" in self._card_keywords(p, cdef, card) and not self._cost_zero_aura(p, cdef)
 
     def _card_keywords(self, p: PlayerState, cdef: CardDef,
                        card: CardInstance | None = None) -> set[str]:
@@ -408,7 +404,7 @@ class Game:
             if want not in targets.pool_refs(self, eff_target.pool, self.state.active):
                 raise IllegalAction("目标不合法")
             chosen = [want]
-        if "fast" in self._card_keywords(p, cdef, card):
+        if self._fast_applies(p, cdef, card):
             p.fast_used = True
         p.orb -= cost
         self._materialize(p, card, cdef)  # 打出装配：付费后、效果结算前快照持久修饰
@@ -480,7 +476,7 @@ class Game:
 
     def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
                              cdef: CardDef, method: PlayMethod | None) -> None:
-        """战斗牌完整事件流程：移入战斗区、获得战力/护甲、战斗前、战斗伤害、战斗后、进墓地。
+        """战斗牌完整事件流程：获得战力/护甲、牌移至墓地、战斗（移入战斗区、战斗前、战斗伤害、战斗后）。
 
         战斗牌提供的力量（战力）在战斗后清除；提供的护甲/破甲会保留，并按即时时机
         发出 on_shield_changed 事件。
@@ -508,17 +504,18 @@ class Game:
         imms = tuple(bool((st.model_extra or {}).get("nested", False))
                      for st in block.steps if st.op == "battle_immunity")
         atk_ref = Ref(player=self.state.active, shikigami=si)
+        # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
+        self.move_card(p, card, "graveyard")
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                              temp_grants=tuple(cdef.temp_grants))
         s.combat_power = 0
-        self.move_card(p, card, "graveyard")
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
                                cdef: CardDef) -> None:
         """响应战斗牌的插入使用（rules.md:52）：在"（被）攻击时"触发时——
 
         - 不发起新战斗：所属式神改为移入战斗区（无论是否具有远程）；
-        - 牌的力量（战力）/护甲/关键字/战斗伤害免疫绑定当前（被插入的）战斗，
+        - 牌的力量（战力）/护甲/关键字/战斗伤害免疫/一次性临时触发绑定当前（被插入的）战斗，
           力量与能力加成持续到该次战斗后（战力经 _battle_power 终止点核销，
           关键字/免疫经 _battle_grants / immunities 的战斗作用域清理）；
         - 牌入墓地。调用方已支付费用并 emit on_trigger。
@@ -544,6 +541,11 @@ class Game:
                 if kw not in ("fast", "trigger"):
                     cls = self._grant_keyword(s, kw)
                     grants.append((ref, kw, cls))
+            # 战斗牌携带的一次性临时触发登记到当前战斗（终止点移除未用者）
+            for blk in cdef.temp_grants:
+                self.state.temp_grants.append(TempGrant(
+                    block=blk, controller=pi, holder=ref,
+                    battle=self._battle_stack[-1]))
         # 其余 steps（battle_immunity 等）照常执行——登记到当前战斗上下文
         ctx = ExecContext(controller=pi, source=ref, card=card)
         for step in block.steps:
@@ -664,7 +666,7 @@ class Game:
         combo = self._has_keyword(attacker, "combo")
         initiative = self._has_keyword(attacker, "initiative")
         # ---- 战斗准备前：移除攻击者的激怒；穿刺——移除被攻击者的所有护甲/屏障 ----
-        # （屏障由伤害管线批次 3 消耗，此处仅清护甲）
+        # （rules.md:160 / terminology.md：穿刺在战斗准备前移除被攻击者的所有护甲与屏障）
         self._remove_keyword(attacker, "enraged")
         if self._has_keyword(attacker, "pierce"):
             vic_ref = Ref(player=def_pi, shikigami=d.combat_index)
@@ -673,6 +675,9 @@ class Game:
                 old = holder.shield
                 holder.shield = 0
                 self.emit("on_shield_changed", target=vic_ref, old=old, new=0, reason="穿刺")
+            if isinstance(holder, ShikigamiState):
+                while self._has_keyword(holder, "barrier"):
+                    self._remove_keyword(holder, "barrier")
         self._drain_queue()
         # ---- 战斗准备：移动攻击者（具有远程则不移动）；攻击者气绝则终止 ----
         if move and not remote and p.combat_index != atk_ref.shikigami:
@@ -1313,10 +1318,13 @@ class Game:
         即时时机（insert）会形成临时队列：同一事件触发的全部能力先被收集，
         收集完成后再依次执行；延时时机（queue）则加入当前效果队列，由外层 _drain_queue
         在合适时机统一结算。
-        对局已进入"待结束"（winner 已定）后，非系统操作不再触发（事件仍记入 history）。
+        对局已进入"待结束"（pending_end，含 winner 已定）后，非系统操作不再触发
+        （事件仍记入 history；已入队能力由 _drain_queue 清空）。
         """
+        if name not in CORE_EVENTS and name not in self.db.custom_events:
+            raise ValueError(f"未声明的事件名: {name}（核心事件见 core/events.py，自定义事件见 db/events.yaml）")
         self.history.append(name)
-        if self.state.winner is not None:
+        if self.state.winner is not None or self.state.pending_end:
             return
         seq = self.state.next_emit_seq()
         event = {"name": name, "_emit": seq, **payload}
@@ -1587,7 +1595,7 @@ class Game:
                 self._log(f"{p.name} 鬼火不足，响应牌《{cdef.name}》未能触发")
                 return
             p.orb -= cost
-            if "fast" in cdef.keywords:
+            if self._fast_applies(p, cdef, ctx.card):
                 p.fast_used = True
             # choose 目标的响应牌：自动选择事件中的被攻击者（rules.md:36"执行效果时选择目标"；
             # 不在合法池则无目标——自动使用而没有效果，如古尘之盾"对其自动使用"）
@@ -1612,6 +1620,12 @@ class Game:
                             self._compact_hand_seq(p, ctx.card.hand_seq)
                         break
                 self._attach_form(p, si, ctx.card, cdef)
+                # 形态牌的进场时效果（镜像主动使用的形态分支；响应形态同样结算）
+                if cdef.effects.steps and cdef.effects.when == "on_play":
+                    self._resolve_block(cdef.effects, ExecContext(
+                        controller=ctx.controller,
+                        source=Ref(player=ctx.controller, shikigami=si),
+                        card=ctx.card, chosen=ctx.chosen))
                 self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
                 return
             self.move_card(p, ctx.card, "graveyard")

@@ -8,7 +8,7 @@ import re
 import pytest
 
 from client import cli
-from tests.conftest import give
+from tests.factories import give
 
 ANSI = re.compile(r"\033\[\d+m")
 

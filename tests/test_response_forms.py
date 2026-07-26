@@ -14,7 +14,7 @@ import pytest
 from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.conftest import give
+from tests.factories import give
 
 T = F.T
 

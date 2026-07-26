@@ -7,7 +7,7 @@
 """
 from core.model import Ref
 from tests import factories as F
-from tests.conftest import give
+from tests.factories import give
 
 T = F.T
 SELF = T(kind="self")
@@ -265,6 +265,25 @@ def test_awaken_yaodao_haste_and_cost_zero(db, make_game):
     g.apply({"op": "play_card", "uid": give(g, 0, c2).uid})
     assert pa.orb == 2       # 两张战斗牌均 0 费
     assert not pa.fast_used  # 不耗鬼火 ≠ 瞬发，不占瞬发名额
+
+
+def test_fast_card_under_cost_zero_aura_keeps_slot(db, make_game):
+    """瞬发卡命中 cost_zero 光环：免费由光环提供，不占用瞬发名额。"""
+    cid = _awaken_yaodao(db)
+    c1 = 10010169
+    db.cards[c1] = F.card(c1, card_type="combat", keywords=["fast"], steps=[], token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    a = pa.shikigami[0]
+    a.level = 3
+    g.state.players[1].shield = 0
+    pa.orb = 3
+    g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
+    g.apply({"op": "assault", "index": 0})  # 迅捷免鬼火直击牌手 → cost_zero 光环
+    assert any(x.get("cost_zero") for x in pa.card_auras)
+    g.apply({"op": "play_card", "uid": give(g, 0, c1).uid})  # 瞬发卡，但本次免费来自光环
+    assert pa.orb == 2       # 光环免费
+    assert not pa.fast_used  # 不占用瞬发名额
 
 
 def test_awaken_yaodao_revive_grants_haste(db, make_game):

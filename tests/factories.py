@@ -5,7 +5,7 @@ db/ 目录下的 YAML 只存放经确认的正式数据。
 """
 from __future__ import annotations
 
-from core.model import GameConfig
+from core.model import CardInstance, GameConfig
 from core.setup import new_game
 from db.loader import CardDatabase
 from db.schema import (
@@ -77,6 +77,15 @@ def db_of(shikigami, cards, events=()) -> CardDatabase:
 
 
 TEAM = [100101, 100102, 100103, 100104]
+
+
+def give(game, player_index: int, defn_id: int) -> CardInstance:
+    """测试辅助：直接发一张牌到玩家手牌（hand_seq 由 move_card 自动分配）。"""
+    st = game.state
+    card = CardInstance(uid=st.next_uid, id=defn_id)
+    st.next_uid += 1
+    game.move_card(st.players[player_index], card, "hand")
+    return card
 
 
 def base_db() -> CardDatabase:

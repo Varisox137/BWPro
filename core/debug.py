@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from core.model import CardInstance, PlayerState, Ref, ShikigamiState
+from core.model import CardInstance, ExecContext, PlayerState, Ref, ShikigamiState
 
 DEBUG_COMMANDS: dict[str, Callable] = {}
 
@@ -114,7 +114,6 @@ def cmd_play_card(game, ctx, *, player: int, uid: int, target: dict | None = Non
     how = f"（{method.text or method.id}）" if method else ""
     game._log(f"[调试] {p.name} 强制使用《{cdef.name}》{how}")
     block = method.effects if (method and method.effects is not None) else cdef.effects
-    from core.engine import ExecContext
 
     game._resolve_block(block, ExecContext(controller=player, source=source, card=card, chosen=chosen))
     game.emit("on_card_played", player=player, uid=uid)

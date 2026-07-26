@@ -4,7 +4,7 @@ import pytest
 from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.conftest import give
+from tests.factories import give
 
 
 def test_game_start_setup(make_game):
@@ -266,6 +266,26 @@ def test_player_defeat_pending_end(db, make_game):
     assert b.defeated is True and g.state.winner == 0
     assert b.health == -5                         # 5 甲吸收后 35 点致死；后续治疗 10 不再生效
     assert len(b.hand) == 5                       # 已入队的"受伤后抽 1"被清除，不再执行
+
+
+def test_pending_end_blocks_insert_abilities(db, make_game):
+    """待结束：牌手气绝后，同一结算链内后续事件不再触发 insert 时机能力。"""
+    # B 的式神能力：任意式神受伤后立即抽 1（即时时机）——牌手已气绝则不应执行
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="draw", count=1),
+        when="on_damage", timing="insert", mode="atomic")
+    db.cards[10010151] = F.card(
+        10010151, token=True,
+        target=F.T(kind="choose", pool="enemy_player"),
+        steps=[F.dmg(40),
+               F.Step(op="damage", amount=1, target=F.T(kind="all", pool="enemy_shikigami"))],
+        block_kw={"mode": "atomic"})
+    g = make_game()
+    b = g.state.players[1]
+    c = give(g, 0, 10010151)
+    g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1)})
+    assert b.defeated is True and g.state.winner == 0
+    assert len(b.hand) == 5  # 气绝后的 on_damage 事件不再触发 insert 能力
 
 
 def test_defeat_event_has_source_and_reason(db, make_game):

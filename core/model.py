@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -125,6 +126,22 @@ class CardInstance(BaseModel):
     hand_seq: int = 0  # 手牌顺序编号（加入手牌时分配；0 表示未分配）
 
 
+@dataclass
+class ExecContext:
+    """效果执行上下文：动作注册表（core/actions.py）的 API 契约。
+
+    放在 model 层以避免 actions/debug 对 engine 的循环引用；引擎结算时构造。
+    """
+
+    controller: int  # 效果归属玩家
+    source: Ref | None = None  # 来源式神（中立牌无来源，为 None）
+    card: CardInstance | None = None  # 来源卡牌实例
+    event: dict[str, Any] | None = None  # 触发来源事件 payload
+    chosen: list[Ref] | None = None  # 玩家选择的目标
+    triggered: bool = False  # 是否为响应牌触发（结算时支付鬼火并消耗手牌）
+    card_id: int | None = None  # 游离触发器的来源卡 id（add_mod 写入目标定位用）
+
+
 class PlayerState(BaseModel):
     """局内"牌手"：有生命/护甲、可被指定为目标的参战实体。
 
@@ -187,7 +204,7 @@ class GameState(BaseModel):
     players: list[PlayerState]
     active: int = 0  # 当前回合玩家下标
     turn: int = 1  # 双方合计半回合计数；turn==1 为先手玩家的第 1 回合
-    phase: str = "battle"  # mulligan=调度阶段（游戏开始） / battle=对战阶段
+    phase: str = "battle"  # mulligan=调度阶段（游戏开始） / upgrade=式神升级阶段 / battle=对战阶段
     winner: int | None = None
     pending_end: bool = False  # 是否处于“待结束”状态（牌手气绝/长对局平局后，剩余结算完成前）
     pending_loser: int | None = None  # 待结束时的失败方下标；-1 表示平局

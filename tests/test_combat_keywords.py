@@ -6,7 +6,7 @@
 from core.actions import ACTIONS
 from core.model import Ref
 from tests import factories as F
-from tests.conftest import give
+from tests.factories import give
 
 T = F.T
 CHOOSE_ENEMY = T(kind="choose", pool="enemy_shikigami")
@@ -101,6 +101,21 @@ def test_pierce_strips_shield(db, make_game):
     assert b.shield == 0
     assert b.health == 1  # 护甲被移除后吃满 3
     assert a.health == 1  # 反击照常
+
+
+def test_pierce_strips_barrier(db, make_game):
+    """穿刺：战斗准备前同时移除被攻击者的所有屏障实例（rules.md:160），此后正常受伤。"""
+    g = make_game()
+    _move(g, 1, 0)
+    b = g.state.players[1].shikigami[0]
+    b.shield = 3
+    b.one_shot_keywords.append("barrier")
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("pierce")
+    g.apply({"op": "assault", "index": 0})
+    assert b.shield == 0
+    assert "barrier" not in b.one_shot_keywords
+    assert b.health == 1  # 屏障已被剥离，不再经伤害管线批次 3 抵消
 
 
 def test_remote_no_counter_no_move(db, make_game):

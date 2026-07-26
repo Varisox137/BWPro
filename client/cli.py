@@ -291,6 +291,7 @@ def render(game: Game) -> str:
     data_w = max((_display_width(_data_label(c)) for c in hand), default=0)
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
+        text = f"{{{cd.text}}}" if cd.text else ""
         line = (
             f"    [{_pad(str(i + 1), idx_w)}] "
             f"{_colored(_pad(f'【{cd.name}】', name_w), _card_color(game, p, c))} "
@@ -299,7 +300,7 @@ def render(game: Game) -> str:
             f"{_pad(f'等级{cd.level}', level_w)} "
             f"{_pad(_cost_label(c), cost_w)} "
             f"{_pad(_data_label(c), data_w)} "
-            f"{{{cd.text}}}"
+            f"{text}"
         )
         lines.append(line)
     lines.append("")

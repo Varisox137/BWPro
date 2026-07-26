@@ -126,10 +126,10 @@ def make_test_db() -> CardDatabase:
         Step(op="attack_buff", power=1, keywords=["pierce"], target=_self_target()),
     ])
     add(100101, 2, "R", "文射", 1, "combat", keywords=["combo"], power=-2, shield=2,
-        text="-2力量/+2护甲，[连击]")
+        text="[连击]")
     add(100101, 3, "SR", "残心", 1, "form", form_power=3, form_health=5,
         keywords=["remote", "keep_attack_buffs"],
-        text="[远程]。白狼的法术强化效果不会在攻击后移除")
+        text="[远程]。白狼的法术强化效果（'起弓''离''无我'）不会在攻击后移除")
     add(100101, 4, "R", "离", 2, "spell", keywords=["fast"],
         text="[瞬发]。白狼获得+3力量，直到白狼的下一次攻击后")
     cards[10010104].effects = EffectBlock(steps=[
@@ -257,8 +257,8 @@ def make_test_db() -> CardDatabase:
         steps=[Step(op="buff_power", amount=1, target=_self_target()),
                Step(op="battle_immunity", target=_self_target())],
     )
-    add(100123, 3, "R", "战意", 2, "combat", power=2, shield=2, text="+2力量/+2护甲")
-    add(100123, 4, "R", "一闪", 2, "combat", cost=0, power=0, shield=0, text="+0力量/+0护甲，不消耗鬼火")
+    add(100123, 3, "R", "战意", 2, "combat", power=2, shield=2, text="")
+    add(100123, 4, "R", "一闪", 2, "combat", cost=0, power=0, shield=0, text="【不消耗鬼火】")
     add(100123, 5, "SR", "禁锢之刀", 2, "combat",
         text="[增强]：{本局游戏中，妖刀姬每消灭过一名敌方式神，此牌便获得+2力量}")
     cards[10012305].effects = EffectBlock(steps=[
@@ -272,7 +272,7 @@ def make_test_db() -> CardDatabase:
         steps=[Step(op="add_mod", to="persistent", key="enhance", amount=2)],
     )]
     add(100123, 6, "R", "妖刀万华", 3, "form", keywords=["combo"],
-        form_power=3, form_health=8, text="3力量/8生命，[连击]")
+        form_power=3, form_health=8, text="[连击]")
     add(100123, 7, "SR", "杀念", 3, "spell",
         text="随机生成3张妖刀姬的战斗牌并置入手牌")
     cards[10012307].effects = EffectBlock(steps=[

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.model import Ref, ShikigamiState
+from core.model import ExecContext, Ref, ShikigamiState
 
 ACTIONS: dict[str, Callable] = {}
 
@@ -259,7 +259,6 @@ def trigger_form_countdown(game, ctx, *, targets: list[Ref]) -> None:
     block = game.db.cards[card.id].countdown_effects
     if block is None:
         return
-    from core.engine import ExecContext  # 避免模块顶层循环引用
     game._resolve_block(block, ExecContext(
         controller=ctx.controller, source=ctx.source, card=card))
 
