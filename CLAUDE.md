@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目定位
 
-BWPro 是一个受《阴阳师百闻牌》启发的数字化卡牌对战游戏。长期目标：双人联机对战服务器、客户端、卡牌数据库、自定义卡牌编辑器。当前为 Phase 1：核心规则引擎 + 卡牌数据库 + CLI 热座对战。
+BWPro 是一个受《阴阳师百闻牌》启发的数字化卡牌对战游戏。长期目标：双人联机对战服务器、客户端、卡牌数据库、自定义卡牌编辑器。当前：核心规则引擎 + 卡牌数据库 + CLI 热座对战 + FastAPI/WebSocket 联机对战（server/ + client/net.py）。
 
 **待确认规则问题统一记录在 `questions.md`（每轮重编号）；已确认规则细节全集在 `docs/rules.md`；代码/数据库命名以 `docs/terminology.md` 为准；维护者的想法与答案在 `thoughts.txt`。**
 
@@ -25,7 +25,8 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 ## 架构
 
 按职责分层：`core/` 为共享规则层（model/engine/actions/events/targets/setup/debug），
-`server/` 为 authoritative 服务端（Phase 2），`client/` 为 CLI 热座客户端（Phase 5 换图形），
+`server/` 为 authoritative 联机服务端（FastAPI + WebSocket，见 server/README.md），
+`client/` 为 CLI 客户端（cli.py 热座 + net.py 联机；Phase 5 换图形），
 `db/` 为卡牌数据库与组卡校验，`diy/` 为自定义卡牌（Phase 4），`docs/` 为规则与术语文档，
 `tests/` 含测试工厂与各类测试。目录细节见文件树。
 
@@ -96,7 +97,7 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 1. **Phase 1 ✅→进行中** 核心规则与数据模型（引擎 + db + CLI 热座；规则按 thoughts.txt 持续校准）
    - 已落地：战斗关键字（连击/先攻/贯通/穿刺/远程/不屈/迅捷/屏障）+ 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫；攻击后到期强化（attack_buffs/keep_attack_buffs）+ 法术觉醒替换（awakened/abilities/keep_shield）；增强装配管线（卡牌触发器 triggers、打出装配 _materialize、enhance 数值、卡牌光环 card_auras、战斗绑定临时触发 temp_grants）+ 白狼/妖刀姬基础能力；倒计时系统（锚点版：形态倒计时结附/回合开始 -1/归零重置并触发/离场移除）+ 形态能力块 + 投射/鼓舞/直接消灭/随机生成（generate）+ 一目连基础能力与全 8 卡、杀念；随机分配伤害（distribute_damage：逐 1 点插入结算、气绝延后、标记气绝目标不再可选）；响应插入使用（战斗牌改为移入战斗区/形态立即结附/choose 自动选事件被攻击者/同时机限一张）+ 延迟触发（delayed/delay_grant"会"）+ 伤害上限（cap_damage"森罗之阵"）+ 激怒与尘缚之阵战斗区锁定（enraged/combat_lock）+ 进场时形态效果与动态数值（shield_of/power_of：尘刀快照/古尘之壁/援护）；YAML 4 式神 32 卡全录
    - 后续批次：32 卡全录 ✅ → CLI 修饰状态显示 ✅（座次配色/修饰状态/关键字中文化；Phase 1 收尾）
-2. **Phase 2** 联机服务端：FastAPI/websockets、房间匹配、断线重连、回放、回合计时（100s）
+2. **Phase 2 ✅（初版）** 联机服务端：FastAPI + WebSocket、房间创建/按 id 加入、随机先手与座位映射、断线重连（token）、调度 30s/回合 120s 计时（升级阶段超时随机升级）、debug 对局与服务端控制台（详见 server/README.md；回放/匹配/限流待后续）
 3. **Phase 3** 进阶机制：形态/觉醒/战斗牌、持续效果与光环、出击增减益、爆能/赐能/起源/连引/连锁/戏法
 4. **Phase 4** 自定义卡牌：DSL 编译器、校验、平衡工具（契约见 diy/README.md）
 5. **Phase 5** 图形客户端

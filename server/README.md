@@ -1,118 +1,81 @@
-# BWPro 服务端架构设计（Phase 2）
+# BWPro 服务端（联机对战）
 
-> 本文档记录 Phase 2 联机服务端的初步架构设想与待确认问题。实现前请先与维护者讨论并确认其中的选择。
+基于 FastAPI + WebSocket 的双人联机对战服务端，已实现。
 
-## 目标
+## 运行
 
-把本地热座 CLI 扩展为基于 FastAPI + WebSocket 的双人联机对战服务端：
+```bash
+uv run python -m server.main [--host 0.0.0.0] [--port 8000] \
+    [--turn-timeout 120] [--mulligan-timeout 30] [--debug-console]
+```
 
-- 服务端持有 authoritative 的 `core.engine.Game` 实例。
-- 客户端只提交 `cmd dict`（与 CLI 同一协议），服务端校验、执行并广播新状态。
-- 支持断线重连、回合超时强制结束、死循环防护。
+客户端：`uv run python -m client.net`（或主菜单 [3] 联机对战），
+`--debug` 创建 debug 对局（房间内允许 debug 指令）。
 
-## 组件划分
+## 架构
 
 ```
 server/
-  main.py          # FastAPI 应用与 WebSocket endpoint
-  room.py          # Room：封装 Game + 玩家连接 + 计时器
-  manager.py       # RoomManager：创建/加入/查询/销毁房间
-  connection.py    # WebSocket 连接包装、心跳、重连校验
-  timer.py         # 回合 / 调度阶段计时器
-  logging.py       # 服务端日志、能力编号分配
-  protocol.py      # ServerMsg / ClientMsg 信封定义
+  main.py          # FastAPI 应用与 /ws endpoint、启动参数、--debug-console stdin 线程
+  room.py          # Room：封装 Game + 玩家连接 + 调度/回合计时器
+  manager.py       # RoomManager：创建/加入/查询/回收房间（内存表，无持久化）
+  protocol.py      # 消息信封构造与客户端消息校验
 ```
 
-### Room
+- 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交
+  `cmd dict`（与热坐 CLI 同一协议），服务端校验、执行并广播完整 `GameState` JSON
+  + 新增日志。
+- 无登录态：创建房间分配随机 6 位房间 id；凭 id 加入；入座时下发 `player_token`，
+  断线后凭 房间id+token 重连（对局与计时器保留，双方断线才回收房间）。
+- 座位（seat）与 `players` 下标的映射在开局随机先手时确定；指令中的 `player`
+  字段由服务端按座位强制改写；回合内操作（play_card/assault/upgrade/end_turn）
+  只能由当前行动方发出。
 
-- 持有 `Game` 实例与两名玩家的 `Connection`。
-- 负责启动/停止回合计时器。
-- 在 `Game.apply(cmd)` 执行后，把完整 `GameState` JSON 广播给所有已连接玩家。
-- 断线玩家重连时，下发当前 `GameState` 与最近日志。
+## 通信协议（WebSocket JSON）
 
-### Connection
-
-- 包装 `WebSocket`。
-- 维护 `player_token`（UUID）、`player_index`、`connected`、`last_pong`。
-- 处理心跳 `ping/pong`。
-
-### RoomManager
-
-- 内存中管理所有房间（Phase 2 先不做持久化数据库）。
-- 创建房间时返回 `room_id` 与两名玩家的 `player_token`。
-- 支持通过 `room_id` 查询房间状态（观战/调试用）。
-
-## 通信协议
-
-基于 WebSocket 的 JSON 消息。
-
-### 客户端 → 服务端
+客户端 → 服务端：
 
 ```json
-{ "type": "join", "token": "<player_token>" }
+{ "type": "create", "name": "甲", "deck_code": null, "debug": false }
+{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": null, "token": null }
 { "type": "cmd", "cmd": { "op": "end_turn" } }
-{ "type": "pong" }
 ```
 
-### 服务端 → 客户端
+服务端 → 客户端：
 
 ```json
-{ "type": "state", "payload": { /* GameState JSON */ } }
-{ "type": "error", "validator": "server", "reason": "..." }
-{ "type": "log", "payload": [ "..." ] }
+{ "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
+{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true }
+{ "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."] }
+{ "type": "error", "reason": "..." }
+{ "type": "notice", "text": "..." }
 { "type": "game_over", "winner": 0, "reason": "player_defeated" }
-{ "type": "ping" }
 ```
 
-## 断线重连
+心跳使用 WS 协议层 ping/pong（uvicorn `ws_ping_interval=10`，`ws_ping_timeout=5`）。
 
-- 玩家加入房间时分配 `player_token`，服务端持久保存。
-- WebSocket 断开时只标记 `connected=False`，**不销毁房间和游戏**。
-- 心跳：服务端每 15s 发送 `ping`，客户端 5s 内回复 `pong`，否则视为断线。
-- 重连：客户端重新连接并发送 `token`，服务端校验后下发当前 `GameState`。
-- 若当前轮到断线玩家，回合计时器继续运行；超时后服务端自动结束其回合。
+## 限时（权威在服务端）
 
-## 超时强制结束回合
+| 阶段 | 默认 | 超时行为 |
+|------|------|----------|
+| 起始手牌调度 | 30s/人 | 自动 `ready`，立即结束该玩家调度 |
+| 回合（含升级阶段） | 120s | 升级阶段先由系统在可升级式神中随机升级，再立即 `end_turn` |
 
-| 阶段 | 超时时间 | 默认行为 |
-|------|----------|----------|
-| 调度阶段 | 30s | 超时视为 `ready`，直接进入对战 |
-| 单个回合 | 120s（可配置） | 服务端自动 `apply({"op": "end_turn"})` |
+- 每 Room 一个 `asyncio` 计时器；计时对象（调度中的玩家 / 回合号）变化时重启，
+  同一回合内的操作不重置计时。
+- 游戏逻辑在事件循环内同步执行，计时器回调只能排在当前 `apply` 返回后运行——
+  天然满足"回合超时等结算完后立即结束回合"。
 
-- 每个 `Room` 持有一个 `asyncio.Task` 计时器，回合开始/切换时重启。
-- 客户端预校验可减少无效请求，但**最终计时权威在服务端**。
+## debug 能力
 
-## 死循环避免
+- **debug 对局**：客户端 `python -m client.net --debug` 创建，房间以
+  `GameConfig(enable_debug_commands=True)` 开局，客户端可用 `debug <子命令>`
+  （解析复用 client/cli.py）。非 debug 房间引擎层拒绝 debug 指令。
+- **服务端控制台**：`--debug-console` 启动后 stdin 接受 `list`（列出房间）与
+  `<房间id> <debug 子命令> [参数...]`，直接进入指定对局执行并广播结果。
 
-### 引擎层（已实现）
+## 死循环防护
 
-- `MAX_QUEUE_ITERATIONS = 1000`：单次效果队列最多处理 1000 个效果块。
-- `state.turn >= 256`：长对局强制平局。
-
-### 服务端/协议层（待实现）
-
-- **命令频率限制**：单连接每秒最多 N 条 cmd（建议 10/s）。
-- **WebSocket 消息大小限制**：单条消息最大 1MB。
-- **最大嵌套深度**：为 `_resolve_block` 增加递归深度计数，超过阈值（建议 32）视为异常。
-- **异常对局终止**：若引擎抛出死循环异常，记录日志并广播 `game_over`（原因 `engine_error`），解散房间。
-
-## 待确认问题
-
-在动手实现前，希望维护者确认以下几点：
-
-1. **回合超时时间**：规则文档写 120s，`memory/bwpro-server-logging.md` 曾提过 100s。是否采用 **120s 作为默认值**，并通过 `GameConfig.turn_timeout` 覆盖？
-2. **断线后的回合处理**：若当前行动玩家断线，是等他重连继续（计时仍走），还是直接由服务端托管/超时结束？
-3. **重连日志下发**：重连时只发当前 `GameState`，还是顺带发完整事件日志供客户端回放？
-4. **引擎异常结果**：发生死循环/异常时，是判平局、双方失败，还是直接终止对局并记录？
-5. **房间匹配方式**：Phase 2 先做“创建房间 + 邀请码/token”模式，还是直接做自动匹配？
-6. **观战/回放**：服务端日志是否同时支持赛后回放文件，还是只保留文本日志？
-
-## 实现顺序建议
-
-1. 搭建 FastAPI + WebSocket 基础连接。
-2. 实现 Room + RoomManager + 简单 join/heartbeat。
-3. 把 CLI 热座逻辑拆出可复用的 `client/net.py`，实现联机 CLI。
-4. 加入回合/mulligan 计时器与超时结束。
-5. 加入断线重连与状态恢复。
-6. 加入服务端日志与能力编号。
-7. 加入频率限制、消息大小限制、嵌套深度防护。
+- 引擎层（已实现）：`MAX_QUEUE_ITERATIONS = 1000`；`state.turn >= 256` 强制平局。
+- 服务端层：引擎抛非 `IllegalAction` 异常时广播 error + `game_over(engine_error)`
+  终止对局。命令频率限制 / 消息大小限制 / 观战回放 / 自动匹配留待后续。

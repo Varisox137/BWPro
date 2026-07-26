@@ -929,6 +929,22 @@ class Game:
         if p.upgrades == 0 or not self._has_upgrade_target(p):
             self.state.phase = "battle"
 
+    def legal_upgrade_indices(self, pi: int) -> list[int]:
+        """玩家 pi 当前可合法升级的式神下标（与 _cmd_upgrade 同一套规则）。
+
+        供服务端回合超时随机升级等托管操作使用；不检查 phase/upgrades 机会数。
+        """
+        p = self.state.players[pi]
+        candidates = [
+            i for i, x in enumerate(p.shikigami)
+            if x.kind == "shikigami" and not x.despawned
+            and x.level < self.config.max_level
+        ]
+        if self.config.upgrade_rule == "lowest" and candidates:
+            lowest = min(p.shikigami[i].level for i in candidates)
+            candidates = [i for i in candidates if p.shikigami[i].level == lowest]
+        return candidates
+
     def _cmd_end_turn(self, cmd: dict) -> None:
         """结束回合：触发 on_turn_end，结算完后切换回合方并进入对方回合开始阶段。"""
         if self.state.winner is not None:

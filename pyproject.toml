@@ -5,6 +5,8 @@ requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13",
     "pyyaml>=6.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
 ]
 
 [dependency-groups]

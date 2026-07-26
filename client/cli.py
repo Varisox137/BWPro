@@ -4,7 +4,8 @@
 非回合方没有任何输入机会——响应牌由引擎自动结算（规则：敌方回合零选择、响应必发）。
 
 运行：uv run python -m client.cli
-一级菜单：热坐对战 / 卡组构筑（client/deckbuilder.py）。数据为正式 YAML
+一级菜单：热坐对战 / 卡组构筑（client/deckbuilder.py）/ 联机对战（client/net.py，
+服务端见 server/main.py）。数据为正式 YAML
 （CardDatabase.load：db/cards、db/shikigami）；热坐开局前双方可粘贴卡组码
 （db/deckcode.py）导入构筑，或跳过使用默认卡组（4 式神各 8 种不同名卡）。
 
@@ -198,8 +199,11 @@ def _hand_sorted(game: Game, p) -> list:
     return sorted(p.hand, key=key)
 
 
-def render(game: Game) -> str:
+def render(game: Game, viewer: int | None = None) -> str:
+    """场况渲染。viewer 为"己方"视角玩家下标（着色/手牌展示）；
+    None = 当前行动方（热坐）。"""
     st = game.state
+    view = st.active if viewer is None else viewer
     active = st.players[st.active]
     lines = [
         "",
@@ -275,7 +279,7 @@ def render(game: Game) -> str:
             f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}"
         )
         for i, name, kind, lv, faction, status in rows:
-            color = _seat_color(p, i) if pi == st.active else None
+            color = _seat_color(p, i) if pi == view else None
             line = (
                 f"    [{_pad(str(i + 1), idx_w)}] "
                 f"{_colored(_pad(name, name_w), color)}"
@@ -286,8 +290,10 @@ def render(game: Game) -> str:
             )
             lines.append(line)
         lines.append("")
-    p = st.players[st.active]
-    lines.append(f"{p.name} 手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）：")
+    p = st.players[view]
+    lines.append(f"{p.name}（你）手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）："
+                 if viewer is not None else
+                 f"{p.name} 手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）：")
     lines.extend(_format_hand_lines(game, p, _hand_sorted(game, p)))
     lines.append("")
     if st.winner is not None:
@@ -580,6 +586,7 @@ def main() -> None:
         print("—— 主菜单 ——")
         print("  [1] 热坐对战")
         print("  [2] 卡组构筑")
+        print("  [3] 联机对战")
         try:
             choice = input("选择（q 退出）> ").strip().lower()
         except EOFError:
@@ -588,6 +595,11 @@ def main() -> None:
             run_battle(db)
         elif choice == "2":
             deckbuilder.run_deckbuilder(db)
+        elif choice == "3":
+            from client import net
+            server = input("服务器地址（回车 = ws://127.0.0.1:8000/ws）> ").strip()
+            net.run(db, server or "ws://127.0.0.1:8000/ws",
+                    input("玩家名 > ").strip() or "玩家", debug=False)
         elif choice in ("q", "quit", "exit"):
             break
 

@@ -1,0 +1,267 @@
+"""Room：一间对局房间 = 一个 authoritative Game + 两名玩家连接 + 计时器。
+
+- 座位（seat）固定：创建者 0、加入者 1；seat→players 下标映射在开局时按随机先手确定。
+- 计时器权威在服务端：调度每玩家 mulligan_timeout 秒，每回合 turn_timeout 秒
+  （含升级阶段）。游戏逻辑在事件循环内同步执行，计时器回调只能排在当前 apply
+  返回后运行——天然满足"回合超时等结算完后立即结束回合"。
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import random
+import string
+import uuid
+
+from core.engine import Game, IllegalAction
+from core.model import GameConfig
+from core.setup import new_game
+from db import deckcode
+from server import protocol
+
+ROOM_ID_ALPHABET = string.ascii_uppercase.replace("I", "").replace("O", "") + "23456789"
+
+
+def new_room_id(rng: random.Random, length: int = 6) -> str:
+    return "".join(rng.choices(ROOM_ID_ALPHABET, k=length))
+
+
+class Connection:
+    """一名玩家的连接槽位（seat 固定，断线只换 ws 不换槽）。"""
+
+    def __init__(self, seat: int, name: str, token: str | None = None) -> None:
+        self.seat = seat
+        self.name = name
+        self.token = token or uuid.uuid4().hex
+        self.ws = None  # 当前 WebSocket；断线时为 None
+
+    @property
+    def connected(self) -> bool:
+        return self.ws is not None
+
+    async def send(self, msg: dict) -> None:
+        if self.ws is not None:
+            try:
+                await self.ws.send_text(json.dumps(msg, ensure_ascii=False))
+            except Exception:
+                self.ws = None  # 发送失败视为断线
+
+
+class Room:
+    def __init__(self, room_id: str, db, *, debug: bool = False,
+                 turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
+                 rng: random.Random | None = None) -> None:
+        self.id = room_id
+        self.db = db
+        self.debug = debug
+        self.turn_timeout = turn_timeout
+        self.mulligan_timeout = mulligan_timeout
+        self.rng = rng or random.Random()
+        self.conns: list[Connection | None] = [None, None]
+        self.game: Game | None = None
+        self.seat_to_player = [0, 1]
+        self._timer: asyncio.Task | None = None
+        self._timer_key: tuple | None = None  # ("mulligan", player) / ("turn", 总回合数)
+        self._sent_log = 0
+        self._over_sent = False
+
+    # ---------- 加入 / 重连 / 断线 ----------
+
+    @property
+    def full(self) -> bool:
+        return all(c is not None for c in self.conns)
+
+    def seat_of_token(self, token: str) -> int | None:
+        for c in self.conns:
+            if c is not None and c.token == token:
+                return c.seat
+        return None
+
+    def _parse_deck(self, deck_code: str | None) -> tuple[list[int], list[int]]:
+        """解析卡组码（空 = 默认卡组）；非法抛 ValueError。"""
+        if deck_code:
+            return deckcode.deck_from_code(self.db, deck_code)
+        return deckcode.default_deck(self.db)
+
+    async def join(self, seat: int, name: str, ws, deck_code: str | None) -> Connection:
+        """新玩家入座。卡组码非法时抛 ValueError（房间保留，可重新入座）。"""
+        if self.game is not None:
+            raise ValueError("对局已开始，不能加入")
+        if self.conns[seat] is not None:
+            raise ValueError("该座位已被占用")
+        ids, cards = self._parse_deck(deck_code)  # 先校验再入座
+        conn = Connection(seat, name)
+        conn.ws = ws
+        conn.deck = (ids, cards)
+        self.conns[seat] = conn
+        return conn
+
+    async def reconnect(self, token: str, ws) -> Connection | None:
+        seat = self.seat_of_token(token)
+        if seat is None:
+            return None
+        conn = self.conns[seat]
+        conn.ws = ws
+        return conn
+
+    def disconnect(self, conn: Connection) -> None:
+        if conn.ws is not None:
+            conn.ws = None  # 仅标记断线；对局与计时器继续
+
+    @property
+    def abandoned(self) -> bool:
+        """可回收：两名玩家都曾入座且均已断线。"""
+        return self.full and not any(c.connected for c in self.conns)
+
+    # ---------- 开局 ----------
+
+    async def start_if_ready(self) -> None:
+        if self.game is not None or not self.full:
+            return
+        first = self.rng.randint(0, 1)  # players[0] 恒为先手
+        self.seat_to_player = [0, 1] if first == 0 else [1, 0]
+        by_player = sorted(self.conns, key=lambda c: self.seat_to_player[c.seat])
+        config = GameConfig(enable_debug_commands=self.debug)
+        self.game = new_game(
+            self.db,
+            (by_player[0].name, *by_player[0].deck),
+            (by_player[1].name, *by_player[1].deck),
+            seed=self.rng.randrange(2**32),
+            config=config,
+            first=0,  # by_player 已按先手排序，无需 new_game 再换
+        )
+        for c in self.conns:
+            await c.send(protocol.start(
+                self.seat_to_player[c.seat],
+                self.conns[1 - c.seat].name,
+                self.seat_to_player[c.seat] == 0))
+        await self.broadcast_state()
+        self.reschedule_timer()
+
+    # ---------- 指令 ----------
+
+    async def handle_cmd(self, seat: int, cmd: dict) -> None:
+        """处理一名玩家的游戏指令。cmd 中的 player 字段被强制改写为该座位对应的
+        players 下标（mulligan/ready/debug 指令统一以此为准）。"""
+        if self.game is None:
+            await self.conns[seat].send(protocol.error("对局尚未开始"))
+            return
+        # 回合内操作只能由当前行动方发出（热坐共用终端无此问题，联机必须校验）
+        if cmd.get("op") in ("play_card", "assault", "upgrade", "end_turn"):
+            if self.game.state.active != self.seat_to_player[seat]:
+                await self.conns[seat].send(protocol.error("还没到你的回合"))
+                return
+        cmd = dict(cmd)
+        cmd["player"] = self.seat_to_player[seat]
+        await self._apply_and_broadcast(seat, cmd)
+
+    async def debug_apply(self, cmd: dict) -> None:
+        """服务端控制台 debug 指令（不经座位改写，player 由指令自带/当前回合方）。"""
+        if self.game is None:
+            return
+        await self._apply_and_broadcast(None, cmd)
+
+    async def _apply_and_broadcast(self, seat: int | None, cmd: dict) -> None:
+        try:
+            self.game.apply(cmd)
+        except IllegalAction as e:
+            if seat is not None:
+                await self.conns[seat].send(protocol.error(str(e)))
+            return
+        except Exception as e:  # 引擎异常：终止对局，避免房间卡死
+            await self._broadcast(protocol.error(f"引擎异常，对局终止（{e}）"))
+            await self._broadcast(protocol.game_over(None, "engine_error"))
+            self._over_sent = True
+            self._cancel_timer()
+            return
+        await self.broadcast_state()
+        self.reschedule_timer()
+
+    # ---------- 广播 ----------
+
+    async def _broadcast(self, msg: dict) -> None:
+        for c in self.conns:
+            if c is not None:
+                await c.send(msg)
+
+    async def broadcast_state(self) -> None:
+        """向双方下发完整状态 + 新增日志；对局结束时补发 game_over。"""
+        st = self.game.state
+        log = st.log[self._sent_log:]
+        self._sent_log = len(st.log)
+        msg = protocol.state(st.model_dump(mode="json"), log)
+        for c in self.conns:
+            await c.send(msg)
+        if st.winner is not None and not self._over_sent:
+            self._over_sent = True
+            await self._broadcast(protocol.game_over(st.winner, "player_defeated"))
+            self._cancel_timer()
+
+    # ---------- 计时器 ----------
+
+    def current_timer_key(self) -> tuple | None:
+        """当前应当计时的对象：("mulligan", 玩家下标) 或 ("turn", 总回合数)。"""
+        if self.game is None:
+            return None
+        st = self.game.state
+        if st.winner is not None or st.pending_end:
+            return None
+        if st.phase == "mulligan":
+            for pi in (0, 1):
+                if not st.players[pi].mulligan_done:
+                    return ("mulligan", pi)
+            return None
+        return ("turn", st.turn)
+
+    def reschedule_timer(self) -> None:
+        """计时对象变化时重启计时器（同一对象不重置，保证 120s 覆盖整个回合）。"""
+        key = self.current_timer_key()
+        if key == self._timer_key:
+            return
+        self._cancel_timer()
+        self._timer_key = key
+        if key is not None:
+            seconds = self.mulligan_timeout if key[0] == "mulligan" else self.turn_timeout
+            self._timer = asyncio.ensure_future(self._run_timer(key, seconds))
+
+    def _cancel_timer(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        self._timer_key = None
+
+    async def _run_timer(self, key: tuple, seconds: float) -> None:
+        try:
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            return
+        if self._timer_key != key or self.game is None:
+            return
+        await self._on_timeout(key)
+
+    async def _on_timeout(self, key: tuple) -> None:
+        st = self.game.state
+        try:
+            if key[0] == "mulligan":
+                pi = key[1]
+                await self._broadcast(protocol.notice(
+                    f"{st.players[pi].name} 调度超时，自动结束调度"))
+                self.game.apply({"op": "ready", "player": pi})
+            else:  # 回合超时：升级阶段先随机升级，再结束回合
+                p = st.players[st.active]
+                if st.phase == "upgrade":
+                    while st.phase == "upgrade" and p.upgrades > 0:
+                        idxs = self.game.legal_upgrade_indices(st.active)
+                        if not idxs:
+                            break
+                        self.game.apply({"op": "upgrade", "index": self.rng.choice(idxs)})
+                    await self._broadcast(protocol.notice(
+                        f"{p.name} 回合超时：已随机完成升级"))
+                if st.winner is None and not st.pending_end:
+                    await self._broadcast(protocol.notice(
+                        f"{p.name} 回合超时，自动结束回合"))
+                    self.game.apply({"op": "end_turn"})
+        except IllegalAction:
+            pass
+        await self.broadcast_state()
+        self.reschedule_timer()
