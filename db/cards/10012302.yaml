@@ -1,0 +1,16 @@
+id: 10012302
+version: 20260724
+name: 见切
+shikigami: 100123
+card_type: combat
+rarity: SR
+level: 1
+cost: 1
+keywords: [trigger]
+effects:
+  when: on_before_assault
+  condition: {victim_shikigami: 100123}
+  steps:
+    - {op: buff_power, amount: 1, target: {kind: self}}
+    - {op: battle_immunity, target: {kind: self}}
+text: "+1力量，免疫战斗伤害。[响应]：{当妖刀姬被攻击时，自动使用此牌}"

@@ -1,0 +1,14 @@
+id: 10010207
+version: 20260724
+name: 古尘之壁
+shikigami: 100102
+card_type: form
+rarity: SR
+level: 3
+cost: 1
+form_power: 5
+form_health: 10
+effects:
+  steps:
+    - {op: buff_health, amount: {shield_of: source}, perm: true, target: {kind: all, pool: friendly_others}}
+text: 进场时，兵俑每具有1护甲，使己方所有其他式神获得+1生命/生命上限

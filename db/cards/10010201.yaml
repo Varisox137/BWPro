@@ -1,0 +1,12 @@
+id: 10010201
+version: 20260724
+name: 尘刀
+shikigami: 100102
+card_type: combat
+rarity: R
+level: 1
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: {shield_of: self}, target: {kind: self}}
+text: 兵俑每具有1点护甲，本次战斗中兵俑就获得+1力量

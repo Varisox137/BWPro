@@ -119,6 +119,10 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int) -> None:
     """
     d = game.db.shikigami[shikigami]
     p = game.state.players[ctx.controller]
+    if game._combat_zone_locked(ctx.controller):
+        # 尘缚之阵：兵俑在战斗区且己方战斗区有式神时，召唤召唤物的效果无效
+        game._log(f"{p.name} 的召唤效果被尘缚之阵无效化")
+        return
     s = ShikigamiState(
         id=shikigami, kind="summon", faction=d.faction, level=1,
         home_slot=None,
@@ -359,3 +363,56 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> N
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         s.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
+
+
+@action("delay_grant")
+def delay_grant(game, ctx, *, targets: list[Ref], when: str,
+                condition: dict | None = None, steps: list | None = None) -> None:
+    """给来源式神登记一个一次性延迟能力（会；targets 忽略）。
+
+    when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
+    随条目存储，触发结算时作为效果目标。气绝时清除（变形离场保留——变形未实现）。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("delay_grant 需要来源式神")
+    from db.schema import EffectBlock, Step
+    block = EffectBlock(when=when, condition=condition,
+                        steps=[Step.model_validate(st) for st in (steps or [])])
+    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    s.delayed.append({
+        "block": block,
+        "chosen": ctx.chosen[0] if ctx.chosen else None,
+        "uses": 1,
+    })
+    game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
+
+
+@action("enter_combat")
+def enter_combat(game, ctx, *, targets: list[Ref]) -> None:
+    """把目标式神移入战斗区（不动如山进场；驻守者按规则退回）。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        p = game.state.players[ref.player]
+        if p.shikigami[ref.shikigami].in_play and p.combat_index != ref.shikigami:
+            game._enter_combat(p, ref.shikigami)
+
+
+@action("cap_damage")
+def cap_damage(game, ctx, *, targets: list[Ref], to: str = "shield") -> None:
+    """伤害上限（森罗之阵；targets 忽略）：改写事件中可变伤害对象的数值。
+
+    to="shield"：若受伤式神具有护甲，伤害值至多为其当前护甲值（护甲 0 不生效）。
+    须挂在伤害时点批次（on_damage_start 等 payload 含 damage 的事件）上。
+    """
+    ev = (ctx.event or {}).get("damage")
+    victim = (ctx.event or {}).get("victim")
+    if ev is None or not isinstance(victim, Ref) or victim.shikigami is None:
+        return
+    if to == "shield":
+        s = game.state.players[victim.player].shikigami[victim.shikigami]
+        if s.shield > 0 and ev.amount > s.shield:
+            game._log(f"{game.db.shikigami[s.id].name} 的伤害上限生效（{ev.amount} → {s.shield}）")
+            ev.amount = s.shield
+    else:
+        raise ValueError(f"未知 cap_damage 上限类型: {to}")

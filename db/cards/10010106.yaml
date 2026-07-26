@@ -1,0 +1,15 @@
+id: 10010106
+version: 20260724
+name: 援护
+shikigami: 100101
+card_type: spell
+rarity: SR
+level: 2
+cost: 1
+keywords: [trigger]
+effects:
+  when: on_before_assault
+  condition: {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100101}
+  steps:
+    - {op: damage, amount: {power_of: source}, target: {kind: all, pool: enemy_combat}}
+text: 对敌方战斗区式神造成等同于白狼力量值的伤害。[响应]：{当己方其他式神被攻击时，自动使用此牌}

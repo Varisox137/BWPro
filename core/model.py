@@ -89,6 +89,8 @@ class ShikigamiState(BaseModel):
     awakened: int | None = None  # 已觉醒：觉醒牌数据 id（能力替换为觉醒能力；气绝/复活保留）
     keep_shield: bool = False  # 护甲不在己方回合开始阶段移除（觉醒·兵俑）
     countdown: int | None = None  # 当前倒计时（形态牌结附时授予=初始值；己方回合开始 -1，归零重置并执行形态倒计时效果；形态离场/气绝清除）
+    delayed: list[dict[str, Any]] = Field(default_factory=list)  # 绑定式神的一次性延迟能力（会）：
+    # {"block": EffectBlock, "chosen": Ref|None, "uses": 1}；气绝清除（变形离场保留——变形未实现，见 rules.md）
 
     @property
     def eff_power(self) -> int:

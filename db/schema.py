@@ -30,6 +30,7 @@ KEYWORDS = frozenset({
     "remote",                   # 远程
     "unyielding", "haste",      # 不屈 / 迅捷
     "barrier",                  # 屏障
+    "enraged",                  # 激怒（状态：出击锁定 + 发起战斗时移除）
     "keep_attack_buffs",        # 引擎级：攻击后到期强化不因攻击移除（残心；卡面不出现）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
@@ -130,7 +131,8 @@ class CardDef(BaseModel):
     form_health: int | None = None  # 形态牌结附时的基础生命（card_type=form 时使用）
     keywords: list[str] = Field(default_factory=list)
     target: TargetSpec = Field(default_factory=TargetSpec)
-    effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段
+    effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段。
+    # 形态牌的 effects 块 = 进场时效果（打出结附时结算，可用卡牌的 choose 目标）
     abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）/ 形态牌的形态能力块（结附期间生效）
     countdown: int | None = None  # 形态牌倒计时初始值（结附时授予式神，离场/气绝移除）
     countdown_effects: EffectBlock | None = None  # 倒计时归零时执行的效果块（重置为初始值后执行）

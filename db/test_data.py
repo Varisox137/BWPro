@@ -5,10 +5,12 @@
 - 卡牌：2位id 稀有度 名称 等级 类型 [数值] [关键字]
 
 约定：
-- 已落地的机制在此同步（供 CLI 热座试玩）：白狼/兵俑/妖刀姬/一目连的基础能力、
+- 已落地的机制在此同步（供 CLI 热座试玩）：4 式神 32 卡全录——白狼/兵俑/妖刀姬/一目连的基础能力、
   文射/妖刀万华的[连击]、起弓/离/无我（攻击后到期强化）、残心、觉醒·白狼/觉醒·兵俑、
   不祥之刃/禁锢之刀/冲撞（击杀标记与增强装配）、觉醒·妖刀姬、杀念（随机生成）、
-  风符系列倒计时形态（破/护/势/湮/龙）、罡风、觉醒·一目连、风符·瞬（自毁部分）；
+  风符系列倒计时形态（破/护/势/湮/龙）、罡风、觉醒·一目连、风符·瞬（含响应）、
+  会（延迟触发）、援护/古尘之盾（响应法术）、见切（响应战斗牌插入使用）、
+  尘刀（护甲快照战力）、不动如山/古尘之壁/森罗之阵（进场时效果与形态能力）、尘缚之阵（激怒与战斗区锁定）；
   正式数据以 db/cards、db/shikigami 的 YAML 为准，本文件与其保持一致的部分逐步移交。
 - 未落地的机制仅以数值/瞬发/cost=0 占位：战斗牌简化为力量/护甲修正，
   形态牌按给定数值覆盖基础身材，觉醒牌为永久修正 + awaken tag。
@@ -133,8 +135,23 @@ def make_test_db() -> CardDatabase:
     cards[10010104].effects = EffectBlock(steps=[
         Step(op="attack_buff", power=3, target=_self_target()),
     ])
-    add(100101, 5, "R", "会", 2, "spell", text="")
-    add(100101, 6, "SR", "援护", 2, "spell", text="")
+    add(100101, 5, "R", "会", 2, "spell",
+        text="选择一名敌方式神，你的下个回合开始时，白狼对其造成8点伤害")
+    cards[10010105].target = TargetSpec(kind="choose", pool="enemy_shikigami")
+    cards[10010105].effects = EffectBlock(steps=[
+        Step(op="delay_grant", when="on_turn_start", condition={"player": "self"},
+             steps=[{"op": "damage", "amount": 8}]),
+    ])
+    add(100101, 6, "SR", "援护", 2, "spell", keywords=["trigger"],
+        text="对敌方战斗区式神造成等同于白狼力量值的伤害。"
+             "[响应]：{当己方其他式神被攻击时，自动使用此牌}")
+    cards[10010106].effects = EffectBlock(
+        when="on_before_assault",
+        condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                   "victim_not_shikigami": 100101},
+        steps=[Step(op="damage", amount={"power_of": "source"},
+                    target=TargetSpec(kind="all", pool="enemy_combat"))],
+    )
     add(100101, 7, "SR", "觉醒·白狼", 3, "spell",
         perm_power=2, perm_health=2,
         text="[觉醒]：{己方回合，每当白狼对敌方式神造成伤害时，对敌方牌手造成4点伤害}")
@@ -152,9 +169,29 @@ def make_test_db() -> CardDatabase:
     ])
 
     # 100102 兵俑
-    add(100102, 1, "R", "尘刀", 1, "combat", text="")
-    add(100102, 2, "R", "古尘之盾", 1, "spell", text="")
-    add(100102, 3, "R", "不动如山", 2, "form", form_power=1, form_health=9, text="1力量/9生命")
+    add(100102, 1, "R", "尘刀", 1, "combat",
+        text="兵俑每具有1点护甲，本次战斗中兵俑就获得+1力量")
+    cards[10010201].effects = EffectBlock(steps=[
+        Step(op="buff_power", amount={"shield_of": "self"}, target=_self_target()),
+    ])
+    add(100102, 2, "R", "古尘之盾", 1, "spell", keywords=["trigger"],
+        text="使一名己方式神获得5护甲。[响应]：{当兵俑被攻击时，对其自动使用此牌}")
+    cards[10010202].target = TargetSpec(kind="choose", pool="friendly_shikigami")
+    cards[10010202].effects = EffectBlock(
+        when="on_before_assault",
+        condition={"victim_shikigami": 100102},
+        steps=[Step(op="gain_shield", amount=5)],
+    )
+    add(100102, 3, "R", "不动如山", 2, "form", form_power=1, form_health=9,
+        text="进场时，将兵俑移入战斗区。己方回合开始时，若兵俑在战斗区，兵俑获得3力量")
+    cards[10010203].effects = EffectBlock(steps=[
+        Step(op="enter_combat", target=_self_target()),
+    ])
+    cards[10010203].abilities = [EffectBlock(
+        when="on_turn_start",
+        condition={"player": "self", "shikigami_in_combat": 100102},
+        steps=[Step(op="buff_power", amount=3, perm=True, target=_self_target())],
+    )]
     add(100102, 4, "SR", "冲撞", 2, "combat",
         text="[增强]：{己方回合开始时，若兵俑在战斗区，此牌获得+1力量/+1护甲}")
     cards[10010204].effects = EffectBlock(steps=[
@@ -166,7 +203,16 @@ def make_test_db() -> CardDatabase:
         condition={"player": "self", "shikigami_in_combat": 100102},
         steps=[Step(op="add_mod", to="hand", key="enhance", amount=1)],
     )]
-    add(100102, 5, "SR", "森罗之阵", 2, "form", form_power=4, form_health=7, text="4力量/7生命")
+    add(100102, 5, "SR", "森罗之阵", 2, "form", form_power=4, form_health=7,
+        text="进场时，兵俑获得2护甲。只要兵俑具有护甲，他至多只会受到等于护甲值的伤害")
+    cards[10010205].effects = EffectBlock(steps=[
+        Step(op="gain_shield", amount=2, target=_self_target()),
+    ])
+    cards[10010205].abilities = [EffectBlock(
+        when="on_damage_start",
+        condition={"victim_shikigami": "self"},
+        steps=[Step(op="cap_damage", to="shield")],
+    )]
     add(100102, 6, "SSR", "觉醒·兵俑", 2, "spell", subtype="awaken",
         text="兵俑获得3护甲。[觉醒]：{己方回合开始时，兵俑获得3护甲。"
              "他的护甲不会在己方回合开始时移除。}")
@@ -179,8 +225,20 @@ def make_test_db() -> CardDatabase:
         condition={"player": "self"},
         steps=[Step(op="gain_shield", amount=3, target=_self_target())],
     )]
-    add(100102, 7, "SR", "古尘之壁", 3, "form", form_power=5, form_health=10, text="5力量/10生命")
-    add(100102, 8, "R", "尘缚之阵", 3, "form", form_power=5, form_health=9, text="5力量/9生命")
+    add(100102, 7, "SR", "古尘之壁", 3, "form", form_power=5, form_health=10,
+        text="进场时，兵俑每具有1护甲，使己方所有其他式神获得+1生命/生命上限")
+    cards[10010207].effects = EffectBlock(steps=[
+        Step(op="buff_health", amount={"shield_of": "source"}, perm=True,
+             target=TargetSpec(kind="all", pool="friendly_others")),
+    ])
+    add(100102, 8, "R", "尘缚之阵", 3, "form", form_power=5, form_health=9,
+        text="进场时，选择一名敌方式神，使其获得[激怒]。只要兵俑在战斗区且敌方战斗区有式神，"
+             "为敌方召唤召唤物的效果无效、敌方准备区式神不能发起不具有[远程]的战斗")
+    cards[10010208].tags = ["combat_lock"]
+    cards[10010208].target = TargetSpec(kind="choose", pool="enemy_shikigami")
+    cards[10010208].effects = EffectBlock(steps=[
+        Step(op="grant_keyword", keyword="enraged"),
+    ])
 
     # 100123 妖刀姬
     add(100123, 1, "R", "不祥之刃", 1, "combat", power=0, shield=1,
@@ -191,7 +249,14 @@ def make_test_db() -> CardDatabase:
                    "source_shikigami": "self"},
         steps=[Step(op="draw", count=1, target=TargetSpec(kind="all", pool="self_player"))],
     )]
-    add(100123, 2, "SR", "见切", 1, "combat", power=1, shield=0, text="+1力量/+0护甲")
+    add(100123, 2, "SR", "见切", 1, "combat", keywords=["trigger"],
+        text="+1力量，免疫战斗伤害。[响应]：{当妖刀姬被攻击时，自动使用此牌}")
+    cards[10012302].effects = EffectBlock(
+        when="on_before_assault",
+        condition={"victim_shikigami": 100123},
+        steps=[Step(op="buff_power", amount=1, target=_self_target()),
+               Step(op="battle_immunity", target=_self_target())],
+    )
     add(100123, 3, "R", "战意", 2, "combat", power=2, shield=2, text="+2力量/+2护甲")
     add(100123, 4, "R", "一闪", 2, "combat", cost=0, power=0, shield=0, text="+0力量/+0护甲，不消耗鬼火")
     add(100123, 5, "SR", "禁锢之刀", 2, "combat",
@@ -271,9 +336,14 @@ def make_test_db() -> CardDatabase:
         EffectBlock(when="on_form_destroyed", condition={"target_shikigami": "self"},
                     steps=[Step(op="trigger_form_countdown")]),
     ]
-    add(100125, 6, "SR", "风符·瞬", 2, "form", keywords=["fast"],
+    add(100125, 6, "SR", "风符·瞬", 2, "form", keywords=["fast", "trigger"],
         form_power=6, form_health=9,
         text="[瞬发]。回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用此牌。}")
+    cards[10012506].effects = EffectBlock(
+        when="on_before_assault",
+        condition={"victim_shikigami": 100125},
+        steps=[],
+    )
     cards[10012506].abilities = [EffectBlock(
         when="on_turn_end",
         steps=[Step(op="destroy_form", target=_self_target())],

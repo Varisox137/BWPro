@@ -41,7 +41,7 @@
 | 力量 | `power` | `base_power + perm_power + temp_power` = `eff_power` | ✅ |
 | 护甲 | `shield` | 被伤害优先消耗；己方回合开始清除 | ✅ |
 | 破甲 | `fragile` | 有独立"给与破甲"流程（非简单负护甲，见 thoughts.txt；Phase 3） | 🔧 |
-| 战力 | `combat_power` | 一次性的战斗伤害增加；与鼓舞机制一同实现（第一个大型卡包） | 🔧 |
+| 战力 | `combat_power` | 一次性的战斗伤害增加：战斗牌/响应战斗牌授予，战斗终止点核销（响应插入的经 `_battle_power` 挂账） | ✅ |
 | 乏力 | `weak` | 战力的负向对应 | 🔧 |
 | 永久修正 | `perm_power` / `perm_health` | 气绝后复活保留 | ✅ |
 | 临时修正 | `temp_power` | 气绝时清除（临时/永久的区分 = 复活能否保留）；光环类 Phase 3 | ✅ |
@@ -105,6 +105,7 @@
 | 远程 | `remote` | 不进入战斗区、不受先攻及交战阶段的反击伤害 | ✅ |
 | 连击 | `combo` | 先攻阶段与交战阶段各造成一次战斗伤害 | ✅ |
 | 暴击 | `critical` | | 🔧 |
+| 激怒 | `enraged` | 状态关键字：己方被激怒式神中存在满足出击合法性者时，其他无激怒式神不能出击；在发起战斗的流程（战斗准备前）移除攻击者的激怒（尘缚之阵授予） | ✅ |
 | （引擎级） | `keep_attack_buffs` | 攻击后到期强化不因攻击移除（残心；卡面不出现此关键字） | ✅ |
 
 **关键字持久性三类**（每类均为可重复多重集，存于 `ShikigamiState`）：
@@ -119,7 +120,7 @@
 
 ## 预留机制（译名确认，规则 Phase 3+）
 
-弹回 `returning`、融合 `fusion`、帷幕 `veiled`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
+弹回 `rebound`、融合 `fusion`、帷幕 `veiled`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
 
 ## 结算与事件
 
@@ -140,6 +141,9 @@
 | 直接消灭 | `destroy` / `destroy_form`（动作） | 非伤害消灭：生命归零走气绝流程 / 消灭当前结附的形态（直接消灭免疫为扩展锚点） | ✅ |
 | 调度 | `mulligan` | 游戏开始阶段：返回 1 张起始手牌再随机抽 1，双方各 3 次 | ✅ |
 | 半回合 | `turn` | GameState.turn，双方交替 +1 | ✅ |
+| 延迟能力 | `delayed` / `delay_grant`（动作） | 绑定式神的一次性延迟能力（会）：条目 {block, chosen, uses}，事件匹配时先触发后执行、收集即消耗；气绝清除（变形离场保留——变形未实现） | ✅ |
+| 伤害上限 | `cap_damage`（动作） | 改写伤害事件中可变伤害对象的数值：to="shield" 时至多为受伤式神当前护甲（森罗之阵；须挂 on_damage_start 等含 damage payload 的时点批次） | ✅ |
+| 战斗区锁定 | `combat_lock`（tags） | 尘缚之阵：携带者（兵俑）在战斗区且敌方战斗区有式神时，敌方召唤召唤物的效果无效、敌方准备区式神不能发起不具有远程的战斗（出击/战斗牌；效果发起的战斗暂无来源） | ✅ |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 
@@ -154,3 +158,4 @@
 | 临时触发 | `temp_grants` / `TempGrant` | 一次性注册的触发（uses 递减移除）；战斗牌携带者绑定该次战斗注册（如不祥之刃击杀抽牌） | ✅ |
 | 写入目标 | `to`（hand/persistent/instance/turn） | 写入原语（add_mod）的修饰存储目标：手牌实例 / 持久 store / 来源实例自身（实例计数器，如风符·龙的目标数）/ 回合 store（turn 未实现，"本回合"类由 card_auras 覆盖） | ✅ |
 | 数值叠加 | `{"enhance": true, "base": n}` | 步骤 amount 参数形式：base + 实例已装配 enhance（战斗牌战力/护甲提取处解析） | ✅ |
+| 动态数值 | `{"shield_of": ...}` / `{"power_of": ...}` | 步骤 amount 参数形式：以来源式神当前护甲 / eff_power 求值——尘刀按打出瞬间护甲快照战力（本次战斗中不变）、古尘之壁按护甲强化、援护按白狼力量造伤 | ✅ |

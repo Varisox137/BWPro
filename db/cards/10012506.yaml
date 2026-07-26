@@ -8,10 +8,12 @@ level: 2
 cost: 1
 form_power: 6
 form_health: 9
-keywords: [fast]
-effects: {steps: []}
+keywords: [fast, trigger]
+effects:
+  when: on_before_assault
+  condition: {victim_shikigami: 100125}
+  steps: []
 abilities:
-  # [响应]部分（一目连被攻击时自动使用）属第五批响应战斗牌插入规则，落地后补录
   - when: on_turn_end
     steps:
       - {op: destroy_form, target: {kind: self}}

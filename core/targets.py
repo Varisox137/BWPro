@@ -10,7 +10,7 @@ kind：
 
 pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / self_player
      / projectile（投射：敌方战斗区式神，空则敌方牌手）/ enemy_combat（敌方战斗区式神）
-     / enemy_character（敌方在场式神 + 敌方牌手）
+     / enemy_character（敌方在场式神 + 敌方牌手）/ friendly_others（己方其他在场式神，排除来源）
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ POOLS = frozenset({
     "projectile",
     "enemy_combat",
     "enemy_character",
+    "friendly_others",
 })
 
 
@@ -76,6 +77,10 @@ def resolve(game, spec, ctx) -> list[Ref]:
     if spec.kind == "self":
         return [ctx.source] if ctx.source else []
     if spec.kind == "all":
+        if spec.pool == "friendly_others":
+            # 己方其他在场式神：排除效果来源（古尘之壁）
+            return [r for r in pool_refs(game, "friendly_shikigami", ctx.controller)
+                    if r != ctx.source]
         return pool_refs(game, spec.pool, ctx.controller)
     if spec.kind == "choose":
         return list(ctx.chosen or [])

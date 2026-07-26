@@ -100,6 +100,9 @@ class Game:
         self._battle_seq: int = 0
         self._battle_stack: list[int] = []
         self._battle_grants: dict[int, list[tuple[Ref, str, str]]] = {}  # battle id → [(式神 Ref, 关键字, 类别)]
+        # battle id → [(式神 Ref, 战力)]：响应战斗牌插入使用授予的战力，终止点核销
+        # （rules.md:52"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
+        self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -201,15 +204,24 @@ class Game:
             card.mods["keywords_add"] = sorted(merged)
 
     @staticmethod
-    def _step_amount(step: Step, card: CardInstance | None) -> int:
-        """解析步骤的 amount 参数：支持 {"enhance": true, "base": n} 形式
-        （base + 实例已装配的 enhance 修饰，docs/enhance-design.md 数值解析流水线）。
+    def _step_amount(step: Step, card: CardInstance | None,
+                     s: ShikigamiState | None = None) -> int:
+        """解析步骤的 amount 参数（docs/enhance-design.md 数值解析流水线）：
+
+        - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
+        - {"shield_of": "self"|"source"}：来源式神当前护甲（尘刀快照/古尘之壁）；
+        - {"power_of": "self"|"source"}：来源式神 eff_power（援护）。
+        后两者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
         """
         raw = (step.model_extra or {}).get("amount", 0)
         if isinstance(raw, dict):
             base = int(raw.get("base", 0))
             if raw.get("enhance") and card is not None:
                 base += int(card.mods.get("enhance", 0))
+            if raw.get("shield_of") and s is not None:
+                base += s.shield
+            if raw.get("power_of") and s is not None:
+                base += s.eff_power
             return base
         return int(raw)
 
@@ -377,6 +389,12 @@ class Game:
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
             if s.level < eff_level:
                 raise IllegalAction(f"《{cdef.name}》需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
+        # 尘缚之阵锁定：准备区式神不能发起不具有远程的战斗（战斗牌；出击见 _cmd_assault）
+        if (cdef.card_type == "combat" and si is not None
+                and p.combat_index != si
+                and not self._has_keyword(p.shikigami[si], "remote")
+                and self._combat_zone_locked(self.state.active)):
+            raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
         # 费用 = （方式覆盖或基础）+ 方式增减 + 实例修饰；瞬发仅免鬼火，其余条件照常
         cost = self._effective_cost(p, cdef, card=card, method=method)
         if p.orb < cost:
@@ -409,6 +427,12 @@ class Game:
                         self._compact_hand_seq(p, removed_seq)
                     break
             self._attach_form(p, si, card, cdef)
+            # 形态牌的进场时效果（effects 块；可用打出时的选择目标，如尘缚之阵授予激怒）
+            if cdef.effects.steps and cdef.effects.when == "on_play":
+                self._resolve_block(cdef.effects, ExecContext(
+                    controller=self.state.active,
+                    source=Ref(player=self.state.active, shikigami=si),
+                    card=card, chosen=chosen))
         elif cdef.card_type == "combat":
             # 战斗牌：以完整战斗事件流程结算（移入战斗区、战力/一次性护甲、
             # 战斗前/后时机、战斗伤害），结算完后进入墓地。
@@ -434,18 +458,20 @@ class Game:
         self.emit("on_card_played", player=self.state.active, uid=uid)
 
     def _combat_card_stats(self, block: EffectBlock,
-                           card: CardInstance | None = None) -> tuple[int, int]:
+                           card: CardInstance | None = None,
+                           s: ShikigamiState | None = None) -> tuple[int, int]:
         """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。
 
         amount 支持 {"enhance": true, "base": n} 形式（禁锢之刀/冲撞）：base + 实例已装配的
-        enhance 修饰（打出装配快照，见 _materialize）。
+        enhance 修饰（打出装配快照，见 _materialize）；以及 {"shield_of": "self"}（尘刀：
+        按打出瞬间护甲快照战力，本次战斗中不变）。
         """
         power = 0
         shield = 0
         for step in block.steps:
             if step.target is not None and step.target.kind != "self":
                 continue
-            amount = self._step_amount(step, card)
+            amount = self._step_amount(step, card, s)
             if step.op == "buff_power":
                 power += amount
             elif step.op == "gain_shield":
@@ -463,7 +489,7 @@ class Game:
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
         block = method.effects if (method and method.effects is not None) else cdef.effects
-        power, shield = self._combat_card_stats(block, card)
+        power, shield = self._combat_card_stats(block, card, s)
         if power:
             s.combat_power += power
         if shield:
@@ -485,6 +511,49 @@ class Game:
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                              temp_grants=tuple(cdef.temp_grants))
         s.combat_power = 0
+        self.move_card(p, card, "graveyard")
+
+    def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
+                               cdef: CardDef) -> None:
+        """响应战斗牌的插入使用（rules.md:52）：在"（被）攻击时"触发时——
+
+        - 不发起新战斗：所属式神改为移入战斗区（无论是否具有远程）；
+        - 牌的力量（战力）/护甲/关键字/战斗伤害免疫绑定当前（被插入的）战斗，
+          力量与能力加成持续到该次战斗后（战力经 _battle_power 终止点核销，
+          关键字/免疫经 _battle_grants / immunities 的战斗作用域清理）；
+        - 牌入墓地。调用方已支付费用并 emit on_trigger。
+        """
+        s = p.shikigami[si]
+        pi = self.state.players.index(p)
+        ref = Ref(player=pi, shikigami=si)
+        block = cdef.effects
+        power, shield = self._combat_card_stats(block, card, s)
+        if power:
+            s.combat_power += power
+            if self._battle_stack:
+                self._battle_power.setdefault(self._battle_stack[-1], []).append((ref, power))
+        if shield:
+            old = s.shield
+            s.shield += shield
+            self.emit("on_shield_changed", target=ref, old=old, new=s.shield,
+                      reason="combat_card")
+        # 关键字（fast/trigger 为卡牌级除外）授予并登记到当前战斗（终止点按实例移除）
+        if self._battle_stack:
+            grants = self._battle_grants.setdefault(self._battle_stack[-1], [])
+            for kw in cdef.keywords:
+                if kw not in ("fast", "trigger"):
+                    cls = self._grant_keyword(s, kw)
+                    grants.append((ref, kw, cls))
+        # 其余 steps（battle_immunity 等）照常执行——登记到当前战斗上下文
+        ctx = ExecContext(controller=pi, source=ref, card=card)
+        for step in block.steps:
+            if (step.op in ("buff_power", "gain_shield")
+                    and (step.target is None or step.target.kind == "self")):
+                continue  # 战力/护甲已提取，不重复执行
+            self._run_step(step, ctx)
+        # 改为移入战斗区（无论该牌所属式神是否具有远程）
+        if p.combat_index != si and s.in_play:
+            self._enter_combat(p, si)
         self.move_card(p, card, "graveyard")
 
     def legal_targets(self, player_index: int, card: CardInstance) -> list[Ref]:
@@ -547,6 +616,7 @@ class Game:
         self._battle_stack.append(bid)
         grants: list[tuple[Ref, str, str]] = []
         self._battle_grants[bid] = grants
+        self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
         for kw in grant_keywords:
             cls = self._grant_keyword(attacker, kw)
             grants.append((atk_ref, kw, cls))
@@ -563,6 +633,10 @@ class Game:
                 st = self.state.players[ref.player].shikigami[ref.shikigami]
                 self._remove_keyword(st, kw, cls)
             self._battle_grants.pop(bid, None)
+            # 响应战斗牌插入使用授予的战力核销（持续到该次战斗后）
+            for ref, pw in self._battle_power.pop(bid, []):
+                st = self.state.players[ref.player].shikigami[ref.shikigami]
+                st.combat_power -= pw
             for pl in self.state.players:
                 for st in pl.shikigami:
                     st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
@@ -589,8 +663,9 @@ class Game:
         piercing = self._has_keyword(attacker, "piercing")
         combo = self._has_keyword(attacker, "combo")
         initiative = self._has_keyword(attacker, "initiative")
-        # ---- 战斗准备前（即时时机）：穿刺——移除被攻击者的所有护甲/屏障 ----
-        # （激怒移除锚点：第五批；屏障由伤害管线批次 3 消耗，此处仅清护甲）
+        # ---- 战斗准备前：移除攻击者的激怒；穿刺——移除被攻击者的所有护甲/屏障 ----
+        # （屏障由伤害管线批次 3 消耗，此处仅清护甲）
+        self._remove_keyword(attacker, "enraged")
         if self._has_keyword(attacker, "pierce"):
             vic_ref = Ref(player=def_pi, shikigami=d.combat_index)
             holder = d.shikigami[d.combat_index] if d.combat_index is not None else d
@@ -678,6 +753,16 @@ class Game:
             raise IllegalAction("该式神未在场（0 级），不能出击")
         if p.assaults_left < 1:
             raise IllegalAction("本回合已没有出击次数")
+        # 激怒：己方存在"被激怒且满足出击合法性（在场 + 有出击次数）"的式神时，
+        # 其他无激怒的式神不能出击（简化：不查鬼火/眩晕，rules.md ch4/11）
+        if not self._has_keyword(s, "enraged") and any(
+                self._has_keyword(o, "enraged") and o.in_play
+                for j, o in enumerate(p.shikigami) if j != i):
+            raise IllegalAction("激怒：被激怒的式神可以出击时，其他式神不能出击")
+        # 尘缚之阵锁定：准备区式神不能发起不具有远程的战斗
+        if (p.combat_index != i and not self._has_keyword(s, "remote")
+                and self._combat_zone_locked(self.state.active)):
+            raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
         # 迅捷：出击事件的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷（永久迅捷不移除）
         if self._has_keyword(s, "haste"):
             if "haste" in s.one_shot_keywords:
@@ -709,6 +794,21 @@ class Game:
                       reason="basic_boost")
         self._log(f"{self.db.shikigami[s.id].name} 获得出击加成（+{power}力量/+{shield}护甲）")
         p.assault_boosts.clear()
+
+    def _combat_zone_locked(self, pi: int) -> bool:
+        """尘缚之阵锁定：敌方战斗区有"结附带 combat_lock 标记形态"的式神，且己方战斗区有式神。
+
+        锁定效果（对己方）：召唤召唤物的效果无效；准备区式神不能发起不具有远程的战斗
+        （出击/战斗牌；效果发起的战斗暂无来源，见 rules.md 锚点）。
+        """
+        p = self.state.players[pi]
+        ep = self.state.players[1 - pi]
+        if p.combat_index is None or ep.combat_index is None:
+            return False
+        s = ep.shikigami[ep.combat_index]
+        if s.form is None or not s.in_play:
+            return False
+        return "combat_lock" in self.db.cards[s.form.id].tags
 
     def _enter_combat(self, p: PlayerState, i: int) -> None:
         """进入战斗区；若已有其它式神驻留，则其退回准备区。"""
@@ -1159,6 +1259,7 @@ class Game:
         s.one_shot_keywords.clear()
         s.immunities.clear()
         s.attack_buffs.clear()  # 攻击后到期强化挂账随临时修正一并清空（keep_shield/awakened 保留）
+        s.delayed.clear()  # 绑定式神的一次性延迟能力气绝时消失（会；变形离场保留——变形未实现）
         s.health = 0
         name = self.db.shikigami[s.id].name
         if s.kind == "summon":
@@ -1318,6 +1419,18 @@ class Game:
                 if self._match(ability.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
                     out.append(_Pending(ability, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si), event=event)))
+            # 绑定式神的一次性延迟能力（会）：先触发后执行，收集即消耗；气绝时已清除
+            for entry in s.delayed:
+                block = entry["block"]
+                if block.when != event["name"] or not s.in_play:
+                    continue
+                if self._match(block.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
+                    chosen = [entry["chosen"]] if entry.get("chosen") is not None else []
+                    out.append(_Pending(block, ExecContext(
+                        controller=pi, source=Ref(player=pi, shikigami=si),
+                        event=event, chosen=chosen)))
+                    entry["uses"] -= 1
+            s.delayed[:] = [e for e in s.delayed if e["uses"] > 0]
         return out
 
     def _collect_responses(self, event: dict, pi: int) -> list[_Pending]:
@@ -1352,8 +1465,8 @@ class Game:
             # 按所属式神从左往右排序（中立响应牌排在最后）；同式神保持手牌顺序
             order = si if si is not None else len(p.shikigami)
             candidates.append((order, card, eb, si))
-        # 注意：Phase 1 响应牌的目标自动选择未实现——带 choose 目标的响应牌按无目标结算
-        # （符合 rules.md："如果没有目标会自动使用而没有效果"）。
+        # 带 choose 目标的响应牌：结算时自动选择事件中的被攻击者（rules.md:36），
+        # 不在合法池则按无目标结算（自动使用而没有效果）——见 _resolve_block 响应前置。
         candidates.sort(key=lambda c: c[0])
         for _, card, eb, si in candidates:
             out.append(_Pending(eb, ExecContext(
@@ -1370,6 +1483,7 @@ class Game:
         - {字段_kind: shikigami|player}   ：Ref 指向式神还是牌手
         - {字段_shikigami: self}   ：事件中的 Ref 与能力持有者（holder）同式神
         - {字段_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id（游离触发器用）
+        - {字段_not_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id ≠ 给定值（"其他式神"）
         - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
         - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
         - 其余按键值相等比较
@@ -1398,6 +1512,13 @@ class Game:
                     return False
                 kind = "shikigami" if ref.shikigami is not None else "player"
                 if kind != want:
+                    return False
+            elif key.endswith("_not_shikigami"):
+                # 事件中的 Ref 所指式神的数据 id ≠ 给定值（"己方其他式神"，如援护）
+                ref = event.get(key[:-14])
+                if not isinstance(ref, Ref) or ref.shikigami is None:
+                    return False
+                if self.state.players[ref.player].shikigami[ref.shikigami].id == want:
                     return False
             elif key.endswith("_shikigami"):
                 ref = event.get(key[:-10])
@@ -1433,7 +1554,9 @@ class Game:
         - 同一时机（event._emit）至多成功结算一张；
         - 从收集到结算之间局面可能已变化，必须复查手牌、条件、等级、鬼火；
         - 复查失败直接 return，不占用本时机的响应名额；
-        - 成功结算后支付费用、移入手牌到墓地、占用名额，并 emit on_trigger。
+        - 成功结算后支付费用、占用名额、emit on_trigger，然后按卡牌类型分派：
+          战斗牌/形态牌走插入使用（_apply_response_combat / 立即结附），
+          其余移入手牌到墓地后按 steps 结算。
 
         然后按 block.steps 顺序执行动作。mode="interleaved" 时每步后清空队列，
         允许其它效果插入；mode="atomic" 时步骤连发，队列留到块外统一结算。
@@ -1449,6 +1572,7 @@ class Game:
                 return
             if ctx.event is not None and not self._match(block.condition, ctx.event, ctx.controller):
                 return
+            si: int | None = None
             if cdef.shikigami is not None:
                 si = self._find_shikigami(p, cdef.shikigami)
                 if si is None:
@@ -1465,10 +1589,32 @@ class Game:
             p.orb -= cost
             if "fast" in cdef.keywords:
                 p.fast_used = True
-            self.move_card(p, ctx.card, "graveyard")
+            # choose 目标的响应牌：自动选择事件中的被攻击者（rules.md:36"执行效果时选择目标"；
+            # 不在合法池则无目标——自动使用而没有效果，如古尘之盾"对其自动使用"）
+            if cdef.target.kind == "choose" and ctx.event is not None:
+                v = ctx.event.get("victim")
+                if isinstance(v, Ref) and v in targets.pool_refs(self, cdef.target.pool, ctx.controller):
+                    ctx.chosen = [v]
             self._response_used_emit = emit_id  # 成功结算才占用本时机的响应名额
             self._log(f"{p.name} 的响应牌《{cdef.name}》触发")
             self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
+            if cdef.card_type == "combat" and si is not None:
+                # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
+                self._apply_response_combat(p, si, ctx.card, cdef)
+                self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
+                return
+            if cdef.card_type == "form" and si is not None:
+                # 响应形态牌插入使用：立即结附（风符·瞬）；牌不进墓地，形态离场才进
+                for zname, z in p.zones.items():
+                    if ctx.card in z:
+                        z.remove(ctx.card)
+                        if zname == "hand":
+                            self._compact_hand_seq(p, ctx.card.hand_seq)
+                        break
+                self._attach_form(p, si, ctx.card, cdef)
+                self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
+                return
+            self.move_card(p, ctx.card, "graveyard")
         for step in block.steps:
             self._run_step(step, ctx)
             if block.mode == "interleaved":
@@ -1483,7 +1629,13 @@ class Game:
         if fn is None:
             raise IllegalAction(f"未知动作: {step.op}")  # 加载时已校验，此处双保险
         refs = targets.resolve(self, step.target, ctx)
-        fn(self, ctx, targets=refs, **(step.model_extra or {}))
+        params = dict(step.model_extra or {})
+        if isinstance(params.get("amount"), dict):
+            # 动态数值（enhance 快照 / shield_of / power_of）：以 ctx 来源式神求值（援护/古尘之壁）
+            src = (self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+                   if ctx.source is not None and ctx.source.shikigami is not None else None)
+            params["amount"] = self._step_amount(step, ctx.card, src)
+        fn(self, ctx, targets=refs, **params)
 
     def _drain_queue(self) -> None:
         """循环结算效果队列，带死循环保护。

@@ -1,0 +1,19 @@
+id: 10010205
+version: 20260724
+name: 森罗之阵
+shikigami: 100102
+card_type: form
+rarity: SR
+level: 2
+cost: 1
+form_power: 4
+form_health: 7
+effects:
+  steps:
+    - {op: gain_shield, amount: 2, target: {kind: self}}
+abilities:
+  - when: on_damage_start
+    condition: {victim_shikigami: self}
+    steps:
+      - {op: cap_damage, to: shield}
+text: 进场时，兵俑获得2护甲。只要兵俑具有护甲，他至多只会受到等于护甲值的伤害
