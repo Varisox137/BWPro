@@ -57,8 +57,8 @@ def run_deckbuilder(db: CardDatabase) -> None:
         except (ValueError, IndexError):
             print("序号有误，已取消构筑")
             return
-        copies = {i + 1: MAX_COPIES_PER_NAME for i in range(len(picked))}
-        tune = _input(f"张数调整（如 1=1 3=1；回车 = 每种 {MAX_COPIES_PER_NAME} 张）> ")
+        copies = {i + 1: 1 for i in range(len(picked))}
+        tune = _input(f"张数调整（如 1=2 3=2；回车 = 每种 1 张）> ")
         for item in tune.split():
             try:
                 k, v = item.split("=")
@@ -66,8 +66,10 @@ def run_deckbuilder(db: CardDatabase) -> None:
             except ValueError:
                 print(f"无法解析 {item!r}，已忽略")
         for i, c in enumerate(picked):
-            n = max(0, min(MAX_COPIES_PER_NAME, copies.get(i + 1, MAX_COPIES_PER_NAME)))
+            n = max(0, min(MAX_COPIES_PER_NAME, copies.get(i + 1, 1)))
             card_ids.extend([c.id] * n)
+        print(f"当前共 {len(card_ids)} 张（每名式神须恰好 "
+              f"{MAX_KINDS_PER_SHIKIGAMI} 张）")
     errors = validate_deck(db, ids, card_ids)
     if errors:
         print("卡组不合法：")
