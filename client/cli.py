@@ -310,10 +310,17 @@ def render(game: Game) -> str:
 
 
 def run_mulligan(game: Game) -> None:
-    """调度阶段：双方轮流确认——输入手牌序号调度（返回牌库再随机抽 1），done 结束。"""
+    """调度阶段：双方轮流确认——输入手牌序号调度（返回牌库再随机抽 1），done 结束。
+
+    每位玩家调度前先展示自己的先后手（players[0] 恒为先手）与四名式神的座位顺序。
+    """
     print("—— 调度阶段：输入手牌序号调度（可以不用满次数），done 结束 ——")
     for pi in (0, 1):
         p = game.state.players[pi]
+        seats = "  ".join(
+            _colored(f"{i + 1}.{game.db.shikigami[s.id].name}", _seat_color(p, i))
+            for i, s in enumerate(p.shikigami))
+        print(f"{p.name}（{'先手' if pi == 0 else '后手'}）座位：{seats}")
         while not p.mulligan_done:
             hand = "  ".join(
                 f"[{i + 1}]" + _colored(f"【{game.db.cards[c.id].name}】",

@@ -56,6 +56,19 @@ def test_color_off_when_disabled(db, make_game, color_off):
     assert "\033[" not in out
 
 
+def test_mulligan_shows_first_second_and_seats(db, make_game, monkeypatch, capsys):
+    """调度阶段：每位玩家调度前显示自己的先后手与四名式神座位顺序。"""
+    def no_input(prompt=""):
+        raise EOFError  # 等价于直接 done
+    monkeypatch.setattr("builtins.input", no_input)
+    g = make_game(mulligan=True)
+    cli.run_mulligan(g)
+    out = capsys.readouterr().out
+    assert "A（先手）座位：" in out
+    assert "B（后手）座位：" in out
+    assert "1.式神100101" in out and "4.式神100104" in out
+
+
 def test_color_does_not_break_alignment(db, make_game, monkeypatch):
     """颜色不影响排版：开色输出剥离 ANSI 后与关色输出逐行相等。"""
     g = make_game()
