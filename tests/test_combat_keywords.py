@@ -138,6 +138,47 @@ def test_piercing_spell_damage_no_overflow(db, make_game):
     assert pl2.health == 27  # 溢出 3
 
 
+def test_piercing_combat_card_overflow(db, make_game):
+    """贯通（伤害原因）：战斗牌本身的效果伤害不继承贯通，但其发起的战斗继承。"""
+    db.cards[10010153] = F.card(10010153, card_type="combat", token=True, steps=[])
+    g = make_game()
+    _move(g, 1, 0)
+    pl = g.state.players[1]
+    pl.shield = 0
+    b = pl.shikigami[0]
+    b.health = 2
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("piercing")
+    g.apply({"op": "play_card", "uid": give(g, 0, 10010153).uid})
+    assert b.defeated       # 战斗伤害 3 吃 2
+    assert pl.health == 29  # 溢出 1
+
+
+def test_distribute_damage_flow(db, make_game):
+    """随机分配伤害：总计 x 点逐 1 点随机分配；已标记气绝（生命≤0）目标不再是合法
+    目标（无合法目标则后续重复落空）；气绝事件延后到效果结束后统一结算。"""
+    db.cards[10010154] = F.card(
+        10010154, token=True,
+        steps=[F.Step(op="distribute_damage", amount=5, pool="enemy_shikigami")])
+    # 单一目标 2 血：吃 2 点标记气绝后退出分配，第 3 点起落空
+    g = make_game()
+    pl = g.state.players[1]
+    b = pl.shikigami[0]
+    b.health = 2
+    g.apply({"op": "play_card", "uid": give(g, 0, 10010154).uid})
+    assert b.health == 0   # 不会被打成负数（标记气绝后不再是合法目标）
+    assert b.defeated      # 效果结束后气绝事件已统一结算
+    # 双目标分配：总伤害 5 全部分配完毕、无目标生命被打成负数
+    g2 = make_game()
+    pl2 = g2.state.players[1]
+    pl2.shikigami[1].level = 1
+    h0, h1 = pl2.shikigami[0].health, pl2.shikigami[1].health
+    g2.apply({"op": "play_card", "uid": give(g2, 0, 10010154).uid})
+    lost = (h0 - pl2.shikigami[0].health) + (h1 - pl2.shikigami[1].health)
+    assert lost == 5       # 5 点全部分配（两目标总生命足够）
+    assert pl2.shikigami[0].health >= 0 and pl2.shikigami[1].health >= 0
+
+
 def test_pierce_strips_shield(db, make_game):
     """穿刺：造成伤害前移除受伤者所有护甲（经护甲变化事件）。"""
     g = make_game()

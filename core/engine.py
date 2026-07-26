@@ -1113,13 +1113,15 @@ class Game:
         self._run_damage_queue([_DamageEvent(source=source, victim=Ref(player=player_index),
                                              amount=amount, kind=kind)])
 
-    def _run_damage_queue(self, events: list[_DamageEvent]) -> None:
+    def _run_damage_queue(self, events: list[_DamageEvent],
+                          defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None) -> None:
         """伤害事件队列：并行伤害、贯通溢出、伤害合并都在同一队列结算（rules.md 第五章）。
 
         每个事件依次经过时点批次：造成伤害前（穿刺）→ 伤害开始时 → 贯通修正 → 护甲计算前（屏障）→ 护甲计算 →
         护甲计算后 → 扣减生命前 → 合并 → 扣减生命（不屈）→ 伤害后。队列清空后按受伤顺序
-        生成气绝事件（rules.md:207）。子优先级批次（0/1/2/3）暂不拆事件名，待首个有
-        优先级需求的监听者出现再拆。
+        生成气绝事件（rules.md:207）；defer_defeats 给出时改为把受伤者追加到该列表、
+        由调用方延后统一结算（随机分配伤害：气绝事件按延时时机在效果结束后结算）。
+        子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者出现再拆。
         """
         dq: deque[_DamageEvent] = deque(events)
         victims: list[tuple[Ref, Ref | None, str]] = []  # (受伤式神, 来源, 气绝原因) 按受伤顺序
@@ -1129,7 +1131,10 @@ class Game:
             if self.state.winner is not None:
                 return
         for ref, source, reason in victims:
-            self.check_defeated(ref, source=source, reason=reason)
+            if defer_defeats is not None:
+                defer_defeats.append((ref, source, reason))
+            else:
+                self.check_defeated(ref, source=source, reason=reason)
 
     def _emit_damage_batch(self, name: str, ev: _DamageEvent) -> None:
         """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。"""

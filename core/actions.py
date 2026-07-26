@@ -356,6 +356,37 @@ def random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
     ])
 
 
+@action("distribute_damage")
+def distribute_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
+                      piercing: bool | None = None) -> None:
+    """造成总计 amount 点伤害，随机分配给 pool 中的目标。
+
+    流程：确定目标池 → 重复 amount 次 {随机选取目标池中 1 名合法目标，对其造成 1 点伤害}。
+    与 random_damage（随机选取 x 个目标、同一队列并行受伤）不同：每次重复的伤害事件
+    单独结算（重复之间按即时时机插入）；气绝事件按延时时机延后到本效果结束后统一生成，
+    但已因此效果生命 ≤ 0（标记气绝）的目标不再是后续重复的合法目标。贯通规则同 damage。
+    """
+    from core import targets as targets_mod
+    refs = targets_mod.pool_refs(game, pool, ctx.controller)
+    if not refs:
+        return
+    pierce = piercing if piercing is not None else game._ability_piercing(ctx)
+    from core.engine import _DamageEvent  # 避免模块顶层循环引用
+    deferred: list[tuple[Ref, Ref | None, str]] = []
+    for _ in range(amount):
+        legal = [r for r in refs if r.shikigami is None
+                 or game.state.players[r.player].shikigami[r.shikigami].health > 0]
+        if not legal:
+            break
+        r = game.rng.choice(legal)
+        game._run_damage_queue(
+            [_DamageEvent(source=ctx.source, victim=r, amount=1, kind="effect",
+                          piercing=pierce)],
+            defer_defeats=deferred)
+    for ref, source, reason in deferred:
+        game.check_defeated(ref, source=source, reason=reason)
+
+
 @action("battle_immunity")
 def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> None:
     """作用域战斗伤害免疫：免疫 kind ∈ (combat, counter) 的伤害（法术/能力等 effect 伤害不免疫）。
