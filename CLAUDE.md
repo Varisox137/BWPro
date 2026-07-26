@@ -86,7 +86,7 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 - 身材 = 基础值 + 永久修正 + 临时修正；**临时/永久的区分 = 气绝后复活能否保留**（临时修正气绝时清除；光环类 Phase 3）；"战力" combat_power 为一次性战斗伤害增益（与鼓舞机制同在第一个大型卡包实现）；破甲有独立"给与破甲"流程（非负护甲，Phase 3）
 - 派系：红莲/紫岩/青岚/苍叶/无相（red/purple/blue/green/white），对局中可被效果改变（构筑规则仅校验时检查）
 - 觉醒牌不是主类型，是通用 tag（`tags` 含 awaken，任意主类型可觉醒）；主类型：spell/combat/form + 预留 field（幻境）/reinforce（协战）；稀有度 rarity（R/SR/SSR）预留
-- 组卡：4 式神、≤2 派系（不含无相）、同源（origin）不共存、每式神 ≤8 种（号段结构性保证）×2、中立牌与衍生卡禁入；协战牌所属任一式神出战即可编入（占其 8 种名额，同名仍限 2）
+- 组卡（天梯规则，db/deck.py 的 DeckRules 可参数化以适配将来模式）：4 式神、≤2 派系（不含无相）、同源（origin）不共存、每式神恰好 8 张（专属牌构筑序号 01-08，协战暂只开放 21）、同名 ≤2、中立牌与衍生卡禁入；协战牌所属任一式神出战即可编入（计入所属式神 8 张，同名仍限 2）
 - 卡牌区域 zones 可扩展；墓地仅 UI 层隐藏（引擎可查看、保留对象引用）；同名卡靠 uid 区分，实例差异放 mods
 - 使用位置（play_from）与使用方式（play_method/PlayMethod，可覆盖 cost/level/card_type/target）保留扩展；多择牌仅保留核心方式、参数可变（PlayMethod.param）；对局中可动态赋予卡牌效果（预留）
 - 数据兼容：字段只增不改、未知字段保留、加载即校验
@@ -94,10 +94,9 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 
 ## Roadmap
 
-1. **Phase 1 ✅→进行中** 核心规则与数据模型（引擎 + db + CLI 热座；规则按 thoughts.txt 持续校准）
-   - 已落地：战斗关键字（连击/先攻/贯通/穿刺/远程/不屈/迅捷/屏障）+ 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫；攻击后到期强化（attack_buffs/keep_attack_buffs）+ 法术觉醒替换（awakened/abilities/keep_shield）；增强装配管线（卡牌触发器 triggers、打出装配 _materialize、enhance 数值、卡牌光环 card_auras、战斗绑定临时触发 temp_grants）+ 白狼/妖刀姬基础能力；倒计时系统（锚点版：形态倒计时结附/回合开始 -1/归零重置并触发/离场移除）+ 形态能力块 + 投射/鼓舞/直接消灭/随机生成（generate）+ 一目连基础能力与全 8 卡、杀念；随机分配伤害（distribute_damage：逐 1 点插入结算、气绝延后、标记气绝目标不再可选）；响应插入使用（战斗牌改为移入战斗区/形态立即结附/choose 自动选事件被攻击者/同时机限一张）+ 延迟触发（delayed/delay_grant"会"）+ 伤害上限（cap_damage"森罗之阵"）+ 激怒与尘缚之阵战斗区锁定（enraged/combat_lock）+ 进场时形态效果与动态数值（shield_of/power_of：尘刀快照/古尘之壁/援护）；YAML 4 式神 32 卡全录
-   - 后续批次：32 卡全录 ✅ → CLI 修饰状态显示 ✅（座次配色/修饰状态/关键字中文化；Phase 1 收尾）
-2. **Phase 2 ✅（初版）** 联机服务端：FastAPI + WebSocket、房间创建/按 id 加入、随机先手与座位映射、断线重连（token）、调度 30s/回合 120s 计时（升级阶段超时随机升级）、debug 对局与服务端控制台（详见 server/README.md；回放/匹配/限流待后续）
+1. **Phase 1 ✅** 核心规则与数据模型（引擎 + 正式数据 4 式神 32 卡 + CLI 热座 + 卡组构筑/卡组码；规则按 thoughts.txt 持续校准）
+   - 已落地机制（示例略，详见 README"已实现机制"）：战斗关键字 + 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫；攻击后到期强化 + 法术觉醒替换；增强装配管线（triggers/_materialize/enhance/card_auras/temp_grants）；倒计时系统（锚点版）+ 形态能力块 + 投射/鼓舞/直接消灭/随机生成；随机分配伤害（distribute_damage）；响应插入使用 + 延迟触发（delayed/delay_grant）+ 伤害上限（cap_damage）+ 激怒与战斗区锁定（enraged/combat_lock）+ 动态数值（shield_of/power_of）
+2. **Phase 2 ✅（初版）** 联机服务端：FastAPI + WebSocket、房间创建/按 id 加入、随机先手与座位映射、断线重连（token）、调度 30s/回合 120s 计时（升级阶段超时随机升级）、debug 对局与服务端控制台、状态按视角脱敏与限流（详见 server/README.md；回放/匹配待后续）
 3. **Phase 3** 进阶机制：形态/觉醒/战斗牌、持续效果与光环、出击增减益、爆能/赐能/起源/连引/连锁/戏法
 4. **Phase 4** 自定义卡牌：DSL 编译器、校验、平衡工具（契约见 diy/README.md）
 5. **Phase 5** 图形客户端
