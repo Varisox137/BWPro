@@ -95,7 +95,7 @@ uv run pytest -q tests/test_engine.py::test_defeated_and_revive   # 单个测试
 
 1. **Phase 1 ✅→进行中** 核心规则与数据模型（引擎 + db + CLI 热座；规则按 thoughts.txt 持续校准）
    - 已落地：战斗关键字（连击/先攻/贯通/穿刺/远程/不屈/迅捷/屏障）+ 全量伤害时点批次管线 + 关键字三类持久性/作用域免疫；攻击后到期强化（attack_buffs/keep_attack_buffs）+ 法术觉醒替换（awakened/abilities/keep_shield）；增强装配管线（卡牌触发器 triggers、打出装配 _materialize、enhance 数值、卡牌光环 card_auras、战斗绑定临时触发 temp_grants）+ 白狼/妖刀姬基础能力；倒计时系统（锚点版：形态倒计时结附/回合开始 -1/归零重置并触发/离场移除）+ 形态能力块 + 投射/鼓舞/直接消灭/随机生成（generate）+ 一目连基础能力与全 8 卡、杀念；响应插入使用（战斗牌改为移入战斗区/形态立即结附/choose 自动选事件被攻击者/同时机限一张）+ 延迟触发（delayed/delay_grant"会"）+ 伤害上限（cap_damage"森罗之阵"）+ 激怒与尘缚之阵战斗区锁定（enraged/combat_lock）+ 进场时形态效果与动态数值（shield_of/power_of：尘刀快照/古尘之壁/援护）；YAML 4 式神 32 卡全录
-   - 后续批次：32 卡全录 ✅ → CLI 修饰状态显示
+   - 后续批次：32 卡全录 ✅ → CLI 修饰状态显示 ✅（座次配色/修饰状态/关键字中文化；Phase 1 收尾）
 2. **Phase 2** 联机服务端：FastAPI/websockets、房间匹配、断线重连、回放、回合计时（100s）
 3. **Phase 3** 进阶机制：形态/觉醒/战斗牌、持续效果与光环、出击增减益、爆能/赐能/起源/连引/连锁/戏法
 4. **Phase 4** 自定义卡牌：DSL 编译器、校验、平衡工具（契约见 diy/README.md）

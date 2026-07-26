@@ -6,9 +6,15 @@
 运行：uv run python -m client.cli
 热座数据为 db/test_data.py（4 式神 × 8 卡；已落地机制与 db/cards、db/shikigami 的
 正式 YAML 保持同步，如文射/妖刀万华的[连击]、兵俑的基础能力）。
+
+显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
+倒计时/战力/保甲/免疫/延迟能力/鼓舞/手牌修饰（增强/费用修正）均在场况中显示。
+颜色仅在 TTY 下启用（管道输出或 NO_COLOR 环境变量时自动关闭）。
 """
 from __future__ import annotations
 
+import os
+import sys
 import unicodedata
 from core.engine import Game, IllegalAction
 from core.model import Ref
@@ -26,6 +32,9 @@ HELP = """指令（括号内为 alias，序号从 1 开始）：
   help (h) / quit (q)
 
 目标代码：e=敌方 f=己方；e0=敌方 0 号式神，f1=己方 1 号式神，ep=敌方牌手，fp=己方牌手
+
+座次颜色：1=黄 2=青 3=紫 4=红（己方场上式神名与手牌卡牌名按座次着色；
+管道输出或 NO_COLOR 环境变量时自动关闭）
 """
 
 COMMAND_ALIASES = {
@@ -83,11 +92,70 @@ def _pad(s: str, width: int) -> str:
     return s + " " * max(0, width - _display_width(s))
 
 
+# ---------- 座次配色 ----------
+
+_USE_COLOR: bool | None = None  # None=惰性自动判定；测试可显式置 True/False
+
+SEAT_COLORS = [93, 96, 95, 91]  # 座次 1-4：亮黄/亮青/亮紫/亮红（亮色系）
+
+
+def _use_color() -> bool:
+    """颜色仅在 TTY 下启用；管道输出或 NO_COLOR 环境变量时关闭。"""
+    global _USE_COLOR
+    if _USE_COLOR is None:
+        _USE_COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    return _USE_COLOR
+
+
+def _colored(text: str, code: int | None) -> str:
+    """按 ANSI 色号包裹文本（须在 _pad 之后调用，以免破坏列对齐）。"""
+    if code is None or not _use_color():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _seat_map(p) -> dict[int, int]:
+    """式神数据 id → 座次下标（0-3；召唤物坑位 ≥4，无座次色）。"""
+    return {s.id: i for i, s in enumerate(p.shikigami)}
+
+
+def _seat_color(p, index: int) -> int | None:
+    """场上式神的座次色：仅原始四座（召唤物/超界无座次色）。"""
+    s = p.shikigami[index]
+    if index >= len(SEAT_COLORS) or s.home_slot is None:
+        return None
+    return SEAT_COLORS[index]
+
+
+def _card_color(game: Game, p, c) -> int | None:
+    """手牌的座次色 = 所属式神的座次色；中立牌/生成牌无色。"""
+    cd = game.db.cards[c.id]
+    if cd.shikigami is None:
+        return None
+    seat = _seat_map(p).get(cd.shikigami)
+    if seat is None or seat >= len(SEAT_COLORS):
+        return None
+    return SEAT_COLORS[seat]
+
+
+# ---------- 关键字显示 ----------
+
+KEYWORD_CN = {  # 名称以 docs/terminology.md 为准；未收录的显示原始 id
+    "fast": "瞬发", "trigger": "响应", "combo": "连击", "initiative": "先攻",
+    "piercing": "贯通", "pierce": "穿刺", "remote": "远程", "unyielding": "不屈",
+    "haste": "迅捷", "barrier": "屏障", "enraged": "激怒",
+}
+_KEYWORD_HIDDEN = {"keep_attack_buffs"}  # 引擎级关键字，卡面不出现
+
+
+def _kw_labels(kws) -> list[str]:
+    """关键字 id 列表 → 显示名列表（中文化；过滤引擎级关键字）。"""
+    return [KEYWORD_CN.get(k, k) for k in kws if k not in _KEYWORD_HIDDEN]
+
+
 def _hand_sorted(game: Game, p) -> list:
     """按式神座位、卡牌序号、入手顺序升序排列后的手牌（显示/选择用）。"""
-    seat = {}
-    for i, s in enumerate(p.shikigami):
-        seat[s.id] = i
+    seat = _seat_map(p)
 
     def key(c):
         cd = game.db.cards[c.id]
@@ -136,7 +204,17 @@ def render(game: Game) -> str:
                     mods.append(f"临血{s.temp_health:+d}")
                 if s.shield:
                     mods.append(f"护甲{s.shield}")
-                kws = s.keywords + s.one_shot_keywords + s.perm_keywords
+                if s.combat_power:
+                    mods.append(f"战力+{s.combat_power}")
+                if s.countdown is not None:
+                    mods.append(f"倒计时{s.countdown}")
+                if s.keep_shield:
+                    mods.append("保甲")
+                if s.immunities:
+                    mods.append("免疫")
+                if s.delayed:
+                    mods.append(f"延迟×{len(s.delayed)}")
+                kws = _kw_labels(s.keywords + s.one_shot_keywords + s.perm_keywords)
                 if kws:
                     mods.append(f"[{'/'.join(kws)}]")
                 extra = f" ({' '.join(mods)})" if mods else ""
@@ -154,14 +232,20 @@ def render(game: Game) -> str:
     for pi, rows in player_rows:
         p = st.players[pi]
         marker = ">" if pi == st.active else " "
+        boost = ""
+        if p.assault_boosts:
+            bp = sum(b.get("power", 0) for b in p.assault_boosts)
+            bs = sum(b.get("shield", 0) for b in p.assault_boosts)
+            boost = f" 鼓舞+{bp}/{bs}"
         lines.append(
             f"{marker} {p.name} 生命{p.health}[护甲{p.shield}] "
-            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}"
+            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}"
         )
         for i, name, kind, lv, faction, status in rows:
+            color = _seat_color(p, i) if pi == st.active else None
             line = (
                 f"    [{_pad(str(i + 1), idx_w)}] "
-                f"{_pad(name, name_w)}"
+                f"{_colored(_pad(name, name_w), color)}"
                 f"{_pad(kind, kind_w)} "
                 f"{_pad(f'Lv{lv}', level_w)} "
                 f"{_pad(f'[{faction}]', faction_w)} "
@@ -182,24 +266,39 @@ def render(game: Game) -> str:
             return f"{base}[{cd.subtype}]"
         return base
 
+    def _cost_label(c) -> str:
+        """费用显示（含实例修饰 cost_delta）。"""
+        cd = game.db.cards[c.id]
+        return f"费用{cd.cost + c.mods.get('cost_delta', 0)}"
+
+    def _data_label(c) -> str:
+        """数据段：关键字（含实例修饰 keywords_add，中文化）+ 增强数值。"""
+        cd = game.db.cards[c.id]
+        parts = []
+        kws = _kw_labels(list(cd.keywords) + list(c.mods.get("keywords_add", [])))
+        if kws:
+            parts.append(f"[{'/'.join(kws)}]")
+        if c.mods.get("enhance"):
+            parts.append(f"增强+{c.mods['enhance']}")
+        return " ".join(parts)
+
     idx_w = max((_display_width(str(i + 1)) for i in range(len(hand))), default=1)
     name_w = max((_display_width(f"【{game.db.cards[c.id].name}】") for c in hand), default=0)
     uid_w = max((_display_width(f"#{c.uid}") for c in hand), default=0)
     ctype_w = max((_display_width(_ctype_label(game.db.cards[c.id])) for c in hand), default=0)
     level_w = max((_display_width(f"等级{game.db.cards[c.id].level}") for c in hand), default=0)
-    cost_w = max((_display_width(f"费用{game.db.cards[c.id].cost}") for c in hand), default=0)
-    data_w = max((_display_width(f"[{'/'.join(game.db.cards[c.id].keywords)}]") for c in hand), default=0)
+    cost_w = max((_display_width(_cost_label(c)) for c in hand), default=0)
+    data_w = max((_display_width(_data_label(c)) for c in hand), default=0)
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
-        data = f"[{'/'.join(cd.keywords)}]" if cd.keywords else ""
         line = (
             f"    [{_pad(str(i + 1), idx_w)}] "
-            f"{_pad(f'【{cd.name}】', name_w)} "
+            f"{_colored(_pad(f'【{cd.name}】', name_w), _card_color(game, p, c))} "
             f"{_pad(f'#{c.uid}', uid_w)} "
             f"{_pad(_ctype_label(cd), ctype_w)} "
             f"{_pad(f'等级{cd.level}', level_w)} "
-            f"{_pad(f'费用{cd.cost}', cost_w)} "
-            f"{_pad(data, data_w)} "
+            f"{_pad(_cost_label(c), cost_w)} "
+            f"{_pad(_data_label(c), data_w)} "
             f"{{{cd.text}}}"
         )
         lines.append(line)
@@ -215,7 +314,10 @@ def run_mulligan(game: Game) -> None:
     for pi in (0, 1):
         p = game.state.players[pi]
         while not p.mulligan_done:
-            hand = "  ".join(f"[{i + 1}]【{game.db.cards[c.id].name}】" for i, c in enumerate(p.hand))
+            hand = "  ".join(
+                f"[{i + 1}]" + _colored(f"【{game.db.cards[c.id].name}】",
+                                        _card_color(game, p, c))
+                for i, c in enumerate(p.hand))
             print("")
             print(f"{p.name} 手牌：{hand}")
             print("")
@@ -326,6 +428,8 @@ def run_debug(game: Game, args: list[str]) -> dict:
 
 
 def main() -> None:
+    if os.name == "nt":
+        os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
     # Phase 1 CLI 热座使用维护者给出的测试数据。
     db = make_test_db()
     deck = make_test_deck()
