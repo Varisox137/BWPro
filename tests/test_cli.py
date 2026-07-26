@@ -8,7 +8,10 @@ import re
 import pytest
 
 from client import cli
+from tests import factories as F
 from tests.factories import give
+
+T = F.T
 
 ANSI = re.compile(r"\033\[\d+m")
 
@@ -46,6 +49,31 @@ def test_hand_card_colored_by_owner_seat(db, make_game, color_on):
         give(g, 0, cid)
         out = cli.render(g)
         assert f"\033[{code}m【卡{cid}】" in out
+
+
+def test_hand_stats_labels(db, make_game):
+    """手牌数值段：战斗牌战力/护甲（含已装配增强）、形态身材、觉醒永久身材。"""
+    db.cards[10010161] = F.card(
+        10010161, card_type="combat", token=True,
+        steps=[F.Step(op="buff_power", amount={"enhance": True, "base": 1},
+                      target=T(kind="self")),
+               F.Step(op="gain_shield", amount=2, target=T(kind="self"))])
+    db.cards[10010162] = F.card(
+        10010162, card_type="form", form_power=5, form_health=9, token=True)
+    db.cards[10010163] = F.card(
+        10010163, subtype="awaken", token=True,
+        steps=[F.Step(op="buff_power", amount=1, perm=True, target=T(kind="self")),
+               F.Step(op="buff_health", amount=2, perm=True, target=T(kind="self"))])
+    g = make_game()
+    c1 = give(g, 0, 10010161)
+    c1.mods["enhance"] = 2
+    give(g, 0, 10010162)
+    give(g, 0, 10010163)
+    out = cli.render(g)
+    assert "战力+3" in out   # base 1 + 已装配增强 2
+    assert "护甲+2" in out
+    assert "身材5/9" in out
+    assert "觉醒+1/+2" in out
 
 
 def test_color_off_when_disabled(db, make_game, color_off):

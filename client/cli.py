@@ -19,6 +19,7 @@ import unicodedata
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
+from db import deckcode
 from db.test_data import TEST_IDS, make_test_db, make_test_deck
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
@@ -136,6 +137,36 @@ def _card_color(game: Game, p, c) -> int | None:
     if seat is None or seat >= len(SEAT_COLORS):
         return None
     return SEAT_COLORS[seat]
+
+
+def _stats_label(game: Game, p, c) -> str:
+    """数值段（按实例已装配的增强/修饰求值）：
+    战斗牌战力与一次性护甲、形态身材、觉醒永久身材。"""
+    cd = game.db.cards[c.id]
+    parts: list[str] = []
+    if cd.card_type == "combat":
+        seat = _seat_map(p).get(cd.shikigami) if cd.shikigami is not None else None
+        s = p.shikigami[seat] if seat is not None else None
+        power, shield = game._combat_card_stats(cd.effects, c, s)
+        if power:
+            parts.append(f"战力{power:+d}")
+        if shield:
+            parts.append(f"护甲+{shield}")
+    elif cd.card_type == "form" and cd.form_power is not None:
+        parts.append(f"身材{cd.form_power}/{cd.form_health}")
+    if cd.subtype == "awaken":
+        pw = hp = 0
+        for st in cd.effects.steps:
+            extra = st.model_extra or {}
+            if not extra.get("perm") or not isinstance(extra.get("amount"), int):
+                continue
+            if st.op == "buff_power":
+                pw += extra["amount"]
+            elif st.op == "buff_health":
+                hp += extra["amount"]
+        if pw or hp:
+            parts.append(f"觉醒{pw:+d}/{hp:+d}")
+    return " ".join(parts)
 
 
 # ---------- 关键字显示 ----------
@@ -264,7 +295,7 @@ def render(game: Game) -> str:
 
 def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
     """手牌逐行格式（render 与调度阶段共用）：
-    [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] {描述}"""
+    [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] 数值段 {描述}"""
     CTYPE_NAMES = {"spell": "法术", "combat": "战斗", "form": "形态",
                    "field": "幻境", "reinforce": "协战"}
 
@@ -297,6 +328,7 @@ def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
     level_w = max((_display_width(f"等级{game.db.cards[c.id].level}") for c in hand), default=0)
     cost_w = max((_display_width(_cost_label(c)) for c in hand), default=0)
     data_w = max((_display_width(_data_label(c)) for c in hand), default=0)
+    stat_w = max((_display_width(_stats_label(game, p, c)) for c in hand), default=0)
     out = []
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
@@ -309,6 +341,7 @@ def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
             f"{_pad(f'等级{cd.level}', level_w)} "
             f"{_pad(_cost_label(c), cost_w)} "
             f"{_pad(_data_label(c), data_w)} "
+            f"{_pad(_stats_label(game, p, c), stat_w)} "
             f"{text}"
         )
         out.append(line)
@@ -440,16 +473,39 @@ def run_debug(game: Game, args: list[str]) -> dict:
     raise ValueError(f"未知调试子命令: {sub}")
 
 
+def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
+    """开局前卡组构筑选择：回车使用默认测试卡组，或粘贴卡组码导入；
+    选定后展示该卡组的卡组码（导出/分享用）。"""
+    try:
+        line = input(f"[{player_name}] 卡组：回车 = 默认测试卡组，粘贴卡组码 = 导入 > ").strip()
+    except EOFError:
+        line = ""
+    if line:
+        try:
+            ids, cards = deckcode.deck_from_code(db, line)
+        except ValueError as e:
+            print(f"卡组码无效（{e}），改用默认测试卡组")
+            ids, cards = list(TEST_IDS), list(make_test_deck())
+    else:
+        ids, cards = list(TEST_IDS), list(make_test_deck())
+    names = "/".join(db.shikigami[s].name for s in ids)
+    code = deckcode.encode_deck(deckcode.group_deck(db, ids, cards))
+    print(f"[{player_name}] 卡组：{names}")
+    print(f"[{player_name}] 卡组码（导出/分享）：{code}")
+    return ids, cards
+
+
 def main() -> None:
     if os.name == "nt":
         os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
-    # Phase 1 CLI 热座使用维护者给出的测试数据。
+    # Phase 1 CLI 热座使用维护者给出的测试数据；卡组可在开局前选择/导入。
     db = make_test_db()
-    deck = make_test_deck()
+    a_ids, a_cards = _choose_deck(db, "玩家A")
+    b_ids, b_cards = _choose_deck(db, "玩家B")
     game = new_game(
         db,
-        ("玩家A", list(TEST_IDS), list(deck)),
-        ("玩家B", list(TEST_IDS), list(deck)),
+        ("玩家A", a_ids, a_cards),
+        ("玩家B", b_ids, b_cards),
         seed=42,
     )
     if game.state.phase == "mulligan":
