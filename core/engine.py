@@ -1013,7 +1013,8 @@ class Game:
             if cdef.countdown_effects is not None:
                 self._log(f"{self.db.shikigami[s.id].name} 的倒计时效果生效（《{cdef.name}》）")
                 self._resolve_block(cdef.countdown_effects, ExecContext(
-                    controller=pi, source=Ref(player=pi, shikigami=i), card=s.form))
+                    controller=pi, source=Ref(player=pi, shikigami=i), card=s.form,
+                    is_ability=True))  # 形态倒计时效果属形态能力（贯通继承判定）
 
     def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
@@ -1092,6 +1093,14 @@ class Game:
 
     # ==================== 伤害 / 抽牌 / 气绝（动作层共用管线） ====================
 
+    def _ability_piercing(self, ctx: ExecContext) -> bool:
+        """能力伤害的贯通继承：仅当伤害来自式神能力（is_ability：基础/觉醒/形态/延迟能力）
+        且来源式神具有贯通时成立；卡牌效果伤害不继承（terminology.md「贯通」）。"""
+        if not ctx.is_ability or ctx.source is None or ctx.source.shikigami is None:
+            return False
+        s = self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+        return self._has_keyword(s, "piercing")
+
     def deal_to_shikigami(self, ref: Ref, amount: int, source: Ref | None,
                           *, kind: str = "effect", piercing: bool = False) -> None:
         """对式神造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
@@ -1164,8 +1173,8 @@ class Game:
                 return
         skip_shield_calc = False
         skip_before_health = False
-        # 批次 2：贯通修正（非反击战斗伤害、伤害原因具有贯通、受伤者是式神）
-        if ev.kind == "combat" and ev.piercing and s is not None:
+        # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神）
+        if ev.kind != "counter" and ev.piercing and s is not None:
             skip_shield_calc = True
             if s.shield > 0:
                 absorbed = min(s.shield, ev.amount)
@@ -1433,7 +1442,8 @@ class Game:
                         continue
                 if self._match(ability.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
                     out.append(_Pending(ability, ExecContext(
-                        controller=pi, source=Ref(player=pi, shikigami=si), event=event)))
+                        controller=pi, source=Ref(player=pi, shikigami=si), event=event,
+                        is_ability=True)))
             # 绑定式神的一次性延迟能力（会）：先触发后执行，收集即消耗；气绝时已清除
             for entry in s.delayed:
                 block = entry["block"]
@@ -1443,7 +1453,7 @@ class Game:
                     chosen = [entry["chosen"]] if entry.get("chosen") is not None else []
                     out.append(_Pending(block, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si),
-                        event=event, chosen=chosen)))
+                        event=event, chosen=chosen, is_ability=True)))
                     entry["uses"] -= 1
             s.delayed[:] = [e for e in s.delayed if e["uses"] > 0]
         return out

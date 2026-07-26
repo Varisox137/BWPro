@@ -28,13 +28,20 @@ def action(name: str) -> Callable:
 
 
 @action("damage")
-def damage(game, ctx, *, targets: list[Ref], amount: int) -> None:
-    """对目标（式神或牌手）造成 amount 点伤害；护甲优先吸收。"""
+def damage(game, ctx, *, targets: list[Ref], amount: int,
+           piercing: bool | None = None) -> None:
+    """对目标（式神或牌手）造成 amount 点伤害；护甲优先吸收。
+
+    贯通：piercing 显式指定优先（牌面明确"贯通伤害"的卡牌效果）；缺省时仅当伤害
+    来自式神能力且来源式神具有贯通才继承——卡牌效果伤害不因式神持有贯通而贯通
+    （terminology.md「贯通」）。
+    """
+    pierce = piercing if piercing is not None else game._ability_piercing(ctx)
     for ref in targets:
         if ref.shikigami is None:
             game.deal_to_player(ref.player, amount, ctx.source)
         else:
-            game.deal_to_shikigami(ref, amount, ctx.source)
+            game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce)
 
 
 @action("heal")
@@ -260,7 +267,8 @@ def trigger_form_countdown(game, ctx, *, targets: list[Ref]) -> None:
     if block is None:
         return
     game._resolve_block(block, ExecContext(
-        controller=ctx.controller, source=ctx.source, card=card))
+        controller=ctx.controller, source=ctx.source, card=card, is_ability=True))
+    # 形态倒计时效果属形态能力（贯通继承判定）
 
 
 @action("destroy_form")
@@ -321,11 +329,11 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 
 @action("random_damage")
 def random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
-                  count: int | dict = 1) -> None:
+                  count: int | dict = 1, piercing: bool | None = None) -> None:
     """对 pool 中无放回随机 count 个目标各造成 amount 点伤害（单次伤害队列=并行结算）。
 
     count 支持 {"mod": key, "base": n}：base + ctx.card.mods[key]（风符·龙的实例计数）。
-    目标数超出可选目标时按可选目标数截断。
+    目标数超出可选目标时按可选目标数截断。贯通规则同 damage 动作。
     """
     from core import targets as targets_mod
     if isinstance(count, dict):
@@ -339,9 +347,11 @@ def random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
         return
     n = min(n, len(refs))
     chosen = game.rng.sample(refs, n)
+    pierce = piercing if piercing is not None else game._ability_piercing(ctx)
     from core.engine import _DamageEvent  # 避免模块顶层循环引用
     game._run_damage_queue([
-        _DamageEvent(source=ctx.source, victim=r, amount=amount, kind="effect")
+        _DamageEvent(source=ctx.source, victim=r, amount=amount, kind="effect",
+                     piercing=pierce)
         for r in chosen
     ])
 

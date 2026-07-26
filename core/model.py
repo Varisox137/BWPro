@@ -140,6 +140,8 @@ class ExecContext:
     chosen: list[Ref] | None = None  # 玩家选择的目标
     triggered: bool = False  # 是否为响应牌触发（结算时支付鬼火并消耗手牌）
     card_id: int | None = None  # 游离触发器的来源卡 id（add_mod 写入目标定位用）
+    is_ability: bool = False  # 是否式神能力来源（基础/觉醒/形态能力、形态倒计时、延迟"会"）
+    # ——卡牌效果（on_play/响应/卡牌触发器/临时触发）为 False；贯通继承等的判定依据
 
 
 class PlayerState(BaseModel):

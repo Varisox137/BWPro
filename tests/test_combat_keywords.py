@@ -89,6 +89,55 @@ def test_piercing_overflow(db, make_game):
     assert pl.health == 27  # 溢出 3
 
 
+def test_piercing_ability_damage_overflow(db, make_game):
+    """贯通（伤害原因）：式神持有的贯通传导至其基础/觉醒/形态能力伤害——能力伤害溢出。"""
+    db.shikigami[100101].ability = F.block(
+        F.dmg(5, F.T(kind="all", pool="enemy_shikigami")),
+        when="on_turn_end", condition={"player": "self"}, timing="queue", mode="atomic")
+    g = make_game()
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("piercing")
+    pl = g.state.players[1]
+    pl.shield = 0
+    b = pl.shikigami[0]
+    b.health = 2
+    g.apply({"op": "end_turn"})
+    assert b.defeated
+    assert pl.health == 27  # 溢出 3
+
+
+def test_piercing_spell_damage_no_overflow(db, make_game):
+    """贯通（伤害原因）：式神持有的贯通不传导至其法术牌伤害——无溢出；
+    牌面步骤显式声明 piercing 的法术伤害才溢出。"""
+    db.cards[10010151] = F.card(10010151, steps=[F.dmg(5)], token=True,
+                                target=CHOOSE_ENEMY)
+    db.cards[10010152] = F.card(
+        10010152, token=True, target=CHOOSE_ENEMY,
+        steps=[F.Step(op="damage", amount=5, piercing=True)])
+    g = make_game()
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("piercing")
+    pl = g.state.players[1]
+    pl.shield = 0
+    b = pl.shikigami[0]
+    b.health = 2
+    g.apply({"op": "play_card", "uid": give(g, 0, 10010151).uid,
+             "target": Ref(player=1, shikigami=0)})
+    assert b.defeated
+    assert pl.health == 30  # 法术伤害不继承贯通：无溢出
+    # 显式声明贯通的法术：同一情形溢出
+    g2 = make_game()
+    g2.state.players[0].shikigami[0].keywords.append("piercing")
+    pl2 = g2.state.players[1]
+    pl2.shield = 0
+    b2 = pl2.shikigami[0]
+    b2.health = 2
+    g2.apply({"op": "play_card", "uid": give(g2, 0, 10010152).uid,
+              "target": Ref(player=1, shikigami=0)})
+    assert b2.defeated
+    assert pl2.health == 27  # 溢出 3
+
+
 def test_pierce_strips_shield(db, make_game):
     """穿刺：造成伤害前移除受伤者所有护甲（经护甲变化事件）。"""
     g = make_game()
