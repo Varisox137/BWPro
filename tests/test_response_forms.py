@@ -577,3 +577,32 @@ def test_fu_lock_inactive_when_bing_not_in_combat(db, make_game):
     assert not g._combat_zone_locked(1)
     g.apply({"op": "assault", "index": BING_IDX})   # 不报错
     assert a.health == 29
+
+
+def test_fu_lock_blocks_response_combat_swap(db, make_game):
+    """尘缚之阵：响应战斗牌插入使用会替换被锁定的战斗区式神 → 该响应不可用
+    （不支付费用、不占响应名额、不触发）；若所属式神本就在战斗区则不受限。"""
+    _fu(db)
+    # 响应战斗牌：一目连被攻击时妖刀姬插入使用（移入战斗区会替换一目连）
+    db.cards[10010352] = F.card(
+        10010352, shikigami=YAO, card_type="combat", cost=1, level=1,
+        keywords=["trigger"], token=True,
+        when="on_before_assault",
+        block_kw={"condition": {"victim_shikigami": LIAN}},
+        steps=[F.Step(op="buff_power", amount=1, target=T(kind="self"))])
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BING_IDX].level = 3
+    b.shikigami[BING_IDX].level = 1
+    b.shikigami[YAO_IDX].level = 1
+    b.shikigami[LIAN_IDX].level = 1
+    _play(g, 0, FU, target=Ref(player=1, shikigami=BING_IDX))
+    g.apply({"op": "end_turn"})
+    _move(g, 1, LIAN_IDX)                # B 战斗区驻留一目连
+    card = give(g, 1, 10010352)
+    b.orb = 3
+    g.apply({"op": "end_turn"})          # 回到 A 回合（兵俑已退回准备区）
+    g.apply({"op": "assault", "index": BING_IDX})  # 兵俑出击重进战斗区 → 锁定时成立
+    assert card in b.hand                # 响应受锁定不可用，未触发
+    assert b.orb == 3                    # 未支付费用
+    assert b.shikigami[LIAN_IDX].defeated  # 战斗仍命中原驻留者一目连（5 攻 vs 5 血）

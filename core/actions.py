@@ -388,13 +388,21 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
 
 @action("enter_combat")
 def enter_combat(game, ctx, *, targets: list[Ref]) -> None:
-    """把目标式神移入战斗区（不动如山进场；驻守者按规则退回）。"""
+    """把目标式神移入战斗区（不动如山进场；驻守者按规则退回）。
+
+    尘缚之阵：若移入会替换被锁定的战斗区式神，该效果无效（不看发起者）；
+    退回准备区方向的移动不受锁定限制（terminology.md「战斗区锁定」）。
+    """
     for ref in targets:
         if ref.shikigami is None:
             continue
         p = game.state.players[ref.player]
-        if p.shikigami[ref.shikigami].in_play and p.combat_index != ref.shikigami:
-            game._enter_combat(p, ref.shikigami)
+        if not p.shikigami[ref.shikigami].in_play or p.combat_index == ref.shikigami:
+            continue
+        if p.combat_index is not None and game._combat_zone_locked(ref.player):
+            game._log(f"{p.name} 的进入战斗区效果被尘缚之阵无效化")
+            continue
+        game._enter_combat(p, ref.shikigami)
 
 
 @action("cap_damage")

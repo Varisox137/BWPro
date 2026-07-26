@@ -90,7 +90,7 @@ def test_piercing_overflow(db, make_game):
 
 
 def test_pierce_strips_shield(db, make_game):
-    """穿刺：战斗准备前移除被攻击者所有护甲（经护甲变化事件）。"""
+    """穿刺：造成伤害前移除受伤者所有护甲（经护甲变化事件）。"""
     g = make_game()
     _move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
@@ -104,7 +104,7 @@ def test_pierce_strips_shield(db, make_game):
 
 
 def test_pierce_strips_barrier(db, make_game):
-    """穿刺：战斗准备前同时移除被攻击者的所有屏障实例（rules.md:160），此后正常受伤。"""
+    """穿刺：造成伤害前同时移除受伤者的所有屏障实例，此后正常受伤。"""
     g = make_game()
     _move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
@@ -116,6 +116,37 @@ def test_pierce_strips_barrier(db, make_game):
     assert b.shield == 0
     assert "barrier" not in b.one_shot_keywords
     assert b.health == 1  # 屏障已被剥离，不再经伤害管线批次 3 抵消
+
+
+def test_pierce_applies_to_effect_damage(db, make_game):
+    """穿刺：适用于任意来源伤害（含非战斗）——效果伤害同样在造成伤害前移除护甲/屏障。"""
+    g = make_game()
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("pierce")
+    b = g.state.players[1].shikigami[0]
+    b.shield = 3
+    b.one_shot_keywords.append("barrier")
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 2, Ref(player=0, shikigami=0))
+    assert b.shield == 0
+    assert "barrier" not in b.one_shot_keywords
+    assert b.health == 2  # 护甲/屏障被剥离，2 点全吃
+
+
+def test_pierce_strips_despite_immunity(db, make_game):
+    """穿刺：即使受伤者免疫此次伤害，护甲/屏障仍被移除（与伤害是否生效无关）。"""
+    g = make_game()
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("pierce")
+    b = g.state.players[1].shikigami[0]
+    b.shield = 3
+    b.one_shot_keywords.append("barrier")
+    g._battle_stack.append(1)
+    b.immunities.append({"kind": "combat_damage", "battle": 1, "nested": False})
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 5, Ref(player=0, shikigami=0),
+                        kind="combat")
+    assert b.shield == 0
+    assert "barrier" not in b.one_shot_keywords
+    assert b.health == 4  # 免疫：未受伤
 
 
 def test_remote_no_counter_no_move(db, make_game):

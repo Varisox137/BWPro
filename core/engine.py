@@ -665,19 +665,8 @@ class Game:
         piercing = self._has_keyword(attacker, "piercing")
         combo = self._has_keyword(attacker, "combo")
         initiative = self._has_keyword(attacker, "initiative")
-        # ---- 战斗准备前：移除攻击者的激怒；穿刺——移除被攻击者的所有护甲/屏障 ----
-        # （rules.md:160 / terminology.md：穿刺在战斗准备前移除被攻击者的所有护甲与屏障）
+        # ---- 战斗准备前：移除攻击者的激怒（穿刺已移至伤害事件"造成伤害前"批次）----
         self._remove_keyword(attacker, "enraged")
-        if self._has_keyword(attacker, "pierce"):
-            vic_ref = Ref(player=def_pi, shikigami=d.combat_index)
-            holder = d.shikigami[d.combat_index] if d.combat_index is not None else d
-            if holder.shield > 0:
-                old = holder.shield
-                holder.shield = 0
-                self.emit("on_shield_changed", target=vic_ref, old=old, new=0, reason="穿刺")
-            if isinstance(holder, ShikigamiState):
-                while self._has_keyword(holder, "barrier"):
-                    self._remove_keyword(holder, "barrier")
         self._drain_queue()
         # ---- 战斗准备：移动攻击者（具有远程则不移动）；攻击者气绝则终止 ----
         if move and not remote and p.combat_index != atk_ref.shikigami:
@@ -803,8 +792,10 @@ class Game:
     def _combat_zone_locked(self, pi: int) -> bool:
         """尘缚之阵锁定：敌方战斗区有"结附带 combat_lock 标记形态"的式神，且己方战斗区有式神。
 
-        锁定效果（对己方）：召唤召唤物的效果无效；准备区式神不能发起不具有远程的战斗
-        （出击/战斗牌；效果发起的战斗暂无来源，见 rules.md 锚点）。
+        锁定效果（对己方，不看效果发起者）：会使己方战斗区式神被替换的效果无效且不能进行——
+        召唤召唤物的效果无效；准备区式神不能发起不具有远程的战斗（出击/战斗牌）；
+        响应战斗牌的插入移入不可用（响应复查处拦截）；enter_combat 效果无效。
+        己方战斗区式神退回准备区不受限。效果发起的战斗暂无来源，见 rules.md 锚点。
         """
         p = self.state.players[pi]
         ep = self.state.players[1 - pi]
@@ -1116,7 +1107,7 @@ class Game:
     def _run_damage_queue(self, events: list[_DamageEvent]) -> None:
         """伤害事件队列：并行伤害、贯通溢出、伤害合并都在同一队列结算（rules.md 第五章）。
 
-        每个事件依次经过时点批次：伤害开始时 → 贯通修正 → 护甲计算前（屏障）→ 护甲计算 →
+        每个事件依次经过时点批次：造成伤害前（穿刺）→ 伤害开始时 → 贯通修正 → 护甲计算前（屏障）→ 护甲计算 →
         护甲计算后 → 扣减生命前 → 合并 → 扣减生命（不屈）→ 伤害后。队列清空后按受伤顺序
         生成气绝事件（rules.md:207）。子优先级批次（0/1/2/3）暂不拆事件名，待首个有
         优先级需求的监听者出现再拆。
@@ -1148,6 +1139,22 @@ class Game:
             return  # 气绝的牌手不再受到伤害
         # 批次 1：造成/受到伤害开始时（即时时机）
         if not ev.skip_early:
+            # 批次 0：造成伤害前（即时时机）——穿刺（来源关键字）在此生效：移除目标
+            # 的所有护甲/屏障，与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于
+            # 任意来源的伤害，含非战斗伤害（terminology.md「穿刺」；贯通溢出事件跳过本批次）
+            self._emit_damage_batch("on_before_damage", ev)
+            if ev.source is not None and ev.source.shikigami is not None:
+                src = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+                if self._has_keyword(src, "pierce"):
+                    holder = s if s is not None else p
+                    if holder.shield > 0:
+                        old = holder.shield
+                        holder.shield = 0
+                        self.emit("on_shield_changed", target=ev.victim,
+                                  old=old, new=0, reason="穿刺")
+                    if s is not None:
+                        while self._has_keyword(s, "barrier"):
+                            self._remove_keyword(s, "barrier")
             self._emit_damage_batch("on_damage_start", ev)
             if ev.amount <= 0 or (s is not None and s.defeated):
                 return
@@ -1590,6 +1597,14 @@ class Game:
                     return
                 if s.level < cdef.level:
                     return
+            # 尘缚之阵：响应战斗牌插入使用会把所属式神移入战斗区；若这会替换被锁定的
+            # 战斗区式神，则该响应不可用（复查失败不占名额）——响应牌能否响应取决于
+            # 其效果本身是否导致战斗区换人（terminology.md「战斗区锁定」）
+            if (cdef.card_type == "combat" and si is not None
+                    and p.combat_index is not None and p.combat_index != si
+                    and self._combat_zone_locked(ctx.controller)):
+                self._log(f"{p.name} 的响应牌《{cdef.name}》受尘缚之阵锁定，未能触发")
+                return
             cost = self._effective_cost(p, cdef, card=ctx.card)
             if p.orb < cost:
                 self._log(f"{p.name} 鬼火不足，响应牌《{cdef.name}》未能触发")
