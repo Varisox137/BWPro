@@ -88,6 +88,7 @@ class ShikigamiState(BaseModel):
     attack_buffs: list[dict[str, Any]] = Field(default_factory=list)  # 攻击后到期强化挂账：{"power": int, "keywords": [(kw, cls)]}；自身作为攻击者的战斗终止点核销（keep_attack_buffs 跳过）；气绝清空
     awakened: int | None = None  # 已觉醒：觉醒牌数据 id（能力替换为觉醒能力；气绝/复活保留）
     keep_shield: bool = False  # 护甲不在己方回合开始阶段移除（觉醒·兵俑）
+    countdown: int | None = None  # 当前倒计时（形态牌结附时授予=初始值；己方回合开始 -1，归零重置并执行形态倒计时效果；形态离场/气绝清除）
 
     @property
     def eff_power(self) -> int:
@@ -150,6 +151,8 @@ class PlayerState(BaseModel):
     card_mods: dict[int, dict[str, Any]] = Field(default_factory=dict)  # 持久修饰 store：card_id → 修饰（"本局游戏每……"类，打出时装配快照）
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
+    assault_boosts: list[dict[str, Any]] = Field(default_factory=list)  # 出击加成（鼓舞）：
+    # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
 
     @property
     def deck(self) -> list[CardInstance]:

@@ -4,5 +4,9 @@ name: 一目连
 faction: 苍叶
 power: 2
 health: 6
-# 能力所需机制（倒计时系统）未落地，暂缺省
+ability:
+  when: on_form_destroyed
+  condition: {target_shikigami: self}
+  steps:
+    - {op: trigger_form_countdown}
 text: 一目连的形态牌离场或被消灭时，触发其[倒计时]效果

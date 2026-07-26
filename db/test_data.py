@@ -5,9 +5,10 @@
 - 卡牌：2位id 稀有度 名称 等级 类型 [数值] [关键字]
 
 约定：
-- 已落地的机制在此同步（供 CLI 热座试玩）：白狼/兵俑/妖刀姬的基础能力、文射/妖刀万华的[连击]、
-  起弓/离/无我（攻击后到期强化）、残心、觉醒·白狼/觉醒·兵俑、
-  不祥之刃/禁锢之刀/冲撞（击杀标记与增强装配）、觉醒·妖刀姬；
+- 已落地的机制在此同步（供 CLI 热座试玩）：白狼/兵俑/妖刀姬/一目连的基础能力、
+  文射/妖刀万华的[连击]、起弓/离/无我（攻击后到期强化）、残心、觉醒·白狼/觉醒·兵俑、
+  不祥之刃/禁锢之刀/冲撞（击杀标记与增强装配）、觉醒·妖刀姬、杀念（随机生成）、
+  风符系列倒计时形态（破/护/势/湮/龙）、罡风、觉醒·一目连、风符·瞬（自毁部分）；
   正式数据以 db/cards、db/shikigami 的 YAML 为准，本文件与其保持一致的部分逐步移交。
 - 未落地的机制仅以数值/瞬发/cost=0 占位：战斗牌简化为力量/护甲修正，
   形态牌按给定数值覆盖基础身材，觉醒牌为永久修正 + awaken tag。
@@ -83,6 +84,12 @@ def make_test_db() -> CardDatabase:
                     keywords=["fast"])],
     )
     shikigami[100123].text = "当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌具有[瞬发]"
+    shikigami[100125].ability = EffectBlock(
+        when="on_form_destroyed",
+        condition={"target_shikigami": "self"},
+        steps=[Step(op="trigger_form_countdown")],
+    )
+    shikigami[100125].text = "一目连的形态牌离场或被消灭时，触发其[倒计时]效果"
     cards: dict[int, CardDef] = {}
 
     def add(sid: int, no: int, rarity: str, name: str, level: int, ctype: str,
@@ -201,7 +208,11 @@ def make_test_db() -> CardDatabase:
     )]
     add(100123, 6, "R", "妖刀万华", 3, "form", keywords=["combo"],
         form_power=3, form_health=8, text="3力量/8生命，[连击]")
-    add(100123, 7, "SR", "杀念", 3, "spell", text="")
+    add(100123, 7, "SR", "杀念", 3, "spell",
+        text="随机生成3张妖刀姬的战斗牌并置入手牌")
+    cards[10012307].effects = EffectBlock(steps=[
+        Step(op="generate", shikigami="self", card_type="combat", count=3),
+    ])
     add(100123, 8, "SSR", "觉醒·妖刀姬", 3, "spell",
         perm_power=1, perm_health=1,
         text="[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌不消耗鬼火。}")
@@ -223,16 +234,64 @@ def make_test_db() -> CardDatabase:
     ]
 
     # 100125 一目连
-    add(100125, 1, "R", "风符·破", 1, "form", form_power=3, form_health=6, text="3力量/6生命")
-    add(100125, 2, "R", "风符·护", 1, "form", form_power=2, form_health=7, text="2力量/7生命")
-    add(100125, 3, "R", "罡风", 2, "spell", keywords=["fast"], text="瞬发")
-    add(100125, 4, "R", "风符·势", 2, "form", form_power=3, form_health=8, text="3力量/8生命")
-    add(100125, 5, "SR", "觉醒·一目连", 2, "spell",
-        perm_power=2, perm_health=0, text="觉醒：+2永久力量/+0永久生命上限")
+    add(100125, 1, "R", "风符·破", 1, "form", form_power=3, form_health=6,
+        text="[倒计时2]：{[投射]：{造成3点伤害}}")
+    cards[10012501].countdown = 2
+    cards[10012501].countdown_effects = EffectBlock(steps=[
+        Step(op="damage", amount=3, target=TargetSpec(kind="all", pool="projectile")),
+    ])
+    add(100125, 2, "R", "风符·护", 1, "form", form_power=2, form_health=7,
+        text="[倒计时2]：{己方牌手获得5护甲}")
+    cards[10012502].countdown = 2
+    cards[10012502].countdown_effects = EffectBlock(steps=[
+        Step(op="gain_shield", amount=5, target=TargetSpec(kind="all", pool="self_player")),
+    ])
+    add(100125, 3, "R", "罡风", 2, "spell", keywords=["fast"],
+        text="[瞬发]。消灭一目连的形态，抽两张牌。")
+    cards[10012503].effects = EffectBlock(steps=[
+        Step(op="destroy_form", target=_self_target()),
+        Step(op="draw", count=2, target=TargetSpec(kind="all", pool="self_player")),
+    ])
+    add(100125, 4, "R", "风符·势", 2, "form", form_power=3, form_health=8,
+        text="[倒计时2]：{[鼓舞]：{获得+3战力/+3护甲}}")
+    cards[10012504].countdown = 2
+    cards[10012504].countdown_effects = EffectBlock(steps=[
+        Step(op="basic_boost", power=3, shield=3),
+    ])
+    add(100125, 5, "SR", "觉醒·一目连", 2, "spell", subtype="awaken",
+        text="随机生成一张一目连的形态牌并置入手牌。"
+             "[觉醒]：{一目连的形态牌进场、离场、被消灭时，触发其[倒计时]效果。}")
+    cards[10012505].effects = EffectBlock(steps=[
+        Step(op="buff_power", amount=2, perm=True, target=_self_target()),
+        Step(op="generate", shikigami="self", card_type="form", count=1),
+    ])
+    cards[10012505].abilities = [
+        EffectBlock(when="on_form_attached", condition={"target_shikigami": "self"},
+                    steps=[Step(op="trigger_form_countdown")]),
+        EffectBlock(when="on_form_destroyed", condition={"target_shikigami": "self"},
+                    steps=[Step(op="trigger_form_countdown")]),
+    ]
     add(100125, 6, "SR", "风符·瞬", 2, "form", keywords=["fast"],
-        form_power=6, form_health=9, text="6力量/9生命，瞬发")
-    add(100125, 7, "SR", "风符·湮", 3, "form", form_power=4, form_health=6, text="4力量/6生命")
-    add(100125, 8, "SSR", "风符·龙", 3, "form", form_power=5, form_health=8, text="5力量/8生命")
+        form_power=6, form_health=9,
+        text="[瞬发]。回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用此牌。}")
+    cards[10012506].abilities = [EffectBlock(
+        when="on_turn_end",
+        steps=[Step(op="destroy_form", target=_self_target())],
+    )]
+    add(100125, 7, "SR", "风符·湮", 3, "form", form_power=4, form_health=6,
+        text="[倒计时2]：{消灭敌方战斗区式神}")
+    cards[10012507].countdown = 2
+    cards[10012507].countdown_effects = EffectBlock(steps=[
+        Step(op="destroy", target=TargetSpec(kind="all", pool="enemy_combat")),
+    ])
+    add(100125, 8, "SSR", "风符·龙", 3, "form", form_power=5, form_health=8,
+        text="[倒计时2]：{随机对1名敌方角色造成6点伤害（并行结算）。下一次此能力的作用目标+1。}")
+    cards[10012508].countdown = 2
+    cards[10012508].countdown_effects = EffectBlock(steps=[
+        Step(op="random_damage", amount=6, pool="enemy_character",
+             count={"mod": "count", "base": 1}),
+        Step(op="add_mod", to="instance", key="count", amount=1),
+    ])
 
     return CardDatabase(cards, shikigami, set())
 

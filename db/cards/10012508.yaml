@@ -1,0 +1,17 @@
+id: 10012508
+version: 20260724
+name: 风符·龙
+shikigami: 100125
+card_type: form
+rarity: SSR
+level: 3
+cost: 1
+form_power: 5
+form_health: 8
+effects: {steps: []}
+countdown: 2
+countdown_effects:
+  steps:
+    - {op: random_damage, amount: 6, pool: enemy_character, count: {mod: count, base: 1}}
+    - {op: add_mod, to: instance, key: count, amount: 1}
+text: "[倒计时2]：{随机对1名敌方角色造成6点伤害（并行结算）。下一次此能力的作用目标+1。}"

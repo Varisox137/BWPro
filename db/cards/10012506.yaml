@@ -1,0 +1,18 @@
+id: 10012506
+version: 20260724
+name: 风符·瞬
+shikigami: 100125
+card_type: form
+rarity: SR
+level: 2
+cost: 1
+form_power: 6
+form_health: 9
+keywords: [fast]
+effects: {steps: []}
+abilities:
+  # [响应]部分（一目连被攻击时自动使用）属第五批响应战斗牌插入规则，落地后补录
+  - when: on_turn_end
+    steps:
+      - {op: destroy_form, target: {kind: self}}
+text: "[瞬发]。回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用此牌。}"

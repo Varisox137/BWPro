@@ -9,6 +9,8 @@ kind：
 - context: 取触发事件 payload 中的 Ref（key 指定字段名），响应/被动常用
 
 pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / self_player
+     / projectile（投射：敌方战斗区式神，空则敌方牌手）/ enemy_combat（敌方战斗区式神）
+     / enemy_character（敌方在场式神 + 敌方牌手）
 """
 from __future__ import annotations
 
@@ -20,6 +22,9 @@ POOLS = frozenset({
     "any_shikigami",
     "enemy_player",
     "self_player",
+    "projectile",
+    "enemy_combat",
+    "enemy_character",
 })
 
 
@@ -44,6 +49,21 @@ def pool_refs(game, pool: str, controller: int) -> list[Ref]:
         return [Ref(player=enemy)]
     if pool == "self_player":
         return [Ref(player=controller)]
+    if pool == "enemy_combat":
+        ep = game.state.players[enemy]
+        ci = ep.combat_index
+        if ci is not None and ep.shikigami[ci].in_play:
+            return [Ref(player=enemy, shikigami=ci)]
+        return []
+    if pool == "projectile":
+        # 投射：优先敌方战斗区式神，战斗区为空时退回敌方牌手
+        ep = game.state.players[enemy]
+        ci = ep.combat_index
+        if ci is not None and ep.shikigami[ci].in_play:
+            return [Ref(player=enemy, shikigami=ci)]
+        return [Ref(player=enemy)]
+    if pool == "enemy_character":
+        return alive_shiki(enemy) + [Ref(player=enemy)]
     raise ValueError(f"未知目标池: {pool}")
 
 

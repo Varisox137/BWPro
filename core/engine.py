@@ -689,7 +689,26 @@ class Game:
             p.orb -= 1
         p.assaults_left -= 1
         atk_ref = Ref(player=self.state.active, shikigami=i)
+        self._consume_assault_boosts(p, atk_ref, s)
         self._resolve_combat(atk_ref, s)
+
+    def _consume_assault_boosts(self, p: PlayerState, atk_ref: Ref, s: ShikigamiState) -> None:
+        """出击时消耗全部出击加成/鼓舞（rules.md 出击流程 4.2-4.3）：
+        力量直到本次出击的战斗后（attack_buffs 挂账核销）、护甲获得后保留；战斗牌不消耗。"""
+        if not p.assault_boosts:
+            return
+        power = sum(b.get("power", 0) for b in p.assault_boosts)
+        shield = sum(b.get("shield", 0) for b in p.assault_boosts)
+        if power:
+            s.temp_power += power
+            s.attack_buffs.append({"power": power, "keywords": []})
+        if shield:
+            old = s.shield
+            s.shield += shield
+            self.emit("on_shield_changed", target=atk_ref, old=old, new=s.shield,
+                      reason="basic_boost")
+        self._log(f"{self.db.shikigami[s.id].name} 获得出击加成（+{power}力量/+{shield}护甲）")
+        p.assault_boosts.clear()
 
     def _enter_combat(self, p: PlayerState, i: int) -> None:
         """进入战斗区；若已有其它式神驻留，则其退回准备区。"""
@@ -734,6 +753,7 @@ class Game:
         if s.form is not None:
             self._destroy_form(p, i, reason="replace")
         s.form = card
+        s.countdown = cdef.countdown  # 形态牌具有倒计时时，式神获得该倒计时（rules.md ch10 结附流程）
         if cdef.form_power is not None:
             s.base_power = cdef.form_power
         if cdef.form_health is not None:
@@ -744,7 +764,9 @@ class Game:
             if kw not in ("fast", "trigger"):
                 self._grant_keyword(s, kw)
         self._log(f"{self.db.shikigami[s.id].name} 结附形态《{cdef.name}》")
-        self.emit("on_form_attached", player=self.state.active, shikigami=i, uid=card.uid)
+        pi = self.state.players.index(p)
+        self.emit("on_form_attached", player=pi, shikigami=i, uid=card.uid,
+                  target=Ref(player=pi, shikigami=i), card=card)
 
     def _destroy_form(self, p: PlayerState, i: int, reason: str) -> None:
         """消灭式神当前结附的形态牌：形态牌进入墓地，基础身材恢复为式神原本身材。
@@ -758,6 +780,7 @@ class Game:
             return
         cdef = self.db.cards[old.id]
         s.form = None
+        s.countdown = None  # 式神失去该倒计时（rules.md ch10 消灭流程）
         # 移除形态授予的关键字实例（气绝已清空时跳过）
         for kw in cdef.keywords:
             if kw not in ("fast", "trigger"):
@@ -768,8 +791,10 @@ class Game:
         s.base_health = d.health
         s.health = s.max_health
         self._log(f"{d.name} 的形态《{cdef.name}》被消灭（原因：{reason}）")
-        self.emit("on_form_destroyed", player=self.state.active, shikigami=i,
-                  uid=old.uid, reason=reason)
+        pi = self.state.players.index(p)
+        self.emit("on_form_destroyed", player=pi, shikigami=i,
+                  uid=old.uid, reason=reason,
+                  target=Ref(player=pi, shikigami=i), card=old)
 
     # ---------- 升级 / 结束回合 ----------
 
@@ -858,6 +883,7 @@ class Game:
         self._turn_start_gain_orb(p, first, pi)
         pending_retreat = self._turn_start_schedule_retreat(p)
         self.emit("on_turn_start", player=pi)
+        self._turn_start_countdown(p, pi)
         self._turn_start_reset_assaults(p, pi)
         if pending_retreat is not None:
             self._retreat(p, pending_retreat)
@@ -873,6 +899,25 @@ class Game:
         for s in p.shikigami:
             if not s.keep_shield:
                 s.shield = 0
+
+    def _turn_start_countdown(self, p: PlayerState, pi: int) -> None:
+        """回合开始阶段 step 8-9：己方式神倒计时 -1（rules.md ch12 锚点版）。
+
+        归零时先将倒计时重置为初始值、再执行本次倒计时效果（ch12 流程 4）；
+        增减事件与"倒计时生效前/变化后"时机暂不拆，首张需要的卡出现时再拆。
+        """
+        for i, s in enumerate(p.shikigami):
+            if s.countdown is None or s.form is None or not s.in_play:
+                continue
+            s.countdown -= 1
+            if s.countdown > 0:
+                continue
+            cdef = self.db.cards[s.form.id]
+            s.countdown = cdef.countdown  # 重置为初始值后执行效果
+            if cdef.countdown_effects is not None:
+                self._log(f"{self.db.shikigami[s.id].name} 的倒计时效果生效（《{cdef.name}》）")
+                self._resolve_block(cdef.countdown_effects, ExecContext(
+                    controller=pi, source=Ref(player=pi, shikigami=i), card=s.form))
 
     def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
@@ -1250,15 +1295,18 @@ class Game:
             self.state.temp_grants.pop(idx)
 
     def _collect_abilities(self, event: dict, pi: int) -> list[_Pending]:
-        """收集玩家 pi 的式神被动能力（已觉醒的式神改读觉醒牌的觉醒能力块）。"""
+        """收集玩家 pi 的式神被动能力（已觉醒的式神改读觉醒牌的觉醒能力块；
+        结附形态时追加形态牌的形态能力块——觉醒替换不覆盖形态能力）。"""
         out: list[_Pending] = []
         p = self.state.players[pi]
         for si, s in enumerate(p.shikigami):
             if s.awakened is not None:
-                blocks = self.db.cards[s.awakened].abilities
+                blocks = list(self.db.cards[s.awakened].abilities)
             else:
                 base = self.db.shikigami[s.id].ability
                 blocks = [base] if base is not None else []
+            if s.form is not None:
+                blocks += self.db.cards[s.form.id].abilities
             for ability in blocks:
                 if ability.when != event["name"]:
                     continue

@@ -131,7 +131,9 @@ class CardDef(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     target: TargetSpec = Field(default_factory=TargetSpec)
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段
-    abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）
+    abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）/ 形态牌的形态能力块（结附期间生效）
+    countdown: int | None = None  # 形态牌倒计时初始值（结附时授予式神，离场/气绝移除）
+    countdown_effects: EffectBlock | None = None  # 倒计时归零时执行的效果块（重置为初始值后执行）
     triggers: list[EffectBlock] = Field(default_factory=list)  # 卡牌触发器：游离触发块（when≠on_play），
     # 不依附在场式神，每次 emit 全库扫描匹配；修饰写入目标由写入动作（add_mod 等）指定
     temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、

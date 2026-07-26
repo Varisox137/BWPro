@@ -1,0 +1,16 @@
+id: 10012501
+version: 20260724
+name: 风符·破
+shikigami: 100125
+card_type: form
+rarity: R
+level: 1
+cost: 1
+form_power: 3
+form_health: 6
+effects: {steps: []}
+countdown: 2
+countdown_effects:
+  steps:
+    - {op: damage, amount: 3, target: {kind: all, pool: projectile}}
+text: "[倒计时2]：{[投射]：{造成3点伤害}}"

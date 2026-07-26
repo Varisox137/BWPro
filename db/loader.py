@@ -130,6 +130,8 @@ class CardDatabase:
             errors += self._check_block(c.effects, known_events, where)
             for ab in c.abilities:
                 errors += self._check_block(ab, known_events - {"on_play"}, f"{where}的能力")
+            if c.countdown_effects is not None:
+                errors += self._check_block(c.countdown_effects, known_events, f"{where}的倒计时效果")
             for tb in c.triggers:
                 errors += self._check_block(tb, known_events - {"on_play"}, f"{where}的触发器")
             for tg in c.temp_grants:

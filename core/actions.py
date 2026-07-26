@@ -181,6 +181,7 @@ def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
       跨回合累积，打出时装配快照；需要 ctx.card_id，即卡牌触发器场景）。
     - to=hand：写入控制者手牌中所有同 id 实例的 `card.mods[key]`（按实例隔离，
       之后才抽到的同名复制不受影响）。
+    - to=instance：写入来源实例自身 `ctx.card.mods[key]`（实例计数器，如风符·龙的目标数）。
     cap 为累积上限（如"最多+3"）。
     """
     p = game.state.players[ctx.controller]
@@ -200,6 +201,10 @@ def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
         for c in p.hand:
             if c.id == ctx.card_id:
                 _bump(c.mods, key)
+    elif to == "instance":
+        if ctx.card is None:
+            raise ValueError("add_mod(to=instance) 需要 ctx.card（来源卡牌实例）")
+        _bump(ctx.card.mods, key)
     else:
         raise ValueError(f"未知 add_mod 写入目标: {to}")
 
@@ -235,6 +240,107 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str) -> None:
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if s.in_play:
             game._grant_keyword(s, keyword)
+
+
+@action("trigger_form_countdown")
+def trigger_form_countdown(game, ctx, *, targets: list[Ref]) -> None:
+    """触发事件中形态牌的倒计时效果（一目连基础/觉醒能力；targets 忽略）。
+
+    从触发事件 payload 的 card 字段取形态实例，结算其 countdown_effects；
+    该形态无倒计时效果（如风符·瞬）时为空操作。
+    """
+    card = (ctx.event or {}).get("card")
+    if card is None:
+        return
+    block = game.db.cards[card.id].countdown_effects
+    if block is None:
+        return
+    from core.engine import ExecContext  # 避免模块顶层循环引用
+    game._resolve_block(block, ExecContext(
+        controller=ctx.controller, source=ctx.source, card=card))
+
+
+@action("destroy_form")
+def destroy_form(game, ctx, *, targets: list[Ref]) -> None:
+    """消灭目标式神当前结附的形态（无形态时为空操作，罡风后续步骤照常）。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        game._destroy_form(game.state.players[ref.player], ref.shikigami, reason="effect")
+
+
+@action("destroy")
+def destroy(game, ctx, *, targets: list[Ref]) -> None:
+    """直接消灭目标式神（非伤害：生命归零走气绝流程；直接消灭免疫属尘缚之阵批次）。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if not s.in_play:
+            continue
+        s.health = 0
+        game.check_defeated(ref, source=ctx.source, reason="消灭")
+
+
+@action("basic_boost")
+def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 0) -> None:
+    """鼓舞：登记一笔出击加成（targets 忽略）。下一次出击时全部消耗——
+    力量直到该次出击的战斗后，护甲保留；战斗牌不消耗出击加成。"""
+    game.state.players[ctx.controller].assault_boosts.append(
+        {"power": power, "shield": shield})
+    game._log(f"{game.state.players[ctx.controller].name} 获得出击加成（+{power}力量/+{shield}护甲）")
+
+
+@action("generate")
+def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
+             card_type: str | None = None, count: int = 1, zone: str = "hand") -> None:
+    """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。"""
+    from core.model import CardInstance
+    if shikigami == "self":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("generate(shikigami=self) 需要来源式神")
+        sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+    else:
+        sid = int(shikigami)
+    pool = [c.id for c in game.db.cards.values()
+            if not c.token and c.shikigami == sid
+            and (card_type is None or c.card_type == card_type)]
+    if not pool:
+        return
+    p = game.state.players[ctx.controller]
+    for _ in range(count):
+        cid = game.rng.choice(pool)
+        inst = CardInstance(uid=game.state.next_uid, id=cid)
+        game.state.next_uid += 1
+        game.move_card(p, inst, zone)
+        game._log(f"生成了《{game.db.cards[cid].name}》")
+
+
+@action("random_damage")
+def random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
+                  count: int | dict = 1) -> None:
+    """对 pool 中无放回随机 count 个目标各造成 amount 点伤害（单次伤害队列=并行结算）。
+
+    count 支持 {"mod": key, "base": n}：base + ctx.card.mods[key]（风符·龙的实例计数）。
+    目标数超出可选目标时按可选目标数截断。
+    """
+    from core import targets as targets_mod
+    if isinstance(count, dict):
+        n = int(count.get("base", 1))
+        if count.get("mod") and ctx.card is not None:
+            n += int(ctx.card.mods.get(count["mod"], 0))
+    else:
+        n = int(count)
+    refs = targets_mod.pool_refs(game, pool, ctx.controller)
+    if not refs:
+        return
+    n = min(n, len(refs))
+    chosen = game.rng.sample(refs, n)
+    from core.engine import _DamageEvent  # 避免模块顶层循环引用
+    game._run_damage_queue([
+        _DamageEvent(source=ctx.source, victim=r, amount=amount, kind="effect")
+        for r in chosen
+    ])
 
 
 @action("battle_immunity")

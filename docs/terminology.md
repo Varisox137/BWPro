@@ -60,6 +60,7 @@
 | 觉醒牌 | `subtype = "awaken"` | **不是主类型**：任意 card_type + subtype（rules.md:502）；打出后替换式神能力并发出 `on_awakened` | ✅ |
 | 觉醒（状态） | `awakened` | `ShikigamiState.awakened` = 觉醒牌 id；能力改读该牌 `abilities` 块；气绝/复活保留 | ✅ |
 | 觉醒能力 | `abilities` | `CardDef.abilities`：觉醒牌携带的能力块（替换式神基础能力） | ✅ |
+| 形态能力 | `abilities`（形态牌） | 形态牌携带的能力块：结附期间生效（与觉醒能力并存，觉醒替换不覆盖；如风符·瞬的回合结束自毁） | ✅ |
 | 标签 | `tags` | 自由字符串标记（觉醒、式神专属标记等） | ✅ |
 | 稀有度 | `rarity` | R/SR/SSR（良/优/极；抽卡/账号系统预留） | 🔧 |
 | 卡包 | `cardpack` | 式神所属版本卡包，即 id 的 xxx 段（1xxxyy） | ✅ |
@@ -84,7 +85,7 @@
 | 疾速 | `swift` | 若有出击次数则改为消耗 1 次出击次数而不消耗鬼火 | 🔧 |
 | 突袭 | `strike` | 使一个式神仅在下一次出击且与敌方式神战斗时获得增益 | 🔧 |
 | 免疫 | `immune` | 免疫某类伤害/效果；战斗伤害免疫已实现为带作用域的 `battle_immunity`（见本节末说明），通用免疫 🔧 | 🔧 |
-| 倒计时 | `countdown` | | 🔧 |
+| 倒计时 | `countdown` | `CardDef.countdown`/`countdown_effects` + `ShikigamiState.countdown`：形态结附获得、己方回合开始 -1、归零重置为初始值并执行倒计时效果、离场/气绝移除（锚点版，rules.md ch12） | ✅ |
 | 直击 | `direct_hit` | | 🔧 |
 | 迅捷 | `haste` | 一次性：出击的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷；仍消耗出击次数 | ✅ |
 | 屏障 | `barrier` | 一次性：伤害事件"护甲计算前3"将伤害值改为 0 并移除一个实例 | ✅ |
@@ -92,12 +93,12 @@
 | 眩晕 | `stunned` | | 🔧 |
 | 运势 | `luck` | 运势判定 = luck check | 🔧 |
 | 增强 | `enhance` | | 🔧 |
-| 鼓舞/压制 | `basic_boost` | 出击增减益（正负值） | 🔧 Phase 3 |
+| 鼓舞/压制 | `basic_boost` / `assault_boosts` | 出击加成：`basic_boost` 动作登记于牌手（`PlayerState.assault_boosts`），下一次出击全部消耗——力量挂攻击后到期强化（战后核销）、护甲获得后保留；战斗牌不消耗。压制（负值）🔧 | ✅（鼓舞） |
 | 追猎 | `hunt` | | 🔧 |
 | 贯通 | `piercing` | 对式神的非反击战斗伤害超过其当前生命时，溢出部分改对所属牌手造成 | ✅ |
 | 穿刺 | `pierce` | 战斗准备前移除被攻击者所有护甲/屏障（经护甲变化事件） | ✅ |
 | 吸血 | `lifesteal` | | 🔧 |
-| 投射 | `projectile` | | 🔧 |
+| 投射 | `projectile`（目标池） | 优先敌方战斗区式神，战斗区为空则退回敌方牌手 | ✅ |
 | 唯一 | `unique` | | 🔧 |
 | 先攻 | `initiative` | 先攻阶段造成伤害、交战阶段不再造成（结构已实现，暂无卡牌持有） | ✅ |
 | 必杀 | `fatal` | | 🔧 |
@@ -135,6 +136,8 @@
 | 可中断 | `interleaved`（mode） | 步骤间允许其它效果结算 | ✅ |
 | 不可中断 | `atomic`（mode） | 步骤连发 | ✅ |
 | 目标 | `target` / `Ref` | Ref(player, shikigami?) | ✅ |
+| 随机生成 | `generate`（动作） | 从 db 按谓词（所属式神/主类型）随机生成卡牌置入区域（发 uid、可重复、池内不含衍生卡；杀念/觉醒·一目连） | ✅ |
+| 直接消灭 | `destroy` / `destroy_form`（动作） | 非伤害消灭：生命归零走气绝流程 / 消灭当前结附的形态（直接消灭免疫为扩展锚点） | ✅ |
 | 调度 | `mulligan` | 游戏开始阶段：返回 1 张起始手牌再随机抽 1，双方各 3 次 | ✅ |
 | 半回合 | `turn` | GameState.turn，双方交替 +1 | ✅ |
 
@@ -149,5 +152,5 @@
 | 卡牌光环 | `card_auras` | 谓词匹配的卡牌获得关键词/不耗鬼火（读取时求值，覆盖已有与新生成的牌）；scope 决定失效时机（"turn"=己方回合开始清除；连续型/属性型光环为扩展锚点） | ✅ |
 | 追加块 | `pre_grants` / `grants` | 可被监测/触发器按索引注入结算的候选效果块（前置/后置） | 🔧 |
 | 临时触发 | `temp_grants` / `TempGrant` | 一次性注册的触发（uses 递减移除）；战斗牌携带者绑定该次战斗注册（如不祥之刃击杀抽牌） | ✅ |
-| 写入目标 | `to`（hand/persistent/turn） | 写入原语（add_mod）的修饰存储目标：手牌实例 / 持久 store / 回合 store（turn 未实现，"本回合"类由 card_auras 覆盖） | ✅ |
+| 写入目标 | `to`（hand/persistent/instance/turn） | 写入原语（add_mod）的修饰存储目标：手牌实例 / 持久 store / 来源实例自身（实例计数器，如风符·龙的目标数）/ 回合 store（turn 未实现，"本回合"类由 card_auras 覆盖） | ✅ |
 | 数值叠加 | `{"enhance": true, "base": n}` | 步骤 amount 参数形式：base + 实例已装配 enhance（战斗牌战力/护甲提取处解析） | ✅ |

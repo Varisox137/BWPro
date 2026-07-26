@@ -1,0 +1,16 @@
+id: 10012504
+version: 20260724
+name: 风符·势
+shikigami: 100125
+card_type: form
+rarity: R
+level: 2
+cost: 1
+form_power: 3
+form_health: 8
+effects: {steps: []}
+countdown: 2
+countdown_effects:
+  steps:
+    - {op: basic_boost, power: 3, shield: 3}
+text: "[倒计时2]：{[鼓舞]：{获得+3战力/+3护甲}}"
