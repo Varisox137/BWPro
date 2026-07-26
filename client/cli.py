@@ -4,8 +4,9 @@
 非回合方没有任何输入机会——响应牌由引擎自动结算（规则：敌方回合零选择、响应必发）。
 
 运行：uv run python -m client.cli
-热座数据为 db/test_data.py（4 式神 × 8 卡；已落地机制与 db/cards、db/shikigami 的
-正式 YAML 保持同步，如文射/妖刀万华的[连击]、兵俑的基础能力）。
+一级菜单：热坐对战 / 卡组构筑（client/deckbuilder.py）。数据为正式 YAML
+（CardDatabase.load：db/cards、db/shikigami）；热坐开局前双方可粘贴卡组码
+（db/deckcode.py）导入构筑，或跳过使用默认卡组（4 式神各 8 种不同名卡）。
 
 显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
 倒计时/战力/保甲/免疫/延迟能力/鼓舞/手牌修饰（增强/费用修正）均在场况中显示。
@@ -16,11 +17,12 @@ from __future__ import annotations
 import os
 import sys
 import unicodedata
+from client import deckbuilder
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
 from db import deckcode
-from db.test_data import TEST_IDS, make_test_db, make_test_deck
+from db.loader import CardDatabase
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
   play (p)   <手牌序号> [目标] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
@@ -474,20 +476,20 @@ def run_debug(game: Game, args: list[str]) -> dict:
 
 
 def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
-    """开局前卡组构筑选择：回车使用默认测试卡组，或粘贴卡组码导入；
-    选定后展示该卡组的卡组码（导出/分享用）。"""
+    """热坐开局前：输入卡组码导入，或跳过（回车）使用默认卡组
+    （现有 4 式神各 8 种不同名卡，共 32 张）。选定后展示该卡组的卡组码（导出）。"""
     try:
-        line = input(f"[{player_name}] 卡组：回车 = 默认测试卡组，粘贴卡组码 = 导入 > ").strip()
+        line = input(f"[{player_name}] 卡组码（回车跳过 = 默认卡组）> ").strip()
     except EOFError:
         line = ""
     if line:
         try:
             ids, cards = deckcode.deck_from_code(db, line)
         except ValueError as e:
-            print(f"卡组码无效（{e}），改用默认测试卡组")
-            ids, cards = list(TEST_IDS), list(make_test_deck())
+            print(f"卡组码无效（{e}），改用默认卡组")
+            ids, cards = deckcode.default_deck(db)
     else:
-        ids, cards = list(TEST_IDS), list(make_test_deck())
+        ids, cards = deckcode.default_deck(db)
     names = "/".join(db.shikigami[s].name for s in ids)
     code = deckcode.encode_deck(deckcode.group_deck(db, ids, cards))
     print(f"[{player_name}] 卡组：{names}")
@@ -495,11 +497,8 @@ def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
     return ids, cards
 
 
-def main() -> None:
-    if os.name == "nt":
-        os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
-    # Phase 1 CLI 热座使用维护者给出的测试数据；卡组可在开局前选择/导入。
-    db = make_test_db()
+def run_battle(db) -> None:
+    """热坐对战：双方依次选择卡组（卡组码导入或默认）后开局。"""
     a_ids, a_cards = _choose_deck(db, "玩家A")
     b_ids, b_cards = _choose_deck(db, "玩家B")
     game = new_game(
@@ -570,6 +569,27 @@ def main() -> None:
             print(f"无效操作: {e}")
         except (ValueError, IndexError):
             print("参数有误，输入 help 查看帮助")
+
+
+def main() -> None:
+    """一级菜单：热坐对战 / 卡组构筑。数据为正式 YAML（CardDatabase.load）。"""
+    if os.name == "nt":
+        os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
+    db = CardDatabase.load()
+    while True:
+        print("—— 主菜单 ——")
+        print("  [1] 热坐对战")
+        print("  [2] 卡组构筑")
+        try:
+            choice = input("选择（q 退出）> ").strip().lower()
+        except EOFError:
+            break
+        if choice == "1":
+            run_battle(db)
+        elif choice == "2":
+            deckbuilder.run_deckbuilder(db)
+        elif choice in ("q", "quit", "exit"):
+            break
 
 
 if __name__ == "__main__":

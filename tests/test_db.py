@@ -80,9 +80,13 @@ def test_validate_summon_rules(db):
 
 
 def test_validate_neutral_format(db):
-    db.cards[10010196] = F.card(10010196, shikigami=None)       # 中立但前缀不是 9999
+    """中立牌 id 须为 9avvvvvv（9 + 1 位异画位 + 6 位数字，自 999999 递减）。"""
+    db.cards[10010196] = F.card(10010196, shikigami=None)       # 中立但首位不是 9
     errors = db.validate()
-    assert any("9999zzzz" in e for e in errors)
+    assert any("9avvvvvv" in e for e in errors)
+    del db.cards[10010196]
+    db.cards[90999999] = F.card(90999999, shikigami=None)       # 默认异画首个中立 id
+    assert not db.validate()
 
 
 def test_validate_token_suffix(db):

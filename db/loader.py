@@ -74,8 +74,8 @@ class CardDatabase:
             where = f"式神 {s.id}《{s.name}》"
             if s.kind == "shikigami":
                 if not 100_000 <= s.id <= 199_999:
-                    errors.append(f"{where}: 式神 id 须为 1xxxyy 格式（1 + 3 位卡包 + 2 位序号）")
-            else:  # summon：8 位 = 从属式神 id + 序号（衍生物从 99 开始递减分配）
+                    errors.append(f"{where}: 式神 id 须为 1avvss（1 + 1 位异画位 + 2 位卡包 + 2 位序号）")
+            else:  # summon：8 位 = 从属式神 id + 序号（衍生物从 99 开始递减分配；结构与卡牌相同）
                 owner = self.shikigami.get(s.id // 100)
                 if not 10_000_000 <= s.id <= 99_999_999:
                     errors.append(f"{where}: 召唤物 id 须为 8 位（从属式神 id + 2 位序号）")
@@ -90,8 +90,8 @@ class CardDatabase:
         for c in self.cards.values():
             where = f"卡牌 {c.id}《{c.name}》"
             if c.shikigami is None:
-                if c.id // 10_000 != NEUTRAL_PREFIX:
-                    errors.append(f"{where}: 中立牌 id 须为 9999zzzz 形式")
+                if not 90_000_000 <= c.id <= 99_999_999 or c.id // 10_000_000 != NEUTRAL_PREFIX:
+                    errors.append(f"{where}: 中立牌 id 须为 9avvvvvv（9 + 1 位异画位 + 6 位数字，自 999999 递减）")
             else:
                 if c.shikigami not in self.shikigami:
                     errors.append(f"{where}: 所属式神 {c.shikigami} 不存在")

@@ -11,6 +11,19 @@ import zlib
 from db.deck import validate_deck
 
 
+def default_deck(db) -> tuple[list[int], list[int]]:
+    """默认卡组：前 4 名可构筑式神 + 其全部可构筑（非衍生）卡牌各 1 张。
+
+    即当前的"4 式神各 8 种不同名卡"（32 张）。
+    """
+    ids = sorted(sid for sid, d in db.shikigami.items()
+                 if d.kind == "shikigami")[:4]
+    owned = set(ids)
+    cards = sorted(cid for cid, c in db.cards.items()
+                   if not c.token and c.shikigami in owned)
+    return ids, cards
+
+
 def group_deck(db, shikigami_ids: list[int],
                card_ids: list[int]) -> list[tuple[int, list[int]]]:
     """把 (式神列表, 卡牌列表) 按所属式神分组为 [(shiki_id, [card_id, ...]), ...]。
