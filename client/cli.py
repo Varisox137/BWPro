@@ -597,8 +597,8 @@ def main() -> None:
             deckbuilder.run_deckbuilder(db)
         elif choice == "3":
             from client import net
-            server = input("服务器地址（回车 = ws://127.0.0.1:8000/ws）> ").strip()
-            net.run(db, server or "ws://127.0.0.1:8000/ws",
+            server = input("服务器地址（回车 = ws://127.0.0.1:1037/ws）> ").strip()
+            net.run(db, server or "ws://127.0.0.1:1037/ws",
                     input("玩家名 > ").strip() or "玩家", debug=False)
         elif choice in ("q", "quit", "exit"):
             break

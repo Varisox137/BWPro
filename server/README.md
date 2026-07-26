@@ -5,12 +5,37 @@
 ## 运行
 
 ```bash
-uv run python -m server.main [--host 0.0.0.0] [--port 8000] \
-    [--turn-timeout 120] [--mulligan-timeout 30] [--debug-console]
+uv run python -m server.main [--host 0.0.0.0] [--port 1037] \
+    [--turn-timeout 120] [--mulligan-timeout 30] [--rate-limit 10] \
+    [--max-rooms 1000] [--ssl-certfile CER --ssl-keyfile KEY] [--debug-console]
 ```
 
 客户端：`uv run python -m client.net`（或主菜单 [3] 联机对战），
 `--debug` 创建 debug 对局（房间内允许 debug 指令）。
+
+## 内网穿透 / 公网联机
+
+可以。服务端以 `--host 0.0.0.0` 监听（默认端口 1037）后：
+
+- **TCP 穿透**（frp、nps 等把公网 IP 的某端口转发到本机 1037）：
+  客户端输入 `ws://<公网IP或域名>:<端口>/ws` 即可联机。
+- **HTTP 穿透 / 反代**（cloudflared、nginx、Caddy 等，要求支持 WebSocket 升级）：
+  客户端输入 `ws://<域名>/ws`；若对方提供 TLS 终止，则输 `wss://<域名>/ws`。
+- 服务端也可直接配置 TLS（`--ssl-certfile/--ssl-keyfile`），此后客户端用
+  `wss://<地址>:1037/ws`。
+
+## 安全性（基本保障）
+
+- **信息隐藏**：下发状态按视角脱敏——对手的手牌/牌库内容替换为占位卡
+  （仅张数公开），修改客户端也无法窥探；墓地与各类计数器按规则为公开信息。
+- **身份与权限**：无登录态；入座下发随机 `player_token`（重连凭证），指令中的
+  `player` 字段由服务端按座位强制改写，回合内操作仅当前行动方可发。
+- **传输加密**：支持 wss（服务端直接配 TLS 证书，或经穿透/反代终止 TLS）。
+- **滥用防护**：每连接每秒最多 10 条消息（`--rate-limit`）；单条 WS 消息最大
+  1MB；输入字段长度上限（名字 32 / 房间 id 16 / 令牌 64 / 卡组码 1024）；
+  房间总数上限 1000（`--max-rooms`）。
+- **传输内容**：房间 id 与 token 经 TLS（wss）时不被窃听；用明文 ws 经公网
+  穿透时建议仅在可信网络或套 TLS。
 
 ## 架构
 
@@ -78,4 +103,4 @@ server/
 
 - 引擎层（已实现）：`MAX_QUEUE_ITERATIONS = 1000`；`state.turn >= 256` 强制平局。
 - 服务端层：引擎抛非 `IllegalAction` 异常时广播 error + `game_over(engine_error)`
-  终止对局。命令频率限制 / 消息大小限制 / 观战回放 / 自动匹配留待后续。
+  终止对局；频率限制 / 消息大小限制见上文"安全性"。观战回放 / 自动匹配留待后续。

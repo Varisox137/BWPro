@@ -1,6 +1,6 @@
 """authoritative 联机服务端（FastAPI + WebSocket）。
 
-运行：uv run python -m server.main [--host 0.0.0.0] [--port 8000]
+运行：uv run python -m server.main [--host 0.0.0.0] [--port 1037]
       [--turn-timeout 120] [--mulligan-timeout 30] [--debug-console]
 
 - 客户端只提交指令（与 client/cli.py 完全相同的 cmd dict 协议），服务端用
@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import threading
+import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -22,53 +23,99 @@ from db.loader import CardDatabase
 from server import protocol
 from server.manager import RoomManager
 
+# 输入字段长度上限（基本防护：拒绝超长/异常输入）
+MAX_NAME = 32
+MAX_ROOM_ID = 16
+MAX_TOKEN = 64
+MAX_DECK_CODE = 1024
 
-def create_app(manager: RoomManager) -> FastAPI:
+
+class RateLimiter:
+    """每连接每秒最多 rate 条消息（令牌窗：每秒重置计数）。"""
+
+    def __init__(self, rate: int = 10) -> None:
+        self.rate = rate
+        self.count = 0
+        self.window = 0.0
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        if now - self.window >= 1.0:
+            self.window = now
+            self.count = 0
+        self.count += 1
+        return self.count <= self.rate
+
+
+def _text(msg: dict, key: str, maxlen: int) -> str | None:
+    """取字符串字段并限制长度；非字符串或超长抛 ValueError。"""
+    v = msg.get(key)
+    if v is None:
+        return None
+    if not isinstance(v, str) or len(v) > maxlen:
+        raise ValueError(f"字段 {key} 非法")
+    return v
+
+
+def create_app(manager: RoomManager, *, rate_limit: int = 10) -> FastAPI:
     app = FastAPI(title="BWPro 联机服务端")
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
         await ws.accept()
+        limiter = RateLimiter(rate_limit)
         room = None
         conn = None
+
+        async def reject(reason: str) -> None:
+            await ws.send_text(json.dumps(protocol.error(reason), ensure_ascii=False))
+
         try:
             while True:
                 raw = await ws.receive_text()
+                if not limiter.allow():
+                    await reject("消息过于频繁，请稍候")
+                    continue
                 try:
                     msg = protocol.parse_client_message(raw)
                 except ValueError as e:
-                    await ws.send_text(json.dumps(
-                        protocol.error(str(e)), ensure_ascii=False))
+                    await reject(str(e))
                     continue
                 t = msg["type"]
                 if t == "pong":
                     continue
                 if t == "create":
-                    room = manager.create(debug=bool(msg.get("debug")))
                     try:
-                        conn = await room.join(0, msg.get("name") or "玩家A", ws,
-                                               msg.get("deck_code"))
+                        name = _text(msg, "name", MAX_NAME) or "玩家A"
+                        deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
+                        room = manager.create(debug=bool(msg.get("debug")))
+                        conn = await room.join(0, name, ws, deck_code)
                     except ValueError as e:
-                        manager.remove(room.id)
-                        room = None
-                        await ws.send_text(json.dumps(
-                            protocol.error(str(e)), ensure_ascii=False))
+                        if room is not None:
+                            manager.remove(room.id)
+                            room = None
+                        await reject(str(e))
                         continue
                     await conn.send(protocol.joined(room.id, conn.token, 0,
                                                     debug=room.debug))
                     await room.start_if_ready()
                 elif t == "join":
-                    room = manager.get(msg.get("room_id") or "")
-                    if room is None:
-                        await ws.send_text(json.dumps(
-                            protocol.error("房间不存在"), ensure_ascii=False))
+                    try:
+                        room_id = _text(msg, "room_id", MAX_ROOM_ID) or ""
+                        token = _text(msg, "token", MAX_TOKEN)
+                        name = _text(msg, "name", MAX_NAME) or "玩家B"
+                        deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
+                    except ValueError as e:
+                        await reject(str(e))
                         continue
-                    token = msg.get("token")
+                    room = manager.get(room_id)
+                    if room is None:
+                        await reject("房间不存在")
+                        continue
                     if token:  # 断线重连
                         conn = await room.reconnect(token, ws)
                         if conn is None:
-                            await ws.send_text(json.dumps(
-                                protocol.error("重连令牌无效"), ensure_ascii=False))
+                            await reject("重连令牌无效")
                             continue
                         await conn.send(protocol.joined(
                             room.id, conn.token, conn.seat,
@@ -78,19 +125,16 @@ def create_app(manager: RoomManager) -> FastAPI:
                             await room.broadcast_state()
                         continue
                     try:
-                        conn = await room.join(1, msg.get("name") or "玩家B", ws,
-                                               msg.get("deck_code"))
+                        conn = await room.join(1, name, ws, deck_code)
                     except ValueError as e:
-                        await ws.send_text(json.dumps(
-                            protocol.error(str(e)), ensure_ascii=False))
+                        await reject(str(e))
                         continue
                     await conn.send(protocol.joined(room.id, conn.token, 1,
                                                     debug=room.debug))
                     await room.start_if_ready()
                 elif t == "cmd":
                     if room is None or conn is None:
-                        await ws.send_text(json.dumps(
-                            protocol.error("尚未加入房间"), ensure_ascii=False))
+                        await reject("尚未加入房间")
                         continue
                     await room.handle_cmd(conn.seat, msg["cmd"])
         except WebSocketDisconnect:
@@ -139,12 +183,20 @@ def _debug_console(manager: RoomManager, loop: asyncio.AbstractEventLoop) -> Non
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="BWPro 联机服务端")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="监听地址；对外服务（含内网穿透）用 0.0.0.0")
+    parser.add_argument("--port", type=int, default=1037)
     parser.add_argument("--turn-timeout", type=float, default=120.0,
                         help="回合限时（秒，含升级阶段）")
     parser.add_argument("--mulligan-timeout", type=float, default=30.0,
                         help="起始手牌调度限时（秒，每人）")
+    parser.add_argument("--rate-limit", type=int, default=10,
+                        help="每连接每秒最大消息数")
+    parser.add_argument("--max-rooms", type=int, default=1000,
+                        help="同时存在的最大房间数")
+    parser.add_argument("--ssl-certfile", default=None,
+                        help="TLS 证书路径（配置后对外为 wss://）")
+    parser.add_argument("--ssl-keyfile", default=None, help="TLS 私钥路径")
     parser.add_argument("--debug-console", action="store_true",
                         help="开启服务端 debug 控制台（stdin）")
     args = parser.parse_args()
@@ -153,10 +205,14 @@ def main() -> None:
 
     db = CardDatabase.load()
     manager = RoomManager(db, turn_timeout=args.turn_timeout,
-                          mulligan_timeout=args.mulligan_timeout)
-    app = create_app(manager)
+                          mulligan_timeout=args.mulligan_timeout,
+                          max_rooms=args.max_rooms)
+    app = create_app(manager, rate_limit=args.rate_limit)
     config = uvicorn.Config(app, host=args.host, port=args.port,
-                            ws_ping_interval=10, ws_ping_timeout=5)
+                            ws_ping_interval=10, ws_ping_timeout=5,
+                            ws_max_size=1024 * 1024,  # 单条消息最大 1MB
+                            ssl_certfile=args.ssl_certfile,
+                            ssl_keyfile=args.ssl_keyfile)
     server = uvicorn.Server(config)
     if args.debug_console:
         loop = asyncio.new_event_loop()

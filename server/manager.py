@@ -8,14 +8,17 @@ from server.room import Room, new_room_id
 
 class RoomManager:
     def __init__(self, db, *, turn_timeout: float = 120.0,
-                 mulligan_timeout: float = 30.0) -> None:
+                 mulligan_timeout: float = 30.0, max_rooms: int = 1000) -> None:
         self.db = db
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
+        self.max_rooms = max_rooms
         self.rooms: dict[str, Room] = {}
         self._rng = random.Random()
 
     def create(self, *, debug: bool = False) -> Room:
+        if len(self.rooms) >= self.max_rooms:
+            raise ValueError("服务器房间数已达上限，请稍后再试")
         room_id = new_room_id(self._rng)
         while room_id in self.rooms:
             room_id = new_room_id(self._rng)

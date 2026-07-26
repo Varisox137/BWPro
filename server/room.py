@@ -26,6 +26,23 @@ def new_room_id(rng: random.Random, length: int = 6) -> str:
     return "".join(rng.choices(ROOM_ID_ALPHABET, k=length))
 
 
+# 占位卡：脱敏后用于替换对手手牌/牌库内容（数量公开，内容保密）
+_HIDDEN_CARD = {"uid": 0, "id": 0, "mods": {}, "hand_seq": 0}
+
+
+def sanitize_state(payload: dict, viewer: int) -> dict:
+    """按视角脱敏完整状态：对手的手牌与牌库以占位卡替换（张数公开、内容保密），
+    防止修改客户端窥探。墓地/计数器等在本游戏中为公开信息，保留。"""
+    import copy
+
+    payload = copy.deepcopy(payload)
+    zones = payload["players"][1 - viewer].get("zones", {})
+    for zone in ("hand", "deck"):
+        if zone in zones:
+            zones[zone] = [dict(_HIDDEN_CARD) for _ in zones[zone]]
+    return payload
+
+
 class Connection:
     """一名玩家的连接槽位（seat 固定，断线只换 ws 不换槽）。"""
 
@@ -185,13 +202,14 @@ class Room:
                 await c.send(msg)
 
     async def broadcast_state(self) -> None:
-        """向双方下发完整状态 + 新增日志；对局结束时补发 game_over。"""
+        """向双方下发完整状态（按各自视角脱敏）+ 新增日志；对局结束时补发 game_over。"""
         st = self.game.state
         log = st.log[self._sent_log:]
         self._sent_log = len(st.log)
-        msg = protocol.state(st.model_dump(mode="json"), log)
+        base = st.model_dump(mode="json")
         for c in self.conns:
-            await c.send(msg)
+            viewer = self.seat_to_player[c.seat]
+            await c.send(protocol.state(sanitize_state(base, viewer), log))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
             await self._broadcast(protocol.game_over(st.winner, "player_defeated"))

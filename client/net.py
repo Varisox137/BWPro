@@ -1,6 +1,6 @@
 """联机客户端：连接 server/main.py 的 WebSocket 服务端进行双人对战。
 
-运行：uv run python -m client.net [--server ws://127.0.0.1:8000/ws] [--debug] [--name 名字]
+运行：uv run python -m client.net [--server ws://127.0.0.1:1037/ws] [--debug] [--name 名字]
 
 - 创建房间（随机分配房间 id）或按 id 加入；开局前可粘贴卡组码（回车 = 默认卡组）。
 - 服务端权威：指令与热坐 CLI 同一 cmd dict 协议；客户端只渲染服务端下发的
@@ -240,7 +240,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="BWPro 联机客户端")
-    parser.add_argument("--server", default="ws://127.0.0.1:8000/ws")
+    parser.add_argument("--server", default="ws://127.0.0.1:1037/ws")
     parser.add_argument("--name", default=None, help="玩家名（默认交互输入）")
     parser.add_argument("--debug", action="store_true",
                         help="创建 debug 对局（房间内允许 debug 指令）")

@@ -201,3 +201,28 @@ def test_timer_not_reset_by_actions_within_turn(db):
                               {"op": "upgrade", "index": idx})
         assert room.current_timer_key() == key
     run(go())
+
+
+# ---------- 安全 ----------
+
+def test_state_sanitized_per_viewer(db):
+    """对手的手牌/牌库内容脱敏为占位卡（张数公开），己方不受影响。"""
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        for ws, seat in ((ws0, 0), (ws1, 1)):
+            viewer = room.seat_to_player[seat]
+            payload = [m for m in ws.messages if m["type"] == "state"][-1]["payload"]
+            opp = payload["players"][1 - viewer]["zones"]
+            assert all(c["id"] == 0 for c in opp["hand"])
+            assert all(c["id"] == 0 for c in opp["deck"])
+            assert len(opp["hand"]) == 5  # 张数公开
+            own = payload["players"][viewer]["zones"]
+            assert all(c["id"] != 0 for c in own["hand"])
+    run(go())
+
+
+def test_max_rooms_cap(db):
+    mgr = RoomManager(db, max_rooms=1)
+    mgr.create()
+    with pytest.raises(ValueError, match="上限"):
+        mgr.create()
