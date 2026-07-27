@@ -71,6 +71,8 @@ class _DamageEvent:
     skip_early: bool = False
     converted: bool = False  # 已经历过一次转化的伤害（碧羽散华破甲→伤害）：
     # 跳过毒蚀的伤害→破甲转化，防止两个转化类效果来回循环
+    fragile: int = 0  # 护甲计算批次消耗的破甲数量（破甲受伤即消耗；on_damage payload
+    # 携带，蚀刃毒羽"攻击后使其获得相同数量的破甲"读取）
 
 
 @dataclass
@@ -385,6 +387,87 @@ class Game:
             raise IllegalAction("调度指令需要 player（0/1）")
         return pi
 
+    def _cmd_play_reinforce(self, p: PlayerState, card: CardInstance,
+                            cdef: CardDef, cmd: dict) -> None:
+        """协战牌打出（维护者答复 10）：选择子选项 → 生成对应 token 子卡入手并
+        "视作从手牌使用"（正常耗火、等级检测按子选项、完整使用事件流程——递归走
+        _cmd_play_card，含 on_before_card_play/on_card_played）→ 主牌离手移除（不进墓地）。
+
+        合法性前置校验（子选项所属式神出战/未气绝/等级、鬼火、目标、尘缚之阵锁定）失败时
+        主牌仍在手（不产生 token）；通过后的递归使用不应再失败。
+        """
+        owners = [sid for sid in (cdef.shikigami, cdef.shikigami2) if sid is not None]
+        if not any(self._find_shikigami(p, sid) is not None for sid in owners):
+            raise IllegalAction(f"《{cdef.name}》的所属式神（{cdef.shikigami} / "
+                                f"{cdef.shikigami2}）均未出战")
+        options = list(cdef.options)
+        if len(options) != 2:
+            raise IllegalAction(f"《{cdef.name}》缺少子选项数据")
+        choice = cmd.get("choice")
+        if choice not in (0, 1):
+            names = " / ".join(f"[{i}]《{self.db.cards[o].name}》"
+                               for i, o in enumerate(options))
+            raise IllegalAction(f"协战牌需要选择子选项（choice 0/1）：{names}")
+        sub = self.db.cards[options[choice]]
+        si: int | None = None
+        if sub.shikigami is not None:
+            si = self._find_shikigami(p, sub.shikigami)
+            sname = self.db.shikigami[sub.shikigami].name
+            if si is None:
+                raise IllegalAction(f"子选项《{sub.name}》的所属式神{sname}未出战")
+            s = p.shikigami[si]
+            if s.defeated and not sub.playable_when_defeated:
+                raise IllegalAction(f"{sname} 气绝中，无法使用《{sub.name}》")
+            if s.level < sub.level:
+                raise IllegalAction(f"《{sub.name}》需要 {sname} 达到 {sub.level} 级"
+                                    f"（当前 {s.level} 级）")
+        cost = self._effective_cost(p, sub)
+        if p.orb < cost:
+            raise IllegalAction(f"鬼火不足（需要 {cost}，现有 {p.orb}）")
+        if sub.target.kind == "choose":
+            want = cmd.get("target")
+            if want is None:
+                raise IllegalAction("该子选项需要选择目标")
+            want = want if isinstance(want, Ref) else Ref(**want)
+            if want not in targets.pool_refs(self, sub.target.pool, self.state.active):
+                raise IllegalAction("目标不合法")
+        if (sub.card_type == "combat" and si is not None
+                and p.combat_index != si
+                and not self._has_keyword(p.shikigami[si], "remote")
+                and self._combat_zone_locked(self.state.active)):
+            raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
+        # 生成子选项 token 入手，视作从手牌使用（完整使用事件流程）
+        inst = CardInstance(uid=self.state.next_uid, id=sub.id)
+        self.state.next_uid += 1
+        self.move_card(p, inst, "hand")
+        self._log(f"{p.name} 使用《{cdef.name}》：选择子选项《{sub.name}》")
+        sub_cmd: dict = {"op": "play_card", "uid": inst.uid}
+        if cmd.get("target") is not None:
+            sub_cmd["target"] = cmd["target"]
+        self._cmd_play_card(sub_cmd)
+        # 主牌离手移除（不进墓地；子选项被无效化等"已使用"情形同样离手）
+        self._remove_from_zone(p, card)
+        p.zones.setdefault("removed", []).append(card)
+
+    def _apply_revive_haste(self, p: PlayerState, card: CardInstance) -> None:
+        """使用实例修饰 revive_haste（鎏金幻羽"使用后以津真天和鸩气绝倒计时-1"）：
+        按数据 id 对控制者已气绝式神气绝倒计时 -1，减到 ≤0 立即复活。"""
+        sids = card.mods.get("revive_haste")
+        if not sids:
+            return
+        pi = self.state.players.index(p)
+        for sid in sids:
+            si = self._find_shikigami(p, int(sid))
+            if si is None:
+                continue
+            s = p.shikigami[si]
+            if not s.defeated or s.despawned:
+                continue
+            s.revive_countdown -= 1
+            self._log(f"{self.db.shikigami[s.id].name} 的气绝倒计时 -1（{s.revive_countdown}）")
+            if s.revive_countdown <= 0:
+                self._revive(p, pi, si)
+
     # ---------- 出牌 ----------
 
     def _cmd_play_card(self, cmd: dict) -> None:
@@ -395,9 +478,11 @@ class Game:
         if card is None:
             raise IllegalAction(f"区域 {play_from} 中没有这张牌")
         cdef = self.db.cards[card.id]
-        # Phase 1 实现法术牌、形态牌、战斗牌（测试数据限定为数值修正）；
-        # 幻境/协战在规则/引擎落地方可打出。
-        if cdef.card_type in ("field", "reinforce"):
+        # Phase 1 实现法术牌、形态牌、战斗牌；协战牌走子选项流程（_cmd_play_reinforce）。
+        if cdef.card_type == "reinforce":
+            self._cmd_play_reinforce(p, card, cdef, cmd)
+            return
+        if cdef.card_type == "field":
             raise IllegalAction(f"《{cdef.name}》的卡牌类型 {cdef.card_type} 尚未实现")
         # 使用方式（多择子选项，仅保留核心方式、参数可变；按 id 匹配，param 为数据预留）
         method: PlayMethod | None = None
@@ -417,7 +502,7 @@ class Game:
             if si is None:
                 raise IllegalAction(f"{sname} 未出战")
             s = p.shikigami[si]
-            if s.defeated and not cdef.playable_when_defeated:
+            if s.defeated and not self._playable_when_defeated(cdef, card):
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
             if s.level < eff_level:
                 raise IllegalAction(f"《{cdef.name}》需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
@@ -496,7 +581,14 @@ class Game:
         if si is not None:
             self._clear_play_delayed(p.shikigami[si])  # "本次使用期间"延迟能力窗口结束
         self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
+        self._apply_revive_haste(p, card)  # 实例修饰"使用后…气绝倒计时-1"（鎏金幻羽）
         self._emit_card_played(self.state.active, uid, cdef, affected)
+
+    @staticmethod
+    def _playable_when_defeated(cdef: CardDef, card: CardInstance | None = None) -> bool:
+        """气绝时可用判定：卡牌标记或实例修饰（鎏金幻羽给手牌黄金羽授予的 mods）。"""
+        return bool(cdef.playable_when_defeated
+                    or (card is not None and card.mods.get("playable_when_defeated")))
 
     def _is_transformed(self, p: PlayerState, cdef: CardDef,
                         card: CardInstance | None = None) -> bool:
@@ -1311,18 +1403,25 @@ class Game:
             else:
                 s.countdown = initial
 
+    def _revive(self, p: PlayerState, pi: int, i: int) -> None:
+        """复活一名己方式神（倒计时归零/气绝倒计时减到 0 共用）：回满生命、重注册
+        倒计时能力、发出 on_shikigami_revived。"""
+        s = p.shikigami[i]
+        s.defeated = False
+        s.revive_countdown = 0
+        s.health = s.max_health
+        self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
+        self._log(f"{self.db.shikigami[s.id].name} 复活")
+        self.emit("on_shikigami_revived",
+                  shikigami=Ref(player=pi, shikigami=i), source=None, reason="倒计时")
+
     def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
         for i, s in enumerate(p.shikigami):
             if s.defeated and not s.despawned and s.level >= 1:
                 s.revive_countdown -= 1
                 if s.revive_countdown <= 0:
-                    s.defeated = False
-                    s.health = s.max_health
-                    self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
-                    self._log(f"{self.db.shikigami[s.id].name} 复活")
-                    self.emit("on_shikigami_revived",
-                              shikigami=Ref(player=pi, shikigami=i), source=None, reason="倒计时")
+                    self._revive(p, pi, i)
 
     def _turn_start_gain_orb(self, p: PlayerState, first: bool, pi: int) -> None:
         """回合开始阶段 steps 4-5：鬼火重置为 0 再获得；emit on_orb_changed。"""
@@ -1505,6 +1604,7 @@ class Game:
             if holder.shield < 0:
                 fragile = -holder.shield
                 ev.amount += fragile
+                ev.fragile = fragile  # 记账：破甲受伤即消耗，on_damage 时目标已无破甲
                 self._change_shield(ev.victim, holder.shield, "破甲计算", kind="fragile")
                 self._log(f"破甲使本次伤害增加 {fragile} 点")
             elif holder.shield > 0:
@@ -1548,7 +1648,7 @@ class Game:
                 self._affected_stack[-1].append(ev.victim)  # 出牌效果实际伤害过的式神
             self._queue_lifesteal(ev)  # 伤害后（延时，优先级 1 锚点）：吸血生成恢复生命事件
             self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source,
-                      kind=ev.kind,
+                      kind=ev.kind, fragile=ev.fragile,
                       battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
             p.health -= ev.amount
@@ -1852,7 +1952,7 @@ class Game:
                 if si is None:
                     continue  # 对应式神未出战
                 s = p.shikigami[si]
-                if s.defeated and not cdef.playable_when_defeated:
+                if s.defeated and not self._playable_when_defeated(cdef, card):
                     continue  # 对应式神气绝且无"气绝时可用"
                 if s.level < cdef.level:
                     continue  # 响应其余要求照常：等级不足不可用
@@ -1907,7 +2007,7 @@ class Game:
             if si is None:
                 return True
             s = p.shikigami[si]
-            if s.defeated and not cdef.playable_when_defeated:
+            if s.defeated and not self._playable_when_defeated(cdef, ctx.card):
                 return True
             if s.level < cdef.level:
                 return True

@@ -1,0 +1,24 @@
+id: 10012652
+version: 20260724
+name: 鎏金幻羽
+shikigami: 100126
+card_type: spell
+rarity: SSR
+token: true  # 协战子选项（致命之羽 10012621）
+level: 2
+cost: 0  # 不消耗鬼火
+effects:
+  steps:
+    # 修饰手牌中所有真黄金羽（tags 含 golden_feather 且为 token；金风流羽只在
+    # 使用时视为黄金羽，不修饰——维护者答复 8）；once_key 实现"不可叠加"。
+    # 三个修饰读取点：气绝时可用（_playable_when_defeated）、伤害+1（damage 动作
+    # damage_boost）、使用后双方气绝倒计时-1（_apply_revive_haste，减到 ≤0 立即复活）
+    - op: mod_hand
+      tag: golden_feather
+      token: true
+      once_key: gilded
+      mods: {gilded: true, playable_when_defeated: true, damage_boost: 1,
+             revive_haste: [100126, 100128]}
+    # 羁绊：鸩倒计时-2（无倒计时能力修正 -0；未出战为空操作）
+    - {op: countdown_delta, amount: -2, shikigami: 100128}
+text: "不消耗鬼火。使手牌所有'黄金羽'获得'气绝时可用，伤害+1，使用后以津真天和鸩气绝倒计时-1'。（不可叠加）[羁绊]：{鸩倒计时-2}。"

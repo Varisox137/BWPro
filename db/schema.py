@@ -153,6 +153,9 @@ class CardDef(BaseModel):
     response: EffectBlock | None = None  # 响应牌效果块覆盖：主动使用效果与响应效果结构
     # 不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/
     # 结算改读本块；缺省（None）用 effects
+    options: list[int] = Field(default_factory=list)  # 协战牌（card_type=reinforce）：
+    # 子选项 token 卡 id，有序（[0]=主式神侧子卡，[1]=副式神侧子卡）；打出时 cmd.choice 选择，
+    # 生成对应 token 并视作从手牌使用，主牌离手移除（不进墓地）
     temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、
     # 绑定该次战斗的一次性触发（uses=1，战斗终止点移除未用者）
     methods: list[PlayMethod] = Field(default_factory=list)  # 使用方式（多择子选项）

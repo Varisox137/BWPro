@@ -24,7 +24,8 @@ from core.setup import new_game
 from db.loader import CardDatabase
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
-  play (p)   <手牌序号> [目标] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
+  play (p)   <手牌序号> [子选项] [目标] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
+                                               （协战牌先给子选项序号 0/1，如 p 3 0）
   assault (a) <式神序号>               式神出击（耗 1 鬼火 + 每回合 1 次次数）
   upgrade (u) <式神序号>               升级式神（只能升己方当前最低级）
   end (e)                              结束回合
@@ -498,8 +499,21 @@ def run_battle(db) -> None:
                 cdef = db.cards[card.id]
                 cmd_dict: dict = {"op": "play_card", "uid": card.uid}
                 rest = args[1:]
-                if cdef.target.kind == "choose":
-                    legal = game.legal_targets(game.state.active, card)
+                eff = cdef
+                if cdef.card_type == "reinforce":
+                    # 协战牌：先选择子选项（显示两选项卡名与文本），目标/等级按子卡
+                    options = [db.cards[o] for o in cdef.options]
+                    if rest:
+                        pick = int(rest.pop(0))
+                    else:
+                        for i, o in enumerate(options):
+                            print(f"  [{i}]《{o.name}》 {o.text}")
+                        pick = int(input("子选项 > "))
+                    cmd_dict["choice"] = pick
+                    eff = options[pick]
+                if eff.target.kind == "choose":
+                    from core import targets as _targets
+                    legal = _targets.pool_refs(game, eff.target.pool, game.state.active)
                     if rest:
                         code = rest.pop(0)
                     else:

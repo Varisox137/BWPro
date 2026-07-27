@@ -169,8 +169,21 @@ class NetClient:
             cdef = self.db.cards[card.id]
             cmd_dict: dict = {"op": "play_card", "uid": card.uid}
             rest = args[1:]
-            if cdef.target.kind == "choose":
-                legal = game.legal_targets(self.me, card)
+            eff = cdef
+            if cdef.card_type == "reinforce":
+                # 协战牌：先选择子选项（显示两选项卡名与文本），目标/等级按子卡
+                options = [self.db.cards[o] for o in cdef.options]
+                if rest:
+                    pick = int(rest.pop(0))
+                else:
+                    for i, o in enumerate(options):
+                        print(f"  [{i}]《{o.name}》 {o.text}")
+                    pick = int(input("子选项 > "))
+                cmd_dict["choice"] = pick
+                eff = options[pick]
+            if eff.target.kind == "choose":
+                from core import targets as _targets
+                legal = _targets.pool_refs(game, eff.target.pool, self.me)
                 if rest:
                     code = rest.pop(0)
                 else:

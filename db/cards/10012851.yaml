@@ -1,0 +1,25 @@
+id: 10012851
+version: 20260724
+name: 蚀刃毒羽
+shikigami: 100128
+card_type: combat
+rarity: SSR
+token: true  # 协战子选项（致命之羽 10012621）
+level: 2
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 2, target: {kind: self}}
+    - {op: gain_shield, amount: 2, target: {kind: self}}
+    # 羁绊：以津真天倒计时-2（战斗牌其它效果步；无倒计时能力修正 -0，未出战空操作）
+    - {op: countdown_delta, amount: -2, shikigami: 100126}
+temp_grants:
+  # 若攻击有破甲的角色：攻击（造成战斗伤害）后使其获得相同数量的破甲。
+  # 破甲受伤即消耗——on_damage 时目标已无破甲，数量读 payload 的 fragile 键
+  # （伤害管线于破甲计算批次记账；无破甲时 amount=0 自然空操作，毒之华同路径）
+  - when: on_damage
+    condition: {source_shikigami: self, kind: combat, victim_side: enemy}
+    steps:
+      - {op: gain_shield, amount: {event: fragile}, kind: fragile,
+         target: {kind: context, key: victim}}
+text: "若攻击有破甲的角色，则攻击后使其获得相同数量的破甲。[羁绊]：{以津真天倒计时-2}。"

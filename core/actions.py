@@ -32,10 +32,13 @@ def damage(game, ctx, *, targets: list[Ref], amount: int,
            piercing: bool | None = None) -> None:
     """对目标（式神或牌手）造成 amount 点伤害；护甲优先吸收。
 
+    实例修饰 damage_boost（鎏金幻羽给手牌黄金羽的"伤害+1"）在卡牌效果伤害上累加。
     贯通：piercing 显式指定优先（牌面明确"贯通伤害"的卡牌效果）；缺省时仅当伤害
     来自式神能力且来源式神具有贯通才继承——卡牌效果伤害不因式神持有贯通而贯通
     （terminology.md「贯通」）。
     """
+    if ctx.card is not None:
+        amount += int(ctx.card.mods.get("damage_boost", 0))
     pierce = piercing if piercing is not None else game._ability_piercing(ctx)
     for ref in targets:
         if ref.shikigami is None:
@@ -236,6 +239,35 @@ def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
         raise ValueError(f"未知 add_mod 写入目标: {to}")
 
 
+@action("mod_hand")
+def mod_hand(game, ctx, *, targets: list[Ref], tag: str | None = None,
+             token: bool | None = None, mods: dict | None = None,
+             once_key: str | None = None) -> None:
+    """给控制者手牌中符合谓词的卡牌实例写入实例修饰（targets 忽略；鎏金幻羽）。
+
+    谓词：tag=卡牌 tags 含该标记 / token=是否衍生卡（"真黄金羽"= tags 含 golden_feather
+    且为 token——金风流羽只在使用时视为黄金羽，不修饰，维护者答复 8）。
+    once_key：实例已有该键则跳过（"不可叠加"）。写入键的读取点：
+    playable_when_defeated（engine._playable_when_defeated）、damage_boost（damage 动作）、
+    revive_haste（engine._apply_revive_haste）。
+    """
+    p = game.state.players[ctx.controller]
+    n = 0
+    for c in p.hand:
+        cd = game.db.cards[c.id]
+        if tag is not None and tag not in cd.tags:
+            continue
+        if token is not None and cd.token != token:
+            continue
+        if once_key is not None and c.mods.get(once_key):
+            continue  # 不可叠加：已修饰过的实例跳过
+        for k, v in (mods or {}).items():
+            c.mods[k] = v
+        n += 1
+    if n:
+        game._log(f"{p.name} 手牌中 {n} 张牌获得了修饰")
+
+
 @action("card_aura")
 def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
               card_type: str | None = None, keywords: list[str] | None = None,
@@ -329,14 +361,39 @@ def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 
     game._log(f"{game.state.players[ctx.controller].name} 获得出击加成（+{power}力量/+{shield}护甲）")
 
 
+@action("consume_assault_boosts")
+def consume_assault_boosts(game, ctx, *, targets: list[Ref]) -> None:
+    """消耗己方全部出击加成（鼓舞），作为该战斗牌赋予来源式神的加成
+    （targets 忽略；灵矢贯虹羁绊，维护者答复 10：战力/护甲作为此战斗牌赋予的效果
+    ——战力持续到本次战斗结束后经 combat_power 核销、护甲保留；鼓舞中的关键字
+    当前卡池不存在，落地后在此扩展）。战斗牌本不消耗鼓舞，本步为牌面指定的例外。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("consume_assault_boosts 需要来源式神")
+    p = game.state.players[ctx.controller]
+    if not p.assault_boosts:
+        return
+    power = sum(int(b.get("power", 0)) for b in p.assault_boosts)
+    shield = sum(int(b.get("shield", 0)) for b in p.assault_boosts)
+    p.assault_boosts.clear()
+    s = p.shikigami[ctx.source.shikigami]
+    if power:
+        s.combat_power += power
+    if shield:
+        game._change_shield(ctx.source, shield, "consume_assault_boosts")
+    game._log(f"{game.db.shikigami[s.id].name} 的鼓舞转化为本次战斗加成"
+              f"（+{power}力量/+{shield}护甲）")
+
+
 @action("generate")
 def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
              card_type: str | None = None, count: int = 1, zone: str = "hand",
              max_level: int | str | None = None, exclude_self: bool = False,
-             card_id: int | None = None) -> None:
+             card_id: int | None = None, subtype: str | None = None) -> None:
     """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。
 
     card_id 指定时直接生成该 id 的牌（可生成 token；黄金羽/金风流羽），绕开随机池。
+    subtype：限定子类型（"随机获得一张妖琴师觉醒牌"= spell + awaken）。
     max_level="source"：卡牌等级 ≤ 来源式神当前等级（吾即正义"小于等于自身等级"）；
     exclude_self=True：排除来源卡牌同 id（"其他法术牌"）。
     """
@@ -366,6 +423,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     pool = [c.id for c in game.db.cards.values()
             if not c.token and c.shikigami == sid
             and (card_type is None or c.card_type == card_type)
+            and (subtype is None or c.subtype == subtype)
             and (lv is None or c.level <= lv)
             and not (exclude_self and ctx.card is not None and c.id == ctx.card.id)]
     if not pool:
@@ -539,13 +597,33 @@ def cap_damage(game, ctx, *, targets: list[Ref], to: str = "shield") -> None:
 
 
 @action("countdown_delta")
-def countdown_delta(game, ctx, *, targets: list[Ref], amount: int) -> None:
+def countdown_delta(game, ctx, *, targets: list[Ref], amount: int,
+                    shikigami: int | None = None, revive: bool = False) -> None:
     """目标式神倒计时增减 amount（±）。
 
     无倒计时能力或倒计时为 0（归零结算中）时修正为 -0（空操作，rules.md ch12
     增减流程 1）；减少后不大于 0 时走归零流程（_countdown_zero，与回合开始批次共用）。
     倒计时增减事件的独立时机批次暂不拆，首张监听卡出现时再引入。
+
+    shikigami：按数据 id 指定控制者的式神（targets 忽略；协战羁绊"鸩/以津真天
+    倒计时-2"——未出战为空操作）；revive=True：改为作用于控制者已气绝式神的
+    气绝倒计时（targets 忽略，扫描全队；幻音绝弦"已气绝则改为气绝倒计时-2"），
+    减到 ≤0 立即复活。
     """
+    if shikigami is not None:
+        pi = ctx.controller
+        idx = game._find_shikigami(game.state.players[pi], int(shikigami))
+        targets = [Ref(player=pi, shikigami=idx)] if idx is not None else []
+    if revive:
+        p = game.state.players[ctx.controller]
+        pi = ctx.controller
+        for i, s in enumerate(p.shikigami):
+            if not s.defeated or s.despawned or s.level < 1:
+                continue
+            s.revive_countdown += amount
+            if s.revive_countdown <= 0:
+                game._revive(p, pi, i)
+        return
     for ref in targets:
         if ref.shikigami is None:
             continue

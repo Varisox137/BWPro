@@ -115,6 +115,17 @@ class CardDatabase:
                         errors.append(f"{where}: 协战牌序号须从 21 开始递增")
                     if c.shikigami2 not in self.shikigami:
                         errors.append(f"{where}: 协战牌另一位所属式神 {c.shikigami2} 不存在")
+                # 子选项（有则逐项校验）：须为已存在的衍生 token 卡，且归属于两位所属
+                # 式神之一；缺省/数量不足由打出流程报错（_cmd_play_reinforce）
+                for o in c.options:
+                    oc = self.cards.get(o)
+                    if oc is None:
+                        errors.append(f"{where}: 子选项 {o} 不存在")
+                    elif not oc.token:
+                        errors.append(f"{where}: 子选项《{oc.name}》须为衍生 token 卡")
+                    elif oc.shikigami not in (c.shikigami, c.shikigami2):
+                        errors.append(
+                            f"{where}: 子选项《{oc.name}》的所属式神 {oc.shikigami} 非协战双方")
             elif c.shikigami2 is not None:
                 errors.append(f"{where}: 仅协战牌可以有 shikigami2")
             if c.card_type not in CARD_TYPES:
