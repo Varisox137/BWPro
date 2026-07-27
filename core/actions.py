@@ -56,9 +56,17 @@ def heal(game, ctx, *, targets: list[Ref], amount: int) -> None:
 
 
 @action("draw")
-def draw(game, ctx, *, targets: list[Ref], count: int = 1) -> None:
-    """效果归属玩家抽 count 张牌（targets 忽略）。牌库抽空判负。"""
-    game.draw_cards(ctx.controller, count)
+def draw(game, ctx, *, targets: list[Ref], count: int | dict = 1) -> None:
+    """效果归属玩家抽 count 张牌（targets 忽略）。牌库抽空判负。
+
+    count 支持 {"memo": key}：读块内暂存 ctx.memo[key]（射怪鸟事"弃多少抽多少"，
+    与 discard 写入的 discarded_count 组合）。
+    """
+    if isinstance(count, dict):
+        n = int((ctx.memo or {}).get(count.get("memo"), 0))
+    else:
+        n = int(count)
+    game.draw_cards(ctx.controller, n)
 
 
 @action("buff_power")
@@ -324,13 +332,23 @@ def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 
 @action("generate")
 def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
              card_type: str | None = None, count: int = 1, zone: str = "hand",
-             max_level: int | str | None = None, exclude_self: bool = False) -> None:
+             max_level: int | str | None = None, exclude_self: bool = False,
+             card_id: int | None = None) -> None:
     """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。
 
+    card_id 指定时直接生成该 id 的牌（可生成 token；黄金羽/金风流羽），绕开随机池。
     max_level="source"：卡牌等级 ≤ 来源式神当前等级（吾即正义"小于等于自身等级"）；
     exclude_self=True：排除来源卡牌同 id（"其他法术牌"）。
     """
     from core.model import CardInstance
+    p = game.state.players[ctx.controller]
+    if card_id is not None:
+        for _ in range(count):
+            inst = CardInstance(uid=game.state.next_uid, id=int(card_id))
+            game.state.next_uid += 1
+            game.move_card(p, inst, zone)
+            game._log(f"生成了《{game.db.cards[int(card_id)].name}》")
+        return
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("generate(shikigami=self) 需要来源式神")
@@ -621,6 +639,8 @@ def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 
     shikigami="self" 弃来源式神所属的牌（射怪鸟事 = discard + draw 两步组合）；
     shikigami="all" 弃全部手牌；count 限制弃牌张数（缺省弃全部符合者）。
+    结算后把实际弃牌数写入块内暂存 ctx.memo["discarded_count"]（供后续 step 的
+    {"memo": key} 动态数值引用，如 draw"弃多少抽多少"）。
     """
     p = game.state.players[ctx.controller]
     if shikigami == "all":
@@ -638,6 +658,26 @@ def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     for c in pool:
         game._log(f"{p.name} 弃掉了《{game.db.cards[c.id].name}》")
         game.move_card(p, c, "graveyard")
+    if ctx.memo is not None:
+        ctx.memo["discarded_count"] = len(pool)
+
+
+@action("grant_immunity")
+def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn") -> None:
+    """授予目标式神战斗伤害免疫（不可饶恕"本回合用过黄金羽则免疫战斗伤害"）。
+
+    scope="turn"：免疫到当前回合结束——以回合号记账（{"turn": 当前回合}），
+    _combat_immune 按回合号比对，跨回合自然过期，无需清理。
+    """
+    if scope != "turn":
+        raise ValueError(f"未知 grant_immunity 作用域: {scope}")
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if s.in_play:
+            s.immunities.append({"kind": "combat_damage", "turn": game.state.turn})
+            game._log(f"{game.db.shikigami[s.id].name} 免疫战斗伤害（本回合）")
 
 
 @action("gain_orb")

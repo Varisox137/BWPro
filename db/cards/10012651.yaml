@@ -1,0 +1,24 @@
+id: 10012651
+version: 20260724
+name: 黄金羽
+shikigami: 100126
+card_type: spell
+rarity: R
+token: true
+level: 1
+cost: 1
+keywords: [fast]
+tags: [golden_feather]  # 出牌记账 feather_used_game/turn；on_card_played payload 供触发匹配
+effects:
+  # 基础效果固定打敌方牌手（无主动选择目标）；觉醒后以敌方式神为目标走使用方式
+  steps:
+    - {op: damage, amount: 2, target: {kind: all, pool: enemy_player}}
+methods:
+  - id: snipe
+    target: {kind: choose, pool: enemy_shikigami}
+    effects:
+      steps:
+        - {op: damage, amount: 2}
+    requires_awaken: true  # 使用方式的觉醒门控（所属式神须已觉醒；engine 校验）
+    text: 以一名敌方式神为目标（需觉醒·以津真天）
+text: "[瞬发]。对敌方牌手造成2点伤害"

@@ -1,0 +1,21 @@
+id: 10012608
+version: 20260724
+name: 流浪之羽
+shikigami: 100126
+card_type: form
+rarity: R
+level: 3
+cost: 1
+form_power: 4
+form_health: 8
+effects:
+  steps: []
+abilities:
+  # 结附期间：己方每使用一张黄金羽（含金风流羽），随机对两个敌方式神各造成2点伤害
+  # （两条 random_damage 各取 1 目标，无放回仅作用于单条内——两次可命中同一目标）
+  - when: on_card_played
+    condition: {player: self, golden_feather: true}
+    steps:
+      - {op: random_damage, amount: 2, pool: enemy_shikigami, count: 1}
+      - {op: random_damage, amount: 2, pool: enemy_shikigami, count: 1}
+text: 当你使用黄金羽时，随机对两个敌方式神各造成2点伤害

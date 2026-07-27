@@ -110,6 +110,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       （"若攻击有破甲的角色"——战斗条件授予以 {"defender": 被攻击者} 求值）
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
     - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
+    - {player_ext: <key>}      ：控制者 PlayerState.ext[key] 为真值（"本回合若使用过黄金羽"
+      = feather_used_turn 记账键；千羽风之舞 step 级条件）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - 其余按键值相等比较
     """
@@ -118,6 +120,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     for key, want in condition.items():
         if key == "active":
             if (want == "self") != (game.state.active == controller):
+                return False
+        elif key == "player_ext":
+            if not game.state.players[controller].ext.get(want):
                 return False
         elif key == "turn_mark_not":
             if want in game.state.players[controller].ext.get("turn_marks", {}):

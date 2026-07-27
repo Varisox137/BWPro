@@ -421,6 +421,11 @@ class Game:
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
             if s.level < eff_level:
                 raise IllegalAction(f"《{cdef.name}》需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
+        # 使用方式的觉醒门控（黄金羽觉醒后"以敌方式神为目标"方式：requires_awaken 数据标记）
+        if method is not None and (method.model_extra or {}).get("requires_awaken"):
+            if si is None or not p.shikigami[si].awakened:
+                who = sname if si is not None else "所属式神"
+                raise IllegalAction(f"「{method.text or method.id}」需要 {who} 已觉醒")
         # 尘缚之阵锁定：准备区式神不能发起不具有远程的战斗（战斗牌；出击见 _cmd_assault）
         if (cdef.card_type == "combat" and si is not None
                 and p.combat_index != si
@@ -525,11 +530,14 @@ class Game:
         """使用后1（延时时机 on_card_played）统一发点。
 
         payload 携带卡牌静态信息（card_type/subtype/shikigami——触发块条件匹配用，
-        如"使用非觉醒法术后"）与 affected_refs：该次出牌效果实际伤害过的式神列表
-        （暴风之主"对受影响的敌方式神各造成1点伤害"以 context 目标读取）。
+        如"使用非觉醒法术后"；golden_feather=该牌 tags 含黄金羽标记，流浪之羽/风之舞
+        "每使用一张黄金羽"类触发以 {golden_feather: true} 判等）与 affected_refs：该次
+        出牌效果实际伤害过的式神列表（暴风之主"对受影响的敌方式神各造成1点伤害"以
+        context 目标读取）。
         """
         self.emit("on_card_played", player=player, uid=uid, card_type=cdef.card_type,
                   subtype=cdef.subtype, shikigami=cdef.shikigami,
+                  golden_feather=("golden_feather" in cdef.tags),
                   affected_refs=list(affected or ()))
 
     @staticmethod
@@ -601,6 +609,16 @@ class Game:
         imms = tuple((bool((st.model_extra or {}).get("nested", False)), st.condition)
                      for st in block.steps if st.op == "battle_immunity")
         convert = any(st.op == "convert_damage" for st in block.steps)
+        # 其它效果步（千羽风之舞的"生成金风流羽"为首个）：战力/护甲与上述专用提取步
+        # 跳过不重复执行；attack_buff（起弓/离）挂账时机另有一套，同样跳过以保持既有行为
+        ctx = ExecContext(controller=self.state.active, source=atk_ref, card=card)
+        for st in block.steps:
+            if (st.op in ("buff_power", "gain_shield")
+                    and (st.target is None or st.target.kind == "self")):
+                continue  # 战力/护甲已提取
+            if st.op in ("grant_keyword", "battle_immunity", "convert_damage", "attack_buff"):
+                continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
+            self._run_step(st, ctx)
         # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
         self.move_card(p, card, "graveyard")
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
@@ -1544,13 +1562,18 @@ class Game:
             controller=ev.source.player, source=ev.source, is_ability=True)))
 
     def _combat_immune(self, s: ShikigamiState) -> bool:
-        """式神在当前战斗上下文中是否免疫战斗伤害（作用域由授予效果指定）。"""
+        """式神在当前战斗上下文中是否免疫战斗伤害（作用域由授予效果指定）。
+
+        战斗作用域按战斗实例比对；grant_immunity(scope="turn") 的"本回合"免疫
+        按回合号比对（跨回合自然过期）。"""
         if not self._battle_stack:
             return False
         current = self._battle_stack[-1]
         for e in s.immunities:
             if e.get("kind") != "combat_damage":
                 continue
+            if e.get("turn") == self.state.turn:
+                return True
             if e.get("battle") == current or (e.get("nested") and e.get("battle") in self._battle_stack):
                 return True
         return False

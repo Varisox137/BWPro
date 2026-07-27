@@ -1,0 +1,20 @@
+id: 10012606
+version: 20260724
+name: 觉醒·以津真天
+shikigami: 100126
+card_type: spell
+subtype: awaken
+rarity: SSR
+level: 2
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+    - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+abilities:
+  # 觉醒倒计时（initial 1，来源=觉醒牌 id，替换基础倒计时）：[倒计时1] 黄金羽入手；
+  # "黄金羽可以敌方式神为目标"由黄金羽的使用方式（requires_awaken 门控）表达
+  - countdown: 1
+    steps:
+      - {op: generate, card_id: 10012651}
+text: "[觉醒]：{[倒计时1]：{将一张黄金羽置入手牌。}你的黄金羽可以以敌方式神为目标。}"

@@ -1,0 +1,20 @@
+id: 10012602
+version: 20260724
+name: 风之舞
+shikigami: 100126
+card_type: combat
+rarity: SR
+level: 1
+cost: 1
+effects:
+  # 增强数值：base 0 + 打出装配快照的 enhance 修饰（禁锢之刀同模式）
+  steps:
+    - {op: buff_power, amount: {enhance: true, base: 0}, target: {kind: self}}
+    - {op: gain_shield, amount: {enhance: true, base: 0}, target: {kind: self}}
+triggers:
+  # 卡牌触发器（游离）：己方每使用一张黄金羽（tags 标记，含金风流羽）+1 持久计数
+  - when: on_card_played
+    condition: {player: self, golden_feather: true}
+    steps:
+      - {op: add_mod, to: persistent, key: enhance, amount: 1}
+text: "[增强]：{本局游戏你每使用过一张黄金羽，此牌便获得+1力量+1护甲}"

@@ -1,0 +1,15 @@
+id: 10012607
+version: 20260724
+name: 千羽风之舞
+shikigami: 100126
+card_type: combat
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 3, target: {kind: self}}
+    - {op: gain_shield, amount: 3, target: {kind: self}}
+    # 其它效果步：战斗牌流程在战力/护甲提取后执行（step 级条件——本回合用过黄金羽）
+    - {op: generate, card_id: 10012603, condition: {player_ext: feather_used_turn}}
+text: "+3力量+3护甲。本回合若使用过黄金羽，将一张金风流羽置入手牌"

@@ -1,0 +1,20 @@
+id: 10012604
+version: 20260724
+name: 不可饶恕
+shikigami: 100126
+card_type: form
+rarity: SR
+level: 2
+cost: 1
+form_power: 4
+form_health: 6
+effects:
+  steps: []
+abilities:
+  # 结附期间：己方每使用一张黄金羽（含金风流羽），以津真天免疫战斗伤害（本回合，
+  # 回合号记账自然过期）
+  - when: on_card_played
+    condition: {player: self, golden_feather: true}
+    steps:
+      - {op: grant_immunity, target: {kind: self}}
+text: 本回合你每使用过一张黄金羽，以津真天免疫战斗伤害
