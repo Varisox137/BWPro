@@ -88,3 +88,74 @@ def resolve(game, spec, ctx) -> list[Ref]:
         ref = (ctx.event or {}).get(spec.key)
         return [ref] if isinstance(ref, Ref) else []
     raise ValueError(f"未知目标类型: {spec.kind}")
+
+
+def match_condition(game, condition: dict | None, event: dict, controller: int,
+                    holder: Ref | None = None) -> bool:
+    """条件迷你语言（扩展点，后续按需加操作符）：
+    - {字段: self|opponent}    ：标量玩家下标与 controller 比较
+    - {字段_side: friendly|enemy|any} ：事件中的 Ref 相对 controller 的归属
+    - {字段_kind: shikigami|player}   ：Ref 指向式神还是牌手
+    - {字段_shikigami: self}   ：事件中的 Ref 与能力持有者（holder）同式神
+    - {字段_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id（游离触发器用）
+    - {字段_not_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id ≠ 给定值（"其他式神"）
+    - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
+    - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
+    - 其余按键值相等比较
+    """
+    if not condition:
+        return True
+    for key, want in condition.items():
+        if key == "active":
+            if (want == "self") != (game.state.active == controller):
+                return False
+        elif key == "shikigami_in_combat":
+            cp = game.state.players[controller]
+            ci = cp.combat_index
+            if ci is None or cp.shikigami[ci].id != want:
+                return False
+        elif key.endswith("_side"):
+            ref = event.get(key[:-5])
+            if not isinstance(ref, Ref):
+                return False
+            side = "friendly" if ref.player == controller else "enemy"
+            if want != "any" and side != want:
+                return False
+        elif key.endswith("_kind"):
+            ref = event.get(key[:-5])
+            if not isinstance(ref, Ref):
+                return False
+            kind = "shikigami" if ref.shikigami is not None else "player"
+            if kind != want:
+                return False
+        elif key.endswith("_not_shikigami"):
+            # 事件中的 Ref 所指式神的数据 id ≠ 给定值（"己方其他式神"，如援护）
+            ref = event.get(key[:-14])
+            if not isinstance(ref, Ref) or ref.shikigami is None:
+                return False
+            if game.state.players[ref.player].shikigami[ref.shikigami].id == want:
+                return False
+        elif key.endswith("_shikigami"):
+            ref = event.get(key[:-10])
+            if want == "self":
+                if (not isinstance(ref, Ref) or holder is None
+                        or holder.shikigami is None or ref.shikigami is None):
+                    return False
+                if ref.player != holder.player or ref.shikigami != holder.shikigami:
+                    return False
+            elif isinstance(want, int):
+                if not isinstance(ref, Ref) or ref.shikigami is None:
+                    return False
+                if game.state.players[ref.player].shikigami[ref.shikigami].id != want:
+                    return False
+            else:
+                return False
+        elif want == "self":
+            if event.get(key) != controller:
+                return False
+        elif want == "opponent":
+            if event.get(key) == controller:
+                return False
+        elif event.get(key) != want:
+            return False
+    return True

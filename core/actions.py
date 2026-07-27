@@ -104,16 +104,11 @@ def gain_shield(game, ctx, *, targets: list[Ref], amount: int) -> None:
     """
     for ref in targets:
         if ref.shikigami is None:
-            p = game.state.players[ref.player]
-            old = p.shield
-            p.shield += amount
-            game.emit("on_shield_changed", target=ref, old=old, new=p.shield, reason="gain_shield")
+            game._change_shield(ref, amount, "gain_shield")
         else:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
             if s.in_play:
-                old = s.shield
-                s.shield += amount
-                game.emit("on_shield_changed", target=ref, old=old, new=s.shield, reason="gain_shield")
+                game._change_shield(ref, amount, "gain_shield")
 
 
 @action("summon")
