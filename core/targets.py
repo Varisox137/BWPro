@@ -30,14 +30,14 @@ POOLS = frozenset({
 
 
 def pool_refs(game, pool: str, controller: int) -> list[Ref]:
-    """列出 pool 中当前全部合法目标（仅在场式神：存活、未离场、等级 >= 1）。"""
+    """列出 pool 中当前全部合法目标（仅在场式神：存活、未离场、非濒死、等级 >= 1）。"""
     enemy = 1 - controller
 
     def alive_shiki(pi: int) -> list[Ref]:
         return [
             Ref(player=pi, shikigami=i)
             for i, s in enumerate(game.state.players[pi].shikigami)
-            if s.in_play
+            if s.in_play and not s.dying  # 濒死者不进随机与选择目标池
         ]
 
     if pool == "enemy_shikigami":

@@ -46,16 +46,10 @@ def damage(game, ctx, *, targets: list[Ref], amount: int,
 
 @action("heal")
 def heal(game, ctx, *, targets: list[Ref], amount: int) -> None:
-    """恢复生命，不超过上限；气绝/未在场式神不能被治疗，气绝的牌手也不能。"""
+    """恢复生命（走 Game.heal 治疗事件流程）：治疗量 = min(amount, 已损失生命)，
+    0 终止；濒死/气绝（未在场）式神与气绝牌手不受治疗。"""
     for ref in targets:
-        if ref.shikigami is None:
-            p = game.state.players[ref.player]
-            if not p.defeated:
-                p.health = min(p.max_health, p.health + amount)
-        else:
-            s = game.state.players[ref.player].shikigami[ref.shikigami]
-            if s.in_play:
-                s.health = min(s.max_health, s.health + amount)
+        game.heal(ref, amount, ctx.source, reason="heal")
 
 
 @action("draw")
@@ -66,11 +60,15 @@ def draw(game, ctx, *, targets: list[Ref], count: int = 1) -> None:
 
 @action("buff_power")
 def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False) -> None:
-    """力量增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。"""
+    """力量增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。
+
+    已气绝式神不能获得非永久增益，但可以获得永久增益（thoughts.txt"已气绝状态"）；
+    0 级未在场/已离场式神不受影响。
+    """
     for ref in targets:
         if ref.shikigami is not None:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
-            if not s.in_play:
+            if not s.in_play and (s.despawned or not s.defeated or not perm):
                 continue
             if perm:
                 s.perm_power += amount
@@ -80,15 +78,20 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
 
 @action("buff_health")
 def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False) -> None:
-    """生命上限增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。"""
+    """生命上限增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。
+
+    已气绝式神不能获得非永久增益，但可以获得永久增益（当前生命不随之上调，
+    复活时按新上限回满）；0 级未在场/已离场式神不受影响。
+    """
     for ref in targets:
         if ref.shikigami is not None:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
-            if not s.in_play:
+            if not s.in_play and (s.despawned or not s.defeated or not perm):
                 continue
             if perm:
                 s.perm_health += amount
-                s.health += amount
+                if not s.defeated:
+                    s.health += amount
             else:
                 s.temp_health += amount
                 # 临时增加上限时，当前生命同步增加等量数值（不超过新上限）
@@ -97,18 +100,21 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
 
 
 @action("gain_shield")
-def gain_shield(game, ctx, *, targets: list[Ref], amount: int) -> None:
-    """获得护甲（式神与牌手均可）。0 级未在场式神不能获得护甲/增益。
+def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shield") -> None:
+    """获得/失去护甲或破甲（式神与牌手均可；docs/rules.md 第六章）。
 
-    护甲变化按即时时机发出 on_shield_changed 事件。
+    kind="shield"（缺省）：amount > 0 获得护甲 / < 0 失去护甲（旧用法 {amount: n} 等价
+    kind=shield 获得，向后兼容）；kind="fragile"：amount > 0 获得破甲 / < 0 失去破甲。
+    获得先抵消反向值再盈余同向；减少只能扣已有的同向值。0 级未在场式神不能获得
+    护甲/破甲/增益。护甲/破甲变化按即时时机发出 on_shield_changed 事件（payload 带 kind）。
     """
     for ref in targets:
         if ref.shikigami is None:
-            game._change_shield(ref, amount, "gain_shield")
+            game._change_shield(ref, amount, "gain_shield", kind=kind)
         else:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
             if s.in_play:
-                game._change_shield(ref, amount, "gain_shield")
+                game._change_shield(ref, amount, "gain_shield", kind=kind)
 
 
 @action("summon")
@@ -284,12 +290,13 @@ def destroy_form(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("destroy")
 def destroy(game, ctx, *, targets: list[Ref]) -> None:
-    """直接消灭目标式神（非伤害：生命归零走气绝流程；尘缚之阵的免疫直接消灭在此判定）。"""
+    """直接消灭目标式神（非伤害：生命归零走气绝流程；尘缚之阵的免疫直接消灭在此判定）。
+    濒死者不能再次被消灭（早退）。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
-        if not s.in_play:
+        if not s.in_play or s.dying:
             continue
         if game._direct_destroy_immune(ref.player, ref.shikigami):
             game._log(f"{game.db.shikigami[s.id].name} 免疫了本次消灭")

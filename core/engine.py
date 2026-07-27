@@ -37,7 +37,7 @@ from core.model import (
     ShikigamiState,
     TempGrant,
 )
-from db.schema import CardDef, EffectBlock, PlayMethod, Step
+from db.schema import CardDef, EffectBlock, PlayMethod, Step, TargetSpec
 
 
 class IllegalAction(Exception):
@@ -592,13 +592,43 @@ class Game:
             self._assign_hand_seq(p, card)
         p.zones.setdefault(to_zone, []).append(card)
 
-    def _change_shield(self, ref: Ref, delta: int, reason: str) -> None:
-        """目标（式神或牌手）护甲增减 delta，并按即时时机发出 on_shield_changed 事件。"""
+    def _change_shield(self, ref: Ref, delta: int, reason: str, kind: str = "shield") -> None:
+        """目标（式神或牌手）护甲/破甲变化（docs/rules.md 第六章），并发出 on_shield_changed。
+
+        shield 为有符号字段（>0 护甲 / <0 破甲）；delta 以 kind 方向的正数计量
+        （kind="shield" 护甲 / kind="fragile" 破甲，± = 获得/失去，四组合）。
+        - 变化量为 0：终止结算（流程 1）；
+        - 减少（delta < 0）：只能扣已有的同向值，不能减到反向（流程 4）；
+        - 获得（delta > 0）：先抵消反向值再盈余同向（流程 5；
+          获得 5 护甲且持有 3 破甲 → 2 护甲）。
+        事件 payload 带 kind 区分方向（"获得护甲"与"失去破甲"属不同事件）。
+        """
+        if delta == 0:
+            return  # 流程 1：变化量为 0 终止
         p = self.state.players[ref.player]
         holder = p.shikigami[ref.shikigami] if ref.shikigami is not None else p
         old = holder.shield
-        holder.shield += delta
-        self.emit("on_shield_changed", target=ref, old=old, new=holder.shield, reason=reason)
+        if delta < 0:
+            # 流程 4：减少（失去护甲/破甲）——只能减少已有的同向值（不持有该方向则终止；
+            # 扣至 0 为止，不能减到反向）
+            if kind == "shield" and old <= 0:
+                return
+            if kind == "fragile" and old >= 0:
+                return
+            new = max(0, old + delta) if kind == "shield" else min(0, old - delta)
+        else:
+            # 流程 5：获得——先抵消反向值再盈余同向（获得 5 护甲且持有 3 破甲 → 2 护甲）
+            if kind == "fragile" and ref.shikigami is not None:
+                # 碧羽散华锚点（"获得破甲前"转化）：持有 fragile_to_damage 标记的式神
+                # 获得破甲改为受到等量伤害（标记经 ext 授予，卡牌数据属后续阶段）
+                s = p.shikigami[ref.shikigami]
+                if s.ext.get("fragile_to_damage"):
+                    self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 {delta} 点伤害")
+                    self.deal_to_shikigami(ref, delta, None)
+                    return
+            new = old + delta if kind == "shield" else old - delta
+        holder.shield = new
+        self.emit("on_shield_changed", target=ref, old=old, new=new, reason=reason, kind=kind)
 
     # ---------- 出击 / 移动 ----------
 
@@ -1028,10 +1058,12 @@ class Game:
         self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
 
     def _turn_start_clear_shield(self, p: PlayerState) -> None:
-        """回合开始阶段 step 2：移除己方所有角色护甲/破甲（破甲 Phase 3；keep_shield 保留）。"""
+        """回合开始阶段 step 2：移除己方所有角色护甲/破甲（双向清零；keep_shield 仅保留正值部分）。"""
         p.shield = 0
         for s in p.shikigami:
-            if not s.keep_shield:
+            if s.keep_shield:
+                s.shield = max(0, s.shield)  # 护甲保留（觉醒·兵俑）；破甲照常清除
+            else:
                 s.shield = 0
 
     def _turn_start_countdown(self, p: PlayerState, pi: int) -> None:
@@ -1251,8 +1283,8 @@ class Game:
         s = p.shikigami[ev.victim.shikigami] if ev.victim.shikigami is not None else None
         if ev.amount <= 0:
             return  # 伤害值不大于 0：终止结算
-        if s is not None and (s.defeated or s.despawned):
-            return
+        if s is not None and (s.defeated or s.despawned or s.dying):
+            return  # 气绝/离场/濒死者不受伤害
         if s is None and p.defeated:
             return  # 气绝的牌手不再受到伤害
         # 批次 1：造成/受到伤害开始时（即时时机）
@@ -1305,10 +1337,15 @@ class Game:
             self._log(f"{self.db.shikigami[s.id].name} 的屏障抵消了伤害")
         if ev.amount <= 0:
             return
-        # 批次 4：护甲计算（破甲 fragile 为独立流程，未引入，见 model.py 注释）
+        # 批次 4：护甲计算——破甲（shield < 0）：移除并增加等量伤害；护甲（> 0）：吸收
         if not skip_shield_calc:
             holder = s if s is not None else p
-            if holder.shield > 0:
+            if holder.shield < 0:
+                fragile = -holder.shield
+                ev.amount += fragile
+                self._change_shield(ev.victim, holder.shield, "破甲计算", kind="fragile")
+                self._log(f"破甲使本次伤害增加 {fragile} 点")
+            elif holder.shield > 0:
                 absorbed = min(holder.shield, ev.amount)
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "护甲计算")
@@ -1336,16 +1373,36 @@ class Game:
                 self._log(f"{self.db.shikigami[s.id].name} 的【不屈】生效，保留 1 点生命")
             s.health -= ev.amount
             self._log(f"{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害（剩余生命 {s.health}）")
+            if s.health <= 0:
+                s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
+            self._queue_lifesteal(ev)  # 伤害后（延时，优先级 1 锚点）：吸血生成恢复生命事件
             self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source, kind=ev.kind)
         else:
             p.health -= ev.amount
             self._log(f"{p.name} 受到 {ev.amount} 点伤害（剩余生命 {p.health}）")
+            self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind)
             if p.health <= 0:
                 # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
                 self._set_pending_end(loser=ev.victim.player, defeat=True)
+
+    def _queue_lifesteal(self, ev: _DamageEvent) -> None:
+        """关键字"吸血"（rules.md ch5 批次 10①；thoughts.txt 答复 (5)）：
+        来源式神具有 lifesteal 时，生成"以其控制者牌手为执行者、治疗量 = 该次伤害值"
+        的恢复生命事件——延时、优先级 1 锚点：以合成 _Pending 入队（先于同批延时能力结算），
+        治疗走 Game.heal 管线。来源式神在结算前气绝不影响（先触发后执行）。
+        """
+        if ev.source is None or ev.source.shikigami is None or ev.amount <= 0:
+            return
+        src = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+        if not self._has_keyword(src, "lifesteal"):
+            return
+        block = EffectBlock(steps=[Step(
+            op="heal", amount=ev.amount, target=TargetSpec(kind="all", pool="self_player"))])
+        self.queue.append(_Pending(block, ExecContext(
+            controller=ev.source.player, source=ev.source, is_ability=True)))
 
     def _combat_immune(self, s: ShikigamiState) -> bool:
         """式神在当前战斗上下文中是否免疫战斗伤害（作用域由授予效果指定）。"""
@@ -1362,19 +1419,26 @@ class Game:
     def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:
         """生成并结算式神气绝事件（要素：来源、气绝者、原因）。
 
-        当前机制范围内的流程：消灭形态牌 → 移除所有非永久 buff（临时修正/护甲）→
-        非召唤物获得倒计时 3：复活并移动至准备区（召唤物直接离场）→ 气绝后（延时时机）。
-        气绝前 1/2/3、替身、击杀标记等时点批次待相应机制引入（见 docs/rules.md）。
+        当前机制范围内的流程：气绝前/消灭前 1（即时 on_before_defeat）→ 消灭形态牌 →
+        移除所有非永久 buff（临时修正/护甲）→ 非召唤物获得倒计时 3：复活并移动至准备区
+        （召唤物直接离场）→ 气绝后（延时时机）。气绝前 2/3、替身、击杀标记等时点批次
+        待相应机制引入（见 docs/rules.md）。
         """
         s = self.state.players[ref.player].shikigami[ref.shikigami]
         if s.defeated or s.health > 0:
             return
+        # 气绝前/消灭前 1（rules.md 第七章 step 1，即时时机；射怪鸟事类响应挂此时机）
+        self.emit("on_before_defeat", victim=ref, source=source, reason=reason,
+                  battle=self._battle_stack[-1] if self._battle_stack else None)
+        if s.defeated:
+            return  # 气绝前 1 的插入结算中已被其它事件标记气绝
         owner = self.state.players[ref.player]
         # 气绝流程 step 3（rules.md 第七章）：先消灭形态牌——此时能力尚未离场（step 6），
         # 一目连类"形态离场时触发"能力仍会收集（先触发后执行，结算时不再复查持有者状态）
         if s.form is not None:
             self._destroy_form(owner, ref.shikigami, reason="defeat")
         s.defeated = True
+        s.dying = False  # 濒死标记在气绝时清除
         self._clear_countdown(s)  # 气绝清除倒计时能力（大天狗记录的法术随之丢失，复活后不再具有）
         s.ext.pop("recorded_card", None)
         s.shield = 0
@@ -1410,6 +1474,30 @@ class Game:
             self.state.players[loser].defeated = True  # 气绝的牌手不再受到伤害和治疗
         self.state.pending_end = True
         self.state.pending_loser = loser
+
+    def heal(self, ref: Ref, amount: int, source: Ref | None = None, reason: str = "") -> None:
+        """治疗（恢复生命）事件流程（thoughts.txt；要素：来源、执行者、治疗量、原因）。
+
+        治疗前（即时 on_before_heal）→ 治疗量 = min(治疗量, 执行者已损失生命) →
+        增加生命 → 治疗量为 0 终止 → 治疗时 on_heal / 治疗后 on_after_heal（均延时）。
+        濒死/气绝（未在场）的式神与气绝的牌手不受治疗（早退，不产生任何事件）。
+        """
+        p = self.state.players[ref.player]
+        s = p.shikigami[ref.shikigami] if ref.shikigami is not None else None
+        if s is not None and (not s.in_play or s.dying):
+            return
+        if s is None and p.defeated:
+            return
+        holder = s if s is not None else p
+        self.emit("on_before_heal", target=ref, amount=amount, source=source, reason=reason)
+        healed = min(amount, holder.max_health - holder.health)
+        if healed > 0:
+            holder.health += healed
+            self._log(f"{self.db.shikigami[s.id].name if s is not None else p.name} 恢复了 {healed} 点生命")
+        if healed <= 0:
+            return  # 治疗量为 0：终止结算
+        self.emit("on_heal", target=ref, amount=healed, source=source, reason=reason)
+        self.emit("on_after_heal", target=ref, amount=healed, source=source, reason=reason)
 
     def draw_cards(self, player_index: int, count: int) -> None:
         """效果抽牌（Phase 1 简化版）。

@@ -78,9 +78,9 @@ class ShikigamiState(BaseModel):
     perm_keywords: list[str] = Field(default_factory=list)  # 永久关键字实例（气绝时不清除 = 复活后自动重新获得）
     immunities: list[dict[str, Any]] = Field(default_factory=list)  # 作用域免疫条目，如 {"kind": "combat_damage", "battle": int, "nested": bool}；战斗结束/气绝时清除
     health: int  # 当前生命
-    shield: int = 0  # 护甲：被伤害时优先消耗；己方回合开始阶段清除（可因效果改变）。
-                    # 注意：破甲 fragile 是独立结算流程（见 docs/rules.md 第六章），
-                    # Phase 3 才引入，不要简单地用负护甲表示。
+    shield: int = 0  # 护甲（>0）/ 破甲（<0）：有符号单一字段。破甲 = 负值，
+                    # 变化事件以 kind 参数区分方向（docs/rules.md 第六章）；
+                    # 被伤害时正护甲优先吸收、负破甲加成伤害；己方回合开始阶段双向清除。
     defeated: bool = False  # 气绝
     dying: bool = False  # 濒死：生命 ≤ 0 但气绝事件尚未结算（通用状态标记，语义见 docs/rules.md）
     stunned: bool = False  # 眩晕（Phase 3）：不能主动行动/被指定/升级，但能力仍可触发
@@ -161,7 +161,7 @@ class PlayerState(BaseModel):
     name: str
     health: int = 30
     max_health: int = 30
-    shield: int = 0  # 牌手护甲；己方回合开始阶段清除
+    shield: int = 0  # 牌手护甲（>0）/ 破甲（<0），有符号（同 ShikigamiState.shield）；己方回合开始阶段清除
     defeated: bool = False  # 牌手气绝：对局进入"待结束"，该牌手不再受到伤害和治疗
     entry_order: int = 0  # 角色进场顺序：牌手先于所有己方式神，固定为 0
     orb: int = 0  # 鬼火；己方回合开始重置，回合间不清零（留火响应）

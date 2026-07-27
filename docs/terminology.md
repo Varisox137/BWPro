@@ -12,7 +12,7 @@
 | 召唤物 | `summon` | `kind = "summon"`；气绝即离场、不可升级、入场 1 级（暂定）、生成即进入战斗区 | ✅ |
 | 实体 | entity / `ShikigamiState` | 局内式神或召唤物；记录 `home_slot`（准备区编号 1-4，召唤物 None） | ✅ |
 | 气绝 | `defeated` | `ShikigamiState.defeated`；倒计时后复活 | ✅ |
-| 濒死 | `dying` | 生命 ≤ 0 但气绝事件尚未结算的标记（字段已备；不受伤害/治疗、不进目标池等语义随机制落地） | 🔧 |
+| 濒死 | `dying` | 生命 ≤ 0 但气绝事件尚未结算（伤害流程扣减生命后先标记，气绝时清除）：不受伤害/治疗、不进随机与选择目标池、不能再次被消灭；能力照常（in_play 不变）、可以攻击 | ✅ |
 | 离场 | `despawned` | 召唤物气绝或被移动即离场（不视为移动、非气绝、不进复活流程） | ✅ |
 | 复活 | `revive` | `revive_countdown` 归零后满血回场 | ✅ |
 | 升级 | `upgrade` | 指令；`PlayerState.upgrades` 为本回合剩余升级机会 | ✅ |
@@ -41,7 +41,7 @@
 | 生命 | `health` | `base_health + perm_health` 为上限 | ✅ |
 | 力量 | `power` | `base_power + perm_power + temp_power` = `eff_power` | ✅ |
 | 护甲 | `shield` | 被伤害优先消耗；己方回合开始清除 | ✅ |
-| 破甲 | `fragile` | 有独立"给与破甲"流程（非简单负护甲，见 thoughts.txt；Phase 3） | 🔧 |
+| 破甲 | `fragile`（shield 负值） | 与护甲合并为单一有符号 `shield`（>0 护甲 / <0 破甲）；变化事件以 kind 参数区分方向（rules.md 第六章）：减少只扣已有同向值、获得先抵消反向再盈余同向；受伤时每点破甲使伤害 +1（伤害流程批次 4，贯通修正跳过、穿刺不动）；回合开始双向清除（keep_shield 仅保正值） | ✅ |
 | 战力 | `combat_power` | 一次性的战斗伤害增加：战斗牌/响应战斗牌授予，战斗终止点核销（响应插入的经 `_battle_power` 挂账） | ✅ |
 | 乏力 | `weak` | 战力的负向对应 | 🔧 |
 | 永久修正 | `perm_power` / `perm_health` | 气绝后复活保留 | ✅ |
@@ -99,7 +99,7 @@
 | 追猎 | `hunt` | | 🔧 |
 | 贯通 | `piercing` | 对式神的非反击伤害超过其当前生命时，溢出部分改对所属牌手造成。是"伤害原因"的属性：式神持有的贯通仅传导至其战斗伤害与基础/觉醒/形态能力（含形态倒计时、延迟"会"）伤害；卡牌效果伤害不继承，除非步骤显式声明 `piercing: true`（实现：`ExecContext.is_ability` + damage/random_damage 动作缺省继承） | ✅ |
 | 穿刺 | `pierce` | 造成伤害前（伤害事件批次0，即时时机）移除受伤者所有护甲/屏障——与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于任意来源伤害（含非战斗伤害） | ✅ |
-| 吸血 | `lifesteal` | | 🔧 |
+| 吸血 | `lifesteal` | 伤害流程"造成/受到伤害后"（延时，优先级 1 锚点）：来源式神持有则生成以其控制者牌手为执行者的恢复生命事件（治疗量 = 该次伤害值，走 `Game.heal` 管线；实现 `Game._queue_lifesteal` 合成 _Pending 入队） | ✅ |
 | 投射 | `projectile`（目标池） | 优先敌方战斗区式神，战斗区为空则退回敌方牌手 | ✅ |
 | 唯一 | `unique` | | 🔧 |
 | 先攻 | `initiative` | 先攻阶段造成伤害、交战阶段不再造成（结构已实现，暂无卡牌持有） | ✅ |
@@ -152,6 +152,8 @@
 | 凭空自动使用 | `recast_recorded`（动作） | 凭空生成 `ext["recorded_card"]` 记录卡 id 的同名牌并免费自动使用（不耗鬼火、非从手牌、无主动目标；大天狗倒计时）；`gain_orb`：获得鬼火 | ✅ |
 | Step 级条件 | `Step.condition` | 结算时以条件迷你语言求值，不满足则跳过该 step（op 自身声明 condition 参数者——如 delay_grant——仍作 op 参数传递） | ✅ |
 | 扩展数据 | `ext` | 少数卡专用的运行时数据（`ShikigamiState.ext` / `PlayerState.ext`，约定键见下表） | ✅ |
+| 治疗（恢复生命） | `Game.heal` / `heal`（动作） | 治疗事件流程（thoughts.txt）：on_before_heal（即时）→ 治疗量 = min(治疗量, 已损失生命) → 增加生命 → 0 终止 → on_heal / on_after_heal（延时）；濒死/气绝者不受治疗 | ✅ |
+| 气绝前 1 | `on_before_defeat` | 气绝/消灭事件开头（`check_defeated`）的即时时机；响应牌挂此时机（射怪鸟事类） | ✅ |
 
 **ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）：
 
@@ -159,6 +161,7 @@
 |---|---|---|
 | `countdown_history` | `PlayerState.ext` | 本局倒计时能力生效序列（归零生效后追加来源 id：基础=式神 id / 觉醒=觉醒牌 id / 形态=形态牌 id；大合奏、风韵雅乐用） |
 | `recorded_card` | `ShikigamiState.ext` | 大天狗记录的法术牌数据 id（`set_countdown(record=True)` 写入；气绝丢失） |
+| `fragile_to_damage` | `ShikigamiState.ext` | 获得破甲转化为等量伤害（"获得破甲前"锚点，`Game._change_shield` 读取；碧羽散华用） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 

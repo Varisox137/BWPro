@@ -38,6 +38,10 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_after_shield",      # 护甲计算后 {damage, victim, source, amount, kind}
     "on_before_health",     # 扣减生命前 {damage, victim, source, amount, kind}（此后伤害值锁定）
     "on_awakened",          # 式神觉醒（能力替换为觉醒能力）{player, shikigami, uid}
+    "on_before_heal",       # 治疗前 {target: Ref, amount, source, reason}
+    "on_heal",              # 治疗时 {target: Ref, amount（实际治疗量）, source, reason}
+    "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
+    "on_before_defeat",     # 气绝前/消灭前 1 {victim: Ref, source, reason, battle}
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）
@@ -54,4 +58,6 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_shield": "insert",    # 护甲计算前：即时时机
     "on_after_shield": "insert",     # 护甲计算后：即时时机
     "on_before_health": "insert",    # 扣减生命前：即时时机
+    "on_before_heal": "insert",      # 治疗前：即时时机
+    "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
 }
