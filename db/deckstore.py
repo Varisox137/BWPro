@@ -31,8 +31,9 @@ def load_decks(path: Path = PATH) -> list[dict]:
 
 
 def save_decks(decks: list[dict], path: Path = PATH) -> None:
-    """原子写入本地卡组文件（先写临时文件再替换）。"""
+    """原子写入本地卡组文件（先写临时文件再替换）；文件/目录不存在时自动创建。"""
     payload = json.dumps({"version": 1, "decks": decks}, ensure_ascii=False, indent=1)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(payload, encoding="utf-8")
     os.replace(tmp, path)

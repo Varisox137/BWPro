@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import os
 import sys
-import unicodedata
 from client import deckbuilder
+from client.textutil import display_width as _display_width, pad as _pad
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
@@ -83,16 +83,6 @@ def ref_code(ref: Ref, active: int) -> str:
     """把 Ref 渲染为目标代码（parse_ref 的逆）。"""
     side = "f" if ref.player == active else "e"
     return f"{side}p" if ref.shikigami is None else f"{side}{ref.shikigami}"
-
-
-def _display_width(s: str) -> int:
-    """计算字符串在等宽终端中的显示宽度（CJK 字符计为 2）。"""
-    return sum(2 if unicodedata.east_asian_width(ch) in ("F", "W") else 1 for ch in s)
-
-
-def _pad(s: str, width: int) -> str:
-    """按显示宽度补齐到指定宽度。"""
-    return s + " " * max(0, width - _display_width(s))
 
 
 # ---------- 座次配色 ----------
