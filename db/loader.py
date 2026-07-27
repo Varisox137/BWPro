@@ -130,6 +130,8 @@ class CardDatabase:
             if "trigger" in c.keywords and c.effects.when == "on_play":
                 errors.append(f"{where}: 响应牌的 effects.when 必须是触发事件")
             errors += self._check_block(c.effects, known_events, where)
+            if c.alt_effects is not None:
+                errors += self._check_block(c.alt_effects, known_events, f"{where}的变为效果")
             for ab in c.abilities:
                 errors += self._check_block(ab, known_events - {"on_play"}, f"{where}的能力")
             if c.countdown_effects is not None:

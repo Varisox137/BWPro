@@ -155,6 +155,9 @@ class Game:
         cost = max(0, base + delta)
         if self._cost_zero_aura(p, cdef):
             return 0
+        cz = cdef.cost_zero_if
+        if cz and cz.get("ext") and p.ext.get(cz["ext"]):
+            return 0  # 动态费用（金风流羽：本回合使用过黄金羽则不消耗鬼火）
         if "fast" in self._card_keywords(p, cdef, card) and not p.fast_used:
             cost = 0
         return cost
@@ -185,6 +188,8 @@ class Game:
             kws |= set(card.mods.get("keywords_add", []))
         for aura in self._match_auras(p, cdef):
             kws |= set(aura.get("keywords", []))
+        if cdef.alt_remove_keywords and self._is_transformed(p, cdef, card):
+            kws -= set(cdef.alt_remove_keywords)  # "变为"后失去关键字（如瞬发）
         return kws
 
     def _materialize(self, p: PlayerState, card: CardInstance, cdef: CardDef) -> None:
@@ -202,6 +207,8 @@ class Game:
         if store.get("keywords_add"):
             merged = set(card.mods.get("keywords_add", [])) | set(store["keywords_add"])
             card.mods["keywords_add"] = sorted(merged)
+        if store.get("transformed"):
+            card.mods["transformed"] = True  # "变为"快照（本局该同名卡全部生效）
 
     @staticmethod
     def _step_amount(step: Step, card: CardInstance | None,
@@ -415,6 +422,16 @@ class Game:
         self._materialize(p, card, cdef)  # 打出装配：付费后、效果结算前快照持久修饰
         how = f"（{method.text or method.id}）" if method else ""
         self._log(f"{p.name} 使用了《{cdef.name}》{how}")
+        # 使用手牌前（即时时机）：合法性检查与支付之后、效果结算之前。payload 的
+        # nullified 为可变标记（参照伤害管线的可变 payload 模式）——监听者（魔音扰心）
+        # 置位后本次使用终止结算：跳过效果块，牌照常离手进墓地（费用/瞬发名额已付不退）
+        marker = {"nullified": False}
+        self.emit("on_before_card_play", player=self.state.active, uid=uid, card=card,
+                  nullified=marker)
+        if marker["nullified"]:
+            self.move_card(p, card, "graveyard")
+            self._log(f"《{cdef.name}》的使用被无效化")
+            return
         if cdef.card_type == "form":
             # 形态牌：从手牌/原区域移除并立即结附（响应插入使用同样走 _play_form_card）
             if si is None:
@@ -434,7 +451,7 @@ class Game:
                 card=card,
                 chosen=chosen,
             )
-            block = method.effects if (method and method.effects is not None) else cdef.effects
+            block = self._played_block(p, cdef, card, method)
             self._resolve_block(block, ctx)
             # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活保留觉醒状态）
             if cdef.subtype == "awaken" and si is not None:
@@ -443,7 +460,35 @@ class Game:
                 self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
                 self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid,
                           target=Ref(player=self.state.active, shikigami=si))
+        self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
         self.emit("on_card_played", player=self.state.active, uid=uid)
+
+    def _is_transformed(self, p: PlayerState, cdef: CardDef,
+                        card: CardInstance | None = None) -> bool:
+        """该卡牌本局是否已"变为"（吾即正义）：持久 store 或实例修饰置位 transformed。
+
+        持久 store（card_mods 按 cid）置位后本局该同名卡全部生效（含之后生成的）；
+        实例修饰为打出装配快照（_materialize）。费用/关键字求值在装配前进行，须直读 store。
+        """
+        if card is not None and card.mods.get("transformed"):
+            return True
+        return bool(p.card_mods.get(cdef.id, {}).get("transformed"))
+
+    def _played_block(self, p: PlayerState, cdef: CardDef, card: CardInstance,
+                      method: PlayMethod | None) -> EffectBlock:
+        """打出时实际结算的效果块：使用方式覆盖优先；"变为"置位后改用 alt_effects。"""
+        if method is not None and method.effects is not None:
+            return method.effects
+        if cdef.alt_effects is not None and self._is_transformed(p, cdef, card):
+            return cdef.alt_effects
+        return cdef.effects
+
+    def _account_card_played(self, p: PlayerState, cdef: CardDef) -> None:
+        """出牌统一记账（按 tags 计数）：tags 含 golden_feather 时累计本局/本回合使用数
+        （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）。"""
+        if "golden_feather" in cdef.tags:
+            p.ext["feather_used_game"] = p.ext.get("feather_used_game", 0) + 1
+            p.ext["feather_used_turn"] = p.ext.get("feather_used_turn", 0) + 1
 
     def combat_card_stats(self, block: EffectBlock,
                           card: CardInstance | None = None,
@@ -493,7 +538,7 @@ class Game:
         s = p.shikigami[si]
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
-        block = method.effects if (method and method.effects is not None) else cdef.effects
+        block = self._played_block(p, cdef, card, method)
         power, shield = self.combat_card_stats(block, card, s)
         atk_ref = Ref(player=self.state.active, shikigami=si)
         self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
@@ -1043,6 +1088,11 @@ class Game:
         self._turn_start_clear_shield(p)
         # "本回合"类卡牌光环（scope="turn"）在己方回合开始失效；其余 scope 条目不受影响
         p.card_auras[:] = [a for a in p.card_auras if a.get("scope") != "turn"]
+        # "本回合"类延迟能力（scope="turn"，魔音扰心类）在己方回合开始清除（未消耗时）；
+        # 黄金羽"本回合"计数键清除（game 级键不清）
+        for s in p.shikigami:
+            s.delayed[:] = [e for e in s.delayed if e.get("scope") != "turn"]
+        p.ext.pop("feather_used_turn", None)
         self._turn_start_revive(p, pi)
         self._turn_start_gain_orb(p, first, pi)
         pending_retreat = self._turn_start_schedule_retreat(p)
@@ -1755,12 +1805,14 @@ class Game:
         if cdef.card_type == "combat" and si is not None:
             # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
             self._apply_response_combat(p, si, ctx.card, cdef)
+            self._account_card_played(p, cdef)
             self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
             return True
         if cdef.card_type == "form" and si is not None:
             # 响应形态牌插入使用：立即结附（风符·瞬）；牌不进墓地，形态离场才进
             # 形态牌的进场时效果镜像主动使用的形态分支（响应形态同样结算）
             self._play_form_card(p, si, ctx.card, cdef, ctx.controller, ctx.chosen)
+            self._account_card_played(p, cdef)
             self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
             return True
         self.move_card(p, ctx.card, "graveyard")
@@ -1784,6 +1836,7 @@ class Game:
         # mode == "atomic"：步骤连发，队列留到块外统一结算
         if ctx.triggered and ctx.card is not None:
             # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
+            self._account_card_played(p, cdef)
             self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
 
     def _run_step(self, step: Step, ctx: ExecContext) -> None:

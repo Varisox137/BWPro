@@ -140,6 +140,11 @@ class CardDef(BaseModel):
     target: TargetSpec = Field(default_factory=TargetSpec)
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段。
     # 形态牌的 effects 块 = 进场时效果（打出结附时结算，可用卡牌的 choose 目标）
+    alt_effects: EffectBlock | None = None  # "变为"（吾即正义）：持久 store 置位
+    # transformed 后，本局该同名卡打出统一改用本块（含生成的；装配/打出读取点见 engine）
+    alt_remove_keywords: list[str] = Field(default_factory=list)  # "变为"后失去的关键字（如 fast 瞬发）
+    cost_zero_if: dict[str, Any] | None = None  # 动态费用：{"ext": key} 对应
+    # PlayerState.ext 键非 0 时费用为 0（金风流羽：feather_used_turn）
     abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）/ 形态牌的形态能力块（结附期间生效）
     countdown: int | None = None  # 形态牌倒计时初始值（结附时授予式神，离场/气绝移除）
     countdown_effects: EffectBlock | None = None  # 倒计时归零时执行的效果块（重置为初始值后执行）

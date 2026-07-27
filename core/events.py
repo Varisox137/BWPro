@@ -42,6 +42,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_heal",              # 治疗时 {target: Ref, amount（实际治疗量）, source, reason}
     "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
     "on_before_defeat",     # 气绝前/消灭前 1 {victim: Ref, source, reason, battle}
+    "on_before_card_play",  # 使用手牌前 {player, uid, card, nullified（可变标记 dict）}
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）
@@ -60,4 +61,5 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_health": "insert",    # 扣减生命前：即时时机
     "on_before_heal": "insert",      # 治疗前：即时时机
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
+    "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
 }

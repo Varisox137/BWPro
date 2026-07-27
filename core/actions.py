@@ -420,11 +420,12 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> N
 @action("delay_grant")
 def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                 condition: dict | None = None, steps: list | None = None,
-                secret: bool = False) -> None:
+                secret: bool = False, scope: str | None = None) -> None:
     """给来源式神登记一个一次性延迟能力（会；targets 忽略）。
 
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
     随条目存储，触发结算时作为效果目标。气绝时清除（变形离场保留——变形未实现）。
+    scope="turn"："本回合"类（魔音扰心主动使用）——己方回合开始清除（未消耗时）。
     secret=True 时选择目标对敌方保密（会：所选目标仅己方可见）——联机状态脱敏
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     """
@@ -439,8 +440,22 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         "chosen": ctx.chosen[0] if ctx.chosen else None,
         "uses": 1,
         "secret": secret,
+        "scope": scope,
     })
     game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
+
+
+@action("nullify_card_play")
+def nullify_card_play(game, ctx, *, targets: list[Ref]) -> None:
+    """无效化事件中的卡牌使用（魔音扰心；targets 忽略）。
+
+    把 on_before_card_play payload 的可变 nullified 标记置位：该次使用跳过效果块、
+    牌照常离手进墓地（费用/瞬发名额已付不退）。须挂在 on_before_card_play 时机的
+    触发块（一次性延迟能力）或响应牌上。
+    """
+    marker = (ctx.event or {}).get("nullified")
+    if isinstance(marker, dict):
+        marker["nullified"] = True
 
 
 @action("enter_combat")
