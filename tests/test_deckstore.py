@@ -149,18 +149,72 @@ def test_deckbuilder_edit_keep_name(db, tmp_path, monkeypatch):
 
 
 def test_deckbuilder_new_interactive(db, tmp_path, monkeypatch):
-    """交互式构筑：4 名式神各选全部卡牌、每种 1 张（恰好 8 张/人）→ 自动保存。"""
+    """交互式构筑：严格输入 4 名式神 + 每人恰好 8 个卡牌序号 → 自动保存。"""
     p = tmp_path / "decks.json"
     feed(monkeypatch, ["", "", "",        # 新建 → 名称回车（自动命名）→ 交互式
                        "1 2 3 4",          # 4 名式神
-                       "", "", "", "",     # 各选全部种类
-                       "", "", "", "",     # 张数各回车（每种 1 张）
+                       "1 2 3 4 5 6 7 8",  # 1 号式神 8 张（8 种各 1 张）
+                       "1 1 2 2 3 3 4 4",  # 2 号式神 8 张（4 种各 2 张）
+                       "1 2 3 4 5 6 7 8",
+                       "1 2 3 4 5 6 7 8",
                        ""])                # 编辑循环：回车完成
     deckbuilder.run_deckbuilder(db, p)
     decks = deckstore.load_decks(db, p)
     assert len(decks) == 1 and decks[0]["standard"]
     ids, cards = deckstore.entry_deck(decks[0])
     assert ids == list(F.TEAM) and len(cards) == 32
+
+
+def test_new_build_shikigami_strict(db, tmp_path, monkeypatch, capsys):
+    """新建选式神：数量不符/重复/不存在都会被拒绝并要求重新输入。"""
+    p = tmp_path / "decks.json"
+    feed(monkeypatch, ["", "", "",
+                       "1 2 3",        # 数量不足
+                       "1 1 2 3",      # 重复
+                       "1 2 3 99",     # 序号不存在
+                       "1 2 3 4",      # 合法
+                       "1 2 3 4 5 6 7 8",
+                       "1 2 3 4 5 6 7 8",
+                       "1 2 3 4 5 6 7 8",
+                       "1 2 3 4 5 6 7 8",
+                       ""])
+    deckbuilder.run_deckbuilder(db, p)
+    out = capsys.readouterr().out
+    assert "须恰好输入 4 个序号" in out
+    assert "式神不能重复" in out
+    assert "序号不存在" in out
+    assert deckstore.load_decks(db, p)[0]["standard"]
+
+
+def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
+    """新建选牌：数量不符/序号不存在/同种卡超 2 张都会被拒绝并要求重新输入。"""
+    p = tmp_path / "decks.json"
+    feed(monkeypatch, ["", "", "",
+                       "1 2 3 4",
+                       "1 2 3",              # 数量不足
+                       "1 2 3 4 5 6 7 99",   # 序号不存在
+                       "1 1 1 2 3 4 5 6",    # 同种卡 3 张
+                       "1 2 3 4 5 6 7 8",    # 合法
+                       "1 2 3 4 5 6 7 8",
+                       "1 2 3 4 5 6 7 8",
+                       "1 2 3 4 5 6 7 8",
+                       ""])
+    deckbuilder.run_deckbuilder(db, p)
+    out = capsys.readouterr().out
+    assert out.count("须恰好输入 8 个序号") == 1
+    assert "序号不存在" in out
+    assert "同种卡至多 2 张" in out
+    assert deckstore.load_decks(db, p)[0]["standard"]
+
+
+def test_deckbuilder_rename(db, tmp_path, monkeypatch):
+    """槽位重命名：名 <序号> <新名称>。"""
+    p = tmp_path / "decks.json"
+    deckstore.save_decks(db, [mk_entry(db, "旧名")], p)
+    feed(monkeypatch, ["名 1 新名字"])
+    deckbuilder.run_deckbuilder(db, p)
+    decks = deckstore.load_decks(db, p)
+    assert decks[0]["name"] == "新名字" and decks[0]["standard"]
 
 
 def test_deckbuilder_bad_code_not_saved(db, tmp_path, monkeypatch):

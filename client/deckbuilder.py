@@ -1,9 +1,11 @@
 """卡组构筑与战前选卡（交互式）。
 
 - 本地卡组文件（db/deckstore.py v2，~/.bwp.decks.json）：进入构筑时读取全部槽位
-  并按天梯规则重新校验（满足者以亮蓝色标明）；可编辑现有槽位或新建；编辑/新建
-  均支持卡组码导入；校验通过即自动写回（文件不存在时自动创建；文件格式异常时
-  提示并删除该文件）。
+  并按天梯规则重新校验（满足者以亮蓝色标明）；可编辑现有槽位、重命名
+  （名 <序号> <新名称>）或新建；编辑/新建均支持卡组码导入；校验通过即自动
+  写回（文件不存在时自动创建；文件格式异常时提示并删除该文件）。
+- 新建为严格输入：必须恰好 4 个不重复的有效式神序号；每名式神必须恰好 8 个
+  卡牌序号（同种卡至多 2 张、序号须存在），反复询问直到合法。
 - 编辑为增量式：在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号
   编辑其卡牌（回车沿用），"换 <序号>" 更换式神（清空其已选卡牌并重新选牌）。
 - choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；所选卡组
@@ -48,10 +50,16 @@ def _input(prompt: str) -> str:
 
 # ---------- 显示 ----------
 
-def _shiki_label(d) -> str:
-    """式神一行：名称（派系）力量/生命 {能力文本}。"""
-    text = f" {{{d.text}}}" if d.text else ""
-    return f"{d.name}（{d.faction}）{d.power}/{d.health}{text}"
+def _shiki_rows(defs: list) -> list[tuple[str, ...]]:
+    """式神列表行（已对齐）：[序号] 名称｜派系｜力量/生命 {能力文本}。"""
+    rows = [(f"[{i + 1}]", d.name, d.faction, f"{d.power}/{d.health}",
+             f"{{{d.text}}}" if d.text else "") for i, d in enumerate(defs)]
+    return cardfmt.align_rows(rows)
+
+
+def _print_shikigami(defs: list) -> None:
+    for r in _shiki_rows(defs):
+        print(f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]} {r[4]}".rstrip())
 
 
 def _print_cards(cards: list, copies: Counter | None = None) -> None:
@@ -64,7 +72,10 @@ def _print_cards(cards: list, copies: Counter | None = None) -> None:
         rows.append((f"[{i + 1}]", c.name, cardfmt.ctype_label(c),
                      f"等级{c.level}", cardfmt.static_stats(c), text, mark))
     for r in cardfmt.align_rows(rows):
-        print(f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]}｜{r[4]} {r[5]} {r[6]}".rstrip())
+        line = f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]}"
+        if r[4].strip() or r[5].strip() or r[6].strip():
+            line += f"｜{r[4]} {r[5]} {r[6]}".rstrip()
+        print(line)
 
 
 def _deck_list_lines(decks: list[dict]) -> None:
@@ -75,12 +86,12 @@ def _deck_list_lines(decks: list[dict]) -> None:
 
 
 def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]]) -> None:
-    """当前卡组总览：每个式神一行（数值+能力文本）+ 其已选卡牌与张数。"""
+    """当前卡组总览：每个式神一行（对齐的数值+能力文本）+ 其已选卡牌与张数。"""
     total = sum(len(v) for v in picks.values())
     print("")
     print(f"—— 当前卡组（共 {total} 张）——")
-    for i, sid in enumerate(team):
-        print(f"  [{i + 1}] {_shiki_label(db.shikigami[sid])}")
+    for r, sid in zip(_shiki_rows([db.shikigami[s] for s in team]), team):
+        print(f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]} {r[4]}".rstrip())
         cards = picks.get(sid, [])
         names = "  ".join(f"{db.cards[c].name}×{n}"
                           for c, n in Counter(cards).items())
@@ -153,8 +164,7 @@ def _edit_deck(db: CardDatabase, team: list[int],
                 continue
             pool = [d for d in available_shikigami(db) if d.id not in team]
             print("")
-            for i, d in enumerate(pool):
-                print(f"  [{i + 1}] {_shiki_label(d)}")
+            _print_shikigami(pool)
             try:
                 new = pool[int(_input(f"更换 {db.shikigami[old].name} 为 > ")) - 1]
             except (ValueError, IndexError):
@@ -178,26 +188,67 @@ def _edit_deck(db: CardDatabase, team: list[int],
             picks[sid] = result
 
 
-def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
-    """新建卡组：选择 4 名式神 → 各选卡牌 → 进入增量编辑循环（回车完成）。"""
+# ---------- 新建卡组的严格输入 ----------
+
+def _pick_shikigami_strict(db: CardDatabase) -> list:
+    """新建卡组选式神：必须恰好 4 个空格分隔的序号，不重复且均存在；反复询问直到合法。"""
     pool = available_shikigami(db)
     print("")
     print("—— 选择 4 名出战式神 ——")
-    for i, d in enumerate(pool):
-        print(f"  [{i + 1}] {_shiki_label(d)}")
+    _print_shikigami(pool)
     print("")
-    try:
-        chosen = [pool[int(x) - 1] for x in _input("式神序号（空格分隔）> ").split()]
-    except (ValueError, IndexError):
-        print("序号有误，已取消构筑")
-        return None
+    while True:
+        tokens = _input("式神序号（恰好 4 个，空格分隔，不能重复）> ").split()
+        if len(tokens) != 4:
+            print(f"须恰好输入 4 个序号（当前 {len(tokens)} 个）")
+            continue
+        try:
+            chosen = [pool[int(x) - 1] for x in tokens]
+        except (ValueError, IndexError):
+            print("序号不存在，请重新输入")
+            continue
+        if len({d.id for d in chosen}) != 4:
+            print("式神不能重复，请重新输入")
+            continue
+        return chosen
+
+
+def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
+    """新建卡组选牌：必须恰好 8 个空格分隔的序号（同种卡至多 2 次，序号须存在）；
+    反复询问直到合法。顺序无所谓。"""
+    d = db.shikigami[sid]
+    cards = buildable_cards(db, sid)
+    print("")
+    print(f"—— {d.name} 的卡牌（须恰好 8 张，同种卡至多 {MAX_COPIES_PER_NAME} 张）——")
+    _print_cards(cards)
+    print("")
+    while True:
+        tokens = _input("卡牌序号（恰好 8 个，空格分隔；重复序号 = 多张）> ").split()
+        if len(tokens) != 8:
+            print(f"须恰好输入 8 个序号（当前 {len(tokens)} 个）")
+            continue
+        try:
+            picked = [cards[int(x) - 1] for x in tokens]
+        except (ValueError, IndexError):
+            print("序号不存在，请重新输入")
+            continue
+        counts = Counter(c.id for c in picked)
+        over = [db.cards[cid].name for cid, n in counts.items()
+                if n > MAX_COPIES_PER_NAME]
+        if over:
+            print(f"同种卡至多 {MAX_COPIES_PER_NAME} 张（超限：{'、'.join(over)}），"
+                  "请重新输入")
+            continue
+        return [c.id for c in picked]
+
+
+def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
+    """新建卡组：严格选择 4 名式神 → 各严格选 8 张牌 → 进入增量编辑循环（回车完成）。"""
+    chosen = _pick_shikigami_strict(db)
     team = [d.id for d in chosen]
     picks: dict[int, list[int]] = {}
     for d in chosen:
-        result = _pick_cards(db, d.id, [])
-        if result is None:
-            return None
-        picks[d.id] = result
+        picks[d.id] = _pick_cards_strict(db, d.id)
     return _edit_deck(db, team, picks)
 
 
@@ -212,7 +263,18 @@ def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
     print(f"—— 卡组构筑（本地卡组文件：{store_path}）——")
     _deck_list_lines(decks)
     print("")
-    line = _input("槽位序号 = 编辑该卡组；回车 = 新建 > ")
+    line = _input("槽位序号 = 编辑该卡组；名 <序号> <新名称> = 重命名；回车 = 新建 > ")
+    parts = line.split(maxsplit=2)
+    if len(parts) == 3 and parts[0] in ("名", "r", "rename"):
+        try:
+            entry = decks[int(parts[1]) - 1]
+        except (ValueError, IndexError):
+            print("序号有误，已取消")
+            return
+        entry["name"] = parts[2].strip()
+        deckstore.save_decks(db, decks, store_path)
+        print(f"已重命名为「{entry['name']}」")
+        return
     index: int | None = None
     team: list[int] | None = None
     picks: dict[int, list[int]] = {}
