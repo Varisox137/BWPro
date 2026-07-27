@@ -82,6 +82,7 @@ class ShikigamiState(BaseModel):
                     # 注意：破甲 fragile 是独立结算流程（见 docs/rules.md 第六章），
                     # Phase 3 才引入，不要简单地用负护甲表示。
     defeated: bool = False  # 气绝
+    dying: bool = False  # 濒死：生命 ≤ 0 但气绝事件尚未结算（通用状态标记，语义见 docs/rules.md）
     stunned: bool = False  # 眩晕（Phase 3）：不能主动行动/被指定/升级，但能力仍可触发
     despawned: bool = False  # 召唤物离场标记（不进复活流程；保留坑位稳定下标）
     revive_countdown: int = 0
@@ -89,7 +90,14 @@ class ShikigamiState(BaseModel):
     attack_buffs: list[dict[str, Any]] = Field(default_factory=list)  # 攻击后到期强化挂账：{"power": int, "keywords": [(kw, cls)]}；自身作为攻击者的战斗终止点核销（keep_attack_buffs 跳过）；气绝清空
     awakened: int | None = None  # 已觉醒：觉醒牌数据 id（能力替换为觉醒能力；气绝/复活保留）
     keep_shield: bool = False  # 护甲不在己方回合开始阶段移除（觉醒·兵俑）
-    countdown: int | None = None  # 当前倒计时（形态牌结附时授予=初始值；己方回合开始 -1，归零重置并执行形态倒计时效果；形态离场/气绝清除）
+    countdown: int | None = None  # 当前倒计时（至多 1 个倒计时能力；己方回合开始 -1，归零先结算后重置/移除；
+    # 注册/替换时机：能力进场、觉醒替换、形态结附、set_countdown；形态离场仅清除形态授予的，气绝清除）
+    countdown_initial: int | None = None  # 倒计时初始值（循环型归零后重置为该值）
+    countdown_block: EffectBlock | None = None  # 倒计时归零时执行的效果块（EffectBlock.countdown 标记的能力块 / 形态牌 countdown_effects）
+    countdown_once: bool = False  # 一次型倒计时：生效后移除而非重置（大天狗记录法术、灵咒锚点）
+    countdown_source: int | None = None  # 倒计时来源 id：基础=式神 id / 觉醒=觉醒牌 id / 形态=形态牌 id
+    # （形态授予判定 = countdown_source == 当前形态牌 id；countdown_history 记账用）
+    ext: dict[str, Any] = Field(default_factory=dict)  # 少数卡专用的式神级运行时数据（约定键见 docs/terminology.md）
     delayed: list[dict[str, Any]] = Field(default_factory=list)  # 绑定式神的一次性延迟能力（会）：
     # {"block": EffectBlock, "chosen": Ref|None, "uses": 1}；气绝清除（变形离场保留——变形未实现，见 rules.md）
 
@@ -174,6 +182,8 @@ class PlayerState(BaseModel):
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
     assault_boosts: list[dict[str, Any]] = Field(default_factory=list)  # 出击加成（鼓舞）：
     # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
+    ext: dict[str, Any] = Field(default_factory=dict)  # 牌手级专用运行时数据（约定键见
+    # docs/terminology.md：countdown_history 本局倒计时能力生效序列 等）
 
     @property
     def deck(self) -> list[CardInstance]:

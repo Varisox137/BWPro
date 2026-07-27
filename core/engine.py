@@ -96,6 +96,7 @@ class Game:
         # battle id → [(式神 Ref, 战力)]：响应战斗牌插入使用授予的战力，终止点核销
         # （rules.md:52"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
         self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
+        self._op_param_cache: dict[str, frozenset] = {}  # op 函数签名缓存（Step.condition 分派用）
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -247,9 +248,10 @@ class Game:
         # 游戏开始阶段能力（如书翁额外抽 1）：式神已入场，即使 0 级能力也可触发
         self.emit("on_game_start")
         self._drain_queue()
-        for p in self.state.players:
+        for pi, p in enumerate(self.state.players):
             if p.shikigami:
                 p.shikigami[0].level = 1  # 最左侧式神自动升至 1 级，其余 0 级未在场
+                self._register_ability_countdown(pi, 0)  # 能力进场：注册倒计时能力块
         self.state.players[1].shield += self.config.second_player_shield  # 后手补偿
         # 先手玩家抽 1（其后手首个回合由回合开始阶段补抽，见 _start_turn）
         self.draw_cards(self.state.active, 1)
@@ -437,6 +439,7 @@ class Game:
             # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活保留觉醒状态）
             if cdef.subtype == "awaken" and si is not None:
                 p.shikigami[si].awakened = cdef.id
+                self._register_ability_countdown(self.state.active, si)  # 觉醒替换：注册觉醒能力的倒计时块
                 self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
                 self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid,
                           target=Ref(player=self.state.active, shikigami=si))
@@ -854,7 +857,10 @@ class Game:
         if s.form is not None:
             self._destroy_form(p, i, reason="replace")
         s.form = card
-        s.countdown = cdef.countdown  # 形态牌具有倒计时时，式神获得该倒计时（rules.md ch10 结附流程）
+        # 形态牌具有倒计时时，式神获得该倒计时能力（替换当前倒计时；rules.md ch10 结附流程）
+        if cdef.countdown is not None:
+            self._register_countdown(s, initial=cdef.countdown,
+                                     block=cdef.countdown_effects, source=card.id)
         if cdef.form_power is not None:
             s.base_power = cdef.form_power
         if cdef.form_health is not None:
@@ -895,7 +901,10 @@ class Game:
             return
         cdef = self.db.cards[old.id]
         s.form = None
-        s.countdown = None  # 式神失去该倒计时（rules.md ch10 消灭流程）
+        # 形态离场仅清除该形态授予的倒计时（rules.md ch10 消灭流程）；
+        # 已被 set_countdown/能力注册替换的倒计时不受影响
+        if s.countdown_source == old.id:
+            self._clear_countdown(s)
         # 移除形态授予的关键字实例（气绝已清空时跳过）
         for kw in cdef.keywords:
             if kw not in CARD_LEVEL_KEYWORDS:
@@ -934,6 +943,8 @@ class Game:
             raise IllegalAction("只能升级当前等级最低的式神")
         s.level += 1
         p.upgrades -= 1
+        if s.level == 1:
+            self._register_ability_countdown(self.state.active, i)  # 能力进场：0 级升至 1 级
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
         self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level)
@@ -1024,24 +1035,89 @@ class Game:
                 s.shield = 0
 
     def _turn_start_countdown(self, p: PlayerState, pi: int) -> None:
-        """回合开始阶段 step 8-9：己方式神倒计时 -1（rules.md ch12 锚点版）。
+        """回合开始阶段 step 8-9：己方式神非灵咒倒计时 -1（rules.md ch12）。
 
-        归零时先将倒计时重置为初始值、再执行本次倒计时效果（ch12 流程 4）；
-        增减事件与"倒计时生效前/变化后"时机暂不拆，首张需要的卡出现时再拆。
+        归零流程（先即时插入结算、再重置/移除）见 _countdown_zero，与 countdown_delta
+        动作共用；灵咒倒计时随灵咒机制引入。
         """
         for i, s in enumerate(p.shikigami):
-            if s.countdown is None or s.form is None or not s.in_play:
+            if s.countdown is None or not s.in_play:
                 continue
             s.countdown -= 1
-            if s.countdown > 0:
-                continue
-            cdef = self.db.cards[s.form.id]
-            s.countdown = cdef.countdown  # 重置为初始值后执行效果
-            if cdef.countdown_effects is not None:
-                self._log(f"{self.db.shikigami[s.id].name} 的倒计时效果生效（《{cdef.name}》）")
-                self._resolve_block(cdef.countdown_effects, ExecContext(
-                    controller=pi, source=Ref(player=pi, shikigami=i), card=s.form,
-                    is_ability=True))  # 形态倒计时效果属形态能力（贯通继承判定）
+            if s.countdown <= 0:
+                self._countdown_zero(pi, i)
+
+    # ---------- 式神级倒计时框架（一名式神至多 1 个倒计时能力，新注册替换旧的） ----------
+
+    @staticmethod
+    def _clear_countdown(s: ShikigamiState) -> None:
+        """清除式神当前倒计时能力（被替换/形态离场/气绝/一次型生效后）。"""
+        s.countdown = None
+        s.countdown_initial = None
+        s.countdown_block = None
+        s.countdown_once = False
+        s.countdown_source = None
+
+    def _register_countdown(self, s: ShikigamiState, *, initial: int,
+                            block: EffectBlock | None, once: bool = False,
+                            source: int | None = None) -> None:
+        """注册倒计时能力三要素（初值/归零效果块/是否一次型），替换当前倒计时能力。"""
+        s.countdown = initial
+        s.countdown_initial = initial
+        s.countdown_block = block if block is not None else EffectBlock()
+        s.countdown_once = once
+        s.countdown_source = source
+
+    def _register_ability_countdown(self, pi: int, si: int) -> None:
+        """能力进场（对局开始/升至 1 级/复活）与觉醒替换：注册式神当前能力
+        （基础/觉醒）中的倒计时能力块（EffectBlock.countdown 非 None 者）。
+
+        当前能力无倒计时块时清除原能力授予的倒计时（能力替换/离场语义）；
+        形态授予的倒计时（来源 = 当前形态牌 id）不受影响。
+        """
+        p = self.state.players[pi]
+        s = p.shikigami[si]
+        if s.awakened is not None:
+            blocks = self.db.cards[s.awakened].abilities
+            source = s.awakened
+        else:
+            d = self.db.shikigami[s.id]
+            blocks = d.all_abilities
+            source = d.id
+        found = next((b for b in blocks if b.countdown is not None), None)
+        if s.form is None or s.countdown_source != s.form.id:
+            self._clear_countdown(s)
+        if found is not None:
+            self._register_countdown(s, initial=found.countdown, block=found, source=source)
+
+    def _countdown_zero(self, pi: int, si: int) -> None:
+        """倒计时归零流程（rules.md ch12 流程 4 修订版；回合开始批次与 countdown_delta 共用）。
+
+        1. 倒计时 ≤ 0 → 先即时插入结算 countdown_block.steps（此时倒计时仍为 0，
+           块内对自身 countdown_delta 修正为 -0 空操作）；
+        2. 生效后向 p.ext["countdown_history"] 追加来源 id（基础=式神 id /
+           觉醒=觉醒牌 id / 形态=形态牌 id；大合奏、风韵雅乐用）；
+        3. 结算后若仍持有该能力（未被替换/清除）：循环型重置为初值、一次型（once）移除。
+        """
+        p = self.state.players[pi]
+        s = p.shikigami[si]
+        block, once, initial, source = (s.countdown_block, s.countdown_once,
+                                        s.countdown_initial, s.countdown_source)
+        if block is not None and block.steps:
+            card = s.form if (s.form is not None and s.form.id == source) else None
+            cname = f"（《{self.db.cards[card.id].name}》）" if card is not None else ""
+            self._log(f"{self.db.shikigami[s.id].name} 的倒计时效果生效{cname}")
+            self._resolve_block(block, ExecContext(
+                controller=pi, source=Ref(player=pi, shikigami=si), card=card,
+                is_ability=True))  # 倒计时效果属式神能力（贯通继承判定）
+            if source is not None:
+                p.ext.setdefault("countdown_history", []).append(source)
+        if block is not None and s.countdown_block is block:
+            # 结算期间未被替换/清除：循环型重置为初始值；一次型（once）移除
+            if once:
+                self._clear_countdown(s)
+            else:
+                s.countdown = initial
 
     def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
@@ -1051,6 +1127,7 @@ class Game:
                 if s.revive_countdown <= 0:
                     s.defeated = False
                     s.health = s.max_health
+                    self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
                     self._log(f"{self.db.shikigami[s.id].name} 复活")
                     self.emit("on_shikigami_revived",
                               shikigami=Ref(player=pi, shikigami=i), source=None, reason="倒计时")
@@ -1298,6 +1375,8 @@ class Game:
         if s.form is not None:
             self._destroy_form(owner, ref.shikigami, reason="defeat")
         s.defeated = True
+        self._clear_countdown(s)  # 气绝清除倒计时能力（大天狗记录的法术随之丢失，复活后不再具有）
+        s.ext.pop("recorded_card", None)
         s.shield = 0
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
         s.temp_health = 0
@@ -1454,11 +1533,12 @@ class Game:
             if s.awakened is not None:
                 blocks = list(self.db.cards[s.awakened].abilities)
             else:
-                base = self.db.shikigami[s.id].ability
-                blocks = [base] if base is not None else []
+                blocks = list(self.db.shikigami[s.id].all_abilities)
             if s.form is not None:
                 blocks += self.db.cards[s.form.id].abilities
             for ability in blocks:
+                if ability.countdown is not None:
+                    continue  # 倒计时能力块不作事件监听（由倒计时框架归零时结算）
                 if ability.when != event["name"]:
                     continue
                 if not s.in_play:
@@ -1622,14 +1702,30 @@ class Game:
         fn = actions.ACTIONS.get(step.op)
         if fn is None:
             raise IllegalAction(f"未知动作: {step.op}")  # 加载时已校验，此处双保险
-        refs = targets.resolve(self, step.target, ctx)
         params = dict(step.model_extra or {})
+        if step.condition is not None:
+            if "condition" in self._op_params(step.op, fn):
+                # op 自身声明 condition 参数（delay_grant 的延迟块触发条件）：作为参数传递
+                params["condition"] = step.condition
+            elif not self._match(step.condition, ctx.event or {}, ctx.controller,
+                                 holder=ctx.source):
+                return  # Step 级条件不满足：跳过该步（条件迷你语言，见 targets.match_condition）
+        refs = targets.resolve(self, step.target, ctx)
         if isinstance(params.get("amount"), dict):
             # 动态数值（enhance 快照 / shield_of / power_of）：以 ctx 来源式神求值（援护/古尘之壁）
             src = (self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
                    if ctx.source is not None and ctx.source.shikigami is not None else None)
             params["amount"] = self._step_amount(step, ctx.card, src)
         fn(self, ctx, targets=refs, **params)
+
+    def _op_params(self, op: str, fn) -> frozenset:
+        """op 函数的参数名集合（缓存；用于区分 Step 级 condition 与 op 的 condition 参数）。"""
+        cached = self._op_param_cache.get(op)
+        if cached is None:
+            import inspect
+            cached = frozenset(inspect.signature(fn).parameters)
+            self._op_param_cache[op] = cached
+        return cached
 
     def _drain_queue(self) -> None:
         """循环结算效果队列，带死循环保护。

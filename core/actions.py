@@ -252,13 +252,20 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str) -> None:
 def trigger_form_countdown(game, ctx, *, targets: list[Ref]) -> None:
     """触发事件中形态牌的倒计时效果（一目连基础/觉醒能力；targets 忽略）。
 
-    从触发事件 payload 的 card 字段取形态实例，结算其 countdown_effects；
-    该形态无倒计时效果（如风符·瞬）时为空操作。
+    结附中的形态读式神 countdown_block（倒计时框架注册的块）；已离场的形态倒计时
+    已清除，回退读卡牌数据的 countdown_effects（同一块）。立即触发只结算倒计时效果
+    本身：不改变倒计时值、不重置/移除。无倒计时效果（如风符·瞬）时为空操作。
     """
     card = (ctx.event or {}).get("card")
     if card is None:
         return
-    block = game.db.cards[card.id].countdown_effects
+    block = None
+    if ctx.source is not None and ctx.source.shikigami is not None:
+        s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+        if s.form is card and s.countdown_block is not None:
+            block = s.countdown_block
+    if block is None:
+        block = game.db.cards[card.id].countdown_effects
     if block is None:
         return
     game._resolve_block(block, ExecContext(
@@ -466,3 +473,129 @@ def cap_damage(game, ctx, *, targets: list[Ref], to: str = "shield") -> None:
             ev.amount = s.shield
     else:
         raise ValueError(f"未知 cap_damage 上限类型: {to}")
+
+
+@action("countdown_delta")
+def countdown_delta(game, ctx, *, targets: list[Ref], amount: int) -> None:
+    """目标式神倒计时增减 amount（±）。
+
+    无倒计时能力或倒计时为 0（归零结算中）时修正为 -0（空操作，rules.md ch12
+    增减流程 1）；减少后不大于 0 时走归零流程（_countdown_zero，与回合开始批次共用）。
+    倒计时增减事件的独立时机批次暂不拆，首张监听卡出现时再引入。
+    """
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if s.countdown is None or s.countdown <= 0 or s.countdown_block is None:
+            continue  # 修正为 -0：无倒计时能力 / 倒计时为 0（归零结算中的自身增减）
+        s.countdown += amount
+        if s.countdown <= 0:
+            game._countdown_zero(ref.player, ref.shikigami)
+
+
+@action("set_countdown")
+def set_countdown(game, ctx, *, targets: list[Ref], initial: int,
+                  steps: list | None = None, once: bool = False,
+                  record: bool = False) -> None:
+    """为目标式神注册新的倒计时能力（替换当前倒计时能力；大天狗记录法术、灵矢类效果）。
+
+    - initial/steps/once：倒计时三要素（初值 / 归零执行的效果步骤 / 一次型生效后移除）；
+    - record=True：把触发事件所用卡牌的数据 id 记入目标式神 ext["recorded_card"]
+      （大天狗"记录使用的法术"，随气绝丢失；on_card_played 事件按 uid 回查）；
+    - 倒计时来源 id = 目标式神 id（countdown_history 记账按"基础=式神 id"）。
+    """
+    from db.schema import EffectBlock, Step
+    block = EffectBlock(steps=[
+        st if isinstance(st, Step) else Step.model_validate(st) for st in (steps or [])])
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        p = game.state.players[ref.player]
+        s = p.shikigami[ref.shikigami]
+        if record:
+            uid = (ctx.event or {}).get("uid")
+            ev_player = (ctx.event or {}).get("player")
+            if uid is not None and ev_player is not None:
+                inst = next((c for z in game.state.players[ev_player].zones.values()
+                             for c in z if c.uid == uid), None)
+                if inst is not None:
+                    s.ext["recorded_card"] = inst.id
+        game._register_countdown(s, initial=initial, block=block, once=once, source=s.id)
+        game._log(f"{game.db.shikigami[s.id].name} 获得了倒计时 {initial} 的能力")
+
+
+@action("recast_recorded")
+def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
+    """凭空生成来源式神记录的卡牌的同名牌并免费自动使用（大天狗倒计时；targets 忽略）。
+
+    不消耗鬼火、不视作从手牌使用、无主动目标（当前大天狗非觉醒法术均无主动选择目标）；
+    记录存于来源式神 ext["recorded_card"]（由 set_countdown(record=True) 写入，气绝丢失）。
+    无记录时为空操作。使用照常发出 on_card_played（可再次触发记录类能力）。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("recast_recorded 需要来源式神")
+    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    cid = s.ext.get("recorded_card")
+    if cid is None:
+        return
+    from core.model import CardInstance
+    cdef = game.db.cards[cid]
+    inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进入任何区域
+    game.state.next_uid += 1
+    game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了《{cdef.name}》")
+    game._resolve_block(cdef.effects, ExecContext(
+        controller=ctx.controller, source=ctx.source, card=inst, is_ability=True))
+    game.emit("on_card_played", player=ctx.controller, uid=inst.uid)
+
+
+@action("retreat")
+def retreat(game, ctx, *, targets: list[Ref]) -> None:
+    """目标式神移回准备区（与 enter_combat 对称；风神一扇组合用）。
+
+    仅对战斗区式神有效（准备区式神为空操作）；召唤物无准备区可归，退回即离场（非气绝）。
+    """
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        p = game.state.players[ref.player]
+        if p.combat_index == ref.shikigami:
+            game._retreat(p, ref.shikigami)
+
+
+@action("discard")
+def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
+            count: int | None = None) -> None:
+    """弃掉控制者手牌中符合谓词的牌（移入墓地；targets 忽略）。
+
+    shikigami="self" 弃来源式神所属的牌（射怪鸟事 = discard + draw 两步组合）；
+    shikigami="all" 弃全部手牌；count 限制弃牌张数（缺省弃全部符合者）。
+    """
+    p = game.state.players[ctx.controller]
+    if shikigami == "all":
+        pool = list(p.hand)
+    else:
+        if shikigami == "self":
+            if ctx.source is None or ctx.source.shikigami is None:
+                raise ValueError("discard(shikigami=self) 需要来源式神")
+            sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+        else:
+            sid = int(shikigami)
+        pool = [c for c in p.hand if game.db.cards[c.id].shikigami == sid]
+    if count is not None:
+        pool = pool[:count]
+    for c in pool:
+        game._log(f"{p.name} 弃掉了《{game.db.cards[c.id].name}》")
+        game.move_card(p, c, "graveyard")
+
+
+@action("gain_orb")
+def gain_orb(game, ctx, *, targets: list[Ref], amount: int = 1) -> None:
+    """控制者获得 amount 点鬼火（镇魂歌；targets 忽略）；emit on_orb_changed。"""
+    p = game.state.players[ctx.controller]
+    old = p.orb
+    p.orb += amount
+    if game.config.orb_cap is not None:
+        p.orb = min(p.orb, game.config.orb_cap)
+    if p.orb != old:
+        game.emit("on_orb_changed", player=ctx.controller, old=old, new=p.orb, reason="gain_orb")

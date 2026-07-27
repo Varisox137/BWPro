@@ -35,6 +35,7 @@ KEYWORDS = frozenset({
     "barrier",                  # 屏障
     "enraged",                  # 激怒（状态：出击锁定 + 发起战斗时移除）
     "keep_attack_buffs",        # 引擎级：攻击后到期强化不因攻击移除（残心；卡面不出现）
+    "lifesteal",                # 吸血（机制见 docs/rules.md 伤害流程；造成伤害后为牌手恢复等量生命）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
@@ -68,6 +69,7 @@ class Step(BaseModel):
 
     op: str  # 动作名，须在 core.actions.ACTIONS 注册表中
     target: TargetSpec | None = None  # 缺省 = 使用卡牌的选择目标
+    condition: dict[str, Any] | None = None  # Step 级条件：结算时以条件迷你语言求值，不满足则跳过该步
     # 其余字段（amount / count / ...）按 op 需要原样保留在 model_extra
 
 
@@ -90,6 +92,8 @@ class EffectBlock(BaseModel):
     condition: dict[str, Any] | None = None
     steps: list[Step] = Field(default_factory=list)
     trigger_when_not_in_play: bool = False
+    countdown: int | None = None  # 非 None = 倒计时能力块（不作事件监听）：初值=countdown，
+    # 归零时执行 steps（式神级倒计时框架，core/engine.py；形态牌倒计时仍用 CardDef.countdown）
 
 
 class PlayMethod(BaseModel):
@@ -172,7 +176,14 @@ class ShikigamiDef(BaseModel):
     health: int  # 基础生命
     keep_buffs: bool = False  # 仅召唤物：离场后同名再召是否保留永久增减益
     ability: EffectBlock | None = None  # 被动；when 为事件名（不可用 on_play）
+    abilities: list[EffectBlock] = Field(default_factory=list)  # 多能力块（含倒计时能力块）；
+    # 字段只增不改：旧 ability 字段并入 abilities[0] 读取（见 all_abilities）
     text: str = ""
+
+    @property
+    def all_abilities(self) -> list[EffectBlock]:
+        """基础能力块列表：旧 ability 字段并入 abilities[0] 读取（向后兼容）。"""
+        return ([self.ability] if self.ability is not None else []) + list(self.abilities)
 
     @field_validator("id")
     @classmethod

@@ -87,6 +87,8 @@ class CardDatabase:
                 errors.append(f"{where}: 未知派系 {s.faction}")
             if s.ability is not None:
                 errors += self._check_block(s.ability, known_events - {"on_play"}, f"{where}的被动")
+            for ab in s.abilities:
+                errors += self._check_block(ab, known_events - {"on_play"}, f"{where}的被动")
         for c in self.cards.values():
             where = f"卡牌 {c.id}《{c.name}》"
             if c.shikigami is None:
@@ -155,7 +157,9 @@ class CardDatabase:
     def _check_block(self, block: EffectBlock, known_events: set[str], where: str) -> list[str]:
         """校验一个效果块：事件名、动作注册、summon 引用与目标池。"""
         errors: list[str] = []
-        if block.when not in known_events:
+        # 倒计时能力块（countdown 非 None）不作事件监听，when 无意义，允许缺省 on_play
+        allowed = known_events | ({"on_play"} if block.countdown is not None else set())
+        if block.when not in allowed:
             errors.append(f"{where}: 未知事件 {block.when}")
         for step in block.steps:
             if step.op not in ACTIONS:
