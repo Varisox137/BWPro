@@ -82,7 +82,7 @@ class NetClient:
             if not p.mulligan_done:
                 print(f"\n—— 调度阶段（剩 {p.mulligans_left} 次）："
                       "输入手牌序号调度，done 结束 ——")
-                for line in cli._format_hand_lines(game, p, p.hand):
+                for line in cli.format_hand_lines(game, p, p.hand):
                     print(line)
             return
         print(cli.render(game, viewer=self.me))
@@ -164,7 +164,7 @@ class NetClient:
             print("还没到你的回合")
             return
         if cmd == "play":
-            hand = cli._hand_sorted(game, st.players[self.me])
+            hand = cli.hand_sorted(game, st.players[self.me])
             card = hand[int(args[0]) - 1]
             cdef = self.db.cards[card.id]
             cmd_dict: dict = {"op": "play_card", "uid": card.uid}

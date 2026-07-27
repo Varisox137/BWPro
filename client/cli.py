@@ -162,7 +162,7 @@ def _kw_labels(kws) -> list[str]:
     return [KEYWORD_CN.get(k, k) for k in kws if k not in _KEYWORD_HIDDEN]
 
 
-def _hand_sorted(game: Game, p) -> list:
+def hand_sorted(game: Game, p) -> list:
     """按式神座位、卡牌序号、入手顺序升序排列后的手牌（显示/选择用）。"""
     seat = _seat_map(p)
 
@@ -269,14 +269,14 @@ def render(game: Game, viewer: int | None = None) -> str:
     lines.append(f"{p.name}（你）手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）："
                  if viewer is not None else
                  f"{p.name} 手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）：")
-    lines.extend(_format_hand_lines(game, p, _hand_sorted(game, p)))
+    lines.extend(format_hand_lines(game, p, hand_sorted(game, p)))
     lines.append("")
     if st.winner is not None:
         lines.append(f"***** {st.players[st.winner].name} 获胜！*****")
     return "\n".join(lines)
 
 
-def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
+def format_hand_lines(game: Game, p, hand: list) -> list[str]:
     """手牌逐行格式（render 与调度阶段共用；与卡组构筑共用 cardfmt 对齐流程）：
     [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] 数值段 {描述}"""
 
@@ -335,7 +335,7 @@ def run_mulligan(game: Game) -> None:
             print("")
             print(f"{p.name} 手牌{len(p.hand)}：")
             # 与回合内手牌同一格式；顺序保持手牌实际顺序（调度替换逻辑），不按式神/cid 排序
-            for line in _format_hand_lines(game, p, p.hand):
+            for line in format_hand_lines(game, p, p.hand):
                 print(line)
             print("")
             try:
@@ -493,7 +493,7 @@ def run_battle(db) -> None:
                     game.apply(dcmd)
                     print(render(game))
             elif cmd == "play":
-                hand = _hand_sorted(game, game.current)
+                hand = hand_sorted(game, game.current)
                 card = hand[int(args[0]) - 1]
                 cdef = db.cards[card.id]
                 cmd_dict: dict = {"op": "play_card", "uid": card.uid}

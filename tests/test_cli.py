@@ -99,7 +99,7 @@ def test_mulligan_shows_first_second_and_seats(db, make_game, monkeypatch, capsy
 
 def test_mulligan_hand_uses_battle_format(db, make_game, monkeypatch, capsys):
     """调度阶段手牌与回合内同一逐行格式（含 uid/类型/等级/费用），
-    但顺序保持手牌实际顺序（不调 _hand_sorted）。"""
+    但顺序保持手牌实际顺序（不调 hand_sorted）。"""
     def no_input(prompt=""):
         raise EOFError
     monkeypatch.setattr("builtins.input", no_input)
