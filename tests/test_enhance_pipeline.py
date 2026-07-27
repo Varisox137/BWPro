@@ -7,16 +7,11 @@
 """
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give
+from tests.factories import give, move
 
 T = F.T
 SELF = T(kind="self")
 SELF_PLAYER = T(kind="all", pool="self_player")
-
-
-def _move(game, player: int, index: int) -> None:
-    """把式神移入战斗区（调试指令）。"""
-    game.apply({"op": "debug_move", "args": {"player": player, "index": index}})
 
 
 def _jingu_card(db, cid: int = 10010161, sid: int = 100101) -> int:
@@ -114,7 +109,7 @@ def test_jingu_kill_counter_and_snapshot(db, make_game):
     g._drain_queue()
     assert pa.card_mods[cid]["enhance"] == 4
     # 打出：战力 = 基础 3 + 快照 4 = 7；被攻击者 8 血 → 剩 1（若回溯新击杀会是 9 伤害）
-    _move(g, 1, 2)
+    move(g, 1, 2)
     b = g.state.players[1].shikigami[2]  # 2/6
     b.health = 8
     g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
@@ -143,7 +138,7 @@ def test_buxiang_kill_draw(db, make_game):
     """不祥之刃：此战斗中消灭敌方式神 → 抽 1；触发后注册表清空。"""
     cid = _buxiang_card(db)
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
     b.health = 2  # 攻击 3 击杀
     pa = g.state.players[0]
@@ -158,7 +153,7 @@ def test_buxiang_no_kill_grant_expires(db, make_game):
     """不祥之刃：未消灭则不抽；战斗终止点移除未使用的临时触发。"""
     cid = _buxiang_card(db)
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     b = g.state.players[1].shikigami[0]  # 3/4，攻击 3 杀不死
     pa = g.state.players[0]
     n0 = len(pa.hand)
@@ -181,17 +176,17 @@ def test_chongzhuang_accumulate_and_play(db, make_game):
     g.apply({"op": "end_turn"})
     g.apply({"op": "end_turn"})  # A 第 2 回合开始：兵俑不在战斗区
     assert c.mods.get("enhance", 0) == 0
-    _move(g, 0, 1)
+    move(g, 0, 1)
     g.apply({"op": "end_turn"})
     g.apply({"op": "end_turn"})  # A 第 3 回合开始：+1（随后兵俑退回准备区）
     assert c.mods["enhance"] == 1
-    _move(g, 0, 1)
+    move(g, 0, 1)
     g.apply({"op": "end_turn"})
     g.apply({"op": "end_turn"})  # A 第 4 回合开始：再 +1
     assert c.mods["enhance"] == 2
     # 打出：战力 2+2=4（总力量 1+4=5 击杀 3/4）；护甲 2+2=4，吃反击 3 后剩 1
     pa.orb = 2
-    _move(g, 1, 0)
+    move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
     g.apply({"op": "play_card", "uid": c.uid})
     assert b.defeated

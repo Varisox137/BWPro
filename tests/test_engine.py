@@ -228,10 +228,21 @@ def test_move_swap_and_combat_trade(make_game):
     g.apply({"op": "debug_move", "args": {"player": 0, "index": 0}})
     g.apply({"op": "assault", "index": 0})        # A 0 号出击打脸并驻留
     g.apply({"op": "end_turn"})
+    seen = []
+    orig_emit = g.emit
+
+    def spy(name, **kw):
+        if name == "on_damage":
+            seen.append(kw["victim"])
+        orig_emit(name, **kw)
+
+    g.emit = spy
     g.apply({"op": "assault", "index": 0})        # B 0 号撞 A 战斗区 0 号：3 ↔ 3
     a0 = g.state.players[0].shikigami[0]
     b0 = g.state.players[1].shikigami[0]
     assert a0.health == 1 and b0.health == 1      # 4 - 3，同时结算
+    assert seen[0] == Ref(player=1, shikigami=0)  # 反击：攻击者先受伤
+    assert seen[1] == Ref(player=0, shikigami=0)  # 攻击：被攻击者后受伤
 
 
 def test_passive_only_in_play_and_own_turn(db, make_game):

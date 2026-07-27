@@ -22,6 +22,9 @@ VER = 20260720
 # 常用类型别名，测试里直接用
 T = TargetSpec
 
+# 常用目标：choose 一个敌方式神
+CHOOSE_ENEMY = T(kind="choose", pool="enemy_shikigami")
+
 
 def shiki(sid: int = 100101, name: str | None = None, kind: str = "shikigami",
           faction: str = "红莲", power: int = 3, health: int = 4,
@@ -86,6 +89,43 @@ def give(game, player_index: int, defn_id: int) -> CardInstance:
     st.next_uid += 1
     game.move_card(st.players[player_index], card, "hand")
     return card
+
+
+def move(game, player: int, index: int) -> None:
+    """把式神移入战斗区（调试指令）。"""
+    game.apply({"op": "debug_move", "args": {"player": player, "index": index}})
+
+
+def pass_turns(game, n: int = 1) -> None:
+    """连续 end_turn n 次。"""
+    for _ in range(n):
+        game.apply({"op": "end_turn"})
+
+
+def play(game, player_index: int, defn_id: int, target=None) -> None:
+    """发一张牌到玩家手牌并打出（可带目标）。"""
+    cmd = {"op": "play_card", "uid": give(game, player_index, defn_id).uid}
+    if target is not None:
+        cmd["target"] = target
+    game.apply(cmd)
+
+
+def ichimokuren(db: CardDatabase, sid: int = 100104) -> None:
+    """一目连基础能力：形态离场/被消灭时触发其倒计时效果。"""
+    db.shikigami[sid].ability = EffectBlock(
+        when="on_form_destroyed", condition={"target_shikigami": "self"},
+        steps=[Step(op="trigger_form_countdown")])
+
+
+def po_form(db: CardDatabase, cid: int = 10010451, sid: int = 100104,
+            token: bool = True) -> int:
+    """风符·破型：一目连倒计时 2 形态（3/6），触发时投射 3。"""
+    db.cards[cid] = card(
+        cid, shikigami=sid, card_type="form", level=1,
+        form_power=3, form_health=6, countdown=2, token=token,
+        countdown_effects=block(
+            Step(op="damage", amount=3, target=T(kind="all", pool="projectile"))))
+    return cid
 
 
 def base_db() -> CardDatabase:

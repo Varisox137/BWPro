@@ -7,10 +7,9 @@ import pytest
 from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give
+from tests.factories import CHOOSE_ENEMY, give
 
 T = F.T
-CHOOSE_ENEMY = T(kind="choose", pool="enemy_shikigami")
 
 
 def _add_damage_card(db, cid=10010151, amount=3, **kw):
@@ -340,26 +339,6 @@ def test_zero_damage_aborts_resolution(db, make_game):
     assert "on_damage" not in g.history                    # 完全吸收：不触发受伤后时机
 
 
-def test_combat_damage_counter_first(db, make_game):
-    """交战伤害按（反击，攻击）并行顺序：先结算攻击者受到的反击伤害，气绝判定同序。"""
-    g = make_game()
-    g.apply({"op": "debug_move", "args": {"player": 0, "index": 0}})
-    g.apply({"op": "assault", "index": 0})                 # A 驻留战斗区
-    g.apply({"op": "end_turn"})
-    seen = []
-    orig_emit = g.emit
-
-    def spy(name, **kw):
-        if name == "on_damage":
-            seen.append(kw["victim"])
-        orig_emit(name, **kw)
-
-    g.emit = spy
-    g.apply({"op": "assault", "index": 0})                 # B 撞 A 的墙
-    assert seen[0] == Ref(player=1, shikigami=0)           # 反击：攻击者先受伤
-    assert seen[1] == Ref(player=0, shikigami=0)           # 攻击：被攻击者后受伤
-
-
 def test_neutral_card(db, make_game):
     """中立牌：无从属式神、无等级，可正常使用。"""
     db.cards[99990001] = F.card(99990001, shikigami=None, steps=[F.Step(op="draw", count=1)])
@@ -505,3 +484,46 @@ def test_form_level_requirement(db, make_game):
     a.shikigami[0].level = 2
     g.apply({"op": "play_card", "uid": c.uid})
     assert a.shikigami[0].base_power == 5
+
+
+def test_zero_cost_card_playable_at_zero_orb(db, make_game):
+    """不消耗鬼火：cost=0 的卡牌可在 0 鬼火时使用。"""
+    db.cards[10010151] = F.card(10010151, cost=0, token=True)
+    g = make_game()
+    a = g.state.players[0]
+    a.orb = 0
+    c = give(g, 0, 10010151)
+    g.apply({"op": "play_card", "uid": c.uid})
+    assert a.orb == 0
+    assert c in a.graveyard
+
+
+def test_play_events_and_zones(db, make_game):
+    """各类型卡牌打出后均发出 on_card_played，并进入正确区域/状态。"""
+    db.cards[10010151] = F.card(10010151, token=True)                                    # 法术
+    db.cards[10010152] = F.card(10010152, card_type="combat", steps=[], token=True)      # 战斗牌
+    db.cards[10010153] = F.card(10010153, card_type="form", form_power=3, form_health=5,
+                                token=True)                                              # 形态
+    db.cards[10010154] = F.card(10010154, level=3, subtype="awaken", steps=[], token=True)  # 觉醒
+    g = make_game()
+    a = g.state.players[0]
+    s = a.shikigami[0]
+    s.level = 3                            # 满足觉醒牌等级
+    a.orb = 10
+
+    spell = give(g, 0, 10010151)
+    combat = give(g, 0, 10010152)
+    form = give(g, 0, 10010153)
+    awaken = give(g, 0, 10010154)
+
+    for card, in_graveyard, attached_form in (
+        (spell, True, None),
+        (combat, True, None),
+        (form, False, form),
+        (awaken, True, form),   # 觉醒是法术，不会替换已结附的形态
+    ):
+        before = len(g.history)
+        g.apply({"op": "play_card", "uid": card.uid})
+        assert "on_card_played" in g.history[before:]
+        assert (card in a.graveyard) is in_graveyard
+        assert s.form is attached_form

@@ -6,15 +6,9 @@
 from core.actions import ACTIONS
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give
+from tests.factories import CHOOSE_ENEMY, give, move
 
 T = F.T
-CHOOSE_ENEMY = T(kind="choose", pool="enemy_shikigami")
-
-
-def _move(game, player: int, index: int) -> None:
-    """把式神移入战斗区（调试指令）。"""
-    game.apply({"op": "debug_move", "args": {"player": player, "index": index}})
 
 
 # ---------- 连击 / 先攻 ----------
@@ -22,7 +16,7 @@ def _move(game, player: int, index: int) -> None:
 def test_combo_kill_no_counter(db, make_game):
     """连击：先攻阶段消灭被攻击者，不吃反击；无贯通则战斗终止。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
     b.health = 1
     a = g.state.players[0].shikigami[0]
@@ -35,7 +29,7 @@ def test_combo_kill_no_counter(db, make_game):
 def test_combo_piercing_retarget_player(db, make_game):
     """连击+贯通：先攻阶段消灭被攻击者后，交战阶段被攻击者改为敌方牌手。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     pl = g.state.players[1]
     pl.shield = 0
     b = pl.shikigami[0]
@@ -62,7 +56,7 @@ def test_combo_hits_player_twice(db, make_game):
 def test_initiative_skips_clash(db, make_game):
     """先攻 initiative：先攻阶段造成伤害，交战阶段不再造成（仍吃反击）。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     a = g.state.players[0].shikigami[0]
     b = g.state.players[1].shikigami[0]
     a.keywords.append("initiative")
@@ -76,7 +70,7 @@ def test_initiative_skips_clash(db, make_game):
 def test_piercing_overflow(db, make_game):
     """贯通：伤害超过当前生命的部分改对敌方牌手造成（同队列新事件）。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     pl = g.state.players[1]
     pl.shield = 0
     b = pl.shikigami[0]
@@ -142,7 +136,7 @@ def test_piercing_combat_card_overflow(db, make_game):
     """贯通（伤害原因）：战斗牌本身的效果伤害不继承贯通，但其发起的战斗继承。"""
     db.cards[10010153] = F.card(10010153, card_type="combat", token=True, steps=[])
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     pl = g.state.players[1]
     pl.shield = 0
     b = pl.shikigami[0]
@@ -182,7 +176,7 @@ def test_distribute_damage_flow(db, make_game):
 def test_pierce_strips_shield(db, make_game):
     """穿刺：造成伤害前移除受伤者所有护甲（经护甲变化事件）。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
     b.shield = 3
     a = g.state.players[0].shikigami[0]
@@ -196,7 +190,7 @@ def test_pierce_strips_shield(db, make_game):
 def test_pierce_strips_barrier(db, make_game):
     """穿刺：造成伤害前同时移除受伤者的所有屏障实例，此后正常受伤。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
     b.shield = 3
     b.one_shot_keywords.append("barrier")
@@ -242,7 +236,7 @@ def test_pierce_strips_despite_immunity(db, make_game):
 def test_remote_no_counter_no_move(db, make_game):
     """远程：不受反击伤害，且不进入战斗区。"""
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     pa = g.state.players[0]
     a = pa.shikigami[0]
     a.keywords.append("remote")
@@ -353,7 +347,7 @@ def test_scoped_combat_immunity(db, make_game):
     g = make_game()
     pb = g.state.players[1]
     pb.shikigami[1].level = 1  # 能力持有者在场
-    _move(g, 1, 1)
+    move(g, 1, 1)
     a = g.state.players[0].shikigami[0]
     c = give(g, 0, cid)
     g.apply({"op": "play_card", "uid": c.uid})

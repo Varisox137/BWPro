@@ -109,9 +109,10 @@ def test_illegal_cmd_returns_error(db):
     async def go():
         room, ws0, ws1 = await _started_room(db)
         n = len(ws0.messages)
+        n1 = len(ws1.messages)
         await room.handle_cmd(0, {"op": "end_turn"})  # 调度阶段不可用
         assert ws0.messages[-1]["type"] == "error"
-        assert len(ws1.messages) == len(ws1.messages)  # 不广播
+        assert len(ws1.messages) == n1  # 未向另一连接广播
         assert any(m["type"] == "error" for m in ws0.messages[n:])
     run(go())
 

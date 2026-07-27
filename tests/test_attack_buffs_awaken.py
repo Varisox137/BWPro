@@ -6,17 +6,11 @@
 """
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give
+from tests.factories import CHOOSE_ENEMY, give, move
 
 T = F.T
 SELF = T(kind="self")
 ENEMY_PLAYER = T(kind="all", pool="enemy_player")
-CHOOSE_ENEMY = T(kind="choose", pool="enemy_shikigami")
-
-
-def _move(game, player: int, index: int) -> None:
-    """把式神移入战斗区（调试指令）。"""
-    game.apply({"op": "debug_move", "args": {"player": player, "index": index}})
 
 
 def _attack_buff_card(db, cid: int, power: int = 0, keywords=()) -> None:
@@ -60,7 +54,7 @@ def test_attack_buff_consumed_after_own_attack(db, make_game):
     cid = 10010151
     _attack_buff_card(db, cid, power=1, keywords=["pierce"])
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     a = g.state.players[0].shikigami[0]
     g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
     assert a.temp_power == 1
@@ -79,7 +73,7 @@ def test_attack_buff_kept_when_attacked(db, make_game):
     g = make_game()
     a = g.state.players[0].shikigami[0]
     g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
-    _move(g, 0, 0)  # 驻留战斗区，成为敌方出击的被攻击者
+    move(g, 0, 0)  # 驻留战斗区，成为敌方出击的被攻击者
     g.apply({"op": "end_turn"})
     g.apply({"op": "assault", "index": 0})
     assert a.temp_power == 1
@@ -151,7 +145,7 @@ def test_bailang_ability_combat_damage(db, make_game):
     """白狼基础能力：己方回合对敌方式神造成战斗伤害，即时对敌方牌手造成 2。"""
     _bailang_base_ability(db)
     g = make_game()
-    _move(g, 1, 0)
+    move(g, 1, 0)
     pl = g.state.players[1]
     pl.shield = 0
     g.apply({"op": "assault", "index": 0})
@@ -210,7 +204,7 @@ def test_awaken_bailang_stats_and_replaced_ability(db, make_game):
              "target": Ref(player=1, shikigami=0)})
     assert pl.health == 26  # 觉醒能力 -4
     # 战斗伤害触发的是 -4 的觉醒版，而非 -2 的基础版
-    _move(g, 1, 0)
+    move(g, 1, 0)
     g.apply({"op": "assault", "index": 0})
     assert pl.health == 22
 
