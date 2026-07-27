@@ -1,25 +1,30 @@
 """卡组构筑与战前选卡（交互式）。
 
-- 本地卡组文件（db/deckstore.py，~/.bwp.decks.json）：进入构筑时读取全部槽位，
-  可编辑现有槽位或新建；编辑/新建均支持卡组码导入；校验通过即自动写回
-  （文件不存在时自动创建）。
+- 本地卡组文件（db/deckstore.py v2，~/.bwp.decks.json）：进入构筑时读取全部槽位
+  并按天梯规则重新校验（满足者以亮蓝色标明）；可编辑现有槽位或新建；编辑/新建
+  均支持卡组码导入；校验通过即自动写回（文件不存在时自动创建；文件格式异常时
+  提示并删除该文件）。
 - 编辑为增量式：在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号
   编辑其卡牌（回车沿用），"换 <序号>" 更换式神（清空其已选卡牌并重新选牌）。
-- choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；
+- choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；所选卡组
+  须满足对战模式的组卡规则，否则要求重选；联机时服务端入座会再次核验；
   文件为空时回退到卡组码输入 / 默认卡组）。
+- 卡牌列表与对局手牌显示共用 client/cardfmt.py 的对齐流程。
 - 卡组码格式见 db/deckcode.py；主菜单入口见 client/cli.py。
 """
 from __future__ import annotations
 
 from collections import Counter
 
-from client.textutil import display_width, pad
+from client import cardfmt
+from client.textutil import colored
 from db import deckcode, deckstore
-from db.deck import MAX_COPIES_PER_NAME, MAX_KINDS_PER_SHIKIGAMI, validate_deck
+from db.deck import (MAX_COPIES_PER_NAME, MAX_KINDS_PER_SHIKIGAMI,
+                     STANDARD_RULES, DeckRules, validate_deck)
 from db.loader import CardDatabase
 
-_CTYPES = {"spell": "法术", "combat": "战斗", "form": "形态",
-           "field": "幻境", "reinforce": "协战"}
+# 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
+STANDARD_COLOR = 94
 
 
 def available_shikigami(db: CardDatabase) -> list:
@@ -49,57 +54,24 @@ def _shiki_label(d) -> str:
     return f"{d.name}（{d.faction}）{d.power}/{d.health}{text}"
 
 
-def _card_stats(c) -> str:
-    """卡牌数值段（静态求值）：形态身材、倒计时、战斗牌战力/护甲、觉醒永久身材。"""
-    parts: list[str] = []
-    if c.card_type == "form" and c.form_power is not None:
-        parts.append(f"身材{c.form_power}/{c.form_health}")
-    if c.countdown is not None:
-        parts.append(f"倒计时{c.countdown}")
-    if c.card_type == "combat":
-        pw = sh = 0
-        for st in c.effects.steps:
-            extra = st.model_extra or {}
-            if st.op == "buff_power" and isinstance(extra.get("amount"), int):
-                pw += extra["amount"]
-            elif st.op == "gain_shield" and isinstance(extra.get("amount"), int):
-                sh += extra["amount"]
-        if pw:
-            parts.append(f"战力{pw:+d}")
-        if sh:
-            parts.append(f"护甲+{sh}")
-    if c.subtype == "awaken":
-        pw = hp = 0
-        for st in c.effects.steps:
-            extra = st.model_extra or {}
-            if not extra.get("perm") or not isinstance(extra.get("amount"), int):
-                continue
-            if st.op == "buff_power":
-                pw += extra["amount"]
-            elif st.op == "buff_health":
-                hp += extra["amount"]
-        if pw or hp:
-            parts.append(f"觉醒{pw:+d}/{hp:+d}")
-    return " ".join(parts)
-
-
 def _print_cards(cards: list, copies: Counter | None = None) -> None:
-    """对齐打印卡牌列表：[序号] 名称｜类型[子类型]｜等级｜数值段 {效果文本} ×n。
-    不显示费用。"""
+    """对齐打印卡牌列表（与对局手牌共用 cardfmt 流程）：
+    [序号] 名称｜类型[子类型]｜等级｜数值段 {效果文本} ×n。不显示费用。"""
     rows = []
-    for c in cards:
-        base = _CTYPES.get(c.card_type, c.card_type)
-        ctype = f"{base}[{c.subtype}]" if c.subtype else base
+    for i, c in enumerate(cards):
         text = f"{{{c.text}}}" if c.text else ""
-        rows.append((c.name, ctype, f"等级{c.level}", _card_stats(c), text))
-    idx_w = max((display_width(str(i + 1)) for i in range(len(rows))), default=1)
-    widths = [max((display_width(r[k]) for r in rows), default=0) for k in range(4)]
-    for i, (r, c) in enumerate(zip(rows, cards)):
-        mark = f" ×{copies[c.id]}" if copies and copies.get(c.id) else ""
-        line = (f"  [{pad(str(i + 1), idx_w)}] {pad(r[0], widths[0])}｜"
-                f"{pad(r[1], widths[1])}｜{pad(r[2], widths[2])}｜"
-                f"{pad(r[3], widths[3])} {r[4]}{mark}")
-        print(line.rstrip())
+        mark = f"×{copies[c.id]}" if copies and copies.get(c.id) else ""
+        rows.append((f"[{i + 1}]", c.name, cardfmt.ctype_label(c),
+                     f"等级{c.level}", cardfmt.static_stats(c), text, mark))
+    for r in cardfmt.align_rows(rows):
+        print(f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]}｜{r[4]} {r[5]} {r[6]}".rstrip())
+
+
+def _deck_list_lines(decks: list[dict]) -> None:
+    """本地卡组槽位列表：满足天梯规则的卡组以亮蓝色标明。"""
+    for i, d in enumerate(decks):
+        print(colored(f"  [{i + 1}] {d['name']}",
+                      STANDARD_COLOR if d.get("standard") else None))
 
 
 def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]]) -> None:
@@ -235,11 +207,10 @@ def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
 def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
     """卡组构筑入口：读取本地卡组文件 → 选择槽位编辑或新建 → 卡组码导入 /
     交互式构筑（编辑为增量式）→ 校验通过自动写回本地文件。"""
-    decks = deckstore.load_decks(store_path)
+    decks = deckstore.load_decks(db, store_path)
     print("")
     print(f"—— 卡组构筑（本地卡组文件：{store_path}）——")
-    for i, d in enumerate(decks):
-        print(f"  [{i + 1}] {d['name']}")
+    _deck_list_lines(decks)
     print("")
     line = _input("槽位序号 = 编辑该卡组；回车 = 新建 > ")
     index: int | None = None
@@ -249,7 +220,8 @@ def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
         try:
             index = int(line) - 1
             entry = decks[index]
-            ids, cards = deckcode.deck_from_code(db, entry["code"])
+            ids, cards = deckstore.entry_deck(entry)
+            deckcode.deck_from_code(db, deckstore.entry_code(entry))  # 校验可用性
         except (ValueError, IndexError):
             print("序号有误或槽位卡组已失效，已取消")
             return
@@ -268,27 +240,26 @@ def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
         except ValueError as e:
             print(f"卡组码无效（{e}），未保存")
             return
-        code = code_line
     else:
         result = (_edit_deck(db, team, picks) if team is not None
                   else _interactive_build(db))
         if result is None:
             return
         ids, card_ids = result
-        code = deckcode.encode_deck(deckcode.group_deck(db, ids, card_ids))
     if not name:
         name = decks[index]["name"] if index is not None else _deck_summary(db, ids)
-    entry = {"name": name, "code": code}
+    groups = deckcode.group_deck(db, ids, card_ids)
+    entry = {"name": name, "groups": groups}
     if index is None:
         decks.append(entry)
         slot = len(decks)
     else:
         decks[index] = entry
         slot = index + 1
-    deckstore.save_decks(decks, store_path)
+    deckstore.save_decks(db, decks, store_path)
     print("")
     print(f"卡组「{name}」已保存（共 {len(card_ids)} 张，槽位 {slot}）")
-    print(f"卡组码（导出/分享）：{code}")
+    print(f"卡组码（导出/分享）：{deckcode.encode_deck(groups)}")
 
 
 def _deck_summary(db: CardDatabase, ids: list[int]) -> str:
@@ -299,23 +270,34 @@ def _deck_summary(db: CardDatabase, ids: list[int]) -> str:
 
 
 def choose_deck(db: CardDatabase, label: str,
-                store_path=deckstore.PATH) -> tuple[list[int], list[int], str]:
+                store_path=deckstore.PATH,
+                rules: DeckRules = STANDARD_RULES
+                ) -> tuple[list[int], list[int], str]:
     """热坐/联机开局前选卡：读取本地卡组文件并要求从中选择槽位；
     文件为空时回退到卡组码输入（回车 = 默认卡组）。
+
+    所选卡组须满足对战模式的组卡规则（rules；本地 is_standard 标记对应天梯
+    规则）；不满足时提示并重新选择。联机对战时服务端还会再次核验（房间入座
+    时 deck_from_code 校验，见 server/room.py）。
     返回 (式神 ids, 卡牌 ids, 卡组码)。"""
-    decks = deckstore.load_decks(store_path)
+    decks = deckstore.load_decks(db, store_path)
     if decks:
-        print(f"[{label}] 选择卡组：")
-        for i, d in enumerate(decks):
-            print(f"  [{i + 1}] {d['name']}")
-        line = _input(f"[{label}] 卡组序号 > ")
-        try:
-            entry = decks[int(line) - 1]
-            ids, cards = deckcode.deck_from_code(db, entry["code"])
+        print(f"[{label}] 选择卡组（亮蓝 = 满足天梯规则）：")
+        _deck_list_lines(decks)
+        while True:
+            line = _input(f"[{label}] 卡组序号 > ")
+            try:
+                entry = decks[int(line) - 1]
+            except (ValueError, IndexError):
+                print("序号有误，改用默认卡组")
+                break
+            if not deckstore.check_deck(db, entry["groups"], rules):
+                print(f"卡组「{entry['name']}」不满足当前对战模式的组卡规则，"
+                      "请重新选择")
+                continue
+            ids, cards = deckstore.entry_deck(entry)
             print(f"[{label}] 使用卡组「{entry['name']}」")
-            return ids, cards, entry["code"]
-        except (ValueError, IndexError):
-            print("序号有误，改用默认卡组")
+            return ids, cards, deckstore.entry_code(entry)
     else:
         print(f"[{label}] 本地卡组文件为空（可先在主菜单「卡组构筑」中创建）")
         code_in = _input(f"[{label}] 卡组码（回车跳过 = 默认卡组）> ")

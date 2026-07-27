@@ -1,13 +1,13 @@
 """CLI 场况渲染测试：座次配色、修饰状态显示、关键字中文化、手牌修饰显示。
 
-直接调用 client.cli.render(game)；颜色开关经 monkeypatch 设置 cli._USE_COLOR。
+直接调用 client.cli.render(game)；颜色开关经 monkeypatch 设置 textutil.USE_COLOR。
 角色位约定同 factories.base_db：0-3 号位 = 100101-100104（显示名 式神1001xx）。
 """
 import re
 
 import pytest
 
-from client import cli
+from client import cli, textutil
 from tests import factories as F
 from tests.factories import give
 
@@ -18,13 +18,13 @@ ANSI = re.compile(r"\033\[\d+m")
 
 @pytest.fixture
 def color_on(monkeypatch):
-    monkeypatch.setattr(cli, "_USE_COLOR", True)
+    monkeypatch.setattr(textutil, "USE_COLOR", True)
     return True
 
 
 @pytest.fixture
 def color_off(monkeypatch):
-    monkeypatch.setattr(cli, "_USE_COLOR", False)
+    monkeypatch.setattr(textutil, "USE_COLOR", False)
     return True
 
 
@@ -117,9 +117,9 @@ def test_color_does_not_break_alignment(db, make_game, monkeypatch):
     """颜色不影响排版：开色输出剥离 ANSI 后与关色输出逐行相等。"""
     g = make_game()
     give(g, 0, 10010201)
-    monkeypatch.setattr(cli, "_USE_COLOR", True)
+    monkeypatch.setattr(textutil, "USE_COLOR", True)
     colored = cli.render(g)
-    monkeypatch.setattr(cli, "_USE_COLOR", False)
+    monkeypatch.setattr(textutil, "USE_COLOR", False)
     plain = cli.render(g)
     assert ANSI.sub("", colored) == plain
 

@@ -4,7 +4,7 @@
 非回合方没有任何输入机会——响应牌由引擎自动结算（规则：敌方回合零选择、响应必发）。
 
 运行：uv run python -m client.cli
-一级菜单：热坐对战 / 卡组构筑（client/deckbuilder.py）/ 联机对战（client/net.py，
+一级菜单：卡组构筑（client/deckbuilder.py）/ 本地热坐 / 联机对战（client/net.py，
 服务端见 server/main.py）。数据为正式 YAML（CardDatabase.load：db/cards、
 db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwp.decks.json，
 db/deckstore.py）选择卡组，文件为空时回退到卡组码输入或默认卡组。
@@ -16,8 +16,7 @@ db/deckstore.py）选择卡组，文件为空时回退到卡组码输入或默�
 from __future__ import annotations
 
 import os
-import sys
-from client import deckbuilder
+from client import cardfmt, deckbuilder, textutil
 from client.textutil import display_width as _display_width, pad as _pad
 from core.engine import Game, IllegalAction
 from core.model import Ref
@@ -87,24 +86,11 @@ def ref_code(ref: Ref, active: int) -> str:
 
 # ---------- 座次配色 ----------
 
-_USE_COLOR: bool | None = None  # None=惰性自动判定；测试可显式置 True/False
+# 颜色判定与包裹委托 client/textutil（测试可 monkeypatch textutil.USE_COLOR）
+_use_color = textutil.use_color
+_colored = textutil.colored
 
 SEAT_COLORS = [93, 96, 95, 91]  # 座次 1-4：亮黄/亮青/亮紫/亮红（亮色系）
-
-
-def _use_color() -> bool:
-    """颜色仅在 TTY 下启用；管道输出或 NO_COLOR 环境变量时关闭。"""
-    global _USE_COLOR
-    if _USE_COLOR is None:
-        _USE_COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
-    return _USE_COLOR
-
-
-def _colored(text: str, code: int | None) -> str:
-    """按 ANSI 色号包裹文本（须在 _pad 之后调用，以免破坏列对齐）。"""
-    if code is None or not _use_color():
-        return text
-    return f"\033[{code}m{text}\033[0m"
 
 
 def _seat_map(p) -> dict[int, int]:
@@ -291,16 +277,8 @@ def render(game: Game, viewer: int | None = None) -> str:
 
 
 def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
-    """手牌逐行格式（render 与调度阶段共用）：
+    """手牌逐行格式（render 与调度阶段共用；与卡组构筑共用 cardfmt 对齐流程）：
     [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] 数值段 {描述}"""
-    CTYPE_NAMES = {"spell": "法术", "combat": "战斗", "form": "形态",
-                   "field": "幻境", "reinforce": "协战"}
-
-    def _ctype_label(cd):
-        base = CTYPE_NAMES.get(cd.card_type, cd.card_type)
-        if cd.subtype:
-            return f"{base}[{cd.subtype}]"
-        return base
 
     def _cost_label(c) -> str:
         """费用显示（含实例修饰 cost_delta）。"""
@@ -318,30 +296,26 @@ def _format_hand_lines(game: Game, p, hand: list) -> list[str]:
             parts.append(f"增强+{c.mods['enhance']}")
         return " ".join(parts)
 
-    idx_w = max((_display_width(str(i + 1)) for i in range(len(hand))), default=1)
-    name_w = max((_display_width(f"【{game.db.cards[c.id].name}】") for c in hand), default=0)
-    uid_w = max((_display_width(f"#{c.uid}") for c in hand), default=0)
-    ctype_w = max((_display_width(_ctype_label(game.db.cards[c.id])) for c in hand), default=0)
-    level_w = max((_display_width(f"等级{game.db.cards[c.id].level}") for c in hand), default=0)
-    cost_w = max((_display_width(_cost_label(c)) for c in hand), default=0)
-    data_w = max((_display_width(_data_label(c)) for c in hand), default=0)
-    stat_w = max((_display_width(_stats_label(game, p, c)) for c in hand), default=0)
-    out = []
+    idx_w = max((_display_width(str(len(hand))), 1))
+    rows = []
     for i, c in enumerate(hand):
         cd = game.db.cards[c.id]
-        text = f"{{{cd.text}}}" if cd.text else ""
-        line = (
-            f"    [{_pad(str(i + 1), idx_w)}] "
-            f"{_colored(_pad(f'【{cd.name}】', name_w), _card_color(game, p, c))} "
-            f"{_pad(f'#{c.uid}', uid_w)} "
-            f"{_pad(_ctype_label(cd), ctype_w)} "
-            f"{_pad(f'等级{cd.level}', level_w)} "
-            f"{_pad(_cost_label(c), cost_w)} "
-            f"{_pad(_data_label(c), data_w)} "
-            f"{_pad(_stats_label(game, p, c), stat_w)} "
-            f"{text}"
-        )
-        out.append(line)
+        rows.append((
+            f"[{_pad(str(i + 1), idx_w)}]",
+            f"【{cd.name}】",
+            f"#{c.uid}",
+            cardfmt.ctype_label(cd),
+            f"等级{cd.level}",
+            _cost_label(c),
+            _data_label(c),
+            _stats_label(game, p, c),
+            f"{{{cd.text}}}" if cd.text else "",
+        ))
+    out = []
+    for row, c in zip(cardfmt.align_rows(rows), hand):
+        cells = list(row)
+        cells[1] = _colored(cells[1], _card_color(game, p, c))
+        out.append("    " + " ".join(cells).rstrip())
     return out
 
 
@@ -552,23 +526,23 @@ def run_battle(db) -> None:
 
 
 def main() -> None:
-    """一级菜单：热坐对战 / 卡组构筑。数据为正式 YAML（CardDatabase.load）。"""
+    """一级菜单：卡组构筑 / 本地热坐 / 联机对战。数据为正式 YAML（CardDatabase.load）。"""
     if os.name == "nt":
         os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
     db = CardDatabase.load()
     while True:
         print("—— 主菜单 ——")
-        print("  [1] 热坐对战")
-        print("  [2] 卡组构筑")
+        print("  [1] 卡组构筑")
+        print("  [2] 本地热坐")
         print("  [3] 联机对战")
         try:
             choice = input("选择（q 退出）> ").strip().lower()
         except EOFError:
             break
         if choice == "1":
-            run_battle(db)
-        elif choice == "2":
             deckbuilder.run_deckbuilder(db)
+        elif choice == "2":
+            run_battle(db)
         elif choice == "3":
             from client import net
             server = input("服务器地址（回车 = ws://127.0.0.1:1037/ws）> ").strip()
