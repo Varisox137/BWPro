@@ -221,6 +221,24 @@ def test_state_sanitized_per_viewer(db):
     run(go())
 
 
+def test_sanitize_hides_secret_delayed_chosen():
+    """会（secret 延迟能力）：对手视角抹除选择目标；非 secret 条目与原始状态不受影响。"""
+    from server.room import sanitize_state
+    payload = {"players": [
+        {"zones": {"hand": [], "deck": []},
+         "shikigami": [{"delayed": [
+             {"chosen": {"player": 1, "shikigami": 2}, "secret": True, "uses": 1},
+             {"chosen": {"player": 1, "shikigami": 1}, "uses": 1}]}]},
+        {"zones": {"hand": [], "deck": []}, "shikigami": []},
+    ]}
+    view = sanitize_state(payload, 1)  # viewer=1 → 对手为 players[0]
+    delayed = view["players"][0]["shikigami"][0]["delayed"]
+    assert delayed[0]["chosen"] is None                       # secret：抹除
+    assert delayed[1]["chosen"] == {"player": 1, "shikigami": 1}  # 非 secret：保留
+    # 原始状态不被修改
+    assert payload["players"][0]["shikigami"][0]["delayed"][0]["chosen"] is not None
+
+
 def test_max_rooms_cap(db):
     mgr = RoomManager(db, max_rooms=1)
     mgr.create()

@@ -27,7 +27,7 @@ def _jingu_card(db, cid: int = 10010161, sid: int = 100101) -> int:
                F.Step(op="gain_shield", amount=2, target=SELF)],
         triggers=[F.EffectBlock(
             when="on_shikigami_defeated",
-            condition={"victim_side": "enemy", "victim_kind": "shikigami",
+            condition={"victim_kind": "shikigami",
                        "source_side": "friendly", "source_shikigami": sid},
             steps=[F.Step(op="add_mod", to="persistent", key="enhance", amount=2)],
         )],
@@ -66,10 +66,10 @@ def _chongzhuang_card(db, cid: int = 10010263) -> int:
 
 
 def _yaodao_base_ability(db) -> None:
-    """妖刀姬基础能力：对敌方牌手造成战斗伤害 → 本回合她的战斗牌具有[瞬发]。"""
+    """妖刀姬基础能力（原版）：对敌方牌手造成任意伤害 → 本回合她的战斗牌具有[瞬发]。"""
     db.shikigami[100101].ability = F.EffectBlock(
         when="on_player_damaged",
-        condition={"source_shikigami": "self", "kind": "combat"},
+        condition={"source_shikigami": "self"},
         steps=[F.Step(op="card_aura", shikigami="self", card_type="combat",
                       keywords=["fast"])],
     )
@@ -90,7 +90,7 @@ def _awaken_yaodao(db, cid: int = 10010166) -> int:
                 steps=[F.Step(op="grant_keyword", keyword="haste", target=SELF)]),
             F.EffectBlock(
                 when="on_player_damaged",
-                condition={"source_shikigami": "self", "kind": "combat"},
+                condition={"source_shikigami": "self"},
                 steps=[F.Step(op="card_aura", shikigami="self", card_type="combat",
                               cost_zero=True)]),
         ],
@@ -122,18 +122,19 @@ def test_jingu_kill_counter_and_snapshot(db, make_game):
 
 
 def test_jingu_counter_scoping(db, make_game):
-    """禁锢之刀计数归属：杀友方不计；敌方同名式神的击杀只进敌方 store。"""
+    """禁锢之刀计数归属（原版）：消灭己方式神（如伤害转移）也计数；
+    敌方同名式神的击杀只进敌方 store。"""
     cid = _jingu_card(db)
     g = make_game()
     pa = g.state.players[0]
     pb = g.state.players[1]
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, Ref(player=0, shikigami=0))
     g._drain_queue()  # 直调伤害管线后手动排空（on_shikigami_defeated 为延时时机）
-    assert cid not in pa.card_mods  # 击杀友方式神不计
+    assert pa.card_mods[cid]["enhance"] == 2  # 消灭己方式神也计数（原版）
     g.deal_to_shikigami(Ref(player=0, shikigami=2), 99, Ref(player=1, shikigami=0), kind="combat")
     g._drain_queue()
-    assert cid not in pa.card_mods               # 敌方妖刀姬的击杀不进我方 store
-    assert pb.card_mods[cid]["enhance"] == 2     # 计入敌方自己的 store
+    assert pa.card_mods[cid]["enhance"] == 2   # 敌方妖刀姬的击杀不进我方 store
+    assert pb.card_mods[cid]["enhance"] == 2   # 计入敌方自己的 store
 
 
 # ---------- 不祥之刃：战斗绑定一次性触发 ----------

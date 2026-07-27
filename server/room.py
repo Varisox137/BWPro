@@ -32,14 +32,20 @@ _HIDDEN_CARD = {"uid": 0, "id": 0, "mods": {}, "hand_seq": 0}
 
 def sanitize_state(payload: dict, viewer: int) -> dict:
     """按视角脱敏完整状态：对手的手牌与牌库以占位卡替换（张数公开、内容保密），
-    防止修改客户端窥探。墓地/计数器等在本游戏中为公开信息，保留。"""
+    对手式神标记 secret 的延迟能力（会）抹除选择目标，防止修改客户端窥探。
+    墓地/计数器等在本游戏中为公开信息，保留。"""
     import copy
 
     payload = copy.deepcopy(payload)
-    zones = payload["players"][1 - viewer].get("zones", {})
+    opponent = payload["players"][1 - viewer]
+    zones = opponent.get("zones", {})
     for zone in ("hand", "deck"):
         if zone in zones:
             zones[zone] = [dict(_HIDDEN_CARD) for _ in zones[zone]]
+    for s in opponent.get("shikigami", []):
+        for entry in s.get("delayed", []):
+            if entry.get("secret"):
+                entry["chosen"] = None
     return payload
 
 

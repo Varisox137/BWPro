@@ -12,6 +12,7 @@ effects:
     - op: delay_grant
       when: on_turn_start
       condition: {player: self}
+      secret: true
       steps:
         - {op: damage, amount: 8}
-text: 选择一名敌方式神，你的下个回合开始时，白狼对其造成8点伤害
+text: 选择一名敌方式神，你的下个回合开始时，白狼对其造成8点伤害（所选目标仅己方可见）

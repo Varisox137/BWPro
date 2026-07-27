@@ -6,10 +6,10 @@ power: 3
 health: 4
 ability:
   when: on_player_damaged
-  condition: {source_shikigami: self, kind: combat}
+  condition: {source_shikigami: self}
   steps:
     - op: card_aura
       shikigami: self
       card_type: combat
       keywords: [fast]
-text: 当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌具有[瞬发]
+text: 当妖刀姬对敌方牌手造成伤害时，本回合她的所有战斗牌具有[瞬发]

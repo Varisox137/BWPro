@@ -806,6 +806,16 @@ class Game:
             return False
         return "combat_lock" in self.db.cards[s.form.id].tags
 
+    def _direct_destroy_immune(self, pi: int, si: int) -> bool:
+        """尘缚之阵：结附带 destroy_immune 标记形态的式神在战斗区时，免疫直接消灭效果。"""
+        p = self.state.players[pi]
+        if p.combat_index != si:
+            return False
+        s = p.shikigami[si]
+        if s.form is None or not s.in_play:
+            return False
+        return "destroy_immune" in self.db.cards[s.form.id].tags
+
     def _enter_combat(self, p: PlayerState, i: int) -> None:
         """进入战斗区；若已有其它式神驻留，则其退回准备区。"""
         if p.combat_index is not None and p.combat_index != i:

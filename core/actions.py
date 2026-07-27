@@ -282,12 +282,15 @@ def destroy_form(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("destroy")
 def destroy(game, ctx, *, targets: list[Ref]) -> None:
-    """直接消灭目标式神（非伤害：生命归零走气绝流程；直接消灭免疫属尘缚之阵批次）。"""
+    """直接消灭目标式神（非伤害：生命归零走气绝流程；尘缚之阵的免疫直接消灭在此判定）。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if not s.in_play:
+            continue
+        if game._direct_destroy_immune(ref.player, ref.shikigami):
+            game._log(f"{game.db.shikigami[s.id].name} 免疫了本次消灭")
             continue
         s.health = 0
         game.check_defeated(ref, source=ctx.source, reason="消灭")
@@ -407,11 +410,14 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> N
 
 @action("delay_grant")
 def delay_grant(game, ctx, *, targets: list[Ref], when: str,
-                condition: dict | None = None, steps: list | None = None) -> None:
+                condition: dict | None = None, steps: list | None = None,
+                secret: bool = False) -> None:
     """给来源式神登记一个一次性延迟能力（会；targets 忽略）。
 
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
     随条目存储，触发结算时作为效果目标。气绝时清除（变形离场保留——变形未实现）。
+    secret=True 时选择目标对敌方保密（会：所选目标仅己方可见）——联机状态脱敏
+    （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     """
     if ctx.source is None or ctx.source.shikigami is None:
         raise ValueError("delay_grant 需要来源式神")
@@ -423,6 +429,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         "block": block,
         "chosen": ctx.chosen[0] if ctx.chosen else None,
         "uses": 1,
+        "secret": secret,
     })
     game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
 

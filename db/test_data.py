@@ -81,11 +81,11 @@ def make_test_db() -> CardDatabase:
     shikigami[100102].text = "己方回合开始时，兵俑获得2护甲"
     shikigami[100123].ability = EffectBlock(
         when="on_player_damaged",
-        condition={"source_shikigami": "self", "kind": "combat"},
+        condition={"source_shikigami": "self"},
         steps=[Step(op="card_aura", shikigami="self", card_type="combat",
                     keywords=["fast"])],
     )
-    shikigami[100123].text = "当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌具有[瞬发]"
+    shikigami[100123].text = "当妖刀姬对敌方牌手造成伤害时，本回合她的所有战斗牌具有[瞬发]"
     shikigami[100125].ability = EffectBlock(
         when="on_form_destroyed",
         condition={"target_shikigami": "self"},
@@ -136,11 +136,11 @@ def make_test_db() -> CardDatabase:
         Step(op="attack_buff", power=3, target=_self_target()),
     ])
     add(100101, 5, "R", "会", 2, "spell",
-        text="选择一名敌方式神，你的下个回合开始时，白狼对其造成8点伤害")
+        text="选择一名敌方式神，你的下个回合开始时，白狼对其造成8点伤害（所选目标仅己方可见）")
     cards[10010105].target = TargetSpec(kind="choose", pool="enemy_shikigami")
     cards[10010105].effects = EffectBlock(steps=[
         Step(op="delay_grant", when="on_turn_start", condition={"player": "self"},
-             steps=[{"op": "damage", "amount": 8}]),
+             secret=True, steps=[{"op": "damage", "amount": 8}]),
     ])
     add(100101, 6, "SR", "援护", 2, "spell", keywords=["trigger"],
         text="对敌方战斗区式神造成等同于白狼力量值的伤害。"
@@ -232,9 +232,10 @@ def make_test_db() -> CardDatabase:
              target=TargetSpec(kind="all", pool="friendly_others")),
     ])
     add(100102, 8, "R", "尘缚之阵", 3, "form", form_power=5, form_health=9,
-        text="进场时，选择一名敌方式神，使其获得[激怒]。只要兵俑在战斗区且敌方战斗区有式神，"
+        text="进场时，选择一名敌方式神，使其获得[激怒]。兵俑在战斗区时免疫直接消灭效果。"
+             "只要兵俑在战斗区且敌方战斗区有式神，"
              "为敌方召唤召唤物的效果无效、敌方准备区式神不能发起不具有[远程]的战斗")
-    cards[10010208].tags = ["combat_lock"]
+    cards[10010208].tags = ["combat_lock", "destroy_immune"]
     cards[10010208].target = TargetSpec(kind="choose", pool="enemy_shikigami")
     cards[10010208].effects = EffectBlock(steps=[
         Step(op="grant_keyword", keyword="enraged"),
@@ -260,14 +261,14 @@ def make_test_db() -> CardDatabase:
     add(100123, 3, "R", "战意", 2, "combat", power=2, shield=2, text="")
     add(100123, 4, "R", "一闪", 2, "combat", cost=0, power=0, shield=0, text="【不消耗鬼火】")
     add(100123, 5, "SR", "禁锢之刀", 2, "combat",
-        text="[增强]：{本局游戏中，妖刀姬每消灭过一名敌方式神，此牌便获得+2力量}")
+        text="[增强]：{本局游戏中，妖刀姬每消灭过一名式神，此牌便获得+2力量}")
     cards[10012305].effects = EffectBlock(steps=[
         Step(op="buff_power", amount={"enhance": True, "base": 0}, target=_self_target()),
         Step(op="gain_shield", amount=2, target=_self_target()),
     ])
     cards[10012305].triggers = [EffectBlock(
         when="on_shikigami_defeated",
-        condition={"victim_side": "enemy", "victim_kind": "shikigami",
+        condition={"victim_kind": "shikigami",
                    "source_side": "friendly", "source_shikigami": 100123},
         steps=[Step(op="add_mod", to="persistent", key="enhance", amount=2)],
     )]
@@ -280,7 +281,7 @@ def make_test_db() -> CardDatabase:
     ])
     add(100123, 8, "SSR", "觉醒·妖刀姬", 3, "spell",
         perm_power=1, perm_health=1,
-        text="[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成战斗伤害时，本回合她的所有战斗牌不消耗鬼火。}")
+        text="[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成伤害时，本回合她的所有战斗牌不消耗鬼火。}")
     cards[10012308].abilities = [
         EffectBlock(
             when="on_awakened", condition={"target_shikigami": "self"},
@@ -292,7 +293,7 @@ def make_test_db() -> CardDatabase:
         ),
         EffectBlock(
             when="on_player_damaged",
-            condition={"source_shikigami": "self", "kind": "combat"},
+            condition={"source_shikigami": "self"},
             steps=[Step(op="card_aura", shikigami="self", card_type="combat",
                         cost_zero=True)],
         ),

@@ -151,7 +151,7 @@ def _bi(db, cid=BI):
 def _fu(db, cid=FU):
     db.cards[cid] = F.card(
         cid, shikigami=BING, card_type="form", level=3,
-        form_power=5, form_health=9, tags=["combat_lock"], token=True,
+        form_power=5, form_health=9, tags=["combat_lock", "destroy_immune"], token=True,
         target=T(kind="choose", pool="enemy_shikigami"),
         steps=[F.Step(op="grant_keyword", keyword="enraged")])
     return cid
@@ -606,3 +606,55 @@ def test_fu_lock_blocks_response_combat_swap(db, make_game):
     assert card in b.hand                # 响应受锁定不可用，未触发
     assert b.orb == 3                    # 未支付费用
     assert b.shikigami[LIAN_IDX].defeated  # 战斗仍命中原驻留者一目连（5 攻 vs 5 血）
+
+
+# ---------- 13. 尘缚之阵：免疫直接消灭 ----------
+
+DESTROY_SPELL = 10010154  # 直接消灭法术（测试用）
+
+
+def _destroy_spell(db):
+    db.cards[DESTROY_SPELL] = F.card(
+        DESTROY_SPELL, shikigami=BAI, level=1, token=True,
+        target=T(kind="choose", pool="enemy_shikigami"),
+        steps=[F.Step(op="destroy")])
+
+
+def test_fu_destroy_immune_in_combat(db, make_game):
+    """尘缚之阵：兵俑在战斗区时免疫直接消灭效果；退回准备区后不再免疫。"""
+    _fu(db)
+    _destroy_spell(db)
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BING_IDX].level = 3
+    b.shikigami[BING_IDX].level = 1      # 激怒目标须在场（等级 >= 1）
+    b.shikigami[BAI_IDX].level = 1
+    _play(g, 0, FU, target=Ref(player=1, shikigami=BING_IDX))
+    bing = a.shikigami[BING_IDX]
+    _move(g, 0, BING_IDX)                # 兵俑进战斗区
+    g.apply({"op": "end_turn"})
+    b.orb = 3
+    _play(g, 1, DESTROY_SPELL, target=Ref(player=0, shikigami=BING_IDX))
+    assert not bing.defeated and bing.health == 9   # 免疫直接消灭（形态 5/9）
+    g.apply({"op": "end_turn"})
+    _move(g, 0, YAO_IDX)                 # 换人：兵俑退回准备区
+    g.apply({"op": "end_turn"})
+    b.orb = 3
+    _play(g, 1, DESTROY_SPELL, target=Ref(player=0, shikigami=BING_IDX))
+    assert bing.defeated                 # 不在战斗区：不再免疫
+
+
+def test_fu_destroy_immune_not_in_combat(db, make_game):
+    """尘缚之阵：兵俑在准备区时，直接消灭照常生效。"""
+    _fu(db)
+    _destroy_spell(db)
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BING_IDX].level = 3
+    b.shikigami[BING_IDX].level = 1      # 激怒目标须在场（等级 >= 1）
+    b.shikigami[BAI_IDX].level = 1
+    _play(g, 0, FU, target=Ref(player=1, shikigami=BING_IDX))
+    g.apply({"op": "end_turn"})
+    b.orb = 3
+    _play(g, 1, DESTROY_SPELL, target=Ref(player=0, shikigami=BING_IDX))
+    assert a.shikigami[BING_IDX].defeated
