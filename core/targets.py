@@ -106,7 +106,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {字段_shikigami: self}   ：事件中的 Ref 与能力持有者（holder）同式神
     - {字段_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id（游离触发器用）
     - {字段_not_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id ≠ 给定值（"其他式神"）
+    - {字段_has_fragile: true|false} ：事件中的 Ref 所指角色（式神或牌手）是否持有破甲
+      （"若攻击有破甲的角色"——战斗条件授予以 {"defender": 被攻击者} 求值）
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
+    - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - 其余按键值相等比较
     """
@@ -115,6 +118,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     for key, want in condition.items():
         if key == "active":
             if (want == "self") != (game.state.active == controller):
+                return False
+        elif key == "turn_mark_not":
+            if want in game.state.players[controller].ext.get("turn_marks", {}):
                 return False
         elif key == "shikigami_in_combat":
             cp = game.state.players[controller]
@@ -127,6 +133,15 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
             side = "friendly" if ref.player == controller else "enemy"
             if want != "any" and side != want:
+                return False
+        elif key.endswith("_has_fragile"):
+            # 事件中的 Ref 所指角色（式神或牌手）是否持有破甲（shield < 0）
+            ref = event.get(key[:-12])
+            if not isinstance(ref, Ref):
+                return False
+            hp = game.state.players[ref.player]
+            holder = hp.shikigami[ref.shikigami] if ref.shikigami is not None else hp
+            if (holder.shield < 0) != bool(want):
                 return False
         elif key.endswith("_kind"):
             ref = event.get(key[:-5])

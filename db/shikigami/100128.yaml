@@ -1,0 +1,14 @@
+id: 100128
+version: 20260724
+name: 鸩
+faction: 苍叶
+power: 2
+health: 5
+ability:
+  # 静态倒计时能力块（对局开始/升至1级/复活时注册）：[倒计时2] 使敌方牌手获得2破甲；
+  # bump_ext 累计 x = 基础+觉醒倒计时生效合计（ext 不随气绝清除，跨气绝保留）
+  countdown: 2
+  steps:
+    - {op: gain_shield, amount: 2, kind: fragile, target: {kind: all, pool: enemy_player}}
+    - {op: bump_ext, key: zhen_proc, target: {kind: self}}
+text: "[倒计时2]：{使敌方牌手获得2破甲。}"

@@ -137,6 +137,7 @@ def test_seigi_transform_destroys_all(make_game):
     store = pa.card_mods[SEIGI]
     assert store["spell_count"] == 10
     assert store["transformed"] == 1
+    assert "fast" not in g._card_keywords(pa, g.db.cards[SEIGI])  # 变为后失去[瞬发]
     play(g, 0, SEIGI)                         # 第 11 张法术：打出装配读取已置位的 transformed
     assert all(s.defeated for s in pb.shikigami)
     assert store["spell_count"] == 11         # 吾即正义自身也计数

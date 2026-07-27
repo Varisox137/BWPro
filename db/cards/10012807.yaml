@@ -1,0 +1,24 @@
+id: 10012807
+version: 20260724
+name: 碧羽散华
+shikigami: 100128
+card_type: form
+rarity: R
+level: 3
+cost: 1
+form_power: 5
+form_health: 7
+effects:
+  # "鸩造成的破甲效果转化为等量的伤害"：锚点为 ext["fragile_to_damage"]
+  # （"获得破甲前"转化，_change_shield 读取）——进场时标记所有敌方式神
+  # （当前卡池仅鸩给予破甲， victim 侧标记与"鸩造成的"等价；牌手不受此转化）
+  steps:
+    - {op: bump_ext, key: fragile_to_damage, target: {kind: all, pool: enemy_shikigami}}
+abilities:
+  # 形态离场时清除标记（形态替换/被消灭/鸩气绝均触发 on_form_destroyed 前的离场清理）
+  - when: on_form_destroyed
+    condition: {target_shikigami: self}
+    steps:
+      - {op: bump_ext, key: fragile_to_damage, amount: -1,
+         target: {kind: all, pool: enemy_shikigami}}
+text: 鸩造成的破甲效果转化为等量的伤害

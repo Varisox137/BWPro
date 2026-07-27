@@ -1,0 +1,17 @@
+id: 10012806
+version: 20260724
+name: 致命诱惑
+shikigami: 100128
+card_type: combat
+rarity: R
+level: 2
+cost: 1
+effects:
+  # grant_keyword step 由战斗牌流程提取为战斗作用域条件授予（战斗终止点移除）；
+  # Step.condition 在战斗开始时以 {"defender": 被攻击者} 求值
+  steps:
+    - {op: buff_power, amount: 2, target: {kind: self}}
+    - {op: gain_shield, amount: 2, target: {kind: self}}
+    - {op: grant_keyword, keyword: lifesteal, target: {kind: self},
+       condition: {defender_has_fragile: true}}
+text: "+2/+2。若攻击有破甲的角色，获得[吸血]"

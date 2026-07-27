@@ -650,3 +650,39 @@ def gain_orb(game, ctx, *, targets: list[Ref], amount: int = 1) -> None:
         p.orb = min(p.orb, game.config.orb_cap)
     if p.orb != old:
         game.emit("on_orb_changed", player=ctx.controller, old=old, new=p.orb, reason="gain_orb")
+
+
+@action("bump_ext")
+def bump_ext(game, ctx, *, targets: list[Ref], key: str, amount: int = 1) -> None:
+    """目标式神/牌手的 ext 计数累加（鸩 x = 基础+觉醒倒计时生效合计：作为倒计时块的
+    一个 step 表达"每触发一次 +1"；ext 不随气绝清除，跨气绝保留）。"""
+    for ref in targets:
+        pl = game.state.players[ref.player]
+        holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+        holder.ext[key] = holder.ext.get(key, 0) + amount
+
+
+@action("turn_mark")
+def turn_mark(game, ctx, *, targets: list[Ref], key: str) -> None:
+    """给控制者打上"每回合合计一次"标记（targets 忽略；寂寥心象）。
+
+    标记存于 `PlayerState.ext["turn_marks"]`，任一回合开始（双方）清除；
+    能力触发条件以 {turn_mark_not: key} 求值（条件迷你语言）。
+    """
+    p = game.state.players[ctx.controller]
+    p.ext.setdefault("turn_marks", {})[key] = True
+
+
+@action("convert_damage")
+def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> None:
+    """伤害转化标记（targets 忽略）：登记到当前战斗上下文——该战斗中双方造成的伤害
+    转化为等量的破甲（毒蚀；伤害管线于护甲计算后、扣减生命前读取，战斗终止点清除）。
+
+    主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
+    响应插入使用时作为普通动作执行，登记到被插入的当前战斗。
+    """
+    if to != "fragile":
+        raise ValueError(f"未知 convert_damage 转化类型: {to}")
+    if not game._battle_stack:
+        return
+    game._battle_convert.add(game._battle_stack[-1])

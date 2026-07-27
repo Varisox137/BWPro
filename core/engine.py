@@ -69,6 +69,8 @@ class _DamageEvent:
     kind: str = "effect"
     piercing: bool = False
     skip_early: bool = False
+    converted: bool = False  # 已经历过一次转化的伤害（碧羽散华破甲→伤害）：
+    # 跳过毒蚀的伤害→破甲转化，防止两个转化类效果来回循环
 
 
 @dataclass
@@ -101,6 +103,8 @@ class Game:
         # 伤害管线把实际受伤的式神记入栈顶，弹出后随 on_card_played 的
         # affected_refs 发出（暴风之主"对受影响的敌方式神各造成1点伤害"）
         self._affected_stack: list[list[Ref]] = []
+        # 毒蚀：伤害→破甲转化登记的战斗 id 集合（战斗终止点随弹栈清除）
+        self._battle_convert: set[int] = set()
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -216,13 +220,18 @@ class Game:
 
     @staticmethod
     def _step_amount(step: Step, card: CardInstance | None,
-                     s: ShikigamiState | None = None) -> int:
+                     s: ShikigamiState | None = None,
+                     event: dict | None = None, game=None) -> int:
         """解析步骤的 amount 参数（docs/enhance-design.md 数值解析流水线）：
 
         - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
         - {"shield_of": "self"|"source"}：来源式神当前护甲（尘刀快照/古尘之壁）；
-        - {"power_of": "self"|"source"}：来源式神 eff_power（援护）。
-        后两者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
+        - {"power_of": "self"|"source"}：来源式神 eff_power（援护）；
+        - {"ext": key}：来源式神 ext 计数（鸩觉醒"每触发过一次…额外+1"的 x）；
+        - {"event": key}：触发事件 payload 中的数值（寂寥心象"获得等量破甲"）；
+        - {"half_health_of": key}：事件中的 Ref 所指角色当前生命的一半（向下取整，
+          毒之华"等同于其一半生命的破甲"）。
+        前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
         """
         raw = (step.model_extra or {}).get("amount", 0)
         if isinstance(raw, dict):
@@ -233,6 +242,17 @@ class Game:
                 base += s.shield
             if raw.get("power_of") and s is not None:
                 base += s.eff_power
+            if raw.get("ext") and s is not None:
+                base += int(s.ext.get(raw["ext"], 0))
+            if raw.get("event") and event is not None:
+                base += int(event.get(raw["event"], 0))
+            if raw.get("half_health_of") and event is not None and game is not None:
+                ref = event.get(raw["half_health_of"])
+                if isinstance(ref, Ref):
+                    pl = game.state.players[ref.player]
+                    hp = (pl.shikigami[ref.shikigami].health
+                          if ref.shikigami is not None else pl.health)
+                    base += hp // 2  # "一半生命"：向下取整
             return base
         return int(raw)
 
@@ -571,14 +591,20 @@ class Game:
         atk_ref = Ref(player=self.state.active, shikigami=si)
         self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
-        # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）
-        grants = tuple(k for k in cdef.keywords if k not in CARD_LEVEL_KEYWORDS)
-        imms = tuple(bool((st.model_extra or {}).get("nested", False))
+        # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）；
+        # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
+        # 角色，获得吸血"），battle_immunity step 可带 Step.condition（鸩羽的条件免疫），
+        # convert_damage step = 毒蚀伤害→破甲转化——三者在此提取，不再按普通 step 执行
+        grants = tuple((k, None) for k in cdef.keywords if k not in CARD_LEVEL_KEYWORDS)
+        grants += tuple(((st.model_extra or {}).get("keyword"), st.condition)
+                        for st in block.steps if st.op == "grant_keyword")
+        imms = tuple((bool((st.model_extra or {}).get("nested", False)), st.condition)
                      for st in block.steps if st.op == "battle_immunity")
+        convert = any(st.op == "convert_damage" for st in block.steps)
         # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
         self.move_card(p, card, "graveyard")
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
-                             temp_grants=tuple(cdef.temp_grants))
+                             temp_grants=tuple(cdef.temp_grants), convert=convert)
         s.combat_power = 0
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
@@ -693,29 +719,35 @@ class Game:
             # 流程 5：获得——先抵消反向值再盈余同向（获得 5 护甲且持有 3 破甲 → 2 护甲）
             if kind == "fragile" and ref.shikigami is not None:
                 # 碧羽散华锚点（"获得破甲前"转化）：持有 fragile_to_damage 标记的式神
-                # 获得破甲改为受到等量伤害（标记经 ext 授予，卡牌数据属后续阶段）
+                # 获得破甲改为受到等量伤害（标记经 ext 授予；converted=True 防止与
+                # 毒蚀的伤害→破甲转化来回循环——转化类效果对同一事件链只生效一次）
                 s = p.shikigami[ref.shikigami]
                 if s.ext.get("fragile_to_damage"):
                     self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 {delta} 点伤害")
-                    self.deal_to_shikigami(ref, delta, None)
+                    self.deal_to_shikigami(ref, delta, None, converted=True)
                     return
             new = old + delta if kind == "shield" else old - delta
         holder.shield = new
-        self.emit("on_shield_changed", target=ref, old=old, new=new, reason=reason, kind=kind)
+        self.emit("on_shield_changed", target=ref, old=old, new=new, reason=reason, kind=kind,
+                  amount=delta, gained=delta > 0)
 
     # ---------- 出击 / 移动 ----------
 
     def _resolve_combat(self, atk_ref: Ref, attacker: ShikigamiState, *,
                         move: bool = True,
-                        grant_keywords: tuple[str, ...] = (),
-                        immunities: tuple[bool, ...] = (),
-                        temp_grants: tuple[EffectBlock, ...] = ()) -> None:
+                        grant_keywords: tuple = (),
+                        immunities: tuple = (),
+                        temp_grants: tuple[EffectBlock, ...] = (),
+                        convert: bool = False) -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
-        （终止点按实例移除，不误删式神原有同名关键字）；immunities 为作用域战斗伤害
-        免疫（元素 = nested：是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
-        一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）。
+        （终止点按实例移除，不误删式神原有同名关键字），元素为 (keyword, condition)——
+        condition 以 {"defender": 被攻击者} 在战斗开始时求值（"若攻击有破甲的角色"，
+        致命诱惑）；immunities 为作用域战斗伤害免疫，元素为 (nested, condition)
+        （鸩羽的条件免疫；nested = 是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
+        一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）；
+        convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）。
         """
         self._battle_seq += 1
         bid = self._battle_seq
@@ -723,11 +755,22 @@ class Game:
         grants: list[tuple[Ref, str, str]] = []
         self._battle_grants[bid] = grants
         self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
-        for kw in grant_keywords:
+        # 条件授予/免疫的求值事件：被攻击者 = 敌方战斗区式神，否则敌方牌手
+        def_event = {"defender": Ref(player=1 - atk_ref.player,
+                                     shikigami=self.state.players[1 - atk_ref.player].combat_index)}
+        for kw, cond in grant_keywords:
+            if cond is not None and not self._match(cond, def_event, atk_ref.player,
+                                                    holder=atk_ref):
+                continue  # 条件不满足（如被攻击者无破甲）：不授予
             cls = self._grant_keyword(attacker, kw)
             grants.append((atk_ref, kw, cls))
-        for nested in immunities:
+        for nested, cond in immunities:
+            if cond is not None and not self._match(cond, def_event, atk_ref.player,
+                                                    holder=atk_ref):
+                continue
             attacker.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
+        if convert:
+            self._battle_convert.add(bid)  # 毒蚀：伤害→破甲转化（伤害管线读取）
         for block in temp_grants:
             self.state.temp_grants.append(TempGrant(
                 block=block, controller=atk_ref.player, holder=atk_ref, battle=bid))
@@ -748,6 +791,7 @@ class Game:
                     st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
             # 移除本战斗绑定的一次性临时触发（已触发完的已随 uses 归零移除）
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
+            self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
             self._battle_stack.pop()
             # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
             if attacker.attack_buffs and not self._has_keyword(attacker, "keep_attack_buffs"):
@@ -1003,6 +1047,12 @@ class Game:
         if old is None:
             return
         cdef = self.db.cards[old.id]
+        pi = self.state.players.index(p)
+        # 形态离场事件在状态变更前发出（延时时机：先触发后执行）——离场形态自身的
+        # 形态能力此时仍可收集（碧羽散华的离场清除标记）；结算时形态已离场
+        self.emit("on_form_destroyed", player=pi, shikigami=i,
+                  uid=old.uid, reason=reason,
+                  target=Ref(player=pi, shikigami=i), card=old)
         s.form = None
         # 形态离场仅清除该形态授予的倒计时（rules.md ch10 消灭流程）；
         # 已被 set_countdown/能力注册替换的倒计时不受影响
@@ -1018,10 +1068,6 @@ class Game:
         s.base_health = d.health
         s.health = s.max_health
         self._log(f"{d.name} 的形态《{cdef.name}》被消灭（原因：{reason}）")
-        pi = self.state.players.index(p)
-        self.emit("on_form_destroyed", player=pi, shikigami=i,
-                  uid=old.uid, reason=reason,
-                  target=Ref(player=pi, shikigami=i), card=old)
 
     # ---------- 升级 / 结束回合 ----------
 
@@ -1121,6 +1167,9 @@ class Game:
         for s in p.shikigami:
             s.delayed[:] = [e for e in s.delayed if e.get("scope") != "turn"]
         p.ext.pop("feather_used_turn", None)
+        # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）
+        for pl in self.state.players:
+            pl.ext.pop("turn_marks", None)
         self._turn_start_revive(p, pi)
         self._turn_start_gain_orb(p, first, pi)
         pending_retreat = self._turn_start_schedule_retreat(p)
@@ -1316,10 +1365,12 @@ class Game:
         return self._has_keyword(s, "piercing")
 
     def deal_to_shikigami(self, ref: Ref, amount: int, source: Ref | None,
-                          *, kind: str = "effect", piercing: bool = False) -> None:
+                          *, kind: str = "effect", piercing: bool = False,
+                          converted: bool = False) -> None:
         """对式神造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
         self._run_damage_queue([_DamageEvent(source=source, victim=ref,
-                                             amount=amount, kind=kind, piercing=piercing)])
+                                             amount=amount, kind=kind, piercing=piercing,
+                                             converted=converted)])
 
     def deal_to_player(self, player_index: int, amount: int, source: Ref | None,
                        *, kind: str = "effect") -> None:
@@ -1441,6 +1492,12 @@ class Game:
             if other.source == ev.source and other.victim == ev.victim and other.kind == ev.kind:
                 ev.amount += other.amount
                 dq.remove(other)
+        # 批次 8 前：毒蚀转化——本次战斗中双方造成的伤害转化为等量破甲（战斗作用域
+        # 标记，于护甲计算后、扣减生命前生效；不再视为伤害：无扣减/气绝/吸血/on_damage）
+        if not ev.converted and any(b in self._battle_convert for b in self._battle_stack):
+            self._change_shield(ev.victim, ev.amount, "毒蚀", kind="fragile")
+            self._log(f"伤害转化为 {ev.amount} 点破甲（毒蚀）")
+            return
         # 批次 8：扣减生命
         if s is not None:
             # 不屈：生命 > 1 且伤害 >= 当前生命 → 保留 1 点生命，消耗全部一次性不屈
@@ -1457,7 +1514,9 @@ class Game:
             if self._affected_stack and ev.victim not in self._affected_stack[-1]:
                 self._affected_stack[-1].append(ev.victim)  # 出牌效果实际伤害过的式神
             self._queue_lifesteal(ev)  # 伤害后（延时，优先级 1 锚点）：吸血生成恢复生命事件
-            self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source, kind=ev.kind)
+            self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source,
+                      kind=ev.kind,
+                      battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
             p.health -= ev.amount
             self._log(f"{p.name} 受到 {ev.amount} 点伤害（剩余生命 {p.health}）")
@@ -1891,10 +1950,12 @@ class Game:
                 return  # Step 级条件不满足：跳过该步（条件迷你语言，见 targets.match_condition）
         refs = targets.resolve(self, step.target, ctx)
         if isinstance(params.get("amount"), dict):
-            # 动态数值（enhance 快照 / shield_of / power_of）：以 ctx 来源式神求值（援护/古尘之壁）
+            # 动态数值（enhance 快照 / shield_of / power_of / ext / 事件引用）：
+            # 以 ctx 来源式神与触发事件求值（援护/古尘之壁/鸩觉醒/毒之华）
             src = (self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
                    if ctx.source is not None and ctx.source.shikigami is not None else None)
-            params["amount"] = self._step_amount(step, ctx.card, src)
+            params["amount"] = self._step_amount(step, ctx.card, src,
+                                                 event=ctx.event, game=self)
         fn(self, ctx, targets=refs, **params)
 
     def _op_params(self, op: str, fn) -> frozenset:

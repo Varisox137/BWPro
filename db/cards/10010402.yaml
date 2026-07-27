@@ -7,6 +7,7 @@ rarity: SR
 level: 1
 cost: 1
 keywords: [fast]
+alt_remove_keywords: [fast]  # thoughts.txt 答复 (2)：增强后失去[瞬发]
 effects:
   steps:
     - op: generate

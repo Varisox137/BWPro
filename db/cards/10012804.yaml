@@ -1,0 +1,18 @@
+id: 10012804
+version: 20260724
+name: 毒蚀
+shikigami: 100128
+card_type: combat
+rarity: SR
+level: 2
+cost: 1
+keywords: [trigger]
+effects:
+  # convert_damage step：主动使用由战斗牌流程提取绑定本次战斗；响应插入使用
+  # （当鸩被攻击时）作为普通动作登记到被插入的战斗
+  when: on_before_assault
+  condition: {victim_shikigami: 100128}   # 响应收集不带 holder：显式式神 id（古尘之盾同例）
+  steps:
+    - {op: buff_power, amount: 4, target: {kind: self}}
+    - {op: convert_damage, to: fragile}
+text: "+4/+0。本次战斗中双方造成的伤害效果转化为等量的破甲。[响应]：{当鸩被攻击时，自动使用此牌。}"
