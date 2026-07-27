@@ -2,7 +2,8 @@
 
 运行：uv run python -m client.net [--server ws://127.0.0.1:1037/ws] [--debug] [--name 名字]
 
-- 创建房间（随机分配房间 id）或按 id 加入；开局前可粘贴卡组码（回车 = 默认卡组）。
+- 创建房间（随机分配房间 id）或按 id 加入；开局前从本地卡组文件
+  （~/.bwp.decks.json）选择卡组（client/deckbuilder.choose_deck）。
 - 服务端权威：指令与热坐 CLI 同一 cmd dict 协议；客户端只渲染服务端下发的
   GameState（本地 CardDatabase + Game 包装，不开局），"己方"视角为自己的座位。
 - --debug：创建 debug 对局（房间内允许 debug 指令，解析复用 client/cli.py）。
@@ -15,7 +16,7 @@ import json
 import os
 import threading
 
-from client import cli
+from client import cli, deckbuilder
 from core.engine import Game
 from core.model import GameState
 from db.loader import CardDatabase
@@ -201,13 +202,15 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
 
     choice = _input("[1] 创建房间 [2] 加入房间（含重连）> ")
     if choice == "1":
-        deck_code = _input("卡组码（回车 = 默认卡组）> ") or None
+        _, _, deck_code = deckbuilder.choose_deck(db, name)
         hello = {"type": "create", "name": name, "deck_code": deck_code,
                  "debug": debug}
     elif choice == "2":
         room_id = _input("房间 id > ")
         token = _input("重连令牌（首次加入回车跳过）> ") or None
-        deck_code = None if token else (_input("卡组码（回车 = 默认卡组）> ") or None)
+        deck_code = None
+        if not token:
+            _, _, deck_code = deckbuilder.choose_deck(db, name)
         hello = {"type": "join", "room_id": room_id, "name": name,
                  "deck_code": deck_code, "token": token}
     else:

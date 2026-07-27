@@ -5,9 +5,9 @@
 
 运行：uv run python -m client.cli
 一级菜单：热坐对战 / 卡组构筑（client/deckbuilder.py）/ 联机对战（client/net.py，
-服务端见 server/main.py）。数据为正式 YAML
-（CardDatabase.load：db/cards、db/shikigami）；热坐开局前双方可粘贴卡组码
-（db/deckcode.py）导入构筑，或跳过使用默认卡组（4 式神各 8 种不同名卡）。
+服务端见 server/main.py）。数据为正式 YAML（CardDatabase.load：db/cards、
+db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwp.decks.json，
+db/deckstore.py）选择卡组，文件为空时回退到卡组码输入或默认卡组。
 
 显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
 倒计时/战力/保甲/免疫/延迟能力/鼓舞/手牌修饰（增强/费用修正）均在场况中显示。
@@ -22,7 +22,6 @@ from client import deckbuilder
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
-from db import deckcode
 from db.loader import CardDatabase
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
@@ -482,24 +481,9 @@ def run_debug(game: Game, args: list[str]) -> dict:
 
 
 def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
-    """热坐开局前：输入卡组码导入，或跳过（回车）使用默认卡组
-    （现有 4 式神各 8 种不同名卡，共 32 张）。选定后展示该卡组的卡组码（导出）。"""
-    try:
-        line = input(f"[{player_name}] 卡组码（回车跳过 = 默认卡组）> ").strip()
-    except EOFError:
-        line = ""
-    if line:
-        try:
-            ids, cards = deckcode.deck_from_code(db, line)
-        except ValueError as e:
-            print(f"卡组码无效（{e}），改用默认卡组")
-            ids, cards = deckcode.default_deck(db)
-    else:
-        ids, cards = deckcode.default_deck(db)
-    names = "/".join(db.shikigami[s].name for s in ids)
-    code = deckcode.encode_deck(deckcode.group_deck(db, ids, cards))
-    print(f"[{player_name}] 卡组：{names}")
-    print(f"[{player_name}] 卡组码（导出/分享）：{code}")
+    """热坐开局前：从本地卡组文件（~/.bwp.decks.json）选择卡组槽位；
+    文件为空时回退到卡组码输入或默认卡组（见 client/deckbuilder.choose_deck）。"""
+    ids, cards, _ = deckbuilder.choose_deck(db, player_name)
     return ids, cards
 
 

@@ -1,10 +1,14 @@
-"""卡组构筑（交互式）：选择 4 名出战式神 → 各选至多 8 种卡牌并设定张数 → 导出卡组码。
+"""卡组构筑与战前选卡（交互式）。
 
-主菜单入口见 client/cli.py；卡组码格式见 db/deckcode.py。
+- 本地卡组文件（db/deckstore.py，~/.bwp.decks.json）：进入构筑时读取全部槽位，
+  可编辑现有槽位或新建；编辑/新建均支持卡组码导入；命名校验通过即自动写回。
+- choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；
+  文件为空时回退到卡组码输入 / 默认卡组）。
+- 卡组码格式见 db/deckcode.py；主菜单入口见 client/cli.py。
 """
 from __future__ import annotations
 
-from db import deckcode
+from db import deckcode, deckstore
 from db.deck import MAX_COPIES_PER_NAME, MAX_KINDS_PER_SHIKIGAMI, validate_deck
 from db.loader import CardDatabase
 
@@ -31,17 +35,25 @@ def _input(prompt: str) -> str:
         return ""
 
 
-def run_deckbuilder(db: CardDatabase) -> None:
-    """交互式卡组构筑；成功时打印卡组码（可在热坐对战开局前导入）。"""
+def _deck_summary(db: CardDatabase, ids: list[int]) -> str:
+    return "/".join(db.shikigami[s].name for s in ids)
+
+
+# ---------- 交互式构筑 ----------
+
+
+def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
+    """选择 4 名式神 → 各选卡牌并设定张数。校验通过返回 (式神 ids, 卡牌 ids)，
+    取消/不合法返回 None。"""
     pool = available_shikigami(db)
-    print("—— 卡组构筑：选择 4 名出战式神 ——")
+    print("—— 选择 4 名出战式神 ——")
     for i, d in enumerate(pool):
         print(f"  [{i + 1}] {d.name}（{d.faction}）")
     try:
         chosen = [pool[int(x) - 1] for x in _input("式神序号（空格分隔）> ").split()]
     except (ValueError, IndexError):
         print("序号有误，已取消构筑")
-        return
+        return None
     ids = [d.id for d in chosen]
     card_ids: list[int] = []
     for d in chosen:
@@ -56,9 +68,9 @@ def run_deckbuilder(db: CardDatabase) -> None:
             picked = cards if not line else [cards[int(x) - 1] for x in line.split()]
         except (ValueError, IndexError):
             print("序号有误，已取消构筑")
-            return
+            return None
         copies = {i + 1: 1 for i in range(len(picked))}
-        tune = _input(f"张数调整（如 1=2 3=2；回车 = 每种 1 张）> ")
+        tune = _input("张数调整（如 1=2 3=2；回车 = 每种 1 张）> ")
         for item in tune.split():
             try:
                 k, v = item.split("=")
@@ -74,7 +86,96 @@ def run_deckbuilder(db: CardDatabase) -> None:
     if errors:
         print("卡组不合法：")
         print("\n".join(errors))
-        return
-    code = deckcode.encode_deck(deckcode.group_deck(db, ids, card_ids))
-    print(f"卡组完成（共 {len(card_ids)} 张），卡组码（热坐对战开局前粘贴导入）：")
-    print(code)
+        return None
+    return ids, card_ids
+
+
+# ---------- 本地卡组槽位管理 ----------
+
+
+def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
+    """卡组构筑入口：读取本地卡组文件 → 选择槽位编辑或新建 → 卡组码导入 /
+    交互式构筑 → 校验通过自动写回本地文件。"""
+    decks = deckstore.load_decks(store_path)
+    print(f"—— 卡组构筑（本地卡组文件：{store_path}）——")
+    for i, d in enumerate(decks):
+        print(f"  [{i + 1}] {d['name']}")
+    line = _input("槽位序号 = 编辑该卡组；回车 = 新建 > ")
+    index: int | None = None
+    if line:
+        try:
+            index = int(line) - 1
+            entry = decks[index]
+            ids, cards = deckcode.deck_from_code(db, entry["code"])
+            print(f"当前卡组「{entry['name']}」：{_deck_summary(db, ids)}（{len(cards)} 张）")
+        except (ValueError, IndexError):
+            print("序号有误或槽位卡组已失效，已取消")
+            return
+    name = _input("卡组名称（回车 = 沿用/自动命名）> ")
+
+    code_line = _input("粘贴卡组码导入（回车 = 交互式构筑）> ")
+    if code_line:
+        try:
+            ids, card_ids = deckcode.deck_from_code(db, code_line)
+        except ValueError as e:
+            print(f"卡组码无效（{e}），未保存")
+            return
+        code = code_line
+    else:
+        result = _interactive_build(db)
+        if result is None:
+            return
+        ids, card_ids = result
+        code = deckcode.encode_deck(deckcode.group_deck(db, ids, card_ids))
+    if not name:
+        name = decks[index]["name"] if index is not None else _deck_summary(db, ids)
+    entry = {"name": name, "code": code}
+    if index is None:
+        decks.append(entry)
+        slot = len(decks)
+    else:
+        decks[index] = entry
+        slot = index + 1
+    deckstore.save_decks(decks, store_path)
+    print(f"卡组「{name}」已保存（共 {len(card_ids)} 张，槽位 {slot}）")
+    print(f"卡组码（导出/分享）：{code}")
+
+
+# ---------- 战前选卡 ----------
+
+
+def choose_deck(db: CardDatabase, label: str,
+                store_path=deckstore.PATH) -> tuple[list[int], list[int], str]:
+    """热坐/联机开局前选卡：读取本地卡组文件并要求从中选择槽位；
+    文件为空时回退到卡组码输入（回车 = 默认卡组）。
+    返回 (式神 ids, 卡牌 ids, 卡组码)。"""
+    decks = deckstore.load_decks(store_path)
+    if decks:
+        print(f"[{label}] 选择卡组：")
+        for i, d in enumerate(decks):
+            print(f"  [{i + 1}] {d['name']}")
+        line = _input(f"[{label}] 卡组序号 > ")
+        try:
+            entry = decks[int(line) - 1]
+            ids, cards = deckcode.deck_from_code(db, entry["code"])
+            print(f"[{label}] 使用卡组「{entry['name']}」")
+            return ids, cards, entry["code"]
+        except (ValueError, IndexError):
+            print("序号有误，改用默认卡组")
+    else:
+        print(f"[{label}] 本地卡组文件为空（可先在主菜单「卡组构筑」中创建）")
+        code_in = _input(f"[{label}] 卡组码（回车跳过 = 默认卡组）> ")
+        if code_in:
+            try:
+                ids, cards = deckcode.deck_from_code(db, code_in)
+                code = code_in
+                print(f"[{label}] 卡组：{_deck_summary(db, ids)}")
+                print(f"[{label}] 卡组码（导出/分享）：{code}")
+                return ids, cards, code
+            except ValueError as e:
+                print(f"卡组码无效（{e}），改用默认卡组")
+    ids, cards = deckcode.default_deck(db)
+    code = deckcode.encode_deck(deckcode.group_deck(db, ids, cards))
+    print(f"[{label}] 卡组（默认）：{_deck_summary(db, ids)}")
+    print(f"[{label}] 卡组码（导出/分享）：{code}")
+    return ids, cards, code
