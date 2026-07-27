@@ -442,10 +442,12 @@ class Game:
                           target=Ref(player=self.state.active, shikigami=si))
         self.emit("on_card_played", player=self.state.active, uid=uid)
 
-    def _combat_card_stats(self, block: EffectBlock,
-                           card: CardInstance | None = None,
-                           s: ShikigamiState | None = None) -> tuple[int, int]:
+    def combat_card_stats(self, block: EffectBlock,
+                          card: CardInstance | None = None,
+                          s: ShikigamiState | None = None) -> tuple[int, int]:
         """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。
+
+        公开方法：引擎内部结算与客户端展示（client/cli.py 手牌数值段）共用。
 
         amount 支持 {"enhance": true, "base": n} 形式（禁锢之刀/冲撞）：base + 实例已装配的
         enhance 修饰（打出装配快照，见 _materialize）；以及 {"shield_of": "self"}（尘刀：
@@ -489,7 +491,7 @@ class Game:
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
         block = method.effects if (method and method.effects is not None) else cdef.effects
-        power, shield = self._combat_card_stats(block, card, s)
+        power, shield = self.combat_card_stats(block, card, s)
         atk_ref = Ref(player=self.state.active, shikigami=si)
         self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
@@ -517,7 +519,7 @@ class Game:
         pi = self.state.players.index(p)
         ref = Ref(player=pi, shikigami=si)
         block = cdef.effects
-        power, shield = self._combat_card_stats(block, card, s)
+        power, shield = self.combat_card_stats(block, card, s)
         self._apply_combat_stats(ref, s, power, shield, battle_scoped=True)
         # 关键字（fast/trigger 为卡牌级除外）授予并登记到当前战斗（终止点按实例移除）
         if self._battle_stack:

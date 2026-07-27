@@ -125,7 +125,7 @@ def _stats_label(game: Game, p, c) -> str:
     if cd.card_type == "combat":
         seat = _seat_map(p).get(cd.shikigami) if cd.shikigami is not None else None
         s = p.shikigami[seat] if seat is not None else None
-        power, shield = game._combat_card_stats(cd.effects, c, s)
+        power, shield = game.combat_card_stats(cd.effects, c, s)
         if power:
             parts.append(f"战力{power:+d}")
         if shield:
