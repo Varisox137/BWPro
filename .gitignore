@@ -10,5 +10,10 @@ __pycache__/
 # Claude Code local cache
 .tokensave/
 
-# 原始卡牌数据（工作参考，不入库）
-card_data_raw.md
+# 冒烟测试隔离 HOME
+.smoke_home/
+
+# 本地工作笔记（有效结论已并入 docs/，不入库）
+CLAUDE.md
+questions.md
+thoughts.txt
