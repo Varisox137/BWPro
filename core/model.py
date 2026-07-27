@@ -150,6 +150,9 @@ class ExecContext:
     card_id: int | None = None  # 游离触发器的来源卡 id（add_mod 写入目标定位用）
     is_ability: bool = False  # 是否式神能力来源（基础/觉醒/形态能力、形态倒计时、延迟"会"）
     # ——卡牌效果（on_play/响应/卡牌触发器/临时触发）为 False；贯通继承等的判定依据
+    memo: dict[str, Any] | None = None  # 块内步骤间暂存（由 _resolve_block 初始化）：
+    # damage 动作写入 last_damage_victims（上一步伤害的受伤者），后续 step 以
+    # TargetSpec(kind="context", key="last_damage_victims") 引用（风神一扇）
 
 
 class PlayerState(BaseModel):

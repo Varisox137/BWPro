@@ -6,7 +6,8 @@ kind：
 - choose:  玩家在 pool 中选择的目标。选择操作只会发生在当前回合方——
            规则约定：非回合方不存在任何带选择的操作（见 CLAUDE.md）
 - all:     pool 中全部合法对象
-- context: 取触发事件 payload 中的 Ref（key 指定字段名），响应/被动常用
+- context: 取触发事件 payload 中的 Ref（key 指定字段名），响应/被动常用；
+           支持列表值（affected_refs）与块内暂存（ctx.memo 的 last_damage_victims）
 
 pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / self_player
      / projectile（投射：敌方战斗区式神，空则敌方牌手）/ enemy_combat（敌方战斗区式神）
@@ -85,8 +86,14 @@ def resolve(game, spec, ctx) -> list[Ref]:
     if spec.kind == "choose":
         return list(ctx.chosen or [])
     if spec.kind == "context":
-        ref = (ctx.event or {}).get(spec.key)
-        return [ref] if isinstance(ref, Ref) else []
+        val = (ctx.event or {}).get(spec.key)
+        if val is None and getattr(ctx, "memo", None):
+            val = ctx.memo.get(spec.key)  # 块内暂存（last_damage_victims）
+        if isinstance(val, Ref):
+            return [val]
+        if isinstance(val, list):  # 列表 payload（affected_refs）/ 块内暂存
+            return [r for r in val if isinstance(r, Ref)]
+        return []
     raise ValueError(f"未知目标类型: {spec.kind}")
 
 

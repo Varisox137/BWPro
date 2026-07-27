@@ -13,8 +13,9 @@ def make_test_db() -> CardDatabase:
     return CardDatabase.load()
 
 
-# 可构筑式神 id（从正式数据派生，按 id 排序）
-TEST_IDS = sorted(d.id for d in make_test_db().shikigami.values() if d.kind == "shikigami")
+# 可构筑式神 id（从正式数据派生，按 id 排序）；测试卡组取前 4 名（组卡规则限 4 名出战，
+# 正式数据增至 5 名式神后须截断，否则 make_test_deck 产出非法卡组）
+TEST_IDS = sorted(d.id for d in make_test_db().shikigami.values() if d.kind == "shikigami")[:4]
 
 
 def make_test_deck(shikigami_ids: list[int] | None = None) -> list[int]:

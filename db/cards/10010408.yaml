@@ -1,0 +1,29 @@
+id: 10010408
+version: 20260724
+name: 觉醒·大天狗
+shikigami: 100104
+card_type: spell
+subtype: awaken
+rarity: SSR
+level: 3
+cost: 1
+effects:
+  # [倒计时]-1 先于觉醒替换结算（对旧倒计时能力生效；觉醒替换会清除非形态授予的
+  # 倒计时——若旧倒计时未被归零消耗，将被替换清除）
+  steps:
+    - {op: countdown_delta, amount: -1, target: {kind: self}}
+    - {op: buff_power, amount: 2, perm: true, target: {kind: self}}
+    - {op: buff_health, amount: 2, perm: true, target: {kind: self}}
+abilities:
+  # 与基础能力同构，[倒计时] 初值 1
+  - when: on_card_played
+    condition: {player: self, card_type: spell, subtype: null, shikigami: 100104}
+    steps:
+      - op: set_countdown
+        target: {kind: self}
+        initial: 1
+        once: true
+        record: true
+        steps:
+          - {op: recast_recorded}
+text: 使大天狗的[倒计时]-1。[觉醒]：{大天狗使用非觉醒法术后，[倒计时1]：{再次使用该法术}。}

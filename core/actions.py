@@ -42,6 +42,9 @@ def damage(game, ctx, *, targets: list[Ref], amount: int,
             game.deal_to_player(ref.player, amount, ctx.source)
         else:
             game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce)
+    if ctx.memo is not None:
+        # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用（风神一扇）
+        ctx.memo["last_damage_victims"] = [r for r in targets if r.shikigami is not None]
 
 
 @action("heal")
@@ -186,7 +189,7 @@ def keep_shield(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("add_mod")
 def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
-            amount: int = 1, cap: int | None = None) -> None:
+            amount: int = 1, cap: int | None = None, require: dict | None = None) -> None:
     """写入修饰（docs/enhance-design.md 写入三目标；targets 忽略）。
 
     - to=persistent：写入控制者的持久 store `card_mods[ctx.card_id]`（"本局游戏每……"类，
@@ -195,10 +198,14 @@ def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
       之后才抽到的同名复制不受影响）。
     - to=instance：写入来源实例自身 `ctx.card.mods[key]`（实例计数器，如风符·龙的目标数）。
     cap 为累积上限（如"最多+3"）。
+    require={"key": k, "ge": n}：条件写入——同一 store 中键 k 的当前值 ≥ n 才执行
+    本次写入（吾即正义"使用过 10 次法术则变为"：先计数、再按计数置位 transformed）。
     """
     p = game.state.players[ctx.controller]
 
     def _bump(store: dict, k: str) -> None:
+        if require is not None and store.get(require.get("key"), 0) < require.get("ge", 1):
+            return  # 条件写入：计数未达标，跳过
         store[k] = store.get(k, 0) + amount
         if cap is not None:
             store[k] = min(store[k], cap)
@@ -316,8 +323,13 @@ def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 
 
 @action("generate")
 def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
-             card_type: str | None = None, count: int = 1, zone: str = "hand") -> None:
-    """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。"""
+             card_type: str | None = None, count: int = 1, zone: str = "hand",
+             max_level: int | str | None = None, exclude_self: bool = False) -> None:
+    """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。
+
+    max_level="source"：卡牌等级 ≤ 来源式神当前等级（吾即正义"小于等于自身等级"）；
+    exclude_self=True：排除来源卡牌同 id（"其他法术牌"）。
+    """
     from core.model import CardInstance
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -325,9 +337,19 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
     else:
         sid = int(shikigami)
+    lv: int | None = None
+    if max_level is not None:
+        if max_level == "source":
+            if ctx.source is None or ctx.source.shikigami is None:
+                raise ValueError("generate(max_level=source) 需要来源式神")
+            lv = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].level
+        else:
+            lv = int(max_level)
     pool = [c.id for c in game.db.cards.values()
             if not c.token and c.shikigami == sid
-            and (card_type is None or c.card_type == card_type)]
+            and (card_type is None or c.card_type == card_type)
+            and (lv is None or c.level <= lv)
+            and not (exclude_self and ctx.card is not None and c.id == ctx.card.id)]
     if not pool:
         return
     p = game.state.players[ctx.controller]
@@ -426,6 +448,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
     随条目存储，触发结算时作为效果目标。气绝时清除（变形离场保留——变形未实现）。
     scope="turn"："本回合"类（魔音扰心主动使用）——己方回合开始清除（未消耗时）。
+    scope="play"："本次使用期间"类（黑羽之刃的消灭抽牌）——该次出牌结算结束时清除。
     secret=True 时选择目标对敌方保密（会：所选目标仅己方可见）——联机状态脱敏
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     """
@@ -562,13 +585,19 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     if cid is None:
         return
     from core.model import CardInstance
+    p = game.state.players[ctx.controller]
     cdef = game.db.cards[cid]
     inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进入任何区域
     game.state.next_uid += 1
     game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了《{cdef.name}》")
-    game._resolve_block(cdef.effects, ExecContext(
-        controller=ctx.controller, source=ctx.source, card=inst, is_ability=True))
-    game.emit("on_card_played", player=ctx.controller, uid=inst.uid)
+    game._affected_stack.append([])
+    try:
+        game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
+            controller=ctx.controller, source=ctx.source, card=inst, is_ability=True))
+    finally:
+        affected = game._affected_stack.pop()
+    game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束（黑羽之刃）
+    game._emit_card_played(ctx.controller, inst.uid, cdef, affected)
 
 
 @action("retreat")

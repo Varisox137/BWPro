@@ -1,0 +1,20 @@
+id: 100104
+version: 20260724
+name: 大天狗
+faction: 苍叶
+power: 3
+health: 4
+ability:
+  # 使用非觉醒法术后：记录该法术并注册一次型[倒计时2]，归零凭空免费再次使用
+  # （记录的法术随气绝丢失——倒计时能力气绝清除，ext["recorded_card"] 随之失效）
+  when: on_card_played
+  condition: {player: self, card_type: spell, subtype: null, shikigami: 100104}
+  steps:
+    - op: set_countdown
+      target: {kind: self}
+      initial: 2
+      once: true
+      record: true
+      steps:
+        - {op: recast_recorded}
+text: 大天狗使用非觉醒法术后，[倒计时2]：{再次使用该法术}

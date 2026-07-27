@@ -97,6 +97,10 @@ class Game:
         # （rules.md:52"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
         self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
         self._op_param_cache: dict[str, frozenset] = {}  # op 函数签名缓存（Step.condition 分派用）
+        # 出牌效果伤害记录栈：结算打出/响应/自动使用的效果块期间压栈一个列表，
+        # 伤害管线把实际受伤的式神记入栈顶，弹出后随 on_card_played 的
+        # affected_refs 发出（暴风之主"对受影响的敌方式神各造成1点伤害"）
+        self._affected_stack: list[list[Ref]] = []
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -432,36 +436,42 @@ class Game:
             self.move_card(p, card, "graveyard")
             self._log(f"《{cdef.name}》的使用被无效化")
             return
-        if cdef.card_type == "form":
-            # 形态牌：从手牌/原区域移除并立即结附（响应插入使用同样走 _play_form_card）
-            if si is None:
-                raise IllegalAction("形态牌必须有所属式神")
-            self._play_form_card(p, si, card, cdef, self.state.active, chosen)
-        elif cdef.card_type == "combat":
-            # 战斗牌：以完整战斗事件流程结算（移入战斗区、战力/一次性护甲、
-            # 战斗前/后时机、战斗伤害），结算完后进入墓地。
-            if si is None:
-                raise IllegalAction("战斗牌必须有所属式神")
-            self._resolve_combat_card(p, si, card, cdef, method)
-        else:
-            self.move_card(p, card, "graveyard")
-            ctx = ExecContext(
-                controller=self.state.active,
-                source=Ref(player=self.state.active, shikigami=si) if si is not None else None,
-                card=card,
-                chosen=chosen,
-            )
-            block = self._played_block(p, cdef, card, method)
-            self._resolve_block(block, ctx)
-            # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活保留觉醒状态）
-            if cdef.subtype == "awaken" and si is not None:
-                p.shikigami[si].awakened = cdef.id
-                self._register_ability_countdown(self.state.active, si)  # 觉醒替换：注册觉醒能力的倒计时块
-                self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
-                self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid,
-                          target=Ref(player=self.state.active, shikigami=si))
+        self._affected_stack.append([])
+        try:
+            if cdef.card_type == "form":
+                # 形态牌：从手牌/原区域移除并立即结附（响应插入使用同样走 _play_form_card）
+                if si is None:
+                    raise IllegalAction("形态牌必须有所属式神")
+                self._play_form_card(p, si, card, cdef, self.state.active, chosen)
+            elif cdef.card_type == "combat":
+                # 战斗牌：以完整战斗事件流程结算（移入战斗区、战力/一次性护甲、
+                # 战斗前/后时机、战斗伤害），结算完后进入墓地。
+                if si is None:
+                    raise IllegalAction("战斗牌必须有所属式神")
+                self._resolve_combat_card(p, si, card, cdef, method)
+            else:
+                self.move_card(p, card, "graveyard")
+                ctx = ExecContext(
+                    controller=self.state.active,
+                    source=Ref(player=self.state.active, shikigami=si) if si is not None else None,
+                    card=card,
+                    chosen=chosen,
+                )
+                block = self._played_block(p, cdef, card, method)
+                self._resolve_block(block, ctx)
+                # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活保留觉醒状态）
+                if cdef.subtype == "awaken" and si is not None:
+                    p.shikigami[si].awakened = cdef.id
+                    self._register_ability_countdown(self.state.active, si)  # 觉醒替换：注册觉醒能力的倒计时块
+                    self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
+                    self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid,
+                              target=Ref(player=self.state.active, shikigami=si))
+        finally:
+            affected = self._affected_stack.pop()
+        if si is not None:
+            self._clear_play_delayed(p.shikigami[si])  # "本次使用期间"延迟能力窗口结束
         self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
-        self.emit("on_card_played", player=self.state.active, uid=uid)
+        self._emit_card_played(self.state.active, uid, cdef, affected)
 
     def _is_transformed(self, p: PlayerState, cdef: CardDef,
                         card: CardInstance | None = None) -> bool:
@@ -489,6 +499,24 @@ class Game:
         if "golden_feather" in cdef.tags:
             p.ext["feather_used_game"] = p.ext.get("feather_used_game", 0) + 1
             p.ext["feather_used_turn"] = p.ext.get("feather_used_turn", 0) + 1
+
+    def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
+                          affected: list[Ref] | None = None) -> None:
+        """使用后1（延时时机 on_card_played）统一发点。
+
+        payload 携带卡牌静态信息（card_type/subtype/shikigami——触发块条件匹配用，
+        如"使用非觉醒法术后"）与 affected_refs：该次出牌效果实际伤害过的式神列表
+        （暴风之主"对受影响的敌方式神各造成1点伤害"以 context 目标读取）。
+        """
+        self.emit("on_card_played", player=player, uid=uid, card_type=cdef.card_type,
+                  subtype=cdef.subtype, shikigami=cdef.shikigami,
+                  affected_refs=list(affected or ()))
+
+    @staticmethod
+    def _clear_play_delayed(s: ShikigamiState) -> None:
+        """清除 scope="play"（"本次使用期间"）的延迟能力：窗口随该次出牌结算结束
+        （黑羽之刃的消灭抽牌——未消灭不遗留到后续出牌/战斗）。"""
+        s.delayed[:] = [e for e in s.delayed if e.get("scope") != "play"]
 
     def combat_card_stats(self, block: EffectBlock,
                           card: CardInstance | None = None,
@@ -1426,6 +1454,8 @@ class Game:
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
+            if self._affected_stack and ev.victim not in self._affected_stack[-1]:
+                self._affected_stack[-1].append(ev.victim)  # 出牌效果实际伤害过的式神
             self._queue_lifesteal(ev)  # 伤害后（延时，优先级 1 锚点）：吸血生成恢复生命事件
             self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source, kind=ev.kind)
         else:
@@ -1806,14 +1836,14 @@ class Game:
             # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
             self._apply_response_combat(p, si, ctx.card, cdef)
             self._account_card_played(p, cdef)
-            self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
+            self._emit_card_played(ctx.controller, ctx.card.uid, cdef)
             return True
         if cdef.card_type == "form" and si is not None:
             # 响应形态牌插入使用：立即结附（风符·瞬）；牌不进墓地，形态离场才进
             # 形态牌的进场时效果镜像主动使用的形态分支（响应形态同样结算）
             self._play_form_card(p, si, ctx.card, cdef, ctx.controller, ctx.chosen)
             self._account_card_played(p, cdef)
-            self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
+            self._emit_card_played(ctx.controller, ctx.card.uid, cdef)
             return True
         self.move_card(p, ctx.card, "graveyard")
         return False
@@ -1824,20 +1854,28 @@ class Game:
         按 block.steps 顺序执行动作。mode="interleaved" 时每步后清空队列，
         允许其它效果插入；mode="atomic" 时步骤连发，队列留到块外统一结算。
         """
+        if ctx.memo is None:
+            ctx.memo = {}  # 块内步骤间暂存（damage 记录 last_damage_victims 等）
+        affected: list[Ref] | None = None
         if ctx.triggered and ctx.card is not None:
             p = self.state.players[ctx.controller]
             cdef = self.db.cards[ctx.card.id]
             if self._settle_response_card(p, cdef, ctx):
                 return
-        for step in block.steps:
-            self._run_step(step, ctx)
-            if block.mode == "interleaved":
-                self._drain_queue()  # 步骤之间允许其它效果结算
+            self._affected_stack.append([])  # 响应法术：记录该次使用伤害过的式神
+        try:
+            for step in block.steps:
+                self._run_step(step, ctx)
+                if block.mode == "interleaved":
+                    self._drain_queue()  # 步骤之间允许其它效果结算
+        finally:
+            if ctx.triggered and ctx.card is not None:
+                affected = self._affected_stack.pop()
         # mode == "atomic"：步骤连发，队列留到块外统一结算
         if ctx.triggered and ctx.card is not None:
             # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
             self._account_card_played(p, cdef)
-            self.emit("on_card_played", player=ctx.controller, uid=ctx.card.uid)
+            self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected)
 
     def _run_step(self, step: Step, ctx: ExecContext) -> None:
         fn = actions.ACTIONS.get(step.op)

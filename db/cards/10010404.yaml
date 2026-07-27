@@ -1,0 +1,19 @@
+id: 10010404
+version: 20260724
+name: 黑羽之刃
+shikigami: 100104
+card_type: spell
+rarity: R
+level: 2
+cost: 1
+effects:
+  steps:
+    # scope="play"："本次使用期间"窗口——该次出牌结算结束时清除，未消灭不留存
+    - op: delay_grant
+      when: on_shikigami_defeated
+      condition: {victim_side: enemy, victim_kind: shikigami, source_side: friendly}
+      scope: play
+      steps:
+        - {op: draw, count: 1}
+    - {op: damage, amount: 4, target: {kind: all, pool: projectile}}
+text: "[投射]：{造成4点伤害，若消灭敌方式神则抽一张牌}"
