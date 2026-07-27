@@ -1,0 +1,26 @@
+id: 10012404
+version: 20260724
+name: 觉醒·神乐歌
+shikigami: 100124
+card_type: spell
+subtype: awaken
+rarity: R
+level: 2
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+abilities:
+  # 觉醒倒计时（initial 3，来源=觉醒牌 id）：己方其他式神倒计时-1 并获得 1 力量与 1 生命
+  # （无倒计时能力者修正 -0；增益为临时修正，气绝清除）
+  - countdown: 3
+    steps:
+      - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
+      - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
+      - {op: buff_health, amount: 1, target: {kind: all, pool: friendly_others}}
+  # 使用妖琴师的觉醒法术牌时：倒计时-3（含本张）
+  - when: on_card_played
+    condition: {player: self, card_type: spell, subtype: awaken, shikigami: 100124}
+    steps:
+      - {op: countdown_delta, amount: -3, target: {kind: self}}
+text: "[觉醒]：{[倒计时3]：{己方其他式神倒计时-1并获得1力量与1生命}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"

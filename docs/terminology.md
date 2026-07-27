@@ -169,6 +169,8 @@
 | 回合级战斗免疫 | `grant_immunity`（动作） | scope="turn"：目标式神免疫战斗伤害到当前回合结束——以回合号记账（immunities 条目 {"turn": n}），`_combat_immune` 按回合号比对自然过期（不可饶恕用） | ✅ |
 | 弃牌计数暂存 | `discarded_count`（memo 键） | discard 动作结算后把实际弃牌数写入块内暂存 `ctx.memo["discarded_count"]`；draw 的 count 支持 {"memo": key} 读取（射怪鸟事"弃多少抽多少"两步组合） | ✅ |
 | 使用方式觉醒门控 | `requires_awaken`（PlayMethod 扩展字段） | 选择该使用方式时所属式神须已觉醒，否则 IllegalAction（黄金羽觉醒后"以敌方式神为目标"方式） | ✅ |
+| 响应效果覆盖 | `response`（CardDef） | 响应牌的效果块覆盖：主动使用效果与响应效果结构不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/结算改读本块；缺省用 effects | ✅ |
+| 倒计时重放 | `replay_countdown`（动作）/ `_countdown_block_for` | 按 `countdown_history` 首次出现顺序依次执行来源属于目标式神的倒计时能力块（每种至多一次；基础=式神 id、觉醒=觉醒牌 id、形态=形态牌 id 找回对应块；大合奏用，风韵雅乐同接口） | ✅ |
 
 **ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）：
 

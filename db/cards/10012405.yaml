@@ -1,0 +1,15 @@
+id: 10012405
+version: 20260724
+name: 疯魔琴心
+shikigami: 100124
+card_type: spell
+rarity: SR
+level: 2
+cost: 1
+target: {kind: choose, pool: enemy_shikigami}
+effects:
+  # 目标敌方式神无倒计时能力时 +2 修正为 -0（空操作）；自身 -2 可立即归零
+  steps:
+    - {op: countdown_delta, amount: 2}
+    - {op: countdown_delta, amount: -2, target: {kind: self}}
+text: 使一个敌方式神的[倒计时]+2，使妖琴师的[倒计时]-2

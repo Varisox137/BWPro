@@ -1,0 +1,15 @@
+id: 10012408
+version: 20260724
+name: 余音
+shikigami: 100124
+card_type: spell
+rarity: SR
+level: 3
+cost: 1
+effects:
+  # 妖琴师 -3 可立即归零；己方其他未气绝式神 -1（气绝者不在目标池，
+  # 无倒计时能力者修正 -0）
+  steps:
+    - {op: countdown_delta, amount: -3, target: {kind: self}}
+    - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
+text: 使妖琴师的[倒计时]-3，使己方其他未气绝式神的[倒计时]-1

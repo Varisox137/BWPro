@@ -588,6 +588,39 @@ def set_countdown(game, ctx, *, targets: list[Ref], initial: int,
         game._log(f"{game.db.shikigami[s.id].name} 获得了倒计时 {initial} 的能力")
 
 
+@action("replay_countdown")
+def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "self") -> None:
+    """按本局 countdown_history 的首次出现顺序，依次执行来源属于目标式神的倒计时
+    能力块（每种至多一次；targets 忽略；大合奏"本局游戏妖琴师的基础能力每生效过一种，
+    此牌便具有对应效果"——维护者答复：按 4 种基础/觉醒倒计时能力的生效顺序依次执行）。
+
+    来源归属：id == 式神 id（基础）或卡牌 shikigami == 式神 id（觉醒牌/形态牌）；
+    找不回对应块（_countdown_block_for）的历史条目跳过。重放为卡牌效果（非能力来源）。
+    """
+    if shikigami == "self":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("replay_countdown(shikigami=self) 需要来源式神")
+        sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+    else:
+        sid = int(shikigami)
+    p = game.state.players[ctx.controller]
+    seen: set[int] = set()
+    for src in p.ext.get("countdown_history", []):
+        if src in seen:
+            continue  # 每种至多一次（按首次出现顺序）
+        if src != sid and not (src in game.db.cards
+                               and game.db.cards[src].shikigami == sid):
+            continue  # 非目标式神的倒计时来源（含其召唤物/其他式神）
+        block = game._countdown_block_for(src)
+        if block is None or not block.steps:
+            continue
+        seen.add(src)
+        cname = game.db.cards[ctx.card.id].name if ctx.card is not None else "效果"
+        game._log(f"《{cname}》重放了{game.db.shikigami[sid].name}的倒计时效果（来源 {src}）")
+        game._resolve_block(block, ExecContext(
+            controller=ctx.controller, source=ctx.source, card=ctx.card))
+
+
 @action("recast_recorded")
 def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     """凭空生成来源式神记录的卡牌的同名牌并免费自动使用（大天狗倒计时；targets 忽略）。

@@ -150,6 +150,9 @@ class CardDef(BaseModel):
     countdown_effects: EffectBlock | None = None  # 倒计时归零时执行的效果块（重置为初始值后执行）
     triggers: list[EffectBlock] = Field(default_factory=list)  # 卡牌触发器：游离触发块（when≠on_play），
     # 不依附在场式神，每次 emit 全库扫描匹配；修饰写入目标由写入动作（add_mod 等）指定
+    response: EffectBlock | None = None  # 响应牌效果块覆盖：主动使用效果与响应效果结构
+    # 不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/
+    # 结算改读本块；缺省（None）用 effects
     temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、
     # 绑定该次战斗的一次性触发（uses=1，战斗终止点移除未用者）
     methods: list[PlayMethod] = Field(default_factory=list)  # 使用方式（多择子选项）

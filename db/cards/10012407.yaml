@@ -1,0 +1,25 @@
+id: 10012407
+version: 20260724
+name: 觉醒·镇魂歌
+shikigami: 100124
+card_type: spell
+subtype: awaken
+rarity: R
+level: 3
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+    - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+abilities:
+  # 觉醒倒计时（initial 3，来源=觉醒牌 id）：抽一张牌，获得 1 点鬼火
+  - countdown: 3
+    steps:
+      - {op: draw, count: 1}
+      - {op: gain_orb, amount: 1}
+  # 使用妖琴师的觉醒法术牌时：倒计时-3（含本张）
+  - when: on_card_played
+    condition: {player: self, card_type: spell, subtype: awaken, shikigami: 100124}
+    steps:
+      - {op: countdown_delta, amount: -3, target: {kind: self}}
+text: "[觉醒]：{[倒计时3]：{抽一张牌，获得1点鬼火}。当你使用妖琴师的[觉醒]法术牌时，使妖琴师的倒计时-3。}"

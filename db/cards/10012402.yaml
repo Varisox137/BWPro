@@ -1,0 +1,14 @@
+id: 10012402
+version: 20260724
+name: 惊弦
+shikigami: 100124
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+target: {kind: choose, pool: any_shikigami}
+effects:
+  # 无倒计时能力/倒计时为 0 的目标修正为 -0（空操作）；减到 ≤0 走归零流程
+  steps:
+    - {op: countdown_delta, amount: -2}
+text: 使一个式神的[倒计时]-2

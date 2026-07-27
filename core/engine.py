@@ -1267,6 +1267,21 @@ class Game:
         if found is not None:
             self._register_countdown(s, initial=found.countdown, block=found, source=source)
 
+    def _countdown_block_for(self, source: int) -> EffectBlock | None:
+        """按倒计时来源 id 找回对应的倒计时能力块（countdown_history 重放用，大合奏）。
+
+        基础=式神 id（式神定义的静态倒计时块）；觉醒=觉醒牌 id（觉醒能力块中的
+        倒计时块）；形态=形态牌 id（countdown_effects）。找不回返回 None（跳过）。
+        """
+        d = self.db.shikigami.get(source)
+        if d is not None:
+            return next((b for b in d.all_abilities if b.countdown is not None), None)
+        cdef = self.db.cards.get(source)
+        if cdef is not None:
+            block = next((b for b in cdef.abilities if b.countdown is not None), None)
+            return block if block is not None else cdef.countdown_effects
+        return None
+
     def _countdown_zero(self, pi: int, si: int) -> None:
         """倒计时归零流程（rules.md ch12 流程 4 修订版；回合开始批次与 countdown_delta 共用）。
 
@@ -1813,6 +1828,11 @@ class Game:
             s.delayed[:] = [e for e in s.delayed if e["uses"] > 0]
         return out
 
+    @staticmethod
+    def _response_block(cdef: CardDef) -> EffectBlock:
+        """响应牌实际结算的效果块：response 覆盖优先（魔音扰心主动/响应结构不同），缺省 effects。"""
+        return cdef.response if cdef.response is not None else cdef.effects
+
     def _collect_responses(self, event: dict, pi: int) -> list[_Pending]:
         """收集玩家 pi 的响应牌（调用方需已确认其为非回合方且本时机未占用名额）。
 
@@ -1824,7 +1844,7 @@ class Game:
         candidates: list[tuple[int, CardInstance, EffectBlock, int | None]] = []
         for card in p.hand:
             cdef = self.db.cards[card.id]
-            eb = cdef.effects
+            eb = self._response_block(cdef)
             if "trigger" not in cdef.keywords or eb.when != event["name"]:
                 continue
             si = self._find_shikigami(p, cdef.shikigami) if cdef.shikigami is not None else None
@@ -1878,7 +1898,8 @@ class Game:
         # 收集到结算之间局面可能已变化：响应牌结算时必须复查条件、鬼火、消耗、使用者
         if ctx.card not in p.hand:
             return True
-        if ctx.event is not None and not self._match(cdef.effects.condition, ctx.event, ctx.controller):
+        if ctx.event is not None and not self._match(
+                self._response_block(cdef).condition, ctx.event, ctx.controller):
             return True
         si: int | None = None
         if cdef.shikigami is not None:
