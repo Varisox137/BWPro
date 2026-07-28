@@ -20,6 +20,6 @@ __pycache__/
 .serena/
 
 # 本地工作笔记（有效结论已并入 docs/，不入库）
-CLAUDE.md
+AGENTS.md
 questions.md
 thoughts.txt
