@@ -298,3 +298,68 @@ def test_awaken_yaodao_revive_grants_haste(db, make_game):
     g.apply({"op": "end_turn"})  # A 回合开始：复活
     assert not a.defeated
     assert "haste" in a.one_shot_keywords  # 复活再次获得
+
+
+# ==========================================================================
+# card_aura 数值通道（power/shield，可叠加）与回合方限定（turn，伺机底层）
+# ==========================================================================
+
+def _aura_grant_card(db, cid, sid=100101, **kw):
+    """卡牌光环授予法术：steps 为一个 card_aura。"""
+    db.cards[cid] = F.card(cid, shikigami=sid, token=True,
+                           steps=[F.Step(op="card_aura", shikigami=sid, **kw)])
+    return cid
+
+
+def _plain_combat(db, cid=10010165, sid=100101):
+    """0 战力战斗牌（便于观察光环数值）。"""
+    db.cards[cid] = F.card(cid, shikigami=sid, card_type="combat", token=True,
+                           steps=[F.Step(op="buff_power", amount=1, target=SELF)])
+    return cid
+
+
+def test_card_aura_power_shield(db, make_game):
+    """card_aura 数值通道：战斗牌战力/一次性护甲读取时叠加光环数值。"""
+    _aura_grant_card(db, 10010163, power=2, shield=1)
+    _plain_combat(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    move(g, 1, 0)
+    F.play(g, 0, 10010163)
+    F.play(g, 0, 10010165)
+    assert pb.shikigami[0].defeated       # 攻击 3 + 战力（1+2）= 6 > 4
+    a = pa.shikigami[0]
+    assert a.health == 2                  # 反击 3：光环护甲 1 吸收后受 2
+    assert a.shield == 0
+    assert a.combat_power == 0            # 战力战斗后清除
+
+
+def test_card_aura_power_stacks(db, make_game):
+    """数值通道可叠加：两次授予 power 累加（与 keywords 的集合语义不同）。"""
+    _aura_grant_card(db, 10010163, power=2)
+    _plain_combat(db)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    F.play(g, 0, 10010163)
+    F.play(g, 0, 10010163)
+    c = give(g, 0, 10010165)
+    cdef = db.cards[10010165]
+    assert g.combat_card_stats(cdef.effects, c, pa.shikigami[0], p=pa) == (5, 0)  # 1+2+2
+
+
+def test_card_aura_turn_filter(db, make_game):
+    """turn 限定：turn="opponent" 的光环仅敌方回合生效（伺机"敌方回合时+2力量"）。"""
+    _aura_grant_card(db, 10010163, power=2, turn="opponent")
+    _plain_combat(db)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    F.play(g, 0, 10010163)
+    c = give(g, 0, 10010165)
+    cdef = db.cards[10010165]
+    s = pa.shikigami[0]
+    assert g.combat_card_stats(cdef.effects, c, s, p=pa) == (1, 0)   # 己方回合：不生效
+    g.state.active = 1
+    assert g.combat_card_stats(cdef.effects, c, s, p=pa) == (3, 0)   # 敌方回合：+2

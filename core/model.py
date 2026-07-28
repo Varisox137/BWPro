@@ -103,7 +103,13 @@ class ShikigamiState(BaseModel):
 
     @property
     def eff_power(self) -> int:
-        """有效力量 = 基础 + 永久修正 + 临时修正 + 本次战斗战力。"""
+        """有效力量 = 基础 + 永久修正 + 临时修正 + 本次战斗战力。
+
+        覆写层：ext["power_zero"] 置位时力量视为 0（power_override op 授予，
+        覆盖全部加成层；形态离场/气绝时清除）。
+        """
+        if self.ext.get("power_zero"):
+            return 0
         return self.base_power + self.perm_power + self.temp_power + self.combat_power
 
     @property

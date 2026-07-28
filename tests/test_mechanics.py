@@ -4,10 +4,11 @@
 """
 import pytest
 
+from core import targets as targets_mod
 from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.factories import CHOOSE_ENEMY, give
+from tests.factories import CHOOSE_ENEMY, give, move
 
 T = F.T
 
@@ -516,3 +517,175 @@ def test_play_events_and_zones(db, make_game):
         assert "on_card_played" in g.history[before:]
         assert (card in a.graveyard) is in_graveyard
         assert s.form is attached_form
+
+
+# ==========================================================================
+# 凤凰火/山童底层：orb_ge 条件 / on_card_played 使用位置 payload /
+# enemy_bench 池 / perm_power 快照 / power_override 力量覆写
+# ==========================================================================
+
+def test_orb_ge_condition(db, make_game):
+    """{orb_ge: n}：控制者当前鬼火 ≥ n 才执行该步（step 级条件）。"""
+    cid = 10010155
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="damage", amount=3, target=T(kind="all", pool="enemy_player"),
+               condition={"orb_ge": 2})])
+    g = make_game()                       # A 先手第 1 回合：鬼火 1，付费后 0
+    g.state.players[1].shield = 0
+    F.play(g, 0, cid)
+    assert g.state.players[1].health == 30  # 条件不满足：空操作
+    g = make_game()
+    g.state.players[0].orb = 5
+    g.state.players[1].shield = 0
+    F.play(g, 0, cid)                     # 付费后 4 ≥ 2
+    assert g.state.players[1].health == 27
+
+
+def _played_payloads(g):
+    """on_card_played 事件 payload 采集（spy 包装 emit）。"""
+    seen = []
+    orig = g.emit
+
+    def spy(name, **kw):
+        if name == "on_card_played":
+            seen.append(kw)
+        return orig(name, **kw)
+    g.emit = spy
+    return seen
+
+
+def test_on_card_played_play_from_payload(db, make_game):
+    """on_card_played 携带 play_from/play_method/triggered（主动使用：hand/active）。"""
+    cid = _add_damage_card(db, 10010156)
+    g = make_game()
+    seen = _played_payloads(g)
+    F.play(g, 0, cid, target=Ref(player=1, shikigami=0))
+    assert seen[-1]["play_from"] == "hand"
+    assert seen[-1]["play_method"] is None
+    assert seen[-1]["triggered"] == "active"
+
+
+def test_on_card_played_play_method_payload(db, make_game):
+    """使用方式 id 随 on_card_played payload 发出。"""
+    cid = 10010157
+    db.cards[cid] = F.card(cid, steps=[F.dmg(3)], target=CHOOSE_ENEMY, token=True,
+                           methods=[F.method("burst", param=2)])
+    g = make_game()
+    seen = _played_payloads(g)
+    c = give(g, 0, cid)
+    g.apply({"op": "play_card", "uid": c.uid, "play_method": "burst",
+             "target": Ref(player=1, shikigami=0)})
+    assert seen[-1]["play_method"] == "burst"
+    assert seen[-1]["triggered"] == "active"
+
+
+def test_on_card_played_response_payload(db, make_game):
+    """响应使用：triggered=response（play_from 仍为 hand）。"""
+    cid = 10010158
+    db.cards[cid] = F.card(cid, keywords=["trigger"], token=True, cost=0,
+                           when="on_before_assault",
+                           steps=[F.dmg(1, T(kind="all", pool="enemy_player"))])
+    g = make_game()
+    seen = _played_payloads(g)
+    give(g, 1, cid)
+    g.state.players[0].orb = 1
+    g.apply({"op": "assault", "index": 0})
+    assert seen[-1]["triggered"] == "response"
+    assert seen[-1]["play_from"] == "hand"
+
+
+def test_enemy_bench_pool(db, make_game):
+    """enemy_bench：敌方在场且不在战斗区的式神（战斗区驻留者被排除）。"""
+    g = make_game()
+    for s in g.state.players[1].shikigami:
+        s.level = 1
+    refs = targets_mod.pool_refs(g, "enemy_bench", 0)
+    assert [r.shikigami for r in refs] == [0, 1, 2, 3]   # 战斗区为空：全部在场式神
+    move(g, 1, 0)
+    refs = targets_mod.pool_refs(g, "enemy_bench", 0)
+    assert [r.shikigami for r in refs] == [1, 2, 3]      # 战斗区驻留者除外
+
+
+def test_perm_power_snapshot(db, make_game):
+    """{perm_power: "self"}：按来源式神当前永久力量修正快照增伤（崩山两步各自加）。"""
+    BUFF = 10010159
+    db.cards[BUFF] = F.card(BUFF, token=True, steps=[
+        F.Step(op="buff_power", amount=2, perm=True, target=T(kind="self"))])
+    db.cards[10010160] = F.card(10010160, token=True, steps=[
+        F.Step(op="damage", amount={"perm_power": "self", "base": 4},
+               target=T(kind="all", pool="enemy_player")),
+        F.Step(op="damage", amount={"perm_power": "self", "base": 1},
+               target=T(kind="all", pool="enemy_player"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    F.play(g, 0, BUFF)                    # 永久力量 +2
+    F.play(g, 0, 10010160)
+    assert pb.health == 21                # (4+2) + (1+2) = 9
+    g = make_game()                       # 负面对照：无永久力量修正仅基础值
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    F.play(g, 0, 10010160)
+    assert pb.health == 25                # 4 + 1 = 5
+
+
+def test_power_override_zeroes_attack(db, make_game):
+    """power_override：力量视为 0（覆盖基础+永久+临时+战力全部）；攻击造成 0 伤害。"""
+    db.cards[10010161] = F.card(10010161, token=True, steps=[
+        F.Step(op="power_override", target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    s = pa.shikigami[0]
+    s.perm_power = 3
+    F.play(g, 0, 10010161)
+    assert s.eff_power == 0               # 永久 +3 也被覆写
+    move(g, 1, 0)
+    pa.orb = 1
+    g.apply({"op": "assault", "index": 0})
+    assert pb.shikigami[0].health == 4    # 0 力量攻击无伤害
+    assert s.health == 1                  # 反击照常（4-3）
+
+
+def test_power_override_off_and_defeat_clear(db, make_game):
+    """power_override(on=False) 解除；气绝时自动清除。"""
+    db.cards[10010161] = F.card(10010161, token=True, steps=[
+        F.Step(op="power_override", target=T(kind="self"))])
+    db.cards[10010162] = F.card(10010162, token=True, steps=[
+        F.Step(op="power_override", on=False, target=T(kind="self"))])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    s = pa.shikigami[0]
+    F.play(g, 0, 10010161)
+    assert s.eff_power == 0
+    F.play(g, 0, 10010162)
+    assert s.eff_power == 3               # on=False 解除覆写
+    F.play(g, 0, 10010161)
+    s.health = 0
+    g.check_defeated(Ref(player=0, shikigami=0), source=None, reason="伤害")
+    assert s.defeated
+    assert not s.ext.get("power_zero")    # 气绝时清除
+
+
+def test_power_override_cleared_on_form_destroy(db, make_game):
+    """形态离场时力量覆写自动清除（基础身材恢复）。"""
+    db.cards[10010161] = F.card(10010161, token=True, steps=[
+        F.Step(op="power_override", target=T(kind="self"))])
+    db.cards[10010163] = F.card(10010163, card_type="form", form_power=5,
+                                form_health=6, token=True)
+    db.cards[10010164] = F.card(10010164, token=True, steps=[
+        F.Step(op="destroy_form", target=T(kind="self"))])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    s = pa.shikigami[0]
+    F.play(g, 0, 10010163)                # 结附形态：基础力量 5
+    assert s.eff_power == 5
+    F.play(g, 0, 10010161)
+    assert s.eff_power == 0
+    F.play(g, 0, 10010164)                # 消灭形态
+    assert s.form is None
+    assert s.eff_power == 3               # 覆写随形态离场清除

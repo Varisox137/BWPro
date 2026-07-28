@@ -763,3 +763,127 @@ def test_golden_feather_accounting(db, make_game):
     pass_turns(g, 2)                            # A 第 2 回合开始
     assert "feather_used_turn" not in pa.ext    # turn 级键清除
     assert pa.ext["feather_used_game"] == 2     # game 级不清
+
+
+# ==========================================================================
+# 法术回响序列（spell_echo/spell_echo_recast，涅槃业火底层）
+# ==========================================================================
+
+ECHO_GRANT = 10010158  # 回响授予法术：sequence=[ECHO1, ECHO2]，once_key="nirvana"
+ECHO1 = 10010159       # 回响序列第 1 张：打敌方牌手 2
+ECHO2 = 10010160       # 回响序列第 2 张：打敌方牌手 3
+TRIG_SPELL = 10010258  # 触发用空白法术（100102 的牌）
+
+
+def _echo_setup(db):
+    """回响测试数据：授予卡 + 序列两张打牌手法术 + 触发用空白法术。"""
+    db.cards[ECHO1] = F.card(ECHO1, token=True,
+                             steps=[F.dmg(2, T(kind="all", pool="enemy_player"))])
+    db.cards[ECHO2] = F.card(ECHO2, token=True,
+                             steps=[F.dmg(3, T(kind="all", pool="enemy_player"))])
+    db.cards[ECHO_GRANT] = F.card(ECHO_GRANT, token=True, steps=[
+        F.Step(op="spell_echo", sequence=[ECHO1, ECHO2], once_key="nirvana")])
+    db.cards[TRIG_SPELL] = F.card(TRIG_SPELL, shikigami=100102, token=True, steps=[])
+
+
+def test_spell_echo_sequence(db, make_game):
+    """法术回响：持有者以外的式神从手牌使用法术 → 按序列依次凭空免费使用。"""
+    _echo_setup(db)
+    db.cards[10010358] = F.card(10010358, shikigami=100103, token=True, steps=[])
+    db.cards[10010458] = F.card(10010458, shikigami=100104, token=True, steps=[])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    for i in (1, 2, 3):
+        pa.shikigami[i].level = 1
+    play(g, 0, ECHO_GRANT)
+    play(g, 0, TRIG_SPELL)                # 100102 的法术 → 触发序列第 1 张
+    assert pb.health == 28                # ECHO1 的 2 伤
+    assert any(c.id == ECHO1 for c in pa.graveyard)  # 凭空生成，用后进墓地
+    assert pa.orb == 7                    # 回响不耗鬼火（只付两张手牌费用）
+    play(g, 0, TRIG_SPELL)                # 同 id 法术每回合至多触发一次
+    assert pb.health == 28
+    play(g, 0, 10010358)                  # 另一 id 法术 → 触发序列第 2 张
+    assert pb.health == 25
+    play(g, 0, 10010458)                  # 序列已走完：空操作
+    assert pb.health == 25
+
+
+def test_spell_echo_excludes_holder(db, make_game):
+    """持有者自己的法术不触发；敌方从手牌使用法术同样触发（打敌方的牌手=己方）。"""
+    _echo_setup(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    pa.shield = 0
+    play(g, 0, ECHO_GRANT)
+    play(g, 0, 10010101)                  # 持有者（100101）自己的法术 → 不触发
+    assert pb.health == 30
+    pass_turns(g, 1)                      # → B 回合
+    pb.shikigami[1].level = 1
+    pb.orb = 9
+    play(g, 1, TRIG_SPELL)                # 敌方使用法术 → 触发序列第 1 张
+    assert pb.health == 28                # 回响牌属持有者："敌方牌手"= 出牌方 B
+
+
+def test_spell_echo_once_key_and_turn_clear(db, make_game):
+    """once_key 不可叠加（同键再授予不覆盖）；己方回合开始清除（"本回合"）。"""
+    _echo_setup(db)
+    db.cards[10010161] = F.card(10010161, token=True, steps=[
+        F.Step(op="spell_echo", sequence=[ECHO2], once_key="nirvana")])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    pa.shikigami[1].level = 1
+    play(g, 0, ECHO_GRANT)
+    play(g, 0, 10010161)                  # 同 once_key：不覆盖已登记序列
+    s = pa.shikigami[0]
+    assert s.ext["spell_echo"]["sequence"] == [ECHO1, ECHO2]
+    pass_turns(g, 2)                      # → A 的下一回合开始：回响清除
+    assert "spell_echo" not in s.ext
+    pa.orb = 9
+    play(g, 0, TRIG_SPELL)                # 回响已清除：不再触发
+    assert pb.health == 30
+
+
+def test_spell_echo_void_auto_payload(db, make_game):
+    """回响的自动使用照常 emit on_card_played：play_from=void、triggered=auto。"""
+    _echo_setup(db)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    g.state.players[1].shield = 0
+    pa.shikigami[1].level = 1
+    seen = []
+    orig = g.emit
+
+    def spy(name, **kw):
+        if name == "on_card_played":
+            seen.append(kw)
+        return orig(name, **kw)
+    g.emit = spy
+    play(g, 0, ECHO_GRANT)
+    play(g, 0, TRIG_SPELL)
+    auto = [p for p in seen if p.get("triggered") == "auto"]
+    assert len(auto) == 1
+    assert auto[0]["play_from"] == "void"
+
+
+def test_spell_echo_random_choose_target(db, make_game):
+    """有目标的回响牌：自动使用在合法目标中随机选择（池中仅 1 个时确定）。"""
+    ECHOT = 10010162
+    db.cards[ECHOT] = F.card(ECHOT, token=True, steps=[F.dmg(2)],
+                             target=T(kind="choose", pool="enemy_shikigami"))
+    db.cards[ECHO_GRANT] = F.card(ECHO_GRANT, token=True, steps=[
+        F.Step(op="spell_echo", sequence=[ECHOT])])
+    db.cards[TRIG_SPELL] = F.card(TRIG_SPELL, shikigami=100102, token=True, steps=[])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pa.shikigami[1].level = 1
+    play(g, 0, ECHO_GRANT)
+    play(g, 0, TRIG_SPELL)
+    assert pb.shikigami[0].health == 2    # 合法池中仅 B0（4 - 2）

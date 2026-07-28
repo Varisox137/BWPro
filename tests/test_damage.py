@@ -9,7 +9,7 @@ from core import targets
 from core.engine import _DamageEvent
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give, pass_turns, play
+from tests.factories import give, move, pass_turns, play
 
 T = F.T
 SID = 100101
@@ -364,3 +364,99 @@ def test_defeated_only_perm_buffs_apply(db, make_game):
     assert not s.defeated
     assert s.health == 7             # 4 + 3 perm
     assert s.eff_power == 6          # 3 + 3 perm
+
+
+# ==========================================================================
+# boost_damage（伤害时点增幅）/ victim_player（受伤者牌手派生，引燃底层）
+# ==========================================================================
+
+def _boost_ability(db, amount=1, sid=SID):
+    """测试能力：on_damage_start 时来源=自身、kind=effect 的伤害 +amount。"""
+    db.shikigami[sid].ability = F.EffectBlock(
+        when="on_damage_start", condition={"source_shikigami": "self", "kind": "effect"},
+        steps=[F.Step(op="boost_damage", amount=amount)])
+
+
+def _dmg_spell(db, cid, sid=SID, amount=3):
+    db.cards[cid] = F.card(cid, shikigami=sid, token=True,
+                           steps=[F.dmg(amount)], target=CHOOSE_ENEMY_DMG)
+    return cid
+
+
+CHOOSE_ENEMY_DMG = T(kind="choose", pool="enemy_shikigami")
+
+
+def test_boost_damage_ability(db, make_game):
+    """boost_damage：伤害开始时点改写事件中伤害 +1（只增）。"""
+    _boost_ability(db)
+    _dmg_spell(db, 10010155)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010155, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].health == 0    # 3 + 1 = 4
+
+
+def test_boost_damage_source_mismatch_noop(db, make_game):
+    """负面对照：来源不是持有者（source_shikigami:self 不满足）不增幅。"""
+    _boost_ability(db)
+    _dmg_spell(db, 10010255, sid=100102)
+    g, pa, pb = _game(make_game)
+    pa.shikigami[1].level = 1
+    play(g, 0, 10010255, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].health == 1    # 无增幅：4 - 3
+
+
+def test_boost_damage_kind_filter(db, make_game):
+    """负面对照：战斗伤害（kind=combat/counter）不匹配条件，不增幅。"""
+    _boost_ability(db)
+    g, pa, pb = _game(make_game)
+    move(g, 1, 0)
+    pa.orb = 1
+    g.apply({"op": "assault", "index": 0})
+    assert pb.shikigami[0].health == 1    # 4 - 3（战斗伤害不增幅）
+    assert pa.shikigami[0].health == 1    # 反击同样不增幅
+
+
+def test_boost_damage_zero_noop(db, make_game):
+    """boost_damage amount=0：空操作（伤害值不变）。"""
+    _boost_ability(db, amount=0)
+    _dmg_spell(db, 10010155)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010155, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].health == 1    # 4 - 3
+
+
+def _ignite_card(db, cid=10010156):
+    """引燃式：登记一次性延迟能力——消灭（来源=自身）时对受伤者的牌手造成 2 伤。"""
+    db.cards[cid] = F.card(cid, shikigami=SID, token=True, steps=[F.Step(
+        op="delay_grant", when="on_shikigami_defeated",
+        condition={"source_shikigami": "self"},
+        steps=[F.Step(op="damage", amount=2,
+                      target=T(kind="context", key="victim_player"))])])
+    return cid
+
+
+def test_victim_player_enemy(db, make_game):
+    """victim_player：消灭敌方式神后对其牌手造成 2 伤。"""
+    _ignite_card(db)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010156)
+    move(g, 1, 0)
+    pb.shikigami[0].health = 1
+    pa.orb = 1
+    g.apply({"op": "assault", "index": 0})
+    assert pb.shikigami[0].defeated
+    assert pb.health == 28                # 受伤者（敌方式神）的牌手受 2 伤
+
+
+def test_victim_player_friendly(db, make_game):
+    """victim_player：消灭己方式神则对己方牌手造成伤害。"""
+    _ignite_card(db)
+    db.cards[10010157] = F.card(10010157, shikigami=SID, token=True,
+                                steps=[F.dmg(99)],
+                                target=T(kind="choose", pool="any_shikigami"))
+    g, pa, pb = _game(make_game)
+    pa.shikigami[1].level = 1
+    play(g, 0, 10010156)
+    play(g, 0, 10010157, target=Ref(player=0, shikigami=1))
+    assert pa.shikigami[1].defeated
+    assert pa.health == 28                # 受伤者（己方式神）的牌手 = 己方牌手

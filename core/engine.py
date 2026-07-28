@@ -53,6 +53,10 @@ ONE_SHOT_KEYWORDS = frozenset({"haste", "unyielding", "barrier"})
 # 卡牌级关键字（瞬发/响应）：只描述卡牌本身的使用方式，不授予式神
 CARD_LEVEL_KEYWORDS = ("fast", "trigger")
 
+# 法术回响（spell_echo）触发时结算的内部块：登记于来源式神 ext["spell_echo"]，
+# 收集门在 Game._collect_abilities（持有者以外的式神从手牌使用法术牌时）
+_SPELL_ECHO_BLOCK = EffectBlock(steps=[Step(op="spell_echo_recast")])
+
 
 @dataclass
 class _DamageEvent:
@@ -108,6 +112,8 @@ class Game:
         self._affected_stack: list[dict] = []
         # 毒蚀：伤害→破甲转化登记的战斗 id 集合（战斗终止点随弹栈清除）
         self._battle_convert: set[int] = set()
+        # 反击贯通：反击伤害具有贯通的战斗 id 集合（counter_piercing 登记；终止点清除）
+        self._battle_counter_piercing: set[int] = set()
         # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量)]，"攻击时"登记、战斗结束后回赋
         self._battle_echo: dict[int, list[tuple[Ref, int]]] = {}
 
@@ -176,12 +182,22 @@ class Game:
         return cost
 
     def _match_auras(self, p: PlayerState, cdef: CardDef) -> list[dict]:
-        """命中该卡牌的卡牌光环（card_auras 注册表，读取时求值，覆盖已有与新生成的牌）。"""
-        return [
-            a for a in p.card_auras
-            if cdef.shikigami == a["shikigami"]
-            and (a.get("card_type") is None or a["card_type"] == cdef.card_type)
-        ]
+        """命中该卡牌的卡牌光环（card_auras 注册表，读取时求值，覆盖已有与新生成的牌）。
+
+        turn 通道（"self"/"opponent"）：限定回合方——仅己方/敌方回合时光环生效
+        （伺机"敌方回合时此牌+2力量"）。"""
+        pi = next(i for i, q in enumerate(self.state.players) if q is p)
+        out = []
+        for a in p.card_auras:
+            if cdef.shikigami != a["shikigami"]:
+                continue
+            if a.get("card_type") is not None and a["card_type"] != cdef.card_type:
+                continue
+            turn = a.get("turn")
+            if turn is not None and (turn == "self") != (self.state.active == pi):
+                continue  # 回合方条件不满足：光环不生效
+            out.append(a)
+        return out
 
     def _cost_zero_aura(self, p: PlayerState, cdef: CardDef) -> bool:
         """是否有命中光环使该牌不消耗鬼火。"""
@@ -232,6 +248,8 @@ class Game:
         - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
         - {"shield_of": "self"|"source"}：来源式神当前护甲（尘刀快照/古尘之壁）；
         - {"power_of": "self"|"source"}：来源式神 eff_power（援护）；
+        - {"perm_power": "self"}：来源式神当前永久力量修正快照（崩山"使用时按永久力量
+          值增伤"——按使用时快照而非计数器；怪力/怒吼的 perm buff 是既有 buff_power）；
         - {"ext": key}：来源式神 ext 计数（鸩觉醒"每触发过一次…额外+1"的 x）；
         - {"event": key}：触发事件 payload 中的数值（寂寥心象"获得等量破甲"）；
         - {"half_health_of": key}：事件中的 Ref 所指角色当前生命的一半（向下取整，
@@ -247,6 +265,8 @@ class Game:
                 base += s.shield
             if raw.get("power_of") and s is not None:
                 base += s.eff_power
+            if raw.get("perm_power") and s is not None:
+                base += s.perm_power
             if raw.get("ext") and s is not None:
                 base += int(s.ext.get(raw["ext"], 0))
             if raw.get("event") and event is not None:
@@ -599,7 +619,9 @@ class Game:
             self._clear_play_delayed(p.shikigami[si])  # "本次使用期间"延迟能力窗口结束
         self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
         self._apply_revive_haste(p, card)  # 实例修饰"使用后…气绝倒计时-1"（鎏金幻羽）
-        self._emit_card_played(self.state.active, uid, cdef, affected)
+        self._emit_card_played(self.state.active, uid, cdef, affected,
+                               play_from=play_from, play_method=method_id,
+                               triggered="active")
 
     @staticmethod
     def _playable_when_defeated(cdef: CardDef, card: CardInstance | None = None) -> bool:
@@ -635,7 +657,9 @@ class Game:
             p.ext["feather_used_turn"] = p.ext.get("feather_used_turn", 0) + 1
 
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
-                          affected: list[Ref] | None = None) -> None:
+                          affected: list[Ref] | None = None, *,
+                          play_from: str = "hand", play_method: str | None = None,
+                          triggered: str = "active") -> None:
         """使用后1（延时时机 on_card_played）统一发点。
 
         payload 携带卡牌静态信息（card_type/subtype/shikigami——触发块条件匹配用，
@@ -643,10 +667,14 @@ class Game:
         "每使用一张黄金羽"类触发以 {golden_feather: true} 判等）与 affected_refs：该次
         出牌效果实际伤害过的式神列表（暴风之主"对受影响的敌方式神各造成1点伤害"以
         context 目标读取）。
+        使用位置/方式（rules.md:611）：play_from ∈ hand/deck/void（凭空生成）；
+        play_method = 使用方式 id（无方式则为 None）；triggered ∈ active（主动）/
+        response（响应）/ auto（凭空自动使用，如 recast_recorded/法术回响）。
         """
         self.emit("on_card_played", player=player, uid=uid, card_type=cdef.card_type,
                   subtype=cdef.subtype, shikigami=cdef.shikigami,
                   golden_feather=("golden_feather" in cdef.tags),
+                  play_from=play_from, play_method=play_method, triggered=triggered,
                   affected_refs=list(affected or ()))
 
     def _queue_awaken_stats(self, si: int, cdef: CardDef, card: CardInstance) -> None:
@@ -673,7 +701,8 @@ class Game:
 
     def combat_card_stats(self, block: EffectBlock,
                           card: CardInstance | None = None,
-                          s: ShikigamiState | None = None) -> tuple[int, int]:
+                          s: ShikigamiState | None = None,
+                          p: PlayerState | None = None) -> tuple[int, int]:
         """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。
 
         公开方法：引擎内部结算与客户端展示（client/cli.py 手牌数值段）共用。
@@ -681,6 +710,7 @@ class Game:
         amount 支持 {"enhance": true, "base": n} 形式（禁锢之刀/冲撞）：base + 实例已装配的
         enhance 修饰（打出装配快照，见 _materialize）；以及 {"shield_of": "self"}（尘刀：
         按打出瞬间护甲快照战力，本次战斗中不变）。
+        p 给出时叠加命中该牌的卡牌光环数值通道（card_aura 的 power/shield，可叠加）。
         """
         power = 0
         shield = 0
@@ -692,6 +722,11 @@ class Game:
                 power += amount
             elif step.op == "gain_shield":
                 shield += amount
+        if p is not None and card is not None:
+            cdef = self.db.cards[card.id]
+            for aura in self._match_auras(p, cdef):
+                power += int(aura.get("power", 0))
+                shield += int(aura.get("shield", 0))
         return power, shield
 
     def _apply_combat_stats(self, ref: Ref, s: ShikigamiState, power: int, shield: int,
@@ -720,20 +755,22 @@ class Game:
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
         block = self._played_block(p, cdef, card, method)
-        power, shield = self.combat_card_stats(block, card, s)
+        power, shield = self.combat_card_stats(block, card, s, p=p)
         atk_ref = Ref(player=self.state.active, shikigami=si)
         self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
         # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）；
         # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
         # 角色，获得吸血"），battle_immunity step 可带 Step.condition（鸩羽的条件免疫），
-        # convert_damage step = 毒蚀伤害→破甲转化——三者在此提取，不再按普通 step 执行
+        # convert_damage step = 毒蚀伤害→破甲转化、counter_piercing step = 反击贯通——
+        # 四者在此提取，不再按普通 step 执行
         grants = tuple((k, None) for k in cdef.keywords if k not in CARD_LEVEL_KEYWORDS)
         grants += tuple(((st.model_extra or {}).get("keyword"), st.condition)
                         for st in block.steps if st.op == "grant_keyword")
         imms = tuple((bool((st.model_extra or {}).get("nested", False)), st.condition)
                      for st in block.steps if st.op == "battle_immunity")
         convert = any(st.op == "convert_damage" for st in block.steps)
+        counter_piercing = any(st.op == "counter_piercing" for st in block.steps)
         # 其它效果步（千羽风之舞的"生成金风流羽"为首个）：战力/护甲与上述专用提取步
         # 跳过不重复执行；attack_buff（起弓/离）挂账时机另有一套，同样跳过以保持既有行为
         ctx = ExecContext(controller=self.state.active, source=atk_ref, card=card)
@@ -741,13 +778,15 @@ class Game:
             if (st.op in ("buff_power", "gain_shield")
                     and (st.target is None or st.target.kind == "self")):
                 continue  # 战力/护甲已提取
-            if st.op in ("grant_keyword", "battle_immunity", "convert_damage", "attack_buff"):
+            if st.op in ("grant_keyword", "battle_immunity", "convert_damage",
+                         "counter_piercing", "attack_buff"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
             self._run_step(st, ctx)
         # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
         self.move_card(p, card, "graveyard")
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
-                             temp_grants=tuple(cdef.temp_grants), convert=convert)
+                             temp_grants=tuple(cdef.temp_grants), convert=convert,
+                             counter_piercing=counter_piercing)
         s.combat_power = 0
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
@@ -764,7 +803,7 @@ class Game:
         pi = self.state.players.index(p)
         ref = Ref(player=pi, shikigami=si)
         block = cdef.effects
-        power, shield = self.combat_card_stats(block, card, s)
+        power, shield = self.combat_card_stats(block, card, s, p=p)
         self._apply_combat_stats(ref, s, power, shield, battle_scoped=True)
         # 关键字（fast/trigger 为卡牌级除外）授予并登记到当前战斗（终止点按实例移除）
         if self._battle_stack:
@@ -888,7 +927,8 @@ class Game:
                         grant_keywords: tuple = (),
                         immunities: tuple = (),
                         temp_grants: tuple[EffectBlock, ...] = (),
-                        convert: bool = False) -> None:
+                        convert: bool = False,
+                        counter_piercing: bool = False) -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
@@ -897,7 +937,8 @@ class Game:
         致命诱惑）；immunities 为作用域战斗伤害免疫，元素为 (nested, condition)
         （鸩羽的条件免疫；nested = 是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
         一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）；
-        convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）。
+        convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）；
+        counter_piercing = 反击贯通：本战斗中被攻击方的反击伤害具有贯通（终止点清除标记）。
         """
         self._battle_seq += 1
         bid = self._battle_seq
@@ -921,6 +962,8 @@ class Game:
             attacker.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
         if convert:
             self._battle_convert.add(bid)  # 毒蚀：伤害→破甲转化（伤害管线读取）
+        if counter_piercing:
+            self._battle_counter_piercing.add(bid)  # 反击贯通（反击事件生成/贯通修正读取）
         for block in temp_grants:
             self.state.temp_grants.append(TempGrant(
                 block=block, controller=atk_ref.player, holder=atk_ref, battle=bid))
@@ -942,6 +985,7 @@ class Game:
             # 移除本战斗绑定的一次性临时触发（已触发完的已随 uses 归零移除）
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
             self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
+            self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗中止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_stack.pop()
             # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
@@ -990,8 +1034,11 @@ class Game:
 
         def counter_event() -> _DamageEvent:
             vs = d.shikigami[vic_idx]
+            # 反击贯通例外（rules.md:201）：本战斗登记了 counter_piercing 时反击伤害具有贯通
+            cp = any(b in self._battle_counter_piercing for b in self._battle_stack)
             return _DamageEvent(source=Ref(player=def_pi, shikigami=vic_idx),
-                                victim=atk_ref, amount=vs.eff_power, kind="counter")
+                                victim=atk_ref, amount=vs.eff_power, kind="counter",
+                                piercing=cp)
 
         # ---- 先攻阶段：拥有连击/先攻的角色对对方造成战斗伤害，按（反击，攻击）并行 ----
         atk_first = combo or initiative
@@ -1220,6 +1267,7 @@ class Game:
         for kw in cdef.keywords:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._remove_keyword(s, kw)
+        s.ext.pop("power_zero", None)  # 力量覆写随形态离场清除（power_override）
         self.move_card(p, old, "graveyard")
         d = self.db.shikigami[s.id]
         s.base_power = d.power
@@ -1321,9 +1369,10 @@ class Game:
         # "本回合"类卡牌光环（scope="turn"）在己方回合开始失效；其余 scope 条目不受影响
         p.card_auras[:] = [a for a in p.card_auras if a.get("scope") != "turn"]
         # "本回合"类延迟能力（scope="turn"，魔音扰心类）在己方回合开始清除（未消耗时）；
-        # 黄金羽"本回合"计数键清除（game 级键不清）
+        # 法术回响序列（spell_echo，"本回合"）同步清除；黄金羽"本回合"计数键清除（game 级键不清）
         for s in p.shikigami:
             s.delayed[:] = [e for e in s.delayed if e.get("scope") != "turn"]
+            s.ext.pop("spell_echo", None)
         p.ext.pop("feather_used_turn", None)
         # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）
         for pl in self.state.players:
@@ -1635,8 +1684,11 @@ class Game:
                 return
         skip_shield_calc = False
         skip_before_health = False
-        # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神）
-        if ev.kind != "counter" and ev.piercing and s is not None:
+        # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
+        # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md:201）
+        if ev.piercing and s is not None and (
+                ev.kind != "counter"
+                or any(b in self._battle_counter_piercing for b in self._battle_stack)):
             skip_shield_calc = True
             if s.shield > 0:
                 absorbed = min(s.shield, ev.amount)
@@ -1778,6 +1830,7 @@ class Game:
         s.dying = False  # 濒死标记在气绝时清除
         self._clear_countdown(s)  # 气绝清除倒计时能力（大天狗记录的法术随之丢失，复活后不再具有）
         s.ext.pop("recorded_card", None)
+        s.ext.pop("power_zero", None)  # 力量覆写随气绝清除（power_override）
         s.shield = 0
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
         s.temp_health = 0
@@ -1974,6 +2027,19 @@ class Game:
                     out.append(_Pending(ability, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si), event=event,
                         is_ability=True)))
+            # 法术回响序列（spell_echo 登记于 ext）：持有者以外的式神（含敌方）从手牌
+            # 使用法术牌时收集一次回响结算（同 id 法术每回合至多一次、序列游标未走完；
+            # 结算处 spell_echo_recast 复查）
+            echo = s.ext.get("spell_echo")
+            if echo is not None and s.in_play and event["name"] == "on_card_played":
+                esid = event.get("shikigami")
+                if (event.get("card_type") == "spell" and event.get("play_from") == "hand"
+                        and esid is not None and esid != s.id
+                        and esid not in echo["triggered"]
+                        and echo["cursor"] < len(echo["sequence"])):
+                    out.append(_Pending(_SPELL_ECHO_BLOCK, ExecContext(
+                        controller=pi, source=Ref(player=pi, shikigami=si),
+                        event=event, is_ability=True)))
             # 绑定式神的一次性延迟能力（会）：先触发后执行，收集即消耗；气绝时已清除
             for entry in s.delayed:
                 block = entry["block"]
@@ -2099,14 +2165,16 @@ class Game:
             # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
             self._apply_response_combat(p, si, ctx.card, cdef)
             self._account_card_played(p, cdef)
-            self._emit_card_played(ctx.controller, ctx.card.uid, cdef)
+            self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
+                                   triggered="response")
             return True
         if cdef.card_type == "form" and si is not None:
             # 响应形态牌插入使用：立即结附（风符·瞬）；牌不进墓地，形态离场才进
             # 形态牌的进场时效果镜像主动使用的形态分支（响应形态同样结算）
             self._play_form_card(p, si, ctx.card, cdef, ctx.controller, ctx.chosen)
             self._account_card_played(p, cdef)
-            self._emit_card_played(ctx.controller, ctx.card.uid, cdef)
+            self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
+                                   triggered="response")
             return True
         self.move_card(p, ctx.card, "graveyard")
         return False
@@ -2138,7 +2206,8 @@ class Game:
         if ctx.triggered and ctx.card is not None:
             # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
             self._account_card_played(p, cdef)
-            self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected)
+            self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
+                                   triggered="response")
 
     def _run_step(self, step: Step, ctx: ExecContext) -> None:
         fn = actions.ACTIONS.get(step.op)

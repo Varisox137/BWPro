@@ -656,3 +656,131 @@ def test_awaken_hyottoko_shield_kept_and_stacked(db, make_game):
     g.apply({"op": "end_turn"})
     g.apply({"op": "end_turn"})  # A 第 2 回合开始：护甲不清除且 +3（若基础能力仍在只 +2）
     assert s.shield == 6
+
+
+# ==========================================================================
+# 额外攻击 launch_attack / 反击贯通 counter_piercing（凤凰火/山童底层）
+# ==========================================================================
+
+def _launch_spell(db, cid=10010155, sid=100101, **kw):
+    """额外攻击法术：令来源（或按 id 指定）式神发起一次攻击。"""
+    db.cards[cid] = F.card(cid, shikigami=sid, token=True,
+                           steps=[F.Step(op="launch_attack", **kw)])
+    return cid
+
+
+def test_launch_attack_basic(db, make_game):
+    """launch_attack：不耗鬼火/出击次数，准备区自动进战斗区，空战斗区时攻击牌手。"""
+    _launch_spell(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0                         # 清掉后手补偿护甲，便于观察数值
+    F.play(g, 0, 10010155)
+    assert pa.orb == 8                    # 只付卡牌费用，攻击本身不耗鬼火
+    assert pa.assaults_left == 1          # 出击次数未消耗
+    assert pa.combat_index == 0           # 准备区自动进战斗区
+    assert pb.health == 27                # 3 力量攻击牌手
+
+
+def test_launch_attack_with_counter(db, make_game):
+    """launch_attack 走正常战斗流程：敌方战斗区有式神时照常吃反击。"""
+    _launch_spell(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    move(g, 1, 0)
+    F.play(g, 0, 10010155)
+    assert pb.shikigami[0].health == 1    # 4 - 3
+    assert pa.shikigami[0].health == 1    # 4 - 3（反击）
+
+
+def test_launch_attack_by_id(db, make_game):
+    """launch_attack(shikigami=int)：按数据 id 定位控制者的式神（协战羁绊式）。"""
+    _launch_spell(db, cid=10010156, shikigami=100102)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    pa.shikigami[1].level = 1
+    F.play(g, 0, 10010156)
+    assert pa.combat_index == 1           # 100102（1/6）发起攻击并进战斗区
+    assert pb.health == 29                # 1 力量攻击牌手
+
+
+def test_launch_attack_noop(db, make_game):
+    """launch_attack 空操作路径：气绝/未出战（id 不在队）不发起攻击。"""
+    _launch_spell(db, cid=10010156, shikigami=100102)
+    _launch_spell(db, cid=10010157, shikigami=100199)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    s = pa.shikigami[1]
+    s.level = 1
+    s.defeated = True
+    F.play(g, 0, 10010156)                # 目标式神气绝：空操作
+    F.play(g, 0, 10010157)                # 目标式神未出战：空操作
+    assert pa.combat_index is None
+    assert pb.health == 30
+
+
+def _cp_combat_card(db, cid=10010157, steps=()):
+    """测试用战斗牌（0 战力/护甲），steps 可带 counter_piercing。"""
+    db.cards[cid] = F.card(cid, shikigami=100101, card_type="combat",
+                           token=True, steps=list(steps))
+    return cid
+
+
+def test_counter_piercing_overflow_to_player(db, make_game):
+    """反击贯通：本战斗反击伤害具有贯通，击杀攻击者后溢出传导至攻击方牌手。"""
+    _cp_combat_card(db, steps=[F.Step(op="counter_piercing")])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    move(g, 1, 0)
+    pb.shikigami[0].perm_power = 5        # 反击 8 伤 > 攻击者 4 生命
+    F.play(g, 0, 10010157)
+    assert pa.shikigami[0].defeated       # 贯通修正：反击伤害锁为当前生命 4
+    assert pa.health == 26                # 溢出 4 传导牌手
+
+
+def test_counter_no_piercing_default(db, make_game):
+    """负面对照：未登记 counter_piercing 时反击不贯通（rules.md:201 默认排除）。"""
+    _cp_combat_card(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    move(g, 1, 0)
+    pb.shikigami[0].perm_power = 5
+    F.play(g, 0, 10010157)
+    assert pa.shikigami[0].defeated       # 反击 8 伤击杀（无贯通修正）
+    assert pa.health == 30                # 溢出归零，不传导牌手
+
+
+def test_counter_piercing_outside_battle_noop(db, make_game):
+    """counter_piercing 无战斗上下文时为空操作（非战斗牌主动使用）。"""
+    db.cards[10010158] = F.card(10010158, token=True,
+                                steps=[F.Step(op="counter_piercing")])
+    g = make_game()
+    F.play(g, 0, 10010158)
+    assert not g._battle_counter_piercing
+
+
+def test_counter_piercing_response_insert(db, make_game):
+    """响应插入使用的战斗牌：counter_piercing 作为普通动作登记到被插入的战斗。"""
+    db.cards[10010159] = F.card(
+        10010159, shikigami=100101, card_type="combat", keywords=["trigger"],
+        token=True, when="on_before_assault",
+        steps=[F.Step(op="counter_piercing")])
+    g = make_game()
+    pa, pb = g.state.players
+    F.pass_turns(g, 1)                    # → B 第 1 回合
+    move(g, 1, 0)                         # B0（100101 3/4）驻留战斗区到 A 回合
+    pb.shikigami[0].perm_power = 5        # 反击 8 伤 > 攻击者 4 生命
+    pb.orb = 1
+    give(g, 1, 10010159)                  # 响应牌属于 B0：插入使用不把战斗区换人
+    F.pass_turns(g, 1)                    # → A 第 2 回合
+    g.apply({"op": "assault", "index": 0})
+    assert g.state.players[1].graveyard[-1].id == 10010159  # 响应牌已使用
+    assert pa.shikigami[0].defeated       # 反击击杀攻击者
+    assert pa.health == 26                # 反击贯通：溢出 4 传导牌手

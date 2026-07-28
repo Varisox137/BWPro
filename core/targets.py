@@ -11,6 +11,7 @@ kind：
 
 pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / self_player
      / projectile（投射：敌方战斗区式神，空则敌方牌手）/ enemy_combat（敌方战斗区式神）
+     / enemy_bench（敌方准备区：在场且不在战斗区的敌方式神）
      / enemy_character（敌方在场式神 + 敌方牌手）/ friendly_others（己方其他在场式神，排除来源）
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ POOLS = frozenset({
     "self_player",
     "projectile",
     "enemy_combat",
+    "enemy_bench",
     "enemy_character",
     "friendly_others",
 })
@@ -57,6 +59,14 @@ def pool_refs(game, pool: str, controller: int) -> list[Ref]:
         if ci is not None and ep.shikigami[ci].in_play:
             return [Ref(player=enemy, shikigami=ci)]
         return []
+    if pool == "enemy_bench":
+        # 敌方准备区：在场且不在战斗区的敌方式神（山童类"攻击准备区式神"）
+        ep = game.state.players[enemy]
+        return [
+            Ref(player=enemy, shikigami=i)
+            for i, s in enumerate(ep.shikigami)
+            if s.in_play and not s.dying and i != ep.combat_index
+        ]
     if pool == "projectile":
         # 投射：优先敌方战斗区式神，战斗区为空时退回敌方牌手
         ep = game.state.players[enemy]
@@ -86,6 +96,11 @@ def resolve(game, spec, ctx) -> list[Ref]:
     if spec.kind == "choose":
         return list(ctx.chosen or [])
     if spec.kind == "context":
+        if spec.key == "victim_player":
+            # 事件中 victim 式神所属的牌手（引燃"若消灭则对它的牌手造成2伤"——
+            # 消灭己方式神则打己方牌手；delay_grant 触发块内可用）
+            v = (ctx.event or {}).get("victim")
+            return [Ref(player=v.player)] if isinstance(v, Ref) else []
         val = (ctx.event or {}).get(spec.key)
         if val is None and getattr(ctx, "memo", None):
             val = ctx.memo.get(spec.key)  # 块内暂存（last_damage_victims）
@@ -110,6 +125,7 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       （"若攻击有破甲的角色"——战斗条件授予以 {"defender": 被攻击者} 求值）
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
     - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
+    - {orb_ge: n}              ：控制者当前鬼火 ≥ n（"若你有 2 点鬼火"类）
     - {player_ext: <key>}      ：控制者 PlayerState.ext[key] 为真值（"本回合若使用过黄金羽"
       = feather_used_turn 记账键；千羽风之舞 step 级条件）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
@@ -126,6 +142,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
         elif key == "turn_mark_not":
             if want in game.state.players[controller].ext.get("turn_marks", {}):
+                return False
+        elif key == "orb_ge":
+            if game.state.players[controller].orb < want:
                 return False
         elif key == "shikigami_in_combat":
             cp = game.state.players[controller]

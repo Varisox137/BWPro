@@ -271,12 +271,18 @@ def mod_hand(game, ctx, *, targets: list[Ref], tag: str | None = None,
 @action("card_aura")
 def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
               card_type: str | None = None, keywords: list[str] | None = None,
-              cost_zero: bool = False, scope: str = "turn") -> None:
-    """登记卡牌光环（targets 忽略）：谓词匹配的卡牌获得 keywords / 不耗鬼火。
+              cost_zero: bool = False, power: int = 0, shield: int = 0,
+              turn: str | None = None, scope: str = "turn") -> None:
+    """登记卡牌光环（targets 忽略）：谓词匹配的卡牌获得 keywords / 不耗鬼火 / 数值加成。
 
     覆盖谓词命中的全部卡牌（任何区域，含之后新生成的）——读取时求值而非写入实例。
+    power/shield 为战斗牌数值通道（combat_card_stats 读取时叠加到战力/一次性护甲）：
+    可叠加——多次授予数值累加（与 keywords 的集合语义不同）。
+    turn："self"/"opponent" 限定回合方，仅己方/敌方回合时光环生效（伺机类）。
     scope 为失效时机："turn" = 己方回合开始清除（"本回合"类）；其余 scope 随需要扩展。
     """
+    if turn not in (None, "self", "opponent"):
+        raise ValueError(f"未知 card_aura 回合方限定: {turn}")
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("card_aura(shikigami=self) 需要来源式神")
@@ -285,7 +291,8 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         sid = int(shikigami)
     game.state.players[ctx.controller].card_auras.append({
         "shikigami": sid, "card_type": card_type,
-        "keywords": list(keywords or []), "cost_zero": cost_zero, "scope": scope,
+        "keywords": list(keywords or []), "cost_zero": cost_zero,
+        "power": power, "shield": shield, "turn": turn, "scope": scope,
     })
     game._log(f"{game.db.shikigami[sid].name} 的卡牌光环生效（{scope}）")
 
@@ -731,7 +738,79 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     finally:
         affected = game._affected_stack.pop()["refs"]
     game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束（黑羽之刃）
-    game._emit_card_played(ctx.controller, inst.uid, cdef, affected)
+    game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
+                           play_from="void", triggered="auto")
+
+
+@action("spell_echo")
+def spell_echo(game, ctx, *, targets: list[Ref], sequence: list[int],
+               once_key: str | None = None) -> None:
+    """法术回响序列（涅槃业火底层；targets 忽略）：给来源式神登记"本回合"回响能力。
+
+    本回合中，当持有者以外的式神（含敌方）从手牌使用法术牌时（同 id 法术每回合
+    至多触发一次），持有者依次凭空免费使用 sequence 中的下一张卡（每张至多一次）：
+    不耗鬼火、凭空生成（用后进墓地）、play_from=void、triggered=auto，照常 emit
+    on_card_played；有目标的自动使用在合法目标中随机选择。触发结算见
+    spell_echo_recast（引擎在 _collect_abilities 中对 ext["spell_echo"] 设门）。
+    己方回合开始清除（与 delay_grant scope="turn" 同步）。once_key：已登记同键
+    回响时跳过（"不可叠加"）。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("spell_echo 需要来源式神")
+    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    if once_key is not None and s.ext.get("spell_echo", {}).get("once_key") == once_key:
+        return  # 不可叠加：已登记同键回响
+    s.ext["spell_echo"] = {
+        "sequence": [int(c) for c in sequence], "cursor": 0,
+        "triggered": [], "once_key": once_key,
+    }
+    game._log(f"{game.db.shikigami[s.id].name} 获得了法术回响（本回合）")
+
+
+@action("spell_echo_recast")
+def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
+    """法术回响的自动使用（内部步，由引擎收集门触发；targets 忽略）。
+
+    复查（收集到结算间局面可能已变）：同 id 法术每回合至多触发一次、序列游标未走完。
+    凭空生成序列下一张并免费自动使用：不耗鬼火、用后进墓地、play_from=void、
+    triggered=auto；有 choose 目标时在合法目标中随机选择。照常 emit on_card_played
+    （会再次触发持有者"使用法术牌时"类能力）。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        return
+    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    echo = s.ext.get("spell_echo")
+    if echo is None:
+        return
+    sid = (ctx.event or {}).get("shikigami")
+    if sid in echo["triggered"] or echo["cursor"] >= len(echo["sequence"]):
+        return
+    echo["triggered"].append(sid)
+    cid = echo["sequence"][echo["cursor"]]
+    echo["cursor"] += 1
+    from core import targets as targets_mod
+    from core.model import CardInstance
+    p = game.state.players[ctx.controller]
+    cdef = game.db.cards[cid]
+    inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进任何区域
+    game.state.next_uid += 1
+    chosen: list[Ref] = []
+    if cdef.target.kind == "choose":
+        pool = targets_mod.pool_refs(game, cdef.target.pool, ctx.controller)
+        if pool:
+            chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选择
+    game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了《{cdef.name}》")
+    game._affected_stack.append({"controller": ctx.controller, "refs": []})
+    try:
+        game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
+            controller=ctx.controller, source=ctx.source, card=inst,
+            chosen=chosen, is_ability=True))
+    finally:
+        affected = game._affected_stack.pop()["refs"]
+    game.move_card(p, inst, "graveyard")  # 凭空生成的回响牌用后进入墓地
+    game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束
+    game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
+                           play_from="void", triggered="auto")
 
 
 @action("fragile_echo")
@@ -904,3 +983,67 @@ def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> Non
     if not game._battle_stack:
         return
     game._battle_convert.add(game._battle_stack[-1])
+
+
+@action("launch_attack")
+def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self") -> None:
+    """令控制者指定式神发起一次额外攻击（targets 忽略；协战/崩山类）。
+
+    不耗鬼火、不耗出击次数；在准备区则自动进战斗区（沿用 _battle_flow 现有行为）；
+    走正常战斗流程（反击照常，无战斗牌加成——就是一次普通攻击）。
+    气绝/未出战/0 级（未在场）为空操作。shikigami="self" 取来源式神，否则按数据 id 定位。
+    """
+    if shikigami == "self":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("launch_attack(shikigami=self) 需要来源式神")
+        pi, idx = ctx.source.player, ctx.source.shikigami
+    else:
+        pi = ctx.controller
+        idx = game._find_shikigami(game.state.players[pi], int(shikigami))
+        if idx is None:
+            return  # 未出战：空操作
+    s = game.state.players[pi].shikigami[idx]
+    if not s.in_play:
+        return  # 气绝/离场/0 级：空操作
+    game._log(f"{game.db.shikigami[s.id].name} 发起了一次额外攻击")
+    game._resolve_combat(Ref(player=pi, shikigami=idx), s)
+
+
+@action("counter_piercing")
+def counter_piercing(game, ctx, *, targets: list[Ref]) -> None:
+    """反击贯通标记（targets 忽略）：登记到当前战斗上下文——该战斗中被攻击方的反击
+    伤害具有贯通（贯通修正批次对 kind=counter 的例外，rules.md:201；战斗终止点清除）。
+
+    主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
+    响应插入使用时作为普通动作执行，登记到被插入的当前战斗。
+    """
+    if not game._battle_stack:
+        return
+    game._battle_counter_piercing.add(game._battle_stack[-1])
+
+
+@action("boost_damage")
+def boost_damage(game, ctx, *, targets: list[Ref], amount: int = 0) -> None:
+    """伤害增幅（targets 忽略）：在伤害时点改写事件中可变伤害对象的数值 +amount（只增）。
+
+    amount=0（或负值）为空操作；须挂在伤害时点批次（on_damage_start 等 payload 含
+    damage 的事件）上，配合条件（如 {source_shikigami: self, kind: effect}）使用。
+    """
+    ev = (ctx.event or {}).get("damage")
+    if ev is None or amount <= 0:
+        return
+    ev.amount += amount
+
+
+@action("power_override")
+def power_override(game, ctx, *, targets: list[Ref], on: bool = True) -> None:
+    """力量覆写（凤凰火形态类）：on=True 时目标式神力量视为 0（覆盖基础+永久+临时+
+    战力全部，eff_power 覆写层）；on=False 解除。形态离场、式神气绝时自动清除。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if on:
+            s.ext["power_zero"] = True
+        else:
+            s.ext.pop("power_zero", None)
