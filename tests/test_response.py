@@ -131,7 +131,7 @@ def _bi(db, cid=BI):
     db.cards[cid] = F.card(
         cid, shikigami=BING, card_type="form", level=3,
         form_power=5, form_health=10, token=True,
-        steps=[F.Step(op="buff_health", amount={"shield_of": "source"}, perm=True,
+        steps=[F.Step(op="buff_health", amount={"shield_of": "source"},
                       target=T(kind="all", pool="friendly_others"))])
     return cid
 
@@ -430,6 +430,46 @@ def test_bi_buffs_others_by_shield(db, make_game):
     assert a.shikigami[YAO_IDX].max_health == 9 and a.shikigami[YAO_IDX].health == 9   # 6+3
     assert a.shikigami[LIAN_IDX].max_health == 8 and a.shikigami[LIAN_IDX].health == 8  # 5+3
     assert bing.max_health == 10         # 兵俑自身不变（形态 5/10）
+
+
+def test_bi_buff_not_perm_cleared_on_defeat(db, make_game):
+    """古尘之壁"获得x生命"非永久：上限增益气绝时清除（维护者答复(1)）。"""
+    _bi(db)
+    g = make_game()
+    a = g.state.players[0]
+    a.shikigami[BING_IDX].level = 3
+    _set_shield(g, 0, BING_IDX, 3)
+    play(g, 0, BI)
+    bai = a.shikigami[BAI_IDX]
+    assert bai.max_health == 7 and bai.temp_health == 3
+    bai.health = 0
+    g.check_defeated(Ref(player=0, shikigami=BAI_IDX))   # 气绝：临时上限清除
+    assert bai.temp_health == 0 and bai.max_health == 4
+
+
+def test_bi_buff_is_not_heal(db, make_game):
+    """古尘之壁"获得x生命"不算治疗：不走 heal 事件、不触发"恢复生命时"能力。"""
+    _bi(db)
+    db.cards[10010154] = F.card(           # 监听形态：任何治疗事件计数
+        10010154, shikigami=BAI, card_type="form", level=1,
+        form_power=3, form_health=4, token=True,
+        abilities=[F.block(F.Step(op="bump_ext", key="heals", target=T(kind="self")),
+                           when="on_heal")])
+    db.cards[10010155] = F.card(           # 普通治疗牌（对照组）
+        10010155, shikigami=BAI, token=True,
+        steps=[F.Step(op="heal", amount=1, target=T(kind="self"))])
+    g = make_game()
+    a = g.state.players[0]
+    a.orb = 9
+    a.shikigami[BING_IDX].level = 3
+    _set_shield(g, 0, BING_IDX, 3)
+    play(g, 0, 10010154)                   # 白狼位结附监听形态
+    play(g, 0, BI)                         # 上限增益伴随的生命上调不触发 on_heal
+    bai = a.shikigami[BAI_IDX]
+    assert bai.ext.get("heals", 0) == 0
+    bai.health -= 2
+    play(g, 0, 10010155)                   # 真实治疗触发 on_heal
+    assert bai.ext["heals"] == 1
 
 
 # ---------- 12. 尘缚之阵（激怒 + 战斗区锁定） ----------

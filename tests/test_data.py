@@ -672,6 +672,17 @@ def test_unforgivable_immunity(real_game):
     assert pa.shikigami[IDX].health == 6      # 反击 1 被免疫
 
 
+def test_unforgivable_immunity_unique(real_game):
+    """维护者答复(3)："若不具有该能力则获得"——本回合多次使用黄金羽不重复授予。"""
+    g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
+    play(g, 0, BKRS)
+    play(g, 0, FEATHER)
+    play(g, 0, FEATHER)
+    entries = [e for e in pa.shikigami[IDX].immunities
+               if e.get("kind") == "combat_damage"]
+    assert len(entries) == 1
+
+
 # ---------- 05 射怪鸟事：气绝前响应弃抽 ----------
 
 def test_shagua_niaoshi_response(real_game):

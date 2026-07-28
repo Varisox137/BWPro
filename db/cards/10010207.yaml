@@ -9,6 +9,8 @@ cost: 1
 form_power: 5
 form_health: 10
 effects:
+  # 维护者答复(1)："获得x生命" = 生命上限+x（持久性增益，气绝复活丢失，非永久）+ 生命+x
+  # （buff_health 非永久通道自带当前生命等量上调）
   steps:
-    - {op: buff_health, amount: {shield_of: source}, perm: true, target: {kind: all, pool: friendly_others}}
+    - {op: buff_health, amount: {shield_of: source}, target: {kind: all, pool: friendly_others}}
 text: 进场时兵俑每有1护甲，己方所有其他式神获得1生命。

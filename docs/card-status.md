@@ -33,7 +33,7 @@
 | 04 冲撞 | ✅ | 跨回合手牌触发式增强 |
 | 05 森罗之阵 | ✅ | |
 | 06 觉醒·兵俑 | ✅ | 原版卡面 +0/+0，实现无身材加成，一致 |
-| 07 古尘之壁 | ✅ | 实现为 +1生命/+1生命上限（永久） |
+| 07 古尘之壁 | ✅ | +x生命/+x生命上限（持久性增益，气绝清除；不算治疗，不走 heal 事件） |
 | 08 尘缚之阵 | ✅ | 已加"兵俑在战斗区时免疫直接消灭"（destroy_immune）；"无法替换"按已确认的自定义"战斗区锁定"实现 |
 
 ## 妖刀姬（100123）
@@ -104,7 +104,7 @@
 | 01 金羽焕生 | ✅ | generate card_id ×2 |
 | 02 风之舞 | ✅ | 卡牌触发器按 on_card_played 的 golden_feather payload 计数（add_mod persistent，打出装配快照；含金风流羽） |
 | 03 金风流羽 | ✅ | tags golden_feather 视为黄金羽（记账/触发同）；cost_zero_if {ext: feather_used_turn} 条件免费（费用先于记账计算，自身不免自身） |
-| 04 不可饶恕 | ✅ | grant_immunity(scope=turn) 回合级战斗伤害免疫：回合号记账自然过期，无需清理 |
+| 04 不可饶恕 | ✅ | grant_immunity(scope=turn, unique) 回合级战斗伤害免疫：回合号记账自然过期；多次使用黄金羽不重复授予 |
 | 05 射怪鸟事 | ✅ | 响应挂 on_before_defeat（条件显式式神 id）；discard 写 memo["discarded_count"] + draw {"memo": key} 组合"弃多少抽多少" |
 | 06 觉醒·以津真天 | ✅ | 觉醒倒计时 initial 1（来源=觉醒牌 id）；"黄金羽可以敌方角色为目标"由黄金羽的使用方式表达（见出入 5；已按维护者答复(11)） |
 | 07 千羽风之舞 | ✅ | 战斗牌"其它效果步"首个消费者（见出入 6）；step 级条件 {player_ext: feather_used_turn} |

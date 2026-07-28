@@ -96,6 +96,8 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
 
     已气绝式神不能获得非永久增益，但可以获得永久增益（当前生命不随之上调，
     复活时按新上限回满）；0 级未在场/已离场式神不受影响。
+    上限上调伴随的当前生命等量增加是直改而非治疗：不走 heal 事件、不触发
+    "恢复生命时"类能力（维护者确认：古尘之壁"获得x生命"不算治疗）。
     """
     for ref in targets:
         if ref.shikigami is not None:
@@ -923,7 +925,8 @@ def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 
 @action("grant_immunity")
 def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
-                   kind: str = "combat_damage", from_side: str | None = None) -> None:
+                   kind: str = "combat_damage", from_side: str | None = None,
+                   unique: bool = False) -> None:
     """授予目标式神伤害免疫（不可饶恕"本回合用过黄金羽则免疫战斗伤害"；觉醒·山童
     "免疫敌方非战斗伤害"）。
 
@@ -933,6 +936,8 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
     scope="turn"：免疫到当前回合结束——以回合号记账（{"turn": 当前回合}），
     按回合号比对，跨回合自然过期，无需清理；scope="perm"：无过期键，
     持续在场期间有效，随气绝清除（immunities 气绝清空，复活需重新授予）。
+    unique=True：目标已持有同等免疫条目时不再重复授予（维护者答复(3)：不可饶恕
+    "若不具有该能力则获得"——回合内多次使用黄金羽只授予一次）。
     """
     if scope not in ("turn", "perm"):
         raise ValueError(f"未知 grant_immunity 作用域: {scope}")
@@ -950,6 +955,10 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
                 entry["from"] = from_side
             if scope == "turn":
                 entry["turn"] = game.state.turn
+            if unique and any(e.get("kind") == kind and e.get("from") == from_side
+                              and (scope == "perm" or e.get("turn") == game.state.turn)
+                              for e in s.immunities):
+                continue
             s.immunities.append(entry)
             label = "战斗伤害" if kind == "combat_damage" else "非战斗伤害"
             game._log(f"{game.db.shikigami[s.id].name} 免疫{label}"

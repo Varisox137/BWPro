@@ -11,10 +11,11 @@ form_health: 6
 effects:
   steps: []
 abilities:
-  # 结附期间：己方每使用一张黄金羽（含金风流羽），以津真天免疫战斗伤害（本回合，
-  # 回合号记账自然过期）
+  # 结附期间：己方使用黄金羽（含金风流羽）后，以津真天获得"免疫战斗伤害。回合结束时
+  # 移除此能力"（维护者答复(3)：若不具有该能力才获得——unique 去重；scope=turn 回合号
+  # 记账即"回合结束时移除"的等价实现）
   - when: on_card_played
     condition: {player: self, golden_feather: true}
     steps:
-      - {op: grant_immunity, target: {kind: self}}
+      - {op: grant_immunity, target: {kind: self}, unique: true}
 text: 本回合若使用过‘黄金羽’，以津真天免疫战斗伤害。
