@@ -14,12 +14,11 @@ effects:
     # 羁绊：以津真天倒计时-2（战斗牌其它效果步；无倒计时能力修正 -0，未出战空操作）
     - {op: countdown_delta, amount: -2, shikigami: 100126}
 temp_grants:
-  # 若攻击有破甲的角色：攻击（造成战斗伤害）后使其获得相同数量的破甲。
-  # 破甲受伤即消耗——on_damage 时目标已无破甲，数量读 payload 的 fragile 键
-  # （伤害管线于破甲计算批次记账；无破甲时 amount=0 自然空操作，毒之华同路径）
-  - when: on_damage
-    condition: {source_shikigami: self, kind: combat, victim_side: enemy}
+  # 维护者答复(2)：战斗步骤"攻击时"（即时时机，优先级 2 按同批登记顺序）——
+  # 若战斗目标此时有破甲，记录该数值并登记一次性"本次战斗结束后赋予等量破甲"
+  # （引擎 _battle_echo；无破甲由 victim_has_fragile 条件过滤）
+  - when: on_before_assault
+    condition: {attacker_shikigami: self, victim_has_fragile: true}
     steps:
-      - {op: gain_shield, amount: {event: fragile}, kind: fragile,
-         target: {kind: context, key: victim}}
+      - {op: fragile_echo, target: {kind: context, key: victim}}
 text: "若攻击有破甲的角色，则攻击后使其获得相同数量的破甲。[羁绊]：{以津真天倒计时-2}。"

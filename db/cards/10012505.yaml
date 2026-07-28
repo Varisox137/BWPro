@@ -4,12 +4,12 @@ name: 觉醒·一目连
 shikigami: 100125
 card_type: spell
 subtype: awaken
+awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
 rarity: SR
 level: 2
 cost: 1
 effects:
   steps:
-    - {op: buff_power, amount: 2, perm: true, target: {kind: self}}
     - {op: generate, shikigami: self, card_type: form, count: 1}
 abilities:
   - when: on_form_attached

@@ -240,6 +240,24 @@ def test_liujin_gilded_feather_effects(make_game):
     assert pa.shikigami[YJZT].revive_countdown == 1
 
 
+def test_gilded_feather_defeated_awakened_no_snipe(make_game):
+    """维护者答复(11)联动：已觉醒的以津真天气绝后，经鎏金幻羽修饰的黄金羽只能打
+    敌方牌手（气绝时觉醒能力不在场，snipe 使用方式门控拒绝、无需选择目标）。"""
+    g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
+    play(g, 0, 10012606)                      # 觉醒·以津真天
+    f1 = give(g, 0, FEATHER)
+    _play_reinforce(g, 0, ZMZY, 0)            # 鎏金幻羽修饰（气绝时可用）
+    g.deal_to_shikigami(Ref(player=0, shikigami=YJZT), 99, None)
+    g._drain_queue()
+    s = pa.shikigami[YJZT]
+    assert s.defeated and s.awakened          # 觉醒标记跨气绝保留，但能力不在场
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": f1.uid, "play_method": "snipe",
+                 "target": Ref(player=1, shikigami=YML)})
+    g.apply({"op": "play_card", "uid": f1.uid})   # 基础效果：无需选择目标打敌方牌手
+    assert pb.health == 27                    # 2 + 1（修饰伤害+1）
+
+
 # ---------- 蚀刃毒羽：条件破甲翻倍 + 羁绊 ----------
 
 def test_shiren_doubles_fragile_and_bond(make_game):

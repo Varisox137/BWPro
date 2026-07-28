@@ -37,7 +37,8 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_before_shield",     # 护甲计算前 {damage, victim, source, amount, kind}（批次3=屏障，引擎内建）
     "on_after_shield",      # 护甲计算后 {damage, victim, source, amount, kind}
     "on_before_health",     # 扣减生命前 {damage, victim, source, amount, kind}（此后伤害值锁定）
-    "on_awakened",          # 式神觉醒（能力替换为觉醒能力）{player, shikigami, uid}
+    "on_before_awaken",     # 觉醒前（能力替换前）{player, shikigami, uid}
+    "on_awakened",          # 觉醒后（能力替换与法术本身效果结算后）{player, shikigami, uid}
     "on_before_heal",       # 治疗前 {target: Ref, amount, source, reason}
     "on_heal",              # 治疗时 {target: Ref, amount（实际治疗量）, source, reason}
     "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
@@ -62,4 +63,5 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_heal": "insert",      # 治疗前：即时时机
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
+    "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程，thoughts.txt）
 }

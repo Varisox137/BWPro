@@ -4,13 +4,13 @@ name: 觉醒·镇魂歌
 shikigami: 100124
 card_type: spell
 subtype: awaken
+awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+awaken_health: 1
 rarity: R
 level: 3
 cost: 1
 effects:
-  steps:
-    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
-    - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+  steps: []
 abilities:
   # 觉醒倒计时（initial 3，来源=觉醒牌 id）：抽一张牌，获得 1 点鬼火
   - countdown: 3

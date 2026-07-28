@@ -255,25 +255,47 @@ def test_ha_arashi_three_to_all(make_game):
     assert [s.health for s in pb.shikigami] == [1, 1, 3, 1]  # 4/4/6/4 - 3
 
 
+def test_storm_lord_enemy_shikigami_only(make_game):
+    """维护者答复(7)：受影响列表只计敌方式神（去重）——羽刃暴风伤及的敌方牌手无
+    暴风之主追加；构造性验证出牌伤害帧内波及的己方式神不进列表。"""
+    g, pa, pb = _game(make_game, dt_level=3)
+    play(g, 0, LORD)
+    play(g, 0, HA)                            # 羽刃暴风：敌方全体各 3
+    assert pb.health == 27                    # 牌手只吃 3（不进列表，无追加 1）
+    assert [s.health for s in pb.shikigami] == [0, 0, 2, 0]  # 4/4/6/4 - 3 - 1
+    # 构造：己方式神被波及不进 affected_refs
+    g._affected_stack.append({"controller": 0, "refs": []})
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 2, None)
+    g.deal_to_shikigami(Ref(player=1, shikigami=2), 2, None)
+    rec = g._affected_stack.pop()
+    assert rec["refs"] == [Ref(player=1, shikigami=2)]
+
+
 # ---------- 08 觉醒·大天狗 ----------
 
 def test_awaken_replace_and_initial_one(make_game):
-    """觉醒：+2/+2 永久、能力替换为[倒计时1]版本；[倒计时]-1 对旧能力生效后
-    旧一次型倒计时随能力替换清除（一式神至多 1 个倒计时能力）。"""
+    """觉醒（维护者答复(10)+法术觉醒流程）：替换在法术效果之前——继承原能力记录的
+    动态倒计时并变为倒计时 1，[倒计时]-1 随之归零 → 自动使用记录的法术；
+    记录不随替换丢失（气绝才清）；+2/+2 随"觉醒后"延时时机授予。"""
     g, pa, pb = _game(make_game, dt_level=3)
     s = pa.shikigami[IDX]
     play(g, 0, KAZAMI)
     assert s.countdown == 2                   # 基础能力的一次型倒计时
+    assert pb.health == 28
     play(g, 0, AWAKEN)
     assert s.awakened == AWAKEN
+    assert g.history.index("on_before_awaken") < g.history.index("on_awakened")
     assert s.perm_power == 2 and s.perm_health == 2
     assert s.max_health == 6 and s.health == 6
-    assert s.countdown is None                # 旧倒计时：-1 后随觉醒替换清除
-    play(g, 0, KAZAMI)                        # 觉醒能力：[倒计时1]
-    assert pb.health == 26                    # 30 - 2×2（两张风神一扇主动使用）
-    assert s.countdown == 1
+    assert pb.health == 26                    # 继承的倒计时 1 → -1 归零：自动复用风神一扇
+    assert s.ext["recorded_card"] == KAZAMI   # 觉醒继承原能力记录的法术
+    assert s.countdown == 1                   # 自动使用再次触发觉醒能力[倒计时1]
     assert s.countdown_source == DT           # set_countdown 来源按 A2 决策 = 式神 id
-    pass_turns(g, 2)                          # A 下回合开始：1→0，自动使用
-    assert pb.health == 24
     assert pa.ext["countdown_history"] == [DT]
+    play(g, 0, KAZAMI)                        # 觉醒能力：[倒计时1]
+    assert pb.health == 24
+    assert s.countdown == 1
+    pass_turns(g, 2)                          # A 下回合开始：1→0，自动使用
+    assert pb.health == 22
+    assert pa.ext["countdown_history"] == [DT, DT]
     assert s.countdown == 1                   # 自动使用再次触发觉醒能力

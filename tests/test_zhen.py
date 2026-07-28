@@ -156,6 +156,20 @@ def test_dushi_response_on_attacked(make_game):
     assert zhen_b.health == 5 and zhen_b.shield == -6   # A 鸩反击 2+4=6 → 6 破甲
 
 
+def test_dushi_with_biyu_net_effect(make_game):
+    """维护者答复(5)净效果：碧羽散华形态的鸩使用毒蚀——敌方式神正常受伤（伤害事件
+    生成点→破甲→碧羽嵌套转回伤害，嵌套不再触发毒蚀），鸩自身被反击获得破甲而不受伤。"""
+    g, pa, pb = _game(make_game, zhen_level=3)
+    play(g, 0, BYSH)                          # 碧羽散华结附（鸩 5/7，标记敌方）
+    move(g, 1, 1)                             # B 白狼（3/4）入战斗区
+    wolf = pb.shikigami[1]
+    wolf.base_health = wolf.health = 20       # 撑住攻击便于观察净效果
+    play(g, 0, DS)                            # 毒蚀：鸩 5+4=9 攻
+    zhen = pa.shikigami[IDX]
+    assert wolf.health == 11 and wolf.shield == 0   # 9 伤→9 破甲→碧羽转回 9 伤
+    assert zhen.health == 7 and zhen.shield == -3   # 反击 3 → 3 破甲，不受伤
+
+
 # ---------- 05 觉醒·鸩：x 累加 ----------
 
 def test_awaken_x_scaling(make_game):
@@ -210,10 +224,13 @@ def test_biyu_sanhua_converts_and_clears(make_game):
     g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile")
     assert wolf.health == 1 and wolf.shield == 0      # 3 破甲 → 3 伤害
     g._change_shield(Ref(player=1), 2, "test", kind="fragile")
-    assert pb.shield == -2 and pb.health == 30        # 牌手不受此转化（锚点仅式神）
+    assert pb.shield == 0 and pb.health == 28          # 牌手同样转化（维护者答复(1)）
     play(g, 0, JLXX)                                   # 替换形态 → 旧形态离场清除标记
     g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile")
     assert wolf.shield == -2 and wolf.health == 1      # 不再转化
+    h, sh = pb.health, pb.shield
+    g._change_shield(Ref(player=1), 2, "test", kind="fragile")
+    assert pb.health == h and pb.shield == sh - 2      # 牌手也不再转化
 
 
 # ---------- 08 毒之华：半血破甲 ----------

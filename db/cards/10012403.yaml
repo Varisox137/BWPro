@@ -9,7 +9,7 @@ cost: 1
 keywords: [fast]
 effects:
   # 按 countdown_history 首次出现顺序重放妖琴师生效过的基础/觉醒倒计时能力块
-  # （每种至多一次；维护者答复：按 4 种能力的生效顺序依次执行）
+  # （每种至多一次；维护者答复(8)：只计入基础/觉醒能力，形态来源跳过）
   steps:
-    - {op: replay_countdown, shikigami: self}
+    - {op: replay_countdown, shikigami: self, skip_forms: true}
 text: "[瞬发]。[增强]：{本局游戏妖琴师的基础能力每生效过一种，此牌便具有对应效果。}"

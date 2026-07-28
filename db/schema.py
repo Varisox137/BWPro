@@ -128,6 +128,8 @@ class CardDef(BaseModel):
     shikigami2: int | None = None  # 协战牌：另一位所属式神 id（仅 card_type=reinforce 使用）
     card_type: str
     subtype: str | None = None  # 子类型：awaken=觉醒牌；保留扩展（如式神专属子类型）
+    awaken_power: int = 0  # 觉醒牌：永久身材增益（力量），"觉醒后"延时时机之后授予
+    awaken_health: int = 0  # 觉醒牌：永久身材增益（生命），同上（thoughts.txt 法术觉醒流程）
     tags: list[str] = Field(default_factory=list)  # 自由标记；机制未实现前不放进数据，避免静默失效
     rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）
     token: bool = False  # 衍生卡：对局中由系统/效果生成，不可编入卡组

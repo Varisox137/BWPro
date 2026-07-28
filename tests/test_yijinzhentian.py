@@ -180,15 +180,18 @@ def test_awaken_countdown_one(make_game):
 
 
 def test_feather_snipe_requires_awaken(make_game):
-    """黄金羽以敌方式神为目标：未觉醒门控 IllegalAction；觉醒后可狙击 2 伤。"""
+    """黄金羽以敌方角色为目标（答复(11)）：未觉醒门控 IllegalAction；觉醒后可狙击
+    式神或牌手 2 伤。"""
     g, pa, pb = _game(make_game, ft_level=2)
     wolf = Ref(player=1, shikigami=1)
     with pytest.raises(IllegalAction):
         _play_method(g, 0, FEATHER, "snipe", wolf)   # 未觉醒：门控拒绝
     play(g, 0, AWAKEN)
-    _play_method(g, 0, FEATHER, "snipe", wolf)       # 觉醒后：瞬发免费狙击
+    _play_method(g, 0, FEATHER, "snipe", wolf)       # 觉醒后：瞬发免费狙击式神
     assert pb.shikigami[1].health == 2
-    assert pa.orb == 8                        # 仅觉醒牌 1 火
+    _play_method(g, 0, FEATHER, "snipe", Ref(player=1))  # 也可狙击敌方牌手
+    assert pb.health == 28
+    assert pa.orb == 7                        # 觉醒牌 1 火 + 第二张黄金羽 1 火（瞬发名额已用）
 
 
 # ---------- 07 千羽风之舞：战斗牌其它效果步 ----------

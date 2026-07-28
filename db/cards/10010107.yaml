@@ -4,13 +4,13 @@ name: 觉醒·白狼
 shikigami: 100101
 card_type: spell
 subtype: awaken
+awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+awaken_health: 2
 rarity: SR
 level: 3
 cost: 1
 effects:
-  steps:
-    - {op: buff_power, amount: 2, perm: true, target: {kind: self}}
-    - {op: buff_health, amount: 2, perm: true, target: {kind: self}}
+  steps: []
 abilities:
   - when: on_damage
     timing: insert

@@ -154,6 +154,20 @@ def test_dahezou_replays_in_history_order(make_game):
     assert ids == [YQS, RUZHENG, ZHENHUN]     # 按 history 首次出现顺序，每种至多一次
 
 
+def test_dahezou_skips_form_sources(make_game, gdb):
+    """维护者答复(8)：大合奏只计入基础/觉醒能力，形态来源跳过——妖琴师当前无形态牌，
+    构造性改写一张形态卡的归属并注入 history 验证。"""
+    g, pa, pb = _game(make_game, ft_level=1)
+    gdb.cards[10012608].shikigami = YQS       # 构造：归属妖琴师的形态来源（流浪之羽）
+    pa.ext["countdown_history"] = [10012608, YQS]
+    pa.health = 20
+    log_before = len(g.state.log)
+    play(g, 0, DAHEZOU)
+    assert pa.health == 23                    # 仅重放基础治疗（形态来源被跳过）
+    replay_logs = [m for m in g.state.log[log_before:] if "重放" in m]
+    assert len(replay_logs) == 1 and f"来源 {YQS}）" in replay_logs[0]
+
+
 # ---------- 06 魔音扰心：无效化（主动 / 响应） ----------
 
 def test_moyin_proactive_nullifies_next_enemy_card(make_game):

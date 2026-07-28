@@ -101,12 +101,15 @@ class Game:
         # （rules.md:52"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
         self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
         self._op_param_cache: dict[str, frozenset] = {}  # op 函数签名缓存（Step.condition 分派用）
-        # 出牌效果伤害记录栈：结算打出/响应/自动使用的效果块期间压栈一个列表，
-        # 伤害管线把实际受伤的式神记入栈顶，弹出后随 on_card_played 的
-        # affected_refs 发出（暴风之主"对受影响的敌方式神各造成1点伤害"）
-        self._affected_stack: list[list[Ref]] = []
+        # 出牌效果伤害记录栈：结算打出/响应/自动使用的效果块期间压栈一条记录，
+        # 伤害管线把实际受伤的"敌方"式神记入栈顶（维护者答复(7)：只计敌方式神——
+        # 牌手与己方式神不计；去重），弹出后随 on_card_played 的 affected_refs
+        # 发出（暴风之主"对受影响的敌方式神各造成1点伤害"）
+        self._affected_stack: list[dict] = []
         # 毒蚀：伤害→破甲转化登记的战斗 id 集合（战斗终止点随弹栈清除）
         self._battle_convert: set[int] = set()
+        # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量)]，"攻击时"登记、战斗结束后回赋
+        self._battle_echo: dict[int, list[tuple[Ref, int]]] = {}
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -506,11 +509,14 @@ class Game:
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
             if s.level < eff_level:
                 raise IllegalAction(f"《{cdef.name}》需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
-        # 使用方式的觉醒门控（黄金羽觉醒后"以敌方式神为目标"方式：requires_awaken 数据标记）
+        # 使用方式的觉醒门控（黄金羽觉醒后"以敌方角色为目标"方式：requires_awaken 数据标记）。
+        # 维护者答复(11)：气绝时觉醒能力不在场——门控要求未气绝/未离场（觉醒标记本身
+        # 跨气绝保留，但能力在场才生效）
         if method is not None and (method.model_extra or {}).get("requires_awaken"):
-            if si is None or not p.shikigami[si].awakened:
+            gate = p.shikigami[si] if si is not None else None
+            if gate is None or not gate.awakened or gate.defeated or gate.despawned:
                 who = sname if si is not None else "所属式神"
-                raise IllegalAction(f"「{method.text or method.id}」需要 {who} 已觉醒")
+                raise IllegalAction(f"「{method.text or method.id}」需要 {who} 已觉醒且在场上")
         # 尘缚之阵锁定：准备区式神不能发起不具有远程的战斗（战斗牌；出击见 _cmd_assault）
         if (cdef.card_type == "combat" and si is not None
                 and p.combat_index != si
@@ -546,7 +552,7 @@ class Game:
             self.move_card(p, card, "graveyard")
             self._log(f"《{cdef.name}》的使用被无效化")
             return
-        self._affected_stack.append([])
+        self._affected_stack.append({"controller": self.state.active, "refs": []})
         try:
             if cdef.card_type == "form":
                 # 形态牌：从手牌/原区域移除并立即结附（响应插入使用同样走 _play_form_card）
@@ -567,17 +573,28 @@ class Game:
                     card=card,
                     chosen=chosen,
                 )
+                # 法术觉醒牌使用事件流程（thoughts.txt）：移入墓地 → 觉醒前（即时）→
+                # 替换式神能力 → 法术本身效果 → 觉醒后（延时）→ 永久身材增益
+                awaken_si = si if (cdef.subtype == "awaken" and si is not None) else None
+                if awaken_si is not None:
+                    self.emit("on_before_awaken", player=self.state.active,
+                              shikigami=awaken_si, uid=uid,
+                              target=Ref(player=self.state.active, shikigami=awaken_si))
+                    # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活
+                    # 保留觉醒状态）；动态倒计时继承见 _register_ability_countdown(awaken=)
+                    p.shikigami[awaken_si].awakened = cdef.id
+                    self._register_ability_countdown(self.state.active, awaken_si, awaken=True)
+                    self._log(f"{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒")
                 block = self._played_block(p, cdef, card, method)
                 self._resolve_block(block, ctx)
-                # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活保留觉醒状态）
-                if cdef.subtype == "awaken" and si is not None:
-                    p.shikigami[si].awakened = cdef.id
-                    self._register_ability_countdown(self.state.active, si)  # 觉醒替换：注册觉醒能力的倒计时块
-                    self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
-                    self.emit("on_awakened", player=self.state.active, shikigami=si, uid=uid,
-                              target=Ref(player=self.state.active, shikigami=si))
+                if awaken_si is not None:
+                    self.emit("on_awakened", player=self.state.active, shikigami=awaken_si,
+                              uid=uid,
+                              target=Ref(player=self.state.active, shikigami=awaken_si))
+                    # 永久身材增益排在"觉醒后"延时监听者之后结算（同批入队）
+                    self._queue_awaken_stats(awaken_si, cdef, card)
         finally:
-            affected = self._affected_stack.pop()
+            affected = self._affected_stack.pop()["refs"]
         if si is not None:
             self._clear_play_delayed(p.shikigami[si])  # "本次使用期间"延迟能力窗口结束
         self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
@@ -631,6 +648,22 @@ class Game:
                   subtype=cdef.subtype, shikigami=cdef.shikigami,
                   golden_feather=("golden_feather" in cdef.tags),
                   affected_refs=list(affected or ()))
+
+    def _queue_awaken_stats(self, si: int, cdef: CardDef, card: CardInstance) -> None:
+        """觉醒牌的永久身材增益（awaken_power/awaken_health）：法术觉醒使用事件流程
+        末尾，排在"觉醒后"（on_awakened，延时时机）监听者之后入队结算。"""
+        steps: list[Step] = []
+        if cdef.awaken_power:
+            steps.append(Step(op="buff_power", amount=cdef.awaken_power, perm=True,
+                              target=TargetSpec(kind="self")))
+        if cdef.awaken_health:
+            steps.append(Step(op="buff_health", amount=cdef.awaken_health, perm=True,
+                              target=TargetSpec(kind="self")))
+        if not steps:
+            return
+        self.queue.append(_Pending(EffectBlock(steps=steps), ExecContext(
+            controller=self.state.active,
+            source=Ref(player=self.state.active, shikigami=si), card=card)))
 
     @staticmethod
     def _clear_play_delayed(s: ShikigamiState) -> None:
@@ -827,14 +860,21 @@ class Game:
             new = max(0, old + delta) if kind == "shield" else min(0, old - delta)
         else:
             # 流程 5：获得——先抵消反向值再盈余同向（获得 5 护甲且持有 3 破甲 → 2 护甲）
-            if kind == "fragile" and ref.shikigami is not None:
-                # 碧羽散华锚点（"获得破甲前"转化）：持有 fragile_to_damage 标记的式神
+            if kind == "fragile":
+                # 碧羽散华锚点（"获得破甲前"转化）：持有 fragile_to_damage 标记的角色
                 # 获得破甲改为受到等量伤害（标记经 ext 授予；converted=True 防止与
-                # 毒蚀的伤害→破甲转化来回循环——转化类效果对同一事件链只生效一次）
-                s = p.shikigami[ref.shikigami]
-                if s.ext.get("fragile_to_damage"):
-                    self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 {delta} 点伤害")
-                    self.deal_to_shikigami(ref, delta, None, converted=True)
+                # 毒蚀的伤害→破甲转化来回循环——转化类效果对同一事件链只生效一次）。
+                # 维护者答复(1)：无论式神/牌手——victim 侧标记挂在敌方式神上，牌手
+                # 沿用"其任一式神持标记"语义（当前卡池仅鸩给予破甲，两者等价）
+                if ref.shikigami is not None:
+                    s = p.shikigami[ref.shikigami]
+                    if s.ext.get("fragile_to_damage"):
+                        self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 {delta} 点伤害")
+                        self.deal_to_shikigami(ref, delta, None, converted=True)
+                        return
+                elif any(st.ext.get("fragile_to_damage") for st in p.shikigami):
+                    self._log(f"{p.name} 的破甲转化为 {delta} 点伤害")
+                    self.deal_to_player(ref.player, delta, None, converted=True)
                     return
             new = old + delta if kind == "shield" else old - delta
         holder.shield = new
@@ -902,6 +942,7 @@ class Game:
             # 移除本战斗绑定的一次性临时触发（已触发完的已随 uses 归零移除）
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
             self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
+            self._battle_echo.pop(bid, None)  # 战斗中止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_stack.pop()
             # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
             if attacker.attack_buffs and not self._has_keyword(attacker, "keep_attack_buffs"):
@@ -934,7 +975,8 @@ class Game:
             return
         # ---- （被）攻击时（即时时机）----
         self.emit("on_before_assault", attacker=atk_ref,
-                  victim=Ref(player=def_pi, shikigami=d.combat_index))
+                  victim=Ref(player=def_pi, shikigami=d.combat_index),
+                  battle=self._battle_stack[-1])
         self._drain_queue()
         if attacker.defeated or attacker.despawned:
             self._log("攻击方在伤害结算前气绝/离场，战斗中止")
@@ -988,7 +1030,10 @@ class Game:
         if events:
             self._run_damage_queue(events)
         # ---- 战斗后 ----
-        self.emit("on_after_assault", attacker=atk_ref)
+        self.emit("on_after_assault", attacker=atk_ref, battle=self._battle_stack[-1])
+        # ---- 战斗结束后：蚀刃毒羽"攻击时"登记的一次性破甲回赋（维护者答复(2)）----
+        for echo_ref, echo_amount in self._battle_echo.pop(self._battle_stack[-1], []):
+            self._change_shield(echo_ref, echo_amount, "蚀刃毒羽", kind="fragile")
 
     def _cmd_assault(self, cmd: dict) -> None:
         """出击指令：耗 1 鬼火 + 消耗出击次数，将攻击者移入战斗区并发起战斗。
@@ -1337,12 +1382,15 @@ class Game:
         s.countdown_once = once
         s.countdown_source = source
 
-    def _register_ability_countdown(self, pi: int, si: int) -> None:
+    def _register_ability_countdown(self, pi: int, si: int, *, awaken: bool = False) -> None:
         """能力进场（对局开始/升至 1 级/复活）与觉醒替换：注册式神当前能力
         （基础/觉醒）中的倒计时能力块（EffectBlock.countdown 非 None 者）。
 
         当前能力无倒计时块时清除原能力授予的倒计时（能力替换/离场语义）；
         形态授予的倒计时（来源 = 当前形态牌 id）不受影响。
+        觉醒替换（awaken=True）且新能力无静态倒计时块时，继承原能力的动态倒计时
+        （set_countdown 授予，来源 = 式神自身 id）：保留归零块与 recorded_card，
+        剩余倒计时变为 1（维护者答复(10)："替换觉醒并变为倒计时1"，大天狗用）。
         """
         p = self.state.players[pi]
         s = p.shikigami[si]
@@ -1354,10 +1402,15 @@ class Game:
             blocks = d.all_abilities
             source = d.id
         found = next((b for b in blocks if b.countdown is not None), None)
-        if s.form is None or s.countdown_source != s.form.id:
-            self._clear_countdown(s)
         if found is not None:
+            if s.form is None or s.countdown_source != s.form.id:
+                self._clear_countdown(s)
             self._register_countdown(s, initial=found.countdown, block=found, source=source)
+        elif awaken and s.countdown_block is not None and s.countdown_source == s.id:
+            # 继承动态倒计时并变为倒计时 1
+            s.countdown = min(s.countdown, 1) if s.countdown is not None else 1
+        elif s.form is None or s.countdown_source != s.form.id:
+            self._clear_countdown(s)
 
     def _countdown_block_for(self, source: int) -> EffectBlock | None:
         """按倒计时来源 id 找回对应的倒计时能力块（countdown_history 重放用，大合奏）。
@@ -1505,10 +1558,10 @@ class Game:
                                              converted=converted)])
 
     def deal_to_player(self, player_index: int, amount: int, source: Ref | None,
-                       *, kind: str = "effect") -> None:
+                       *, kind: str = "effect", converted: bool = False) -> None:
         """对牌手造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
         self._run_damage_queue([_DamageEvent(source=source, victim=Ref(player=player_index),
-                                             amount=amount, kind=kind)])
+                                             amount=amount, kind=kind, converted=converted)])
 
     def _run_damage_queue(self, events: list[_DamageEvent],
                           defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None) -> None:
@@ -1548,6 +1601,13 @@ class Game:
             return  # 气绝/离场/濒死者不受伤害
         if s is None and p.defeated:
             return  # 气绝的牌手不再受到伤害
+        # 毒蚀转化（维护者答复(5)）：伤害事件生成点全额转化为等量破甲——护甲不再
+        # 先吸收，不再视为伤害（无扣减/气绝/吸血/on_damage）。converted=True 的伤害
+        # （碧羽散华破甲→伤害的嵌套事件）不再转化，防止转化类效果来回循环。
+        if not ev.converted and any(b in self._battle_convert for b in self._battle_stack):
+            self._change_shield(ev.victim, ev.amount, "毒蚀", kind="fragile")
+            self._log(f"伤害转化为 {ev.amount} 点破甲（毒蚀）")
+            return
         # 批次 1：造成/受到伤害开始时（即时时机）
         if not ev.skip_early:
             # 批次 0：造成伤害前（即时时机）——穿刺（来源关键字）在此生效：移除目标
@@ -1625,12 +1685,6 @@ class Game:
             if other.source == ev.source and other.victim == ev.victim and other.kind == ev.kind:
                 ev.amount += other.amount
                 dq.remove(other)
-        # 批次 8 前：毒蚀转化——本次战斗中双方造成的伤害转化为等量破甲（战斗作用域
-        # 标记，于护甲计算后、扣减生命前生效；不再视为伤害：无扣减/气绝/吸血/on_damage）
-        if not ev.converted and any(b in self._battle_convert for b in self._battle_stack):
-            self._change_shield(ev.victim, ev.amount, "毒蚀", kind="fragile")
-            self._log(f"伤害转化为 {ev.amount} 点破甲（毒蚀）")
-            return
         # 批次 8：扣减生命
         if s is not None:
             # 不屈：生命 > 1 且伤害 >= 当前生命 → 保留 1 点生命，消耗全部一次性不屈
@@ -1644,8 +1698,11 @@ class Game:
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
-            if self._affected_stack and ev.victim not in self._affected_stack[-1]:
-                self._affected_stack[-1].append(ev.victim)  # 出牌效果实际伤害过的式神
+            if (self._affected_stack
+                    and ev.victim.player != self._affected_stack[-1]["controller"]
+                    and ev.victim not in self._affected_stack[-1]["refs"]):
+                # 出牌效果实际伤害过的敌方式神（答复(7)：己方式神/牌手不计，去重）
+                self._affected_stack[-1]["refs"].append(ev.victim)
             self._queue_lifesteal(ev)  # 伤害后（延时，优先级 1 锚点）：吸血生成恢复生命事件
             self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source,
                       kind=ev.kind, fragile=ev.fragile,
@@ -2065,7 +2122,7 @@ class Game:
             cdef = self.db.cards[ctx.card.id]
             if self._settle_response_card(p, cdef, ctx):
                 return
-            self._affected_stack.append([])  # 响应法术：记录该次使用伤害过的式神
+            self._affected_stack.append({"controller": ctx.controller, "refs": []})  # 响应法术：记录该次使用伤害过的敌方式神
         try:
             for step in block.steps:
                 self._run_step(step, ctx)
@@ -2073,7 +2130,7 @@ class Game:
                     self._drain_queue()  # 步骤之间允许其它效果结算
         finally:
             if ctx.triggered and ctx.card is not None:
-                affected = self._affected_stack.pop()
+                affected = self._affected_stack.pop()["refs"]
         # mode == "atomic"：步骤连发，队列留到块外统一结算
         if ctx.triggered and ctx.card is not None:
             # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）

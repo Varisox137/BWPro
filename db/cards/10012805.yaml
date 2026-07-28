@@ -4,13 +4,13 @@ name: 觉醒·鸩
 shikigami: 100128
 card_type: spell
 subtype: awaken
+awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
 rarity: SSR
 level: 2
 cost: 1
 effects:
   steps:
     - {op: gain_shield, amount: 2, kind: fragile, target: {kind: all, pool: enemy_player}}
-    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
 abilities:
   # 觉醒倒计时（initial 2，来源=觉醒牌 id，替换基础倒计时）：2 + x 破甲，
   # x = 基础+觉醒倒计时生效合计（ext["zhen_proc"]，觉醒后继续累加——先给破甲再计数）

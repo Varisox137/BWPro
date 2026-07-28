@@ -667,13 +667,16 @@ def set_countdown(game, ctx, *, targets: list[Ref], initial: int,
 
 
 @action("replay_countdown")
-def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "self") -> None:
+def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
+                     skip_forms: bool = False) -> None:
     """按本局 countdown_history 的首次出现顺序，依次执行来源属于目标式神的倒计时
     能力块（每种至多一次；targets 忽略；大合奏"本局游戏妖琴师的基础能力每生效过一种，
     此牌便具有对应效果"——维护者答复：按 4 种基础/觉醒倒计时能力的生效顺序依次执行）。
 
     来源归属：id == 式神 id（基础）或卡牌 shikigami == 式神 id（觉醒牌/形态牌）；
-    找不回对应块（_countdown_block_for）的历史条目跳过。重放为卡牌效果（非能力来源）。
+    skip_forms=True 时形态牌来源跳过（维护者答复(8)：大合奏只计入基础/觉醒能力；
+    风韵雅乐的一目连倒计时皆来自形态，不过滤）；找不回对应块（_countdown_block_for）
+    的历史条目跳过。重放为卡牌效果（非能力来源）。
     """
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -686,8 +689,10 @@ def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "s
     for src in p.ext.get("countdown_history", []):
         if src in seen:
             continue  # 每种至多一次（按首次出现顺序）
-        if src != sid and not (src in game.db.cards
-                               and game.db.cards[src].shikigami == sid):
+        src_card = game.db.cards.get(src)
+        if skip_forms and src_card is not None and src_card.card_type == "form":
+            continue  # 形态来源不计入（答复(8)，大合奏用）
+        if src != sid and not (src_card is not None and src_card.shikigami == sid):
             continue  # 非目标式神的倒计时来源（含其召唤物/其他式神）
         block = game._countdown_block_for(src)
         if block is None or not block.steps:
@@ -719,14 +724,32 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进入任何区域
     game.state.next_uid += 1
     game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了《{cdef.name}》")
-    game._affected_stack.append([])
+    game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
             controller=ctx.controller, source=ctx.source, card=inst, is_ability=True))
     finally:
-        affected = game._affected_stack.pop()
+        affected = game._affected_stack.pop()["refs"]
     game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束（黑羽之刃）
     game._emit_card_played(ctx.controller, inst.uid, cdef, affected)
+
+
+@action("fragile_echo")
+def fragile_echo(game, ctx, *, targets: list[Ref]) -> None:
+    """蚀刃毒羽（维护者答复(2)）："攻击时"记录目标当前破甲量，登记一次性
+    "本次战斗结束后赋予等量破甲"（引擎 _battle_echo，战斗中止则丢弃）。
+
+    无破甲（量 ≤ 0）/ 不在战斗中：空操作（条件 {victim_has_fragile} 已在块级过滤）。
+    """
+    if not game._battle_stack:
+        return
+    bid = game._battle_stack[-1]
+    for ref in targets:
+        p = game.state.players[ref.player]
+        holder = p.shikigami[ref.shikigami] if ref.shikigami is not None else p
+        if holder.shield < 0:
+            game._battle_echo.setdefault(bid, []).append((ref, -holder.shield))
+            game._log(f"蚀刃毒羽记录了 {-holder.shield} 点破甲（战斗结束后回赋）")
 
 
 @action("retreat")

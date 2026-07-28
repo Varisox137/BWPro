@@ -4,12 +4,12 @@ name: 觉醒·入阵歌
 shikigami: 100124
 card_type: spell
 subtype: awaken
+awaken_health: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
 rarity: R
 level: 1
 cost: 1
 effects:
-  steps:
-    - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+  steps: []
 abilities:
   # 觉醒倒计时（initial 3，来源=觉醒牌 id，替换基础倒计时）：5 伤随机分配给所有敌方角色
   - countdown: 3
