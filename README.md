@@ -20,7 +20,8 @@ uv run pytest -q tests/              # 运行全部测试
 ## 项目结构
 
 - `core/` — 规则层：状态模型、引擎、动作原语、事件、目标解析、对局组装、调试指令
-- `db/` — 卡牌数据库（YAML）、schema、组卡校验（天梯规则，可参数化）、卡组码
+- `db/` — 卡牌数据库（YAML 按 `db/<版本包>_<拼音>/<包内编号>_<式神拼音>/` 分目录，
+  式神与其全部卡牌同目录，见 `db/packs.py`）、schema、组卡校验（天梯规则，可参数化）、卡组码
 - `client/` — CLI 客户端：`cli.py` 热座 + 卡组构筑；`net.py` 联机（同一 `cmd dict` 协议）；
   `tui.py` TUI 基座（prompt_toolkit 底部输入框 + 常驻状态行，非 TTY 自动回退内置 input）
 - `server/` — authoritative 联机服务端（FastAPI + WebSocket，详见 `server/README.md`）

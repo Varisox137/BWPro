@@ -41,30 +41,26 @@ class CardDatabase:
     @classmethod
     def load(cls, root: Path | str | None = None, strict: bool = True) -> "CardDatabase":
         root = Path(root) if root else DB_ROOT
-        cards = cls._load_dir(root / "cards", CardDef)
-        shikigami = cls._load_dir(root / "shikigami", ShikigamiDef)
+        cards: dict[int, CardDef] = {}
+        shikigami: dict[int, ShikigamiDef] = {}
         custom_events: set[str] = set()
-        events_file = root / "events.yaml"
-        if events_file.exists():
-            for entry in yaml.safe_load(events_file.read_text(encoding="utf-8")) or []:
-                custom_events.add(entry["name"])
+        # db/<pack>/<seq>_<slug>/*.yaml 递归收集；按有无 card_type 区分卡牌/式神定义
+        for f in sorted(root.rglob("*.yaml")):
+            if f.name == "events.yaml":
+                for entry in yaml.safe_load(f.read_text(encoding="utf-8")) or []:
+                    custom_events.add(entry["name"])
+                continue
+            data = yaml.safe_load(f.read_text(encoding="utf-8"))
+            out: dict = cards if "card_type" in data else shikigami
+            obj = (CardDef if out is cards else ShikigamiDef).model_validate(data)
+            if obj.id in cards or obj.id in shikigami:
+                raise RuntimeError(f"id 重复: {obj.id}（{f.name}）")
+            out[obj.id] = obj
         db = cls(cards, shikigami, custom_events)
         errors = db.validate()
         if errors and strict:
             raise RuntimeError("卡牌数据库校验失败：\n" + "\n".join(errors))
         return db
-
-    @staticmethod
-    def _load_dir(path: Path, model: type) -> dict:
-        out: dict[int, object] = {}
-        if not path.exists():
-            return out
-        for f in sorted(path.glob("*.yaml")):
-            obj = model.model_validate(yaml.safe_load(f.read_text(encoding="utf-8")))
-            if obj.id in out:
-                raise RuntimeError(f"id 重复: {obj.id}（{f.name}）")
-            out[obj.id] = obj
-        return out
 
     def validate(self) -> list[str]:
         """返回全部错误信息（空列表 = 通过）。"""

@@ -2,9 +2,13 @@
 
 用法：
     PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold shikigami \
-        --id 100127 --name 萤草 --faction green --power 2 --health 5 [--with-cards]
+        --id 100127 --name 萤草 --slug yingcao --faction green --power 2 --health 5 [--with-cards]
     PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold card \
         --shikigami 100127 --seq 01 --name 治愈之光 --type spell
+
+输出目录约定（见 db/packs.py）：db/<版本包编号>_<拼音>/<包内编号>_<式神拼音>/，
+6 位式神 yaml 与其全部 8 位卡牌 yaml 同目录存放；协战牌本体归主式神
+（两位所属中 id 较小者）目录。
 
 生成后立即跑 loader 校验，骨架必须过校验（空 effects.steps 合法但打出无效果，
 由注释引导后续 Edit 补全）。已存在的文件默认拒绝覆盖，--force 才覆盖。
@@ -19,6 +23,7 @@ from pathlib import Path
 import yaml
 
 from db.loader import CardDatabase
+from db.packs import find_shiki_dir, pack_dir_name, shiki_dir_name
 from db.schema import CARD_TYPES, FACTION_COLORS, RARITIES
 
 DB_ROOT = Path(__file__).parent
@@ -36,16 +41,17 @@ def _version() -> int:
 def _write(path: Path, content: str, force: bool) -> Path:
     if path.exists() and not force:
         raise FileExistsError(f"文件已存在：{path}（--force 才覆盖）")
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
 
 
 def _shikigami_faction(root: Path, sid: int) -> str | None:
     """从所属式神 yaml 读取派系（继承用）；文件不存在返回 None。"""
-    f = root / "shikigami" / f"{sid}.yaml"
-    if not f.exists():
+    d = find_shiki_dir(root, sid)
+    if d is None:
         return None
-    data = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load((d / f"{sid}.yaml").read_text(encoding="utf-8")) or {}
     return data.get("faction")
 
 
@@ -58,20 +64,29 @@ def scaffold_shikigami(
     power: int,
     health: int,
     kind: str = "shikigami",
+    slug: str | None = None,
     with_cards: bool = False,
     force: bool = False,
 ) -> list[Path]:
-    """生成式神骨架（可选连带 01-08 八张卡骨架）；返回写入的文件列表。"""
+    """生成式神骨架（可选连带 01-08 八张卡骨架）；返回写入的文件列表。
+
+    shikigami 须给 slug（式神名拼音，决定目录名 <包内编号>_<slug>）；
+    summon 从属式神的目录即其存放目录。
+    """
     root = Path(root)
     if faction not in _FACTION_BY_COLOR.values():
         raise ValueError(f"未知派系 {faction}（{sorted(_FACTION_BY_COLOR.values())}）")
     if kind == "shikigami":
         if not 100_000 <= id <= 199_999:
             raise ValueError("式神 id 须为 6 位 1avvss")
+        if not slug:
+            raise ValueError("须给 --slug（式神名拼音，用于目录名）")
+        out_dir = root / pack_dir_name(id) / shiki_dir_name(id, slug)
     elif kind == "summon":
         if not 10_000_000 <= id <= 99_999_999 or not 90 <= id % 100 <= 99:
             raise ValueError("召唤物 id 须为 8 位且序号在 90-99 号段")
-        if not (root / "shikigami" / f"{id // 100}.yaml").exists():
+        out_dir = find_shiki_dir(root, id // 100)
+        if out_dir is None:
             raise ValueError(f"召唤物从属式神 {id // 100} 不存在")
     else:
         raise ValueError(f"未知 kind {kind}")
@@ -87,7 +102,7 @@ def scaffold_shikigami(
     lines.append(f"health: {health}\n")
     lines.append("# ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）\n")
     lines.append('text: ""\n')
-    written = [_write(root / "shikigami" / f"{id}.yaml", "".join(lines), force)]
+    written = [_write(out_dir / f"{id}.yaml", "".join(lines), force)]
 
     if with_cards:
         for i, seq in enumerate(range(1, 9)):
@@ -119,19 +134,20 @@ def scaffold_card(
         raise ValueError(f"未知主类型 {card_type}（{sorted(CARD_TYPES)}）")
     if rarity not in RARITIES:
         raise ValueError(f"未知稀有度 {rarity}（{sorted(RARITIES)}）")
-    owner_file = root / "shikigami" / f"{shikigami}.yaml"
-    if not owner_file.exists():
+    owner_dir = find_shiki_dir(root, shikigami)
+    if owner_dir is None:
         raise ValueError(f"所属式神 {shikigami} 不存在（先生成式神骨架）")
 
     if card_type == "reinforce":
         if shikigami2 is None:
             raise ValueError("协战牌须给 --shikigami2（副归属式神）")
-        if not (root / "shikigami" / f"{shikigami2}.yaml").exists():
+        if find_shiki_dir(root, shikigami2) is None:
             raise ValueError(f"协战副归属式神 {shikigami2} 不存在")
         if seq < 21:
             raise ValueError("协战牌序号须从 21 开始")
         # 约定：shikigami = 两位所属中较小者（= id 前六位），shikigami2 = 较大者
         shikigami, shikigami2 = sorted((shikigami, shikigami2))
+        owner_dir = find_shiki_dir(root, shikigami)  # 协战牌本体归主式神目录
     elif shikigami2 is not None:
         raise ValueError("仅协战牌可以有 --shikigami2")
     elif token:
@@ -174,7 +190,7 @@ def scaffold_card(
     if awaken:
         lines.append("# abilities: 待补觉醒能力块（打出时替换式神能力）\n")
     lines.append('text: ""  # TODO: 待补卡面文本\n')
-    return _write(root / "cards" / f"{card_id}.yaml", "".join(lines), force)
+    return _write(owner_dir / f"{card_id}.yaml", "".join(lines), force)
 
 
 def _validate_and_print(root: Path) -> int:
@@ -198,9 +214,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    ps = sub.add_parser("shikigami", help="生成式神骨架 db/shikigami/<id>.yaml")
+    ps = sub.add_parser("shikigami", help="生成式神骨架 db/<pack>/<seq>_<slug>/<id>.yaml")
     ps.add_argument("--id", type=int, required=True, help="6 位式神 id（如 100127）")
     ps.add_argument("--name", required=True, help="式神名")
+    ps.add_argument("--slug", default=None,
+                    help="式神名拼音（目录名 <包内编号>_<slug>，如 yingcao；shikigami 必给）")
     ps.add_argument("--faction", required=True,
                     choices=["red", "purple", "blue", "green", "white"],
                     help="派系：red=红莲 purple=紫岩 blue=青岚 green=苍叶 white=无相")
@@ -212,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="同时生成 01-08 共 8 张卡骨架（spell，等级 1/1/1/2/2/2/3/3）")
     ps.add_argument("--force", action="store_true", help="覆盖已存在的文件")
 
-    pc = sub.add_parser("card", help="生成卡牌骨架 db/cards/<式神id><序号>.yaml")
+    pc = sub.add_parser("card", help="生成卡牌骨架（写入所属式神目录，协战牌归主式神目录）")
     pc.add_argument("--shikigami", type=int, required=True, help="6 位所属式神 id")
     pc.add_argument("--seq", type=int, required=True,
                     help="2 位卡序号：可构筑 01-08 / 衍生 token 51-99 / 协战 21 起")
@@ -234,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             written = scaffold_shikigami(
                 DB_ROOT, id=args.id, name=args.name,
                 faction=_FACTION_BY_COLOR[args.faction], power=args.power,
-                health=args.health, kind=args.kind,
+                health=args.health, kind=args.kind, slug=args.slug,
                 with_cards=args.with_cards, force=args.force,
             )
         else:
