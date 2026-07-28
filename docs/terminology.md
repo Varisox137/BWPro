@@ -166,7 +166,7 @@
 | 伤害→破甲转化 | `convert_damage`（动作） | 战斗作用域（毒蚀"双方造成的伤害转化为等量破甲"）：答复(5)——伤害事件生成点全额转化（`_battle_convert`，护甲不再先吸收；不再视为伤害），战斗终止点清除；已转化的伤害（converted）不再转化，防与获得破甲→伤害转化循环 | ✅ |
 | 战斗条件授予 | `defender_has_fragile`（条件运算符） | 战斗牌效果块中的 grant_keyword / battle_immunity step 由战斗流程提取为战斗作用域授予，Step.condition 在战斗开始时以 {"defender": 被攻击者} 求值（鸩羽/致命诱惑"若攻击有破甲的角色"） | ✅ |
 | 玩家扩展条件 | `player_ext`（条件运算符） | {player_ext: key}：控制者 `PlayerState.ext[key]` 为真值（"本回合若使用过黄金羽"= feather_used_turn；千羽风之舞 step 级条件用） | ✅ |
-| 回合级战斗免疫 | `grant_immunity`（动作） | scope="turn"：目标式神免疫战斗伤害到当前回合结束——以回合号记账（immunities 条目 {"turn": n}），`_combat_immune` 按回合号比对自然过期（不可饶恕用） | ✅ |
+| 战斗/非战斗伤害免疫 | `grant_immunity`（动作） | scope="turn"：目标式神免疫战斗伤害到当前回合结束——以回合号记账（immunities 条目 {"turn": n}），`_combat_immune` 按回合号比对自然过期（不可饶恕用）；scope="perm"：持续在场期间有效（气绝清除、复活重新授予）；kind="effect" + from_side="enemy"：非战斗伤害免疫、只免疫敌方来源（无来源或己方来源不免疫——觉醒·山童，`_effect_immune` 在伤害流程"伤害开始时"批次内判定） | ✅ |
 | 弃牌计数暂存 | `discarded_count`（memo 键） | discard 动作结算后把实际弃牌数写入块内暂存 `ctx.memo["discarded_count"]`；draw 的 count 支持 {"memo": key} 读取（射怪鸟事"弃多少抽多少"两步组合） | ✅ |
 | 使用方式觉醒门控 | `requires_awaken`（PlayMethod 扩展字段） | 选择该使用方式时所属式神须已觉醒且未气绝/离场（气绝时觉醒能力不在场——答复(11)），否则 IllegalAction（黄金羽觉醒后"以敌方角色为目标"方式） | ✅ |
 | 响应效果覆盖 | `response`（CardDef） | 响应牌的效果块覆盖：主动使用效果与响应效果结构不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/结算改读本块；缺省用 effects | ✅ |
@@ -181,6 +181,16 @@
 | 鼓舞吸收 | `consume_assault_boosts`（动作） | 鼓舞战力/护甲转为本次结算战力/护甲并清空鼓舞（灵矢贯虹"消耗所有鼓舞"用；鼓舞关键字暂只有战力/护甲两种） | ✅ |
 | 破甲消耗记账 | `_DamageEvent.fragile` | 伤害批次实际消耗（增伤）的破甲量记账，进 on_damage payload `fragile` 键——本引擎破甲受伤即消耗（蚀刃毒羽已改用 fragile_echo，payload 键保留备用） | ✅ |
 | 生成子类型过滤 | `subtype`（generate 参数） | 生成候选池限式神 + 子类型（妖琴师觉醒法术池：100124 spell/awaken） | ✅ |
+| 法术回响 | `spell_echo` / `spell_echo_recast`（动作） | 登记于来源式神 `ext["spell_echo"]` 的"本回合"序列：持有者以外的式神（含敌方）从手牌使用法术时（同式神法术每回合至多触发一次），依次凭空免费使用 sequence 下一张（每张至多一次；不耗鬼火、play_from=void、triggered=auto、choose 目标随机合法、用后入墓地；照常 emit on_card_played 触发持有者"使用法术牌时"能力，但回响自身不自连锁）；`once_key` 防叠加；己方回合开始清除（涅槃业火） | ✅ |
+| 效果发起攻击 | `launch_attack`（动作） | 令指定式神发起一次额外攻击：不耗鬼火/出击次数、准备区自动进战斗区、走正常战斗流程（含反击，无战斗牌加成）；气绝/未在场空操作；shikigami="self" 取来源式神，否则按数据 id 定位（鲁莽、刃影叠岚羁绊） | ✅ |
+| 反击贯通 | `counter_piercing`（动作） | 登记到当前战斗上下文（`_battle_counter_piercing`）：该战斗被攻击方的反击伤害具有贯通（rules.md:201 贯通修正批次的反击例外；战斗终止点清除；主动使用由战斗牌流程提取绑定，响应插入使用作为普通动作登记——伺机） | ✅ |
+| 力量覆写 | `power_override`（动作） | on=True 时目标式神力量视为 0（覆盖基础+永久+临时+战力全部，`eff_power` 覆写层，标记存 `ext["power_zero"]`）；on=False 解除；形态离场/气绝自动清除（笨拙） | ✅ |
+| 伤害增幅 | `boost_damage`（动作） | 在伤害时点批次改写事件中可变伤害对象的数值 +amount（只增；须挂 on_damage_start 等 payload 含 damage 的批次，配合 {source_shikigami: self, kind: effect} 类条件——焚羽"非战斗伤害+1"） | ✅ |
+| 鬼火条件 | `orb_ge`（条件运算符） | {orb_ge: n}：控制者当前鬼火 ≥ n（青行灯"若你有剩余鬼火"） | ✅ |
+| 字段不等 | `{字段_not: 值}`（条件运算符） | 事件字段 ≠ 给定值；{shikigami_not: null} = 所用牌为专属牌（非中立牌）——觉醒·凤凰火"己方式神使用法术牌" | ✅ |
+| 消灭者牌手 | `victim_player`（语境目标） | 气绝事件语境目标（TargetSpec kind="context"）：被消灭式神所属牌手，敌己两向（引燃"若消灭则再对它的牌手造成 2 点伤害"） | ✅ |
+| 敌方准备区 | `enemy_bench`（目标池） | 敌方全部准备区式神（与 enemy_combat 对应——崩山准备区段） | ✅ |
+| 基础关键字 | `keywords`（ShikigamiDef） | 式神先天关键字：`build_player` 初始化时入 `perm_keywords`（永久类别：气绝不清除、复活自动重新获得——山童先天[贯通]） | ✅ |
 
 **ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）：
 
@@ -192,6 +202,8 @@
 | `feather_used_game` / `feather_used_turn` | `PlayerState.ext` | 黄金羽（tags 标记）牌使用计数：本局累计 / 本回合（己方回合开始清除；黄金羽动态免费与计数触发用） |
 | `zhen_proc` | `ShikigamiState.ext` | 鸩 x：基础+觉醒倒计时能力生效合计（倒计时块内 bump_ext step 累加；气绝不清、跨气绝保留，觉醒后继续累加） |
 | `turn_marks` | `PlayerState.ext` | "每回合合计一次"标记表（turn_mark 写入，任一回合开始双方清除；寂寥心象用） |
+| `power_zero` | `ShikigamiState.ext` | 力量覆写标记（power_override 写入/解除；eff_power 覆写层——力量视为 0；形态离场/气绝清除；笨拙用） |
+| `spell_echo` | `ShikigamiState.ext` | 法术回响序列登记（{sequence, cursor, triggered, once_key}；spell_echo 动作写入，己方回合开始清除；涅槃业火用） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 
@@ -201,9 +213,9 @@
 | 实时监测 | `monitors` / Monitor | 卡面"增强"等的实现机制之一：状态谓词 + 修饰，读取/打出装配时求值，不存储 | 🔧 |
 | 即时装配 | `_materialize` | 打出时由"定义块 ⊕ 活跃修饰"装配本次实际效果（persistent 快照入实例 mods），用完即弃 | ✅ |
 | 修饰 | `mods` | 实例级（`CardInstance.mods`：enhance 数值/keywords_add/cost_delta，及 mod_hand 写入的 playable_when_defeated/damage_boost/revive_haste 等读取点键）与 (玩家, card_id) 级持久 store（`PlayerState.card_mods`，"本局游戏每……"类计数） | ✅ |
-| 卡牌光环 | `card_auras` | 谓词匹配的卡牌获得关键词/不耗鬼火（读取时求值，覆盖已有与新生成的牌）；scope 决定失效时机（"turn"=己方回合开始清除；连续型/属性型光环为扩展锚点） | ✅ |
+| 卡牌光环 | `card_auras` | 谓词匹配的卡牌获得关键词/不耗鬼火/数值加成（读取时求值，覆盖已有与新生成的牌）；scope 决定失效时机（"turn"=己方回合开始清除；连续型/属性型光环为扩展锚点）。谓词通道：shikigami（必）/ card_type / **card_id**（"此牌"自指——伺机）/ **turn**（"self"/"opponent" 限定回合方——伺机"敌方回合时此牌+2力量"）；**数值通道 power/shield 为战斗牌战力/一次性护甲加值，可叠加**（多次授予累加，与 keywords 的集合语义不同——刃影叠岚；combat_card_stats 读取时叠加） | ✅ |
 | 追加块 | `pre_grants` / `grants` | 可被监测/触发器按索引注入结算的候选效果块（前置/后置） | 🔧 |
 | 临时触发 | `temp_grants` / `TempGrant` | 一次性注册的触发（uses 递减移除）；战斗牌携带者绑定该次战斗注册（如不祥之刃击杀抽牌） | ✅ |
 | 写入目标 | `to`（hand/persistent/instance/turn） | 写入原语（add_mod）的修饰存储目标：手牌实例 / 持久 store / 来源实例自身（实例计数器，如风符·龙的目标数）/ 回合 store（turn 未实现，"本回合"类由 card_auras 覆盖） | ✅ |
 | 数值叠加 | `{"enhance": true, "base": n}` | 步骤 amount 参数形式：base + 实例已装配 enhance（战斗牌战力/护甲提取处解析） | ✅ |
-| 动态数值 | `{"shield_of"/"power_of"/"ext"/"event"/"half_health_of": ...}` | 步骤 amount 参数形式：以来源式神当前护甲 / eff_power / ext 计数（鸩 x）、事件 payload 数值（寂寥心象"等量"）、事件角色当前生命一半（毒之华，向下取整）求值——尘刀按打出瞬间护甲快照战力（本次战斗中不变）、古尘之壁按护甲强化、援护按白狼力量造伤 | ✅ |
+| 动态数值 | `{"shield_of"/"power_of"/"perm_power"/"ext"/"event"/"half_health_of": ...}` | 步骤 amount 参数形式：以来源式神当前护甲 / eff_power / **使用时永久力量快照（{"perm_power": "self", "base": n}——崩山增强，山童的贯通不传导法术伤害）** / ext 计数（鸩 x）、事件 payload 数值（寂寥心象"等量"）、事件角色当前生命一半（毒之华，向下取整）求值——尘刀按打出瞬间护甲快照战力（本次战斗中不变）、古尘之壁按护甲强化、援护按白狼力量造伤 | ✅ |
