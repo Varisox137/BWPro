@@ -21,3 +21,8 @@
 - 汇报从简：不复述代码、不贴大段 diff/文件内容，只给结论、路径与关键决策。
 - 编辑用 Edit 精准替换，不用 Write 整文件重写；写入后不冗余重读验证。
 - 新增式神/卡牌 yaml 一律用脚手架生成骨架再补效果块（`PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h` 查看用法），不手写整份 yaml。
+
+## MCP 工具
+
+- **Serena**（符号级代码导航）：查函数/类位置与签名优先用 `mcp__serena__find_symbol`/`get_symbols_overview`/`find_referencing_symbols`，避免整文件通读；大段符号替换可用其编辑工具，小改仍用内置 Edit。
+- **codebase-memory**（语义代码图谱）：自然语言/语义查代码用 `mcp__codebase-memory__search_graph`/`search_code`/`trace_path`。**大批量代码改动后需重建索引**（`index_repository`，mode=full），否则结果是旧代码。
