@@ -156,7 +156,7 @@ def _edit_deck(db: CardDatabase, team: list[int],
             print("\n".join(errors))
             continue
         parts = line.lower().split()
-        if parts[0] in ("换", "h", "change") and len(parts) == 2:
+        if parts[0] in ("h", "change") and len(parts) == 2:
             try:
                 slot = int(parts[1]) - 1
                 old = team[slot]
@@ -282,7 +282,7 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
         parts = line.split(maxsplit=2)
         if parts and parts[0].lower() in ("q", "quit", "exit"):
             return
-        if len(parts) == 3 and parts[0] in ("名", "r", "rename"):
+        if len(parts) == 3 and parts[0] in ("r", "rename"):
             try:
                 entry = decks[int(parts[1]) - 1]
             except (ValueError, IndexError):
@@ -292,7 +292,7 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
             deckstore.save_decks(db, decks, store_path)
             print(f"已重命名为「{entry['name']}」")
             continue
-        if len(parts) == 2 and parts[0] in ("删", "d", "del", "delete"):
+        if len(parts) == 2 and parts[0] in ("d", "del", "delete"):
             try:
                 index = int(parts[1]) - 1
                 entry = decks[index]

@@ -200,12 +200,12 @@ def _store_entries(db):
 
 
 def test_deckbuilder_delete_cancel_then_confirm(db, monkeypatch, capsys, tmp_path):
-    """删 <序号>：二次确认；取消保留、y 删除并写回文件。"""
+    """d <序号>：二次确认；取消保留、y 删除并写回文件。"""
     from client import deckbuilder
     from db import deckstore
     store = tmp_path / "decks.json"
     deckstore.save_decks(db, _store_entries(db), store)
-    _feed(monkeypatch, ["删 2", "n", "删 1", "y", "q"])
+    _feed(monkeypatch, ["d 2", "n", "d 1", "y", "q"])
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
     assert "已取消删除" in out
@@ -215,12 +215,12 @@ def test_deckbuilder_delete_cancel_then_confirm(db, monkeypatch, capsys, tmp_pat
 
 
 def test_deckbuilder_delete_invalid_slot(db, monkeypatch, capsys, tmp_path):
-    """删 <序号>：空槽/越界序号提示并留在管理界面，文件不变。"""
+    """d <序号>：空槽/越界序号提示并留在管理界面，文件不变。"""
     from client import deckbuilder
     from db import deckstore
     store = tmp_path / "decks.json"
     deckstore.save_decks(db, _store_entries(db), store)
-    _feed(monkeypatch, ["删 9", "q"])
+    _feed(monkeypatch, ["d 9", "q"])
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
     assert "序号有误" in out

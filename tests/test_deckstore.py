@@ -214,10 +214,10 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
 
 
 def test_deckbuilder_rename(db, tmp_path, monkeypatch):
-    """槽位重命名：名 <序号> <新名称>。"""
+    """槽位重命名：r <序号> <新名称>。"""
     p = tmp_path / "decks.json"
     deckstore.save_decks(db, [mk_entry(db, "旧名")], p)
-    feed(monkeypatch, ["名 1 新名字"])
+    feed(monkeypatch, ["r 1 新名字"])
     deckbuilder.run_deckbuilder(db, p)
     decks = deckstore.load_decks(db, p)
     assert decks[0]["name"] == "新名字" and decks[0]["standard"]
@@ -258,7 +258,7 @@ def test_edit_change_shikigami_clears_cards(db, tmp_path, monkeypatch):
     p = tmp_path / "decks.json"
     deckstore.save_decks(db, [mk_entry(db, "旧")], p)
     feed(monkeypatch, ["1", "", "",       # 编辑槽位 1
-                       "换 1",            # 更换 1 号式神
+                       "h 1",            # 更换 1 号式神
                        "1",               # 备选池只有 100105
                        "1 2 3 4 5 6 7 8",  # 新式神选全部 8 种
                        "",                # 每种 1 张
