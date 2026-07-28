@@ -28,7 +28,8 @@ def group_deck(db, shikigami_ids: list[int],
                card_ids: list[int]) -> list[tuple[int, list[int]]]:
     """把 (式神列表, 卡牌列表) 按所属式神分组为 [(shiki_id, [card_id, ...]), ...]。
 
-    卡牌顺序保留；协战牌挂在第一所属式神名下（仅编码/展示归属，与校验器的
+    组内卡牌按 id 升序规范化（保存/导出落盘即有序）；式神顺序保留输入顺序。
+    协战牌挂在第一所属式神名下（仅编码/展示归属，与校验器的
     种类数挂载规则无关）。无法归属的卡牌静默忽略（编码前请先校验卡组）。
     """
     groups: dict[int, list[int]] = {sid: [] for sid in shikigami_ids}
@@ -40,7 +41,7 @@ def group_deck(db, shikigami_ids: list[int],
             groups[c.shikigami].append(cid)
         elif getattr(c, "shikigami2", None) in groups:
             groups[c.shikigami2].append(cid)
-    return [(sid, groups[sid]) for sid in shikigami_ids]
+    return [(sid, sorted(groups[sid])) for sid in shikigami_ids]
 
 
 def encode_deck(deck: list[tuple[int, list[int]]]) -> str:

@@ -168,6 +168,21 @@ def test_deck_code_compact_and_urlsafe():
     assert all(ch not in code for ch in "+/=")
 
 
+def test_group_deck_sorts_cards_within_shikigami():
+    """组内卡牌按 id 升序规范化（落盘/导出即有序）；式神顺序保留输入顺序。"""
+    db = make_test_db()
+    ids = list(TEST_IDS)
+    cards = list(make_test_deck())
+    shuffled = list(reversed(cards))                  # 乱序输入
+    groups = deckcode.group_deck(db, ids, shuffled)
+    assert [sid for sid, _ in groups] == ids          # 式神顺序不变
+    for _, cs in groups:
+        assert cs == sorted(cs)                       # 组内升序
+    assert sorted(cid for _, cs in groups for cid in cs) == sorted(cards)
+    # 与正序输入结果一致：已有卡组码语义不变（仅组内顺序规范化）
+    assert groups == deckcode.group_deck(db, ids, cards)
+
+
 def test_decode_rejects_garbage():
     """非卡组码输入：抛 ValueError。"""
     with pytest.raises(ValueError):
