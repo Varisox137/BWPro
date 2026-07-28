@@ -69,14 +69,10 @@ def activate():
 
 # ---------- 输入框边框 ----------
 
-def frame_message(text: str, width: int | None = None) -> str:
-    """输入框消息：上边框行（╭─ 指令 ──…）+ `│ <提示>` 输入行，宽度随终端。
-    下边框（╰──…）由状态栏首行绘制。"""
-    if width is None:
-        width = shutil.get_terminal_size().columns
-    label = " 指令 "
-    top = "╭─" + label + "─" * max(1, width - 2 - display_width(label))
-    return f"{top}\n│ {text}"
+def frame_message(text: str) -> str:
+    """输入框消息：`│ <提示>` 单行输入行（上边框不绘——它会随提交滚入历史消息，
+    观感差；框的其余两边由左侧 │ 与状态栏首行的下边框 ╰──… 构成）。"""
+    return f"│ {text}"
 
 
 def _bottom_border(width: int) -> str:

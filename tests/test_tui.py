@@ -85,12 +85,10 @@ def test_toolbar_no_raw_ansi():
 # ---------- 输入框边框与样式 ----------
 
 def test_frame_message_box():
-    """输入框消息：上边框行（╭─ 指令 ──…）+ `│ 提示` 输入行。"""
-    top, line = tui.frame_message("[玩家A] > ", width=20).split("\n")
-    assert top.startswith("╭─ 指令 ")
-    assert set(top[6:]) == {"─"}
-    assert display_width(top) == 20
+    """输入框消息：单行 `│ 提示`（上边框不绘，避免滚入历史消息）。"""
+    line = tui.frame_message("[玩家A] > ")
     assert line == "│ [玩家A] > "
+    assert "\n" not in line and "╭" not in line and "指令" not in line
 
 
 def test_bottom_border():
