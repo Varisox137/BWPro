@@ -15,3 +15,9 @@
 - README 不出现具体式神/卡牌名（`docs/` 可以）；原版卡牌描述以 `card_data_raw.md` 为唯一事实来源。
 - 机制未实现不进数据（关键字/op 未落地不写进 yaml）；schema 字段只增不改。
 - `CLAUDE.md`、`questions.md`、`thoughts.txt` 为本地工作笔记（已 gitignore，不入库）。
+
+## 输出约定（省 token）
+
+- 汇报从简：不复述代码、不贴大段 diff/文件内容，只给结论、路径与关键决策。
+- 编辑用 Edit 精准替换，不用 Write 整文件重写；写入后不冗余重读验证。
+- 新增式神/卡牌 yaml 一律用脚手架生成骨架再补效果块（`PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h` 查看用法），不手写整份 yaml。

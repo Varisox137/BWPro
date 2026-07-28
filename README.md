@@ -13,6 +13,7 @@ uv run python -m client.cli          # 主菜单：热座对战 / 卡组构筑 /
 uv run python -m server.main         # 联机服务端（默认 127.0.0.1:1037）
 uv run python -m client.net          # 联机客户端（创建/加入房间）
 uv run python -m db.validate         # 校验卡牌数据库
+uv run python -m db.scaffold -h      # 式神/卡牌 yaml 脚手架（生成骨架再补效果块）
 uv run pytest -q tests/              # 运行全部测试
 ```
 
