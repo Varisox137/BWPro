@@ -67,7 +67,8 @@ def test_summon_banned_in_team(db):
 
 def test_too_many_copies(db):
     errors = validate_deck(db, F.TEAM, [10010101] * 3)
-    assert any("超过限" in e for e in errors)
+    assert any("超过同式神限" in e for e in errors)
+    assert any("超过全卡组限" in e for e in errors)
 
 
 def test_reinforce_deck_rules(db):
@@ -78,7 +79,7 @@ def test_reinforce_deck_rules(db):
     deck = [c for c in base if c != 10010104] + [10010121] * 2
     assert validate_deck(db, F.TEAM, deck) == []
     errors = validate_deck(db, F.TEAM, deck + [10010121])
-    assert any("协战牌同名仍限" in e for e in errors)
+    assert any("超过全卡组限" in e for e in errors)  # 协战牌同名 3 张（全局计数）
     # 只有第一所属在队（第二所属未出战）也可以编
     db.shikigami[100105] = F.shiki(100105)
     db.cards[10010321] = F.card(10010321, shikigami=100103,
@@ -116,24 +117,54 @@ def test_buildable_suffix_range(db):
 
 
 def test_custom_deck_rules(db):
-    """对局模式参数：DeckRules 可放宽/收紧各限制（为将来新模式预留）。"""
+    """对局模式卡组约束：DeckRules 各配置项可放宽/收紧；rules=None 无约束。"""
     from db.deck import DeckRules
     deck = F.deck_of(*F.TEAM)
     # 每名式神各去掉一张（恰好 7 张/人）
     short = deck.copy()
     for sid in F.TEAM:
         short.remove(sid * 100 + 4)
-    # 默认规则下 7 张不合法；cards_per_shikigami=7 的模式下合法
+    # 默认规则下 7 张不合法；各式神带卡 [7,7,7,7] 的模式下合法
     errors = validate_deck(db, F.TEAM, short)
     assert errors
     assert validate_deck(db, F.TEAM, short,
-                         DeckRules(cards_per_shikigami=7)) == []
-    # 同名限 3 的模式
-    errors = validate_deck(db, F.TEAM, [10010101] * 3)
-    assert any("超过限" in e for e in errors)
+                         DeckRules(cards_per_shikigami=[7, 7, 7, 7])) == []
+    # 各式神带卡数量按队伍顺序一一对应：仅末位 7 张时，4 号位 7 张合法、1 号位 7 张不合法
+    last_short = deck.copy()
+    last_short.remove(F.TEAM[3] * 100 + 4)
+    assert validate_deck(db, F.TEAM, last_short,
+                         DeckRules(cards_per_shikigami=[8, 8, 8, 7])) == []
+    assert validate_deck(db, F.TEAM, last_short,
+                         DeckRules(cards_per_shikigami=[7, 8, 8, 8]))
+    # 同名限 3 的模式（同式神与全卡组两个配置项独立）
     errors = validate_deck(db, F.TEAM, [10010101] * 3,
                            DeckRules(max_copies_per_name=3))
-    assert not any("超过限" in e for e in errors)
+    assert any("超过全卡组限" in e for e in errors)      # 全卡组仍限 2
+    errors = validate_deck(db, F.TEAM, [10010101] * 3,
+                           DeckRules(max_copies_per_name=3, max_copies_deck=3))
+    assert not any("超过" in e for e in errors)
+    # 出战 3 名模式
+    three = F.TEAM[:3]
+    assert validate_deck(db, three, F.deck_of(*three),
+                         DeckRules(required_shikigami=3,
+                                   cards_per_shikigami=[8, 8, 8])) == []
+    assert validate_deck(db, F.TEAM, deck,
+                         DeckRules(required_shikigami=3,
+                                   cards_per_shikigami=[8, 8, 8]))
+    # rules=None：无约束，直接判合法
+    assert validate_deck(db, [100101], [], None) == []
+
+
+def test_deck_rules_config_validation(db):
+    """DeckRules 配置自校验：数量越界/列表长度不符/非正带卡数均拒绝。"""
+    from db.deck import DeckRules
+    import pytest
+    with pytest.raises(ValueError):
+        DeckRules(required_shikigami=5)
+    with pytest.raises(ValueError):
+        DeckRules(required_shikigami=3, cards_per_shikigami=[8, 8, 8, 8])
+    with pytest.raises(ValueError):
+        DeckRules(cards_per_shikigami=[8, 8, 8, 0])
 
 
 def test_card_of_benched_shikigami(db):
@@ -284,11 +315,11 @@ def test_choose_deck_custom_rules(db, tmp_path, monkeypatch):
         deck.remove(sid * 100 + 4)  # 每名式神 7 张
     short = {"name": "少牌队",
              "groups": deckcode.group_deck(db, list(F.TEAM), deck)}
-    # 每人 7 张：天梯不合法（选择会要求重选），cards_per_shikigami=7 模式下合法
+    # 每人 7 张：天梯不合法（选择会要求重选），各式神带卡 [7,7,7,7] 模式下合法
     deckstore.save_decks(db, [short], p)
     feed(monkeypatch, ["1"])
     ids, cards, _ = deckbuilder.choose_deck(db, "玩家A", p,
-                                            DeckRules(cards_per_shikigami=7))
+                                            DeckRules(cards_per_shikigami=[7, 7, 7, 7]))
     assert len(cards) == 28
 
 

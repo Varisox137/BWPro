@@ -4,16 +4,16 @@
 - 恰好 4 名出战式神（kind=shikigami）
 - 至多 2 个不同派系（无相不计入）
 - 同源式神（原形/SP 等，origin 相同）不能同时出战
-- 每名式神恰好 8 张牌（含挂载的协战牌）；每种（按名称）最多 2 张；
-  不同名卡牌不超过 8 种（构筑序号仅 01-08，结构性保证）
+- 每名式神恰好 8 张牌（含挂载的协战牌）；同名卡在同一式神中最多 2 张、
+  在全卡组中最多 2 张；不同名卡牌不超过 8 种（构筑序号仅 01-08，结构性保证）
 - 专属牌构筑序号仅开放 01-08；协战牌暂只开放序号 21
 - 协战牌：不要求两位所属式神均出战——任一出战即可编入，作为该式神 8 张牌
-  的一部分（两位都在队时挂到当前总张数较少者名下）；同名协战牌仍限 2（全局
-  计数，与挂在谁名下无关）；构筑界面同时列入两位所属式神的可选卡牌；
-  与出战式神数量/派系等无关
+  的一部分（两位都在队时挂到剩余配额较多者名下）；构筑界面同时列入两位所属
+  式神的可选卡牌；与出战式神数量/派系等无关
 - 中立牌不可编入卡组（中立牌实质为系统给予或效果生成的衍生卡）
 - token=true 的衍生卡不可编入卡组；只能携带出战式神的卡牌
-- 将来可能引入新模式玩法：validate_deck 接受 DeckRules 参数，各限制均可调
+- 对局模式卡组约束：validate_deck 接受 DeckRules 参数（出战式神数量、各式神
+  带卡数量、同名限值均可调）；传入 None 表示无约束，直接判合法
 """
 from __future__ import annotations
 
@@ -23,31 +23,48 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class DeckRules:
-    """组卡规则参数（对应不同对局模式；默认值为天梯规则）。"""
+    """对局模式卡组约束（默认值为天梯规则）。
+
+    - required_shikigami：出战式神数量（1~4）
+    - cards_per_shikigami：各式神带卡数量（>0），按队伍顺序一一对应，
+      长度须等于 required_shikigami
+    - max_copies_per_name：同名卡在同一式神中的限制
+    - max_copies_deck：同名卡在全卡组中的限制
+    其余字段（派系/构筑序号等）为天梯结构性规则，暂不对模式开放。
+    """
 
     required_shikigami: int = 4
-    max_factions: int = 2  # 无相不计入
-    cards_per_shikigami: int = 8  # 每名式神恰好 N 张牌（含挂载的协战牌）
-    max_kinds_per_shikigami: int = 8
+    cards_per_shikigami: list[int] = field(default_factory=lambda: [8, 8, 8, 8])
     max_copies_per_name: int = 2
+    max_copies_deck: int = 2
+    max_factions: int = 2  # 无相不计入
+    max_kinds_per_shikigami: int = 8
     # 可构筑的卡牌序号（id 末两位）：专属牌 01-08；协战牌暂只开放 21
     buildable_suffixes: frozenset = field(default_factory=lambda: frozenset(range(1, 9)))
     reinforce_suffixes: frozenset = field(default_factory=lambda: frozenset({21}))
 
+    def __post_init__(self) -> None:
+        if not 1 <= self.required_shikigami <= 4:
+            raise ValueError(f"出战式神数量须在 1~4（当前 {self.required_shikigami}）")
+        if len(self.cards_per_shikigami) != self.required_shikigami:
+            raise ValueError(f"各式神带卡数量列表长度须等于出战式神数量 "
+                             f"{self.required_shikigami}（当前 {len(self.cards_per_shikigami)}）")
+        if any(n <= 0 for n in self.cards_per_shikigami):
+            raise ValueError("各式神带卡数量须为正整数")
+        object.__setattr__(self, "cards_per_shikigami", tuple(self.cards_per_shikigami))
+
 
 STANDARD_RULES = DeckRules()
 
-# 兼容性别名（client/deckbuilder.py 等引用）
-REQUIRED_SHIKIGAMI = STANDARD_RULES.required_shikigami
-MAX_FACTIONS = STANDARD_RULES.max_factions
-MAX_KINDS_PER_SHIKIGAMI = STANDARD_RULES.max_kinds_per_shikigami
-MAX_COPIES_PER_NAME = STANDARD_RULES.max_copies_per_name
-
 
 def validate_deck(db, shikigami_ids: list[int], card_ids: list[int],
-                  rules: DeckRules = STANDARD_RULES) -> list[str]:
-    """返回全部错误信息（空列表 = 卡组合法）。"""
+                  rules: DeckRules | None = STANDARD_RULES) -> list[str]:
+    """返回全部错误信息（空列表 = 卡组合法）。rules=None：无约束，直接判合法。"""
+    if rules is None:
+        return []
     errors: list[str] = []
+    # 各出战式神的带卡配额（按队伍顺序）
+    quota = {sid: n for sid, n in zip(shikigami_ids, rules.cards_per_shikigami)}
     if len(shikigami_ids) != rules.required_shikigami:
         errors.append(f"出战式神须为 {rules.required_shikigami} 名"
                       f"（当前 {len(shikigami_ids)} 名）")
@@ -107,25 +124,27 @@ def validate_deck(db, shikigami_ids: list[int], card_ids: list[int],
             errors.append(f"《{c.name}》属于未出战的式神 {c.shikigami}")
             continue
         by_owner.setdefault(c.shikigami, []).append(c)
-    # 协战牌同名仍限 2（全局计数，与挂在哪位所属式神名下无关）
-    for name, n in Counter(c.name for c, _ in reinforce).items():
-        if n > rules.max_copies_per_name:
-            errors.append(f"《{name}》×{n} 超过限 {rules.max_copies_per_name}"
-                          f"（协战牌同名仍限 {rules.max_copies_per_name}）")
-    # 协战牌作为所属式神 8 张牌的一部分：挂到当前总张数较少的在队所属式神名下
-    # （"恰好 8 张"是绑定约束）；数量相同时取列表中先出现者（规则未指定，属实现细节）。
+    # 协战牌作为所属式神配额的一部分：挂到剩余配额较多（当前张数-配额最小）的
+    # 在队所属式神名下；数量相同时取列表中先出现者（规则未指定，属实现细节）。
     for c, owners in reinforce:
-        pick = min(owners, key=lambda o: len(by_owner.get(o, [])))
+        pick = min(owners, key=lambda o: len(by_owner.get(o, [])) - quota.get(o, 0))
         by_owner.setdefault(pick, []).append(c)
-    # 每名出战式神恰好 cards_per_shikigami 张牌（含挂载的协战牌）
+    # 每名出战式神恰好 cards_per_shikigami[i] 张牌（含挂载的协战牌）
     for sid in shikigami_ids:
         d = db.shikigami.get(sid)
         if d is None or d.kind != "shikigami":
             continue
         n = len(by_owner.get(sid, []))
-        if n != rules.cards_per_shikigami:
-            errors.append(f"{d.name}: 卡牌须恰好 {rules.cards_per_shikigami} 张"
-                          f"（当前 {n} 张）")
+        # 式神数与带卡数列表不一致时数量错误已在前面报出，跳过逐位配额
+        if sid not in quota:
+            continue
+        if n != quota[sid]:
+            errors.append(f"{d.name}: 卡牌须恰好 {quota[sid]} 张（当前 {n} 张）")
+    # 同名卡全卡局限 max_copies_deck（含专属牌与协战牌，与挂在谁名下无关）
+    all_names = Counter(c.name for cards in by_owner.values() for c in cards)
+    for name, n in all_names.items():
+        if n > rules.max_copies_deck:
+            errors.append(f"《{name}》×{n} 超过全卡组限 {rules.max_copies_deck}")
     for owner, cards in by_owner.items():
         who = db.shikigami[owner].name
         names = Counter(c.name for c in cards)
@@ -134,5 +153,6 @@ def validate_deck(db, shikigami_ids: list[int], card_ids: list[int],
                           f" {rules.max_kinds_per_shikigami}")
         for name, n in names.items():
             if n > rules.max_copies_per_name:
-                errors.append(f"{who}: 《{name}》×{n} 超过限 {rules.max_copies_per_name}")
+                errors.append(f"{who}: 《{name}》×{n} 超过同式神限"
+                              f" {rules.max_copies_per_name}")
     return errors
