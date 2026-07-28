@@ -167,6 +167,16 @@ def test_deck_rules_config_validation(db):
         DeckRules(cards_per_shikigami=[8, 8, 8, 0])
 
 
+def test_rules_summary_renders_rules(db):
+    """规则提示文本与 DeckRules 取值同步（构筑界面打印的标准规则细节）。"""
+    from db.deck import DeckRules, rules_summary
+    text = "\n".join(rules_summary())
+    assert "4 名" in text and "8 张" in text and "限 2" in text and "01-08" in text
+    custom = "\n".join(rules_summary(DeckRules(
+        required_shikigami=3, cards_per_shikigami=[7, 7, 7], max_copies_deck=3)))
+    assert "3 名" in custom and "7 张" in custom and "全卡组限 3" in custom
+
+
 def test_card_of_benched_shikigami(db):
     db.shikigami[100105] = F.shiki(100105)
     db.cards[10010501] = F.card(10010501, shikigami=100105)
@@ -427,7 +437,7 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out.count("须恰好输入 8 个序号") == 1
     assert "序号不存在" in out
-    assert "同名卡全卡组限 2" in out
+    assert "同名卡在同一式神限 2、在全卡组限 2" in out
     assert "不满足标准规则" in out
     decks = deckstore.load_decks(db, p)
     assert len(decks) == 1 and not decks[0]["standard"]  # 超限卡组可保存、非标准

@@ -7,8 +7,8 @@
   自动创建；文件格式异常时提示并删除该文件）。
 - 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
   反复询问直到合法；新建时还必须恰好 4 个不重复的有效式神序号。同名卡张数不做
-  强制校验——每次构筑（新建/编辑）仅提示一次"同名卡全卡组限 2"标准规则，超限
-  卡组仍可保存，仅在完成时不满足 is_standard（不以亮蓝标明）。
+  强制校验——每次构筑（新建/编辑）仅打印一次标准规则细节（db.deck.rules_summary），
+  超限卡组仍可保存，仅在完成时不满足 is_standard（不以亮蓝标明）。
 - 协战牌同时列入两位所属式神的可选卡牌；完成时的 is_standard 检查含
   单式神携带 ≤2 与全卡组同名 ≤2（validate_deck 全局计数）。
 - 编辑在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号重新严格选满其
@@ -26,7 +26,7 @@ from collections import Counter
 from client import cardfmt, tui
 from client.textutil import colored
 from db import deckcode, deckstore
-from db.deck import STANDARD_RULES, DeckRules, validate_deck
+from db.deck import STANDARD_RULES, DeckRules, rules_summary, validate_deck
 from db.loader import CardDatabase
 
 # 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
@@ -125,6 +125,7 @@ def _edit_deck(db: CardDatabase, team: list[int],
             card_ids = [cid for sid in team for cid in picks.get(sid, [])]
             errors = validate_deck(db, ids, card_ids)
             if errors:
+                print("")
                 print("卡组不满足标准规则（仍保存，不标记为标准卡组）：")
                 print("\n".join(errors))
             return ids, card_ids
@@ -287,10 +288,15 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
                 c = db.cards[cid]
                 owner = c.shikigami if c.shikigami in team else c.shikigami2
                 picks.setdefault(owner, []).append(cid)
+            print()
             print(f"编辑卡组「{entry['name']}」（在当前基础上修改）")
             print(f"卡组码：{deckstore.entry_code(entry)}")
-        print("提示：标准规则——同名卡全卡组限 2（协战牌计入两位所属式神）；"
-              "构筑不强制校验，超限卡组仍可保存，仅不标记为标准卡组")
+        print()
+        print("标准规则：")
+        for line in rules_summary():
+            print(f"  {line}")
+        print("  （构筑不强制校验，超限卡组仍可保存，仅不标记为标准卡组）")
+        print()
         name = _input("卡组名称（Enter = 沿用/自动命名）> ")
 
         code_line = _input("粘贴卡组码导入覆盖（Enter = 交互式构筑/编辑）> ")
