@@ -471,9 +471,9 @@ class Game:
         if cmd.get("target") is not None:
             sub_cmd["target"] = cmd["target"]
         self._cmd_play_card(sub_cmd)
-        # 主牌离手移除（不进墓地；子选项被无效化等"已使用"情形同样离手）
+        # 主牌离手放逐（不进墓地；子选项被无效化等"已使用"情形同样离手）
         self._remove_from_zone(p, card)
-        p.zones.setdefault("removed", []).append(card)
+        p.zones["exiled"].append(card)
 
     def _apply_revive_haste(self, p: PlayerState, card: CardInstance) -> None:
         """使用实例修饰 revive_haste（鎏金幻羽"使用后以津真天和鸩气绝倒计时-1"）：

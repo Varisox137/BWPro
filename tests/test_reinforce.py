@@ -2,7 +2,7 @@
 
 覆盖：构筑归属（协战牌计入所属式神 8 张、同名限 2、双归属任一出战可编、均未出战拒绝）、
 打出流程（choice 选择子选项、费用/等级/目标按子卡、生成 token 视作从手牌使用走完整
-使用事件流程、主牌离手进 removed 不进墓地、非法选项/未出战/气绝归属拒绝）、
+使用事件流程、主牌离手进 exiled 不进墓地、非法选项/未出战/气绝归属拒绝）、
 各子卡效果（幻音绝弦延迟倒计时与气绝倒计时-2 立即复活、风韵雅乐 history 重放+获得
 觉醒牌、鎏金幻羽手牌修饰与不可叠加+修饰三读取点、蚀刃毒羽条件破甲翻倍+羁绊、
 灵矢贯虹鼓舞消耗转化）。
@@ -94,16 +94,16 @@ def test_deck_reinforce_no_owner_rejected(gdb):
 
 # ---------- 打出流程 ----------
 
-def test_play_choice_full_flow_and_main_removed(make_game):
+def test_play_choice_full_flow_and_main_exiled(make_game):
     """选择子选项：费用按子卡（1 火）、生成 token 视作从手牌使用（效果完整结算）、
-    主牌离手进 removed（不进墓地）。"""
+    主牌离手进 exiled（不进墓地）。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1})
     hand_before = len(pa.hand)
     _play_reinforce(g, 0, FYZ, 0)             # 风之乐章 → 幻音绝弦
     assert pa.orb == 8                        # 子选项正常 1 火
     assert not any(c.id == FYZ for c in pa.hand)
     assert not any(c.id == FYZ for c in pa.graveyard)     # 主牌不入墓地
-    assert any(c.id == FYZ for c in pa.zones["removed"])  # 离手移除
+    assert any(c.id == FYZ for c in pa.zones["exiled"])  # 离手放逐
     assert not any(c.id == HYJX for c in pa.hand)         # token 已使用离手
     assert any(c.id == HYJX for c in pa.graveyard)
     assert len(pa.shikigami[YQS].delayed) == 1            # 延迟能力已登记
@@ -112,9 +112,10 @@ def test_play_choice_full_flow_and_main_removed(make_game):
     assert len(pa.hand) == hand_before + 1  # give 主牌+生成 token+打出=抵消，羁绊 +1
 
 
-def test_bond_gated_by_shikigami_active(make_game):
+def test_bond_gated_by_shikigami_active(make_game, gdb):
     """羁绊触发条件（维护者确认）：使用此牌时对应式神在场（等级 ≥1 且未气绝）。
-    一目连 0 级或气绝时，幻音绝弦不生成形态牌。"""
+    幻音绝弦（一目连 0 级/气绝不生成形态牌）、风韵雅乐（妖琴师气绝不生成觉醒牌）、
+    涅槃业火（青行灯不在队不生成明灯；在场则生成）。"""
     forms = {10012501, 10012502, 10012504, 10012506, 10012507, 10012508}
 
     def _form_count(pa):
@@ -130,6 +131,28 @@ def test_bond_gated_by_shikigami_active(make_game):
     before = _form_count(pa)
     _play_reinforce(g, 0, FYZ, 0)
     assert _form_count(pa) == before
+    # 妖琴师气绝：风韵雅乐不生成觉醒牌
+    g, pa, pb = _game(make_game, levels={YQS: 2, YML: 2})
+    pa.shikigami[YQS].health = 0
+    g.check_defeated(Ref(player=0, shikigami=YQS))
+    awakens = {10012401, 10012404, 10012407}
+    before = sum(1 for c in pa.hand if c.id in awakens)   # 起手可能已含可构筑觉醒牌
+    _play_reinforce(g, 0, FYZ, 1)
+    assert sum(1 for c in pa.hand if c.id in awakens) == before
+    # 青行灯不在队：涅槃业火不生成明灯（回响测试队伍不含青行灯，见下）
+    g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
+    play(g, 0, NPYH)
+    assert not any(c.id == MD for c in pa.hand)
+    # 青行灯在队且在场：明灯生成（无可构筑卡，跳过卡组校验；避开明灯 id 混入起手）
+    from core.setup import new_game
+    team = [100105, 100116, 100101, 100112]
+    deck = F.deck_of(100105, 100116, 100101, 100116)
+    g = new_game(gdb, ("A", list(team), deck), ("B", list(team), deck),
+                 seed=1, first=0, shuffle_team=False, mulligan=False, check_deck=False,
+                 config=F.GameConfig(auto_skip_upgrade=True))
+    pa, pb = F.battle_setup(g, {0: 2, 3: 1})
+    play(g, 0, NPYH)
+    assert any(c.id == MD for c in pa.hand)
 
 
 def test_play_invalid_choice_rejected(make_game):
@@ -148,7 +171,7 @@ def test_play_level_checked_by_sub(make_game):
     with pytest.raises(IllegalAction):
         _play_reinforce(g, 0, FYZ, 1)         # 一目连仅 1 级：副侧子卡不可用
     _play_reinforce(g, 0, FYZ, 0)             # 妖琴师 2 级：主侧子卡可用
-    assert any(c.id == FYZ for c in pa.zones["removed"])
+    assert any(c.id == FYZ for c in pa.zones["exiled"])
 
 
 def test_play_owner_defeated_rejects_only_that_side(make_game):
@@ -159,7 +182,7 @@ def test_play_owner_defeated_rejects_only_that_side(make_game):
     with pytest.raises(IllegalAction):
         _play_reinforce(g, 0, FYZ, 0)
     _play_reinforce(g, 0, FYZ, 1)             # 一目连侧正常
-    assert any(c.id == FYZ for c in pa.zones["removed"])
+    assert any(c.id == FYZ for c in pa.zones["exiled"])
 
 
 def test_play_no_owner_deployed_rejected(make_game):
@@ -171,7 +194,7 @@ def test_play_no_owner_deployed_rejected(make_game):
 
 # ---------- 幻音绝弦：延迟倒计时 / 气绝倒计时 ----------
 
-def test_huanyin_delayed_countdown_and_revive(make_game):
+def test_delay_grant_countdown_and_revive(make_game):
     """下一个己方回合开始：己方式神倒计时 -1（妖琴师 1→0 归零治疗）；已气绝者改为
     气绝倒计时 -2（一目连 2→0 立即复活）。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1})
@@ -193,7 +216,7 @@ def test_huanyin_delayed_countdown_and_revive(make_game):
 
 # ---------- 风韵雅乐：重放 + 获得觉醒牌 ----------
 
-def test_fengyun_replays_ichimokuren_countdowns(make_game):
+def test_replay_countdown_history(make_game):
     """触发本局生效过的一目连倒计时（风符·破投射 3）+ 随机获得一张妖琴师觉醒牌。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 2})
     play(g, 0, 10012501)                      # 一目连结附风符·破（倒计时 2）
@@ -211,7 +234,7 @@ def test_fengyun_replays_ichimokuren_countdowns(make_game):
 
 # ---------- 鎏金幻羽：手牌修饰 ----------
 
-def test_liujin_mods_real_feathers_and_bond(make_game):
+def test_mod_hand_tag_token_filter(make_game):
     """修饰手牌真黄金羽（金风流羽不修饰）：气绝时可用/伤害+1/复活倒计时-1；
     羁绊：鸩倒计时 -2（立即归零给破甲）。不可叠加。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
@@ -230,7 +253,7 @@ def test_liujin_mods_real_feathers_and_bond(make_game):
     assert f1.mods["damage_boost"] == 1
 
 
-def test_liujin_gilded_feather_effects(make_game):
+def test_mod_hand_read_points(make_game):
     """修饰后的黄金羽：伤害+1（3 伤）；以津真天气绝时可用；使用后双方气绝倒计时 -1。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
     f1, f2 = give(g, 0, FEATHER), give(g, 0, FEATHER)
@@ -247,7 +270,7 @@ def test_liujin_gilded_feather_effects(make_game):
     assert pa.shikigami[YJZT].revive_countdown == 1
 
 
-def test_gilded_feather_defeated_awakened_no_snipe(make_game):
+def test_playable_when_defeated_gates_methods(make_game):
     """维护者答复(11)联动：已觉醒的以津真天气绝后，经鎏金幻羽修饰的黄金羽只能打
     敌方牌手（气绝时觉醒能力不在场，snipe 使用方式门控拒绝、无需选择目标）。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
@@ -267,7 +290,7 @@ def test_gilded_feather_defeated_awakened_no_snipe(make_game):
 
 # ---------- 蚀刃毒羽：条件破甲翻倍 + 羁绊 ----------
 
-def test_shiren_doubles_fragile_and_bond(make_game):
+def test_fragile_echo_grants_equal_amount(make_game):
     """攻击有破甲的角色：攻击后使其获得相同数量的破甲；羁绊：以津真天倒计时 -2
     （立即归零：黄金羽入手）。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
@@ -284,7 +307,7 @@ def test_shiren_doubles_fragile_and_bond(make_game):
     assert zhen.health == 5 and zhen.shield == 0   # +2 护甲吃反击 2
 
 
-def test_shiren_no_fragile_no_double(make_game):
+def test_fragile_echo_requires_fragile(make_game):
     """被攻击者无破甲：不触发翻倍（正常战斗）。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
     move(g, 1, YML)                           # B 一目连无破甲
@@ -295,7 +318,7 @@ def test_shiren_no_fragile_no_double(make_game):
 
 # ---------- 灵矢贯虹：鼓舞消耗转化 ----------
 
-def test_lingshi_consumes_assault_boosts(make_game):
+def test_consume_assault_boosts_as_combat_bonus(make_game):
     """羁绊 2：己方全部鼓舞（战力/护甲）作为此战斗牌加成赋予白狼并消耗。"""
     g, pa, pb = _game(make_game, levels={0: 2}, team=TEAM_WOLF)
     pa.assault_boosts.append({"power": 1, "shield": 1})
@@ -361,7 +384,7 @@ def gdb():
     return db
 
 
-def test_lingshi_mirrors_spell_buff_power(make_game):
+def test_reapply_attack_buff_power_only_power(make_game):
     """起弓（+1）与离（+3）挂账中：灵矢贯虹使白狼再次临时获得合计 4 力量
     （仅力量部分；三条 attack_buffs 挂账 [1, 3, 4]），本次攻击一并生效。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 3}, team=YC_TEAM)
@@ -374,7 +397,7 @@ def test_lingshi_mirrors_spell_buff_power(make_game):
     assert wolf.attack_buffs == []            # 攻击后到期强化（含镜像）战斗后核销
 
 
-def test_lingshi_bond1_replays_form_enter(make_game):
+def test_trigger_form_enter_replays_effect(make_game):
     """羁绊 1：攻击前触发萤草当前形态进场效果（形态 B 进场 +2 护甲再执行一次）。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 2}, team=YC_TEAM)
     play(g, 0, YC_FORM_B)                     # 结附形态 B：进场 +2 护甲
@@ -383,7 +406,7 @@ def test_lingshi_bond1_replays_form_enter(make_game):
     assert pa.shikigami[YC_IDX].shield == 4   # 羁绊 1：进场效果再触发 +2
 
 
-def test_lingshi_bond1_no_form_noop(make_game):
+def test_trigger_form_enter_no_form_noop(make_game):
     """萤草未结附形态（当前正式数据永远如此）：羁绊 1 空操作，战斗照常。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 2}, team=YC_TEAM)
     play(g, 0, LSGH)                          # 白狼 3+2=5 攻打牌手
@@ -414,7 +437,7 @@ def _echo(pa):
     return pa.shikigami[0].ext.get("spell_echo")
 
 
-def test_niepan_echo_sequence_and_single_trigger(make_game):
+def test_spell_echo_sequence_single_trigger(make_game):
     """回响序列：怒吼触发凤鸣（墓地次序可验证）、同式神法术不重复触发、
     起弓触发引燃；自动使用的回响牌触发凤凰火基础投射。"""
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
@@ -436,20 +459,10 @@ def test_niepan_echo_sequence_and_single_trigger(make_game):
     assert pb.health == 25                    # 引燃随机打式神（打不死），基础投射 1 必中
 
 
-def test_niepan_bond_mingdeng_gated(gdb):
-    """涅槃业火羁绊"获得明灯"触发条件：青行灯在场（等级 ≥1 且未气绝）才生成。"""
-    from core.setup import new_game
-    team = [100105, 100116, 100101, 100112]       # 青行灯在队（无可构筑卡，不校验卡组）
-    deck = F.deck_of(100105, 100116, 100101, 100116)   # 避开明灯 id 混入起手手牌
-    g = new_game(gdb, ("A", list(team), deck), ("B", list(team), deck),
-                 seed=1, first=0, shuffle_team=False, mulligan=False, check_deck=False,
-                 config=F.GameConfig(auto_skip_upgrade=True))
-    pa, pb = F.battle_setup(g, {0: 2, 3: 1})      # 凤凰火 2 级、青行灯 1 级在场
-    play(g, 0, NPYH)
-    assert any(c.id == MD for c in pa.hand)   # 羁绊触发：明灯入手
+   # 羁绊触发：明灯入手
 
 
-def test_niepan_echo_enemy_spell_triggers(make_game):
+def test_spell_echo_enemy_spell_triggers(make_game):
     """敌方式神在敌方回合从手牌使用法术同样触发（回响存活到己方下回合开始）。"""
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
     play(g, 0, NPYH)
@@ -462,7 +475,7 @@ def test_niepan_echo_enemy_spell_triggers(make_game):
     assert pb.health == 30 - 1 - 2 - 1 - 1    # 涅槃投射 + 凤鸣 + 两次投射
 
 
-def test_niepan_once_key_not_stackable(make_game):
+def test_spell_echo_once_key_not_stackable(make_game):
     """不可叠加：已登记同键回响时第二次涅槃业火不重置序列（游标/已触发保留）。"""
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
     play(g, 0, NPYH)
@@ -493,7 +506,7 @@ def _die_lan_auras(pa):
             if a.get("power") == 1 and a.get("shield") == 1 and "fast" in a["keywords"]]
 
 
-def test_renying_bond_launch_attack_and_retreat(make_game):
+def test_launch_attack_and_retreat_linkage(make_game):
     """羁绊：姑获鸟发起一次攻击（不耗火/出击次数），并联动其基础能力攻击后退回。"""
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1}, team=RY_TEAM)
     play(g, 0, RYDL)
@@ -503,7 +516,7 @@ def test_renying_bond_launch_attack_and_retreat(make_game):
     assert pa.combat_index is None            # 姑获鸟攻击后已退回准备区
 
 
-def test_renying_awaken_aura_stacks_and_combat_stats(make_game):
+def test_card_aura_stacks_and_stats(make_game):
     """觉醒：打脸登记战斗牌[瞬发]+1/+1 光环（可叠加）；战意吃满光环数值且瞬发免费。"""
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1}, team=RY_TEAM)
     play(g, 0, RYDL)                          # 姑获鸟羁绊攻击：pb 27

@@ -539,7 +539,7 @@ def test_attack_buff_cleared_on_defeat(db, make_game):
 
 # ---------- 白狼基础能力 ----------
 
-def test_bailang_ability_combat_damage(db, make_game):
+def test_base_ability_on_combat_damage(db, make_game):
     """白狼基础能力：己方回合对敌方式神造成战斗伤害，即时对敌方牌手造成 2。"""
     _bailang_base_ability(db)
     g = make_game()
@@ -551,7 +551,7 @@ def test_bailang_ability_combat_damage(db, make_game):
     assert pl.health == 28              # 能力 -2（反击伤害来源非白狼，不再触发）
 
 
-def test_bailang_ability_effect_damage_no_trigger(db, make_game):
+def test_base_ability_ignores_effect_damage(db, make_game):
     """白狼基础能力：法术（effect 伤害）不触发。"""
     _bailang_base_ability(db)
     cid = 10010154
@@ -565,7 +565,7 @@ def test_bailang_ability_effect_damage_no_trigger(db, make_game):
     assert pl.health == 30  # 未触发
 
 
-def test_bailang_ability_opponent_turn_no_trigger(db, make_game):
+def test_base_ability_active_self_only(db, make_game):
     """白狼基础能力：非己方回合不触发（active: self 限定）。"""
     _bailang_base_ability(db)
     g = make_game()
@@ -579,7 +579,7 @@ def test_bailang_ability_opponent_turn_no_trigger(db, make_game):
 
 # ---------- 觉醒 ----------
 
-def test_awaken_bailang_stats_and_replaced_ability(db, make_game):
+def test_awaken_replaces_ability_and_perm_stats(db, make_game):
     """觉醒·白狼：+2/+2 永久修正；能力替换为任意伤害版（法术伤害也触发，伤害 4）。"""
     _bailang_base_ability(db)
     cid = _awaken_bailang(db)
@@ -607,7 +607,7 @@ def test_awaken_bailang_stats_and_replaced_ability(db, make_game):
     assert pl.health == 22
 
 
-def test_awaken_bailang_persists_through_revive(db, make_game):
+def test_awaken_persists_through_revive(db, make_game):
     """觉醒状态气绝/复活保留：永久修正与觉醒能力在复活后仍生效。"""
     cid = _awaken_bailang(db)
     g = make_game()

@@ -41,7 +41,7 @@ class GameConfig(BaseModel):
 
 
 # 标准卡牌区域；引擎不限制于此——move_card 可创建任意新区域
-STANDARD_ZONES = ("deck", "hand", "graveyard", "exile")
+STANDARD_ZONES = ("deck", "hand", "graveyard", "exiled")
 
 
 class Ref(BaseModel):

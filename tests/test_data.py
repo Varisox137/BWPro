@@ -393,11 +393,12 @@ def test_base_countdown_heals(real_game):
     assert pa.ext["countdown_history"] == [YQS]
 
 
-# ---------- 觉醒三张：替换 + 同次 -3 立即归零 ----------
+# ---------- 法术觉醒：替换 + 同次 -3 立即归零（三张不同卡牌用例） ----------
 
-def test_awaken_ruzheng_immediate(real_game):
-    """觉醒·入阵歌：+0/+1 永久；觉醒替换注册倒计时 3（来源=觉醒牌 id）→ 同次出牌
-    触发 -3 至 0 立即归零：5 伤随机分配给所有敌方角色。"""
+def test_awaken_spell_immediate_countdown_zero(real_game):
+    """法术觉醒牌共用流程（觉醒·入阵歌/神乐歌/镇魂歌）：永久身材修正 + 觉醒替换注册
+    倒计时 3（来源=觉醒牌 id）→ 同次出牌触发 -3 至 0 立即归零执行归零效果并循环重置。"""
+    # 入阵歌：+0/+1 永久；归零 5 伤随机分配给所有敌方角色
     g, pa, pb = _game(real_game, YQS_TEAM)
     s = pa.shikigami[IDX]
     enemy_total = sum(x.health for x in pb.shikigami) + pb.health
@@ -407,11 +408,7 @@ def test_awaken_ruzheng_immediate(real_game):
     assert s.countdown == 3 and s.countdown_source == RUZHENG   # 归零后循环重置
     assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 5
     assert pa.ext["countdown_history"] == [RUZHENG]
-
-
-def test_awaken_shenyue_immediate(real_game):
-    """觉醒·神乐歌：+1/+0 永久；同次 -3 立即归零：己方其他在场式神倒计时 -1
-    并获得 1 力量与 1 生命（临时修正）。"""
+    # 神乐歌：+1/+0 永久；归零己方其他在场式神倒计时 -1 并获得 1 力量与 1 生命（临时）
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
     _register_allied_countdowns(g)            # 鸩/以津真天倒计时均为 2
     s = pa.shikigami[IDX]
@@ -424,10 +421,7 @@ def test_awaken_shenyue_immediate(real_game):
     assert yjzt.temp_power == 1 and yjzt.health == 6
     assert s.countdown == 3 and s.countdown_source == SHENYUE
     assert pa.ext["countdown_history"] == [SHENYUE]
-
-
-def test_awaken_zhenhun_immediate(real_game):
-    """觉醒·镇魂歌：+1/+1 永久；同次 -3 立即归零：抽一张牌、获得 1 点鬼火。"""
+    # 镇魂歌：+1/+1 永久；归零抽一张牌、获得 1 点鬼火
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
     s = pa.shikigami[IDX]
     hand_before = len(pa.hand)
@@ -610,7 +604,7 @@ def test_base_countdown_generates_feather(real_game):
 
 # ---------- 01 金羽焕生 ----------
 
-def test_jinyu_huansheng_two_feathers(real_game):
+def test_generate_two_by_card_id(real_game):
     """金羽焕生：将两张黄金羽置入手牌（指定 id 生成，token 不入随机池）。"""
     g, pa, pb = _game(real_game, YJZT_TEAM)
     play(g, 0, JYHS)
@@ -619,7 +613,7 @@ def test_jinyu_huansheng_two_feathers(real_game):
 
 # ---------- 51 黄金羽：瞬发打牌手 / 记账 ----------
 
-def test_feather_fast_hits_player_and_accounts(real_game):
+def test_fast_free_and_tag_accounting(real_game):
     """黄金羽：瞬发（本回合首张瞬发免费，鬼火不变）对敌方牌手 2 伤；
     记账 feather_used_game/turn。"""
     g, pa, pb = _game(real_game, YJZT_TEAM)
@@ -661,8 +655,9 @@ def test_jinfeng_liuyu_cost_and_accounting(real_game):
 
 # ---------- 04 不可饶恕：回合级战斗免疫 ----------
 
-def test_unforgivable_immunity(real_game):
-    """结附后本回合用过黄金羽：免疫战斗伤害（反击不扣血；回合号记账）。"""
+def test_turn_scoped_immunity_grant(real_game):
+    """grant_immunity(scope=turn)：结附后本回合用过黄金羽则免疫战斗伤害（反击不扣血，
+    回合号记账）；unique 去重——多次使用黄金羽不重复授予（维护者答复(3)）。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
     play(g, 0, BKRS)                          # 形态 4/6
     play(g, 0, FEATHER)                       # 触发形态能力：本回合免疫战斗伤害
@@ -670,14 +665,10 @@ def test_unforgivable_immunity(real_game):
     g.apply({"op": "assault", "index": IDX})  # 以津真天 4 攻 → 兵俑 6→2
     assert pb.shikigami[2].health == 2
     assert pa.shikigami[IDX].health == 6      # 反击 1 被免疫
-
-
-def test_unforgivable_immunity_unique(real_game):
-    """维护者答复(3)："若不具有该能力则获得"——本回合多次使用黄金羽不重复授予。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
     play(g, 0, BKRS)
     play(g, 0, FEATHER)
-    play(g, 0, FEATHER)
+    play(g, 0, FEATHER)                       # 第二次：unique 命中不再授予
     entries = [e for e in pa.shikigami[IDX].immunities
                if e.get("kind") == "combat_damage"]
     assert len(entries) == 1
@@ -685,7 +676,7 @@ def test_unforgivable_immunity_unique(real_game):
 
 # ---------- 05 射怪鸟事：气绝前响应弃抽 ----------
 
-def test_shagua_niaoshi_response(real_game):
+def test_before_defeat_response_discard_draw(real_game):
     """响应：以津真天将气绝时自动使用——弃掉所有她的专属牌并抽等量（瞬发免费）。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
     give(g, 0, SGNS)
@@ -719,7 +710,7 @@ def test_awaken_countdown_one(real_game):
     assert pa.ext["countdown_history"] == [YJZT_AWAKEN]
 
 
-def test_feather_snipe_requires_awaken(real_game):
+def test_method_requires_awaken_gating(real_game):
     """黄金羽以敌方角色为目标（答复(11)）：未觉醒门控 IllegalAction；觉醒后可狙击
     式神或牌手 2 伤。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
@@ -736,15 +727,12 @@ def test_feather_snipe_requires_awaken(real_game):
 
 # ---------- 07 千羽风之舞：战斗牌其它效果步 ----------
 
-def test_qianyu_no_feather_no_generate(real_game):
-    """本回合未用过黄金羽：仅 +3/+3，不生成金风流羽。"""
+def test_conditional_step_by_player_ext(real_game):
+    """战斗牌其它效果步的 step 级条件（player_ext=feather_used_turn）：本回合未用过
+    黄金羽仅 +3/+3 不生成金风流羽；用过则战斗流程执行其它效果步置入手牌。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
     play(g, 0, QYFW)
     assert not any(c.id == JLFY for c in pa.hand)
-
-
-def test_qianyu_after_feather_generates(real_game):
-    """本回合用过黄金羽：战斗流程执行其它效果步——金风流羽置入手牌。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
     play(g, 0, FEATHER)
     play(g, 0, QYFW)
@@ -753,7 +741,7 @@ def test_qianyu_after_feather_generates(real_game):
 
 # ---------- 08 流浪之羽：形态触发随机伤害 ----------
 
-def test_wandering_feather_random_damage(real_game):
+def test_random_damage_on_tagged_play(real_game):
     """结附期间使用黄金羽：随机对两个敌方式神各造成 2 点伤害（合计 4）。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
     play(g, 0, LLZY)
@@ -803,7 +791,7 @@ def test_base_countdown_gives_fragile(real_game):
     assert pa.ext["countdown_history"] == [ZHEN]
 
 
-def test_zhenyu_susheng(real_game):
+def test_countdown_delta_immediate_zero(real_game):
     """鸩羽苏生：鸩倒计时 -2（1→0 立即归零结算）+ 抽 1。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM)
     s = pa.shikigami[IDX]
@@ -833,18 +821,14 @@ def test_x_survives_defeat(real_game):
 
 # ---------- 01 鸩羽：条件免疫 ----------
 
-def test_zhenyu_immunity_vs_fragile(real_game):
-    """攻击有破甲的角色：免疫战斗伤害（反击不扣血）。"""
+def test_battle_immunity_conditioned_on_victim_fragile(real_game):
+    """战斗牌条件免疫（victim_has_fragile）：攻击有破甲的角色免疫反击；无破甲正常扣血。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM)
     pb.shikigami[2].shield = -1               # B 兵俑（1/6）持 1 破甲
     move(g, 1, 2)
     play(g, 0, ZY)                            # 鸩 2+2=4 攻 → 兵俑 4+1=5 伤
     assert pb.shikigami[2].health == 1
     assert pa.shikigami[IDX].health == 5      # 反击 1 被免疫
-
-
-def test_zhenyu_no_immunity_without_fragile(real_game):
-    """被攻击者无破甲：不免疫（正常吃反击）。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM)
     move(g, 1, 2)                             # B 兵俑无破甲
     play(g, 0, ZY)
@@ -1014,7 +998,7 @@ def test_jiliao_player_branch_and_next_turn(real_game):
 # 队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]。
 # ==========================================================================
 
-def test_yingcao_draws_on_different_form(real_game):
+def test_draw_on_different_form_attach(real_game):
     """使用与当前形态不同的形态牌 → 抽 1；同形态再结附不触发。"""
     g, pa, pb = _game(real_game, YC_TEAM, {IDX: 1, 1: 1})
     hand = len(pa.hand)

@@ -196,7 +196,7 @@ def test_chongzhuang_accumulate_and_play(db, make_game):
 
 # ---------- 妖刀姬基础能力：卡牌光环（[瞬发]） ----------
 
-def test_yaodao_aura_grants_fast(db, make_game):
+def test_card_aura_grants_fast_keyword(db, make_game):
     """妖刀姬能力：对牌手战斗伤害后，她的战斗牌获得[瞬发]（0 费），法术牌不受影响。"""
     _yaodao_base_ability(db)
     combat_cid, spell_cid = 10010164, 10010165
@@ -217,7 +217,7 @@ def test_yaodao_aura_grants_fast(db, make_game):
     assert pa.orb == 1  # 法术牌不受光环影响：照付 1 费
 
 
-def test_yaodao_aura_expires_at_own_turn_start(db, make_game):
+def test_card_aura_turn_scope_expiry(db, make_game):
     """妖刀姬能力的光环（scope="turn"）：己方回合开始清除，战斗牌恢复原价。"""
     _yaodao_base_ability(db)
     combat_cid = 10010164
@@ -237,7 +237,7 @@ def test_yaodao_aura_expires_at_own_turn_start(db, make_game):
 
 # ---------- 觉醒·妖刀姬 ----------
 
-def test_awaken_yaodao_haste_and_cost_zero(db, make_game):
+def test_awaken_grants_haste_and_cost_zero_aura(db, make_game):
     """觉醒·妖刀姬：打出授一次性迅捷；伤害牌手后战斗牌不耗鬼火（连续多张、不占瞬发名额）。"""
     cid = _awaken_yaodao(db)
     c1, c2 = 10010167, 10010168
@@ -282,7 +282,7 @@ def test_fast_card_under_cost_zero_aura_keeps_slot(db, make_game):
     assert not pa.fast_used  # 不占用瞬发名额
 
 
-def test_awaken_yaodao_revive_grants_haste(db, make_game):
+def test_awaken_ability_reenters_on_revive(db, make_game):
     """觉醒·妖刀姬：复活时觉醒能力再次进场 → 重新获得一次性迅捷。"""
     cid = _awaken_yaodao(db)
     g = make_game()

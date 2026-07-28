@@ -78,7 +78,7 @@
 | 06 魔音扰心 | ✅ | 主动=delay_grant(scope=turn) 登记一次性无效化；响应=response 覆盖块直接无效化当前用牌（CardDef.response 新字段：主动/响应结构不同） |
 | 07 觉醒·镇魂歌 | ✅ | 倒计时 draw 1 + gain_orb 1；同次 -3 立即归零 |
 | 08 余音 | ✅ | 自身 -3（立即归零）+ friendly_others -1（气绝者不在目标池） |
-| 21 风之乐章 | ✅ | 协战主牌：options 双子选项，choice 选择后生成 token 视作从手牌使用，主牌离手进 removed |
+| 21 风之乐章 | ✅ | 协战主牌：options 双子选项，choice 选择后生成 token 视作从手牌使用，主牌离手进 exiled |
 | 51 幻音绝弦 | ✅ | delay_grant（on_turn_start，uses=1，不用 scope=turn 以免同批清除）：己方式神倒计时-1 + 气绝者气绝倒计时-2（revive 参数，≤0 立即复活）；羁绊=随机一目连形态牌 |
 
 ## 一目连（100125）

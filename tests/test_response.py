@@ -274,7 +274,7 @@ def test_yuanhu_response_kill_aborts_battle(db, make_game):
     assert a.shikigami[BING_IDX].health == 6   # 战斗中止，未受攻击
 
 
-def test_yuanhu_not_triggered_when_bailang_attacked(db, make_game):
+def test_response_victim_not_shikigami_filter(db, make_game):
     """白狼自己被攻击时不触发（victim_not_shikigami）。"""
     _yuan_hu(db)
     g = make_game()
@@ -290,7 +290,7 @@ def test_yuanhu_not_triggered_when_bailang_attacked(db, make_game):
     assert any(c.id == YUAN_HU for c in a.hand)
 
 
-def test_yuanhu_active_play_hits_enemy_combat(db, make_game):
+def test_response_card_active_play(db, make_game):
     """援护主动使用：对敌方战斗区式神造成白狼力量值伤害。"""
     _yuan_hu(db)
     g = make_game()
@@ -303,7 +303,7 @@ def test_yuanhu_active_play_hits_enemy_combat(db, make_game):
 
 # ---------- 7. 会（延迟触发） ----------
 
-def test_hui_delayed_damage(db, make_game):
+def test_delay_grant_turn_start_damage(db, make_game):
     """会：指定敌方式神，下个己方回合开始造成 8 点；触发后条目移除不二次触发。"""
     _hui(db)
     g = make_game()
@@ -317,7 +317,7 @@ def test_hui_delayed_damage(db, make_game):
     pass_turns(g, 2)                          # 再过一轮：不二次触发（无异常）
 
 
-def test_hui_cleared_when_bailang_defeated(db, make_game):
+def test_delay_grant_cleared_on_defeat(db, make_game):
     """白狼先气绝：延迟能力消失，不触发。"""
     _hui(db)
     g = make_game()
@@ -415,7 +415,7 @@ def test_budong_enter_combat_and_power_gain(db, make_game):
 
 # ---------- 11. 古尘之壁（friendly_others / shield_of） ----------
 
-def test_bi_buffs_others_by_shield(db, make_game):
+def test_buff_health_amount_shield_of_source(db, make_game):
     """古尘之壁：进场时按兵俑护甲使其余己方式神 +生命/生命上限，兵俑自身不变。"""
     _bi(db)
     g = make_game()
@@ -432,7 +432,7 @@ def test_bi_buffs_others_by_shield(db, make_game):
     assert bing.max_health == 10         # 兵俑自身不变（形态 5/10）
 
 
-def test_bi_buff_not_perm_cleared_on_defeat(db, make_game):
+def test_buff_health_temp_cleared_on_defeat(db, make_game):
     """古尘之壁"获得x生命"非永久：上限增益气绝时清除（维护者答复(1)）。"""
     _bi(db)
     g = make_game()
@@ -447,7 +447,7 @@ def test_bi_buff_not_perm_cleared_on_defeat(db, make_game):
     assert bai.temp_health == 0 and bai.max_health == 4
 
 
-def test_bi_buff_is_not_heal(db, make_game):
+def test_buff_health_not_a_heal_event(db, make_game):
     """古尘之壁"获得x生命"不算治疗：不走 heal 事件、不触发"恢复生命时"能力。"""
     _bi(db)
     db.cards[10010154] = F.card(           # 监听形态：任何治疗事件计数
@@ -791,7 +791,7 @@ def test_cost_zero_if_ext(db, make_game):
     assert pa.orb == 8                          # 动态费用：0 费
 
 
-def test_golden_feather_accounting(db, make_game):
+def test_tag_play_accounting_game_turn(db, make_game):
     """使用 tags 含 golden_feather 的牌：game/turn 两级计数；turn 键回合开始清除。"""
     db.cards[FEATHER] = F.card(FEATHER, shikigami=100101, level=1, cost=1,
                                token=True, tags=["golden_feather"], steps=[])

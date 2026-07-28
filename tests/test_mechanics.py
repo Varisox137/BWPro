@@ -396,14 +396,14 @@ def test_game_config_override(db, make_game):
 
 
 def test_move_card_to_custom_zone(db, make_game):
-    """move_card 支持任意区域：把牌从自定义区 exile 打回战场。"""
+    """move_card 支持任意区域：把牌从放逐区 exiled 打回战场。"""
     cid = _add_damage_card(db)
     g = make_game()
     a = g.state.players[0]
     c = give(g, 0, cid)
-    g.move_card(a, c, "exile")
+    g.move_card(a, c, "exiled")
     assert c not in a.hand
-    g.apply({"op": "play_card", "uid": c.uid, "play_from": "exile",
+    g.apply({"op": "play_card", "uid": c.uid, "play_from": "exiled",
              "target": Ref(player=1, shikigami=0)})
     assert g.state.players[1].shikigami[0].health == 1
 
