@@ -50,7 +50,9 @@ def _yc_form(cid: int, name: str, steps=()) -> CardDef:
 @pytest.fixture
 def gdb():
     """真实 db + 测试库临时注册：萤草形态牌 A（空白进场）/B（进场 +2 护甲）
-    与凑卡组的空白法术 03/04（萤草 8 卡未加入，mk_game 卡组构造需要 01-04）。
+    与凑卡组的空白法术 03/04（萤草 8 卡未加入，mk_game 卡组构造需要 01-04）；
+    姑获鸟（卡牌未设计，10010601-04 全空白）与青行灯（仅明灯 01 为真卡，
+    10011202-04 空白）同样补足 01-04。
     本覆盖原属 test_yingcao.py，合并后萤草基础能力测试（本文件）与灵矢贯虹测试
     （test_reinforce.py）各持一份。"""
     db = CardDatabase.load()
@@ -62,6 +64,13 @@ def gdb():
         db.cards[cid] = CardDef(id=cid, version=20260728, name=f"萤草空白卡{n}",
                                 shikigami=YC, card_type="spell", level=1, cost=1,
                                 effects=EffectBlock(), text="")
+    for sid, nums in ((100106, (1, 2, 3, 4)), (100112, (2, 3, 4))):
+        for n in nums:
+            cid = sid * 100 + n
+            db.cards[cid] = CardDef(id=cid, version=20260729,
+                                    name=f"{db.shikigami[sid].name}空白卡{n}",
+                                    shikigami=sid, card_type="spell", level=1, cost=1,
+                                    effects=EffectBlock(), text="")
     return db
 
 
@@ -1004,3 +1013,277 @@ def test_yingcao_draws_on_different_form(real_game):
     assert len(pa.hand) == hand + 1
     play(g, 0, YC_FORM_B)                     # 不同形态 → 抽 1
     assert len(pa.hand) == hand + 2
+
+
+# ==========================================================================
+# 凤凰火（100105）
+#
+# 覆盖：基础能力投射（专属法术→投射 1）、引燃消灭追加（敌/己两向）、焚羽非战斗
+# 伤害 +1、觉醒替换投射（己方式神任意专属法术触发、自身法术只触发一次）、
+# 炎舞增强计数与贯通溢出、出云生成凤火。队伍 [凤凰火, 山童, 白狼, 妖刀姬]。
+# ==========================================================================
+
+FM, RX, YR = 10010501, 10010502, 10010503      # 凤鸣/瑞翔/引燃
+FY, FH = 10010504, 10010505                    # 焚羽/凤火
+FHH_AWAKEN, YW, CY = 10010506, 10010507, 10010508
+
+FHH_TEAM = [100105, 100116, 100101, 100123]
+
+
+def test_fhh_base_projectile(real_game):
+    """基础能力：凤凰火使用专属法术（凤鸣）→ [投射]1（B 战斗区空 → 打脸）。"""
+    g, pa, pb = _game(real_game, FHH_TEAM)
+    play(g, 0, FM)                            # 凤鸣 2 + 投射 1
+    assert pb.health == 27
+
+
+def test_fhh_yinran_kill_enemy(real_game):
+    """引燃消灭敌方式神：再对它的牌手造成 2（victim_player 语境目标）。"""
+    g, pa, pb = _game(real_game, FHH_TEAM)
+    pb.shikigami[0].health = 2
+    play(g, 0, YR, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].defeated
+    assert pb.health == 27                    # 消灭追加 2 + 投射 1
+
+
+def test_fhh_yinran_kill_friendly(real_game):
+    """引燃可对己方式神使用（维护者确认）：消灭己方式神 → 对己方牌手造成 2。"""
+    g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 1, 1: 1})
+    pa.shikigami[1].health = 2
+    play(g, 0, YR, target=Ref(player=0, shikigami=1))
+    assert pa.shikigami[1].defeated
+    assert pa.health == 28
+    assert pb.health == 29                    # 投射 1
+
+
+def test_fhh_fenyu_boosts_effect_damage(real_game):
+    """焚羽：凤凰火造成的非战斗伤害 +1——凤鸣直击与基础投射均吃增幅。"""
+    g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 2})
+    play(g, 0, FY)
+    play(g, 0, FM)                            # (2+1) + 投射 (1+1)
+    assert pb.health == 25
+
+
+def test_fhh_awaken_any_shikigami_spell(real_game):
+    """觉醒·凤凰火：己方式神使用任意专属法术均投射 1（觉醒牌本身已触发一次）；
+    凤凰火自己的法术只触发一次（基础能力已被觉醒能力替换）。"""
+    g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 2, 1: 1})
+    play(g, 0, FHH_AWAKEN)
+    assert pa.shikigami[IDX].awakened == FHH_AWAKEN
+    assert pb.health == 29                    # 觉醒牌自身的使用事件已触发觉醒能力
+    play(g, 0, 10011603)                      # 山童怒吼（其他式神的专属法术）→ 投射 1
+    assert pb.health == 28
+    play(g, 0, FM)                            # 凤鸣 2 + 投射 1（只触发一次）
+    assert pb.health == 25
+    assert pa.shikigami[IDX].perm_power == 1  # 觉醒 +1/+1
+
+
+def test_fhh_yanwu_enhance_counts_player_damage(real_game):
+    """炎舞增强：凤凰火每对敌方牌手造成 1 次伤害 +1——凤鸣直击与投射各计 1 次。"""
+    g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
+    play(g, 0, FM)                            # 直击 2 + 投射 1 = 2 次
+    assert pa.card_mods[YW]["enhance"] == 2
+    play(g, 0, YW)                            # (5+2) 贯通投射打脸；炎舞本身再触发基础投射 1
+    assert pb.health == 30 - 3 - 7 - 1
+
+
+def test_fhh_yanwu_piercing_overflow(real_game):
+    """炎舞贯通：投射命中战斗区式神，溢出给牌手；随后基础投射再打脸。"""
+    g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
+    move(g, 1, 0)
+    pb.shikigami[0].health = 3
+    play(g, 0, YW)                            # 5 → B0(3) 亡，溢出 2 打脸
+    assert pb.shikigami[0].defeated
+    assert pb.health == 27                    # 溢出 2 + 基础投射 1
+
+
+def test_fhh_chuyun_generates_fenghuo(real_game):
+    """出云：凤凰火使用法术牌时，将一张'凤火'置入手牌。"""
+    g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
+    play(g, 0, CY)
+    play(g, 0, FM)
+    assert any(c.id == FH for c in pa.hand)
+
+
+# ==========================================================================
+# 山童（100116）
+#
+# 覆盖：先天[贯通]（ShikigamiDef.keywords）、鲁莽回合开始自动攻击、怪力永久力量
+# （非战力提取）、怒吼永久/临时分层、笨拙敌方回合力量覆写、碎岩穿刺、
+# 觉醒免疫敌方非战斗伤害、伺机响应（敌方回合光环 + 反击贯通）、崩山增强。
+# 队伍 [山童, 凤凰火, 白狼, 妖刀姬]。
+# ==========================================================================
+
+LM, GL, NH, BN = 10011601, 10011602, 10011603, 10011604   # 鲁莽/怪力/怒吼/笨拙
+SY, ST_AWAKEN, SJI, BS = 10011605, 10011606, 10011607, 10011608
+
+ST_TEAM = [100116, 100105, 100101, 100123]
+
+
+def test_st_innate_piercing_overflow(real_game):
+    """先天[贯通]：出击击杀战斗区式神，溢出伤害给牌手。"""
+    g, pa, pb = _game(real_game, ST_TEAM)
+    move(g, 1, 0)                             # B0 山童入战斗区
+    pb.shikigami[0].health = 2
+    g.apply({"op": "assault", "index": 0})    # 山童 3 贯通 → B0 亡，溢出 1
+    assert pb.shikigami[0].defeated
+    assert pb.health == 29
+    assert pa.shikigami[IDX].health == 1      # 气绝在战斗结束后结算：反击 3 照常
+
+
+def test_st_lumang_auto_attack(real_game):
+    """鲁莽：己方回合开始山童自动发起攻击（不耗鬼火/出击次数）。"""
+    g, pa, pb = _game(real_game, ST_TEAM)
+    play(g, 0, LM)                            # 形态 3/5
+    pass_turns(g, 2)                          # 回到 A 回合开始：自动攻击打脸 3
+    assert pb.health == 27
+    assert pa.combat_index == IDX             # 攻击后留在战斗区
+
+
+def test_st_guaili_perm_power_not_battle_power(real_game):
+    """怪力：永久 +1 力量按常规效果步执行（不提取为本次战斗战力）；当次战斗已生效。"""
+    g, pa, pb = _game(real_game, ST_TEAM)
+    play(g, 0, GL)
+    s = pa.shikigami[IDX]
+    assert s.perm_power == 1
+    assert s.combat_power == 0                # 无战力通道
+    assert pb.health == 26                    # 3+1=4 直击
+    assert pa.combat_index == IDX
+
+
+def test_st_nuhou_perm_self_temp_others(real_game):
+    """怒吼：山童永久 +1 力量；其他己方式神临时 +1（气绝清除层）。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 1, 1: 1})
+    play(g, 0, NH)
+    assert pa.shikigami[IDX].perm_power == 1
+    assert pa.shikigami[1].temp_power == 1
+    assert pa.shikigami[1].perm_power == 0
+
+
+def test_st_benzhuo_power_zero_on_enemy_turn(real_game):
+    """笨拙：敌方回合力量覆写为 0，己方回合开始解除。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2})
+    play(g, 0, BN)                            # 形态 6/9
+    s = pa.shikigami[IDX]
+    assert s.eff_power == 6
+    pass_turns(g, 1)                          # B 回合开始：覆写
+    assert s.eff_power == 0
+    pass_turns(g, 1)                          # A 回合开始：解除
+    assert s.eff_power == 6
+
+
+def test_st_suiyan_pierce_strips_shield(real_game):
+    """碎岩：[穿刺] 先移除目标全部护甲再结算伤害；+2 战力/+2 一次性护甲。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2})
+    move(g, 1, 0)
+    b0 = pb.shikigami[0]
+    g.apply({"op": "debug_set_stat",
+             "args": {"target": {"player": 1, "shikigami": 0}, "key": "shield", "value": 2}})
+    play(g, 0, SY)                            # 3+2=5，穿刺移除 2 护甲
+    assert b0.defeated and b0.shield == 0
+    assert pb.health == 29                    # 先天贯通：溢出 1
+    s = pa.shikigami[IDX]
+    assert s.shield == 0 and s.health == 3    # 反击 3：一次性护甲吸收 2 后扣 1
+
+
+def test_st_awaken_effect_immunity(real_game):
+    """觉醒·山童：免疫敌方非战斗伤害——己方来源与战斗伤害不免疫。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2, 1: 1})
+    play(g, 0, ST_AWAKEN)
+    s = pa.shikigami[IDX]
+    assert s.health == 5                      # 觉醒 +1/+1
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0))
+    assert s.health == 5                      # 敌方非战斗伤害：免疫
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=0, shikigami=1))
+    assert s.health == 3                      # 己方来源：不免疫
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0),
+                        kind="combat")
+    assert s.health == 1                      # 战斗伤害：不免疫
+
+
+def test_st_siji_response_counter_piercing(real_game):
+    """伺机：敌方回合开始登记"此牌 +2 力量"光环（card_id 谓词）；山童被攻击时响应
+    插入使用——反击 3+2 战力+2 光环=7 且贯通，击杀攻击者并溢出。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 1, 1: 1})
+    pb.shikigami[0].level = 2                 # 伺机为 2 级牌
+    give(g, 1, SJI)
+    pass_turns(g, 2)                          # A 第 2 回合开始：B 的光环触发登记
+    move(g, 1, 0)                             # B0 山童入战斗区（A 回合内）
+    orb = pb.orb
+    g.apply({"op": "assault", "index": 0})    # A0 山童 3 出击 → B 响应伺机
+    b0 = pb.shikigami[0]
+    assert b0.health == 2                     # 3 - 伺机 1 护甲 = 2
+    assert pa.shikigami[IDX].defeated         # 反击 7 > 4
+    assert pa.health == 27                    # 反击贯通：溢出 3
+    assert any(c.id == SJI for c in pb.graveyard)
+    assert pb.orb == orb - 1                  # 响应付 1 火
+
+
+def test_st_bengshan_perm_power_enhance(real_game):
+    """崩山增强：山童每永久 1 力量，战斗区/准备区伤害各自 +1（先怒吼：5/2）。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 3, 1: 1})
+    move(g, 1, 0)
+    play(g, 0, NH)                            # 山童永久 +1
+    play(g, 0, BS)
+    assert pb.shikigami[0].defeated           # 战斗区 4+1=5 > 4
+    assert [s.health for s in pb.shikigami[1:]] == [2, 2, 2]   # 准备区 1+1=2
+
+
+def test_st_bengshan_base_damage(real_game):
+    """崩山无永久力量时：战斗区 4、准备区 1。"""
+    g, pa, pb = _game(real_game, ST_TEAM, {IDX: 3})
+    move(g, 1, 0)
+    play(g, 0, BS)
+    assert pb.shikigami[0].defeated           # 4 = 4
+    assert [s.health for s in pb.shikigami[1:]] == [3, 3, 3]
+
+
+# ==========================================================================
+# 姑获鸟（100106）基础能力（卡牌未设计，构筑池过滤见 test_deck.py）
+# ==========================================================================
+
+GHN_TEAM = [100106, 100101, 100102, 100123]
+
+
+def test_ghn_retreat_after_assault(real_game):
+    """姑获鸟攻击后移回准备区。"""
+    g, pa, pb = _game(real_game, GHN_TEAM)
+    g.apply({"op": "assault", "index": 0})    # 3 攻打脸
+    assert pb.health == 27
+    assert pa.combat_index is None            # 攻击后自动退回准备区
+
+
+# ==========================================================================
+# 青行灯（100112）基础能力与明灯（其余卡牌未设计）
+# ==========================================================================
+
+QXD_TEAM = [100112, 100101, 100123, 100127]
+MD = 10011201                                 # 明灯
+
+
+def test_qxd_generates_mingdeng_on_enemy_turn(real_game):
+    """敌方回合开始时若你有剩余鬼火 → 获得一张'明灯'（手牌明灯数 +1；
+    卡组本身含明灯 01×2，以计数差判定而非有无）。"""
+    g, pa, pb = _game(real_game, QXD_TEAM)    # pa.orb = 9
+    n = sum(1 for c in pa.hand if c.id == MD)
+    pass_turns(g, 1)                          # B 回合开始
+    assert sum(1 for c in pa.hand if c.id == MD) == n + 1
+
+
+def test_qxd_no_mingdeng_without_orb(real_game):
+    """无剩余鬼火：不获得明灯。"""
+    g, pa, pb = _game(real_game, QXD_TEAM)
+    pa.orb = 0
+    n = sum(1 for c in pa.hand if c.id == MD)
+    pass_turns(g, 1)
+    assert sum(1 for c in pa.hand if c.id == MD) == n
+
+
+def test_qxd_mingdeng_gains_orb(real_game):
+    """明灯：[瞬发] 获得 1 点鬼火（本回合首张瞬发免费 → 净 +1）。"""
+    g, pa, pb = _game(real_game, QXD_TEAM)
+    pass_turns(g, 2)                          # B 回合开始已生成明灯；回到 A 回合鬼火重置
+    assert any(c.id == MD for c in pa.hand)
+    orb = pa.orb
+    play(g, 0, MD)
+    assert pa.orb == orb + 1

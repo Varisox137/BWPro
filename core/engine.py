@@ -185,7 +185,8 @@ class Game:
         """命中该卡牌的卡牌光环（card_auras 注册表，读取时求值，覆盖已有与新生成的牌）。
 
         turn 通道（"self"/"opponent"）：限定回合方——仅己方/敌方回合时光环生效
-        （伺机"敌方回合时此牌+2力量"）。"""
+        （伺机"敌方回合时此牌+2力量"）。
+        card_id 通道：仅命中该数据 id 的牌（"此牌"类自指光环）。"""
         pi = next(i for i, q in enumerate(self.state.players) if q is p)
         out = []
         for a in p.card_auras:
@@ -193,6 +194,8 @@ class Game:
                 continue
             if a.get("card_type") is not None and a["card_type"] != cdef.card_type:
                 continue
+            if a.get("card_id") is not None and a["card_id"] != cdef.id:
+                continue  # "此牌"限定：仅命中指定数据 id
             turn = a.get("turn")
             if turn is not None and (turn == "self") != (self.state.active == pi):
                 continue  # 回合方条件不满足：光环不生效
@@ -717,6 +720,8 @@ class Game:
         for step in block.steps:
             if step.target is not None and step.target.kind != "self":
                 continue
+            if step.op == "buff_power" and (step.model_extra or {}).get("perm"):
+                continue  # 永久力量增益（怪力）是常规效果步，非本次战斗战力
             amount = self._step_amount(step, card, s)
             if step.op == "buff_power":
                 power += amount
@@ -776,8 +781,9 @@ class Game:
         ctx = ExecContext(controller=self.state.active, source=atk_ref, card=card)
         for st in block.steps:
             if (st.op in ("buff_power", "gain_shield")
-                    and (st.target is None or st.target.kind == "self")):
-                continue  # 战力/护甲已提取
+                    and (st.target is None or st.target.kind == "self")
+                    and not (st.op == "buff_power" and (st.model_extra or {}).get("perm"))):
+                continue  # 战力/护甲已提取（永久力量增益属常规效果步，不提取）
             if st.op in ("grant_keyword", "battle_immunity", "convert_damage",
                          "counter_piercing", "attack_buff"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
@@ -821,8 +827,9 @@ class Game:
         ctx = ExecContext(controller=pi, source=ref, card=card)
         for step in block.steps:
             if (step.op in ("buff_power", "gain_shield")
-                    and (step.target is None or step.target.kind == "self")):
-                continue  # 战力/护甲已提取，不重复执行
+                    and (step.target is None or step.target.kind == "self")
+                    and not (step.op == "buff_power" and (step.model_extra or {}).get("perm"))):
+                continue  # 战力/护甲已提取，不重复执行（永久力量增益照常执行）
             self._run_step(step, ctx)
         # 改为移入战斗区（无论该牌所属式神是否具有远程）
         if p.combat_index != si and s.in_play:
@@ -1682,6 +1689,10 @@ class Game:
             if ev.kind in ("combat", "counter") and s is not None and self._combat_immune(s):
                 self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
                 return
+            # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）
+            if ev.kind == "effect" and s is not None and self._effect_immune(s, ev):
+                self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
+                return
         skip_shield_calc = False
         skip_before_health = False
         # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
@@ -1803,6 +1814,21 @@ class Game:
                 return True
             if e.get("battle") == current or (e.get("nested") and e.get("battle") in self._battle_stack):
                 return True
+        return False
+
+    def _effect_immune(self, s: ShikigamiState, ev: _DamageEvent) -> bool:
+        """式神是否免疫该次非战斗伤害（条目 {"kind": "effect", "from": "enemy"|None}）。
+
+        from="enemy"：伤害来源属于敌方才免疫（无来源 ev.source=None 或己方来源不免疫）；
+        scope="perm" 条目无过期键，随气绝清除（immunities 气绝清空）。
+        """
+        for e in s.immunities:
+            if e.get("kind") != "effect":
+                continue
+            if e.get("from") == "enemy" and (
+                    ev.source is None or ev.source.player == ev.victim.player):
+                continue  # 来源缺失或属于己方：不免疫
+            return True
         return False
 
     def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:

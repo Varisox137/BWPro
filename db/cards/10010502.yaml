@@ -1,0 +1,13 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010502
+version: 20260729
+name: 瑞翔
+shikigami: 100105  # 派系：红莲（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+effects:
+  steps:
+    - {op: damage, amount: 1, target: {kind: all, pool: enemy_character}}
+text: 对所有敌方角色造成1点伤害

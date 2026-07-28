@@ -31,8 +31,12 @@ STANDARD_COLOR = 94
 
 
 def available_shikigami(db: CardDatabase) -> list:
-    """全部可构筑式神（kind=shikigami，按 id 排序）。"""
-    return sorted((d for d in db.shikigami.values() if d.kind == "shikigami"),
+    """全部可构筑式神（kind=shikigami 且可构筑卡满 8 种，按 id 排序）。
+
+    可构筑卡不足 8 种的 WIP 式神（如姑获鸟/青行灯）不进构筑可选池。
+    """
+    return sorted((d for d in db.shikigami.values()
+                   if d.kind == "shikigami" and len(buildable_cards(db, d.id)) >= 8),
                   key=lambda d: d.id)
 
 

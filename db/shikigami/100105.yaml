@@ -1,0 +1,15 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 100105
+version: 20260729
+name: 凤凰火
+faction: 红莲
+power: 2
+health: 4
+# ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）
+ability:
+  # 凤凰火使用法术牌（含觉醒/响应/凭空自动使用，专属牌）时：[投射]1
+  when: on_card_played
+  condition: {player: self, card_type: spell, shikigami: 100105}
+  steps:
+    - {op: damage, amount: 1, target: {kind: all, pool: projectile}}
+text: 当凤凰火使用法术牌时，[投射]：{造成1点伤害}

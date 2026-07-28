@@ -1,0 +1,22 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010506
+version: 20260729
+name: 觉醒·凤凰火
+shikigami: 100105  # 派系：红莲（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+awaken_health: 1
+rarity: SR
+level: 2
+cost: 1
+effects:
+  steps: []
+abilities:
+  # 己方式神使用专属法术牌（shikigami 非 None 排除中立牌）时：[投射]1（来源=凤凰火，
+  # 吃焚羽+1、计入炎舞增强）
+  - when: on_card_played
+    condition: {player: self, card_type: spell, shikigami_not: null}
+    steps:
+      - {op: damage, amount: 1, target: {kind: all, pool: projectile}}
+text: "[觉醒]：{当己方式神使用法术牌时，[投射]：{造成1点伤害}。}"

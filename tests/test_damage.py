@@ -460,3 +460,46 @@ def test_victim_player_friendly(db, make_game):
     play(g, 0, 10010157, target=Ref(player=0, shikigami=1))
     assert pa.shikigami[1].defeated
     assert pa.health == 28                # 受伤者（己方式神）的牌手 = 己方牌手
+
+
+# ==========================================================================
+# 免疫敌方非战斗伤害（grant_immunity kind=effect from_side=enemy，觉醒山童底层）
+# ==========================================================================
+
+def _effect_immunity_spell(db, cid=10010158):
+    """授予来源式神"免疫敌方非战斗伤害"（perm）的法术。"""
+    db.cards[cid] = F.card(cid, shikigami=SID, token=True, steps=[F.Step(
+        op="grant_immunity", scope="perm", kind="effect", from_side="enemy",
+        target=T(kind="self"))])
+    return cid
+
+
+def test_effect_immunity_enemy_source(db, make_game):
+    """免疫敌方非战斗伤害：敌方来源的 effect 伤害被免疫。"""
+    _effect_immunity_spell(db)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010158)
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0))
+    assert pa.shikigami[IDX].health == 4     # 免疫
+
+
+def test_effect_immunity_friendly_or_none_source_not(db, make_game):
+    """from=enemy 限定：己方来源与无来源的 effect 伤害不免疫。"""
+    _effect_immunity_spell(db)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010158)
+    ref = Ref(player=0, shikigami=IDX)
+    g.deal_to_shikigami(ref, 3, Ref(player=0, shikigami=1))
+    assert pa.shikigami[IDX].health == 1     # 己方来源：不免疫
+    g.deal_to_shikigami(ref, 1, None)
+    assert pa.shikigami[IDX].health == 0     # 无来源：不免疫
+
+
+def test_effect_immunity_not_combat(db, make_game):
+    """kind=effect 免疫不覆盖战斗伤害（combat/counter 属 combat_damage 免疫）。"""
+    _effect_immunity_spell(db)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010158)
+    ref = Ref(player=0, shikigami=IDX)
+    g.deal_to_shikigami(ref, 2, Ref(player=1, shikigami=0), kind="combat")
+    assert pa.shikigami[IDX].health == 2     # 战斗伤害照常

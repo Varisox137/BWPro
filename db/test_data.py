@@ -13,9 +13,30 @@ def make_test_db() -> CardDatabase:
     return CardDatabase.load()
 
 
-# 可构筑式神 id（从正式数据派生，按 id 排序）；测试卡组取前 4 名（组卡规则限 4 名出战，
-# 正式数据增至 5 名式神后须截断，否则 make_test_deck 产出非法卡组）
-TEST_IDS = sorted(d.id for d in make_test_db().shikigami.values() if d.kind == "shikigami")[:4]
+# 可构筑式神 id（从正式数据派生，按 id 排序）；测试卡组取 4 名（组卡规则限 4 名出战，
+# 正式数据增至 5 名式神后须截断，否则 make_test_deck 产出非法卡组）。
+# 取法：可构筑（≥8 种非衍生卡，排除 WIP 式神）且派系 ≤2（无相不计）按 id 贪心选取。
+def _pick_test_ids() -> list[int]:
+    db = make_test_db()
+    picked: list[int] = []
+    factions: set[str] = set()
+    for d in sorted(db.shikigami.values(), key=lambda x: x.id):
+        if d.kind != "shikigami":
+            continue
+        if sum(1 for c in db.cards.values()
+               if not c.token and c.shikigami == d.id) < 8:
+            continue  # WIP 式神（可构筑卡不足 8 种）不进测试卡组
+        if d.faction != "无相":
+            if d.faction not in factions and len(factions) >= 2:
+                continue  # 保持派系 ≤2
+            factions.add(d.faction)
+        picked.append(d.id)
+        if len(picked) == 4:
+            break
+    return picked
+
+
+TEST_IDS = _pick_test_ids()
 
 
 def make_test_deck(shikigami_ids: list[int] | None = None) -> list[int]:

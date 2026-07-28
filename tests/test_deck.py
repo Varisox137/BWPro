@@ -455,3 +455,11 @@ def test_edit_invalid_keeps_editing(db, tmp_path, monkeypatch, capsys):
     assert "卡组暂不合法" in capsys.readouterr().out
     ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
     assert sorted(c for c in cards if c // 100 == 100101) == F.deck_of(100101)
+
+
+def test_available_shikigami_excludes_wip(gdb):
+    """构筑可选池：可构筑卡不足 8 种的 WIP 式神（姑获鸟 0 卡/青行灯 1 卡）不可选。"""
+    ids = [d.id for d in deckbuilder.available_shikigami(gdb)]
+    assert 100106 not in ids                 # 姑获鸟（卡牌暂未加入）
+    assert 100112 not in ids                 # 青行灯（仅明灯 1 张）
+    assert 100105 in ids and 100116 in ids   # 凤凰火/山童（8 卡齐）可选

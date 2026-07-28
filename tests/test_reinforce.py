@@ -329,6 +329,15 @@ def gdb():
         db.cards[cid] = CardDef(id=cid, version=20260728, name=f"萤草空白卡{n}",
                                 shikigami=YC, card_type="spell", level=1, cost=1,
                                 effects=EffectBlock(), text="")
+    # 姑获鸟（卡牌未设计，10010601-04 全空白）与青行灯（仅明灯 01 为真卡，
+    # 10011202-04 空白）补足 01-04：刃影叠岚/涅槃业火节的队伍需要
+    for sid, nums in ((100106, (1, 2, 3, 4)), (100112, (2, 3, 4))):
+        for n in nums:
+            cid = sid * 100 + n
+            db.cards[cid] = CardDef(id=cid, version=20260729,
+                                    name=f"{db.shikigami[sid].name}空白卡{n}",
+                                    shikigami=sid, card_type="spell", level=1, cost=1,
+                                    effects=EffectBlock(), text="")
     return db
 
 
@@ -360,3 +369,117 @@ def test_lingshi_bond1_no_form_noop(make_game):
     play(g, 0, LSGH)                          # 白狼 3+2=5 攻打牌手
     assert pb.health == 25
     assert pa.shikigami[YC_IDX].form is None
+
+
+# ==========================================================================
+# 涅槃业火（10010551，协战子卡 token；主牌"烛火重燃"未加入，直接发牌测试）
+#
+# 法术回响：本回合其他式神（含敌方）从手牌使用法术时（同式神法术至多一次），
+# 凤凰火按序列凭空免费使用 凤鸣→引燃→瑞翔（每张至多一次，once_key 不可叠加）；
+# 回响自动使用照常 emit on_card_played（触发凤凰火基础投射）但不自连锁。
+# 队伍 [凤凰火, 山童, 青行灯, 妖刀姬]；凤凰火 2 级（涅槃业火 2 级牌）。
+# ==========================================================================
+
+NPYH = 10010551      # 涅槃业火
+NH = 10011603        # 怒吼（山童法术，回响触发用）
+QG = 10010101        # 起弓（白狼法术，回响触发用）
+MD = 10011201        # 明灯（涅槃业火羁绊产物；青行灯不在队不可使用，仅验证入手）
+FM_E, YR_E = 10010501, 10010503   # 回响序列前两张：凤鸣/引燃（第三张瑞翔 10010502）
+
+# 红莲×2 + 苍叶×2（构筑派系 ≤2；触发牌须来自队内式神，青行灯无法入队故用起弓）
+NPYH_TEAM = [100105, 100116, 100101, 100123]
+
+
+def _echo(pa):
+    return pa.shikigami[0].ext.get("spell_echo")
+
+
+def test_niepan_echo_sequence_and_single_trigger(make_game):
+    """回响序列：怒吼触发凤鸣（墓地次序可验证）、同式神法术不重复触发、
+    起弓触发引燃；自动使用的回响牌触发凤凰火基础投射。"""
+    g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
+    play(g, 0, NPYH)
+    assert pb.health == 29                    # 涅槃业火本身触发基础投射 1
+    assert any(c.id == MD for c in pa.hand)   # 羁绊：明灯入手
+    assert _echo(pa)["cursor"] == 0
+    play(g, 0, NH)                            # 山童怒吼 → 回响凤鸣
+    assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E]
+    assert pb.health == 26                    # 凤鸣 2 + 基础投射 1
+    assert _echo(pa)["cursor"] == 1           # 自动使用不自连锁（只推进一次）
+    play(g, 0, NH)                            # 同式神法术：不重复触发
+    assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH]
+    assert pb.health == 26
+    assert _echo(pa)["cursor"] == 1
+    play(g, 0, QG)                            # 白狼起弓 → 回响引燃
+    assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH, QG, YR_E]
+    assert _echo(pa)["cursor"] == 2
+    assert pb.health == 25                    # 引燃随机打式神（打不死），基础投射 1 必中
+
+
+def test_niepan_echo_enemy_spell_triggers(make_game):
+    """敌方式神在敌方回合从手牌使用法术同样触发（回响存活到己方下回合开始）。"""
+    g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
+    play(g, 0, NPYH)
+    play(g, 0, NH)                            # A 怒吼 → 回响凤鸣（cursor 1）
+    pass_turns(g, 1)                          # B 回合（回响仍在）
+    play(g, 1, QG)                            # B 白狼起弓 → A 凤凰火回响引燃
+    assert _echo(pa)["cursor"] == 2
+    assert any(c.id == YR_E for c in pa.graveyard)
+    # 引燃随机打式神（全员 ≥3 血打不死）；回响牌均触发基础投射（必中牌手）
+    assert pb.health == 30 - 1 - 2 - 1 - 1    # 涅槃投射 + 凤鸣 + 两次投射
+
+
+def test_niepan_once_key_not_stackable(make_game):
+    """不可叠加：已登记同键回响时第二次涅槃业火不重置序列（游标/已触发保留）。"""
+    g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
+    play(g, 0, NPYH)
+    play(g, 0, NH)                            # 推进回响：cursor 1、triggered [100116]
+    play(g, 0, NPYH)                          # 第二次：once_key 命中 → 跳过登记
+    assert _echo(pa)["cursor"] == 1
+    assert _echo(pa)["triggered"] == [100116]
+    pass_turns(g, 2)                          # 己方回合开始：回响清除
+    assert _echo(pa) is None
+
+
+# ==========================================================================
+# 刃影叠岚（10012351，协战子卡 token；主牌未加入，直接发牌测试）
+#
+# [觉醒]：妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[瞬发]及 +1/+1
+# （数值通道可叠加）；[羁绊]：姑获鸟发起一次攻击（联动其攻击后退回能力）。
+# 队伍 [妖刀姬, 姑获鸟, 白狼, 兵俑]；妖刀姬 2 级、姑获鸟 1 级。
+# ==========================================================================
+
+RYDL = 10012351      # 刃影叠岚
+ZY = 10012303        # 战意（+2/+2 战斗牌）
+
+RY_TEAM = [100123, 100106, 100101, 100102]
+
+
+def _die_lan_auras(pa):
+    return [a for a in pa.card_auras
+            if a.get("power") == 1 and a.get("shield") == 1 and "fast" in a["keywords"]]
+
+
+def test_renying_bond_launch_attack_and_retreat(make_game):
+    """羁绊：姑获鸟发起一次攻击（不耗火/出击次数），并联动其基础能力攻击后退回。"""
+    g, pa, pb = _game(make_game, levels={0: 2, 1: 1}, team=RY_TEAM)
+    play(g, 0, RYDL)
+    assert pa.shikigami[0].awakened == RYDL
+    assert pa.shikigami[0].health == 5        # 觉醒 +0/+1
+    assert pb.health == 27                    # 姑获鸟 3 攻打脸
+    assert pa.combat_index is None            # 姑获鸟攻击后已退回准备区
+
+
+def test_renying_awaken_aura_stacks_and_combat_stats(make_game):
+    """觉醒：打脸登记战斗牌[瞬发]+1/+1 光环（可叠加）；战意吃满光环数值且瞬发免费。"""
+    g, pa, pb = _game(make_game, levels={0: 2, 1: 1}, team=RY_TEAM)
+    play(g, 0, RYDL)                          # 姑获鸟羁绊攻击：pb 27
+    g.apply({"op": "assault", "index": 0})    # 妖刀姬 3 攻打脸 → 光环①
+    assert pb.health == 24
+    assert len(_die_lan_auras(pa)) == 1
+    orb = pa.orb
+    play(g, 0, ZY)                            # 战力 2+1、护甲 2+1；光环瞬发免费
+    assert pa.orb == orb
+    assert pb.health == 18                    # 3+3=6 打脸 → 光环②（数值可叠加）
+    assert len(_die_lan_auras(pa)) == 2
+    assert pa.shikigami[0].shield == 3        # 一次性护甲 2+1（无反击保留）

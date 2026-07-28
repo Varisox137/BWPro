@@ -31,7 +31,8 @@ def build_player(
         shikigami.append(ShikigamiState(
             id=sid, kind=d.kind, faction=d.faction,
             home_slot=idx + 1, entry_order=idx + 1,
-            base_power=d.power, base_health=d.health, health=d.health))
+            base_power=d.power, base_health=d.health, health=d.health,
+            perm_keywords=list(d.keywords)))  # 先天关键字（贯通等）按永久类别入列
     uid = uid_start
     deck = []
     for cid in card_ids:

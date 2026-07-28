@@ -270,12 +270,14 @@ def mod_hand(game, ctx, *, targets: list[Ref], tag: str | None = None,
 
 @action("card_aura")
 def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
-              card_type: str | None = None, keywords: list[str] | None = None,
+              card_type: str | None = None, card_id: int | None = None,
+              keywords: list[str] | None = None,
               cost_zero: bool = False, power: int = 0, shield: int = 0,
               turn: str | None = None, scope: str = "turn") -> None:
     """登记卡牌光环（targets 忽略）：谓词匹配的卡牌获得 keywords / 不耗鬼火 / 数值加成。
 
     覆盖谓词命中的全部卡牌（任何区域，含之后新生成的）——读取时求值而非写入实例。
+    card_id：仅命中该数据 id 的牌（"此牌"类自指光环，伺机）。
     power/shield 为战斗牌数值通道（combat_card_stats 读取时叠加到战力/一次性护甲）：
     可叠加——多次授予数值累加（与 keywords 的集合语义不同）。
     turn："self"/"opponent" 限定回合方，仅己方/敌方回合时光环生效（伺机类）。
@@ -290,7 +292,7 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     else:
         sid = int(shikigami)
     game.state.players[ctx.controller].card_auras.append({
-        "shikigami": sid, "card_type": card_type,
+        "shikigami": sid, "card_type": card_type, "card_id": card_id,
         "keywords": list(keywords or []), "cost_zero": cost_zero,
         "power": power, "shield": shield, "turn": turn, "scope": scope,
     })
@@ -920,21 +922,38 @@ def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 
 
 @action("grant_immunity")
-def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn") -> None:
-    """授予目标式神战斗伤害免疫（不可饶恕"本回合用过黄金羽则免疫战斗伤害"）。
+def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
+                   kind: str = "combat_damage", from_side: str | None = None) -> None:
+    """授予目标式神伤害免疫（不可饶恕"本回合用过黄金羽则免疫战斗伤害"；觉醒·山童
+    "免疫敌方非战斗伤害"）。
 
+    kind="combat_damage"（缺省）：免疫 kind ∈ (combat, counter) 的战斗伤害；
+    kind="effect"：免疫非战斗伤害（法术/能力等），from_side="enemy" 限定伤害来源
+    属于敌方（无来源/己方来源不免疫）。
     scope="turn"：免疫到当前回合结束——以回合号记账（{"turn": 当前回合}），
-    _combat_immune 按回合号比对，跨回合自然过期，无需清理。
+    按回合号比对，跨回合自然过期，无需清理；scope="perm"：无过期键，
+    持续在场期间有效，随气绝清除（immunities 气绝清空，复活需重新授予）。
     """
-    if scope != "turn":
+    if scope not in ("turn", "perm"):
         raise ValueError(f"未知 grant_immunity 作用域: {scope}")
+    if kind not in ("combat_damage", "effect"):
+        raise ValueError(f"未知 grant_immunity 免疫类别: {kind}")
+    if from_side not in (None, "enemy"):
+        raise ValueError(f"未知 grant_immunity 来源限定: {from_side}")
     for ref in targets:
         if ref.shikigami is None:
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if s.in_play:
-            s.immunities.append({"kind": "combat_damage", "turn": game.state.turn})
-            game._log(f"{game.db.shikigami[s.id].name} 免疫战斗伤害（本回合）")
+            entry: dict = {"kind": kind}
+            if from_side is not None:
+                entry["from"] = from_side
+            if scope == "turn":
+                entry["turn"] = game.state.turn
+            s.immunities.append(entry)
+            label = "战斗伤害" if kind == "combat_damage" else "非战斗伤害"
+            game._log(f"{game.db.shikigami[s.id].name} 免疫{label}"
+                      f"（{'本回合' if scope == 'turn' else '持续'}）")
 
 
 @action("gain_orb")
@@ -1037,7 +1056,7 @@ def boost_damage(game, ctx, *, targets: list[Ref], amount: int = 0) -> None:
 
 @action("power_override")
 def power_override(game, ctx, *, targets: list[Ref], on: bool = True) -> None:
-    """力量覆写（凤凰火形态类）：on=True 时目标式神力量视为 0（覆盖基础+永久+临时+
+    """力量覆写（山童笨拙类）：on=True 时目标式神力量视为 0（覆盖基础+永久+临时+
     战力全部，eff_power 覆写层）；on=False 解除。形态离场、式神气绝时自动清除。"""
     for ref in targets:
         if ref.shikigami is None:

@@ -126,6 +126,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
     - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
     - {orb_ge: n}              ：控制者当前鬼火 ≥ n（"若你有 2 点鬼火"类）
+    - {字段_not: 值}           ：事件字段 ≠ 给定值（{shikigami_not: null} = 专属牌/非中立，
+      "己方式神使用法术牌"排除中立牌用）
     - {player_ext: <key>}      ：控制者 PlayerState.ext[key] 为真值（"本回合若使用过黄金羽"
       = feather_used_turn 记账键；千羽风之舞 step 级条件）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
@@ -173,6 +175,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
             kind = "shikigami" if ref.shikigami is not None else "player"
             if kind != want:
+                return False
+        elif key.endswith("_not"):
+            # 不等判定（如 {shikigami_not: null} = 该字段非 None——排除中立牌）
+            if event.get(key[:-4]) == want:
                 return False
         elif key.endswith("_not_shikigami"):
             # 事件中的 Ref 所指式神的数据 id ≠ 给定值（"己方其他式神"，如援护）

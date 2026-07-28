@@ -1,0 +1,14 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011201
+version: 20260729
+name: 明灯
+shikigami: 100112  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [fast]
+effects:
+  steps:
+    - {op: gain_orb, amount: 1}
+text: "[瞬发]。你获得1点鬼火"

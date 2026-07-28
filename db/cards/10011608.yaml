@@ -1,0 +1,18 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011608
+version: 20260729
+name: 崩山
+shikigami: 100116  # 派系：红莲（继承自式神数据）
+card_type: spell
+rarity: R
+level: 3
+cost: 1
+effects:
+  steps:
+    # 顺序（维护者确认）：先战斗区伤害、后准备区；增强按使用时永久力量快照各自加
+    # （山童的贯通不传导本牌法术伤害——步骤不标 piercing）
+    - {op: damage, amount: {perm_power: self, base: 4},
+       target: {kind: all, pool: enemy_combat}}
+    - {op: damage, amount: {perm_power: self, base: 1},
+       target: {kind: all, pool: enemy_bench}}
+text: 对敌方战斗区式神造成4点伤害，对准备区式神造成1点伤害。[增强]：{山童每永久提高1力量，此牌便伤害+1。}
