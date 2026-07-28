@@ -12,4 +12,4 @@ ability:
   condition: {player: opponent, orb_ge: 1}
   steps:
     - {op: generate, card_id: 10011201, zone: hand}
-text: 敌方回合开始时若你有剩余鬼火，获得一张'明灯'
+text: 敌方回合开始时若你有剩余鬼火，获得一张‘明灯’。

@@ -12,4 +12,4 @@ ability:
     - op: damage
       amount: 2
       target: {kind: all, pool: enemy_player}
-text: 己方回合，每当白狼对敌方式神造成战斗伤害时（即时时机），对敌方牌手造成2点伤害
+text: 己方回合当白狼对敌方式神造成战斗伤害时，对敌方牌手造成2点伤害

@@ -11,4 +11,4 @@ ability:
     - op: gain_shield
       amount: 2
       target: {kind: self}
-text: 己方回合开始时，兵俑获得2护甲
+text: 己方回合开始时，兵俑获得2护甲。

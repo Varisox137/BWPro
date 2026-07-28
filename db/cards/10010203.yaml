@@ -16,4 +16,4 @@ abilities:
     condition: {player: self, shikigami_in_combat: 100102}
     steps:
       - {op: buff_power, amount: 3, perm: true, target: {kind: self}}
-text: 进场时，将兵俑移入战斗区。己方回合开始时，若兵俑在战斗区，兵俑获得3力量
+text: 进场时将兵俑移入战斗区。己方回合开始时若兵俑在战斗区，则获得3力量。

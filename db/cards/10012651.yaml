@@ -22,4 +22,4 @@ methods:
         - {op: damage, amount: 2}
     requires_awaken: true  # 使用方式的觉醒门控（所属式神须已觉醒；engine 校验）
     text: 以一名敌方角色为目标（需觉醒·以津真天）
-text: "[瞬发]。对敌方牌手造成2点伤害"
+text: "[瞬发]。对敌方牌手造成2点伤害。"

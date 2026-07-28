@@ -9,4 +9,4 @@ cost: 1
 effects:
   steps:
     - {op: generate, shikigami: self, card_type: combat, count: 3}
-text: 随机生成3张妖刀姬的战斗牌并置入手牌
+text: 随机将三张妖刀姬的战斗牌置入手牌。

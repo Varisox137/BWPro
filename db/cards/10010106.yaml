@@ -12,4 +12,4 @@ effects:
   condition: {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100101}
   steps:
     - {op: damage, amount: {power_of: source}, target: {kind: all, pool: enemy_combat}}
-text: 对敌方战斗区式神造成等同于白狼力量值的伤害。[响应]：{当己方其他式神被攻击时，自动使用此牌}
+text: 对敌方战斗区式神造成等同于白狼力量的伤害。[响应]：{当你的其他式神被攻击时，自动使用}。

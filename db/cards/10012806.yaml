@@ -14,4 +14,4 @@ effects:
     - {op: gain_shield, amount: 2, target: {kind: self}}
     - {op: grant_keyword, keyword: lifesteal, target: {kind: self},
        condition: {defender_has_fragile: true}}
-text: "+2/+2。若攻击有破甲的角色，获得[吸血]"
+text: 若攻击有破甲的角色，获得[吸血]。

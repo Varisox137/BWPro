@@ -14,4 +14,4 @@ temp_grants:
     condition: {victim_side: enemy, victim_kind: shikigami, source_shikigami: self}
     steps:
       - {op: draw, count: 1, target: {kind: all, pool: self_player}}
-text: 若妖刀姬于此战斗牌所发起的战斗中消灭了敌方式神，抽一张牌
+text: 消灭敌方式神时，抽一张牌。

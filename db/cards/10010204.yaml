@@ -15,4 +15,4 @@ triggers:
     condition: {player: self, shikigami_in_combat: 100102}
     steps:
       - {op: add_mod, to: hand, key: enhance, amount: 1}
-text: "[增强]：{己方回合开始时，若兵俑在战斗区，此牌获得+1力量/+1护甲}"
+text: "[增强]：{己方回合开始时若兵俑在战斗区，此牌获得+1力量与+1护甲。}"

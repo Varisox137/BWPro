@@ -19,4 +19,4 @@ effects:
         # 对它的牌手造成2点伤害（消灭己方式神则打己方牌手）
         - {op: damage, amount: 2, target: {kind: context, key: victim_player}}
     - {op: damage, amount: 2}
-text: 对一个式神造成2点伤害，若消灭则再对它的牌手造成2点伤害
+text: 对一个式神造成2点伤害，若消灭则再对它的牌手造成2点伤害。

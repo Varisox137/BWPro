@@ -12,4 +12,4 @@ ability:
       shikigami: self
       card_type: combat
       keywords: [fast]
-text: 当妖刀姬对敌方牌手造成伤害时，本回合她的所有战斗牌具有[瞬发]
+text: 当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[瞬发]。

@@ -12,4 +12,4 @@ effects:
     - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
     # 其他己方式神+1力量（非永久：临时修正，气绝清除）
     - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
-text: 山童永久获得1力量，其他己方式神获得1力量
+text: 山童永久获得1力量，其他己方式神获得1力量。

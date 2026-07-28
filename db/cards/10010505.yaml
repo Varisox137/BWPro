@@ -11,4 +11,4 @@ target: {kind: choose, pool: any_shikigami}
 effects:
   steps:
     - {op: damage, amount: 5}
-text: 对一个式神造成5点伤害
+text: 对一个式神造成5点伤害。

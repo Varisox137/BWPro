@@ -12,4 +12,4 @@ ability:
   condition: {player: self, card_type: spell, shikigami: 100105}
   steps:
     - {op: damage, amount: 1, target: {kind: all, pool: projectile}}
-text: 当凤凰火使用法术牌时，[投射]：{造成1点伤害}
+text: 当凤凰火使用法术牌时，[投射]：{造成1点伤害。}

@@ -11,4 +11,4 @@ effects:
   steps:
     # 永久力量增益非战力：战斗牌流程按常规效果步执行（不提取为本次战斗战力）
     - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
-text: 山童永久获得1力量
+text: 山童永久获得1力量。

@@ -12,4 +12,4 @@ ability:
   condition: {attacker_shikigami: self}
   steps:
     - {op: retreat, target: {kind: self}}
-text: 姑获鸟攻击后，移回准备区
+text: 姑获鸟攻击后，移回准备区。

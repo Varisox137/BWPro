@@ -12,4 +12,4 @@ effects:
   steps:
     - {op: buff_power, amount: 2, target: {kind: self}}
     - {op: battle_immunity, target: {kind: self}, condition: {defender_has_fragile: true}}
-text: "+2/+0。若攻击有破甲的角色，免疫战斗伤害"
+text: 若攻击有破甲的角色，免疫战斗伤害。

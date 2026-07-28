@@ -13,4 +13,4 @@ countdown: 2
 countdown_effects:
   steps:
     - {op: destroy, target: {kind: all, pool: enemy_combat}}
-text: "[倒计时2]：{消灭敌方战斗区式神}"
+text: "[倒计时2]：{消灭敌方战斗区的式神。}"

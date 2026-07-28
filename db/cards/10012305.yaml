@@ -17,4 +17,4 @@ triggers:
     condition: {victim_kind: shikigami, source_side: friendly, source_shikigami: 100123}
     steps:
       - {op: add_mod, to: persistent, key: enhance, amount: 2}
-text: "[增强]：{本局游戏中，妖刀姬每消灭过一名式神，此牌便获得+2力量}"
+text: "[增强]：{本局游戏妖刀姬每消灭一个式神，此牌获得+2力量。}"

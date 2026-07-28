@@ -15,4 +15,4 @@ effects:
   steps:
     - {op: buff_power, amount: 4, target: {kind: self}}
     - {op: convert_damage, to: fragile}
-text: "+4/+0。本次战斗中双方造成的伤害效果转化为等量的破甲。[响应]：{当鸩被攻击时，自动使用此牌。}"
+text: "本次战斗中双方造成的伤害效果转化为等量的破甲。[响应]：{当鸩被攻击时，自动使用此牌。}"

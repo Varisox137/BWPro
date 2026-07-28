@@ -17,4 +17,4 @@ abilities:
     condition: {source_shikigami: self, victim_side: enemy, victim_kind: shikigami, active: self}
     steps:
       - {op: damage, amount: 4, target: {kind: all, pool: enemy_player}}
-text: "[觉醒]：{己方回合，每当白狼对敌方式神造成伤害时，对敌方牌手造成4点伤害}"
+text: "[觉醒]：{己方回合当白狼对敌方式神造成伤害时，对敌方牌手造成4点伤害。}"

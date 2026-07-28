@@ -20,4 +20,4 @@ abilities:
     condition: {target_shikigami: self}
     steps:
       - {op: trigger_form_countdown}
-text: "随机生成一张一目连的形态牌并置入手牌。[觉醒]：{一目连的形态牌进场、离场、被消灭时，触发其[倒计时]效果。}"
+text: "随机获得一张一目连的形态牌。[觉醒]：{一目连的形态牌进场、离场或被消灭时触发[倒计时]效果。}"

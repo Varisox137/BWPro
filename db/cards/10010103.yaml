@@ -11,4 +11,4 @@ form_health: 5
 keywords: [remote, keep_attack_buffs]
 effects:
   steps: []
-text: "[远程]。白狼的法术强化效果（'起弓''离''无我'）不会在攻击后移除"
+text: "[远程]。白狼的法术强化效果不再因攻击而消失。"

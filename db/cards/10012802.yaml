@@ -10,4 +10,4 @@ effects:
   steps:
     - {op: countdown_delta, amount: -2, target: {kind: self}}
     - {op: draw, count: 1}
-text: 使鸩[倒计时]-2，抽一张牌
+text: 使鸩[倒计时]-2，抽一张牌。

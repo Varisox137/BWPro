@@ -15,4 +15,4 @@ temp_grants:
     steps:
       - {op: gain_shield, amount: {half_health_of: victim}, kind: fragile,
          target: {kind: context, key: victim}}
-text: "+0/+0。对敌方角色造成战斗伤害时，使其获得等同于其一半生命的破甲"
+text: 对敌方角色造成战斗伤害时，使其获得等同于其一半生命的破甲。

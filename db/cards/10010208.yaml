@@ -13,4 +13,4 @@ target: {kind: choose, pool: enemy_shikigami}
 effects:
   steps:
     - {op: grant_keyword, keyword: enraged}
-text: "进场时，选择一名敌方式神，使其获得[激怒]。兵俑在战斗区时免疫直接消灭效果。只要兵俑在战斗区且敌方战斗区有式神，为敌方召唤召唤物的效果无效、敌方准备区式神不能发起不具有[远程]的战斗"
+text: 使一个敌方式神获得[激怒]。当兵俑在战斗区时免疫直接消灭效果，敌方战斗区式神无法被其他式神替换。

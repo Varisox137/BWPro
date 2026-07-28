@@ -21,4 +21,4 @@ abilities:
          condition: {target_kind: shikigami}}
       - {op: gain_shield, amount: {event: amount}, kind: fragile,
          target: {kind: all, pool: enemy_combat}, condition: {target_kind: player}}
-text: 每回合触发以下效果合计一次，当敌方式神获得破甲时，鸩的[倒计时]-2；或当敌方牌手获得破甲时，敌方战斗区式神获得等量破甲
+text: 每回合触发以下效果合计一次，当敌方式神获得破甲时，鸩的[倒计时]-2；或当敌方牌手获得破甲时，敌方战斗区式神获得等量破甲。

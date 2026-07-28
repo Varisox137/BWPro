@@ -17,4 +17,4 @@ ability:
       record: true
       steps:
         - {op: recast_recorded}
-text: 大天狗使用非觉醒法术后，[倒计时2]：{再次使用该法术}
+text: 大天狗使用非觉醒法术后，[倒计时2]：{再次使用该法术}。

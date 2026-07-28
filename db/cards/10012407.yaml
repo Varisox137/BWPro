@@ -22,4 +22,4 @@ abilities:
     condition: {player: self, card_type: spell, subtype: awaken, shikigami: 100124}
     steps:
       - {op: countdown_delta, amount: -3, target: {kind: self}}
-text: "[觉醒]：{[倒计时3]：{抽一张牌，获得1点鬼火}。当你使用妖琴师的[觉醒]法术牌时，使妖琴师的倒计时-3。}"
+text: "[觉醒]：{[倒计时3]：{抽一张牌，获得1点鬼火}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"

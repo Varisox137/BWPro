@@ -17,4 +17,4 @@ triggers:
     condition: {player: self, golden_feather: true}
     steps:
       - {op: add_mod, to: persistent, key: enhance, amount: 1}
-text: "[增强]：{本局游戏你每使用过一张黄金羽，此牌便获得+1力量+1护甲}"
+text: "[增强]：{本局游戏你每使用过一张‘黄金羽’，此牌便获得+1力量与+1护甲。}"

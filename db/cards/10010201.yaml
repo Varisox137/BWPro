@@ -9,4 +9,4 @@ cost: 1
 effects:
   steps:
     - {op: buff_power, amount: {shield_of: self}, target: {kind: self}}
-text: 兵俑每具有1点护甲，本次战斗中兵俑就获得+1力量
+text: 每有1护甲兵俑便获得1力量。

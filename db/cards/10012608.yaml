@@ -18,4 +18,4 @@ abilities:
     steps:
       - {op: random_damage, amount: 2, pool: enemy_shikigami, count: 1}
       - {op: random_damage, amount: 2, pool: enemy_shikigami, count: 1}
-text: 当你使用黄金羽时，随机对两个敌方式神各造成2点伤害
+text: 当以津真天使用‘黄金羽’时，对随机敌方式神造成2点伤害，此效果执行2次。

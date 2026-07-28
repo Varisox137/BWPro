@@ -11,4 +11,4 @@ keywords: [fast]
 effects:
   steps:
     - {op: gain_orb, amount: 1}
-text: "[瞬发]。你获得1点鬼火"
+text: "[瞬发]。你获得1点鬼火。"

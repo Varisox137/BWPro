@@ -9,4 +9,4 @@ cost: 1
 effects:
   steps:
     - {op: generate, card_id: 10012651, count: 2}
-text: 将两张黄金羽置入手牌
+text: 将两张‘黄金羽’置入手牌。

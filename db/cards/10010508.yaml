@@ -17,4 +17,4 @@ abilities:
     condition: {player: self, card_type: spell, shikigami: 100105}
     steps:
       - {op: generate, card_id: 10010505, zone: hand}
-text: 当凤凰火使用法术牌时，将一张'凤火'置入手牌
+text: 当凤凰火使用法术牌时，将一张‘凤火’置入手牌。

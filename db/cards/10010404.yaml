@@ -16,4 +16,4 @@ effects:
       steps:
         - {op: draw, count: 1}
     - {op: damage, amount: 4, target: {kind: all, pool: projectile}}
-text: "[投射]：{造成4点伤害，若消灭敌方式神则抽一张牌}"
+text: "[投射]：{造成4点伤害，若消灭敌方式神则抽一张牌}。"

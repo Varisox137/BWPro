@@ -11,4 +11,4 @@ effects:
   steps:
     - {op: draw, count: 1, target: {kind: all, pool: self_player}}
     - {op: attack_buff, power: 1, keywords: [pierce], target: {kind: self}}
-text: "[瞬发]。抽一张牌，白狼获得+1力量以及[穿刺]，直到白狼的下一次攻击后"
+text: "[瞬发]。抽一张牌，白狼获得1力量，[穿刺]直到下一次攻击后。"

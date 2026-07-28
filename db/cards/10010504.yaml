@@ -17,4 +17,4 @@ abilities:
     condition: {source_shikigami: self, kind: effect}
     steps:
       - {op: boost_damage, amount: 1}
-text: 凤凰火造成的所有非战斗伤害+1
+text: 凤凰火造成的所有非战斗伤害+1。

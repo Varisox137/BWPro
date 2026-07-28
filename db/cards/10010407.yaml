@@ -9,4 +9,4 @@ cost: 1
 effects:
   steps:
     - {op: damage, amount: 3, target: {kind: all, pool: enemy_character}}
-text: 对所有敌方角色造成3点伤害
+text: 对所有敌方角色造成3点伤害。

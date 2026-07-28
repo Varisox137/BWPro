@@ -11,4 +11,4 @@ effects:
   steps:
     - {op: destroy_form, target: {kind: self}}
     - {op: draw, count: 2, target: {kind: all, pool: self_player}}
-text: "[瞬发]。消灭一目连的形态，抽两张牌。"
+text: "[瞬发]。消灭一目连上的形态牌，抽两张牌。"

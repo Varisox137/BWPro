@@ -12,4 +12,4 @@ effects:
   steps:
     - {op: countdown_delta, amount: -3, target: {kind: self}}
     - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
-text: 使妖琴师的[倒计时]-3，使己方其他未气绝式神的[倒计时]-1
+text: 使妖琴师的[倒计时]-3，使己方其他未气绝式神的[倒计时]-1。

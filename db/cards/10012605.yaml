@@ -15,4 +15,4 @@ effects:
   steps:
     - {op: discard, shikigami: self}
     - {op: draw, count: {memo: discarded_count}}
-text: "[瞬发]。弃掉你手牌中所有以津真天的专属牌，然后抽等量的牌。[响应]：{当以津真天将气绝时，自动使用此牌}"
+text: "[瞬发]。弃掉所有以津真天的专属牌，抽等量的牌。[响应]：{当以津真天将气绝时，自动使用。}"

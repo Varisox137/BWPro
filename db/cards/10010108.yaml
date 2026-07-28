@@ -10,4 +10,4 @@ keywords: [fast]
 effects:
   steps:
     - {op: attack_buff, power: 3, keywords: [unyielding, piercing, haste], target: {kind: self}}
-text: "[瞬发]。白狼获得+3力量、[不屈]、[贯通]、[迅捷]，直到白狼的下一次攻击后"
+text: "[瞬发]。白狼获得3力量、[不屈]、[贯通]、[迅捷]直到下一次攻击后。"

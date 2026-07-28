@@ -9,4 +9,4 @@ cost: 1
 effects:
   steps:
     - {op: distribute_damage, amount: 6, pool: enemy_character}
-text: 造成6点伤害，随机分配给所有敌方角色
+text: 造成6点伤害，随机分配给所有敌方角色。

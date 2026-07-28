@@ -9,4 +9,4 @@ ability:
   countdown: 2
   steps:
     - {op: generate, card_id: 10012651}
-text: "[倒计时2]：{将一张黄金羽置入手牌。}"
+text: "[倒计时2]：{将一张‘黄金羽’置入手牌。}"

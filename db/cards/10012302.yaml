@@ -13,4 +13,4 @@ effects:
   steps:
     - {op: buff_power, amount: 1, target: {kind: self}}
     - {op: battle_immunity, target: {kind: self}}
-text: "+1力量，免疫战斗伤害。[响应]：{当妖刀姬被攻击时，自动使用此牌}"
+text: "免疫战斗伤害。[响应]：{当妖刀姬被攻击时，自动使用。}"

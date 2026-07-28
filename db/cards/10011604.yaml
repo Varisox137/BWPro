@@ -21,4 +21,4 @@ abilities:
     condition: {player: self}
     steps:
       - {op: power_override, "on": false, target: {kind: self}}
-text: 敌方回合时山童力量变为0
+text: 敌方回合时山童力量变为0。

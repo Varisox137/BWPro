@@ -13,4 +13,4 @@ countdown: 2
 countdown_effects:
   steps:
     - {op: gain_shield, amount: 5, target: {kind: all, pool: self_player}}
-text: "[倒计时2]：{己方牌手获得5护甲}"
+text: "[倒计时2]：{你获得5护甲。}"

@@ -21,4 +21,4 @@ abilities:
     steps:
       - {op: bump_ext, key: fragile_to_damage, amount: -1,
          target: {kind: all, pool: enemy_shikigami}}
-text: 鸩造成的破甲效果转化为等量的伤害
+text: 鸩造成的破甲效果转化为等量的伤害。

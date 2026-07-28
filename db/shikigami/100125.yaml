@@ -9,4 +9,4 @@ ability:
   condition: {target_shikigami: self}
   steps:
     - {op: trigger_form_countdown}
-text: 一目连的形态牌离场或被消灭时，触发其[倒计时]效果
+text: 一目连的形态牌离场或被消灭时触发[倒计时]效果。

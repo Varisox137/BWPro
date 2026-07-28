@@ -23,4 +23,4 @@ triggers:
     steps:
       - {op: card_aura, shikigami: 100116, card_id: 10011607, power: 2,
          turn: opponent, scope: turn}
-text: "+2力量/+1护甲。被攻击时也会造成[贯通]伤害。敌方回合时此牌获得+2力量。[响应]：{当山童被攻击时，自动使用此牌}"
+text: "被攻击时也会造成[贯通]伤害。敌方回合时此牌获得+2力量。[响应]：{当山童被攻击时，自动使用。}"

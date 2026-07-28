@@ -11,4 +11,4 @@ form_health: 10
 effects:
   steps:
     - {op: buff_health, amount: {shield_of: source}, perm: true, target: {kind: all, pool: friendly_others}}
-text: 进场时，兵俑每具有1护甲，使己方所有其他式神获得+1生命/生命上限
+text: 进场时兵俑每有1护甲，己方所有其他式神获得1生命。

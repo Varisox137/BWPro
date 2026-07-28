@@ -17,4 +17,4 @@ abilities:
     condition: {player: self}
     steps:
       - {op: launch_attack, shikigami: self}
-text: 己方回合开始时，山童自动发起攻击
+text: 己方回合开始时，山童自动发起攻击。

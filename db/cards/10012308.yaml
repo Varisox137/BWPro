@@ -25,4 +25,4 @@ abilities:
     condition: {source_shikigami: self}
     steps:
       - {op: card_aura, shikigami: self, card_type: combat, cost_zero: true}
-text: "[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成伤害时，本回合她的所有战斗牌不消耗鬼火。}"
+text: "[觉醒]：{[迅捷]。当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合不消耗鬼火。}"

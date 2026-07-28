@@ -11,4 +11,4 @@ cost_zero_if: {ext: feather_used_turn}  # 本回合若使用过黄金羽则不�
 effects:
   steps:
     - {op: buff_power, amount: 1, target: {kind: self}}
-text: "+1力量。使用时视为黄金羽。本回合若使用过黄金羽，此牌不消耗鬼火"
+text: 此牌使用时视为‘黄金羽’。本回合若使用过‘黄金羽’，此牌不消耗鬼火。
