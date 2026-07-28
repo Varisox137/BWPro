@@ -14,7 +14,6 @@ import pytest
 
 from core.engine import IllegalAction
 from core.model import Ref
-from db.loader import CardDatabase
 from tests import factories as F
 from tests.factories import give, move, pass_turns, play
 
@@ -34,27 +33,16 @@ TEAM = [100126, 100101, 100102, 100123]
 
 
 @pytest.fixture
-def gdb():
-    """真实卡牌数据库（db/ 目录 YAML，strict 校验加载）。"""
-    return CardDatabase.load()
-
-
-@pytest.fixture
-def make_game(gdb):
+def make_game(real_game):
     def _make(seed: int = 1, **kw):
-        return F.mk_game(gdb, seed=seed, team=TEAM, **kw)
+        return real_game(TEAM, seed=seed, **kw)
 
     return _make
 
 
 def _game(make_game, ft_level: int = 1):
     g = make_game()
-    pa, pb = g.state.players
-    pa.orb = 9
-    pb.shield = 0
-    for s in pb.shikigami:
-        s.level = 1
-    pa.shikigami[IDX].level = ft_level
+    pa, pb = F.battle_setup(g, {IDX: ft_level})
     return g, pa, pb
 
 

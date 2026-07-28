@@ -15,3 +15,19 @@ def make_game(db):
         return factories.mk_game(db, seed=seed, **kw)
 
     return _make
+
+
+@pytest.fixture
+def gdb():
+    """真实卡牌数据库（db/ 目录 YAML，strict 校验加载）——数据端到端测试用。"""
+    from db.loader import CardDatabase
+    return CardDatabase.load()
+
+
+@pytest.fixture
+def real_game(gdb):
+    """真实数据库对局工厂：team 必传（主力式神放 0 号位）。"""
+    def _make(team, seed: int = 1, **kw):
+        return factories.mk_game(gdb, seed=seed, team=team, **kw)
+
+    return _make

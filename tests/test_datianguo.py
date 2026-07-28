@@ -9,7 +9,6 @@ from collections import Counter
 import pytest
 
 from core.model import Ref
-from db.loader import CardDatabase
 from tests import factories as F
 from tests.factories import give, move, pass_turns, play
 
@@ -28,15 +27,9 @@ TEAM = [100104, 100101, 100102, 100123]
 
 
 @pytest.fixture
-def gdb():
-    """真实卡牌数据库（db/ 目录 YAML，strict 校验加载）。"""
-    return CardDatabase.load()
-
-
-@pytest.fixture
-def make_game(gdb):
+def make_game(real_game):
     def _make(seed: int = 1, **kw):
-        return F.mk_game(gdb, seed=seed, team=TEAM, **kw)
+        return real_game(TEAM, seed=seed, **kw)
 
     return _make
 
@@ -44,12 +37,7 @@ def make_game(gdb):
 def _game(make_game, dt_level: int = 1):
     """对局 + 常用状态：A 9 鬼火、B 无补偿护甲、B 全员 1 级在场、A 大天狗指定等级。"""
     g = make_game()
-    pa, pb = g.state.players
-    pa.orb = 9
-    pb.shield = 0
-    for s in pb.shikigami:
-        s.level = 1
-    pa.shikigami[IDX].level = dt_level
+    pa, pb = F.battle_setup(g, {IDX: dt_level})
     return g, pa, pb
 
 

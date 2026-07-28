@@ -102,6 +102,19 @@ def pass_turns(game, n: int = 1) -> None:
         game.apply({"op": "end_turn"})
 
 
+def battle_setup(game, levels: dict[int, int] | None = None):
+    """数据测试常用开局：A 9 鬼火、B 无补偿护甲、B 全员 1 级在场、A 按 levels
+    定级（默认 {0: 1}）。返回 (pa, pb)。"""
+    pa, pb = game.state.players
+    pa.orb = 9
+    pb.shield = 0
+    for s in pb.shikigami:
+        s.level = 1
+    for i, lv in (levels or {0: 1}).items():
+        pa.shikigami[i].level = lv
+    return pa, pb
+
+
 def play(game, player_index: int, defn_id: int, target=None) -> None:
     """发一张牌到玩家手牌并打出（可带目标）。"""
     cmd = {"op": "play_card", "uid": give(game, player_index, defn_id).uid}

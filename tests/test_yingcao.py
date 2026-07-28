@@ -48,22 +48,16 @@ def gdb():
 
 
 @pytest.fixture
-def make_game(gdb):
+def make_game(real_game):                    # real_game 经 fixture 覆盖拿到本文件的 gdb
     def _make(seed: int = 1, **kw):
-        return F.mk_game(gdb, seed=seed, team=TEAM, **kw)
+        return real_game(TEAM, seed=seed, **kw)
 
     return _make
 
 
 def _game(make_game, wolf_level: int = 1):
     g = make_game()
-    pa, pb = g.state.players
-    pa.orb = 9
-    pb.shield = 0
-    for s in pb.shikigami:
-        s.level = 1
-    pa.shikigami[IDX].level = 1
-    pa.shikigami[1].level = wolf_level
+    pa, pb = F.battle_setup(g, {IDX: 1, 1: wolf_level})
     return g, pa, pb
 
 
