@@ -97,7 +97,7 @@ def test_deck_reinforce_no_owner_rejected(gdb):
 def test_play_choice_full_flow_and_main_removed(make_game):
     """选择子选项：费用按子卡（1 火）、生成 token 视作从手牌使用（效果完整结算）、
     主牌离手进 removed（不进墓地）。"""
-    g, pa, pb = _game(make_game)
+    g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1})
     hand_before = len(pa.hand)
     _play_reinforce(g, 0, FYZ, 0)             # 风之乐章 → 幻音绝弦
     assert pa.orb == 8                        # 子选项正常 1 火
@@ -110,6 +110,26 @@ def test_play_choice_full_flow_and_main_removed(make_game):
     forms = {10012501, 10012502, 10012504, 10012506, 10012507, 10012508}
     assert any(c.id in forms for c in pa.hand)            # 羁绊：一目连形态牌入手
     assert len(pa.hand) == hand_before + 1  # give 主牌+生成 token+打出=抵消，羁绊 +1
+
+
+def test_bond_gated_by_shikigami_active(make_game):
+    """羁绊触发条件（维护者确认）：使用此牌时对应式神在场（等级 ≥1 且未气绝）。
+    一目连 0 级或气绝时，幻音绝弦不生成形态牌。"""
+    forms = {10012501, 10012502, 10012504, 10012506, 10012507, 10012508}
+
+    def _form_count(pa):
+        return sum(1 for c in pa.hand if c.id in forms)
+
+    g, pa, pb = _game(make_game)                    # {0: 2}：一目连 0 级
+    before = _form_count(pa)
+    _play_reinforce(g, 0, FYZ, 0)
+    assert _form_count(pa) == before
+    g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1})
+    pa.shikigami[YML].health = 0
+    g.check_defeated(Ref(player=0, shikigami=YML))  # 一目连气绝
+    before = _form_count(pa)
+    _play_reinforce(g, 0, FYZ, 0)
+    assert _form_count(pa) == before
 
 
 def test_play_invalid_choice_rejected(make_game):
@@ -383,7 +403,7 @@ def test_lingshi_bond1_no_form_noop(make_game):
 NPYH = 10010551      # 涅槃业火
 NH = 10011603        # 怒吼（山童法术，回响触发用）
 QG = 10010101        # 起弓（白狼法术，回响触发用）
-MD = 10011201        # 明灯（涅槃业火羁绊产物；青行灯不在队不可使用，仅验证入手）
+MD = 10011201        # 明灯（涅槃业火羁绊产物；需青行灯在场才生成，不在队不可用）
 FM_E, YR_E = 10010501, 10010503   # 回响序列前两张：凤鸣/引燃（第三张瑞翔 10010502）
 
 # 红莲×2 + 苍叶×2（构筑派系 ≤2；触发牌须来自队内式神，青行灯无法入队故用起弓）
@@ -400,7 +420,7 @@ def test_niepan_echo_sequence_and_single_trigger(make_game):
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
     play(g, 0, NPYH)
     assert pb.health == 29                    # 涅槃业火本身触发基础投射 1
-    assert any(c.id == MD for c in pa.hand)   # 羁绊：明灯入手
+    assert not any(c.id == MD for c in pa.hand)  # 青行灯不在队：羁绊不触发
     assert _echo(pa)["cursor"] == 0
     play(g, 0, NH)                            # 山童怒吼 → 回响凤鸣
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E]
@@ -414,6 +434,19 @@ def test_niepan_echo_sequence_and_single_trigger(make_game):
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH, QG, YR_E]
     assert _echo(pa)["cursor"] == 2
     assert pb.health == 25                    # 引燃随机打式神（打不死），基础投射 1 必中
+
+
+def test_niepan_bond_mingdeng_gated(gdb):
+    """涅槃业火羁绊"获得明灯"触发条件：青行灯在场（等级 ≥1 且未气绝）才生成。"""
+    from core.setup import new_game
+    team = [100105, 100116, 100101, 100112]       # 青行灯在队（无可构筑卡，不校验卡组）
+    deck = F.deck_of(100105, 100116, 100101, 100116)   # 避开明灯 id 混入起手手牌
+    g = new_game(gdb, ("A", list(team), deck), ("B", list(team), deck),
+                 seed=1, first=0, shuffle_team=False, mulligan=False, check_deck=False,
+                 config=F.GameConfig(auto_skip_upgrade=True))
+    pa, pb = F.battle_setup(g, {0: 2, 3: 1})      # 凤凰火 2 级、青行灯 1 级在场
+    play(g, 0, NPYH)
+    assert any(c.id == MD for c in pa.hand)   # 羁绊触发：明灯入手
 
 
 def test_niepan_echo_enemy_spell_triggers(make_game):

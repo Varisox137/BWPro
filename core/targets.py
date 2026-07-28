@@ -131,6 +131,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {player_ext: <key>}      ：控制者 PlayerState.ext[key] 为真值（"本回合若使用过黄金羽"
       = feather_used_turn 记账键；千羽风之舞 step 级条件）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
+    - {shikigami_active: <式神id>}  ：控制者的式神（按数据 id）在场——等级 ≥1、未气绝、
+      未离场（[羁绊]触发条件："使用此牌时，对应式神等级不为 0 且未气绝"）
     - 其余按键值相等比较
     """
     if not condition:
@@ -152,6 +154,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             cp = game.state.players[controller]
             ci = cp.combat_index
             if ci is None or cp.shikigami[ci].id != want:
+                return False
+        elif key == "shikigami_active":
+            # 控制者的式神（按数据 id）在场：等级 ≥1、未气绝、未离场（羁绊触发条件）
+            ap = game.state.players[controller]
+            ai = next((i for i, s in enumerate(ap.shikigami) if s.id == want), None)
+            if ai is None or not ap.shikigami[ai].in_play:
                 return False
         elif key.endswith("_side"):
             ref = event.get(key[:-5])

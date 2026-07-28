@@ -18,6 +18,6 @@ effects:
         - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_shikigami}}
         # 已气绝者改为气绝倒计时 -2（扫描全队气绝式神；减到 ≤0 立即复活）
         - {op: countdown_delta, amount: -2, revive: true}
-    # 羁绊：随机获得一张一目连形态牌
-    - {op: generate, shikigami: 100125, card_type: form}
+    # 羁绊：随机获得一张一目连形态牌（触发条件：一目连在场——等级 ≥1 且未气绝）
+    - {op: generate, shikigami: 100125, card_type: form, condition: {shikigami_active: 100125}}
 text: "下一个己方回合开始时所有己方式神[倒计时]-1，若目标式神已气绝则改为气绝[倒计时]-2。[羁绊]：{随机获得一张一目连形态牌}。"

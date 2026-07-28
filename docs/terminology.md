@@ -57,7 +57,7 @@
 | 战斗牌 | `combat` | card_type | ✅ |
 | 形态牌 | `form` | card_type | ✅ |
 | 幻境牌 | `field` | card_type（预留） | 🔧 |
-| 协战牌 | `reinforce` / `options` / `choice` | card_type=协战主牌（shikigami 主 + shikigami2 副双归属）；`options` = 两个子选项 token 卡 id（[0] 主侧 [1] 副侧）；打出时 cmd 带 `choice`（0/1）选择 → 合法性（出战/等级/鬼火/目标）按子卡 → 生成 token 入手并视作从手牌使用（完整使用事件流程）→ 主牌离手进 `removed` 区（不进墓地）；[羁绊] 不进关键词表，实现为子卡普通 steps | ✅ |
+| 协战牌 | `reinforce` / `options` / `choice` | card_type=协战主牌（shikigami 主 + shikigami2 副双归属）；`options` = 两个子选项 token 卡 id（[0] 主侧 [1] 副侧）；打出时 cmd 带 `choice`（0/1）选择 → 合法性（出战/等级/鬼火/目标）按子卡 → 生成 token 入手并视作从手牌使用（完整使用事件流程）→ 主牌离手进 `removed` 区（不进墓地）；[羁绊] 不进关键词表，实现为子卡普通 steps；**羁绊触发条件 = 使用此牌时对应式神在场（等级 ≥1 且未气绝）**——step 级 `condition: {shikigami_active: <式神id>}` 门控（generate 类），倒计时增减/发起攻击/形态进场类由 op 空操作语义隐式满足 | ✅ |
 | 觉醒牌 | `subtype = "awaken"` | **不是主类型**：任意 card_type + subtype（rules.md:502）；法术觉醒使用事件流程：墓地 → `on_before_awaken`（觉醒前，即时）→ 替换式神能力 → 法术本身效果 → `on_awakened`（觉醒后，延时）→ 永久身材增益（`awaken_power`/`awaken_health`） | ✅ |
 | 觉醒（状态） | `awakened` | `ShikigamiState.awakened` = 觉醒牌 id；能力改读该牌 `abilities` 块；气绝/复活保留（但气绝时能力不在场——觉醒门控类判定要求未气绝） | ✅ |
 | 觉醒能力 | `abilities` | `CardDef.abilities`：觉醒牌携带的能力块（替换式神基础能力） | ✅ |
