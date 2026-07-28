@@ -13,7 +13,7 @@ effects:
     - {op: gain_shield, amount: 2, target: {kind: self}}
     # 本次攻击白狼获得当前自身法术牌强化（起弓/离/无我 attack_buff 挂账）的力量
     # 加成——仅力量部分合计后作为攻击后到期强化再次授予（关键字部分不重复）
-    - {op: mirror_attack_buffs, target: {kind: self}}
+    - {op: reapply_attack_buff_power, target: {kind: self}}
     # 羁绊1：攻击前触发萤草当前形态进场效果（未结附形态空操作）
     - {op: trigger_form_enter, shikigami: 100127}
     # 羁绊2（维护者答复 10）：己方全部鼓舞（战力/护甲）作为此战斗牌赋予的加成

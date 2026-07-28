@@ -752,8 +752,8 @@ def fragile_echo(game, ctx, *, targets: list[Ref]) -> None:
             game._log(f"蚀刃毒羽记录了 {-holder.shield} 点破甲（战斗结束后回赋）")
 
 
-@action("mirror_attack_buffs")
-def mirror_attack_buffs(game, ctx, *, targets: list[Ref]) -> None:
+@action("reapply_attack_buff_power")
+def reapply_attack_buff_power(game, ctx, *, targets: list[Ref]) -> None:
     """灵矢贯虹"本次攻击获得当前自身法术牌强化效果的力量加成"（维护者答复(3)）：
     把目标当前 attack_buffs 挂账（起弓/离/无我）的力量部分合计，作为一条新的
     攻击后到期强化再次临时授予——仅力量，关键字部分不重复；无挂账为空操作。
