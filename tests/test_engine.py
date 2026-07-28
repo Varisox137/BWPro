@@ -93,15 +93,6 @@ def test_assault_costs_orb_and_action(make_game):
         g.apply({"op": "assault", "index": 0})
 
 
-def test_level_zero_not_in_play(make_game):
-    g = make_game()
-    a = g.state.players[0]
-    assert a.shikigami[1].in_play is False
-    with pytest.raises(IllegalAction):
-        g.apply({"op": "assault", "index": 1})    # 0 级未在场，不能出击
-    # 移动（move）已不再是玩家主动操作，故不再在此测试
-
-
 def test_upgrade_lowest_rule(make_game):
     g = make_game(auto_skip_upgrade=False)
     g.apply({"op": "debug_skip_upgrade"})

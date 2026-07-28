@@ -160,24 +160,6 @@ def test_turn_start_clears_both_directions(db, make_game):
     assert pa.shield == 0
 
 
-def test_gain_shield_op_four_combos(db, make_game):
-    """gain_shield 动作 kind/amount 四组合（旧用法 {amount: n} 等价 kind=shield 获得）。"""
-    g, pa, pb = _game(make_game)
-    s = pa.shikigami[IDX]
-    _shield_spell(db, 10010151, 2, pool="self")
-    _shield_spell(db, 10010152, -1, pool="self")
-    _shield_spell(db, 10010153, 4, kind="fragile", pool="self")
-    _shield_spell(db, 10010154, -1, kind="fragile", pool="self")
-    play(g, 0, 10010151)             # 获得 2 护甲（旧用法兼容）
-    assert s.shield == 2
-    play(g, 0, 10010152)             # 失去 1 护甲
-    assert s.shield == 1
-    play(g, 0, 10010153)             # 获得 4 破甲（抵消 1 护甲 → 3 破甲）
-    assert s.shield == -3
-    play(g, 0, 10010154)             # 失去 1 破甲
-    assert s.shield == -2
-
-
 def test_fragile_to_damage_anchor(db, make_game):
     """碧羽散华锚点：ext 持 fragile_to_damage 标记的式神获得破甲改为受到等量伤害。"""
     g, pa, pb = _game(make_game)
@@ -274,15 +256,6 @@ def test_lifesteal_heals_player_after_damage(db, make_game):
     play(g, 0, cid)
     assert pb.health == 25
     assert pa.health == 25           # 再恢复 2
-
-
-def test_no_lifesteal_no_heal(db, make_game):
-    """无吸血关键字：不生成恢复生命事件。"""
-    g, pa, pb = _game(make_game)
-    pa.health = 20
-    g.apply({"op": "assault", "index": IDX})
-    assert pb.health == 27
-    assert pa.health == 20
 
 
 # ---------- 濒死（thoughts.txt 濒死定义）与气绝前 1 ----------

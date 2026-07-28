@@ -1,16 +1,84 @@
-"""联机房间（server/room.py + server/manager.py）单元测试：假 WebSocket + asyncio。"""
+"""server 层测试：联机协议消息构造/解析（原 test_protocol.py）
++ 服务端入口限流与输入上限（原 test_server_main.py）
++ 联机房间单元测试：假 WebSocket + asyncio（原 test_room.py）
++ 联机端到端：线程内 uvicorn + 两个 websockets.sync 客户端全流程（原 test_net.py，
+端口不可用时跳过）。
+"""
 import asyncio
 import json
 import random
+import threading
 import time
 
 import pytest
 
+from server import protocol
+from server.main import RateLimiter, _text, create_app
 from server.manager import RoomManager
 from server.room import Room
 
 from tests import factories as F
 
+
+# ==========================================================================
+# 联机协议（原 test_protocol.py，server/protocol.py）
+# ==========================================================================
+
+def test_parse_client_messages():
+    assert protocol.parse_client_message('{"type": "create", "name": "甲"}')["type"] == "create"
+    msg = protocol.parse_client_message(json.dumps(
+        {"type": "cmd", "cmd": {"op": "end_turn"}}))
+    assert msg["cmd"]["op"] == "end_turn"
+    assert protocol.parse_client_message('{"type": "pong"}')["type"] == "pong"
+
+
+def test_parse_rejects_bad_messages():
+    for raw in ("not json", "[1,2]", '{"type": "hack"}',
+                '{"type": "cmd"}', '{"cmd": {}}'):
+        with pytest.raises(ValueError):
+            protocol.parse_client_message(raw)
+
+
+def test_server_message_builders():
+    j = protocol.joined("ABC123", "tok", 0, debug=True)
+    assert (j["type"], j["room_id"], j["token"], j["seat"], j["debug"]) == \
+        ("joined", "ABC123", "tok", 0, True)
+    s = protocol.start(1, "乙", False)
+    assert (s["player_index"], s["opponent"], s["you_first"]) == (1, "乙", False)
+    st = protocol.state({"turn": 3}, ["x", "y"])
+    assert st["payload"]["turn"] == 3 and st["log"] == ["x", "y"]
+    assert "timer" not in st  # 缺省不带计时器字段（旧客户端兼容）
+    st2 = protocol.state({"turn": 3}, [], timer={"kind": "turn", "deadline": 1.0})
+    assert st2["timer"] == {"kind": "turn", "deadline": 1.0}
+    assert protocol.error("r") == {"type": "error", "reason": "r"}
+    assert protocol.notice("t") == {"type": "notice", "text": "t"}
+    assert protocol.game_over(0, "player_defeated")["winner"] == 0
+
+
+# ==========================================================================
+# 服务端入口限流与输入上限（原 test_server_main.py，server/main.py）
+# ==========================================================================
+
+def test_rate_limiter():
+    rl = RateLimiter(3)
+    assert all(rl.allow() for _ in range(3))
+    assert not rl.allow()
+    rl.window -= 1.1  # 模拟进入下一秒
+    assert rl.allow()
+
+
+def test_text_field_caps():
+    assert _text({"name": "甲"}, "name", 32) == "甲"
+    assert _text({}, "name", 32) is None
+    with pytest.raises(ValueError):
+        _text({"name": "x" * 33}, "name", 32)
+    with pytest.raises(ValueError):
+        _text({"name": 123}, "name", 32)
+
+
+# ==========================================================================
+# 联机房间（原 test_room.py，server/room.py + server/manager.py）
+# ==========================================================================
 
 class FakeWS:
     """收集 send_text 内容的假 WebSocket。"""
@@ -262,3 +330,116 @@ def test_max_rooms_cap(db):
     mgr.create()
     with pytest.raises(ValueError, match="上限"):
         mgr.create()
+
+
+# ==========================================================================
+# 联机端到端（原 test_net.py）：线程内起 uvicorn + 两个 websockets.sync 客户端，
+# 跑完 创建/加入/调度/升级/出牌回合 全流程。端口不可用时跳过。
+# ==========================================================================
+
+PORT = 8377
+URL = f"ws://127.0.0.1:{PORT}/ws"
+
+
+class WsClient:
+    def __init__(self):
+        from websockets.sync.client import connect
+        self.ws = connect(URL)
+
+    def send(self, msg: dict):
+        self.ws.send(json.dumps(msg))
+
+    def recv_until(self, *types: str, limit: int = 50) -> dict:
+        for _ in range(limit):
+            msg = json.loads(self.ws.recv(timeout=10))
+            if msg.get("type") in types:
+                return msg
+        raise AssertionError(f"未等到消息类型 {types}")
+
+
+@pytest.fixture(scope="module")
+def server():
+    import uvicorn
+    db = F.base_db()
+    app = create_app(RoomManager(db))
+    config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="error")
+    srv = uvicorn.Server(config)
+    t = threading.Thread(target=lambda: asyncio.run(srv.serve()), daemon=True)
+    t.start()
+    for _ in range(50):  # 等服务就绪
+        if srv.started:
+            break
+        time.sleep(0.1)
+    if not srv.started:
+        pytest.skip("无法启动本地测试服务端")
+    yield srv
+    srv.should_exit = True
+
+
+def test_full_match_flow(server):
+    a = WsClient()
+    a.send({"type": "create", "name": "甲", "deck_code": None})
+    ja = a.recv_until("joined", "error")
+    assert ja["type"] == "joined"
+    room_id, token_a = ja["room_id"], ja["token"]
+
+    b = WsClient()
+    b.send({"type": "join", "room_id": room_id, "name": "乙", "deck_code": None})
+    jb = b.recv_until("joined")
+    assert jb["type"] == "joined"
+
+    sa = a.recv_until("start")
+    sb = b.recv_until("start")
+    assert sa["player_index"] != sb["player_index"]
+    assert (sa["you_first"], sb["you_first"]) in ((True, False), (False, True))
+
+    # 双方都收到初始 state（调度阶段）
+    st_a = a.recv_until("state")["payload"]
+    assert st_a["phase"] == "mulligan"
+    b.recv_until("state")
+
+    # 调度：双方直接 ready（两个客户端都要排干各次广播）
+    a.send({"type": "cmd", "cmd": {"op": "ready"}})
+    b.send({"type": "cmd", "cmd": {"op": "ready"}})
+    st = None
+    for c in (a, b):
+        st = c.recv_until("state")["payload"]
+        while st["phase"] == "mulligan":
+            st = c.recv_until("state")["payload"]
+    assert st["phase"] == "upgrade"
+    # 行动方是 players[0]（先手）
+    first = a if sa["you_first"] else b
+    second = b if sa["you_first"] else a
+
+    # 升级阶段：升一名合法式神（0 级者之一）
+    me = st["active"]
+    upgradable = [i for i, s in enumerate(st["players"][me]["shikigami"])
+                  if s["kind"] == "shikigami" and not s["despawned"]
+                  and s["level"] == min(x["level"] for x in st["players"][me]["shikigami"]
+                                        if x["kind"] == "shikigami" and not x["despawned"])]
+    first.send({"type": "cmd", "cmd": {"op": "upgrade", "index": upgradable[0]}})
+    st = first.recv_until("state")["payload"]
+    assert st["phase"] == "battle"
+    assert st["players"][me]["shikigami"][upgradable[0]]["level"] == 1
+
+    # 非回合方指令被拒绝（error 只回发送者；先排干升级广播）
+    second.recv_until("state")
+    second.send({"type": "cmd", "cmd": {"op": "end_turn"}})
+    err = second.recv_until("error", "state")
+    assert err["type"] == "error"
+
+    # 结束回合 → 换手
+    first.send({"type": "cmd", "cmd": {"op": "end_turn"}})
+    st = second.recv_until("state")["payload"]
+    assert st["active"] == 1 - me
+
+    # 断线重连：凭房间 id + 令牌恢复
+    a.ws.close()
+    a2 = WsClient()
+    a2.send({"type": "join", "room_id": room_id, "token": token_a})
+    ja2 = a2.recv_until("joined", "error")
+    assert ja2["type"] == "joined"
+    st2 = a2.recv_until("state")["payload"]
+    assert st2["turn"] == st["turn"]
+    a2.ws.close()
+    b.ws.close()

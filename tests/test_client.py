@@ -1,20 +1,33 @@
-"""CLI 场况渲染测试：座次配色、修饰状态显示、关键字中文化、手牌修饰显示。
+"""client 层测试：CLI 场况渲染（座次配色、修饰状态显示、关键字中文化、手牌修饰显示）
+（原 test_cli.py）+ TUI 基座与状态栏文本（原 test_tui.py）+ 调试指令（原 test_debug.py）。
 
 直接调用 client.cli.render(game)；颜色开关经 monkeypatch 设置 textutil.USE_COLOR。
 角色位约定同 factories.base_db：0-3 号位 = 100101-100104（显示名 式神1001xx）。
+pytest 的 stdin 为管道（非 TTY），tui.prompt 自动回退内置 input——这也是全部
+既有测试不受 prompt_toolkit 影响的保证。
 """
+import builtins
 import re
 
 import pytest
 
-from client import cli, textutil
+from client import cli, textutil, tui
+from client.net import _fmt_timer
+from client.textutil import display_width
+from core.engine import IllegalAction
+from core.model import Ref
 from tests import factories as F
+from tests.conftest import feed
 from tests.factories import give
 
 T = F.T
 
 ANSI = re.compile(r"\033\[\d+m")
 
+
+# ==========================================================================
+# CLI 场况渲染（原 test_cli.py）
+# ==========================================================================
 
 @pytest.fixture
 def color_on(monkeypatch):
@@ -180,18 +193,6 @@ def test_hand_mods_display(db, make_game, color_off):
 
 # ---------- 卡组管理界面 / 战后流程 ----------
 
-def _feed(monkeypatch, lines):
-    """按顺序喂输入；耗尽后 EOF。"""
-    it = iter(lines)
-
-    def _input(prompt=""):
-        try:
-            return next(it)
-        except StopIteration:
-            raise EOFError
-    monkeypatch.setattr("builtins.input", _input)
-
-
 def _store_entries(db):
     from db import deckcode
     groups = deckcode.group_deck(db, list(F.TEAM), F.deck_of(*F.TEAM))
@@ -205,7 +206,7 @@ def test_deckbuilder_delete_cancel_then_confirm(db, monkeypatch, capsys, tmp_pat
     from db import deckstore
     store = tmp_path / "decks.json"
     deckstore.save_decks(db, _store_entries(db), store)
-    _feed(monkeypatch, ["d 2", "n", "d 1", "y", "q"])
+    feed(monkeypatch, ["d 2", "n", "d 1", "y", "q"])
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
     assert "已取消删除" in out
@@ -220,7 +221,7 @@ def test_deckbuilder_delete_invalid_slot(db, monkeypatch, capsys, tmp_path):
     from db import deckstore
     store = tmp_path / "decks.json"
     deckstore.save_decks(db, _store_entries(db), store)
-    _feed(monkeypatch, ["d 9", "q"])
+    feed(monkeypatch, ["d 9", "q"])
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
     assert "序号有误" in out
@@ -234,7 +235,7 @@ def test_deckbuilder_save_returns_to_manager(db, monkeypatch, capsys, tmp_path):
     store = tmp_path / "decks.json"
     deckstore.save_decks(db, _store_entries(db), store)
     # 编辑槽位 1：沿用名称 → 不导入卡组码 → 编辑循环回车完成 → 保存 → q 退出
-    _feed(monkeypatch, ["1", "", "", "", "q"])
+    feed(monkeypatch, ["1", "", "", "", "q"])
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
     assert "已保存" in out
@@ -257,3 +258,221 @@ def test_run_battle_shows_result_and_waits(db, make_game, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "获胜" in out
     assert prompts == ["按 Enter 返回主菜单 > "]  # 战后恰好一次确认，随后返回
+
+
+# ==========================================================================
+# TUI 基座（client/tui.py）与状态栏文本（原 test_tui.py）
+# ==========================================================================
+
+@pytest.fixture(autouse=True)
+def _clean_status():
+    yield
+    tui.set_status(None)  # 状态栏回调是全局量，测试间清理
+
+
+# ---------- 状态栏渲染（两段） ----------
+
+def test_toolbar_left_right_aligned():
+    tui.set_status(lambda: ("左", "右"))
+    bar = tui.render_toolbar(width=20)
+    assert bar == "左" + " " * 16 + "右"
+    assert display_width(bar) == 20
+
+
+def test_toolbar_cjk_width():
+    """CJK 字符按显示宽度 2 计算对齐。"""
+    tui.set_status(lambda: ("甲乙丙", "回合"))
+    bar = tui.render_toolbar(width=20)
+    assert bar == "甲乙丙" + " " * 10 + "回合"
+    assert display_width(bar) == 20
+
+
+def test_toolbar_truncates_left_keeps_right():
+    """超宽时截断左段，右段优先完整保留。"""
+    tui.set_status(lambda: ("一二三四五六七八九十", "右"))
+    bar = tui.render_toolbar(width=10)
+    assert bar.endswith("右")
+    assert display_width(bar) <= 10
+    assert "十" not in bar
+
+
+def test_toolbar_empty_without_status():
+    assert tui.render_toolbar(width=20) == ""
+
+
+# ---------- 状态栏渲染（三段） ----------
+
+def test_toolbar_three_segments_centered():
+    """三段：左左对齐、中居中、右右对齐。"""
+    tui.set_status(lambda: ("AA", "MM", "RR"))
+    bar = tui.render_toolbar(width=30)
+    assert bar == "AA" + " " * 12 + "MM" + " " * 12 + "RR"
+    assert display_width(bar) == 30
+    assert bar.index("MM") == (30 - 2) // 2  # 中段居中
+
+
+def test_toolbar_three_segments_cjk_mid():
+    tui.set_status(lambda: ("左", "回合", "右"))
+    bar = tui.render_toolbar(width=30)
+    assert bar.startswith("左") and bar.endswith("右")
+    assert display_width(bar) == 30
+    assert display_width(bar[:bar.index("回合")]) == (30 - 4) // 2  # CJK 按宽度 2 居中
+
+
+def test_toolbar_three_segments_truncates_left_keeps_mid_right():
+    """超宽时优先保中段与右段、截断左段。"""
+    tui.set_status(lambda: ("一二三四五六七八九十", "中", "右"))
+    bar = tui.render_toolbar(width=20)
+    assert bar.endswith("右") and "中" in bar
+    assert display_width(bar) <= 20
+    assert "九十" not in bar
+
+
+def test_toolbar_no_raw_ansi():
+    """状态栏纯文本不含未解析的 ANSI 转义（回调返回纯文本时）。"""
+    tui.set_status(lambda: ("左", "中", "右"))
+    assert "\x1b" not in tui.render_toolbar(width=30)
+
+
+# ---------- 非 TTY 回退 ----------
+
+def test_prompt_falls_back_to_builtin_input(monkeypatch):
+    monkeypatch.setattr(builtins, "input", lambda prompt="": "hello")
+    assert tui.prompt("> ") == "hello"
+    assert tui._session is None  # 非 TTY 不创建 PromptSession（无 import 副作用）
+
+
+# ---------- 牌手信息段 ----------
+
+def test_player_segments(make_game):
+    game = make_game()
+    p0, p1 = game.state.players
+    own, opp = cli.player_segments(game)  # 热坐：己方 = 当前行动方（players[0] 先手）
+    assert own.startswith(f"> {p0.name} 生命{p0.health}")   # `>` 标行动方
+    assert opp.startswith(f"  {p1.name} 生命{p1.health}")
+    assert f"手牌{len(p0.hand)} 牌库{len(p0.deck)} 墓地{len(p0.graveyard)}" in own
+    assert "（你）" not in own + opp
+    own_v, opp_v = cli.player_segments(game, viewer=1)  # 联机：己方 = viewer
+    assert f"{p1.name}（你）" in own_v and "（你）" not in opp_v
+
+
+def test_battle_status_three_segments(make_game):
+    """热坐状态栏：三段（己方 / 回合 / 敌方），中段为回合文本。"""
+    game = make_game()
+    left, mid, right = cli._battle_status(game)
+    assert left.startswith(">")
+    assert "回合" in mid and "行动中" in mid
+    assert right.startswith("  ")
+
+
+# ---------- 倒计时格式化 ----------
+
+def test_fmt_timer():
+    assert _fmt_timer({"kind": "turn", "deadline": 100.0 + 95}, 100.0) == "⏱ 1:35"
+    assert _fmt_timer({"kind": "turn", "deadline": 100.0 + 9}, 100.0) == "⏱ 0:09"
+    assert _fmt_timer({"kind": "mulligan", "deadline": 100.0 + 27}, 100.0) == "调度 ⏱ 0:27"
+    assert _fmt_timer({"kind": "turn", "deadline": 100.0}, 130.0) == "⏱ 0:00"  # 超时封顶
+
+
+# ==========================================================================
+# 调试指令（原 test_debug.py）
+# ==========================================================================
+
+def test_debug_give_card_to_hand(db, make_game):
+    g = make_game()
+    a = g.state.players[0]
+    before = len(a.hand)
+    g.apply({"op": "debug_give_card", "args": {"player": 0, "card_id": 10010101, "count": 2}})
+    assert len(a.hand) == before + 2
+    assert all(c.id == 10010101 for c in a.hand[-2:])
+
+
+def test_debug_give_card_to_graveyard(db, make_game):
+    g = make_game()
+    a = g.state.players[0]
+    g.apply({"op": "debug_give_card", "args": {"player": 0, "card_id": 10010101, "zone": "graveyard"}})
+    assert a.graveyard[-1].id == 10010101
+
+
+def test_debug_set_stat_shikigami(db, make_game):
+    g = make_game()
+    s = g.state.players[0].shikigami[0]
+    g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "health", "value": 1}})
+    assert s.health == 1
+    g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "level", "value": 3}})
+    assert s.level == 3
+
+
+def test_debug_set_stat_player(db, make_game):
+    g = make_game()
+    a = g.state.players[0]
+    g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0}, "key": "orb", "value": 9}})
+    assert a.orb == 9
+
+
+def test_debug_set_stat_bool(db, make_game):
+    g = make_game()
+    s = g.state.players[0].shikigami[0]
+    g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "defeated", "value": True}})
+    assert s.defeated is True
+
+
+def test_debug_play_card_bypass_cost_and_level(db, make_game):
+    """debug_play_card 跳过费用、等级、目标合法性检查。"""
+    cid = 10010152
+    db.cards[cid] = F.card(cid, steps=[F.dmg(5)], target=F.T(kind="choose", pool="enemy_shikigami"), token=True)
+    g = make_game()
+    a = g.state.players[0]
+    a.orb = 0
+    c = give(g, 0, cid)
+    # 正常打出会因鬼火不足失败
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=0)})
+    # 调试指令强制打出
+    g.apply({"op": "debug_play_card", "args": {"player": 0, "uid": c.uid, "target": {"player": 1, "shikigami": 0}}})
+    assert g.state.players[1].shikigami[0].defeated is True  # 5 点伤害超过 4 血
+    assert g.state.players[1].shikigami[0].health == 0       # 气绝后 health 被置 0
+    assert c in a.graveyard
+
+
+def test_debug_assault_bypass_checks(db, make_game):
+    g = make_game()
+    a = g.state.players[0]
+    a.orb = 0
+    a.assaults_left = 0
+    # 正常出击因 0 火/0 次数失败
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "assault", "index": 0})
+    # 调试强制出击打脸
+    g.apply({"op": "debug_assault", "args": {"player": 0, "index": 0}})
+    assert g.state.players[1].shield == 2  # 5 - 3
+
+
+def test_debug_draw(db, make_game):
+    g = make_game()
+    a = g.state.players[0]
+    before = len(a.hand)
+    deck_before = len(a.deck)
+    g.apply({"op": "debug_draw", "args": {"player": 0, "count": 2}})
+    assert len(a.hand) == before + 2
+    assert len(a.deck) == deck_before - 2
+
+
+def test_debug_set_turn(db, make_game):
+    g = make_game()
+    g.apply({"op": "debug_set_turn", "args": {"active": 1, "turn": 10}})
+    assert g.state.active == 1
+    assert g.state.turn == 10
+
+
+def test_debug_unknown_command(db, make_game):
+    g = make_game()
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "debug_foobar", "args": {}})
+
+
+def test_debug_disabled(db, make_game):
+    g = make_game()
+    g.state.config.enable_debug_commands = False
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "debug_draw", "args": {"player": 0, "count": 1}})

@@ -31,3 +31,16 @@ def real_game(gdb):
         return factories.mk_game(gdb, seed=seed, team=team, **kw)
 
     return _make
+
+
+def feed(monkeypatch, lines):
+    """输入注入 helper：builtins.input 依次返回 lines；序列耗尽抛 EOFError
+    （= 用户关闭输入，管理循环据此退出）。供 CLI/卡组构筑类测试统一使用。"""
+    it = iter(lines)
+
+    def _input(prompt=""):
+        try:
+            return next(it)
+        except StopIteration:
+            raise EOFError
+    monkeypatch.setattr("builtins.input", _input)

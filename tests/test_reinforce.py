@@ -286,3 +286,77 @@ def test_lingshi_consumes_assault_boosts(make_game):
     wolf = pa.shikigami[0]
     assert wolf.shield == 3                   # +2（牌）+1（鼓舞）护甲
     assert wolf.combat_power == 0             # 战力已在战斗后清除
+
+
+# ==========================================================================
+# 灵矢贯虹：法术强化镜像 + 羁绊 1（原 test_yingcao.py 灵矢贯虹部分）
+#
+# 队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]（萤草 0 号位 1 级、白狼 1 号位）。
+# 萤草基础能力测试在同区合并的 test_data.py；两处各持一份相同的 gdb 覆盖。
+# ==========================================================================
+
+YC = 100127       # 萤草（双方 0 号位）
+YC_IDX, WOLF_IDX = 0, 1
+YC_TEAM = [100127, 100101, 100102, 100123]
+QIGONG = 10010101  # 起弓（+1 力量 & 穿刺）
+LI = 10010104      # 离（+3 力量）
+YC_FORM_A, YC_FORM_B = 10012701, 10012702  # 测试库注册的萤草形态牌
+
+
+def _yc_form(cid: int, name: str, steps=()):
+    from db.schema import CardDef, EffectBlock
+    return CardDef(id=cid, version=20260728, name=name, shikigami=YC,
+                   card_type="form", rarity="R", level=1, cost=1,
+                   form_power=2, form_health=3,
+                   effects=EffectBlock(steps=list(steps)), text="")
+
+
+@pytest.fixture
+def gdb():
+    """真实 db + 测试库临时注册：萤草形态牌 A（空白进场）/B（进场 +2 护甲）
+    与凑卡组的空白法术 03/04（萤草 8 卡未加入，mk_game 卡组构造需要 01-04）。
+
+    覆盖链：本文件 gdb 覆盖 conftest gdb → real_game(gdb) → make_game(real_game)，
+    灵矢贯虹羁绊 1 测试需要萤草形态牌；只新增卡牌定义，不影响本文件其他测试。"""
+    from db.loader import CardDatabase
+    from db.schema import CardDef, EffectBlock, Step, TargetSpec
+    db = CardDatabase.load()
+    db.cards[YC_FORM_A] = _yc_form(YC_FORM_A, "测试形态·花")
+    db.cards[YC_FORM_B] = _yc_form(YC_FORM_B, "测试形态·叶", steps=[
+        Step(op="gain_shield", amount=2, target=TargetSpec(kind="self"))])
+    for n in (3, 4):
+        cid = YC * 100 + n
+        db.cards[cid] = CardDef(id=cid, version=20260728, name=f"萤草空白卡{n}",
+                                shikigami=YC, card_type="spell", level=1, cost=1,
+                                effects=EffectBlock(), text="")
+    return db
+
+
+def test_lingshi_mirrors_spell_buff_power(make_game):
+    """起弓（+1）与离（+3）挂账中：灵矢贯虹使白狼再次临时获得合计 4 力量
+    （仅力量部分；三条 attack_buffs 挂账 [1, 3, 4]），本次攻击一并生效。"""
+    g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 3}, team=YC_TEAM)
+    play(g, 0, QIGONG)                        # 起弓：+1 力量 & 穿刺（瞬发免费）
+    play(g, 0, LI)                            # 离：+3 力量（瞬发名额已用，1 火）
+    wolf = pa.shikigami[WOLF_IDX]
+    assert [e["power"] for e in wolf.attack_buffs] == [1, 3]
+    play(g, 0, LSGH)                          # 灵矢贯虹：+2/+2 + 镜像 +4 → 攻 3+4+2+4=13
+    assert pb.health == 17                    # 敌方空战斗区：13 攻打牌手
+    assert wolf.attack_buffs == []            # 攻击后到期强化（含镜像）战斗后核销
+
+
+def test_lingshi_bond1_replays_form_enter(make_game):
+    """羁绊 1：攻击前触发萤草当前形态进场效果（形态 B 进场 +2 护甲再执行一次）。"""
+    g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 2}, team=YC_TEAM)
+    play(g, 0, YC_FORM_B)                     # 结附形态 B：进场 +2 护甲
+    assert pa.shikigami[YC_IDX].shield == 2
+    play(g, 0, LSGH)
+    assert pa.shikigami[YC_IDX].shield == 4   # 羁绊 1：进场效果再触发 +2
+
+
+def test_lingshi_bond1_no_form_noop(make_game):
+    """萤草未结附形态（当前正式数据永远如此）：羁绊 1 空操作，战斗照常。"""
+    g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 2}, team=YC_TEAM)
+    play(g, 0, LSGH)                          # 白狼 3+2=5 攻打牌手
+    assert pb.health == 25
+    assert pa.shikigami[YC_IDX].form is None

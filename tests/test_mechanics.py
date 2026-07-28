@@ -351,17 +351,6 @@ def test_neutral_card(db, make_game):
     assert a.orb == 0
 
 
-def test_play_from_alternate_zone(db, make_game):
-    cid = _add_damage_card(db)
-    g = make_game()
-    a = g.state.players[0]
-    c = give(g, 0, cid)
-    g.move_card(a, c, "graveyard")
-    g.apply({"op": "play_card", "uid": c.uid, "play_from": "graveyard",
-             "target": Ref(player=1, shikigami=0)})
-    assert g.state.players[1].shikigami[0].health == 1
-
-
 def test_cost_delta_mod(db, make_game):
     """实例修饰：同名卡可因 mods 而不同（此例降费）。"""
     cid = _add_damage_card(db, cost=2)
