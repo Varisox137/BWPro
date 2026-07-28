@@ -191,9 +191,12 @@ def _player_segment(game: Game, pi: int, viewer: int | None = None) -> str:
             f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}")
 
 
-def player_status_segment(game: Game, viewer: int | None = None) -> str:
-    """双方牌手信息压缩成一行（底部状态栏用），双方段以两个空格连接。"""
-    return "  ".join(_player_segment(game, pi, viewer) for pi in range(2))
+def player_segments(game: Game, viewer: int | None = None) -> tuple[str, str]:
+    """（己方段, 敌方段）：viewer 指定时己方=viewer（联机视角），
+    否则己方=当前行动方（热坐）。段格式同 _player_segment。"""
+    st = game.state
+    own = st.active if viewer is None else viewer
+    return _player_segment(game, own, viewer), _player_segment(game, 1 - own, viewer)
 
 
 def render(game: Game, viewer: int | None = None) -> str:
@@ -463,15 +466,15 @@ def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
     return ids, cards
 
 
-def _battle_status(game: Game) -> tuple[str, str]:
-    """热坐底部状态栏：左 = 双方牌手信息；右 = 回合（调度阶段显示调度阶段）。"""
+def _battle_status(game: Game) -> tuple[str, str, str]:
+    """热坐底部状态栏三段：左=己方（当前行动方）、中=回合、右=敌方。"""
     st = game.state
-    left = player_status_segment(game)
+    left, right = player_segments(game)
     if st.phase == "mulligan":
-        right = "调度阶段"
+        mid = "调度阶段"
     else:
-        right = f"总第 {st.turn - 1} 回合 · 行动中 {st.players[st.active].name}"
-    return left, right
+        mid = f"总第 {st.turn - 1} 回合 · 行动中 {st.players[st.active].name}"
+    return left, mid, right
 
 
 def run_battle(db) -> None:

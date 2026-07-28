@@ -217,22 +217,23 @@ def _fmt_timer(timer: dict, now: float) -> str:
     return text
 
 
-def _net_status(client: NetClient) -> tuple[str, str]:
-    """底部状态栏：左 = 双方牌手信息（未开局为房间提示）；右 = 回合 + 倒计时。"""
+def _net_status(client: NetClient) -> tuple[str, ...]:
+    """底部状态栏三段：左=己方牌手、中=回合+倒计时（居中）、右=敌方牌手。
+    未开局时为两段（房间提示）。"""
     game = client.wrapper()
     if game is None or client.me is None:
         left = f"房间 {client.room_id}，等待对手……" if client.room_id else "联机"
         return left, ""
-    left = cli.player_status_segment(game, viewer=client.me)
+    left, right = cli.player_segments(game, viewer=client.me)
     st = game.state
     if st.phase == "mulligan":
-        right = _fmt_timer(client.timer, time.time()) if client.timer else "调度阶段"
+        mid = _fmt_timer(client.timer, time.time()) if client.timer else "调度阶段"
     else:
         active = st.players[st.active]
-        right = f"总第 {st.turn - 1} 回合 · {active.name} 第 {active.turn_count} 回合"
+        mid = f"总第 {st.turn - 1} 回合 · {active.name} 第 {active.turn_count} 回合"
         if client.timer:
-            right += " " + _fmt_timer(client.timer, time.time())
-    return left, right
+            mid += " " + _fmt_timer(client.timer, time.time())
+    return left, mid, right
 
 
 def _input(prompt: str) -> str:
