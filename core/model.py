@@ -36,7 +36,7 @@ class GameConfig(BaseModel):
     extra_upgrade_turns: tuple[int, int] = (7, 3)  # 先手第 7 / 后手第 3 个己方回合各 +1 升级机会
     enable_debug_commands: bool = True  # 是否启用 debug_ 指令（服务端可关闭）
     auto_skip_upgrade: bool = False  # 测试便利：升级阶段自动跳过（生产/CLI 保持 False）
-    hand_cap: int = 12  # 手牌上限；超出时卡牌先进入目标区域再移至墓地（Phase 3+ 完整流程）
+    hand_cap: int = 12  # 手牌上限；超出时卡牌先进入目标区域再移至墓地（Phase 5+ 完整流程）
     deck_cap: int = 99  # 牌库上限；预留，Phase 1 不强制
 
 
@@ -57,7 +57,7 @@ class ShikigamiState(BaseModel):
     身材组成（thoughts.txt）：基础值（式神基础值/当前形态基础值）
     + 永久增减益修正 + 临时增减益修正。
     临时/永久的区分标准是"气绝后复活能否保留"：临时修正在气绝时清除，
-    永久修正复活后保留（光环类属临时修正的细分，Phase 3）。
+    永久修正复活后保留（光环类属临时修正的细分，Phase 5）。
     """
 
     id: int  # 数据 id：对应 db 中式神的 id
@@ -66,7 +66,7 @@ class ShikigamiState(BaseModel):
     level: int = 0  # 0 级 = 未在场：能力不触发、不能行动、不可被指定（除特殊说明）
     home_slot: int | None = None  # 所属准备区编号（1-4）；召唤物为 None（无准备区可归）
     entry_order: int = 0  # 角色进场顺序：牌手为 0，式神按入场顺序 1-4
-    base_power: int  # 基础力量（形态会改写，Phase 3）
+    base_power: int  # 基础力量（形态会改写，Phase 5）
     base_health: int  # 基础生命
     perm_power: int = 0  # 永久增减益修正（气绝后复活保留）
     perm_health: int = 0
@@ -83,7 +83,7 @@ class ShikigamiState(BaseModel):
                     # 被伤害时正护甲优先吸收、负破甲加成伤害；己方回合开始阶段双向清除。
     defeated: bool = False  # 气绝
     dying: bool = False  # 濒死：生命 ≤ 0 但气绝事件尚未结算（通用状态标记，语义见 docs/rules.md）
-    stunned: bool = False  # 眩晕（Phase 3）：不能主动行动/被指定/升级，但能力仍可触发
+    stunned: bool = False  # 眩晕（Phase 5）：不能主动行动/被指定/升级，但能力仍可触发
     despawned: bool = False  # 召唤物离场标记（不进复活流程；保留坑位稳定下标）
     revive_countdown: int = 0
     form: CardInstance | None = None  # 当前结附的形态牌（card_type=form）

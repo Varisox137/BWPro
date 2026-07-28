@@ -41,7 +41,7 @@ KEYWORDS = frozenset({
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
 # 天然持久性类别入列（见 core.model.ShikigamiState 与 docs/terminology.md）。
 FACTIONS = frozenset({"红莲", "紫岩", "青岚", "苍叶", "无相"})  # 无相 = 无派系
-FACTION_COLORS = {"红莲": "red", "紫岩": "purple", "青岚": "blue", "苍叶": "green", "无相": "white"}  # Phase 5 UI 展示预留，代码侧暂无消费方
+FACTION_COLORS = {"红莲": "red", "紫岩": "purple", "青岚": "blue", "苍叶": "green", "无相": "white"}  # Phase 4 UI 展示预留，代码侧暂无消费方
 RARITIES = frozenset({"R", "SR", "SSR"})  # 良 / 优 / 极（抽卡/账号系统预留，见 thoughts.txt）
 # 觉醒牌 = 任意主类型 + tags 含 "awaken"；保留字面量即可，无需单独常量。
 
@@ -101,7 +101,7 @@ class PlayMethod(BaseModel):
 
     多择牌仅保留核心使用方式、参数可变（thoughts.txt）：如爆能表示为
     PlayMethod(id="burst", param=2, ...)，param 为能量等数值参数，
-    其数值可被效果增减（Phase 3 落地全局增减钩子）。
+    其数值可被效果增减（Phase 5 落地全局增减钩子）。
     每个选项可以拥有自己的费用/等级/卡牌类型/目标。
     """
 
@@ -112,7 +112,7 @@ class PlayMethod(BaseModel):
     cost: int | None = None  # 费用绝对覆盖（缺省用卡牌基础费用）
     cost_delta: int = 0  # 在（覆盖后）费用上的增减
     level: int | None = None  # 等级要求覆盖
-    card_type: str | None = None  # 卡牌类型覆盖（多择各选项可不同类型；Phase 3 战斗牌/形态牌落地前引擎不读取）
+    card_type: str | None = None  # 卡牌类型覆盖（多择各选项可不同类型；Phase 5 战斗牌/形态牌落地前引擎不读取）
     target: TargetSpec | None = None  # 目标覆盖
     effects: EffectBlock | None = None  # 缺省 = 使用卡牌基础 effects
     text: str = ""

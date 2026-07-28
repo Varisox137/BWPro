@@ -13,7 +13,7 @@
 
 指令（cmd dict）一览：
   play_card {uid, play_from?=hand, play_method?=<使用方式id>, target?}  使用卡牌
-  assault {index}  出击：耗 1 鬼火 + 每回合唯一出击次数（+ 出击增减益，Phase 3）
+  assault {index}  出击：耗 1 鬼火 + 每回合唯一出击次数（+ 出击增减益，Phase 5）
   upgrade {index}  升级式神
   end_turn {}      结束回合
   调度阶段：mulligan {player, uid} / ready {player}
@@ -93,7 +93,7 @@ class Game:
         # 限一张"已取消——不同时机可各响应一张；复查失败不占名额，同时机下一张可继续）
         self._response_used_emit: int | None = None
         # 战斗上下文（最小版）：每次 _resolve_combat 压栈新 battle id，终止点弹栈并
-        # 清理本战斗授予的关键字实例与免疫条目。为嵌套战斗/响应战斗牌（Phase 3+）打底。
+        # 清理本战斗授予的关键字实例与免疫条目。为嵌套战斗/响应战斗牌（Phase 5+）打底。
         self._battle_seq: int = 0
         self._battle_stack: list[int] = []
         self._battle_grants: dict[int, list[tuple[Ref, str, str]]] = {}  # battle id → [(式神 Ref, 关键字, 类别)]
@@ -1298,7 +1298,7 @@ class Game:
         7. 触发 on_turn_start（延时时机）。
         8-9. 非灵咒倒计时 -1（锚点版已实现：形态倒计时，归零重置并触发）；灵咒倒计时随灵咒机制引入。
         10. 重置出击次数与瞬发名额；emit on_assaults_changed（若有能力监听）。
-        11-12. （Phase 3+ 预留）直到回合结束时效果 / 敌方回合外效果。
+        11-12. （Phase 5+ 预留）直到回合结束时效果 / 敌方回合外效果。
         13. 执行延时战斗区移回与回合开始时效果（_drain_queue）。
         14. 抽 1：后手玩家第 1 回合抽 1；先手玩家从第 2 回合开始抽 1。
         15. 进入式神升级阶段。
