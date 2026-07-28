@@ -8,7 +8,8 @@
   不同名卡牌不超过 8 种（构筑序号仅 01-08，结构性保证）
 - 专属牌构筑序号仅开放 01-08；协战牌暂只开放序号 21
 - 协战牌：不要求两位所属式神均出战——任一出战即可编入，作为该式神 8 张牌
-  的一部分（两位都在队时挂到种类数较少者名下）；同名协战牌仍限 2；
+  的一部分（两位都在队时挂到当前总张数较少者名下）；同名协战牌仍限 2（全局
+  计数，与挂在谁名下无关）；构筑界面同时列入两位所属式神的可选卡牌；
   与出战式神数量/派系等无关
 - 中立牌不可编入卡组（中立牌实质为系统给予或效果生成的衍生卡）
 - token=true 的衍生卡不可编入卡组；只能携带出战式神的卡牌
@@ -111,10 +112,10 @@ def validate_deck(db, shikigami_ids: list[int], card_ids: list[int],
         if n > rules.max_copies_per_name:
             errors.append(f"《{name}》×{n} 超过限 {rules.max_copies_per_name}"
                           f"（协战牌同名仍限 {rules.max_copies_per_name}）")
-    # 协战牌作为所属式神 8 张牌的一部分：挂到种类数较少的在队所属式神名下；
-    # 数量相同时取列表中先出现者（规则未指定，属于实现细节）。
+    # 协战牌作为所属式神 8 张牌的一部分：挂到当前总张数较少的在队所属式神名下
+    # （"恰好 8 张"是绑定约束）；数量相同时取列表中先出现者（规则未指定，属实现细节）。
     for c, owners in reinforce:
-        pick = min(owners, key=lambda o: len({x.name for x in by_owner.get(o, [])}))
+        pick = min(owners, key=lambda o: len(by_owner.get(o, [])))
         by_owner.setdefault(pick, []).append(c)
     # 每名出战式神恰好 cards_per_shikigami 张牌（含挂载的协战牌）
     for sid in shikigami_ids:

@@ -380,14 +380,14 @@ def test_new_build_shikigami_strict(db, tmp_path, monkeypatch, capsys):
 
 
 def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
-    """新建选牌：数量不符/序号不存在/同种卡超 2 张都会被拒绝并要求重新输入。"""
+    """新建选牌：数量不符/序号不存在被拒并重问；同种卡超 2 张不强制——
+    仅一次性提示标准规则，卡组仍保存但不标记为标准。"""
     p = tmp_path / "decks.json"
     feed(monkeypatch, ["", "", "",
                        "1 2 3 4",
                        "1 2 3",              # 数量不足
                        "1 2 3 4 5 6 7 99",   # 序号不存在
-                       "1 1 1 2 3 4 5 6",    # 同种卡 3 张
-                       "1 2 3 4 5 6 7 8",    # 合法
+                       "1 1 1 2 3 4 5 6",    # 同种卡 3 张 → 接受（仅提示）
                        "1 2 3 4 5 6 7 8",
                        "1 2 3 4 5 6 7 8",
                        "1 2 3 4 5 6 7 8",
@@ -396,8 +396,16 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out.count("须恰好输入 8 个序号") == 1
     assert "序号不存在" in out
-    assert "同种卡至多 2 张" in out
-    assert deckstore.load_decks(db, p)[0]["standard"]
+    assert "同名卡全卡组限 2" in out
+    assert "不满足标准规则" in out
+    decks = deckstore.load_decks(db, p)
+    assert len(decks) == 1 and not decks[0]["standard"]  # 超限卡组可保存、非标准
+
+
+def test_buildable_cards_reinforce_listed_under_both_owners(gdb):
+    """协战牌同时列入两位所属式神的可选卡牌（风之乐章 = 妖琴师 & 一目连）。"""
+    assert any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100124))
+    assert any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100125))
 
 
 def test_deckbuilder_rename(db, tmp_path, monkeypatch):

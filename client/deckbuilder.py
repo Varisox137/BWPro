@@ -5,8 +5,12 @@
   （r <序号> <新名称>）、删除（d <序号>，二次确认）或新建；编辑/新建均支持
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
   自动创建；文件格式异常时提示并删除该文件）。
-- 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（同种卡至多 2 张、
-  序号须存在），反复询问直到合法；新建时还必须恰好 4 个不重复的有效式神序号。
+- 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
+  反复询问直到合法；新建时还必须恰好 4 个不重复的有效式神序号。同名卡张数不做
+  强制校验——每次构筑（新建/编辑）仅提示一次"同名卡全卡组限 2"标准规则，超限
+  卡组仍可保存，仅在完成时不满足 is_standard（不以亮蓝标明）。
+- 协战牌同时列入两位所属式神的可选卡牌；完成时的 is_standard 检查含
+  单式神携带 ≤2 与全卡组同名 ≤2（validate_deck 全局计数）。
 - 编辑在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号重新严格选满其
   8 张牌，"h <序号>" 更换式神（清空其已选卡牌并重新选牌）。
 - choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；所选卡组
@@ -22,8 +26,7 @@ from collections import Counter
 from client import cardfmt, tui
 from client.textutil import colored
 from db import deckcode, deckstore
-from db.deck import (MAX_COPIES_PER_NAME, MAX_KINDS_PER_SHIKIGAMI,
-                     STANDARD_RULES, DeckRules, validate_deck)
+from db.deck import STANDARD_RULES, DeckRules, validate_deck
 from db.loader import CardDatabase
 
 # 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
@@ -41,9 +44,12 @@ def available_shikigami(db: CardDatabase) -> list:
 
 
 def buildable_cards(db: CardDatabase, sid: int) -> list:
-    """某式神全部可构筑（非衍生）卡牌，按 id 排序。"""
+    """某式神全部可构筑（非衍生）卡牌，按 id 排序。协战牌同时列入两位所属式神。"""
     return sorted((c for c in db.cards.values()
-                   if not c.token and c.shikigami == sid), key=lambda c: c.id)
+                   if not c.token and (c.shikigami == sid
+                                       or (c.card_type == "reinforce"
+                                           and c.shikigami2 == sid))),
+                  key=lambda c: c.id)
 
 
 def _input(prompt: str) -> str:
@@ -109,7 +115,8 @@ def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]]) 
 def _edit_deck(db: CardDatabase, team: list[int],
                picks: dict[int, list[int]]) -> tuple[list[int], list[int]] | None:
     """在当前基础上编辑：序号 = 编辑该式神卡牌；h <序号> = 更换式神（清空其卡牌）；
-    Enter = 完成。校验不通过时打印错误并继续编辑。"""
+    Enter = 完成。完成时做 is_standard 检查：不满足标准规则时打印错误但仍返回
+    （保存为非标准卡组），不强制要求合法。"""
     while True:
         _print_deck(db, team, picks)
         line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；Enter = 完成 > ")
@@ -117,11 +124,10 @@ def _edit_deck(db: CardDatabase, team: list[int],
             ids = list(team)
             card_ids = [cid for sid in team for cid in picks.get(sid, [])]
             errors = validate_deck(db, ids, card_ids)
-            if not errors:
-                return ids, card_ids
-            print("卡组暂不合法（请继续调整）：")
-            print("\n".join(errors))
-            continue
+            if errors:
+                print("卡组不满足标准规则（仍保存，不标记为标准卡组）：")
+                print("\n".join(errors))
+            return ids, card_ids
         parts = line.lower().split()
         if parts[0] in ("h", "change") and len(parts) == 2:
             try:
@@ -178,12 +184,13 @@ def _pick_shikigami_strict(db: CardDatabase) -> list:
 
 
 def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
-    """新建卡组选牌：必须恰好 8 个空格分隔的序号（同种卡至多 2 次，序号须存在）；
-    反复询问直到合法。顺序无所谓。"""
+    """新建/编辑选牌：必须恰好 8 个空格分隔的序号（序号须存在）；反复询问直到合法。
+    同名卡张数不做强制校验（构筑入口统一提示一次标准规则；超限卡组仍可保存，
+    仅在完成时不满足 is_standard）。"""
     d = db.shikigami[sid]
     cards = buildable_cards(db, sid)
     print("")
-    print(f"—— {d.name} 的卡牌（须恰好 8 张，同种卡至多 {MAX_COPIES_PER_NAME} 张）——")
+    print(f"—— {d.name} 的卡牌（须恰好 8 张）——")
     _print_cards(cards)
     print("")
     while True:
@@ -195,13 +202,6 @@ def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
             picked = [cards[int(x) - 1] for x in tokens]
         except (ValueError, IndexError):
             print("序号不存在，请重新输入")
-            continue
-        counts = Counter(c.id for c in picked)
-        over = [db.cards[cid].name for cid, n in counts.items()
-                if n > MAX_COPIES_PER_NAME]
-        if over:
-            print(f"同种卡至多 {MAX_COPIES_PER_NAME} 张（超限：{'、'.join(over)}），"
-                  "请重新输入")
             continue
         return [c.id for c in picked]
 
@@ -289,6 +289,8 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
                 picks.setdefault(owner, []).append(cid)
             print(f"编辑卡组「{entry['name']}」（在当前基础上修改）")
             print(f"卡组码：{deckstore.entry_code(entry)}")
+        print("提示：标准规则——同名卡全卡组限 2（协战牌计入两位所属式神）；"
+              "构筑不强制校验，超限卡组仍可保存，仅不标记为标准卡组")
         name = _input("卡组名称（Enter = 沿用/自动命名）> ")
 
         code_line = _input("粘贴卡组码导入覆盖（Enter = 交互式构筑/编辑）> ")
