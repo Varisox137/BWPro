@@ -425,8 +425,7 @@ def test_edit_single_shikigami_cards(db, tmp_path, monkeypatch):
     deckstore.save_decks(db, [mk_entry(db, "旧")], p)
     feed(monkeypatch, ["1", "", "",       # 编辑槽位 1 → 沿用名 → 交互式编辑
                        "1",               # 编辑 1 号式神卡牌
-                       "1 2 3 4 5 6 7 8",  # 改选全部 8 种
-                       "1=1 2=1 3=1 4=1",  # 原 4 种由 ×2 调为 ×1（5-8 默认 1 张）
+                       "1 2 3 4 5 6 7 8",  # 严格选满 8 张（8 种各 1 张）
                        ""])               # 完成
     deckbuilder.run_deckbuilder(db, p)
     ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
@@ -447,8 +446,7 @@ def test_edit_change_shikigami_clears_cards(db, tmp_path, monkeypatch):
     feed(monkeypatch, ["1", "", "",       # 编辑槽位 1
                        "h 1",            # 更换 1 号式神
                        "1",               # 备选池只有 100105
-                       "1 2 3 4 5 6 7 8",  # 新式神选全部 8 种
-                       "",                # 每种 1 张
+                       "1 2 3 4 5 6 7 8",  # 新式神严格选满 8 张（8 种各 1 张）
                        ""])               # 完成
     deckbuilder.run_deckbuilder(db, p)
     ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
@@ -457,19 +455,20 @@ def test_edit_change_shikigami_clears_cards(db, tmp_path, monkeypatch):
         [10010500 + n for n in range(1, 9)]
 
 
-def test_edit_invalid_keeps_editing(db, tmp_path, monkeypatch, capsys):
-    """完成时校验不通过：打印错误并留在编辑循环，修正后可保存。"""
+def test_edit_cards_strict_input(db, tmp_path, monkeypatch, capsys):
+    """编辑单式神卡牌：与新建一致的严格输入——非恰好 8 个序号时重问，直到合法。"""
     p = tmp_path / "decks.json"
     deckstore.save_decks(db, [mk_entry(db, "旧")], p)
     feed(monkeypatch, ["1", "", "",
-                       "1", "1 2 3", "",  # 1 号式神只留 3 种各 1 张（3 张，不合法）
-                       "",                # 完成 → 校验失败，继续编辑
-                       "1", "1 2 3 4", "1=2 2=2 3=2 4=2",  # 修回 4 种 ×2
-                       ""])               # 完成 → 通过
+                       "1",
+                       "1 2 3",            # 不足 8 个 → 重问
+                       "1 2 3 4 5 6 7 8",  # 8 种各 1 张
+                       ""])
     deckbuilder.run_deckbuilder(db, p)
-    assert "卡组暂不合法" in capsys.readouterr().out
+    assert "须恰好输入 8 个序号" in capsys.readouterr().out
     ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
-    assert sorted(c for c in cards if c // 100 == 100101) == F.deck_of(100101)
+    assert sorted(c for c in cards if c // 100 == 100101) == \
+        [10010100 + n for n in range(1, 9)]
 
 
 def test_available_shikigami_excludes_wip(gdb):
