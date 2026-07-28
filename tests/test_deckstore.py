@@ -21,7 +21,13 @@ def mk_entry(db, name="x", sids=None) -> dict:
 
 def feed(monkeypatch, lines):
     it = iter(lines)
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(it))
+
+    def _input(prompt=""):
+        try:
+            return next(it)
+        except StopIteration:
+            raise EOFError  # 序列耗尽 = 用户关闭输入（管理循环据此退出）
+    monkeypatch.setattr("builtins.input", _input)
 
 
 # ---------- deckstore 读写 ----------

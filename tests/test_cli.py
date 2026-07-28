@@ -176,3 +176,84 @@ def test_hand_mods_display(db, make_game, color_off):
     assert "费用0" in line
     assert "增强+2" in line
     assert "[瞬发]" in line
+
+
+# ---------- 卡组管理界面 / 战后流程 ----------
+
+def _feed(monkeypatch, lines):
+    """按顺序喂输入；耗尽后 EOF。"""
+    it = iter(lines)
+
+    def _input(prompt=""):
+        try:
+            return next(it)
+        except StopIteration:
+            raise EOFError
+    monkeypatch.setattr("builtins.input", _input)
+
+
+def _store_entries(db):
+    from db import deckcode
+    groups = deckcode.group_deck(db, list(F.TEAM), F.deck_of(*F.TEAM))
+    return [{"name": "甲", "groups": groups},
+            {"name": "乙", "groups": groups}]
+
+
+def test_deckbuilder_delete_cancel_then_confirm(db, monkeypatch, capsys, tmp_path):
+    """删 <序号>：二次确认；取消保留、y 删除并写回文件。"""
+    from client import deckbuilder
+    from db import deckstore
+    store = tmp_path / "decks.json"
+    deckstore.save_decks(db, _store_entries(db), store)
+    _feed(monkeypatch, ["删 2", "n", "删 1", "y", "q"])
+    deckbuilder.run_deckbuilder(db, store_path=store)
+    out = capsys.readouterr().out
+    assert "已取消删除" in out
+    assert "卡组「甲」已删除" in out
+    remaining = deckstore.load_decks(db, store)
+    assert [d["name"] for d in remaining] == ["乙"]
+
+
+def test_deckbuilder_delete_invalid_slot(db, monkeypatch, capsys, tmp_path):
+    """删 <序号>：空槽/越界序号提示并留在管理界面，文件不变。"""
+    from client import deckbuilder
+    from db import deckstore
+    store = tmp_path / "decks.json"
+    deckstore.save_decks(db, _store_entries(db), store)
+    _feed(monkeypatch, ["删 9", "q"])
+    deckbuilder.run_deckbuilder(db, store_path=store)
+    out = capsys.readouterr().out
+    assert "序号有误" in out
+    assert len(deckstore.load_decks(db, store)) == 2
+
+
+def test_deckbuilder_save_returns_to_manager(db, monkeypatch, capsys, tmp_path):
+    """编辑保存成功后回到卡组管理界面（标题再次出现），而非直接回主菜单。"""
+    from client import deckbuilder
+    from db import deckstore
+    store = tmp_path / "decks.json"
+    deckstore.save_decks(db, _store_entries(db), store)
+    # 编辑槽位 1：沿用名称 → 不导入卡组码 → 编辑循环回车完成 → 保存 → q 退出
+    _feed(monkeypatch, ["1", "", "", "", "q"])
+    deckbuilder.run_deckbuilder(db, store_path=store)
+    out = capsys.readouterr().out
+    assert "已保存" in out
+    assert out.count("—— 卡组构筑") == 2     # 进入一次 + 保存后回管理界面一次
+
+
+def test_run_battle_shows_result_and_waits(db, make_game, monkeypatch, capsys):
+    """热坐对局结束：显示最终场况（含胜负）并等待回车确认后才返回主菜单。"""
+    g = make_game()
+    g.state.winner = 0
+    monkeypatch.setattr(cli, "new_game", lambda *a, **k: g)
+    monkeypatch.setattr(cli, "_choose_deck", lambda db_, label: ([], []))
+    prompts = []
+
+    def _input(prompt=""):
+        prompts.append(prompt)
+        return ""
+    monkeypatch.setattr("builtins.input", _input)
+    cli.run_battle(db)
+    out = capsys.readouterr().out
+    assert "获胜" in out
+    assert prompts == ["按回车返回主菜单 > "]  # 战后恰好一次确认，随后返回

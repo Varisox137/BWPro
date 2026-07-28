@@ -537,6 +537,13 @@ def run_battle(db) -> None:
             print(f"无效操作: {e}")
         except (ValueError, IndexError):
             print("参数有误，输入 help 查看帮助")
+    # 对局结束：显示最终场况（含胜负），等待确认后回主菜单
+    print("")
+    print(render(game))
+    try:
+        input("按回车返回主菜单 > ")
+    except EOFError:
+        pass
 
 
 def main() -> None:
@@ -545,10 +552,13 @@ def main() -> None:
         os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
     db = CardDatabase.load()
     while True:
+        print("")
         print("—— 主菜单 ——")
+        print("")
         print("  [1] 卡组构筑")
         print("  [2] 本地热坐")
         print("  [3] 联机对战")
+        print("")
         try:
             choice = input("选择（q 退出）> ").strip().lower()
         except EOFError:

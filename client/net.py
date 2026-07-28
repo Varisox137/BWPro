@@ -252,6 +252,11 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
 
         threading.Thread(target=recv_loop, daemon=True).start()
         client.input_loop()
+    # 对局结束（含 quit/断线）：等待确认后回主菜单；服务端负责房间清理
+    try:
+        input("按回车返回主菜单 > ")
+    except (EOFError, KeyboardInterrupt):
+        pass
 
 
 def main() -> None:

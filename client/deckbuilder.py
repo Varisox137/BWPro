@@ -2,8 +2,9 @@
 
 - 本地卡组文件（db/deckstore.py v2，~/.bwp.decks.json）：进入构筑时读取全部槽位
   并按天梯规则重新校验（满足者以亮蓝色标明）；可编辑现有槽位、重命名
-  （名 <序号> <新名称>）或新建；编辑/新建均支持卡组码导入；校验通过即自动
-  写回（文件不存在时自动创建；文件格式异常时提示并删除该文件）。
+  （名 <序号> <新名称>）、删除（删 <序号>，二次确认）或新建；编辑/新建均支持
+  卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
+  自动创建；文件格式异常时提示并删除该文件）。
 - 新建为严格输入：必须恰好 4 个不重复的有效式神序号；每名式神必须恰好 8 个
   卡牌序号（同种卡至多 2 张、序号须存在），反复询问直到合法。
 - 编辑为增量式：在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号
@@ -256,72 +257,94 @@ def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
 
 
 def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
-    """卡组构筑入口：读取本地卡组文件 → 选择槽位编辑或新建 → 卡组码导入 /
-    交互式构筑（编辑为增量式）→ 校验通过自动写回本地文件。"""
-    decks = deckstore.load_decks(db, store_path)
-    print("")
-    print(f"—— 卡组构筑（本地卡组文件：{store_path}）——")
-    _deck_list_lines(decks)
-    print("")
-    line = _input("槽位序号 = 编辑该卡组；名 <序号> <新名称> = 重命名；回车 = 新建 > ")
-    parts = line.split(maxsplit=2)
-    if len(parts) == 3 and parts[0] in ("名", "r", "rename"):
+    """卡组构筑入口：本地卡组管理循环——编辑/重命名/删除/新建，q 返回主菜单。
+    保存（编辑/新建/重命名/删除）成功后回到管理界面而非主菜单。"""
+    while True:
+        decks = deckstore.load_decks(db, store_path)
+        print("")
+        print(f"—— 卡组构筑（本地卡组文件：{store_path}）——")
+        _deck_list_lines(decks)
+        print("")
         try:
-            entry = decks[int(parts[1]) - 1]
-        except (ValueError, IndexError):
-            print("序号有误，已取消")
+            line = input("槽位序号 = 编辑该卡组；名 <序号> <新名称> = 重命名；"
+                         "删 <序号> = 删除该卡组；回车 = 新建；q = 返回主菜单 > ").strip()
+        except EOFError:
             return
-        entry["name"] = parts[2].strip()
-        deckstore.save_decks(db, decks, store_path)
-        print(f"已重命名为「{entry['name']}」")
-        return
-    index: int | None = None
-    team: list[int] | None = None
-    picks: dict[int, list[int]] = {}
-    if line:
-        try:
-            index = int(line) - 1
-            entry = decks[index]
-            ids, cards = deckstore.entry_deck(entry)
-            deckcode.deck_from_code(db, deckstore.entry_code(entry))  # 校验可用性
-        except (ValueError, IndexError):
-            print("序号有误或槽位卡组已失效，已取消")
+        parts = line.split(maxsplit=2)
+        if parts and parts[0].lower() in ("q", "quit", "exit"):
             return
-        team = ids
-        for cid in cards:  # 按所属式神分组（协战牌挂在队在的所属名下）
-            c = db.cards[cid]
-            owner = c.shikigami if c.shikigami in team else c.shikigami2
-            picks.setdefault(owner, []).append(cid)
-        print(f"编辑卡组「{entry['name']}」（在当前基础上修改）")
-    name = _input("卡组名称（回车 = 沿用/自动命名）> ")
+        if len(parts) == 3 and parts[0] in ("名", "r", "rename"):
+            try:
+                entry = decks[int(parts[1]) - 1]
+            except (ValueError, IndexError):
+                print("序号有误，已取消")
+                continue
+            entry["name"] = parts[2].strip()
+            deckstore.save_decks(db, decks, store_path)
+            print(f"已重命名为「{entry['name']}」")
+            continue
+        if len(parts) == 2 and parts[0] in ("删", "d", "del", "delete"):
+            try:
+                index = int(parts[1]) - 1
+                entry = decks[index]
+            except (ValueError, IndexError):
+                print("序号有误，已取消")
+                continue
+            confirm = _input(f"确认删除卡组「{entry['name']}」？（y 确认，其他取消）> ")
+            if confirm.lower() not in ("y", "yes"):
+                print("已取消删除")
+                continue
+            decks.pop(index)
+            deckstore.save_decks(db, decks, store_path)
+            print(f"卡组「{entry['name']}」已删除")
+            continue
+        index: int | None = None
+        team: list[int] | None = None
+        picks: dict[int, list[int]] = {}
+        if line:
+            try:
+                index = int(line) - 1
+                entry = decks[index]
+                ids, cards = deckstore.entry_deck(entry)
+                deckcode.deck_from_code(db, deckstore.entry_code(entry))  # 校验可用性
+            except (ValueError, IndexError):
+                print("序号有误或槽位卡组已失效，已取消")
+                continue
+            team = ids
+            for cid in cards:  # 按所属式神分组（协战牌挂在队在的所属名下）
+                c = db.cards[cid]
+                owner = c.shikigami if c.shikigami in team else c.shikigami2
+                picks.setdefault(owner, []).append(cid)
+            print(f"编辑卡组「{entry['name']}」（在当前基础上修改）")
+        name = _input("卡组名称（回车 = 沿用/自动命名）> ")
 
-    code_line = _input("粘贴卡组码导入覆盖（回车 = 交互式构筑/编辑）> ")
-    if code_line:
-        try:
-            ids, card_ids = deckcode.deck_from_code(db, code_line)
-        except ValueError as e:
-            print(f"卡组码无效（{e}），未保存")
-            return
-    else:
-        result = (_edit_deck(db, team, picks) if team is not None
-                  else _interactive_build(db))
-        if result is None:
-            return
-        ids, card_ids = result
-    if not name:
-        name = decks[index]["name"] if index is not None else _deck_summary(db, ids)
-    groups = deckcode.group_deck(db, ids, card_ids)
-    entry = {"name": name, "groups": groups}
-    if index is None:
-        decks.append(entry)
-        slot = len(decks)
-    else:
-        decks[index] = entry
-        slot = index + 1
-    deckstore.save_decks(db, decks, store_path)
-    print("")
-    print(f"卡组「{name}」已保存（共 {len(card_ids)} 张，槽位 {slot}）")
-    print(f"卡组码（导出/分享）：{deckcode.encode_deck(groups)}")
+        code_line = _input("粘贴卡组码导入覆盖（回车 = 交互式构筑/编辑）> ")
+        if code_line:
+            try:
+                ids, card_ids = deckcode.deck_from_code(db, code_line)
+            except ValueError as e:
+                print(f"卡组码无效（{e}），未保存")
+                continue
+        else:
+            result = (_edit_deck(db, team, picks) if team is not None
+                      else _interactive_build(db))
+            if result is None:
+                continue
+            ids, card_ids = result
+        if not name:
+            name = decks[index]["name"] if index is not None else _deck_summary(db, ids)
+        groups = deckcode.group_deck(db, ids, card_ids)
+        entry = {"name": name, "groups": groups}
+        if index is None:
+            decks.append(entry)
+            slot = len(decks)
+        else:
+            decks[index] = entry
+            slot = index + 1
+        deckstore.save_decks(db, decks, store_path)
+        print("")
+        print(f"卡组「{name}」已保存（共 {len(card_ids)} 张，槽位 {slot}）")
+        print(f"卡组码（导出/分享）：{deckcode.encode_deck(groups)}")
 
 
 def _deck_summary(db: CardDatabase, ids: list[int]) -> str:
