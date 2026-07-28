@@ -21,7 +21,8 @@ uv run pytest -q tests/              # 运行全部测试
 
 - `core/` — 规则层：状态模型、引擎、动作原语、事件、目标解析、对局组装、调试指令
 - `db/` — 卡牌数据库（YAML）、schema、组卡校验（天梯规则，可参数化）、卡组码
-- `client/` — CLI 客户端：`cli.py` 热座 + 卡组构筑；`net.py` 联机（同一 `cmd dict` 协议）
+- `client/` — CLI 客户端：`cli.py` 热座 + 卡组构筑；`net.py` 联机（同一 `cmd dict` 协议）；
+  `tui.py` TUI 基座（prompt_toolkit 底部输入框 + 常驻状态行，非 TTY 自动回退内置 input）
 - `server/` — authoritative 联机服务端（FastAPI + WebSocket，详见 `server/README.md`）
 - `diy/` — 自定义卡牌 DSL（Phase 3） · `docs/` — 规则与术语文档 · `tests/` — 测试
 
@@ -43,7 +44,8 @@ uv run pytest -q tests/              # 运行全部测试
   卡组码导出导入、本地卡组文件（~/.bwp.decks.json）槽位管理（编辑/重命名/删除）与战前选卡
 - 联机：房间创建/按 id 加入、随机先手、token 断线重连、调度 30s/回合 120s 计时、
   debug 对局与服务端控制台、状态按视角脱敏等基础安全（详见 `server/README.md`）
-- CLI 显示：座次配色、修饰状态、关键字中文化、手牌数值段（含增强求值）
+- CLI 显示：座次配色、修饰状态、关键字中文化、手牌数值段（含增强求值）；
+  TTY 下底部输入框 + 常驻状态行（双方牌手信息 + 回合，联机另显示倒计时）
 
 ## 主要协议
 

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import random
+import time
 
 import pytest
 
@@ -201,6 +202,22 @@ def test_timer_not_reset_by_actions_within_turn(db):
         await room.handle_cmd(room.seat_to_player.index(g.state.active),
                               {"op": "upgrade", "index": idx})
         assert room.current_timer_key() == key
+    run(go())
+
+
+def test_state_carries_timer_deadline(db):
+    """state 消息附带当前计时器（kind/deadline）：调度阶段 kind=mulligan，
+    双方 ready 后切换为 turn；deadline 约为 now + 对应超时时长。"""
+    async def go():
+        room, ws0, _ = await _started_room(db)
+        timer = [m for m in ws0.messages if m["type"] == "state"][-1]["timer"]
+        assert timer["kind"] == "mulligan"
+        assert 0 < timer["deadline"] - time.time() <= room.mulligan_timeout
+        for pi in (0, 1):
+            await room.handle_cmd(room.seat_to_player.index(pi), {"op": "ready"})
+        timer = [m for m in ws0.messages if m["type"] == "state"][-1]["timer"]
+        assert timer["kind"] == "turn"
+        assert 0 < timer["deadline"] - time.time() <= room.turn_timeout
     run(go())
 
 

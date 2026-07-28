@@ -41,9 +41,13 @@ def start(player_index: int, opponent: str, you_first: bool) -> dict:
             "opponent": opponent, "you_first": you_first}
 
 
-def state(payload: dict, log: list[str]) -> dict:
-    """完整对局状态 + 自上次以来的新增日志。"""
-    return {"type": "state", "payload": payload, "log": log}
+def state(payload: dict, log: list[str], timer: dict | None = None) -> dict:
+    """完整对局状态 + 自上次以来的新增日志。
+    timer 非空时附带 {"kind", "deadline"}（客户端倒计时显示用，旧客户端忽略该字段）。"""
+    msg = {"type": "state", "payload": payload, "log": log}
+    if timer is not None:
+        msg["timer"] = timer
+    return msg
 
 
 def error(reason: str) -> dict:

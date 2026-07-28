@@ -16,7 +16,7 @@ db/deckstore.py）选择卡组，文件为空时回退到卡组码输入或默�
 from __future__ import annotations
 
 import os
-from client import cardfmt, deckbuilder, textutil
+from client import cardfmt, deckbuilder, textutil, tui
 from client.textutil import display_width as _display_width, pad as _pad
 from core.engine import Game, IllegalAction
 from core.model import Ref
@@ -175,6 +175,27 @@ def hand_sorted(game: Game, p) -> list:
     return sorted(p.hand, key=key)
 
 
+def _player_segment(game: Game, pi: int, viewer: int | None = None) -> str:
+    """单方牌手信息段：`> 名字（你） 生命h[护甲s] 手牌n 牌库n 墓地n[鼓舞+bp/bs]`。
+    `>` 标行动方（非行动方前缀空格）；viewer 匹配时名字后加（你）。"""
+    st = game.state
+    p = st.players[pi]
+    marker = ">" if pi == st.active else " "
+    boost = ""
+    if p.assault_boosts:
+        bp = sum(b.get("power", 0) for b in p.assault_boosts)
+        bs = sum(b.get("shield", 0) for b in p.assault_boosts)
+        boost = f" 鼓舞+{bp}/{bs}"
+    you = "（你）" if viewer is not None and pi == viewer else ""
+    return (f"{marker} {p.name}{you} 生命{p.health}[护甲{p.shield}] "
+            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}")
+
+
+def player_status_segment(game: Game, viewer: int | None = None) -> str:
+    """双方牌手信息压缩成一行（底部状态栏用），双方段以两个空格连接。"""
+    return "  ".join(_player_segment(game, pi, viewer) for pi in range(2))
+
+
 def render(game: Game, viewer: int | None = None) -> str:
     """场况渲染。viewer 为"己方"视角玩家下标（着色/手牌展示）；
     None = 当前行动方（热坐）。"""
@@ -243,17 +264,7 @@ def render(game: Game, viewer: int | None = None) -> str:
     faction_w = max((_display_width(f"[{f}]") for _, _, _, _, f, _ in all_rows), default=0)
 
     for pi, rows in player_rows:
-        p = st.players[pi]
-        marker = ">" if pi == st.active else " "
-        boost = ""
-        if p.assault_boosts:
-            bp = sum(b.get("power", 0) for b in p.assault_boosts)
-            bs = sum(b.get("shield", 0) for b in p.assault_boosts)
-            boost = f" 鼓舞+{bp}/{bs}"
-        lines.append(
-            f"{marker} {p.name} 生命{p.health}[护甲{p.shield}] "
-            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}"
-        )
+        lines.append(_player_segment(game, pi))
         for i, name, kind, lv, faction, status in rows:
             color = _seat_color(p, i) if pi == view else None
             line = (
@@ -340,7 +351,7 @@ def run_mulligan(game: Game) -> None:
                 print(line)
             print("")
             try:
-                line = input(f"[{p.name}] 调度（剩 {p.mulligans_left} 次）> ").strip().lower()
+                line = tui.prompt(f"[{p.name}] 调度（剩 {p.mulligans_left} 次）> ").strip().lower()
             except EOFError:
                 line = "done"
             if line in ("done", "", "q"):
@@ -452,6 +463,17 @@ def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
     return ids, cards
 
 
+def _battle_status(game: Game) -> tuple[str, str]:
+    """热坐底部状态栏：左 = 双方牌手信息；右 = 回合（调度阶段显示调度阶段）。"""
+    st = game.state
+    left = player_status_segment(game)
+    if st.phase == "mulligan":
+        right = "调度阶段"
+    else:
+        right = f"总第 {st.turn - 1} 回合 · 行动中 {st.players[st.active].name}"
+    return left, right
+
+
 def run_battle(db) -> None:
     """热坐对战：双方依次选择卡组（卡组码导入或默认）后开局。"""
     a_ids, a_cards = _choose_deck(db, "玩家A")
@@ -462,6 +484,14 @@ def run_battle(db) -> None:
         ("玩家B", b_ids, b_cards),
         seed=42,
     )
+    tui.set_status(lambda: _battle_status(game))
+    try:
+        _battle_loop(game)
+    finally:
+        tui.set_status(None)
+
+
+def _battle_loop(game: Game) -> None:
     if game.state.phase == "mulligan":
         run_mulligan(game)
     print(render(game))
@@ -470,7 +500,7 @@ def run_battle(db) -> None:
         if game.state.phase == "upgrade":
             prompt = f"[{game.current.name} 升级阶段（剩 {game.current.upgrades} 次）]"
         try:
-            line = input(f"{prompt} > ").strip()
+            line = tui.prompt(f"{prompt} > ").strip()
         except EOFError:
             break
         if not line:
@@ -496,19 +526,19 @@ def run_battle(db) -> None:
             elif cmd == "play":
                 hand = hand_sorted(game, game.current)
                 card = hand[int(args[0]) - 1]
-                cdef = db.cards[card.id]
+                cdef = game.db.cards[card.id]
                 cmd_dict: dict = {"op": "play_card", "uid": card.uid}
                 rest = args[1:]
                 eff = cdef
                 if cdef.card_type == "reinforce":
                     # 协战牌：先选择子选项（显示两选项卡名与文本），目标/等级按子卡
-                    options = [db.cards[o] for o in cdef.options]
+                    options = [game.db.cards[o] for o in cdef.options]
                     if rest:
                         pick = int(rest.pop(0))
                     else:
                         for i, o in enumerate(options):
                             print(f"  [{i}]《{o.name}》 {o.text}")
-                        pick = int(input("子选项 > "))
+                        pick = int(tui.prompt("子选项 > "))
                     cmd_dict["choice"] = pick
                     eff = options[pick]
                 if eff.target.kind == "choose":
@@ -519,7 +549,7 @@ def run_battle(db) -> None:
                     else:
                         print("可选目标: " + " ".join(
                             ref_code(r, game.state.active) for r in legal))
-                        code = input("目标 > ")
+                        code = tui.prompt("目标 > ")
                     cmd_dict["target"] = parse_ref(code, game.state.active)
                 if rest:
                     cmd_dict["play_method"] = rest.pop(0)  # 使用方式，如 burst
@@ -541,7 +571,7 @@ def run_battle(db) -> None:
     print("")
     print(render(game))
     try:
-        input("按回车返回主菜单 > ")
+        tui.prompt("按回车返回主菜单 > ")
     except EOFError:
         pass
 
@@ -551,29 +581,32 @@ def main() -> None:
     if os.name == "nt":
         os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
     db = CardDatabase.load()
-    while True:
-        print("")
-        print("—— 主菜单 ——")
-        print("")
-        print("  [1] 卡组构筑")
-        print("  [2] 本地热坐")
-        print("  [3] 联机对战")
-        print("")
-        try:
-            choice = input("选择（q 退出）> ").strip().lower()
-        except EOFError:
-            break
-        if choice == "1":
-            deckbuilder.run_deckbuilder(db)
-        elif choice == "2":
-            run_battle(db)
-        elif choice == "3":
-            from client import net
-            server = input("服务器地址（回车 = ws://127.0.0.1:1037/ws）> ").strip()
-            net.run(db, server or "ws://127.0.0.1:1037/ws",
-                    input("玩家名 > ").strip() or "玩家", debug=False)
-        elif choice in ("q", "quit", "exit"):
-            break
+    with tui.activate():
+        while True:
+            tui.set_status(lambda: ("主菜单", "输入 1/2/3 选择，q 退出"))
+            print("")
+            print("—— 主菜单 ——")
+            print("")
+            print("  [1] 卡组构筑")
+            print("  [2] 本地热坐")
+            print("  [3] 联机对战")
+            print("")
+            try:
+                choice = tui.prompt("选择（q 退出）> ").strip().lower()
+            except EOFError:
+                break
+            if choice == "1":
+                deckbuilder.run_deckbuilder(db)
+            elif choice == "2":
+                run_battle(db)
+            elif choice == "3":
+                from client import net
+                server = tui.prompt("服务器地址（回车 = ws://127.0.0.1:1037/ws）> ").strip()
+                net.run(db, server or "ws://127.0.0.1:1037/ws",
+                        tui.prompt("玩家名 > ").strip() or "玩家", debug=False)
+            elif choice in ("q", "quit", "exit"):
+                break
+        tui.set_status(None)
 
 
 if __name__ == "__main__":

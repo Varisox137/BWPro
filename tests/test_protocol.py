@@ -29,6 +29,9 @@ def test_server_message_builders():
     assert (s["player_index"], s["opponent"], s["you_first"]) == (1, "乙", False)
     st = protocol.state({"turn": 3}, ["x", "y"])
     assert st["payload"]["turn"] == 3 and st["log"] == ["x", "y"]
+    assert "timer" not in st  # 缺省不带计时器字段（旧客户端兼容）
+    st2 = protocol.state({"turn": 3}, [], timer={"kind": "turn", "deadline": 1.0})
+    assert st2["timer"] == {"kind": "turn", "deadline": 1.0}
     assert protocol.error("r") == {"type": "error", "reason": "r"}
     assert protocol.notice("t") == {"type": "notice", "text": "t"}
     assert protocol.game_over(0, "player_defeated")["winner"] == 0

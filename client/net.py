@@ -15,8 +15,9 @@ import argparse
 import json
 import os
 import threading
+import time
 
-from client import cli, deckbuilder
+from client import cli, deckbuilder, tui
 from core.engine import Game
 from core.model import GameState
 from db.loader import CardDatabase
@@ -32,6 +33,7 @@ class NetClient:
         self.me: int | None = None  # 自己在 state.players 中的下标
         self.room_debug = False
         self.payload: dict | None = None  # 最近一次 state 的 payload
+        self.timer: dict | None = None    # 最近一次 state 附带的计时器（kind/deadline）
         self.over = threading.Event()
 
     # ---------- 接收 ----------
@@ -54,8 +56,10 @@ class NetClient:
             self.me = msg["player_index"]
             print(f"对局开始：你是{'先手' if msg['you_first'] else '后手'}"
                   f"，对手：{msg['opponent']}")
+            tui.start_ticker(1.0)  # 驱动状态栏倒计时逐秒重绘
         elif t == "state":
             self.payload = msg["payload"]
+            self.timer = msg.get("timer")
             for line in msg.get("log", []):
                 print(f"  | {line}")
             self._show()
@@ -98,26 +102,27 @@ class NetClient:
     # ---------- 输入循环 ----------
 
     def input_loop(self) -> None:
-        while not self.over.is_set():
-            game = self.wrapper()
-            prompt = f"[{self.name}]"
-            if game is not None:
-                st = game.state
-                if st.phase == "mulligan":
-                    p = st.players[self.me]
-                    prompt = f"[{self.name} 调度（剩 {p.mulligans_left} 次）]"
-                elif st.phase == "upgrade" and st.active == self.me:
-                    prompt = f"[{self.name} 升级阶段（剩 {st.players[self.me].upgrades} 次）]"
-            try:
-                line = input(f"{prompt} > ").strip()
-            except (EOFError, KeyboardInterrupt):
-                break
-            if not line:
-                continue
-            try:
-                self.handle_line(line)
-            except (ValueError, IndexError):
-                print("参数有误，输入 help 查看帮助")
+        with tui.activate():
+            while not self.over.is_set():
+                game = self.wrapper()
+                prompt = f"[{self.name}]"
+                if game is not None:
+                    st = game.state
+                    if st.phase == "mulligan":
+                        p = st.players[self.me]
+                        prompt = f"[{self.name} 调度（剩 {p.mulligans_left} 次）]"
+                    elif st.phase == "upgrade" and st.active == self.me:
+                        prompt = f"[{self.name} 升级阶段（剩 {st.players[self.me].upgrades} 次）]"
+                try:
+                    line = tui.prompt(f"{prompt} > ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if not line:
+                    continue
+                try:
+                    self.handle_line(line)
+                except (ValueError, IndexError):
+                    print("参数有误，输入 help 查看帮助")
 
     def handle_line(self, line: str) -> None:
         game = self.wrapper()
@@ -178,7 +183,7 @@ class NetClient:
                 else:
                     for i, o in enumerate(options):
                         print(f"  [{i}]《{o.name}》 {o.text}")
-                    pick = int(input("子选项 > "))
+                    pick = int(tui.prompt("子选项 > "))
                 cmd_dict["choice"] = pick
                 eff = options[pick]
             if eff.target.kind == "choose":
@@ -189,7 +194,7 @@ class NetClient:
                 else:
                     print("可选目标: " + " ".join(
                         cli.ref_code(r, self.me) for r in legal))
-                    code = input("目标 > ")
+                    code = tui.prompt("目标 > ")
                 cmd_dict["target"] = cli.parse_ref(code, self.me).model_dump()
             if rest:
                 cmd_dict["play_method"] = rest.pop(0)
@@ -202,9 +207,37 @@ class NetClient:
             print("未知指令，输入 help 查看帮助")
 
 
+def _fmt_timer(timer: dict, now: float) -> str:
+    """倒计时文本：`⏱ m:ss`（调度阶段加"调度 "前缀）；超时封顶 0:00。"""
+    remaining = max(0.0, timer.get("deadline", now) - now)
+    m, s = divmod(int(remaining), 60)
+    text = f"⏱ {m}:{s:02d}"
+    if timer.get("kind") == "mulligan":
+        text = f"调度 {text}"
+    return text
+
+
+def _net_status(client: NetClient) -> tuple[str, str]:
+    """底部状态栏：左 = 双方牌手信息（未开局为房间提示）；右 = 回合 + 倒计时。"""
+    game = client.wrapper()
+    if game is None or client.me is None:
+        left = f"房间 {client.room_id}，等待对手……" if client.room_id else "联机"
+        return left, ""
+    left = cli.player_status_segment(game, viewer=client.me)
+    st = game.state
+    if st.phase == "mulligan":
+        right = _fmt_timer(client.timer, time.time()) if client.timer else "调度阶段"
+    else:
+        active = st.players[st.active]
+        right = f"总第 {st.turn - 1} 回合 · {active.name} 第 {active.turn_count} 回合"
+        if client.timer:
+            right += " " + _fmt_timer(client.timer, time.time())
+    return left, right
+
+
 def _input(prompt: str) -> str:
     try:
-        return input(prompt).strip()
+        return tui.prompt(prompt).strip()
     except EOFError:
         return ""
 
@@ -237,24 +270,28 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
     with ws:
         client = NetClient(db, ws, name)
         client.send(hello)
+        tui.set_status(lambda: _net_status(client))
+        try:
+            def recv_loop() -> None:
+                try:
+                    for raw in ws:
+                        try:
+                            client.handle(json.loads(raw))
+                        except (ValueError, KeyError) as e:
+                            print(f"无法解析服务端消息（{e}）")
+                except Exception:
+                    pass
+                finally:
+                    client.over.set()
 
-        def recv_loop() -> None:
-            try:
-                for raw in ws:
-                    try:
-                        client.handle(json.loads(raw))
-                    except (ValueError, KeyError) as e:
-                        print(f"无法解析服务端消息（{e}）")
-            except Exception:
-                pass
-            finally:
-                client.over.set()
-
-        threading.Thread(target=recv_loop, daemon=True).start()
-        client.input_loop()
+            threading.Thread(target=recv_loop, daemon=True).start()
+            client.input_loop()
+        finally:
+            tui.stop_ticker()
+            tui.set_status(None)
     # 对局结束（含 quit/断线）：等待确认后回主菜单；服务端负责房间清理
     try:
-        input("按回车返回主菜单 > ")
+        tui.prompt("按回车返回主菜单 > ")
     except (EOFError, KeyboardInterrupt):
         pass
 

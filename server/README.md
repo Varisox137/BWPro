@@ -71,7 +71,8 @@ server/
 ```json
 { "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
 { "type": "start", "player_index": 0, "opponent": "乙", "you_first": true }
-{ "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."] }
+{ "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
+  "timer": { "kind": "turn", "deadline": 1735689600.0 } }
 { "type": "error", "reason": "..." }
 { "type": "notice", "text": "..." }
 { "type": "game_over", "winner": 0, "reason": "player_defeated" }
@@ -88,6 +89,8 @@ server/
 
 - 每 Room 一个 `asyncio` 计时器；计时对象（调度中的玩家 / 回合号）变化时重启，
   同一回合内的操作不重置计时。
+- `state` 消息附带当前计时器的 `timer`（`kind`: mulligan/turn，`deadline`: unix
+  截止时刻）——仅供客户端状态栏倒计时显示，裁决仍在服务端；无计时对象时省略该字段。
 - 游戏逻辑在事件循环内同步执行，计时器回调只能排在当前 `apply` 返回后运行——
   天然满足"回合超时等结算完后立即结束回合"。
 

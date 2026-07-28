@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from client import cardfmt
+from client import cardfmt, tui
 from client.textutil import colored
 from db import deckcode, deckstore
 from db.deck import (MAX_COPIES_PER_NAME, MAX_KINDS_PER_SHIKIGAMI,
@@ -44,7 +44,7 @@ def buildable_cards(db: CardDatabase, sid: int) -> list:
 
 def _input(prompt: str) -> str:
     try:
-        return input(prompt).strip()
+        return tui.prompt(prompt).strip()
     except EOFError:
         return ""
 
@@ -259,6 +259,15 @@ def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
 def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
     """卡组构筑入口：本地卡组管理循环——编辑/重命名/删除/新建，q 返回主菜单。
     保存（编辑/新建/重命名/删除）成功后回到管理界面而非主菜单。"""
+    tui.set_status(lambda: ("卡组构筑",
+                            "序号=编辑 · 名/删 <序号> · 回车=新建 · q=返回"))
+    try:
+        _manage_loop(db, store_path)
+    finally:
+        tui.set_status(None)
+
+
+def _manage_loop(db: CardDatabase, store_path) -> None:
     while True:
         decks = deckstore.load_decks(db, store_path)
         print("")
@@ -266,8 +275,8 @@ def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
         _deck_list_lines(decks)
         print("")
         try:
-            line = input("槽位序号 = 编辑该卡组；名 <序号> <新名称> = 重命名；"
-                         "删 <序号> = 删除该卡组；回车 = 新建；q = 返回主菜单 > ").strip()
+            line = tui.prompt("槽位序号 = 编辑该卡组；名 <序号> <新名称> = 重命名；"
+                              "删 <序号> = 删除该卡组；回车 = 新建；q = 返回主菜单 > ").strip()
         except EOFError:
             return
         parts = line.split(maxsplit=2)

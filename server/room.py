@@ -11,6 +11,7 @@ import asyncio
 import json
 import random
 import string
+import time
 import uuid
 
 from core.engine import Game, IllegalAction
@@ -85,6 +86,7 @@ class Room:
         self.seat_to_player = [0, 1]
         self._timer: asyncio.Task | None = None
         self._timer_key: tuple | None = None  # ("mulligan", player) / ("turn", 总回合数)
+        self._timer_deadline: float | None = None  # 当前计时器的 unix 截止时刻（随 state 下发）
         self._sent_log = 0
         self._over_sent = False
 
@@ -158,8 +160,8 @@ class Room:
                 self.seat_to_player[c.seat],
                 self.conns[1 - c.seat].name,
                 self.seat_to_player[c.seat] == 0))
-        await self.broadcast_state()
         self.reschedule_timer()
+        await self.broadcast_state()
 
     # ---------- 指令 ----------
 
@@ -197,8 +199,8 @@ class Room:
             self._over_sent = True
             self._cancel_timer()
             return
-        await self.broadcast_state()
         self.reschedule_timer()
+        await self.broadcast_state()
 
     # ---------- 广播 ----------
 
@@ -208,14 +210,20 @@ class Room:
                 await c.send(msg)
 
     async def broadcast_state(self) -> None:
-        """向双方下发完整状态（按各自视角脱敏）+ 新增日志；对局结束时补发 game_over。"""
+        """向双方下发完整状态（按各自视角脱敏）+ 新增日志；对局结束时补发 game_over。
+        附带当前计时器的 timer（kind/deadline），客户端状态栏倒计时显示用。"""
         st = self.game.state
         log = st.log[self._sent_log:]
         self._sent_log = len(st.log)
         base = st.model_dump(mode="json")
+        key = self._timer_key
+        timer = None
+        if key is not None and self._timer_deadline is not None \
+                and key == self.current_timer_key():
+            timer = {"kind": key[0], "deadline": self._timer_deadline}
         for c in self.conns:
             viewer = self.seat_to_player[c.seat]
-            await c.send(protocol.state(sanitize_state(base, viewer), log))
+            await c.send(protocol.state(sanitize_state(base, viewer), log, timer=timer))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
             await self._broadcast(protocol.game_over(st.winner, "player_defeated"))
@@ -238,7 +246,8 @@ class Room:
         return ("turn", st.turn)
 
     def reschedule_timer(self) -> None:
-        """计时对象变化时重启计时器（同一对象不重置，保证 120s 覆盖整个回合）。"""
+        """计时对象变化时重启计时器（同一对象不重置，保证 120s 覆盖整个回合）。
+        deadline 随 state 消息下发（客户端状态栏倒计时显示用，裁决仍在服务端）。"""
         key = self.current_timer_key()
         if key == self._timer_key:
             return
@@ -246,6 +255,7 @@ class Room:
         self._timer_key = key
         if key is not None:
             seconds = self.mulligan_timeout if key[0] == "mulligan" else self.turn_timeout
+            self._timer_deadline = time.time() + seconds
             self._timer = asyncio.ensure_future(self._run_timer(key, seconds))
 
     def _cancel_timer(self) -> None:
@@ -253,6 +263,7 @@ class Room:
             self._timer.cancel()
             self._timer = None
         self._timer_key = None
+        self._timer_deadline = None
 
     async def _run_timer(self, key: tuple, seconds: float) -> None:
         try:
@@ -287,5 +298,5 @@ class Room:
                     self.game.apply({"op": "end_turn"})
         except IllegalAction:
             pass
-        await self.broadcast_state()
         self.reschedule_timer()
+        await self.broadcast_state()
