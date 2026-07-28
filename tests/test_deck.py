@@ -171,7 +171,7 @@ def test_rules_summary_renders_rules(db):
     """规则提示文本与 DeckRules 取值同步（构筑界面打印的标准规则细节）。"""
     from db.deck import DeckRules, rules_summary
     text = "\n".join(rules_summary())
-    assert "4 名" in text and "8 张" in text and "限 2" in text and "01-08" in text
+    assert "4 名" in text and "8 张" in text and "限 2" in text
     custom = "\n".join(rules_summary(DeckRules(
         required_shikigami=3, cards_per_shikigami=[7, 7, 7], max_copies_deck=3)))
     assert "3 名" in custom and "7 张" in custom and "全卡组限 3" in custom

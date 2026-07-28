@@ -62,17 +62,12 @@ def rules_summary(rules: DeckRules = STANDARD_RULES) -> list[str]:
     检查项一一对应，规则调整时只需改 DeckRules。"""
     cps = rules.cards_per_shikigami
     per = str(cps[0]) if len(set(cps)) == 1 else "/".join(str(n) for n in cps)
-    suffix = rules.buildable_suffixes
-    reinforce = "/".join(f"{s:02d}" for s in sorted(rules.reinforce_suffixes))
     return [
         f"出战式神 {rules.required_shikigami} 名（不重复）；派系至多 "
         f"{rules.max_factions} 个（无相不计入）；同源式神不能同时出战",
         f"每名式神恰好 {per} 张牌；不同名卡不超过 {rules.max_kinds_per_shikigami} 种",
         f"同名卡在同一式神限 {rules.max_copies_per_name}、"
         f"在全卡组限 {rules.max_copies_deck}",
-        f"专属牌构筑序号 {min(suffix):02d}-{max(suffix):02d}；协战牌序号 {reinforce}"
-        "（两位所属任一出战即可编入，计入所在式神配额）",
-        "中立牌/衍生卡不可编入卡组",
     ]
 
 
