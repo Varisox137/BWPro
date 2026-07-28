@@ -48,10 +48,10 @@ def _get_session():
 
 
 def prompt(text: str = "") -> str:
-    """统一输入入口：TTY 走 PromptSession（带框输入行 + 状态栏 + ↑↓ 历史），
+    """统一输入入口：TTY 走 PromptSession（纯文本输入行 + 状态栏 + ↑↓ 历史），
     非 TTY 回退内置 input。"""
     if _tty():
-        return _get_session().prompt(frame_message(text))
+        return _get_session().prompt(text)
     return input(text)
 
 
@@ -67,16 +67,13 @@ def activate():
         yield
 
 
-# ---------- 输入框边框 ----------
+# ---------- 输入区与状态栏分隔线 ----------
 
-def frame_message(text: str) -> str:
-    """输入框消息：`│ <提示>` 单行输入行（上边框不绘——它会随提交滚入历史消息，
-    观感差；框的其余两边由左侧 │ 与状态栏首行的下边框 ╰──… 构成）。"""
-    return f"│ {text}"
-
-
-def _bottom_border(width: int) -> str:
-    return "╰" + "─" * max(0, width - 1)
+def _separator(width: int) -> str:
+    """pi-tui 风格纯横线。prompt_toolkit 非全屏模式下提交后 prompt 渲染行必然滚入
+    历史消息，任何 prompt 侧边框都会残留成难看的竖线/角字符——故输入行保持纯文本，
+    输入区与状态栏的分隔感由状态栏首行这条常驻横线提供。"""
+    return "─" * max(0, width)
 
 
 # ---------- 状态栏 ----------
@@ -132,11 +129,11 @@ def render_toolbar(width: int | None = None) -> str:
 
 
 def _toolbar_text():
-    """bottom_toolbar 回调：首行输入框下边框（╰──…）、次行状态栏。
+    """bottom_toolbar 回调：首行分隔横线（pi-tui 风格）、次行状态栏。
     ANSI 包装解析 textutil 颜色码（回调返回纯文本时为普通文本）。"""
     from prompt_toolkit.formatted_text import ANSI
     width = shutil.get_terminal_size().columns
-    return ANSI(_bottom_border(width) + "\n" + render_toolbar(width))
+    return ANSI(_separator(width) + "\n" + render_toolbar(width))
 
 
 def start_ticker(interval: float = 1.0) -> None:

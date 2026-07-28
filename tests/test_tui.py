@@ -82,17 +82,12 @@ def test_toolbar_no_raw_ansi():
     assert "\x1b" not in tui.render_toolbar(width=30)
 
 
-# ---------- 输入框边框与样式 ----------
+# ---------- 输入区分隔线与样式 ----------
 
-def test_frame_message_box():
-    """输入框消息：单行 `│ 提示`（上边框不绘，避免滚入历史消息）。"""
-    line = tui.frame_message("[玩家A] > ")
-    assert line == "│ [玩家A] > "
-    assert "\n" not in line and "╭" not in line and "指令" not in line
-
-
-def test_bottom_border():
-    assert tui._bottom_border(20) == "╰" + "─" * 19
+def test_separator_plain_rule():
+    """分隔线：pi-tui 风格纯横线，无角字符/换行。"""
+    assert tui._separator(20) == "─" * 20
+    assert "\n" not in tui._separator(20)
 
 
 def test_session_style_no_reverse():
