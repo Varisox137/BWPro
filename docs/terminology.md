@@ -1,6 +1,6 @@
 # 术语表（中文 ↔ 代码标识）
 
-代码与数据库中的命名以此表为准。状态：✅ 已统一 / 🔧 预留（数据可携带，机制未实现） / ❓ 待确认（见 questions.md 对应编号）。
+代码与数据库中的命名以此表为准。状态：✅ 已统一 / 🔧 预留（数据可携带，机制未实现）。
 
 ## 核心概念
 
@@ -45,7 +45,7 @@
 | 战力 | `combat_power` | 一次性的战斗伤害增加：战斗牌/响应战斗牌授予，战斗终止点核销（响应插入的经 `_battle_power` 挂账） | ✅ |
 | 乏力 | `weak` | 战力的负向对应 | 🔧 |
 | 永久修正 | `perm_power` / `perm_health` | 气绝后复活保留 | ✅ |
-| 临时修正 | `temp_power` | 气绝时清除（临时/永久的区分 = 复活能否保留）；光环类 Phase 3 | ✅ |
+| 临时修正 | `temp_power` | 气绝时清除（临时/永久的区分 = 复活能否保留）；光环类 Phase 5 | ✅ |
 | 攻击后到期强化 | `attack_buffs` / `attack_buff`（动作） | 挂账式临时强化（临时力量 + 授予关键字）：自身作为攻击者的战斗终止点核销（rules.md:176"直到攻击后"）；气绝清空 | ✅ |
 | 护甲保留 | `keep_shield` | `ShikigamiState.keep_shield`：护甲不再于己方回合开始移除（觉醒·兵俑） | ✅ |
 
@@ -54,8 +54,8 @@
 | 中文 | 代码标识 | 说明 | 状态 |
 |---|---|---|---|
 | 法术牌 | `spell` | card_type | ✅ |
-| 战斗牌 | `combat` | card_type | 🔧 Phase 3 |
-| 形态牌 | `form` | card_type | 🔧 Phase 3 |
+| 战斗牌 | `combat` | card_type | ✅ |
+| 形态牌 | `form` | card_type | ✅ |
 | 幻境牌 | `field` | card_type（预留） | 🔧 |
 | 协战牌 | `reinforce` / `options` / `choice` | card_type=协战主牌（shikigami 主 + shikigami2 副双归属）；`options` = 两个子选项 token 卡 id（[0] 主侧 [1] 副侧）；打出时 cmd 带 `choice`（0/1）选择 → 合法性（出战/等级/鬼火/目标）按子卡 → 生成 token 入手并视作从手牌使用（完整使用事件流程）→ 主牌离手进 `removed` 区（不进墓地）；[羁绊] 不进关键词表，实现为子卡普通 steps | ✅ |
 | 觉醒牌 | `subtype = "awaken"` | **不是主类型**：任意 card_type + subtype（rules.md:502）；法术觉醒使用事件流程：墓地 → `on_before_awaken`（觉醒前，即时）→ 替换式神能力 → 法术本身效果 → `on_awakened`（觉醒后，延时）→ 永久身材增益（`awaken_power`/`awaken_health`） | ✅ |
@@ -118,9 +118,9 @@
 | 持续性 | `keywords` | 触发后不移除（远程/贯通/连击/穿刺/先攻/连击等）；气绝时清除 |
 | 永久 | `perm_keywords` | 气绝时不清除 = 复活后自动重新获得；永久是授予方式而非关键字属性 |
 
-此外**战斗伤害免疫**不是关键字：带作用域的修饰（`ShikigamiState.immunities` 条目 + `battle_immunity` 动作），只免疫 kind ∈ (combat, counter) 的伤害，作用域由授予效果指定（仅本战斗 / 含嵌套战斗）。
+此外**战斗伤害免疫**不是关键字：带作用域的修饰（`ShikigamiState.immunities` 条目 + `battle_immunity` / `grant_immunity` 动作），只免疫 kind ∈ (combat, counter) 的伤害，作用域由授予效果指定（仅本战斗 / 含嵌套战斗 / 本回合）。
 
-## 预留机制（译名确认，规则 Phase 3+）
+## 预留机制（译名确认，规则 Phase 5+）
 
 弹回 `rebound`、融合 `fusion`、帷幕 `veiled`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
 
@@ -152,7 +152,7 @@
 | 凭空自动使用 | `recast_recorded`（动作） | 凭空生成 `ext["recorded_card"]` 记录卡 id 的同名牌并免费自动使用（不耗鬼火、非从手牌、无主动目标；大天狗倒计时）；`gain_orb`：获得鬼火 | ✅ |
 | Step 级条件 | `Step.condition` | 结算时以条件迷你语言求值，不满足则跳过该 step（op 自身声明 condition 参数者——如 delay_grant——仍作 op 参数传递） | ✅ |
 | 扩展数据 | `ext` | 少数卡专用的运行时数据（`ShikigamiState.ext` / `PlayerState.ext`，约定键见下表） | ✅ |
-| 治疗（恢复生命） | `Game.heal` / `heal`（动作） | 治疗事件流程（thoughts.txt）：on_before_heal（即时）→ 治疗量 = min(治疗量, 已损失生命) → 增加生命 → 0 终止 → on_heal / on_after_heal（延时）；濒死/气绝者不受治疗 | ✅ |
+| 治疗（恢复生命） | `Game.heal` / `heal`（动作） | 治疗事件流程：on_before_heal（即时）→ 治疗量 = min(治疗量, 已损失生命) → 增加生命 → 0 终止 → on_heal / on_after_heal（延时）；濒死/气绝者不受治疗 | ✅ |
 | 气绝前 1 | `on_before_defeat` | 气绝/消灭事件开头（`check_defeated`）的即时时机；响应牌挂此时机（射怪鸟事类） | ✅ |
 | 使用手牌前 | `on_before_card_play` / `nullify_card_play`（动作） | 付费/打出装配后、类型分支前的即时时机；`nullify_card_play` 置位 payload 可变标记 `nullified` 终止该次使用（牌入墓地、跳过效果与 on_card_played）；"一次性无效化"能力用 `delay_grant(scope="turn")` 表达（魔音扰心） | ✅ |
 | 变为（卡牌） | `transformed`（card_mods/mods 键） | 同名牌视为新牌：打出装配改读 `alt_effects`、关键字减 `alt_remove_keywords`（正义之必胜类"本局每……变为"用 triggers + add_mod(to=persistent, key=transformed) 表达） | ✅ |

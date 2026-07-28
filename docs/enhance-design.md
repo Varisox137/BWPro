@@ -81,7 +81,7 @@
 | 敌方牌库≤16，此牌伤害翻倍 | monitor：谓词命中 → amount_mult=2（先加后乘） |
 | 己方式神全青岚，抽牌前先[占卜2] | monitor 命中 → 注入 pre_grants（改变执行流程） |
 | 使用时慧明灯在战斗区，获得“战斗结束后各回3” | monitor 命中 → 注册 temp_grant（一次性触发） |
-| 八尺琼勾玉战斗牌：先对结附者攻击 / 攻击后使己方结附者攻击 | temp/pre grants + `launch_attack`（inherit_context 区分是否共享战力；依赖战斗上下文，Phase 3） |
+| 八尺琼勾玉战斗牌：先对结附者攻击 / 攻击后使己方结附者攻击 | temp/pre grants + `launch_attack`（inherit_context 区分是否共享战力；依赖战斗上下文，Phase 5） |
 | 形态/幻境离场保留状态入墓、“洗回牌库保留特性” | 不变式 1：实例身份 + mods 写回 |
 | 使用位置/方式作为增强条件 | 不变式 4：on_card_played payload |
 

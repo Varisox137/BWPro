@@ -57,7 +57,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 触发块：使用非觉醒法术→记录该法术并注册一次型[倒计时2]，归零凭空免费复用同名牌（非从手牌、不耗火）；记录随气绝丢失；倒计时来源按 A2 决策 = 式神 id |
 | 01 风神一扇 | ✅ | 投射 2 伤 + retreat；受伤者经块内暂存 last_damage_victims 引用 |
-| 02 吾即正义 | ✅ | generate 谓词扩展（max_level=source / exclude_self）；计数 10 张法术后经 add_mod require 置位 transformed，改用 alt_effects（消灭所有敌方式神）；变为后失去[瞬发]（thoughts.txt 答复 2，alt_remove_keywords） |
+| 02 吾即正义 | ✅ | generate 谓词扩展（max_level=source / exclude_self）；计数 10 张法术后经 add_mod require 置位 transformed，改用 alt_effects（消灭所有敌方式神）；变为后失去[瞬发]（维护者答复 2，alt_remove_keywords） |
 | 03 暴风之盾 | ✅ | gain_shield + delay_grant（下己方回合开始再 +2；选择目标随延迟条目存储）；响应挂 on_before_assault（受击方即战斗区式神） |
 | 04 黑羽之刃 | ✅ | 投射 4 伤 + delay_grant scope="play"（"本次使用期间"消灭敌方式神→抽 1，出牌结束窗口清除） |
 | 05 暴风之主 | ✅ | 形态能力读 on_card_played payload affected_refs（该次出牌效果伤害过的敌方式神；维护者答复(7)：只计敌方式神、去重，牌手与己方式神不计） |
@@ -130,7 +130,7 @@
 | 02 鸩羽苏生 | ✅ | countdown_delta -2（可立即归零）+ 抽 1 |
 | 03 寂寥心象 | ✅ | 每回合合计一次（turn_mark/turn_mark_not 门控，任一回合开始双方清除）；目标种类定分支；"等量"=事件获得量（{event: amount}）；敌方战斗区为空时该分支空结算但仍消耗名额 |
 | 04 毒蚀 | ✅ | convert_damage 战斗作用域：已按维护者答复(5)——伤害事件生成点全额转化为等量破甲（护甲不再先吸收；不再视为伤害）；响应挂 on_before_assault（条件显式式神 id，响应收集不带 holder） |
-| 05 觉醒·鸩 | ✅ | x = 基础+觉醒倒计时生效合计（thoughts.txt 答复 9），{base: 2, ext: zhen_proc} 动态数值；觉醒倒计时来源=觉醒牌 id，先给破甲再计数 |
+| 05 觉醒·鸩 | ✅ | x = 基础+觉醒倒计时生效合计（维护者答复 9），{base: 2, ext: zhen_proc} 动态数值；觉醒倒计时来源=觉醒牌 id，先给破甲再计数 |
 | 06 致命诱惑 | ✅ | 战斗牌 grant_keyword step = 战斗作用域条件授予（吸血；战斗终止点移除） |
 | 07 碧羽散华 | ✅ | victim 侧 ext 标记（当前卡池仅鸩给予破甲，与"鸩造成的"等价；已按维护者答复(1)扩展到牌手——牌手沿用"其任一式神持标记"语义）；离场经 on_form_destroyed 前置 emit 的形态能力清除；与毒蚀同场时经 converted 标记防止转化循环（伤害→破甲→伤害，净效果=原伤害） |
 | 08 毒之华 | ✅ | temp_grants 绑本次战斗；"一半生命"=受伤后当前生命向下取整（{half_health_of: victim}）；on_damage payload 补 battle 键供战斗绑定触发匹配 |
