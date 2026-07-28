@@ -256,4 +256,4 @@ def test_run_battle_shows_result_and_waits(db, make_game, monkeypatch, capsys):
     cli.run_battle(db)
     out = capsys.readouterr().out
     assert "获胜" in out
-    assert prompts == ["按回车返回主菜单 > "]  # 战后恰好一次确认，随后返回
+    assert prompts == ["按 Enter 返回主菜单 > "]  # 战后恰好一次确认，随后返回

@@ -574,7 +574,7 @@ def _battle_loop(game: Game) -> None:
     print("")
     print(render(game))
     try:
-        tui.prompt("按回车返回主菜单 > ")
+        tui.prompt("按 Enter 返回主菜单 > ")
     except EOFError:
         pass
 
@@ -604,7 +604,7 @@ def main() -> None:
                 run_battle(db)
             elif choice == "3":
                 from client import net
-                server = tui.prompt("服务器地址（回车 = ws://127.0.0.1:1037/ws）> ").strip()
+                server = tui.prompt("服务器地址（Enter = ws://127.0.0.1:1037/ws）> ").strip()
                 net.run(db, server or "ws://127.0.0.1:1037/ws",
                         tui.prompt("玩家名 > ").strip() or "玩家", debug=False)
             elif choice in ("q", "quit", "exit"):

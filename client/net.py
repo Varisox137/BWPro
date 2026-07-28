@@ -254,7 +254,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
                  "debug": debug}
     elif choice == "2":
         room_id = _input("房间 id > ")
-        token = _input("重连令牌（首次加入回车跳过）> ") or None
+        token = _input("重连令牌（首次加入 Enter 跳过）> ") or None
         deck_code = None
         if not token:
             _, _, deck_code = deckbuilder.choose_deck(db, name)
@@ -292,7 +292,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
             tui.set_status(None)
     # 对局结束（含 quit/断线）：等待确认后回主菜单；服务端负责房间清理
     try:
-        tui.prompt("按回车返回主菜单 > ")
+        tui.prompt("按 Enter 返回主菜单 > ")
     except (EOFError, KeyboardInterrupt):
         pass
 

@@ -2,13 +2,13 @@
 
 - 本地卡组文件（db/deckstore.py v2，~/.bwp.decks.json）：进入构筑时读取全部槽位
   并按天梯规则重新校验（满足者以亮蓝色标明）；可编辑现有槽位、重命名
-  （名 <序号> <新名称>）、删除（删 <序号>，二次确认）或新建；编辑/新建均支持
+  （r <序号> <新名称>）、删除（d <序号>，二次确认）或新建；编辑/新建均支持
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
   自动创建；文件格式异常时提示并删除该文件）。
 - 新建为严格输入：必须恰好 4 个不重复的有效式神序号；每名式神必须恰好 8 个
   卡牌序号（同种卡至多 2 张、序号须存在），反复询问直到合法。
 - 编辑为增量式：在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号
-  编辑其卡牌（回车沿用），"换 <序号>" 更换式神（清空其已选卡牌并重新选牌）。
+  编辑其卡牌（Enter 沿用），"h <序号>" 更换式神（清空其已选卡牌并重新选牌）。
 - choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；所选卡组
   须满足对战模式的组卡规则，否则要求重选；联机时服务端入座会再次核验；
   文件为空时回退到卡组码输入 / 默认卡组）。
@@ -103,7 +103,7 @@ def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]]) 
 # ---------- 单式神卡牌编辑 ----------
 
 def _pick_cards(db: CardDatabase, sid: int, current: list[int]) -> list[int] | None:
-    """编辑一名式神的卡牌：回车 = 沿用当前（当前为空则 = 全部种类）；取消返回 None。"""
+    """编辑一名式神的卡牌：Enter = 沿用当前（当前为空则 = 全部种类）；取消返回 None。"""
     d = db.shikigami[sid]
     cards = buildable_cards(db, sid)
     cur_copies = Counter(current)
@@ -113,7 +113,7 @@ def _pick_cards(db: CardDatabase, sid: int, current: list[int]) -> list[int] | N
           f"每种至多 {MAX_COPIES_PER_NAME} 张）——")
     _print_cards(cards, cur_copies)
     print("")
-    line = _input("卡牌种类序号（空格分隔；回车 = 沿用当前/全部种类）> ")
+    line = _input("卡牌种类序号（空格分隔；Enter = 沿用当前/全部种类）> ")
     try:
         picked = ([cards[int(x) - 1] for x in line.split()] if line
                   else (cur_kinds or cards))
@@ -122,7 +122,7 @@ def _pick_cards(db: CardDatabase, sid: int, current: list[int]) -> list[int] | N
         return None
     # 初始张数：沿用的种类按当前张数，新选的种类 1 张
     copies = {i + 1: (cur_copies.get(c.id, 0) or 1) for i, c in enumerate(picked)}
-    tune = _input("张数调整（如 1=2 3=2；回车 = 沿用/每种 1 张）> ")
+    tune = _input("张数调整（如 1=2 3=2；Enter = 沿用/每种 1 张）> ")
     for item in tune.split():
         try:
             k, v = item.split("=")
@@ -141,11 +141,11 @@ def _pick_cards(db: CardDatabase, sid: int, current: list[int]) -> list[int] | N
 
 def _edit_deck(db: CardDatabase, team: list[int],
                picks: dict[int, list[int]]) -> tuple[list[int], list[int]] | None:
-    """在当前基础上编辑：序号 = 编辑该式神卡牌；换 <序号> = 更换式神（清空其卡牌）；
-    回车 = 完成。校验不通过时打印错误并继续编辑。"""
+    """在当前基础上编辑：序号 = 编辑该式神卡牌；h <序号> = 更换式神（清空其卡牌）；
+    Enter = 完成。校验不通过时打印错误并继续编辑。"""
     while True:
         _print_deck(db, team, picks)
-        line = _input("序号 = 编辑该式神卡牌；换 <序号> = 更换式神；回车 = 完成 > ")
+        line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；Enter = 完成 > ")
         if not line:
             ids = list(team)
             card_ids = [cid for sid in team for cid in picks.get(sid, [])]
@@ -244,7 +244,7 @@ def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
 
 
 def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
-    """新建卡组：严格选择 4 名式神 → 各严格选 8 张牌 → 进入增量编辑循环（回车完成）。"""
+    """新建卡组：严格选择 4 名式神 → 各严格选 8 张牌 → 进入增量编辑循环（Enter 完成）。"""
     chosen = _pick_shikigami_strict(db)
     team = [d.id for d in chosen]
     picks: dict[int, list[int]] = {}
@@ -260,7 +260,7 @@ def run_deckbuilder(db: CardDatabase, store_path=deckstore.PATH) -> None:
     """卡组构筑入口：本地卡组管理循环——编辑/重命名/删除/新建，q 返回主菜单。
     保存（编辑/新建/重命名/删除）成功后回到管理界面而非主菜单。"""
     tui.set_status(lambda: ("卡组构筑",
-                            "序号=编辑 · 名/删 <序号> · 回车=新建 · q=返回"))
+                            "序号=编辑 · r/d <序号> · Enter=新建 · q=返回"))
     try:
         _manage_loop(db, store_path)
     finally:
@@ -275,8 +275,8 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
         _deck_list_lines(decks)
         print("")
         try:
-            line = tui.prompt("槽位序号 = 编辑该卡组；名 <序号> <新名称> = 重命名；"
-                              "删 <序号> = 删除该卡组；回车 = 新建；q = 返回主菜单 > ").strip()
+            line = tui.prompt("槽位序号 = 编辑该卡组；r <序号> <新名称> = 重命名；"
+                              "d <序号> = 删除该卡组；Enter = 新建；q = 返回主菜单 > ").strip()
         except EOFError:
             return
         parts = line.split(maxsplit=2)
@@ -325,9 +325,9 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
                 owner = c.shikigami if c.shikigami in team else c.shikigami2
                 picks.setdefault(owner, []).append(cid)
             print(f"编辑卡组「{entry['name']}」（在当前基础上修改）")
-        name = _input("卡组名称（回车 = 沿用/自动命名）> ")
+        name = _input("卡组名称（Enter = 沿用/自动命名）> ")
 
-        code_line = _input("粘贴卡组码导入覆盖（回车 = 交互式构筑/编辑）> ")
+        code_line = _input("粘贴卡组码导入覆盖（Enter = 交互式构筑/编辑）> ")
         if code_line:
             try:
                 ids, card_ids = deckcode.deck_from_code(db, code_line)
@@ -368,7 +368,7 @@ def choose_deck(db: CardDatabase, label: str,
                 rules: DeckRules = STANDARD_RULES
                 ) -> tuple[list[int], list[int], str]:
     """热坐/联机开局前选卡：读取本地卡组文件并要求从中选择槽位；
-    文件为空时回退到卡组码输入（回车 = 默认卡组）。
+    文件为空时回退到卡组码输入（Enter = 默认卡组）。
 
     所选卡组须满足对战模式的组卡规则（rules；本地 is_standard 标记对应天梯
     规则）；不满足时提示并重新选择。联机对战时服务端还会再次核验（房间入座
@@ -394,7 +394,7 @@ def choose_deck(db: CardDatabase, label: str,
             return ids, cards, deckstore.entry_code(entry)
     else:
         print(f"[{label}] 本地卡组文件为空（可先在主菜单「卡组构筑」中创建）")
-        code_in = _input(f"[{label}] 卡组码（回车跳过 = 默认卡组）> ")
+        code_in = _input(f"[{label}] 卡组码（Enter 跳过 = 默认卡组）> ")
         if code_in:
             try:
                 ids, cards = deckcode.deck_from_code(db, code_in)
