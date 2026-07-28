@@ -752,6 +752,50 @@ def fragile_echo(game, ctx, *, targets: list[Ref]) -> None:
             game._log(f"蚀刃毒羽记录了 {-holder.shield} 点破甲（战斗结束后回赋）")
 
 
+@action("mirror_attack_buffs")
+def mirror_attack_buffs(game, ctx, *, targets: list[Ref]) -> None:
+    """灵矢贯虹"本次攻击获得当前自身法术牌强化效果的力量加成"（维护者答复(3)）：
+    把目标当前 attack_buffs 挂账（起弓/离/无我）的力量部分合计，作为一条新的
+    攻击后到期强化再次临时授予——仅力量，关键字部分不重复；无挂账为空操作。
+    """
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        total = sum(e.get("power", 0) for e in s.attack_buffs)
+        if total:
+            s.temp_power += total
+            s.attack_buffs.append({"power": total, "keywords": []})
+            game._log(f"{game.db.shikigami[s.id].name} 再次获得法术强化的 {total} 力量加成")
+
+
+@action("trigger_form_enter")
+def trigger_form_enter(game, ctx, *, targets: list[Ref],
+                       shikigami: int | str = "self") -> None:
+    """触发控制者指定式神当前形态的进场时效果块（再执行一次 form 的 effects）——
+    灵矢贯虹羁绊"攻击前触发萤草当前形态进场效果"；未结附形态为空操作。targets 忽略。
+    """
+    if shikigami == "self":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("trigger_form_enter(shikigami=self) 需要来源式神")
+        si: int | None = ctx.source.shikigami
+    else:
+        p0 = game.state.players[ctx.controller]
+        si = next((i for i, s in enumerate(p0.shikigami) if s.id == int(shikigami)), None)
+    if si is None:
+        return
+    p = game.state.players[ctx.controller]
+    s = p.shikigami[si]
+    if s.form is None:
+        return  # 未结附形态：空操作
+    cdef = game.db.cards[s.form.id]
+    if cdef.effects.steps and cdef.effects.when == "on_play":
+        game._log(f"触发了{game.db.shikigami[s.id].name}当前形态《{cdef.name}》的进场效果")
+        game._resolve_block(cdef.effects, ExecContext(
+            controller=ctx.controller,
+            source=Ref(player=ctx.controller, shikigami=si), card=s.form))
+
+
 @action("retreat")
 def retreat(game, ctx, *, targets: list[Ref]) -> None:
     """目标式神移回准备区（与 enter_combat 对称；风神一扇组合用）。

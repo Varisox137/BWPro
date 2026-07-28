@@ -1156,6 +1156,7 @@ class Game:
         统一 emit on_form_destroyed / on_form_attached（均延时时机）。
         """
         s = p.shikigami[i]
+        old_form_id = s.form.id if s.form is not None else None
         if s.form is not None:
             self._destroy_form(p, i, reason="replace")
         s.form = card
@@ -1174,8 +1175,10 @@ class Game:
                 self._grant_keyword(s, kw)
         self._log(f"{self.db.shikigami[s.id].name} 结附形态《{cdef.name}》")
         pi = self.state.players.index(p)
+        # form_changed：无当前形态或新旧形态不同（萤草"使用与当前形态不同的形态牌时"）
         self.emit("on_form_attached", player=pi, shikigami=i, uid=card.uid,
-                  target=Ref(player=pi, shikigami=i), card=card)
+                  target=Ref(player=pi, shikigami=i), card=card,
+                  form_changed=(old_form_id != card.id))
 
     def _play_form_card(self, p: PlayerState, si: int, card: CardInstance,
                         cdef: CardDef, controller: int, chosen: list[Ref]) -> None:

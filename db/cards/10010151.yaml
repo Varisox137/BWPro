@@ -4,16 +4,18 @@ name: 灵矢贯虹
 shikigami: 100101
 card_type: combat
 rarity: SSR
-token: true  # 协战子选项（森佑灵矢 10010121；主牌待萤草 100127 引入，本卡暂不可经协战使用）
+token: true  # 协战子选项（森佑灵矢 10010121；主牌待森佑灵引的[庇佑]/牌库抽形态机制引入）
 level: 2
 cost: 1
 effects:
-  # 缺两步（待对应机制/式神引入后补，见 card-status）：
-  # - "本次攻击白狼获得当前自身法术牌强化效果的力量加成"（白狼法术牌强化机制尚不存在）
-  # - 羁绊1"攻击前触发萤草当前形态进场效果"（萤草 100127 未引入）
   steps:
     - {op: buff_power, amount: 2, target: {kind: self}}
     - {op: gain_shield, amount: 2, target: {kind: self}}
+    # 本次攻击白狼获得当前自身法术牌强化（起弓/离/无我 attack_buff 挂账）的力量
+    # 加成——仅力量部分合计后作为攻击后到期强化再次授予（关键字部分不重复）
+    - {op: mirror_attack_buffs, target: {kind: self}}
+    # 羁绊1：攻击前触发萤草当前形态进场效果（未结附形态空操作）
+    - {op: trigger_form_enter, shikigami: 100127}
     # 羁绊2（维护者答复 10）：己方全部鼓舞（战力/护甲）作为此战斗牌赋予的加成
     # 生效并消耗（战力持续到本次战斗后、护甲保留；鼓舞关键字当前卡池不存在）
     - {op: consume_assault_boosts}
