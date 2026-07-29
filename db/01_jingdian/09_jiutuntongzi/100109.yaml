@@ -5,7 +5,6 @@ name: 酒吞童子
 faction: 红莲
 power: 2
 health: 6
-wip: true  # WIP：仅基础数据+能力，卡牌未加入（维护者答复(10)——任意伤害按次触发）
 ability:
   when: on_damage
   condition: {victim_shikigami: self}

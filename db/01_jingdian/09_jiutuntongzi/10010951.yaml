@@ -1,0 +1,21 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010951
+version: 20260730
+name: 醉酒当歌
+shikigami: 100109  # 派系：红莲（继承自式神数据）
+card_type: combat
+rarity: SSR
+token: true
+level: 1
+cost: 1
+keywords: [unyielding]
+effects:
+  # 自伤 3（正常触发基础能力）→ 获得等量护甲（自伤无减免路径，等量=3）；
+  # gain_shield 标 no_extract：不提取为战斗牌护甲前置结算，按步骤顺序在自伤后获得
+  steps:
+    - {op: damage, amount: 3, target: {kind: self}}
+    - {op: gain_shield, amount: 3, no_extract: true, target: {kind: self}}
+    # 羁绊：获得一张茨木童子当前等级的战斗牌（generate level="shikigami"
+    # 精确等级匹配；茨木未出战/未在场空操作）
+    - {op: generate, shikigami: 100103, card_type: combat, level: shikigami}
+text: "[不屈]。对酒吞童子造成3点伤害，获得等量的护甲。[羁绊]：{获得一张茨木童子当前等级的战斗牌。}"

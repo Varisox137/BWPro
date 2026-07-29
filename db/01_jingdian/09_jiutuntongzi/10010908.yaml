@@ -1,0 +1,20 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010908
+version: 20260730
+name: 百鬼夜行
+shikigami: 100109  # 派系：红莲（继承自式神数据）
+card_type: spell
+rarity: SSR
+level: 3
+cost: 1
+keywords: [fast]
+effects:
+  # X = 酒吞童子本回合所受伤害之和（ext["damage_taken_turn"]，伤害扣减生命处记账、
+  # 半回合作用域回合开始清除）；目标 = 双方所有其他式神（friendly_others 排除
+  # 来源酒吞 + enemy_shikigami 两段，答复4）
+  steps:
+    - {op: damage, amount: {ext: damage_taken_turn},
+       target: {kind: all, pool: friendly_others}}
+    - {op: damage, amount: {ext: damage_taken_turn},
+       target: {kind: all, pool: enemy_shikigami}}
+text: "[瞬发]。对其他所有式神各造成X点伤害，X为酒吞童子本回合所受伤害之和。"

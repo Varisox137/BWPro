@@ -1,0 +1,37 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010608
+version: 20260730
+name: 觉醒·姑获鸟
+shikigami: 100106  # 派系：苍叶（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 2   # +2/+0：永久身材增益，"觉醒后"延时时机之后授予
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps: []
+triggers:
+  # 当其他己方式神攻击后，本回合此牌获得[瞬发]（同伞剑手牌触发式光环通道）
+  - when: on_after_assault
+    condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
+    steps:
+      - {op: card_aura, shikigami: 100106, card_id: 10010608, keywords: [fast],
+         scope: turn}
+abilities:
+  # [觉醒]：{[远程]（觉醒时授予，复活重新授予——觉醒·山童先例）}
+  - when: on_awakened
+    condition: {target_shikigami: self}
+    steps:
+      - {op: grant_keyword, keyword: remote, target: {kind: self}}
+  - when: on_shikigami_revived
+    condition: {shikigami_shikigami: self}
+    steps:
+      - {op: grant_keyword, keyword: remote, target: {kind: self}}
+  # 姑获鸟消灭敌方式神时，再次发起攻击（答复2：气绝后延时时机——战斗中受战斗
+  # 伤害气绝的事件晚于战斗事件，追加攻击不享受战斗牌加成；不分敌我回合、无次数限制）
+  - when: on_shikigami_defeated
+    condition: {source_shikigami: self, victim_side: enemy}
+    steps:
+      - {op: launch_attack, shikigami: self}
+text: "当其他己方式神攻击后，本回合此牌获得[瞬发]。[觉醒]：{[远程]。姑获鸟消灭敌方式神时，再次发起攻击。}"

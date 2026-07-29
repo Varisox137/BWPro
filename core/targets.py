@@ -203,6 +203,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             ai = next((i for i, s in enumerate(ap.shikigami) if s.id == want), None)
             if ai is None or not ap.shikigami[ai].in_play:
                 return False
+        elif key == "combat_empty":
+            # 指定方战斗区为空（偷袭响应"（敌方）战斗区没有式神"）：self=控制者 / opponent=对方
+            cp = game.state.players[controller if want == "self" else 1 - controller]
+            if cp.combat_index is not None:
+                return False
         elif key.endswith("_side"):
             ref = event.get(key[:-5])
             if not isinstance(ref, Ref):

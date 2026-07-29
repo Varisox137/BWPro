@@ -2,7 +2,6 @@
 id: 100106
 version: 20260729
 name: 姑获鸟
-wip: true  # WIP：仅基础数据，卡牌未加入
 faction: 苍叶
 power: 3
 health: 4

@@ -96,6 +96,7 @@ class Game:
         # 已消耗响应名额的时机实例序号：同一时机至多成功结算一张响应牌（原版"每空闲点
         # 限一张"已取消——不同时机可各响应一张；复查失败不占名额，同时机下一张可继续）
         self._response_used_emit: int | None = None
+        self._suppress_responses = False  # on_turn_end 的响应推迟到回合结束效果结算后（答复3）
         # 战斗上下文（最小版）：每次 _resolve_combat 压栈新 battle id，终止点弹栈并
         # 清理本战斗授予的关键字实例与免疫条目。为嵌套战斗/响应战斗牌（Phase 5+）打底。
         self._battle_seq: int = 0
@@ -270,6 +271,7 @@ class Game:
           毒之华"等同于其一半生命的破甲"）。
         - {"max_power_gap": "self"}：来源式神历史峰值力量（ext["max_power"]）与当前
           eff_power 之差（断臂"力量变为本局游戏曾有的最大值"的差值补偿形式，≥0）。
+        - {"missing_health": "self"}：来源式神已损失生命（鹤唳回风"恢复所有生命"）。
         前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
         """
         raw = (step.model_extra or {}).get("amount", 0)
@@ -296,6 +298,8 @@ class Game:
                     base += hp // 2  # "一半生命"：向下取整
             if raw.get("max_power_gap") and s is not None:
                 base += max(0, int(s.ext.get("max_power", 0)) - s.eff_power)
+            if raw.get("missing_health") and s is not None:
+                base += s.max_health - s.health  # "恢复所有生命"（鹤唳回风）
             return base
         return int(raw)
 
@@ -569,12 +573,18 @@ class Game:
         if eff_target.kind == "choose":
             want = cmd.get("target")
             if want is None:
-                raise IllegalAction("该牌需要选择目标")
-            want = want if isinstance(want, Ref) else Ref(**want)
-            if want not in targets.pool_refs(self, eff_target.pool, self.state.active,
-                                             targeted=True):
-                raise IllegalAction("目标不合法")
-            chosen = [want]
+                # optional 选择目标（天翔鹤斩类"有合法目标则必须选择、无则无目标结算"）：
+                # 合法池为空时允许不带目标使用
+                pool = targets.pool_refs(self, eff_target.pool, self.state.active,
+                                         targeted=True)
+                if not ((eff_target.model_extra or {}).get("optional") and not pool):
+                    raise IllegalAction("该牌需要选择目标")
+            else:
+                want = want if isinstance(want, Ref) else Ref(**want)
+                if want not in targets.pool_refs(self, eff_target.pool, self.state.active,
+                                                 targeted=True):
+                    raise IllegalAction("目标不合法")
+                chosen = [want]
         if self._fast_applies(p, cdef, card):
             p.fast_used = True
         p.orb -= cost
@@ -738,6 +748,8 @@ class Game:
                 continue
             if step.op == "buff_power" and (step.model_extra or {}).get("perm"):
                 continue  # 永久力量增益（怪力）是常规效果步，非本次战斗战力
+            if (step.model_extra or {}).get("no_extract"):
+                continue  # 标记不提取的步骤按常规效果步顺序结算（醉酒当歌"先自伤再获盾"）
             amount = self._step_amount(step, card, s)
             if step.op == "buff_power":
                 power += amount
@@ -782,9 +794,13 @@ class Game:
             if not chosen:
                 raise IllegalAction("追猎战斗牌需要选择一名敌方式神为目标")
             hunt_target = chosen[0]
+        elif chosen and (cdef.target.model_extra or {}).get("battle"):
+            # 指定战斗目标的非追猎战斗牌（target 扩展键 battle=true；天翔鹤斩
+            # "改为攻击一个敌方准备区式神"——同追猎的有目标战斗管线，帷幕不可选）
+            hunt_target = chosen[0]
         block = self._played_block(p, cdef, card, method)
         power, shield = self.combat_card_stats(block, card, s, p=p)
-        atk_ref = Ref(player=self.state.active, shikigami=si)
+        atk_ref = Ref(player=self.state.players.index(p), shikigami=si)
         self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
         # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）；
@@ -801,12 +817,13 @@ class Game:
         counter_piercing = any(st.op == "counter_piercing" for st in block.steps)
         # 其它效果步（千羽风之舞的"生成金风流羽"为首个）：战力/护甲与上述专用提取步
         # 跳过不重复执行；attack_buff（起弓/离）挂账时机另有一套，同样跳过以保持既有行为
-        ctx = ExecContext(controller=self.state.active, source=atk_ref, card=card)
+        ctx = ExecContext(controller=self.state.players.index(p), source=atk_ref, card=card)
         for st in block.steps:
             if (st.op in ("buff_power", "gain_shield")
                     and (st.target is None or st.target.kind == "self")
+                    and not (st.model_extra or {}).get("no_extract")
                     and not (st.op == "buff_power" and (st.model_extra or {}).get("perm"))):
-                continue  # 战力/护甲已提取（永久力量增益属常规效果步，不提取）
+                continue  # 战力/护甲已提取（永久力量增益与 no_extract 标记步属常规效果步，不提取）
             if st.op in ("grant_keyword", "battle_immunity", "convert_damage",
                          "counter_piercing", "attack_buff"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
@@ -852,8 +869,9 @@ class Game:
         for step in block.steps:
             if (step.op in ("buff_power", "gain_shield")
                     and (step.target is None or step.target.kind == "self")
+                    and not (step.model_extra or {}).get("no_extract")
                     and not (step.op == "buff_power" and (step.model_extra or {}).get("perm"))):
-                continue  # 战力/护甲已提取，不重复执行（永久力量增益照常执行）
+                continue  # 战力/护甲已提取，不重复执行（永久力量增益与 no_extract 标记步照常执行）
             self._run_step(step, ctx)
         # 改为移入战斗区（无论该牌所属式神是否具有远程）
         if p.combat_index != si and s.in_play:
@@ -1443,12 +1461,28 @@ class Game:
         return candidates
 
     def _cmd_end_turn(self, cmd: dict) -> None:
-        """结束回合：触发 on_turn_end，结算完后切换回合方并进入对方回合开始阶段。"""
+        """结束回合：触发 on_turn_end，结算完后切换回合方并进入对方回合开始阶段。
+
+        响应排序（偷袭答复3）：当前回合方的回合结束效果（即时与延时）全部结算完后，
+        才检查对方手牌响应——on_turn_end 发出时抑制响应收集，_drain_queue 之后以
+        同一事件手动收集并结算（响应复查此时条件，如"（敌方）战斗区没有式神"）。
+        """
         if self.state.winner is not None:
             return
         p = self.current
-        self.emit("on_turn_end", player=self.state.active)
+        self._suppress_responses = True
+        try:
+            self.emit("on_turn_end", player=self.state.active)
+        finally:
+            self._suppress_responses = False
         self._drain_queue()  # 回合结束的队列效果结算完再换手
+        if self.state.winner is not None:
+            return
+        ev = {"name": "on_turn_end", "_emit": self.state.next_emit_seq(),
+              "player": self.state.active}
+        for pend in self._collect_responses(ev, 1 - self.state.active):
+            self._resolve_pending(pend)
+        self._drain_queue()  # 响应插入使用（偷袭的战斗）结算完再换手
         if self.state.winner is not None:
             return
         self.state.active = 1 - self.state.active
@@ -1500,9 +1534,14 @@ class Game:
             if turn_power:
                 s.temp_power -= turn_power
         p.ext.pop("feather_used_turn", None)
-        # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）
+        # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）；
+        # 狂啸"本回合生命不降到1以下"（min_health_turn）与百鬼夜行 X 计数
+        # （damage_taken_turn，本回合所受伤害之和）同为半回合作用域，双方清除
         for pl in self.state.players:
             pl.ext.pop("turn_marks", None)
+            for s in pl.shikigami:
+                s.ext.pop("min_health_turn", None)
+                s.ext.pop("damage_taken_turn", None)
         self._turn_start_revive(p, pi)
         self._turn_start_gain_orb(p, first, pi)
         pending_retreat = self._turn_start_schedule_retreat(p)
@@ -1878,7 +1917,18 @@ class Game:
                 ev.amount = s.health - 1
                 s.one_shot_keywords[:] = [k for k in s.one_shot_keywords if k != "unyielding"]
                 self._log(f"{self.db.shikigami[s.id].name} 的【不屈】生效，保留 1 点生命")
+            # 狂啸"本回合生命不会降到 1 以下"（ext["min_health_turn"]，半回合作用域）：
+            # 伤害压到至多 当前生命-1；生命已为 1 时不再扣减（同护甲完全吸收提前终止）
+            if s.ext.get("min_health_turn"):
+                cap = max(0, s.health - 1)
+                if ev.amount > cap:
+                    ev.amount = cap
+                    self._log(f"{self.db.shikigami[s.id].name} 的生命保持 1（狂啸）")
+                if ev.amount <= 0:
+                    return
             s.health -= ev.amount
+            # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
+            s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._log(f"{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害（剩余生命 {s.health}）")
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
@@ -2115,7 +2165,8 @@ class Game:
             out.extend(self._collect_player_auras(event, pi))
             if pi == self.state.active:
                 out.extend(self._collect_temp_grants(event))
-            if pi != self.state.active and self._response_used_emit != event["_emit"]:
+            if pi != self.state.active and not self._suppress_responses \
+                    and self._response_used_emit != event["_emit"]:
                 out.extend(self._collect_responses(event, pi))
         return out
 
@@ -2335,8 +2386,13 @@ class Game:
         self._log(f"{p.name} 的响应牌《{cdef.name}》触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
         if cdef.card_type == "combat" and si is not None:
-            # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
-            self._apply_response_combat(p, si, ctx.card, cdef)
+            if not self._battle_stack:
+                # 无当前战斗的响应战斗牌（偷袭"敌方回合结束自动使用"）：
+                # 不能插入战斗，按完整战斗事件流程发起一次新战斗（正常反击）
+                self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen)
+            else:
+                # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
+                self._apply_response_combat(p, si, ctx.card, cdef)
             self._account_card_played(p, cdef)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
                                    triggered="response")

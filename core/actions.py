@@ -122,13 +122,16 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
 
 
 @action("gain_shield")
-def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shield") -> None:
+def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shield",
+                no_extract: bool = False) -> None:
     """获得/失去护甲或破甲（式神与牌手均可；docs/rules.md 第六章）。
 
     kind="shield"（缺省）：amount > 0 获得护甲 / < 0 失去护甲（旧用法 {amount: n} 等价
     kind=shield 获得，向后兼容）；kind="fragile"：amount > 0 获得破甲 / < 0 失去破甲。
     获得先抵消反向值再盈余同向；减少只能扣已有的同向值。0 级未在场式神不能获得
     护甲/破甲/增益。护甲/破甲变化按即时时机发出 on_shield_changed 事件（payload 带 kind）。
+    no_extract=True：战斗牌中该步不提取为战斗牌护甲前置结算，按步骤顺序执行
+    （醉酒当歌"先自伤 3 再获得等量护甲"——前置结算会被自己的自伤消耗）。
     """
     for ref in targets:
         if ref.shikigami is None:
@@ -408,13 +411,16 @@ def consume_assault_boosts(game, ctx, *, targets: list[Ref]) -> None:
 def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
              card_type: str | None = None, count: int = 1, zone: str = "hand",
              max_level: int | str | None = None, exclude_self: bool = False,
-             card_id: int | None = None, subtype: str | None = None) -> None:
+             card_id: int | None = None, subtype: str | None = None,
+             level: int | str | None = None) -> None:
     """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。
 
     card_id 指定时直接生成该 id 的牌（可生成 token；黄金羽/金风流羽），绕开随机池。
     subtype：限定子类型（"随机获得一张妖琴师觉醒牌"= spell + awaken）。
     max_level="source"：卡牌等级 ≤ 来源式神当前等级（吾即正义"小于等于自身等级"）；
     exclude_self=True：排除来源卡牌同 id（"其他法术牌"）。
+    level="shikigami"：卡牌等级 == shikigami 参数所指式神的当前等级（精确匹配；
+    醉酒当歌"茨木童子当前等级的战斗牌"）——该式神未出战/未在场为空操作。
     """
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
@@ -439,11 +445,21 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             lv = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].level
         else:
             lv = int(max_level)
+    lv_eq: int | None = None
+    if level is not None:
+        if level == "shikigami":
+            idx = game._find_shikigami(p, sid)
+            if idx is None or not p.shikigami[idx].in_play:
+                return  # 所指式神未出战/未在场：空操作
+            lv_eq = p.shikigami[idx].level
+        else:
+            lv_eq = int(level)
     pool = [c.id for c in game.db.cards.values()
             if not c.token and c.shikigami == sid
             and (card_type is None or c.card_type == card_type)
             and (subtype is None or c.subtype == subtype)
             and (lv is None or c.level <= lv)
+            and (lv_eq is None or c.level == lv_eq)
             and not (exclude_self and ctx.card is not None and c.id == ctx.card.id)]
     if not pool:
         return

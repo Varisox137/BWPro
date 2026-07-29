@@ -1,0 +1,21 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010607
+version: 20260730
+name: 慈乌稚子
+shikigami: 100106  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: R
+level: 3
+cost: 1
+form_power: 8
+form_health: 6
+effects:
+  steps: []
+abilities:
+  # 其他己方式神攻击后，姑获鸟获得[迅捷]（一次性消耗关键字，grant_keyword
+  # 按天然持久性入列）
+  - when: on_after_assault
+    condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
+    steps:
+      - {op: grant_keyword, keyword: haste, target: {kind: self}}
+text: 当其他己方式神攻击后，姑获鸟获得[迅捷]。

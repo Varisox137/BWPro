@@ -529,3 +529,38 @@ def test_card_aura_stacks_and_stats(make_game):
     assert pb.health == 18                    # 3+3=6 打脸 → 光环②（数值可叠加）
     assert len(_die_lan_auras(pa)) == 2
     assert pa.shikigami[0].shield == 3        # 一次性护甲 2+1（无反击保留）
+
+
+# ---------- 姑获鸟/酒吞童子协战主牌 ----------
+
+RYHL = 10010621   # 刃影鹤唳（姑获鸟/妖刀姬）
+KGHQ = 10010321   # 狂歌豪情（茨木童子/酒吞童子）
+HHHF = 10010651   # 鹤唳回风（姑获鸟侧子卡）
+ZJDG = 10010951   # 醉酒当歌（酒吞侧子卡）
+
+KG_TEAM = [100103, 100109, 100001, 100002]  # 茨木/酒吞/纸人武士/天邪鬼军团
+
+
+def test_reinforce_main_cards_dual_ownership(gdb):
+    """刃影鹤唳/狂歌豪情：options 登记与构筑池双归属（同时列入两位所属式神）。"""
+    from client.deckbuilder import buildable_cards
+    assert gdb.cards[RYHL].options == [HHHF, 10012351]
+    assert gdb.cards[KGHQ].options == [10010351, ZJDG]
+    assert RYHL in {c.id for c in buildable_cards(gdb, 100106)}
+    assert RYHL in {c.id for c in buildable_cards(gdb, 100123)}
+    assert KGHQ in {c.id for c in buildable_cards(gdb, 100103)}
+    assert KGHQ in {c.id for c in buildable_cards(gdb, 100109)}
+
+
+def test_play_kuangge_haoqing_jiutun_side(make_game):
+    """狂歌豪情选副侧醉酒当歌：主牌离手放逐；酒吞自伤 3（触发基础能力）+ 等量
+    护甲 3；[羁绊]获得茨木当前等级（1 级）的战斗牌——唯一为鬼之手。"""
+    g, pa, pb = _game(make_game, levels={0: 1, 1: 1}, team=KG_TEAM)
+    _play_reinforce(g, 0, KGHQ, 1)            # 狂歌豪情 → 醉酒当歌
+    assert not any(c.id == KGHQ for c in pa.hand)
+    assert any(c.id == KGHQ for c in pa.zones["exiled"])
+    jt = pa.shikigami[1]
+    assert jt.health == 3                     # 6 - 3 自伤
+    assert jt.shield == 3                     # 等量护甲（自伤后获得，不被消耗）
+    assert jt.temp_power == 1                 # 基础能力：受伤 +1 力量
+    assert any(c.id == 10010301 for c in pa.hand)   # 鬼之手（茨木 1 级唯一战斗牌）

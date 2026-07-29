@@ -1,0 +1,13 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010603
+version: 20260730
+name: 丛云鹤舞
+shikigami: 100106  # 派系：苍叶（继承自式神数据）
+card_type: combat
+rarity: SR
+level: 2
+cost: 1
+keywords: [direct]
+effects:
+  steps: []
+text: "[直击]"

@@ -1,0 +1,27 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010651
+version: 20260730
+name: 鹤唳回风
+shikigami: 100106  # 派系：苍叶（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
+awaken_health: 1
+rarity: SSR
+token: true
+level: 2
+cost: 1
+effects:
+  # 羁绊：妖刀姬发起一次攻击（未出战/气绝空操作——刃影叠岚先例）
+  steps:
+    - {op: launch_attack, shikigami: 100123}
+abilities:
+  # [觉醒]：{姑获鸟攻击后，移回准备区，获得+1力量并恢复所有生命}——
+  # 基础能力的强化版（替换非叠加）；+1 力量为临时持续性（未写"永久/本局"）
+  - when: on_after_assault
+    condition: {attacker_shikigami: self}
+    steps:
+      - {op: retreat, target: {kind: self}}
+      - {op: buff_power, amount: 1, target: {kind: self}}
+      - {op: heal, amount: {missing_health: self}, target: {kind: self}}
+text: "[觉醒]：{姑获鸟攻击后，移回准备区，获得+1力量并恢复所有生命}。[羁绊]：{妖刀姬发起一次攻击。}"

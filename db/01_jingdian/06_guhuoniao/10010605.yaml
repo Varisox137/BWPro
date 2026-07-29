@@ -1,0 +1,19 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010605
+version: 20260730
+name: 天翔鹤斩
+shikigami: 100106  # 派系：苍叶（继承自式神数据）
+card_type: combat
+rarity: SSR
+level: 2
+cost: 1
+keywords: [piercing]
+# 有合法准备区目标则必须选择（答复1：使用者指定，走有目标战斗管线、帷幕不可选）；
+# 敌方无未气绝准备区式神时 optional 生效——不带目标使用，默认无目标战斗
+target: {kind: choose, pool: enemy_bench, optional: true, battle: true}
+effects:
+  steps:
+    - {op: buff_power, amount: 3, target: {kind: self}}
+    # 免疫战斗伤害：由战斗牌流程提取绑定本次战斗（鸩羽先例）
+    - {op: battle_immunity, target: {kind: self}}
+text: "[贯通]。免疫战斗伤害。敌方有未气绝的准备区式神时，本次战斗改为攻击一个敌方准备区式神。"

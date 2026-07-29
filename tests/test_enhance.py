@@ -407,3 +407,27 @@ def test_rashomon_random_enhance_tiers(real_game):
     got = form_card.mods["enhance_got"]
     assert len(got) == 2 and len(set(got)) == 2        # 不会出现已有的强化
     assert len(hand_copy.mods["enhance_got"]) == 2
+
+
+# ---- 真实数据：姑获鸟（手牌触发式光环）----
+
+GH_TEAM = [100106, 100123, 100101, 100102]  # 姑获鸟、妖刀姬、桃花妖、一目连（苍叶×2+红莲+风符）
+
+
+def test_hand_trigger_fast_aura(real_game):
+    """伞剑（10010601）：其他友方式神攻击后本回合获得[瞬发]（手牌触发式光环，
+    on_after_assault 登记 scope=turn）；0 鬼火免费打出，跨回合光环清除后不可。"""
+    import pytest
+    from core.engine import IllegalAction
+    g = real_game(GH_TEAM)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    move(g, 1, 0)                              # B 有驻守，妖刀姬出击打得到
+    g.apply({"op": "assault", "index": 1})     # 妖刀姬（非姑获鸟）攻击 → 光环登记
+    pa.orb = 0                                 # 瞬发免费：0 鬼火可打出
+    F.play(g, 0, 10010601)
+    assert pa.orb == 0 and pa.fast_used
+    assert any(c.id == 10010601 for c in pa.graveyard)
+    F.pass_turns(g, 2)                         # 光环 scope=turn 已清除
+    pa.orb = 0
+    with pytest.raises(IllegalAction):
+        F.play(g, 0, 10010601)

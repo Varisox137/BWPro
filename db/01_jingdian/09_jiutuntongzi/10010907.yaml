@@ -1,0 +1,30 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10010907
+version: 20260730
+name: 觉醒·酒吞童子
+shikigami: 100109  # 派系：红莲（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1   # +1/+3：永久身材增益，"觉醒后"延时时机之后授予
+awaken_health: 3
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps: []
+abilities:
+  # [觉醒]：{[贯通]（觉醒时授予，复活重新授予——觉醒·山童先例）}
+  - when: on_awakened
+    condition: {target_shikigami: self}
+    steps:
+      - {op: grant_keyword, keyword: piercing, target: {kind: self}}
+  - when: on_shikigami_revived
+    condition: {shikigami_shikigami: self}
+    steps:
+      - {op: grant_keyword, keyword: piercing, target: {kind: self}}
+  # 每当酒吞童子受到伤害时，获得等量的力量（按次、量=该次伤害量，临时持续性）
+  - when: on_damage
+    condition: {victim_shikigami: self}
+    steps:
+      - {op: buff_power, amount: {event: amount}, target: {kind: self}}
+text: "[觉醒]：{[贯通]。每当酒吞童子受到伤害时，获得等量的力量。}"
