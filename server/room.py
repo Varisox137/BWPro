@@ -88,6 +88,7 @@ class Room:
         self._timer_key: tuple | None = None  # ("mulligan", player) / ("turn", 总回合数)
         self._timer_deadline: float | None = None  # 当前计时器的 unix 截止时刻（随 state 下发）
         self._sent_log = 0
+        self._sent_settle = 0
         self._over_sent = False
 
     # ---------- 加入 / 重连 / 断线 ----------
@@ -215,6 +216,8 @@ class Room:
         st = self.game.state
         log = st.log[self._sent_log:]
         self._sent_log = len(st.log)
+        settle = st.settle_log[self._sent_settle:]
+        self._sent_settle = len(st.settle_log)
         base = st.model_dump(mode="json")
         key = self._timer_key
         timer = None
@@ -223,7 +226,8 @@ class Room:
             timer = {"kind": key[0], "deadline": self._timer_deadline}
         for c in self.conns:
             viewer = self.seat_to_player[c.seat]
-            await c.send(protocol.state(sanitize_state(base, viewer), log, timer=timer))
+            await c.send(protocol.state(sanitize_state(base, viewer), log,
+                                        timer=timer, settle=settle))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
             await self._broadcast(protocol.game_over(st.winner, "player_defeated"))

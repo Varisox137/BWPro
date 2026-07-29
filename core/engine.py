@@ -634,6 +634,8 @@ class Game:
                     p.shikigami[awaken_si].awakened = cdef.id
                     self._register_ability_countdown(self.state.active, awaken_si, awaken=True)
                     self._log(f"{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒")
+                    self._settle(f"【觉醒】{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒"
+                                 f"（永久 {cdef.awaken_power:+d}/{cdef.awaken_health:+d}）")
                 block = self._played_block(p, cdef, card, method)
                 self._resolve_block(block, ctx)
                 if awaken_si is not None:
@@ -772,6 +774,7 @@ class Game:
         """
         if power:
             s.combat_power += power
+            self._settle(f"【战力】{self.db.shikigami[s.id].name} 战力 +{power}（本次战斗）")
             if battle_scoped and self._battle_stack:
                 self._battle_power.setdefault(self._battle_stack[-1], []).append((ref, power))
         if shield:
@@ -966,6 +969,12 @@ class Game:
                     return
             new = old + delta if kind == "shield" else old - delta
         holder.shield = new
+        label = "护甲" if kind == "shield" else "破甲"
+        verb = "获得" if delta > 0 else "失去"
+        name = (self.db.shikigami[holder.id].name if ref.shikigami is not None
+                else p.name)
+        self._settle(f"【{label}】{name} {verb} {abs(delta)} 点{label}"
+                     f"（{old}→{new}，{reason}）")
         self.emit("on_shield_changed", target=ref, old=old, new=new, reason=reason, kind=kind,
                   amount=delta, gained=delta > 0)
 
@@ -997,6 +1006,7 @@ class Game:
         self._battle_seq += 1
         bid = self._battle_seq
         self._battle_stack.append(bid)
+        self._settle(f"—— 战斗开始：{self.db.shikigami[attacker.id].name} ——")
         grants: list[tuple[Ref, str, str]] = []
         self._battle_grants[bid] = grants
         self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
@@ -1050,6 +1060,7 @@ class Game:
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗中止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_stack.pop()
+            self._settle("—— 战斗结束 ——")
             # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
             if attacker.attack_buffs and not self._has_keyword(attacker, "keep_attack_buffs"):
                 for entry in attacker.attack_buffs:
@@ -1355,6 +1366,8 @@ class Game:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._grant_keyword(s, kw)
         self._log(f"{self.db.shikigami[s.id].name} 结附形态《{cdef.name}》")
+        self._settle(f"【形态】{self.db.shikigami[s.id].name} 结附《{cdef.name}》"
+                     f"（身材 {s.base_power}/{s.max_health}，生命回满）")
         pi = self.state.players.index(p)
         # form_changed：无当前形态或新旧形态不同（萤草"使用与当前形态不同的形态牌时"）
         self.emit("on_form_attached", player=pi, shikigami=i, uid=card.uid,
@@ -1412,6 +1425,8 @@ class Game:
         s.base_health = d.health
         s.health = s.max_health
         self._log(f"{d.name} 的形态《{cdef.name}》被消灭（原因：{reason}）")
+        self._settle(f"【形态】{d.name} 的形态《{cdef.name}》离场"
+                     f"（身材回退 {s.base_power}/{s.max_health}，生命回满）")
 
     # ---------- 升级 / 结束回合 ----------
 
@@ -1440,6 +1455,7 @@ class Game:
             self._register_ability_countdown(self.state.active, i)  # 能力进场：0 级升至 1 级
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
+        self._settle(f"【升级】{p.name} 的{name}升至 {s.level} 级")
         self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level)
         if p.upgrades == 0 or not self._has_upgrade_target(p):
             self.state.phase = "battle"
@@ -1470,6 +1486,7 @@ class Game:
         if self.state.winner is not None:
             return
         p = self.current
+        self._settle(f"—— 回合结束阶段（{p.name}）——")
         self._suppress_responses = True
         try:
             self.emit("on_turn_end", player=self.state.active)
@@ -1508,6 +1525,7 @@ class Game:
         if self.state.winner is not None:
             return
         p = self.current
+        self._settle(f"—— 回合开始阶段（{p.name} 的第 {p.turn_count + 1} 回合）——")
         pi = self.state.active
         cfg = self.config
         # 1. 回合计数 +1；长对局平局检查
@@ -1661,6 +1679,7 @@ class Game:
             card = s.form if (s.form is not None and s.form.id == source) else None
             cname = f"（《{self.db.cards[card.id].name}》）" if card is not None else ""
             self._log(f"{self.db.shikigami[s.id].name} 的倒计时效果生效{cname}")
+            self._settle(f"【倒计时】{self.db.shikigami[s.id].name} 的倒计时归零，效果生效{cname}")
             self._resolve_block(block, ExecContext(
                 controller=pi, source=Ref(player=pi, shikigami=si), card=card,
                 is_ability=True))  # 倒计时效果属式神能力（贯通继承判定）
@@ -1682,6 +1701,7 @@ class Game:
         s.health = s.max_health
         self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
         self._log(f"{self.db.shikigami[s.id].name} 复活")
+        self._settle(f"【复活】{self.db.shikigami[s.id].name} 复活（生命回满 {s.max_health}）")
         self.emit("on_shikigami_revived",
                   shikigami=Ref(player=pi, shikigami=i), source=None, reason="倒计时")
 
@@ -1792,6 +1812,7 @@ class Game:
         """
         dq: deque[_DamageEvent] = deque(events)
         victims: list[tuple[Ref, Ref | None, str]] = []  # (受伤式神, 来源, 气绝原因) 按受伤顺序
+        self._settle("—— 伤害结算开始 ——")
         while dq:
             ev = dq.popleft()
             self._damage_event_flow(ev, dq, victims)
@@ -1802,6 +1823,7 @@ class Game:
                 defer_defeats.append((ref, source, reason))
             else:
                 self.check_defeated(ref, source=source, reason=reason)
+        self._settle("—— 伤害结算结束 ——")
 
     def _emit_damage_batch(self, name: str, ev: _DamageEvent) -> None:
         """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。"""
@@ -1929,6 +1951,8 @@ class Game:
             s.health -= ev.amount
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
+            self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
+                         f"（生命 {s.health + ev.amount}→{s.health}）")
             self._log(f"{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害（剩余生命 {s.health}）")
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
@@ -1952,6 +1976,8 @@ class Game:
                       battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
             p.health -= ev.amount
+            self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
+                         f"（生命 {p.health + ev.amount}→{p.health}）")
             self._log(f"{p.name} 受到 {ev.amount} 点伤害（剩余生命 {p.health}）")
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
@@ -2051,11 +2077,13 @@ class Game:
         name = self.db.shikigami[s.id].name
         if s.kind == "summon":
             # 召唤物死亡即离场：不进气绝复活流程
+            self._settle(f"【气绝】{name} 离场（召唤物）")
             self._despawn(owner, ref.shikigami)
         else:
             if owner.combat_index == ref.shikigami:
                 owner.combat_index = None  # 气绝者移动至准备区
             s.revive_countdown = self.config.revive_countdown
+            self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
             self._log(f"{name} 气绝")
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
                   in_combat=in_combat, summon=(s.kind == "summon"),
@@ -2092,6 +2120,8 @@ class Game:
         healed = min(amount, holder.max_health - holder.health)
         if healed > 0:
             holder.health += healed
+            self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
+                         f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
             self._log(f"{self.db.shikigami[s.id].name if s is not None else p.name} 恢复了 {healed} 点生命")
         if healed <= 0:
             return  # 治疗量为 0：终止结算
@@ -2514,3 +2544,8 @@ class Game:
 
     def _log(self, msg: str) -> None:
         self.state.log.append(msg)
+
+    def _settle(self, msg: str) -> None:
+        """结算明细记录（GameState.settle_log）：等级/力量/战力/生命/护甲/破甲变化与
+        各事件开始结束。纯记录不打印——CLI 在空闲点取增量逐条展示（client/cli.py）。"""
+        self.state.settle_log.append(msg)

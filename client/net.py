@@ -60,6 +60,15 @@ class NetClient:
         elif t == "state":
             self.payload = msg["payload"]
             self.timer = msg.get("timer")
+            settle = msg.get("settle") or []
+            if settle:
+                # 结算明细：0.4s 每条逐条打印，整块前后各空一行（热坐同一节奏）
+                print("")
+                for line in settle:
+                    print(line)
+                    if cli.SETTLE_INTERVAL > 0:
+                        time.sleep(cli.SETTLE_INTERVAL)
+                print("")
             for line in msg.get("log", []):
                 print(f"  | {line}")
             self._show()

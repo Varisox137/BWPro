@@ -94,6 +94,8 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
                 if scope == "turn":
                     s.ext["turn_power"] = s.ext.get("turn_power", 0) + amount
             game._record_max_power(s)
+            game._settle(f"【力量】{game.db.shikigami[s.id].name} "
+                         f"{'永久' if perm else '临时'}力量 {amount:+d}（现 {s.eff_power}）")
 
 
 @action("buff_health")
@@ -119,6 +121,9 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
                 # 临时增加上限时，当前生命同步增加等量数值（不超过新上限）
                 if amount > 0:
                     s.health = min(s.max_health, s.health + amount)
+            game._settle(f"【生命】{game.db.shikigami[s.id].name} "
+                         f"{'永久' if perm else '临时'}生命上限 {amount:+d}"
+                         f"（现 {s.health}/{s.max_health}）")
 
 
 @action("gain_shield")

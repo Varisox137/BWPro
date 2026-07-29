@@ -236,6 +236,7 @@ class GameState(BaseModel):
     emit_seq: int = 0  # 事件编号：每次 emit 递增，持久化到状态以支持回放/断线重连
     config: GameConfig = Field(default_factory=GameConfig)
     log: list[str] = Field(default_factory=list)
+    settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；CLI 空闲点逐条展示用，与 log 指令回显分离）
     temp_grants: list[TempGrant] = Field(default_factory=list)  # 一次性临时触发注册表
 
     def next_emit_seq(self) -> int:

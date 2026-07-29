@@ -476,3 +476,53 @@ def test_debug_disabled(db, make_game):
     g.state.config.enable_debug_commands = False
     with pytest.raises(IllegalAction):
         g.apply({"op": "debug_draw", "args": {"player": 0, "count": 1}})
+
+
+# ==========================================================================
+# 结算明细通道（settle_log 记录 + drain_settle 空闲点打印）
+# ==========================================================================
+
+def test_settle_log_channels(db, make_game):
+    """结算明细通道：回合阶段/升级/力量/战力/护甲/伤害与战斗、伤害结算的
+    开始结束分类入账（引擎只记录，不打印）。"""
+    g = make_game(auto_skip_upgrade=False)
+    pa, pb = F.battle_setup(g)
+    slog = g.state.settle_log
+    assert any("—— 回合开始阶段（A" in x for x in slog)
+    g.apply({"op": "upgrade", "index": 1})
+    assert any("【升级】A 的式神100102升至 1 级" in x for x in slog)
+    cid = 10010151
+    db.cards[cid] = F.card(
+        cid, steps=[F.Step(op="buff_power", amount=2, target=T(kind="self"))],
+        token=True)
+    F.play(g, 0, cid)
+    assert any("【力量】式神100101 临时力量 +2" in x for x in slog)
+    c2 = 10010152
+    db.cards[c2] = F.card(
+        c2, card_type="combat",
+        steps=[F.Step(op="buff_power", amount=2, target=T(kind="self")),
+               F.Step(op="gain_shield", amount=1, target=T(kind="self"))],
+        token=True)
+    F.play(g, 0, c2)
+    assert any("【战力】式神100101 战力 +2" in x for x in slog)
+    assert any("【护甲】式神100101 获得 1 点护甲" in x for x in slog)
+    assert any("—— 战斗开始：式神100101 ——" in x for x in slog)
+    assert any("—— 战斗结束 ——" in x for x in slog)
+    assert any("—— 伤害结算开始 ——" in x for x in slog)
+    assert any("—— 伤害结算结束 ——" in x for x in slog)
+    assert any("【伤害】B 受到 7 点伤害（生命 30→23）" in x for x in slog)
+
+
+def test_drain_settle_increment_and_blank_lines(db, make_game, capsys):
+    """drain_settle：按游标增量打印（0 间隔测试模式），整块前后各空一行，
+    无新增明细时不输出、游标不动。"""
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    seen = cli.drain_settle(g, 0, interval=0)
+    out = capsys.readouterr().out
+    assert seen == len(g.state.settle_log) and seen > 0
+    assert out.startswith("\n") and out.endswith("\n\n")
+    assert "回合开始阶段" in out
+    seen2 = cli.drain_settle(g, seen, interval=0)
+    assert seen2 == seen
+    assert capsys.readouterr().out == ""

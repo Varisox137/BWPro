@@ -16,6 +16,7 @@ db/deckstore.py）选择卡组，文件为空时回退到卡组码输入或默�
 from __future__ import annotations
 
 import os
+import time
 from client import cardfmt, deckbuilder, textutil, tui
 from client.textutil import display_width as _display_width, pad as _pad
 from core.engine import Game, IllegalAction
@@ -67,6 +68,31 @@ DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
   value 为 bool 时：true/false
   keyword 示例：combo, initiative, piercing, pierce, remote, unyielding, haste, barrier
 """
+
+
+# ---------- 结算明细展示 ----------
+
+SETTLE_INTERVAL = float(os.environ.get("BWP_SETTLE_INTERVAL", "0.4"))  # 每条明细的打印间隔（秒）
+
+
+def drain_settle(game: Game, seen: int, interval: float | None = None) -> int:
+    """打印自游标 seen 以来积累的结算明细（GameState.settle_log 增量），返回新游标。
+
+    空闲点（回合开始/结束阶段结算完、主要阶段每次指令结算完）调用：0.4s 每条
+    逐条打印，整块前后各空一行；无新增明细时不输出（不空打印空行）。
+    纯展示层行为——引擎/服务端只记录，不 sleep；interval 供测试置 0。
+    """
+    lines = game.state.settle_log[seen:]
+    if not lines:
+        return seen
+    delay = SETTLE_INTERVAL if interval is None else interval
+    print("")
+    for line in lines:
+        print(line)
+        if delay > 0:
+            time.sleep(delay)
+    print("")
+    return len(game.state.settle_log)
 
 
 def parse_ref(code: str, active: int) -> Ref:
@@ -497,6 +523,7 @@ def run_battle(db) -> None:
 def _battle_loop(game: Game) -> None:
     if game.state.phase == "mulligan":
         run_mulligan(game)
+    settle_seen = drain_settle(game, 0)  # 先手首回合的回合开始阶段起：调度后首块明细
     print(render(game))
     while game.state.winner is None:
         prompt = f"[{game.current.name}]"
@@ -525,6 +552,7 @@ def _battle_loop(game: Game) -> None:
                 dcmd = run_debug(game, args)
                 if dcmd:
                     game.apply(dcmd)
+                    settle_seen = drain_settle(game, settle_seen)
                     print(render(game))
             elif cmd == "play":
                 hand = hand_sorted(game, game.current)
@@ -558,6 +586,7 @@ def _battle_loop(game: Game) -> None:
                 if rest:
                     cmd_dict["play_method"] = rest.pop(0)  # 使用方式，如 burst
                 game.apply(cmd_dict)
+                settle_seen = drain_settle(game, settle_seen)
                 print(render(game))
             elif cmd in ("assault", "upgrade"):
                 cmd_dict: dict = {"op": cmd, "index": int(args[0]) - 1}
@@ -579,9 +608,11 @@ def _battle_loop(game: Game) -> None:
                             if code:
                                 cmd_dict["target"] = parse_ref(code, game.state.active)
                 game.apply(cmd_dict)
+                settle_seen = drain_settle(game, settle_seen)
                 print(render(game))
             elif cmd == "end":
                 game.apply({"op": "end_turn"})
+                settle_seen = drain_settle(game, settle_seen)
                 print(render(game))
             else:
                 print("未知指令，输入 help 查看帮助")

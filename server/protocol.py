@@ -41,12 +41,16 @@ def start(player_index: int, opponent: str, you_first: bool) -> dict:
             "opponent": opponent, "you_first": you_first}
 
 
-def state(payload: dict, log: list[str], timer: dict | None = None) -> dict:
+def state(payload: dict, log: list[str], timer: dict | None = None,
+          settle: list[str] | None = None) -> dict:
     """完整对局状态 + 自上次以来的新增日志。
-    timer 非空时附带 {"kind", "deadline"}（客户端倒计时显示用，旧客户端忽略该字段）。"""
+    timer 非空时附带 {"kind", "deadline"}（客户端倒计时显示用，旧客户端忽略该字段）。
+    settle 非空时附带结算明细增量（客户端空闲点逐条展示用，旧客户端忽略）。"""
     msg = {"type": "state", "payload": payload, "log": log}
     if timer is not None:
         msg["timer"] = timer
+    if settle:
+        msg["settle"] = settle
     return msg
 
 
