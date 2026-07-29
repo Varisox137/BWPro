@@ -268,6 +268,8 @@ class Game:
         - {"event": key}：触发事件 payload 中的数值（寂寥心象"获得等量破甲"）；
         - {"half_health_of": key}：事件中的 Ref 所指角色当前生命的一半（向下取整，
           毒之华"等同于其一半生命的破甲"）。
+        - {"max_power_gap": "self"}：来源式神历史峰值力量（ext["max_power"]）与当前
+          eff_power 之差（断臂"力量变为本局游戏曾有的最大值"的差值补偿形式，≥0）。
         前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
         """
         raw = (step.model_extra or {}).get("amount", 0)
@@ -292,6 +294,8 @@ class Game:
                     hp = (pl.shikigami[ref.shikigami].health
                           if ref.shikigami is not None else pl.health)
                     base += hp // 2  # "一半生命"：向下取整
+            if raw.get("max_power_gap") and s is not None:
+                base += max(0, int(s.ext.get("max_power", 0)) - s.eff_power)
             return base
         return int(raw)
 
@@ -1323,10 +1327,10 @@ class Game:
             self._register_countdown(s, initial=cdef.countdown,
                                      block=cdef.countdown_effects, source=card.id)
         if cdef.form_power is not None:
-            s.base_power = cdef.form_power
+            s.base_power = cdef.form_power + int(card.mods.get("form_power_delta", 0))
             self._record_max_power(s)  # 形态基础力量变更后同步峰值记账
         if cdef.form_health is not None:
-            s.base_health = cdef.form_health
+            s.base_health = cdef.form_health + int(card.mods.get("form_health_delta", 0))
         s.health = s.max_health
         # 形态牌 keywords（fast/trigger 为卡牌级除外）结附期间授予式神
         for kw in cdef.keywords:
@@ -1344,7 +1348,11 @@ class Game:
         """形态牌结附（主动使用与响应插入使用共用）：从手牌/原区域移除（不进入任何区域），
         以该卡牌数据给式神结附形态；形态离场时变为卡牌并置入墓地。此过程不是“卡牌移动事件”。
         随后结算形态牌的进场时效果（effects 块；可用打出时的选择目标，如尘缚之阵授予激怒）。
+        实例修饰 revive_on_play：气绝中使用该形态时先复活来源式神（罗生门强化项）。
         """
+        s = p.shikigami[si]
+        if card.mods.get("revive_on_play") and s.defeated:
+            self._revive(p, self.state.players.index(p), si)
         self._remove_from_zone(p, card)
         self._attach_form(p, si, card, cdef)
         if cdef.effects.steps and cdef.effects.when == "on_play":
@@ -1480,11 +1488,17 @@ class Game:
         self._turn_start_clear_shield(p)
         # "本回合"类卡牌光环（scope="turn"）在己方回合开始失效；其余 scope 条目不受影响
         p.card_auras[:] = [a for a in p.card_auras if a.get("scope") != "turn"]
+        # "本回合"类牌手级监听（scope="turn"，天邪鬼黄·鼓舞类）同步失效
+        p.auras[:] = [a for a in p.auras if a.get("scope") != "turn"]
         # "本回合"类延迟能力（scope="turn"，魔音扰心类）在己方回合开始清除（未消耗时）；
         # 法术回响序列（spell_echo，"本回合"）同步清除；黄金羽"本回合"计数键清除（game 级键不清）
         for s in p.shikigami:
             s.delayed[:] = [e for e in s.delayed if e.get("scope") != "turn"]
             s.ext.pop("spell_echo", None)
+            # "本回合额外获得力量"（buff_power scope="turn"，武士之笛类）到期撤销
+            turn_power = s.ext.pop("turn_power", 0)
+            if turn_power:
+                s.temp_power -= turn_power
         p.ext.pop("feather_used_turn", None)
         # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）
         for pl in self.state.players:
@@ -1965,6 +1979,7 @@ class Game:
         if s.defeated:
             return  # 气绝前 1 的插入结算中已被其它事件标记气绝
         owner = self.state.players[ref.player]
+        in_combat = owner.combat_index == ref.shikigami  # 气绝时是否在战斗区（迁怒/罗生门条件）
         # 气绝流程 step 3（rules.md 第七章）：先消灭形态牌——此时能力尚未离场（step 6），
         # 一目连类"形态离场时触发"能力仍会收集（先触发后执行，结算时不再复查持有者状态）
         if s.form is not None:
@@ -1993,6 +2008,7 @@ class Game:
             s.revive_countdown = self.config.revive_countdown
             self._log(f"{name} 气绝")
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
+                  in_combat=in_combat, summon=(s.kind == "summon"),
                   battle=self._battle_stack[-1] if self._battle_stack else None)
 
     def _set_pending_end(self, loser: int | None = None, defeat: bool = False) -> None:

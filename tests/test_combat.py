@@ -1049,3 +1049,62 @@ def test_followup_attack_chain(db, make_game):
     assert b0.defeated
     assert b1.defeated      # 追加①击杀生命最低
     assert b2.health == 3   # 追加②改打新的生命最低 B2（6 - 3，无战力加成）
+
+
+# ==========================================================================
+# 真实数据：茨木童子战斗牌（鬼之手联动 / 地狱之手追猎追加攻击 / 迁怒）
+# 队伍 [茨木童子, 纸人武士, 天邪鬼军团, 白狼]；茨木 0 号位开局自动 1 级，
+# 对局开始批次基础能力已 perm+1（裸 eff 4）。
+# ==========================================================================
+
+CM_TEAM = [100103, 100001, 100002, 100105]  # 派系 ≤2（红莲×3 + 青岚）
+
+
+def test_force_enter_combat_pulls_bench_then_battle(real_game):
+    """鬼之手：敌方战斗区为空时随机将一名敌方准备区式神移入战斗区（随机不取
+    对象、不吃帷幕），随即成为本场无目标战斗的被攻击者。"""
+    g = real_game(CM_TEAM)
+    pa, pb = F.battle_setup(g)
+    play(g, 0, 10010301)                       # 鬼之手（战斗 +0/+0）
+    # 有敌方式神被拉入战斗区并成为被攻击者：恰好一名受到茨木（eff 4）的战斗伤害
+    hit = [s for s in pb.shikigami if s.defeated or s.health < s.max_health]
+    assert len(hit) == 1
+    assert hit[0].defeated or hit[0].health == hit[0].max_health - 4
+
+
+def test_force_enter_combat_noop_when_enemy_combat_occupied(real_game):
+    """鬼之手空发：敌方战斗区非空时不拉人，战斗正常打战斗区驻守者。"""
+    g = real_game(CM_TEAM)
+    pa, pb = F.battle_setup(g)
+    move(g, 1, 2)                              # B 天邪鬼军团（5 命）驻守战斗区
+    play(g, 0, 10010301)
+    assert pb.combat_index == 2                # 驻守者未被替换
+    assert pb.shikigami[2].health == 1         # 5 - 4
+    for i in (0, 1, 3):
+        assert pb.shikigami[i].health == pb.shikigami[i].max_health
+
+
+def test_hunt_followup_attack(real_game):
+    """地狱之手：追猎选择目标；本次战斗消灭敌方式神后，战斗结束追加攻击
+    生命最低的敌方式神（不吃原战斗牌加成）。"""
+    g = real_game(CM_TEAM, )
+    pa, pb = F.battle_setup(g, {0: 3})
+    play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
+    c = give(g, 0, 10010307)                   # 地狱之手（追猎）
+    g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})
+    assert pb.shikigami[1].defeated            # 追猎目标（纸人 4 命）被击杀
+    assert sum(s.defeated for s in pb.shikigami) == 2  # 追加攻击再杀一名生命最低者
+
+
+def test_qiannu_bench_damage_on_combat_kill(real_game):
+    """迁怒：茨木消灭敌方战斗区式神时，对其准备区式神各造成 2 点伤害。"""
+    g = real_game(CM_TEAM)
+    pa, pb = F.battle_setup(g, {0: 2})
+    play(g, 0, 10010304)                       # 迁怒（形态 3/7）
+    play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
+    move(g, 1, 1)                              # B 纸人（4 命）驻守战斗区
+    g.apply({"op": "assault", "index": 0})
+    assert pb.shikigami[1].defeated
+    assert pb.shikigami[0].health == 2         # 准备区各 -2
+    assert pb.shikigami[2].health == 3
+    assert pb.shikigami[3].health == 2

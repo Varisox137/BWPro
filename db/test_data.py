@@ -21,11 +21,12 @@ def _pick_test_ids() -> list[int]:
     picked: list[int] = []
     factions: set[str] = set()
     for d in sorted(db.shikigami.values(), key=lambda x: x.id):
-        if d.kind != "shikigami":
-            continue
+        if d.kind != "shikigami" or d.wip:
+            continue  # WIP 式神（wip=true）不进测试卡组
         if sum(1 for c in db.cards.values()
                if not c.token and c.shikigami == d.id) < 8:
-            continue  # WIP 式神（可构筑卡不足 8 种）不进测试卡组
+            continue  # 卡数 <8 的式神（纸人武士/天邪鬼军团）不进测试卡组——
+            # make_test_deck 按 01-08 生成卡 id，不足 8 种会产出不存在的 id
         if d.faction != "无相":
             if d.faction not in factions and len(factions) >= 2:
                 continue  # 保持派系 ≤2

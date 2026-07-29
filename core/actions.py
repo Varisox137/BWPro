@@ -73,11 +73,14 @@ def draw(game, ctx, *, targets: list[Ref], count: int | dict = 1) -> None:
 
 
 @action("buff_power")
-def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False) -> None:
+def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False,
+               scope: str | None = None) -> None:
     """力量增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。
 
     已气绝式神不能获得非永久增益，但可以获得永久增益（thoughts.txt"已气绝状态"）；
     0 级未在场/已离场式神不受影响。
+    scope="turn"：临时增益记账到 ext["turn_power"]，回合开始时随该通道一并清除
+    （武士之笛/鼓舞类"本回合"增益；与 perm 互斥，数据侧只对临时增益使用）。
     """
     for ref in targets:
         if ref.shikigami is not None:
@@ -88,6 +91,8 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
                 s.perm_power += amount
             else:
                 s.temp_power += amount
+                if scope == "turn":
+                    s.ext["turn_power"] = s.ext.get("turn_power", 0) + amount
             game._record_max_power(s)
 
 
@@ -591,25 +596,38 @@ def enter_combat(game, ctx, *, targets: list[Ref]) -> None:
 
 
 @action("force_enter_combat")
-def force_enter_combat(game, ctx, *, targets: list[Ref]) -> None:
+def force_enter_combat(game, ctx, *, targets: list[Ref],
+                       random_pick: bool = False,
+                       if_combat_empty: bool = False) -> None:
     """强制目标进入其战斗区（鬼之手类"将敌方准备区式神移入战斗区"，targets 经
     enemy_bench 池选择）。
 
     移动语义与 enter_combat 相同（驻守者退回）；尘缚之阵锁定下（移入会替换被锁定的
     战斗区式神时）该效果静默无效，与 enter_combat 的锁定处理对齐。
+    random_pick=True：从候选目标中随机取 1 名（随机不取对象，不吃帷幕）。
+    if_combat_empty=True：目标所属玩家的战斗区非空时整体跳过（鬼之手空发）。
     """
+    if not targets:
+        return
+    owner_pi = targets[0].player
+    owner = game.state.players[owner_pi]
+    if if_combat_empty and owner.combat_index is not None:
+        return
+    if random_pick:
+        targets = [game.rng.choice(targets)]
     enter_combat(game, ctx, targets=targets)
 
 
 @action("player_aura")
 def player_aura(game, ctx, *, targets: list[Ref], when: str,
                 condition: dict | None = None, steps: list | None = None,
-                once_key: str | None = None) -> None:
-    """给控制者牌手登记一个"本局游戏"级持久监听（targets 忽略；豪焰类附着于牌手的能力）。
+                once_key: str | None = None, scope: str = "game") -> None:
+    """给控制者牌手登记一个持久监听（targets 忽略；豪焰/鼓舞类附着于牌手的能力）。
 
     事件 when 触发且 condition 满足时结算 steps；登记于 `PlayerState.auras`——
-    跨气绝保留、回合开始不清除、不限触发次数。once_key：已登记同键监听时跳过
-    （"四项均有则不会再赋予"类不可叠加）。
+    跨气绝保留、不限触发次数。scope="game"（默认）本局游戏有效；scope="turn"
+    仅本回合（己方回合开始时随回合通道清除）。once_key：已登记同键监听时跳过
+    （"四项均有则不会再赋予"类不可叠加）；不指定则可叠加。
     """
     from db.schema import EffectBlock, Step
     p = game.state.players[ctx.controller]
@@ -617,8 +635,71 @@ def player_aura(game, ctx, *, targets: list[Ref], when: str,
         return
     block = EffectBlock(when=when, condition=condition,
                         steps=[Step.model_validate(st) for st in (steps or [])])
-    p.auras.append({"block": block, "once_key": once_key})
-    game._log(f"{p.name} 获得了牌手级能力（本局游戏）")
+    p.auras.append({"block": block, "once_key": once_key, "scope": scope})
+    game._log(f"{p.name} 获得了牌手级能力（{'本回合' if scope == 'turn' else '本局游戏'}）")
+
+
+@action("random_enhance")
+def random_enhance(game, ctx, *, targets: list[Ref], card_id: int,
+                   count_key: str, at: list[int], tiers: list[dict]) -> None:
+    """按计数次档给同名卡各实例随机赋予一项强化（targets 忽略；罗生门之鬼）。
+
+    控制者 ext[count_key] 的当前次数须 ∈ at（第 1/3/5 次类档位），否则空操作。
+    候选 = tiers 中 min（缺省 1）≤ 次数的项；对控制者所有区域及在场形态中同
+    card_id 的每个实例，各自经 `c.mods["enhance_got"]`（key 列表）去重后 rng.choice
+    一项并记录 key。强化写入实例 mods：keywords_add 并入集合排序、
+    form_power_delta/form_health_delta 累加、其余键直写（playable_when_defeated /
+    revive_on_play 等开关）。
+    """
+    p = game.state.players[ctx.controller]
+    count = int(p.ext.get(count_key, 0))
+    if count not in [int(a) for a in at]:
+        return
+    pool = [t for t in tiers if int(t.get("min", 1)) <= count]
+    if not pool:
+        return
+    instances = [c for z in p.zones.values() for c in z if c.id == card_id]
+    instances += [s.form for s in p.shikigami
+                  if s.form is not None and s.form.id == card_id]
+    for c in instances:
+        got = c.mods.setdefault("enhance_got", [])
+        candidates = [t for t in pool if t["key"] not in got]
+        if not candidates:
+            continue
+        t = game.rng.choice(candidates)
+        got.append(t["key"])
+        if t.get("keywords_add"):
+            merged = set(c.mods.get("keywords_add", [])) | set(t["keywords_add"])
+            c.mods["keywords_add"] = sorted(merged)
+        for k in ("form_power_delta", "form_health_delta"):
+            if t.get(k):
+                c.mods[k] = c.mods.get(k, 0) + int(t[k])
+        for k, v in t.items():
+            if k not in ("key", "min", "keywords_add", "form_power_delta",
+                         "form_health_delta"):
+                c.mods[k] = v
+        game._log(f"《{game.db.cards[c.id].name}》获得了强化（{t['key']}）")
+
+
+@action("random_aura")
+def random_aura(game, ctx, *, targets: list[Ref], options: list[dict],
+                once_prefix: str = "aura") -> None:
+    """从 options 中随机赋予一项牌手级监听（targets 忽略；豪焰"随机获得一项"）。
+
+    各项以 `{once_prefix}_{option["key"]}` 为 once_key——已在 `p.auras` 登记过的
+    项剔出候选，全项都有则空操作；rng.choice 后转调 player_aura（option 须含
+    key/when，可含 condition/steps/scope）。
+    """
+    p = game.state.players[ctx.controller]
+    held = {a.get("once_key") for a in p.auras}
+    pool = [o for o in options
+            if f"{once_prefix}_{o['key']}" not in held]
+    if not pool:
+        return
+    o = game.rng.choice(pool)
+    player_aura(game, ctx, targets=targets, when=o["when"],
+                condition=o.get("condition"), steps=o.get("steps"),
+                once_key=f"{once_prefix}_{o['key']}", scope=o.get("scope", "game"))
 
 
 @action("followup_attack")
@@ -670,23 +751,31 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int,
     倒计时增减事件的独立时机批次暂不拆，首张监听卡出现时再引入。
 
     shikigami：按数据 id 指定控制者的式神（targets 忽略；协战羁绊"鸩/以津真天
-    倒计时-2"——未出战为空操作）；revive=True：改为作用于控制者已气绝式神的
-    气绝倒计时（targets 忽略，扫描全队；幻音绝弦"已气绝则改为气绝倒计时-2"），
-    减到 ≤0 立即复活。
+    倒计时-2"——未出战为空操作）；revive=True：改为作用于气绝倒计时（减到 ≤0
+    立即复活）——targets 非空时只作用于这些目标（可跨阵营，豪焰"使该式神气绝
+    倒计时+1"），targets 为空时扫描控制者全队已气绝式神（幻音绝弦先例）。
     """
     if shikigami is not None:
         pi = ctx.controller
         idx = game._find_shikigami(game.state.players[pi], int(shikigami))
         targets = [Ref(player=pi, shikigami=idx)] if idx is not None else []
     if revive:
-        p = game.state.players[ctx.controller]
-        pi = ctx.controller
-        for i, s in enumerate(p.shikigami):
+        if targets:
+            refs = targets
+        else:
+            p = game.state.players[ctx.controller]
+            refs = [Ref(player=ctx.controller, shikigami=i)
+                    for i in range(len(p.shikigami))]
+        for ref in refs:
+            if ref.shikigami is None:
+                continue
+            pl = game.state.players[ref.player]
+            s = pl.shikigami[ref.shikigami]
             if not s.defeated or s.despawned or s.level < 1:
                 continue
             s.revive_countdown += amount
             if s.revive_countdown <= 0:
-                game._revive(p, pi, i)
+                game._revive(pl, ref.player, ref.shikigami)
         return
     for ref in targets:
         if ref.shikigami is None:

@@ -363,3 +363,47 @@ def test_card_aura_turn_filter(db, make_game):
     assert g.combat_card_stats(cdef.effects, c, s, p=pa) == (1, 0)   # 己方回合：不生效
     g.state.active = 1
     assert g.combat_card_stats(cdef.effects, c, s, p=pa) == (3, 0)   # 敌方回合：+2
+
+
+# ==========================================================================
+# 真实数据：罗生门之鬼（茨木童子 SSR 形态）随机强化
+# 队伍 [茨木童子, 纸人武士, 天邪鬼军团, 凤凰火]（派系 红莲×3 + 青岚）；
+# 茨木 0 号位开局自动 1 级（对局开始批次基础能力已 perm+1）。
+# ==========================================================================
+
+CM_TEAM = [100103, 100001, 100002, 100105]
+
+
+def _rashomon_kill(g, bench_index: int) -> None:
+    """把 B 一名准备区式神移入战斗区并出击击杀（茨木力量已垫高；
+    出击前回满生命，隔离反击致死对强化计数的干扰）。"""
+    s = g.state.players[0].shikigami[0]
+    s.health = s.max_health
+    move(g, 1, bench_index)
+    g.apply({"op": "assault", "index": 0})
+
+
+def test_rashomon_random_enhance_tiers(real_game):
+    """累计消灭敌方战斗区 1/3/5 个基础式神时随机强化一次：档位门控（次数 ∉
+    {1,3,5} 不强化）、按实例 enhance_got 去重、手牌与在场形态实例各自强化。"""
+    g = real_game(CM_TEAM)
+    pa, pb = F.battle_setup(g, {0: 2})
+    F.play(g, 0, 10010302)                     # 豪拳 +3（出击力量垫高）
+    F.play(g, 0, 10010306)                     # 罗生门之鬼（形态 4/6）
+    hand_copy = give(g, 0, 10010306)           # 第二张留在手牌观察实例强化
+    form_card = pa.shikigami[0].form
+    _rashomon_kill(g, 0)                       # 第 1 杀（B 茨木 4 命）→ 次数 1 ∈ at
+    assert pa.ext["rashomon_kills"] == 1
+    assert len(form_card.mods["enhance_got"]) == 1
+    assert len(hand_copy.mods["enhance_got"]) == 1
+    F.pass_turns(g, 2)
+    F.play(g, 0, 10010302)                     # 再垫 +3
+    _rashomon_kill(g, 1)                       # 第 2 杀 → 次数 2 ∉ at：不强化
+    assert pa.ext["rashomon_kills"] == 2
+    assert len(form_card.mods["enhance_got"]) == 1
+    F.pass_turns(g, 2)
+    _rashomon_kill(g, 2)                       # 第 3 杀 → 次数 3 ∈ at：再强化
+    assert pa.ext["rashomon_kills"] == 3
+    got = form_card.mods["enhance_got"]
+    assert len(got) == 2 and len(set(got)) == 2        # 不会出现已有的强化
+    assert len(hand_copy.mods["enhance_got"]) == 2

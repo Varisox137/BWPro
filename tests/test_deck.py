@@ -521,8 +521,11 @@ def test_edit_cards_strict_input(db, tmp_path, monkeypatch, capsys):
 
 
 def test_available_shikigami_excludes_wip(gdb):
-    """构筑可选池：可构筑卡不足 8 种的 WIP 式神（姑获鸟 0 卡/青行灯 1 卡）不可选。"""
+    """构筑可选池：wip=true 的半成品式神（姑获鸟/青行灯/酒吞童子）不可选；
+    卡数不足 8 种的成品式神（纸人武士/天邪鬼军团，各 4 卡）可选。"""
     ids = [d.id for d in deckbuilder.available_shikigami(gdb)]
-    assert 100106 not in ids                 # 姑获鸟（卡牌暂未加入）
-    assert 100112 not in ids                 # 青行灯（仅明灯 1 张）
+    assert 100106 not in ids                 # 姑获鸟（wip：卡牌暂未加入）
+    assert 100112 not in ids                 # 青行灯（wip：仅明灯 1 张）
+    assert 100109 not in ids                 # 酒吞童子（wip：仅基础数据+能力）
+    assert 100001 in ids and 100002 in ids   # 纸人武士/天邪鬼军团（4 卡成品）可选
     assert 100105 in ids and 100116 in ids   # 凤凰火/山童（8 卡齐）可选

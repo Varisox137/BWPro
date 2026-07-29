@@ -392,6 +392,8 @@
 - **身材** = 基础值（式神基础值/当前形态基础值）+ 永久修正 + 临时修正。**临时/永久的区分 = 气绝后复活能否保留**（临时修正气绝时清除；光环类临时修正细分，Phase 5）。**力量覆写 power_override**：覆写全部加成层将力量视为 0（`ext["power_zero"]`，eff_power 覆写层；解除后复原；形态离场/气绝自动清除——笨拙"敌方回合时力量变为 0"）。
 - **"获得x生命"**（古尘之壁）= 生命上限 +x（持久性临时增益，气绝复活丢失——未写"永久/本局游戏"即非永久）伴随当前生命 +x；该上调是直改而**不算治疗**：不走 heal 事件、不触发"恢复生命时"类能力（维护者确认）。
 - **战力 combat_power**：一次性的战斗伤害增加（乏力 weak 为其负向对应）；与鼓舞机制一同在第一个大型卡包实现。【战力已实现（出击加成/战斗牌授予，战斗后核销）；乏力未实现】
+- **历史峰值力量 max_power**：`ShikigamiState.ext["max_power"]` 记录本局曾有最高力量（基础+永久+临时，不含战力；只增不减，跨气绝保留；`Game._record_max_power` 在力量变化点更新）——断臂"力量变为本局游戏的最大值"以 `{max_power_gap: self}` 补差值实现。
+- **"本回合"类增益**：buff_power 的 `scope="turn"`（武士之笛）与 player_aura 的 `scope="turn"`（鼓舞）——临时力量记账 `ext["turn_power"]`、牌手监听存 `PlayerState.auras`，均于己方回合开始统一清除（与 delayed 的 scope="turn" 同批次）。
 - **护甲 shield**：被伤害优先消耗；己方回合开始阶段清除（可因效果改变）。**破甲 fragile**：独立"给与破甲"流程（见专节），非简单负护甲。
 - **派系 faction**：红莲/紫岩/青岚/苍叶/无相（red/purple/blue/green/white）；对局中可被效果改变（构筑规则仅校验时检查，对局中改变不受限）。
 - **免疫 immune**：免疫某类伤害/效果。【战斗伤害免疫已实现：战斗牌授予绑定本次战斗上下文（可声明覆盖嵌套战斗）、回合级按回合号记账（grant_immunity，unique=True 时"若不具有该能力则获得"——不可饶恕多次使用黄金羽不重复授予）；**非战斗伤害免疫已实现**：grant_immunity 的 kind="effect" + from_side 参数（from_side="enemy" 只免疫敌方来源，scope="perm" 持续在场期间、气绝清除、复活重新授予——觉醒·山童"免疫敌方非战斗伤害"）；通用免疫（免疫效果/指定）未实现】
@@ -616,6 +618,7 @@
 - **“增强”不作为统一机制实现**，只是卡面话术；实现层分解为两种通用机制：
   - **卡牌触发器（triggers）**：游离触发块（when/condition/steps），游戏开始按数据库全量注册；【已实现：emit 时全库扫描匹配，为第三收集来源（式神能力之后、响应牌之前）】
   - **实时监测（monitors）**：状态谓词 + 修饰（关键词/数值倍率/追加块/临时触发），读取与打出装配时实时求值，不存储。【未实现】
-- **写入三目标**：`hand`（手牌各复制实例）/ `persistent`（(玩家, card_id) 持久）/ `turn`（回合开始清空），由写入原语的 `to` 参数分派。【已实现 hand/persistent（add_mod 原语）；turn store 未实现——"本回合"类需求目前由 card_auras（scope="turn"）覆盖】
+- **写入三目标**：`hand`（手牌各复制实例）/ `persistent`（(玩家, card_id) 持久）/ `turn`（回合开始清空），由写入原语的 `to` 参数分派。【已实现 hand/persistent（add_mod 原语）；turn store 未实现——"本回合"类需求目前由 card_auras（scope="turn"）、buff_power/player_aura 的 scope="turn" 通道（武士之笛/鼓舞）覆盖】
+- **随机强化**：`random_enhance`（罗生门之鬼）：按 ext 计数次档（at=[1,3,5]）对控制者所有区域及在场形态的同卡 id 实例各自随机赋予一项强化（tiers 按 min 门控、实例 `mods["enhance_got"]` 去重）；强化写入 mods——keywords_add 并入、form_power_delta/form_health_delta 于 `_attach_form` 结附时叠加形态身材、playable_when_defeated+revive_on_play 使气绝中可用该形态并先复活（`_play_form_card` 读取）。【已实现】
 - **即时装配模型**：结算效果 = 定义块 ⊕ 活跃修饰（打出/读取时装配，用完即弃）；效果块永远共享不可变，块间唯一耦合是事件总线。【已实现：打出装配 _materialize（persistent→实例快照）、enhance 数值参数（{"enhance": true, "base": n}）、卡牌光环 card_auras（关键词/cost_zero 读取时求值）、战斗绑定一次性触发 temp_grants】
 - **架构不变式**：CardInstance 是对局卡牌唯一身份（区域/形态转换传递同一实例及 mods）；战斗上下文对象化；额外攻击 `launch_attack` 走正常战斗流程（不耗鬼火/出击次数、无战斗牌加成）；`on_card_played` 携带使用位置/方式（play_from/play_method/triggered）。【已实现：play_from ∈ hand/deck/void、triggered ∈ active/response/auto】

@@ -766,3 +766,98 @@ def test_player_aura_game_scope(db, make_game):
     pa.orb = 9
     play(g, 0, blank_cid)  # 跨回合不清除
     assert pa.ext.get("aura_proc") == 5
+
+
+# ==========================================================================
+# 真实数据：本回合通道（武士之笛/鼓舞）/ 峰值差值（断臂）/ 豪焰牌手光环
+# 队伍派系均 ≤2；0 号位开局自动 1 级（茨木对局开始批次基础能力已 perm+1）。
+# ==========================================================================
+
+ZR_TEAM = [100001, 100103, 100002, 100105]   # 纸人武士主力
+CM_TEAM2 = [100103, 100001, 100002, 100105]  # 茨木童子主力
+TX_TEAM = [100002, 100103, 100001, 100105]   # 天邪鬼军团主力
+
+
+def test_turn_scoped_buff_expires(real_game):
+    """武士之笛：己方全体本回合 +1 力量（scope=turn），己方回合开始时清除；
+    历史峰值 max_power 只增不回落。"""
+    g = real_game(ZR_TEAM)
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]                        # 纸人武士 3/4
+    play(g, 0, 10000102)                       # 武士之笛（瞬发，全队本回合 +1）
+    assert s.temp_power == 1
+    assert s.ext["max_power"] == 4
+    pass_turns(g, 2)                           # 己方下回合开始：回合通道清除
+    assert s.temp_power == 0
+    assert s.ext["max_power"] == 4             # 峰值记账保留
+
+
+def test_inspire_aura_boosts_effect_damage_this_turn(real_game):
+    """鼓舞：牌手级监听（scope=turn 可叠加）使天邪鬼军团本回合非战斗伤害 +1。"""
+    g = real_game(TX_TEAM)
+    pa, pb = F.battle_setup(g)
+    play(g, 0, 10000202)                       # 鼓舞（瞬发）
+    assert len(pa.auras) == 1
+    play(g, 0, 10000201)                       # 燃烧：敌方全体 1 + 1 = 2 伤
+    assert [s.health for s in pb.shikigami] == [3, 2, 2, 2]
+    pass_turns(g, 2)
+    assert pa.auras == []                      # 回合开始清除
+    play(g, 0, 10000201)                       # 无鼓舞：回到 1 伤
+    assert [s.health for s in pb.shikigami] == [2, 1, 1, 1]
+
+
+def test_max_power_gap_restores_peak(real_game):
+    """断臂：力量变为本局游戏最大值 = 补峰值差值（max_power - eff_power）。"""
+    g = real_game(CM_TEAM2)
+    pa, pb = F.battle_setup(g, {0: 2, 1: 1})   # 纸人 1 级（武士之笛使用条件）
+    s = pa.shikigami[0]                        # 茨木 eff 4（perm 1）
+    play(g, 0, 10000102)                       # 武士之笛 +1（turn 通道）
+    play(g, 0, 10010302)                       # 豪拳 +3 → temp 4, eff 8, max 8
+    assert s.eff_power == 8 and s.ext["max_power"] == 8
+    pass_turns(g, 2)                           # perm+1（=2），turn 通道清除 → temp 3
+    assert s.eff_power == 8                    # 3 + 2 + 3，与峰值持平
+    s.temp_power = 0                           # 模拟临时增益流失（气绝清除等价路径）
+    play(g, 0, 10010305)                       # 断臂：补差值 8 - 5 = 3
+    assert s.temp_power == 3
+    assert s.eff_power == 8
+    assert s.ext["max_power"] == 8             # 峰值不突破
+
+
+def test_haoyan_aura_fixed_and_random(real_game):
+    """地狱豪焰：本次战斗击杀式神后登记固定项（haoyan_base，不可叠加）与
+    一项随机豪焰监听；之后茨木使用战斗牌时固定项 +1 力量/+1 护甲。"""
+    g = real_game(CM_TEAM2)
+    pa, pb = F.battle_setup(g)
+    play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
+    move(g, 1, 3)                              # B 凤凰火（4 命）驻守战斗区
+    play(g, 0, 10010351)                       # 地狱豪焰：战斗击杀 → 触发
+    assert pb.shikigami[3].defeated
+    keys = {a.get("once_key") for a in pa.auras}
+    assert "haoyan_base" in keys
+    assert len(keys) == 2                      # 固定项 + 一项随机豪焰
+    assert keys & {"haoyan_cd", "haoyan_pow", "haoyan_heal", "haoyan_burn"}
+    pass_turns(g, 2)
+    s = pa.shikigami[0]
+    temp_before = s.temp_power
+    play(g, 0, 10010301)                       # 鬼之手（战斗牌）→ 固定项触发
+    assert s.temp_power == temp_before + 1     # +1 力量
+    assert s.shield >= 1                       # +1 护甲（战斗结算后保留）
+
+
+def test_haoyan_bond_jiutun(gdb):
+    """地狱豪焰[羁绊]：酒吞童子在场时对自己造成 1 伤（触发其受伤能力 +1 力量），
+    茨木获得 2 护甲。"""
+    from core.model import GameConfig
+    from core.setup import new_game
+    team = [100103, 100109, 100001, 100002]
+    deck = F.deck_of(100103, 100001, 100002, 100105)  # 酒吞无卡：借凤凰火卡位凑组
+    g = new_game(gdb, ("A", list(team), list(deck)), ("B", list(team), list(deck)),
+                 seed=1, first=0, shuffle_team=False, mulligan=False, check_deck=False,
+                 config=GameConfig(auto_skip_upgrade=True))
+    pa, pb = F.battle_setup(g)
+    pa.shikigami[1].level = 1                  # 酒吞在场（未气绝）
+    play(g, 0, 10010351)                       # 地狱豪焰（token 直接发牌打出）
+    jt = pa.shikigami[1]
+    assert jt.health == 5                      # 6 - 1 自伤
+    assert jt.temp_power == 1                  # 酒吞能力：受伤 +1 力量
+    assert pa.shikigami[0].shield == 2         # 茨木 +2 护甲

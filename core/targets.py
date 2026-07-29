@@ -117,9 +117,16 @@ def resolve(game, spec, ctx) -> list[Ref]:
     if spec.kind == "all":
         if spec.pool == "friendly_others":
             # 己方其他在场式神：排除效果来源（古尘之壁）
-            return [r for r in pool_refs(game, "friendly_shikigami", ctx.controller)
+            refs = [r for r in pool_refs(game, "friendly_shikigami", ctx.controller)
                     if r != ctx.source]
-        return pool_refs(game, spec.pool, ctx.controller)
+        else:
+            refs = pool_refs(game, spec.pool, ctx.controller)
+        sid = (spec.model_extra or {}).get("shikigami")
+        if sid is not None:
+            # 按数据 id 过滤式神（豪焰固定项 buff 茨木、羁绊伤酒吞类"指定式神"）
+            refs = [r for r in refs if r.shikigami is not None
+                    and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
+        return refs
     if spec.kind == "choose":
         return _chosen(game, ctx)
     if spec.kind == "context":

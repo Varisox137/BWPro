@@ -1,0 +1,14 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10000104
+version: 20260729
+name: 武士之刃
+shikigami: 100001  # 派系：红莲（继承自式神数据）
+card_type: combat
+rarity: R
+level: 3
+cost: 1
+effects:
+  steps:
+    - {op: buff_power, amount: 3, target: {kind: self}}
+    - {op: gain_shield, amount: 2, target: {kind: self}}
+text: ""
