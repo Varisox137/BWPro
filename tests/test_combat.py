@@ -6,9 +6,12 @@
 测试辅助卡使用衍生号段（51+，token=True）。
 """
 from core.actions import ACTIONS
+from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.factories import CHOOSE_ENEMY, give, move
+from tests.factories import CHOOSE_ENEMY, give, move, play
+
+import pytest
 
 T = F.T
 SELF = T(kind="self")
@@ -784,3 +787,265 @@ def test_counter_piercing_response_insert(db, make_game):
     assert g.state.players[1].graveyard[-1].id == 10010159  # 响应牌已使用
     assert pa.shikigami[0].defeated       # 反击击杀攻击者
     assert pa.health == 26                # 反击贯通：溢出 4 传导牌手
+
+
+# ==========================================================================
+# 有目标的战斗：追猎 / 直击 / 帷幕 / 强制进场 / 战斗结束追加攻击
+# ==========================================================================
+
+def _hunt_combat_card(db, cid=10010161):
+    """合成追猎战斗牌：+1 战力，须选择一名敌方式神为战斗目标。"""
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, card_type="combat", level=1, token=True,
+        keywords=["hunt"], target=F.T(kind="choose", pool="enemy_shikigami"),
+        steps=[F.Step(op="buff_power", amount=1, target=F.T(kind="self"))])
+    return cid
+
+
+def _followup_card(db, cid=10010162, blocks=1):
+    """合成追加攻击战斗牌：+2 战力、贯通；"若自身消灭敌方式神"登记战斗结束追加攻击。"""
+    blk = F.EffectBlock(
+        when="on_shikigami_defeated",
+        condition={"source_shikigami": "self", "victim_side": "enemy"},
+        steps=[F.Step(op="followup_attack")])
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, card_type="combat", level=1, token=True,
+        keywords=["piercing"], temp_grants=[blk] * blocks,
+        steps=[F.Step(op="buff_power", amount=2, target=F.T(kind="self"))])
+    return cid
+
+
+def _force_enter_card(db, cid=10010163):
+    """合成强制进场法术：选择 1 名敌方准备区式神移入其战斗区。"""
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, token=True,
+        target=F.T(kind="choose", pool="enemy_bench"),
+        steps=[F.Step(op="force_enter_combat")])
+    return cid
+
+
+def _lock_form(db, cid=10010164):
+    """合成尘缚锁定形态（tags=combat_lock）。"""
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, card_type="form", level=1, token=True,
+        form_power=3, form_health=5, tags=["combat_lock"])
+    return cid
+
+
+def _veil_spell(db, cid=10010165):
+    """合成 choose 敌方式神伤害法术（帷幕目标过滤用）。"""
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, token=True,
+        target=F.T(kind="choose", pool="enemy_shikigami"),
+        steps=[F.Step(op="damage", amount=2)])
+    return cid
+
+
+def _veil_cancel_spell(db, cid=10010166):
+    """合成"先授予帷幕再伤害"法术（结算时目标获帷幕 → 取消目标效果用）。"""
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, token=True,
+        target=F.T(kind="choose", pool="enemy_shikigami"),
+        steps=[F.Step(op="grant_keyword", keyword="veil"),
+               F.Step(op="damage", amount=2)])
+    return cid
+
+
+# ---------- 追猎 ----------
+
+def test_hunt_assault_targeting(db, make_game):
+    """追猎出击：可任选合法敌方式神为目标（含准备区），该场战斗以其为被攻击者；
+    发起者无远程照常移入战斗区、反击来自选定目标。"""
+    g = make_game()
+    pa, pb = g.state.players
+    a, b0, b1 = pa.shikigami[0], pb.shikigami[0], pb.shikigami[1]
+    b1.level = 1
+    move(g, 1, 0)  # B0 驻留战斗区
+    a.keywords.append("hunt")
+    g.apply({"op": "assault", "index": 0, "target": {"player": 1, "shikigami": 1}})
+    assert b1.health == 3        # 6 - 3：被攻击者为选定的准备区式神
+    assert b0.health == 4        # 战斗区式神未受伤
+    assert a.health == 3         # 反击来自 B1（1 攻）
+    assert pa.combat_index == 0  # 无远程照常移入战斗区
+
+
+def test_hunt_assault_target_restrictions(db, make_game):
+    """追猎目标限制：无追猎出击不能选择目标；帷幕敌方式神不可选；
+    不选目标 = 默认无目标战斗（打敌方战斗区式神）。"""
+    g = make_game()
+    pa, pb = g.state.players
+    b0, b1 = pb.shikigami[0], pb.shikigami[1]
+    b1.level = 1
+    move(g, 1, 0)
+    with pytest.raises(IllegalAction):  # 无追猎不能选择出击目标
+        g.apply({"op": "assault", "index": 0, "target": {"player": 1, "shikigami": 1}})
+    pa.shikigami[0].keywords.append("hunt")
+    b1.keywords.append("veil")
+    with pytest.raises(IllegalAction):  # 帷幕敌方式神不可选
+        g.apply({"op": "assault", "index": 0, "target": {"player": 1, "shikigami": 1}})
+    g.apply({"op": "assault", "index": 0})  # 不选 = 默认无目标战斗
+    assert b0.health == 1
+    assert b1.health == 6
+
+
+def test_hunt_combat_card_targeting(db, make_game):
+    """追猎战斗牌：主动使用必须选择合法敌方式神为目标，该场战斗以其为被攻击者；
+    不给目标 / 目标持帷幕（无合法目标）则不能使用。"""
+    cid = _hunt_combat_card(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b0, b1 = pb.shikigami[0], pb.shikigami[1]
+    b1.level = 1
+    move(g, 1, 0)
+    with pytest.raises(IllegalAction):  # 追猎战斗牌必须选择目标
+        play(g, 0, cid)
+    b1.keywords.append("veil")
+    with pytest.raises(IllegalAction):  # 帷幕目标不合法
+        play(g, 0, cid, target={"player": 1, "shikigami": 1})
+    b1.keywords.clear()
+    play(g, 0, cid, target={"player": 1, "shikigami": 1})
+    a = pa.shikigami[0]
+    assert b1.health == 2        # 6 - (3+1 战力)
+    assert b0.health == 4        # 战斗区式神未受伤
+    assert a.health == 3         # B1 反击 1
+    assert pa.combat_index == 0  # 无远程照常入战斗区
+
+
+# ---------- 直击 ----------
+
+def test_direct_hit_player_and_hunt_override(db, make_game):
+    """直击：无目标的战斗在确定目标前 1 被攻击者改为敌方牌手（无视战斗区式神）；
+    追猎已选定目标时直击被覆盖。"""
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    a, b0 = pa.shikigami[0], pb.shikigami[0]
+    move(g, 1, 0)
+    a.keywords.append("direct")
+    g.apply({"op": "assault", "index": 0})
+    assert pb.health == 27  # 直击打脸 3
+    assert b0.health == 4   # 战斗区式神未受伤
+    # 追猎选定目标覆盖直击
+    g2 = make_game()
+    pa2, pb2 = g2.state.players
+    a2, bb1 = pa2.shikigami[0], pb2.shikigami[1]
+    bb1.level = 1
+    move(g2, 1, 0)
+    a2.keywords.extend(["direct", "hunt"])
+    g2.apply({"op": "assault", "index": 0, "target": {"player": 1, "shikigami": 1}})
+    assert bb1.health == 3    # 选定目标受伤
+    assert pb2.health == 30   # 直击未生效，牌手未受伤
+
+
+# ---------- 帷幕 ----------
+
+def test_veil_targeting_filter_and_cancel(db, make_game):
+    """帷幕：不能成为敌方用牌的合法目标（choose 过滤）；已确定的目标在结算时
+    获得帷幕 → 取消目标相关效果。"""
+    dmg_cid = _veil_spell(db)
+    cancel_cid = _veil_cancel_spell(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b0, b1 = pb.shikigami[0], pb.shikigami[1]
+    b1.level = 1
+    b0.keywords.append("veil")
+    inst = give(g, 0, dmg_cid)
+    assert Ref(player=1, shikigami=0) not in g.legal_targets(0, inst)  # 帷幕过滤
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": inst.uid,
+                 "target": {"player": 1, "shikigami": 0}})
+    g.apply({"op": "play_card", "uid": inst.uid,
+             "target": {"player": 1, "shikigami": 1}})  # 无帷幕者可正常指定
+    assert b1.health == 4
+    play(g, 0, cancel_cid, target={"player": 1, "shikigami": 1})
+    assert "veil" in b1.keywords
+    assert b1.health == 4  # 结算时目标已持帷幕：伤害步骤被取消
+
+
+def test_veil_battle_recheck(db, make_game):
+    """帷幕的战斗发起前再校验：有目标的出击目标持帷幕 → 不发起战斗；
+    有目标的非出击战斗目标持帷幕 → 改为无目标战斗。"""
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    a, b0, b1 = pa.shikigami[0], pb.shikigami[0], pb.shikigami[1]
+    b1.level = 1
+    move(g, 1, 0)
+    b1.keywords.append("veil")
+    atk = Ref(player=0, shikigami=0)
+    g._resolve_combat(atk, a, target=Ref(player=1, shikigami=1), origin="assault")
+    assert b1.health == 6 and b0.health == 4  # 出击：不发起战斗
+    assert pa.combat_index is None            # 未移入战斗区
+    g._resolve_combat(atk, a, target=Ref(player=1, shikigami=1), origin="effect")
+    assert b0.health == 1   # 非出击战斗：改为无目标战斗，打战斗区式神
+    assert b1.health == 6
+
+
+# ---------- 强制进场 ----------
+
+def test_force_enter_combat_move_and_lock(db, make_game):
+    """强制进场：将敌方准备区式神移入其战斗区（驻守者退回准备区）；
+    尘缚之阵锁定下（移入会替换被锁战斗区式神）效果无效。"""
+    cid = _force_enter_card(db)
+    form_cid = _lock_form(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shikigami[1].level = 1
+    move(g, 1, 0)
+    play(g, 0, cid, target={"player": 1, "shikigami": 1})
+    assert pb.combat_index == 1          # B1 被移入战斗区
+    assert not pb.shikigami[0].defeated  # B0 退回准备区（未气绝）
+    # 尘缚之阵锁定：A 战斗区结附锁定形态 + B 战斗区有式神 → 强制进场无效
+    g2 = make_game()
+    pa2, pb2 = g2.state.players
+    pa2.orb = 9
+    pb2.shikigami[1].level = 1
+    play(g2, 0, form_cid)  # A0 结附尘缚锁定形态
+    move(g2, 0, 0)
+    move(g2, 1, 0)
+    play(g2, 0, cid, target={"player": 1, "shikigami": 1})
+    assert pb2.combat_index == 0  # 锁定：敌方战斗区未变化
+
+
+# ---------- 战斗结束追加攻击 ----------
+
+def test_followup_attack_after_battle(db, make_game):
+    """战斗结束追加攻击：自身消灭敌方式神触发登记，整场战斗结束后对生命最低
+    敌方式神发起有目标战斗；追加攻击不享受原战斗牌的战力/关键字加成。"""
+    cid = _followup_card(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    b0, b1 = pb.shikigami[0], pb.shikigami[1]
+    b1.level = 1
+    move(g, 1, 0)
+    b0.health = 1  # 主战贯通击杀：触发追加攻击登记
+    b1.health = 2  # 生命最低的敌方式神
+    play(g, 0, cid)
+    assert b0.defeated
+    assert pb.health == 26  # 主战贯通溢出 4（3+2 战力 - 1）
+    assert b1.defeated      # 追加攻击击杀：伤害 3（无 +2 战力）
+    assert pb.health == 26  # 追加攻击无贯通：溢出 1 不传导牌手
+
+
+def test_followup_attack_chain(db, make_game):
+    """战斗结束追加攻击可多次登记、战斗结束后依次结算（每次重新选取生命最低目标）。"""
+    cid = _followup_card(db, blocks=2)  # 两块相同临时触发：一次消灭登记两次
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    b0, b1, b2 = pb.shikigami[0], pb.shikigami[1], pb.shikigami[2]
+    b1.level = b2.level = 1
+    move(g, 1, 0)
+    pa.shikigami[0].health = 9  # 抬高攻击者生命：两次追加的反击不致死
+    b0.health = 1
+    b1.health = 2  # 追加①目标（生命最低）
+    play(g, 0, cid)
+    assert b0.defeated
+    assert b1.defeated      # 追加①击杀生命最低
+    assert b2.health == 3   # 追加②改打新的生命最低 B2（6 - 3，无战力加成）

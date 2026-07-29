@@ -8,7 +8,7 @@ from core import targets as targets_mod
 from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.factories import CHOOSE_ENEMY, give, move
+from tests.factories import CHOOSE_ENEMY, give, move, pass_turns, play
 
 T = F.T
 
@@ -689,3 +689,80 @@ def test_power_override_cleared_on_form_destroy(db, make_game):
     F.play(g, 0, 10010164)                # 消灭形态
     assert s.form is None
     assert s.eff_power == 3               # 覆写随形态离场清除
+
+
+# ==========================================================================
+# 力量历史峰值 / 牌手级持久监听
+# ==========================================================================
+
+def _power_cards(db):
+    """合成力量增益卡：临时 +2 / 攻击后到期强化 +3 / 永久 +1。"""
+    c1, c2, c3 = 10010171, 10010172, 10010173
+    db.cards[c1] = F.card(c1, shikigami=100101, token=True,
+                          steps=[F.Step(op="buff_power", amount=2, target=F.T(kind="self"))])
+    db.cards[c2] = F.card(c2, shikigami=100101, token=True,
+                          steps=[F.Step(op="attack_buff", power=3, target=F.T(kind="self"))])
+    db.cards[c3] = F.card(c3, shikigami=100101, token=True,
+                          steps=[F.Step(op="buff_power", amount=1, perm=True,
+                                        target=F.T(kind="self"))])
+    return c1, c2, c3
+
+
+def test_max_power_peak_record(db, make_game):
+    """力量历史峰值 ext["max_power"]：临时/永久力量增减与攻击强化施加处更新（只增），
+    跨气绝保留不重置。"""
+    buff_cid, atk_cid, perm_cid = _power_cards(db)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    a = pa.shikigami[0]
+    assert a.ext["max_power"] == 3  # 初始 = 基础力量
+    play(g, 0, buff_cid)  # 临时 +2
+    assert a.ext["max_power"] == 5
+    play(g, 0, atk_cid)  # 攻击后到期强化 +3
+    assert a.ext["max_power"] == 8
+    play(g, 0, perm_cid)  # 永久 +1
+    assert a.ext["max_power"] == 9
+    a.health = 0
+    g.check_defeated(Ref(player=0, shikigami=0))  # 气绝清除临时修正
+    assert a.eff_power == 4
+    assert a.ext["max_power"] == 9  # 峰值跨气绝保留
+    a.revive_countdown = 1
+    pass_turns(g, 2)
+    assert not a.defeated
+    assert a.ext["max_power"] == 9  # 复活后仍保留
+
+
+def _aura_cards(db):
+    """合成牌手级监听登记卡（player_aura：用牌后 ext 计数 +1，once_key 防叠加）。"""
+    cid = 10010174
+    db.cards[cid] = F.card(cid, shikigami=100101, token=True, steps=[F.Step(
+        op="player_aura", when="on_card_played", once_key="test_aura",
+        steps=[{"op": "bump_ext", "key": "aura_proc",
+                "target": {"kind": "all", "pool": "self_player"}}])])
+    return cid, 10010201  # 空白卡（1 级，属 100102）
+
+
+def test_player_aura_game_scope(db, make_game):
+    """牌手级"本局游戏"持久监听（player_aura）：事件触发即结算、不限次数、
+    once_key 防重复登记、跨气绝保留、回合开始不清除。"""
+    aura_cid, blank_cid = _aura_cards(db)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    pa.shikigami[1].level = 1
+    play(g, 0, aura_cid)  # 登记；本次使用的 on_card_played 也触发
+    assert pa.ext.get("aura_proc") == 1
+    play(g, 0, aura_cid)  # once_key：不重复登记，仍只触发一次
+    assert pa.ext.get("aura_proc") == 2
+    play(g, 0, blank_cid)
+    assert pa.ext.get("aura_proc") == 3
+    a0 = pa.shikigami[0]
+    a0.health = 0
+    g.check_defeated(Ref(player=0, shikigami=0))  # 来源式神气绝
+    play(g, 0, blank_cid)  # 跨气绝保留：牌手级监听不受影响
+    assert pa.ext.get("aura_proc") == 4
+    pass_turns(g, 2)
+    pa.orb = 9
+    play(g, 0, blank_cid)  # 跨回合不清除
+    assert pa.ext.get("aura_proc") == 5

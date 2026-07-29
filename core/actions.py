@@ -88,6 +88,7 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
                 s.perm_power += amount
             else:
                 s.temp_power += amount
+            game._record_max_power(s)
 
 
 @action("buff_health")
@@ -156,6 +157,7 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int) -> None:
         s.perm_power = legacy.get("perm_power", 0)
         s.perm_health = legacy.get("perm_health", 0)
         s.health += s.perm_health
+    s.ext["max_power"] = s.base_power + s.perm_power  # 力量历史峰值初值（断臂记账）
     p.shikigami.append(s)
     idx = len(p.shikigami) - 1
     game._log(f"{p.name} 召唤了 {d.name}")
@@ -184,6 +186,7 @@ def attack_buff(game, ctx, *, targets: list[Ref], power: int = 0,
         entry: dict = {"power": power, "keywords": []}
         if power:
             s.temp_power += power
+            game._record_max_power(s)
         for kw in keywords or []:
             cls = game._grant_keyword(s, kw)
             entry["keywords"].append((kw, cls))
@@ -587,6 +590,56 @@ def enter_combat(game, ctx, *, targets: list[Ref]) -> None:
         game._enter_combat(p, ref.shikigami)
 
 
+@action("force_enter_combat")
+def force_enter_combat(game, ctx, *, targets: list[Ref]) -> None:
+    """强制目标进入其战斗区（鬼之手类"将敌方准备区式神移入战斗区"，targets 经
+    enemy_bench 池选择）。
+
+    移动语义与 enter_combat 相同（驻守者退回）；尘缚之阵锁定下（移入会替换被锁定的
+    战斗区式神时）该效果静默无效，与 enter_combat 的锁定处理对齐。
+    """
+    enter_combat(game, ctx, targets=targets)
+
+
+@action("player_aura")
+def player_aura(game, ctx, *, targets: list[Ref], when: str,
+                condition: dict | None = None, steps: list | None = None,
+                once_key: str | None = None) -> None:
+    """给控制者牌手登记一个"本局游戏"级持久监听（targets 忽略；豪焰类附着于牌手的能力）。
+
+    事件 when 触发且 condition 满足时结算 steps；登记于 `PlayerState.auras`——
+    跨气绝保留、回合开始不清除、不限触发次数。once_key：已登记同键监听时跳过
+    （"四项均有则不会再赋予"类不可叠加）。
+    """
+    from db.schema import EffectBlock, Step
+    p = game.state.players[ctx.controller]
+    if once_key is not None and any(a.get("once_key") == once_key for a in p.auras):
+        return
+    block = EffectBlock(when=when, condition=condition,
+                        steps=[Step.model_validate(st) for st in (steps or [])])
+    p.auras.append({"block": block, "once_key": once_key})
+    game._log(f"{p.name} 获得了牌手级能力（本局游戏）")
+
+
+@action("followup_attack")
+def followup_attack(game, ctx, *, targets: list[Ref]) -> None:
+    """登记一次战斗结束后的追加攻击（targets 忽略；地狱之手类临时能力）。
+
+    追加攻击在整场战斗结束、战斗牌加成随终止点核销后依次结算（一场战斗中可多次登记，
+    链式排队），不享受原战斗牌的力量/关键字加成；来源式神届时在场才发起，目标为生命
+    最低的敌方式神（平手随机，帷幕不可选；无合法目标则改为无目标战斗）。
+    须挂在战斗绑定的触发块（temp_grants 等）上——触发事件须带 battle payload
+    （气绝后等延时能力在战斗弹栈后结算，故按事件中的战斗 id 登记而非当前战斗栈）。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        return
+    bid = (ctx.event or {}).get("battle")
+    if bid is None or bid not in game._battle_followups:
+        return
+    game._battle_followups[bid].append(ctx.source)
+    game._log(f"{game.db.shikigami[game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id].name} 登记了战斗结束后的追加攻击")
+
+
 @action("cap_damage")
 def cap_damage(game, ctx, *, targets: list[Ref], to: str = "shield") -> None:
     """伤害上限（森罗之阵；targets 忽略）：改写事件中可变伤害对象的数值。
@@ -800,7 +853,7 @@ def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
     game.state.next_uid += 1
     chosen: list[Ref] = []
     if cdef.target.kind == "choose":
-        pool = targets_mod.pool_refs(game, cdef.target.pool, ctx.controller)
+        pool = targets_mod.pool_refs(game, cdef.target.pool, ctx.controller, targeted=True)
         if pool:
             chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选择
     game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了《{cdef.name}》")
@@ -848,6 +901,7 @@ def reapply_attack_buff_power(game, ctx, *, targets: list[Ref]) -> None:
         total = sum(e.get("power", 0) for e in s.attack_buffs)
         if total:
             s.temp_power += total
+            game._record_max_power(s)
             s.attack_buffs.append({"power": total, "keywords": []})
             game._log(f"{game.db.shikigami[s.id].name} 再次获得法术强化的 {total} 力量加成")
 

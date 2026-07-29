@@ -116,6 +116,9 @@ class Game:
         self._battle_counter_piercing: set[int] = set()
         # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量)]，"攻击时"登记、战斗结束后回赋
         self._battle_echo: dict[int, list[tuple[Ref, int]]] = {}
+        # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
+        # 战斗终止点清理后依次结算，不享受原战斗牌的力量/关键字加成——地狱之手）
+        self._battle_followups: dict[int, list[Ref]] = {}
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -143,6 +146,14 @@ class Game:
             if keyword in lst:
                 lst.remove(keyword)
                 return
+
+    @staticmethod
+    def _record_max_power(s: ShikigamiState) -> None:
+        """力量历史峰值记账：ext["max_power"] = 本局最高力量（基础+永久+临时，不含战力；
+        只增不减，跨气绝保留不重置——断臂"本局最高力量-当前力量"用）。"""
+        cur = s.base_power + s.perm_power + s.temp_power
+        if cur > s.ext.get("max_power", 0):
+            s.ext["max_power"] = cur
 
     @property
     def current(self) -> PlayerState:
@@ -556,7 +567,8 @@ class Game:
             if want is None:
                 raise IllegalAction("该牌需要选择目标")
             want = want if isinstance(want, Ref) else Ref(**want)
-            if want not in targets.pool_refs(self, eff_target.pool, self.state.active):
+            if want not in targets.pool_refs(self, eff_target.pool, self.state.active,
+                                             targeted=True):
                 raise IllegalAction("目标不合法")
             chosen = [want]
         if self._fast_applies(p, cdef, card):
@@ -587,7 +599,7 @@ class Game:
                 # 战斗前/后时机、战斗伤害），结算完后进入墓地。
                 if si is None:
                     raise IllegalAction("战斗牌必须有所属式神")
-                self._resolve_combat_card(p, si, card, cdef, method)
+                self._resolve_combat_card(p, si, card, cdef, method, chosen)
             else:
                 self.move_card(p, card, "graveyard")
                 ctx = ExecContext(
@@ -750,15 +762,22 @@ class Game:
             self._change_shield(ref, shield, "combat_card")
 
     def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
-                             cdef: CardDef, method: PlayMethod | None) -> None:
+                             cdef: CardDef, method: PlayMethod | None,
+                             chosen: list[Ref] | None = None) -> None:
         """战斗牌完整事件流程：获得战力/护甲、牌移至墓地、战斗（移入战斗区、战斗前、战斗伤害、战斗后）。
 
         战斗牌提供的力量（战力）在战斗后清除；提供的护甲/破甲会保留，并按即时时机
-        发出 on_shield_changed 事件。
+        发出 on_shield_changed 事件。追猎战斗牌以选择目标为战斗目标（有目标的非出击战斗；
+        必须选择一名合法敌方式神——无合法目标时该牌不能使用）。
         """
         s = p.shikigami[si]
         if not s.in_play:
             raise IllegalAction("该式神未在场，无法使用战斗牌")
+        hunt_target: Ref | None = None
+        if "hunt" in cdef.keywords:
+            if not chosen:
+                raise IllegalAction("追猎战斗牌需要选择一名敌方式神为目标")
+            hunt_target = chosen[0]
         block = self._played_block(p, cdef, card, method)
         power, shield = self.combat_card_stats(block, card, s, p=p)
         atk_ref = Ref(player=self.state.active, shikigami=si)
@@ -792,7 +811,8 @@ class Game:
         self.move_card(p, card, "graveyard")
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                              temp_grants=tuple(cdef.temp_grants), convert=convert,
-                             counter_piercing=counter_piercing)
+                             counter_piercing=counter_piercing,
+                             target=hunt_target, origin="card")
         s.combat_power = 0
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
@@ -841,7 +861,7 @@ class Game:
         cdef = self.db.cards[card.id]
         if cdef.target.kind != "choose":
             return []
-        return targets.pool_refs(self, cdef.target.pool, player_index)
+        return targets.pool_refs(self, cdef.target.pool, player_index, targeted=True)
 
     @staticmethod
     def _assign_hand_seq(p: PlayerState, card: CardInstance) -> None:
@@ -935,7 +955,9 @@ class Game:
                         immunities: tuple = (),
                         temp_grants: tuple[EffectBlock, ...] = (),
                         convert: bool = False,
-                        counter_piercing: bool = False) -> None:
+                        counter_piercing: bool = False,
+                        target: Ref | None = None,
+                        origin: str = "effect") -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
@@ -946,6 +968,9 @@ class Game:
         一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）；
         convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）；
         counter_piercing = 反击贯通：本战斗中被攻击方的反击伤害具有贯通（终止点清除标记）。
+        target = 有目标的战斗的战斗目标（追猎；None = 无目标战斗，被攻击者按敌方战斗区/直击
+        决定）；origin = 发起方式（"assault" 出击 / "card" 战斗牌 / "effect" 效果发起）——
+        帷幕再校验时出击取消战斗、其余改为无目标战斗（thoughts.txt 帷幕定义）。
         """
         self._battle_seq += 1
         bid = self._battle_seq
@@ -953,9 +978,17 @@ class Game:
         grants: list[tuple[Ref, str, str]] = []
         self._battle_grants[bid] = grants
         self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
-        # 条件授予/免疫的求值事件：被攻击者 = 敌方战斗区式神，否则敌方牌手
-        def_event = {"defender": Ref(player=1 - atk_ref.player,
-                                     shikigami=self.state.players[1 - atk_ref.player].combat_index)}
+        self._battle_followups[bid] = []  # 战斗结束后的追加攻击登记（战斗结束后结算）
+        # 条件授予/免疫的求值事件：被攻击者 = 战斗目标；无目标时敌方战斗区式神，
+        # 无目标且攻击者持直击（确定目标前1）则为敌方牌手
+        d0 = self.state.players[1 - atk_ref.player]
+        if target is not None:
+            vic0 = target.shikigami
+        elif self._has_keyword(attacker, "direct"):
+            vic0 = None  # 直击：无目标的战斗被攻击者改为敌方牌手
+        else:
+            vic0 = d0.combat_index
+        def_event = {"defender": Ref(player=1 - atk_ref.player, shikigami=vic0)}
         for kw, cond in grant_keywords:
             if cond is not None and not self._match(cond, def_event, atk_ref.player,
                                                     holder=atk_ref):
@@ -975,7 +1008,7 @@ class Game:
             self.state.temp_grants.append(TempGrant(
                 block=block, controller=atk_ref.player, holder=atk_ref, battle=bid))
         try:
-            self._battle_flow(atk_ref, attacker, move=move)
+            self._battle_flow(atk_ref, attacker, move=move, target=target, origin=origin)
         finally:
             # 终止点（rules.md:174）：移除本战斗授予的关键字实例与免疫条目
             for ref, kw, cls in grants:
@@ -1002,15 +1035,62 @@ class Game:
                     for kw, cls in entry.get("keywords", []):
                         self._remove_keyword(attacker, kw, cls)
                 attacker.attack_buffs.clear()
+        # 战斗结束后：先结算战斗中积累的延时能力（气绝后等——追加攻击登记在其中），
+        # 再依次结算本战斗登记的追加攻击（战斗绑定的力量/关键字/临时触发已在上方
+        # 终止点核销，追加战斗不享受原战斗牌加成——答复(7)）
+        attacker.combat_power = 0  # 本次战斗战力于战斗结束时清除（追加攻击不继承）
+        self._drain_queue()
+        self._resolve_followup_attacks(bid)
 
-    def _battle_flow(self, atk_ref: Ref, attacker: ShikigamiState, *, move: bool) -> None:
-        """战斗步骤：战斗准备前 → 战斗准备（移动）→（被）攻击时 → 先攻阶段 → 交战阶段 → 战斗后。
+    def _resolve_followup_attacks(self, bid: int) -> None:
+        """战斗结束后的追加攻击（地狱之手类）：对生命最低的敌方式神（平手随机）发起
+        有目标的战斗；无合法目标（含全持帷幕）时改为无目标战斗。"""
+        for ref in self._battle_followups.pop(bid, []):
+            if self.state.winner is not None or self.state.pending_end:
+                return
+            st = self.state.players[ref.player].shikigami[ref.shikigami]
+            if not st.in_play:
+                continue
+            def_pi = 1 - ref.player
+            d = self.state.players[def_pi]
+            pool = [Ref(player=def_pi, shikigami=i)
+                    for i, s in enumerate(d.shikigami)
+                    if s.in_play and not s.dying
+                    and not targets.is_veiled(self, Ref(player=def_pi, shikigami=i), ref.player)]
+            target = None
+            if pool:
+                lo = min(d.shikigami[r.shikigami].health for r in pool)
+                target = self.rng.choice(
+                    [r for r in pool if d.shikigami[r.shikigami].health == lo])
+                self._log(f"追加攻击以 {self.db.shikigami[d.shikigami[target.shikigami].id].name} 为目标")
+            self._log(f"{self.db.shikigami[st.id].name} 发起了战斗结束后的追加攻击")
+            self._resolve_combat(ref, st, target=target, origin="effect")
 
-        锚点（未实现）：激怒移除、战斗结界中的嵌套战斗、被攻击者气绝后复活不终止战斗。
+    def _battle_flow(self, atk_ref: Ref, attacker: ShikigamiState, *, move: bool,
+                     target: Ref | None = None, origin: str = "effect") -> None:
+        """战斗步骤：战斗准备前 → 战斗准备（移动/确定目标）→（被）攻击时 → 先攻阶段 → 交战阶段 → 战斗后。
+
+        target = 有目标的战斗的战斗目标（追猎）；origin 区分发起方式——目标在发起战斗前
+        获得帷幕（或已不可指定）时：有目标的出击不发起战斗，其余改为无目标战斗
+        （thoughts.txt 帷幕定义）。确定目标（战斗准备步骤）：有目标用目标；无目标且
+        攻击者持直击（确定目标前1）则被攻击者改为敌方牌手；否则敌方战斗区式神。
+        锚点（未实现）：战斗结界中的嵌套战斗、被攻击者气绝后复活不终止战斗。
         """
         p = self.state.players[atk_ref.player]
         def_pi = 1 - atk_ref.player
         d = self.state.players[def_pi]
+        # ---- 发起战斗前：有目标的战斗目标再校验（帷幕/气绝/离场）----
+        if target is not None:
+            ts = (d.shikigami[target.shikigami]
+                  if target.player == def_pi and target.shikigami is not None
+                  and 0 <= target.shikigami < len(d.shikigami) else None)
+            if (ts is None or not ts.in_play or ts.dying
+                    or targets.is_veiled(self, target, atk_ref.player)):
+                if origin == "assault":
+                    self._log("战斗目标已不能成为攻击目标，不发起本次战斗")
+                    return
+                self._log("战斗目标已不能成为攻击目标，本次战斗改为无目标战斗")
+                target = None
         remote = self._has_keyword(attacker, "remote")
         piercing = self._has_keyword(attacker, "piercing")
         combo = self._has_keyword(attacker, "combo")
@@ -1024,16 +1104,26 @@ class Game:
         if attacker.defeated or attacker.despawned:
             self._log("攻击方在战斗准备阶段气绝/离场，战斗中止")
             return
+        # ---- 确定被攻击者：战斗目标 / 直击改牌手（确定目标前1）/ 敌方战斗区式神 ----
+        if target is not None:
+            vic_idx = target.shikigami
+        elif self._has_keyword(attacker, "direct"):
+            vic_idx = None  # 直击：无目标的战斗被攻击者改为敌方牌手（追猎已选目标则覆盖直击）
+            self._log(f"{self.db.shikigami[attacker.id].name} 的【直击】生效，被攻击者改为对方牌手")
+        else:
+            vic_idx = d.combat_index
         # ---- （被）攻击时（即时时机）----
         self.emit("on_before_assault", attacker=atk_ref,
-                  victim=Ref(player=def_pi, shikigami=d.combat_index),
+                  victim=Ref(player=def_pi, shikigami=vic_idx),
                   battle=self._battle_stack[-1])
         self._drain_queue()
         if attacker.defeated or attacker.despawned:
             self._log("攻击方在伤害结算前气绝/离场，战斗中止")
             return
-        # ---- 确定被攻击者：敌方战斗区式神，否则敌方牌手 ----
-        vic_idx = d.combat_index
+        # （被）攻击时结算后敌方战斗区可能已变：无目标的战斗被攻击者随之变更
+        # （rules.md「被攻击者随敌方战斗区式神改变而变更」）；有目标/直击者不变
+        if target is None and not self._has_keyword(attacker, "direct"):
+            vic_idx = d.combat_index
 
         def attack_event() -> _DamageEvent:
             return _DamageEvent(source=atk_ref, victim=Ref(player=def_pi, shikigami=vic_idx),
@@ -1114,6 +1204,19 @@ class Game:
         if (p.combat_index != i and not self._has_keyword(s, "remote")
                 and self._combat_zone_locked(self.state.active)):
             raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
+        # 追猎：持追猎的式神主动出击可任选一名合法敌方式神为战斗目标（不选 = 无目标战斗，
+        # 被攻击者按敌方战斗区/直击决定；无追猎不能选择出击目标）
+        target: Ref | None = None
+        want = cmd.get("target")
+        if want is not None:
+            want = want if isinstance(want, Ref) else Ref(**want)
+            if not self._has_keyword(s, "hunt"):
+                raise IllegalAction("没有追猎的式神出击不能选择目标")
+            if (want.player != 1 - self.state.active or want.shikigami is None
+                    or want not in targets.pool_refs(
+                        self, "enemy_shikigami", self.state.active, targeted=True)):
+                raise IllegalAction("追猎出击须以一名合法敌方式神为目标")
+            target = want
         # 迅捷：出击事件的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷（永久迅捷不移除）
         if self._has_keyword(s, "haste"):
             if "haste" in s.one_shot_keywords:
@@ -1126,7 +1229,7 @@ class Game:
         p.assaults_left -= 1
         atk_ref = Ref(player=self.state.active, shikigami=i)
         self._consume_assault_boosts(p, atk_ref, s)
-        self._resolve_combat(atk_ref, s)
+        self._resolve_combat(atk_ref, s, target=target, origin="assault")
 
     def _consume_assault_boosts(self, p: PlayerState, atk_ref: Ref, s: ShikigamiState) -> None:
         """出击时消耗全部出击加成/鼓舞（rules.md 出击流程 4.2-4.3）：
@@ -1138,6 +1241,7 @@ class Game:
         if power:
             s.temp_power += power
             s.attack_buffs.append({"power": power, "keywords": []})
+            self._record_max_power(s)
         if shield:
             self._change_shield(atk_ref, shield, "basic_boost")
         self._log(f"{self.db.shikigami[s.id].name} 获得出击加成（+{power}力量/+{shield}护甲）")
@@ -1220,6 +1324,7 @@ class Game:
                                      block=cdef.countdown_effects, source=card.id)
         if cdef.form_power is not None:
             s.base_power = cdef.form_power
+            self._record_max_power(s)  # 形态基础力量变更后同步峰值记账
         if cdef.form_health is not None:
             s.base_health = cdef.form_health
         s.health = s.max_health
@@ -1764,6 +1869,14 @@ class Game:
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
+            # 必杀：来源式神持 lethal 且本次伤害实际造成（走到扣减生命即已造成）——
+            # 令受伤者在该次伤害事件后延时结算气绝事件，不提前标濒死；与伤害本身
+            # 导致的气绝并行结算（同入 victims 队列，check_defeated 幂等去重）
+            if (ev.source is not None and ev.source.shikigami is not None
+                    and self._has_keyword(
+                        self.state.players[ev.source.player].shikigami[ev.source.shikigami],
+                        "lethal")):
+                victims.append((ev.victim, ev.source, "必杀"))
             if (self._affected_stack
                     and ev.victim.player != self._affected_stack[-1]["controller"]
                     and ev.victim not in self._affected_stack[-1]["refs"]):
@@ -1840,6 +1953,10 @@ class Game:
         待相应机制引入（见 docs/rules.md）。
         """
         s = self.state.players[ref.player].shikigami[ref.shikigami]
+        if reason == "必杀" and not s.defeated and s.health > 0:
+            # 必杀的延时气绝：伤害本身未致死（未标濒死）时令受伤者气绝
+            s.health = 0
+            self._log(f"{self.db.shikigami[s.id].name} 因【必杀】而气绝")
         if s.defeated or s.health > 0:
             return
         # 气绝前/消灭前 1（rules.md 第七章 step 1，即时时机；射怪鸟事类响应挂此时机）
@@ -1979,10 +2096,24 @@ class Game:
             # 第三收集来源（式神能力之后、响应牌之前，docs/enhance-design.md 第一节）：
             # 卡牌触发器（全库游离触发块）与一次性临时触发（按注册顺序，只收一次）
             out.extend(self._collect_card_triggers(event, pi))
+            out.extend(self._collect_player_auras(event, pi))
             if pi == self.state.active:
                 out.extend(self._collect_temp_grants(event))
             if pi != self.state.active and self._response_used_emit != event["_emit"]:
                 out.extend(self._collect_responses(event, pi))
+        return out
+
+    def _collect_player_auras(self, event: dict, pi: int) -> list[_Pending]:
+        """收集牌手级持久监听（PlayerState.auras，"本局游戏"类能力；豪焰）：
+        附着于牌手——跨气绝保留、回合开始不清除、不限触发次数，按注册顺序收集。"""
+        out: list[_Pending] = []
+        for entry in self.state.players[pi].auras:
+            block = entry["block"]
+            if block.when != event["name"]:
+                continue
+            if self._match(block.condition, event, pi):
+                out.append(_Pending(block, ExecContext(
+                    controller=pi, event=event, is_ability=True)))
         return out
 
     def _collect_card_triggers(self, event: dict, pi: int) -> list[_Pending]:

@@ -26,7 +26,7 @@ from db.loader import CardDatabase
 HELP = """指令（括号内为 alias，序号从 1 开始）：
   play (p)   <手牌序号> [子选项] [目标] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
                                                （协战牌先给子选项序号 0/1，如 p 3 0）
-  assault (a) <式神序号>               式神出击（耗 1 鬼火 + 每回合 1 次次数）
+  assault (a) <式神序号> [目标]          式神出击（耗 1 鬼火 + 每回合 1 次次数；追猎可指定敌方式神目标，如 a 1 e2）
   upgrade (u) <式神序号>               升级式神（只能升己方当前最低级）
   end (e)                              结束回合
   state (st)                           重印场面
@@ -546,7 +546,8 @@ def _battle_loop(game: Game) -> None:
                     eff = options[pick]
                 if eff.target.kind == "choose":
                     from core import targets as _targets
-                    legal = _targets.pool_refs(game, eff.target.pool, game.state.active)
+                    legal = _targets.pool_refs(game, eff.target.pool, game.state.active,
+                                               targeted=True)
                     if rest:
                         code = rest.pop(0)
                     else:
@@ -559,7 +560,25 @@ def _battle_loop(game: Game) -> None:
                 game.apply(cmd_dict)
                 print(render(game))
             elif cmd in ("assault", "upgrade"):
-                game.apply({"op": cmd, "index": int(args[0]) - 1})
+                cmd_dict: dict = {"op": cmd, "index": int(args[0]) - 1}
+                if cmd == "assault":
+                    # 追猎：可任选一名合法敌方式神为战斗目标（不选 = 默认无目标战斗）
+                    s = game.state.players[game.state.active].shikigami[cmd_dict["index"]]
+                    kws = s.keywords + s.one_shot_keywords + s.perm_keywords
+                    if "hunt" in kws:
+                        from core import targets as _targets
+                        legal = _targets.pool_refs(game, "enemy_shikigami",
+                                                   game.state.active, targeted=True)
+                        if len(args) > 1:
+                            cmd_dict["target"] = parse_ref(args[1], game.state.active)
+                        elif legal:
+                            print("追猎可选目标: " + " ".join(
+                                ref_code(r, game.state.active) for r in legal)
+                                + "（回车 = 默认战斗区）")
+                            code = tui.prompt("追猎目标 > ").strip()
+                            if code:
+                                cmd_dict["target"] = parse_ref(code, game.state.active)
+                game.apply(cmd_dict)
                 print(render(game))
             elif cmd == "end":
                 game.apply({"op": "end_turn"})

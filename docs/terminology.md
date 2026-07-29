@@ -88,7 +88,7 @@
 | 突袭 | `strike` | 使一个式神仅在下一次出击且与敌方式神战斗时获得增益 | 🔧 |
 | 免疫 | `immune` | 免疫某类伤害/效果；战斗伤害免疫已实现为带作用域的 `battle_immunity`（见本节末说明），通用免疫 🔧 | 🔧 |
 | 倒计时 | `countdown` | 式神级倒计时能力（一名式神至多 1 个，新注册替换旧的；不论基础/觉醒/形态来源）：三要素 `countdown_initial`（初值）/ `countdown_block`（归零效果块，`EffectBlock.countdown` 非 None 的能力块或形态牌 `countdown_effects`）/ `countdown_once`（一次型），另记来源 `countdown_source`（基础=式神 id / 觉醒=觉醒牌 id / 形态=形态牌 id）。注册时机：能力进场（对局开始/升至 1 级/复活）、觉醒替换、形态结附、`set_countdown` 动作；形态离场仅清除形态授予的，气绝清除。归零（rules.md ch12 修订版）：先即时插入结算（此时仍为 0，块内对自身 `countdown_delta` 修正为 -0）→ 记账 `countdown_history` → 循环型重置/一次型移除 | ✅ |
-| 直击 | `direct_hit` | | 🔧 |
+| 直击 | `direct` | 战斗事件"确定目标前1"：若本次战斗无目标，被攻击者改为敌方牌手（无视敌方战斗区式神）；追猎已选定目标时直击被覆盖 | ✅ |
 | 迅捷 | `haste` | 一次性：出击的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷；仍消耗出击次数 | ✅ |
 | 屏障 | `barrier` | 一次性：伤害事件"护甲计算前3"将伤害值改为 0 并移除一个实例 | ✅ |
 | 不屈 | `unyielding` | 生命>1 且伤害≥当前生命时保留 1 点生命；一次性不屈触发后全部消耗，持续/永久不屈保留可再触发；生命=1 不触发 | ✅ |
@@ -96,14 +96,15 @@
 | 运势 | `luck` | 运势判定 = luck check | 🔧 |
 | 增强 | `enhance` | | 🔧 |
 | 鼓舞/压制 | `basic_boost` / `assault_boosts` | 出击加成：`basic_boost` 动作登记于牌手（`PlayerState.assault_boosts`），下一次出击全部消耗——力量挂攻击后到期强化（战后核销）、护甲获得后保留；战斗牌不消耗。压制（负值）🔧 | ✅（鼓舞） |
-| 追猎 | `hunt` | | 🔧 |
+| 追猎 | `hunt` | 有目标的战斗：战斗牌持追猎主动使用时须选择 1 名合法敌方式神为战斗目标（不能选牌手；无合法目标则不能使用）；式神/形态持追猎主动出击可任选合法敌方式神为目标（不选 = 默认无目标战斗）；发起者无远程照常移入战斗区；`launch_attack` 类"使己方式神发起攻击"是无目标战斗，不吃追猎 | ✅ |
 | 贯通 | `piercing` | 对式神的非反击伤害超过其当前生命时，溢出部分改对所属牌手造成。是"伤害原因"的属性：式神持有的贯通仅传导至其战斗伤害与基础/觉醒/形态能力（含形态倒计时、延迟"会"）伤害；卡牌效果伤害不继承，除非步骤显式声明 `piercing: true`（实现：`ExecContext.is_ability` + damage/random_damage 动作缺省继承） | ✅ |
 | 穿刺 | `pierce` | 造成伤害前（伤害事件批次0，即时时机）移除受伤者所有护甲/屏障——与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于任意来源伤害（含非战斗伤害） | ✅ |
 | 吸血 | `lifesteal` | 伤害流程"造成/受到伤害后"（延时，优先级 1 锚点）：来源式神持有则生成以其控制者牌手为执行者的恢复生命事件（治疗量 = 该次伤害值，走 `Game.heal` 管线；实现 `Game._queue_lifesteal` 合成 _Pending 入队） | ✅ |
 | 投射 | `projectile`（目标池） | 优先敌方战斗区式神，战斗区为空则退回敌方牌手 | ✅ |
 | 唯一 | `unique` | | 🔧 |
 | 先攻 | `initiative` | 先攻阶段造成伤害、交战阶段不再造成（结构已实现，暂无卡牌持有） | ✅ |
-| 必杀 | `fatal` | | 🔧 |
+| 必杀 | `lethal` | 不是伤害属性：伤害事件造成伤害后，来源持必杀则令受伤者在该次伤害事件后延时结算气绝（剩余生命 >0 不提前标濒死；与伤害本身导致的气绝并行结算——victims 队列追加"必杀"条目，`check_defeated` 幂等；伤害被免疫未造成则不触发） | ✅ |
+| 帷幕 | `veil` | 不能成为敌方出击/用牌的合法目标：choose/出击目标过滤（`pool_refs(targeted=True)`）；已确定目标在效果结算时持帷幕则取消目标相关效果（`targets.resolve` 再校验，仅卡牌效果、能力不受）；有目标的出击发起前目标获帷幕则不发起战斗、有目标的非出击战斗则改为无目标战斗（`_battle_flow` 发起前再校验）；全体/随机效果不取对象不受影响 | ✅ |
 | 远程 | `remote` | 不进入战斗区、不受先攻及交战阶段的反击伤害 | ✅ |
 | 连击 | `combo` | 先攻阶段与交战阶段各造成一次战斗伤害 | ✅ |
 | 暴击 | `critical` | | 🔧 |
@@ -122,7 +123,7 @@
 
 ## 预留机制（译名确认，规则 Phase 5+）
 
-弹回 `rebound`、融合 `fusion`、帷幕 `veiled`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
+弹回 `rebound`、融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
 
 ## 结算与事件
 
@@ -145,9 +146,12 @@
 | 半回合 | `turn` | GameState.turn，双方交替 +1 | ✅ |
 | 延迟能力 | `delayed` / `delay_grant`（动作） | 绑定式神的一次性延迟能力（会）：条目 {block, chosen, uses, secret, scope}，事件匹配时先触发后执行、收集即消耗；气绝清除（变形离场保留——变形未实现）；scope="turn" 时己方回合开始清除（魔音扰心类）、scope="play" 时该次出牌结算结束清除（黑羽之刃类"本次使用期间"）；secret=True 时选择目标对敌方保密（联机脱敏抹除对手视角的 chosen） | ✅ |
 | 伤害上限 | `cap_damage`（动作） | 改写伤害事件中可变伤害对象的数值：to="shield" 时至多为受伤式神当前护甲（森罗之阵；须挂 on_damage_start 等含 damage payload 的时点批次） | ✅ |
-| 战斗区锁定 | `combat_lock`（tags） | 尘缚之阵：携带者（兵俑）在战斗区且敌方战斗区有式神时，会使敌方战斗区式神被替换的效果无效且不能进行（不看发起者）——召唤召唤物无效、准备区式神不能发起无远程的战斗（出击/战斗牌）、响应战斗牌插入移入不可用、enter_combat 效果无效；退回准备区不受限；效果发起的战斗暂无来源 | ✅ |
+| 战斗区锁定 | `combat_lock`（tags） | 尘缚之阵：携带者（兵俑）在战斗区且敌方战斗区有式神时，会使敌方战斗区式神被替换的效果无效且不能进行（不看发起者）——召唤召唤物无效、准备区式神不能发起无远程的战斗（出击/战斗牌）、响应战斗牌插入移入不可用、enter_combat / force_enter_combat 效果无效；退回准备区不受限；效果发起的战斗暂无来源 | ✅ |
 | 免疫直接消灭 | `destroy_immune`（tags） | 尘缚之阵：结附带此标记形态的式神在战斗区时，`destroy` 动作对其无效（日志记"免疫了本次消灭"）；伤害消灭/形态消灭不受影响 | ✅ |
 | 退回准备区 | `retreat`（动作） | 目标式神移回准备区（与 `enter_combat` 对称；仅战斗区式神有效，召唤物退回即离场） | ✅ |
+| 强制进场 | `force_enter_combat`（动作） | 强制目标进入其战斗区（鬼之手类"将敌方准备区式神移入战斗区"，targets 经 enemy_bench 池选择）；移动语义同 enter_combat，尘缚锁定下（移入会替换被锁战斗区式神）静默无效 | ✅ |
+| 牌手级持久监听 | `player_aura`（动作）/ `PlayerState.auras` | "本局游戏"类能力附着于牌手（豪焰）：事件触发即结算块，不限次数、跨气绝保留、回合开始不清除；`once_key` 防重复登记；emit 时按注册顺序收集（`_collect_player_auras`，卡牌触发器之后） | ✅ |
+| 战斗结束追加攻击 | `followup_attack`（动作）/ `_battle_followups` | 登记战斗结束后的追加攻击（地狱之手类）：整场战斗终止点核销后先结算积累的延时能力（登记在其中），再依次结算——目标为生命最低敌方式神（平手随机、帷幕不可选；无合法目标改无目标战斗），不享受原战斗牌战力/关键字；可多次登记链式排队；按触发事件 battle payload 登记（气绝后延时能力在战斗弹栈后结算） | ✅ |
 | 倒计时增减 | `countdown_delta` / `set_countdown`（动作） | `countdown_delta`：倒计时 ±（无能力/为 0 修正 -0，≤0 走归零流程）；`set_countdown`：注册新倒计时能力（initial/steps/once，替换旧的；record=True 记录事件所用卡牌到式神 `ext["recorded_card"]`） | ✅ |
 | 凭空自动使用 | `recast_recorded`（动作） | 凭空生成 `ext["recorded_card"]` 记录卡 id 的同名牌并免费自动使用（不耗鬼火、非从手牌、无主动目标；大天狗倒计时）；`gain_orb`：获得鬼火 | ✅ |
 | Step 级条件 | `Step.condition` | 结算时以条件迷你语言求值，不满足则跳过该 step（op 自身声明 condition 参数者——如 delay_grant——仍作 op 参数传递） | ✅ |
@@ -204,6 +208,7 @@
 | `turn_marks` | `PlayerState.ext` | "每回合合计一次"标记表（turn_mark 写入，任一回合开始双方清除；寂寥心象用） |
 | `power_zero` | `ShikigamiState.ext` | 力量覆写标记（power_override 写入/解除；eff_power 覆写层——力量视为 0；形态离场/气绝清除；笨拙用） |
 | `spell_echo` | `ShikigamiState.ext` | 法术回响序列登记（{sequence, cursor, triggered, once_key}；spell_echo 动作写入，己方回合开始清除；涅槃业火用） |
+| `max_power` | `ShikigamiState.ext` | 本局历史最高力量（基础+永久+临时，不含战力；只增不减，跨气绝保留不重置——断臂"本局最高力量-当前力量"用；`Game._record_max_power` 在力量变化点更新，初始 = 基础力量） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 

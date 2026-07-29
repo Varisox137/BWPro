@@ -32,6 +32,7 @@ def build_player(
             id=sid, kind=d.kind, faction=d.faction,
             home_slot=idx + 1, entry_order=idx + 1,
             base_power=d.power, base_health=d.health, health=d.health,
+            ext={"max_power": d.power},  # 力量历史峰值初值 = 基础力量（断臂记账）
             perm_keywords=list(d.keywords)))  # 先天关键字（贯通等）按永久类别入列
     uid = uid_start
     deck = []

@@ -503,3 +503,40 @@ def test_effect_immunity_not_combat(db, make_game):
     ref = Ref(player=0, shikigami=IDX)
     g.deal_to_shikigami(ref, 2, Ref(player=1, shikigami=0), kind="combat")
     assert pa.shikigami[IDX].health == 2     # 战斗伤害照常
+
+
+# ---------- 必杀 ----------
+
+def test_lethal_delayed_defeat(db, make_game):
+    """必杀：造成伤害后受伤者延时结算气绝（不提前标濒死——剩余生命 >0 也气绝）；
+    与伤害本身导致的气绝并行结算（幂等，气绝事件只结算一次）。"""
+    g = make_game()
+    pa, pb = g.state.players
+    a, b = pa.shikigami[0], pb.shikigami[0]
+    move(g, 1, 0)
+    a.keywords.append("lethal")
+    a.temp_power = -1  # 2 攻：伤害本身不致死（4 血 → 剩 2）
+    g.apply({"op": "assault", "index": 0})
+    assert b.defeated and b.health == 0  # 必杀延时气绝（伤害未致死仍气绝）
+    assert g.history.count("on_shikigami_defeated") == 1
+    # 伤害致死与必杀并行结算：气绝事件仍只结算一次
+    g2 = make_game()
+    a2, b2 = g2.state.players[0].shikigami[0], g2.state.players[1].shikigami[0]
+    move(g2, 1, 0)
+    a2.keywords.append("lethal")
+    a2.temp_power = 1  # 4 攻：伤害本身击杀 4 血
+    g2.apply({"op": "assault", "index": 0})
+    assert b2.defeated
+    assert g2.history.count("on_shikigami_defeated") == 1
+
+
+def test_lethal_not_damage_property(db, make_game):
+    """必杀不是伤害属性：伤害被免疫（未造成）则不触发；与伤害免疫/屏障等无关。"""
+    g = make_game()
+    pa, pb = g.state.players
+    a, b = pa.shikigami[0], pb.shikigami[0]
+    move(g, 1, 0)
+    a.keywords.append("lethal")
+    b.immunities.append({"kind": "combat_damage", "turn": g.state.turn})
+    g.apply({"op": "assault", "index": 0})
+    assert b.health == 4 and not b.defeated  # 未造成伤害：必杀不触发

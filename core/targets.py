@@ -32,8 +32,27 @@ POOLS = frozenset({
 })
 
 
-def pool_refs(game, pool: str, controller: int) -> list[Ref]:
-    """列出 pool 中当前全部合法目标（仅在场式神：存活、未离场、非濒死、等级 >= 1）。"""
+def _veiled_state(s) -> bool:
+    return ("veil" in s.keywords or "veil" in s.one_shot_keywords
+            or "veil" in s.perm_keywords)
+
+
+def is_veiled(game, ref: Ref, controller: int) -> bool:
+    """帷幕：ref 是否为对 controller 而言不可被出击/用牌指定的敌方式神（持 veil 关键字）。
+
+    仅阻挡"选择目标"（choose/出击目标/有目标的战斗）；all 池全体效果与随机效果不取对象，
+    不受帷幕影响。牌手暂不持帷幕。
+    """
+    if ref.shikigami is None or ref.player == controller:
+        return False
+    return _veiled_state(game.state.players[ref.player].shikigami[ref.shikigami])
+
+
+def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> list[Ref]:
+    """列出 pool 中当前全部合法目标（仅在场式神：存活、未离场、非濒死、等级 >= 1）。
+
+    targeted=True（choose 选择/出击目标等有目标的指定）时，持帷幕的敌方式神不可选。
+    """
     enemy = 1 - controller
 
     def alive_shiki(pi: int) -> list[Ref]:
@@ -41,6 +60,7 @@ def pool_refs(game, pool: str, controller: int) -> list[Ref]:
             Ref(player=pi, shikigami=i)
             for i, s in enumerate(game.state.players[pi].shikigami)
             if s.in_play and not s.dying  # 濒死者不进随机与选择目标池
+            and not (targeted and pi == enemy and _veiled_state(s))
         ]
 
     if pool == "enemy_shikigami":
@@ -57,6 +77,8 @@ def pool_refs(game, pool: str, controller: int) -> list[Ref]:
         ep = game.state.players[enemy]
         ci = ep.combat_index
         if ci is not None and ep.shikigami[ci].in_play:
+            if targeted and _veiled_state(ep.shikigami[ci]):
+                return []
             return [Ref(player=enemy, shikigami=ci)]
         return []
     if pool == "enemy_bench":
@@ -66,6 +88,7 @@ def pool_refs(game, pool: str, controller: int) -> list[Ref]:
             Ref(player=enemy, shikigami=i)
             for i, s in enumerate(ep.shikigami)
             if s.in_play and not s.dying and i != ep.combat_index
+            and not (targeted and _veiled_state(s))
         ]
     if pool == "projectile":
         # 投射：优先敌方战斗区式神，战斗区为空时退回敌方牌手
@@ -80,11 +103,15 @@ def pool_refs(game, pool: str, controller: int) -> list[Ref]:
 
 
 def resolve(game, spec, ctx) -> list[Ref]:
-    """把 step 的 TargetSpec 解析为 Ref 列表。spec 为 None 时回退到卡牌的选择目标。"""
+    """把 step 的 TargetSpec 解析为 Ref 列表。spec 为 None 时回退到卡牌的选择目标。
+
+    帷幕再校验（卡牌效果，is_ability=False）：已确定的目标在结算时具有帷幕则取消
+    （"取消目标、不执行目标相关的效果"）；能力/全体/随机指定不受帷幕影响。
+    """
     if spec is None:
-        return list(ctx.chosen or [])
+        return _chosen(game, ctx)
     if spec.kind == "none":
-        return list(ctx.chosen or [])
+        return _chosen(game, ctx)
     if spec.kind == "self":
         return [ctx.source] if ctx.source else []
     if spec.kind == "all":
@@ -94,7 +121,7 @@ def resolve(game, spec, ctx) -> list[Ref]:
                     if r != ctx.source]
         return pool_refs(game, spec.pool, ctx.controller)
     if spec.kind == "choose":
-        return list(ctx.chosen or [])
+        return _chosen(game, ctx)
     if spec.kind == "context":
         if spec.key == "victim_player":
             # 事件中 victim 式神所属的牌手（引燃"若消灭则对它的牌手造成2伤"——
@@ -110,6 +137,14 @@ def resolve(game, spec, ctx) -> list[Ref]:
             return [r for r in val if isinstance(r, Ref)]
         return []
     raise ValueError(f"未知目标类型: {spec.kind}")
+
+
+def _chosen(game, ctx) -> list[Ref]:
+    """卡牌的选择目标（帷幕再校验：结算时目标持帷幕则取消；能力结算不过滤）。"""
+    refs = list(ctx.chosen or [])
+    if getattr(ctx, "is_ability", False):
+        return refs
+    return [r for r in refs if not is_veiled(game, r, ctx.controller)]
 
 
 def match_condition(game, condition: dict | None, event: dict, controller: int,

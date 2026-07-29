@@ -189,6 +189,9 @@ class PlayerState(BaseModel):
     card_mods: dict[int, dict[str, Any]] = Field(default_factory=dict)  # 持久修饰 store：card_id → 修饰（"本局游戏每……"类，打出时装配快照）
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
+    auras: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级持久监听（"本局游戏"类，
+    # 豪焰）：{"block": EffectBlock, "once_key": str|None}；事件触发即结算块，跨气绝保留、
+    # 回合开始不清除（player_aura 动作写入，emit 时按注册顺序收集）
     assault_boosts: list[dict[str, Any]] = Field(default_factory=list)  # 出击加成（鼓舞）：
     # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
     ext: dict[str, Any] = Field(default_factory=dict)  # 牌手级专用运行时数据（约定键见
