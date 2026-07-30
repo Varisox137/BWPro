@@ -106,17 +106,17 @@ def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
 
 
 def parse_ref(code: str, active: int) -> Ref:
-    """把目标代码解析为 Ref：s=己方（self；兼容 f 与无前缀裸数字）e=敌方；
-    0（或 p）=牌手，1-4=座次式神，5=召唤物（如有）。编号与场况显示一致
+    """把目标代码解析为 Ref：侧前缀必填——s=己方（self）e=敌方；
+    0=牌手，1-4=座次式神，5=召唤物（如有）。编号与场况显示一致
     （1 基）；引擎内部式神下标 0 基，本翻译层做 ±1 转换。"""
     code = code.strip().lower()
     if code[0] == "e":
         player, rest = 1 - active, code[1:]
-    elif code[0] in ("s", "f"):
+    elif code[0] == "s":
         player, rest = active, code[1:]
-    else:  # 无前缀 = 己方（如 "2" 等价 "s2"）
-        player, rest = active, code
-    if rest in ("p", "0"):
+    else:
+        raise ValueError(f"目标代码须以 s（己方）或 e（敌方）开头：{code!r}")
+    if rest == "0":
         return Ref(player=player)
     return Ref(player=player, shikigami=int(rest) - 1)
 
