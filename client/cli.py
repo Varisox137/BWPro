@@ -425,6 +425,15 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
     return out
 
 
+def format_seat_line(game: Game, pi: int) -> str:
+    """调度前展示的先后手与座次行（热坐 run_mulligan 与联机 net 共用）。"""
+    p = game.state.players[pi]
+    seats = "  ".join(
+        _colored(f"{i + 1}.{game.db.shikigami[s.id].name}", _seat_color(p, i))
+        for i, s in enumerate(p.shikigami))
+    return f"{p.name}（{'先手' if pi == 0 else '后手'}）座位：{seats}"
+
+
 def run_mulligan(game: Game) -> None:
     """调度阶段：双方轮流确认——输入手牌序号调度（返回牌库再随机抽 1），done 结束。
 
@@ -433,10 +442,7 @@ def run_mulligan(game: Game) -> None:
     print("—— 调度阶段：输入手牌序号调度（可以不用满次数），done 结束 ——")
     for pi in (0, 1):
         p = game.state.players[pi]
-        seats = "  ".join(
-            _colored(f"{i + 1}.{game.db.shikigami[s.id].name}", _seat_color(p, i))
-            for i, s in enumerate(p.shikigami))
-        print(f"{p.name}（{'先手' if pi == 0 else '后手'}）座位：{seats}")
+        print(format_seat_line(game, pi))
         while not p.mulligan_done:
             print("")
             print(f"{p.name} 手牌{len(p.hand)}：")

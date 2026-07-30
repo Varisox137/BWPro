@@ -37,6 +37,7 @@ class NetClient:
         self.payload: dict | None = None  # 最近一次 state 的 payload
         self.timer: dict | None = None    # 最近一次 state 附带的计时器（kind/deadline）
         self._seq = 0  # 服务端回推计数（state/error 各 +1）：发指令后等待回推用
+        self._seats_shown = False  # 调度前先后手/座次行只打印一次（start 时重置）
         self.result_text: str | None = None  # 终局结果文本（按视角；run() 收尾等待播完用）
         self.over = threading.Event()
 
@@ -58,6 +59,7 @@ class NetClient:
                   f"{'【debug 对局】' if self.room_debug else ''}，等待对手……")
         elif t == "start":
             self.me = msg["player_index"]
+            self._seats_shown = False  # 新对局：调度前重新展示座次行
             print(f"对局开始：你是{'先手' if msg['you_first'] else '后手'}"
                   f"，对手：{msg['opponent']}")
             tui.start_ticker(1.0)  # 驱动状态栏倒计时逐秒重绘
@@ -106,6 +108,9 @@ class NetClient:
         if st.phase == "mulligan":
             p = st.players[self.me]
             if not p.mulligan_done:
+                if not self._seats_shown:  # 调度前先展示己方先后手与四座次（仅一次）
+                    print("\n" + cli.format_seat_line(game, self.me))
+                    self._seats_shown = True
                 print(f"\n—— 调度阶段（剩 {p.mulligans_left} 次）："
                       "输入手牌序号调度，done 结束 ——")
                 for line in cli.format_hand_lines(game, p, p.hand):
