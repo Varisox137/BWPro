@@ -40,6 +40,7 @@ KEYWORDS = frozenset({
     "direct",                   # 直击（确定目标前1：无目标的战斗被攻击者改为敌方牌手）
     "veil",                     # 帷幕（不能成为敌方出击/用牌的合法目标）
     "lethal",                   # 必杀（造成伤害后令受伤者延时结算气绝）
+    "inspire",                  # 鼓舞（下一次出击获得战力/护甲——效果以 basic_boost 出击加成通道结算）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
@@ -86,6 +87,8 @@ class EffectBlock(BaseModel):
                None（默认）= 跟随该事件的时机类别（core.events.EVENT_TIMING）
     - trigger_when_not_in_play: 允许在式神未升级（0 级未在场）时也触发
                （书翁/三尾狐类能力；气绝/离场仍不触发）
+    - trigger_when_defeated: 允许在式神气绝时也触发
+               （觉醒·犬神"己方回合结束时复活犬神"类；离场仍不触发）
     """
 
     model_config = ConfigDict(extra="allow")
@@ -96,6 +99,7 @@ class EffectBlock(BaseModel):
     condition: dict[str, Any] | None = None
     steps: list[Step] = Field(default_factory=list)
     trigger_when_not_in_play: bool = False
+    trigger_when_defeated: bool = False
     countdown: int | None = None  # 非 None = 倒计时能力块（不作事件监听）：初值=countdown，
     # 归零时执行 steps（式神级倒计时框架，core/engine.py；形态牌倒计时仍用 CardDef.countdown）
 
@@ -150,7 +154,12 @@ class CardDef(BaseModel):
     # transformed 后，本局该同名卡打出统一改用本块（含生成的；装配/打出读取点见 engine）
     alt_remove_keywords: list[str] = Field(default_factory=list)  # "变为"后失去的关键字（如 fast 瞬发）
     cost_zero_if: dict[str, Any] | None = None  # 动态费用：{"ext": key} 对应
-    # PlayerState.ext 键非 0 时费用为 0（金风流羽：feather_used_turn）
+    # PlayerState.ext 键非 0 时费用为 0（金风流羽：feather_used_turn）；
+    # {"level_ge": n} 卡牌所属式神当前等级 ≥ n 时费用为 0（心身炼磨"犬神 3 级不耗鬼火"）
+    conditional_keywords: list[dict[str, Any]] = Field(default_factory=list)
+    # 动态关键字：满足条件的条目把 keyword 加入实际关键字（读取点 _card_keywords，
+    # 对手中/生成的一切副本生效）。条目条件（可组合）：level_ge=卡牌所属式神当前等级 ≥ n
+    # （心身炼磨"犬神 2 级获得[瞬发]"）；if_alive=所属式神在场未气绝（桃华灼灼）
     abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）/ 形态牌的形态能力块（结附期间生效）
     countdown: int | None = None  # 形态牌倒计时初始值（结附时授予式神，离场/气绝移除）
     countdown_effects: EffectBlock | None = None  # 倒计时归零时执行的效果块（重置为初始值后执行）

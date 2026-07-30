@@ -190,8 +190,14 @@ class Game:
         if self._cost_zero_aura(p, cdef):
             return 0
         cz = cdef.cost_zero_if
-        if cz and cz.get("ext") and p.ext.get(cz["ext"]):
-            return 0  # 动态费用（金风流羽：本回合使用过黄金羽则不消耗鬼火）
+        if cz:
+            if cz.get("ext") and p.ext.get(cz["ext"]):
+                return 0  # 动态费用（金风流羽：本回合使用过黄金羽则不消耗鬼火）
+            if cz.get("level_ge") is not None and cdef.shikigami:
+                # 式神等级达到下限则不消耗鬼火（心身炼磨类）；未出战不满足
+                si = self._find_shikigami(p, cdef.shikigami)
+                if si is not None and p.shikigami[si].level >= int(cz["level_ge"]):
+                    return 0
         if "fast" in self._card_keywords(p, cdef, card) and not p.fast_used:
             cost = 0
         return cost
@@ -229,12 +235,26 @@ class Game:
 
     def _card_keywords(self, p: PlayerState, cdef: CardDef,
                        card: CardInstance | None = None) -> set[str]:
-        """一张卡当前实际具有的关键字：定义 ∪ 实例修饰 ∪ 命中光环（瞬发判定等的统一读取点）。"""
+        """一张卡当前实际具有的关键字：定义 ∪ 实例修饰 ∪ 命中光环 ∪ 条件关键字
+        （瞬发判定等的统一读取点）。
+
+        conditional_keywords（心身炼磨/桃华灼灼）：按卡牌所属式神在座次中的状态
+        判定（level_ge = 等级下限；if_alive = 在场）；式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
         for aura in self._match_auras(p, cdef):
             kws |= set(aura.get("keywords", []))
+        for ck in cdef.conditional_keywords:
+            si = self._find_shikigami(p, cdef.shikigami) if cdef.shikigami else None
+            if si is None:
+                continue
+            st = p.shikigami[si]
+            if ck.get("level_ge") is not None and st.level < int(ck["level_ge"]):
+                continue
+            if ck.get("if_alive") and not st.in_play:
+                continue
+            kws.add(ck["keyword"])
         if cdef.alt_remove_keywords and self._is_transformed(p, cdef, card):
             kws -= set(cdef.alt_remove_keywords)  # "变为"后失去关键字（如瞬发）
         return kws
@@ -767,10 +787,13 @@ class Game:
 
     def _account_card_played(self, p: PlayerState, cdef: CardDef) -> None:
         """出牌统一记账（按 tags 计数）：tags 含 golden_feather 时累计本局/本回合使用数
-        （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）。"""
+        （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）；tags 含 lianmo 时
+        累计本局使用数（心技一体"本局每使用过一张炼磨牌"光环数值通道）。"""
         if "golden_feather" in cdef.tags:
             p.ext["feather_used_game"] = p.ext.get("feather_used_game", 0) + 1
             p.ext["feather_used_turn"] = p.ext.get("feather_used_turn", 0) + 1
+        if "lianmo" in cdef.tags:
+            p.ext["lianmo_used_game"] = p.ext.get("lianmo_used_game", 0) + 1
 
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
                           affected: list[Ref] | None = None, *,
@@ -847,6 +870,12 @@ class Game:
             for aura in self._match_auras(p, cdef):
                 power += int(aura.get("power", 0))
                 shield += int(aura.get("shield", 0))
+                # ext 数值通道（心技一体"本局每使用过一张炼磨牌+1/+1"）：读取时从
+                # PlayerState.ext 解析计数（出牌记账见 _account_card_played）
+                if aura.get("power_ext"):
+                    power += int(p.ext.get(aura["power_ext"], 0))
+                if aura.get("shield_ext"):
+                    shield += int(p.ext.get(aura["shield_ext"], 0))
         return power, shield
 
     def _apply_combat_stats(self, ref: Ref, s: ShikigamiState, power: int, shield: int,
@@ -1393,15 +1422,20 @@ class Game:
         return "destroy_immune" in self.db.cards[s.form.id].tags
 
     def _enter_combat(self, p: PlayerState, i: int) -> None:
-        """进入战斗区；若已有其它式神驻留，则其退回准备区。"""
+        """进入战斗区；若已有其它式神驻留，则其退回准备区。
+        emit on_enter_combat（延时时机；被换下的驻留者经 _retreat 发 on_leave_combat）。"""
         if p.combat_index is not None and p.combat_index != i:
             self._retreat(p, p.combat_index)
         p.combat_index = i
+        self.emit("on_enter_combat", player=self.state.players.index(p),
+                  shikigami=Ref(player=self.state.players.index(p), shikigami=i))
 
     def _retreat(self, p: PlayerState, i: int) -> None:
-        """战斗区式神退回准备区；召唤物无准备区可归（home_slot=None），退回即离场（非气绝）。"""
+        """战斗区式神退回准备区；召唤物无准备区可归（home_slot=None），退回即离场（非气绝）。
+        确实离开战斗区时 emit on_leave_combat（延时时机；气绝移动不经此路径，不发）。"""
         s = p.shikigami[i]
-        if p.combat_index == i:
+        was_in_combat = p.combat_index == i
+        if was_in_combat:
             p.combat_index = None
         if s.defeated or s.despawned:
             return
@@ -1409,6 +1443,9 @@ class Game:
             self._despawn(p, i)
         else:
             self._log(f"{self.db.shikigami[s.id].name} 退回准备区")
+        if was_in_combat:
+            self.emit("on_leave_combat", player=self.state.players.index(p),
+                      shikigami=Ref(player=self.state.players.index(p), shikigami=i))
 
     def _despawn(self, p: PlayerState, i: int) -> None:
         """召唤物离场：不进复活流程（保留坑位稳定下标）；keep_buffs 留下永久增减益。"""
@@ -1504,6 +1541,10 @@ class Game:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._remove_keyword(s, kw)
         s.ext.pop("power_zero", None)  # 力量覆写随形态离场清除（power_override）
+        # 移除绑定该形态持有者的 scope="form" 卡牌光环（心技一体"形态离场时光环结束"；
+        # 气绝经 _destroy_form 同路径一并移除）
+        p.card_auras[:] = [a for a in p.card_auras
+                           if not (a.get("scope") == "form" and a.get("holder") == [pi, i])]
         self.move_card(p, old, "graveyard")
         d = self.db.shikigami[s.id]
         s.base_power = d.power
@@ -1541,7 +1582,8 @@ class Game:
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
         self._settle(f"【升级】{p.name} 的{name}升至 {s.level} 级")
-        self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level)
+        self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level,
+                  target=Ref(player=self.state.active, shikigami=i))
         if p.upgrades == 0 or not self._has_upgrade_target(p):
             self.state.phase = "battle"
 
@@ -1782,9 +1824,9 @@ class Game:
             else:
                 s.countdown = initial
 
-    def _revive(self, p: PlayerState, pi: int, i: int) -> None:
-        """复活一名己方式神（倒计时归零/气绝倒计时减到 0 共用）：回满生命、重注册
-        倒计时能力、发出 on_shikigami_revived。"""
+    def _revive(self, p: PlayerState, pi: int, i: int, source: Optional[Ref] = None, reason: str = "倒计时") -> None:
+        """复活一名己方式神（倒计时归零/复活类 op 共用）：回满生命、重注册倒计时
+        能力、发出 on_shikigami_revived（source=复活来源）。"""
         s = p.shikigami[i]
         s.defeated = False
         s.revive_countdown = 0
@@ -1793,7 +1835,7 @@ class Game:
         self._log(f"{self.db.shikigami[s.id].name} 复活")
         self._settle(f"【复活】{self.db.shikigami[s.id].name} 复活（生命回满 {s.max_health}）")
         self.emit("on_shikigami_revived",
-                  shikigami=Ref(player=pi, shikigami=i), source=None, reason="倒计时")
+                  shikigami=Ref(player=pi, shikigami=i), source=source, reason=reason)
 
     def _turn_start_revive(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 3：已气绝己方式神倒计时 -1，归零复活。"""
@@ -2128,16 +2170,20 @@ class Game:
         """式神在当前战斗上下文中是否免疫战斗伤害（作用域由授予效果指定）。
 
         战斗作用域按战斗实例比对；grant_immunity(scope="turn") 的"本回合"免疫
-        按回合号比对（跨回合自然过期）。"""
+        按回合号比对（跨回合自然过期）。kind="all"（桃红簇簇）同样免疫战斗伤害；
+        scope="once" 条目无过期键、命中任意一类伤害即免疫一次并消耗。"""
         if not self._battle_stack:
             return False
         current = self._battle_stack[-1]
-        for e in s.immunities:
-            if e.get("kind") != "combat_damage":
+        for e in list(s.immunities):
+            if e.get("kind") not in ("combat_damage", "all"):
                 continue
             if e.get("turn") == self.state.turn:
                 return True
             if e.get("battle") == current or (e.get("nested") and e.get("battle") in self._battle_stack):
+                return True
+            if e.get("once"):
+                s.immunities.remove(e)  # 消耗式免疫：命中即移除
                 return True
         return False
 
@@ -2146,13 +2192,16 @@ class Game:
 
         from="enemy"：伤害来源属于敌方才免疫（无来源 ev.source=None 或己方来源不免疫）；
         scope="perm" 条目无过期键，随气绝清除（immunities 气绝清空）。
+        kind="all"（桃红簇簇）同样免疫非战斗伤害；scope="once" 条目命中即消耗。
         """
-        for e in s.immunities:
-            if e.get("kind") != "effect":
+        for e in list(s.immunities):
+            if e.get("kind") not in ("effect", "all"):
                 continue
             if e.get("from") == "enemy" and (
                     ev.source is None or ev.source.player == ev.victim.player):
                 continue  # 来源缺失或属于己方：不免疫
+            if e.get("once"):
+                s.immunities.remove(e)  # 消耗式免疫：命中即移除
             return True
         return False
 
@@ -2423,8 +2472,15 @@ class Game:
                 if ability.when != event["name"]:
                     continue
                 if not s.in_play:
-                    # 0 级未在场能力不触发；个别能力标记为未升级也可触发（书翁/三尾狐类）
-                    if s.defeated or s.despawned or not ability.trigger_when_not_in_play:
+                    # 离场（despawned）恒不触发；气绝者仅 trigger_when_defeated 标记的能力
+                    # 触发（觉醒·犬神"气绝时也能触发"）；0 级未在场仅 trigger_when_not_in_play
+                    # 标记的能力触发（书翁/三尾狐类）
+                    if s.despawned:
+                        continue
+                    if s.defeated:
+                        if not ability.trigger_when_defeated:
+                            continue
+                    elif not ability.trigger_when_not_in_play:
                         continue
                 if self._match(ability.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
                     out.append(_Pending(ability, ExecContext(

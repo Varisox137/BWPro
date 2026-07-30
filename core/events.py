@@ -44,6 +44,8 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
     "on_before_defeat",     # 气绝前/消灭前 1 {victim: Ref, source, reason, battle}
     "on_before_card_play",  # 使用手牌前 {player, uid, card, nullified（可变标记 dict）}
+    "on_enter_combat",      # 式神进入战斗区 {player, shikigami: Ref}（延时时机）
+    "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）

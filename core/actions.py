@@ -299,6 +299,7 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
               card_type: str | None = None, card_id: int | None = None,
               keywords: list[str] | None = None,
               cost_zero: bool = False, power: int = 0, shield: int = 0,
+              power_ext: str | None = None, shield_ext: str | None = None,
               turn: str | None = None, scope: str = "turn") -> None:
     """登记卡牌光环（targets 忽略）：谓词匹配的卡牌获得 keywords / 不耗鬼火 / 数值加成。
 
@@ -306,22 +307,36 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     card_id：仅命中该数据 id 的牌（"此牌"类自指光环，伺机）。
     power/shield 为战斗牌数值通道（combat_card_stats 读取时叠加到战力/一次性护甲）：
     可叠加——多次授予数值累加（与 keywords 的集合语义不同）。
+    power_ext/shield_ext：数值改从控制者 PlayerState.ext[key] 读取（心技一体"本局
+    每使用过一张炼磨牌+1/+1"——出牌记账见 _account_card_played，读取时求值）。
     turn："self"/"opponent" 限定回合方，仅己方/敌方回合时光环生效（伺机类）。
-    scope 为失效时机："turn" = 己方回合开始清除（"本回合"类）；其余 scope 随需要扩展。
+    scope 为失效时机："turn" = 己方回合开始清除（"本回合"类）；"form" = 绑定来源式神
+    当前结附的形态，形态离场时移除（心技一体；气绝经 _destroy_form 同路径）。
     """
     if turn not in (None, "self", "opponent"):
         raise ValueError(f"未知 card_aura 回合方限定: {turn}")
+    if scope not in ("turn", "form"):
+        raise ValueError(f"未知 card_aura 作用域: {scope}")
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("card_aura(shikigami=self) 需要来源式神")
         sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
     else:
         sid = int(shikigami)
-    game.state.players[ctx.controller].card_auras.append({
+    aura = {
         "shikigami": sid, "card_type": card_type, "card_id": card_id,
         "keywords": list(keywords or []), "cost_zero": cost_zero,
         "power": power, "shield": shield, "turn": turn, "scope": scope,
-    })
+    }
+    if power_ext is not None:
+        aura["power_ext"] = power_ext
+    if shield_ext is not None:
+        aura["shield_ext"] = shield_ext
+    if scope == "form":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("card_aura(scope=form) 需要来源式神")
+        aura["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态离场按持有者移除
+    game.state.players[ctx.controller].card_auras.append(aura)
     game._log(f"{game.db.shikigami[sid].name} 的卡牌光环生效（{scope}）")
 
 
@@ -483,6 +498,37 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         game.state.next_uid += 1
         game.move_card(p, inst, zone)
         game._log(f"生成了【{game.db.cards[cid].name}】")
+
+
+@action("search_deck")
+def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target") -> None:
+    """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
+
+    shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
+    "self"=来源式神；或给出数据 id。按原文"然后洗牌库"：即使未命中（牌库无该式神
+    的牌）也照常洗牌。
+    """
+    p = game.state.players[ctx.controller]
+    if shikigami == "target":
+        ref = targets[0] if targets else None
+        if ref is None or ref.shikigami is None:
+            game.rng.shuffle(p.deck)  # 无有效目标：检索落空，洗牌照常
+            game._log(f"{p.name} 洗了牌库")
+            return
+        sid = game.state.players[ref.player].shikigami[ref.shikigami].id
+    elif shikigami == "self":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("search_deck(shikigami=self) 需要来源式神")
+        sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+    else:
+        sid = int(shikigami)
+    pool = [c for c in p.deck if game.db.cards[c.id].shikigami == sid]
+    if pool:
+        card = game.rng.choice(pool)
+        game.move_card(p, card, "hand")
+        game._log(f"从牌库检索了【{game.db.cards[card.id].name}】")
+    game.rng.shuffle(p.deck)
+    game._log(f"{p.name} 洗了牌库")
 
 
 @action("random_damage")
@@ -1116,14 +1162,16 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
 
     kind="combat_damage"（缺省）：免疫 kind ∈ (combat, counter) 的战斗伤害；
     kind="effect"：免疫非战斗伤害（法术/能力等），from_side="enemy" 限定伤害来源
-    属于敌方（无来源/己方来源不免疫）；kind="all"：免疫全部伤害（仅牌手目标使用）。
+    属于敌方（无来源/己方来源不免疫）；kind="all"：免疫全部伤害（牌手目标=舍生；
+    式神目标=桃红簇簇"免疫该伤害"）。
     scope="turn"：免疫到当前回合结束——以回合号记账（{"turn": 当前回合}），
     按回合号比对，跨回合自然过期，无需清理；scope="perm"：无过期键，
-    持续在场期间有效，随气绝清除（immunities 气绝清空，复活需重新授予）。
+    持续在场期间有效，随气绝清除（immunities 气绝清空，复活需重新授予）；
+    scope="once"：消耗式，命中任意一类伤害即免疫一次并移除（桃红簇簇）。
     unique=True：目标已持有同等免疫条目时不再重复授予（维护者答复(3)：不可饶恕
     "若不具有该能力则获得"——回合内多次使用黄金羽只授予一次）。
     """
-    if scope not in ("turn", "perm"):
+    if scope not in ("turn", "perm", "once"):
         raise ValueError(f"未知 grant_immunity 作用域: {scope}")
     if kind not in ("combat_damage", "effect", "all"):
         raise ValueError(f"未知 grant_immunity 免疫类别: {kind}")
@@ -1135,6 +1183,8 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
             entry["from"] = from_side
         if scope == "turn":
             entry["turn"] = game.state.turn
+        if scope == "once":
+            entry["once"] = True  # 消耗式免疫：命中即移除（_combat_immune/_effect_immune）
         if ref.shikigami is None:
             # 牌手级免疫（舍生）：存 PlayerState.immunities，伤害管线按回合号过期
             pl = game.state.players[ref.player]
@@ -1148,9 +1198,9 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
                               for e in s.immunities):
                 continue
             s.immunities.append(entry)
-            label = "战斗伤害" if kind == "combat_damage" else "非战斗伤害"
-            game._log(f"{game.db.shikigami[s.id].name} 免疫{label}"
-                      f"（{'本回合' if scope == 'turn' else '持续'}）")
+            label = {"combat_damage": "战斗伤害", "effect": "非战斗伤害", "all": "所有伤害"}[kind]
+            scope_label = {"turn": "本回合", "perm": "持续", "once": "下一次"}[scope]
+            game._log(f"{game.db.shikigami[s.id].name} 免疫{label}（{scope_label}）")
 
 
 @action("gain_orb")
@@ -1353,7 +1403,9 @@ def level_up(game, ctx, *, targets: list[Ref], amount: int = 1,
     """目标式神等级 +amount（百闻一得；不走升级次数、不受升级阶段限制，封顶 3 级）。
 
     overflow_draw=True：目标已为 3 级时改为控制者抽 1 张牌（"若其等级已为 3 则改为
-    抽一张牌"）。0 级未在场/气绝式神为目标为空操作。"""
+    抽一张牌"）。0 级未在场/气绝式神为目标为空操作。
+    实际升级后 emit on_upgrade（与指令升级同事件——犬神"犬神升级时"类触发对两来源
+    均生效，维护者答复）。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
@@ -1367,12 +1419,16 @@ def level_up(game, ctx, *, targets: list[Ref], amount: int = 1,
         s.level = min(3, s.level + int(amount))
         game._log(f"{game.db.shikigami[s.id].name} 升至 {s.level} 级")
         game._register_ability_countdown(ref.player, ref.shikigami)  # 能力进场（同升级）
+        game.emit("on_upgrade", player=ref.player, shikigami=ref.shikigami,
+                  level=s.level, target=ref)
 
 
 @action("revive")
 def revive(game, ctx, *, targets: list[Ref]) -> None:
     """复活目标式神（不灭之火"返回场上"前若气绝先复活；走 Game._revive 复活流程：
-    生命回满、重注册倒计时能力、emit on_shikigami_revived）。未气绝/已离场为空操作。"""
+    生命回满、重注册倒计时能力、emit on_shikigami_revived，source=效果来源、
+    reason="effect"——桃花妖"由桃花妖复活时"类触发以 source_shikigami 匹配）。
+    未气绝/已离场为空操作。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
@@ -1380,7 +1436,7 @@ def revive(game, ctx, *, targets: list[Ref]) -> None:
         s = p.shikigami[ref.shikigami]
         if not s.defeated or s.despawned:
             continue
-        game._revive(p, ref.player, ref.shikigami)
+        game._revive(p, ref.player, ref.shikigami, source=ctx.source, reason="effect")
 
 
 @action("reattach_form")
