@@ -96,13 +96,41 @@ def format_settle_lines(lines: list[str]) -> list[str]:
     return out
 
 
+def format_timeline_lines(entries: list[dict]) -> list[str]:
+    """合并时间线排版（结算/叙事按真实发生顺序合流，thoughts(1)）：结算行（k="s"）
+    按嵌套块层级缩进（同 format_settle_lines），叙事行（k="l"）以 "| "前缀按当前
+    层级缩进。热坐 _play_settle 与联机 state.timeline 共用，保证两端格式一致。"""
+    out: list[str] = []
+    depth = 0
+    for e in entries:
+        stripped = e["m"].strip()
+        if e["k"] == "l":
+            out.append("  " * depth + f"| {stripped}" if depth else f"  | {stripped}")
+            continue
+        if stripped.startswith("—— 战斗结束") or stripped.startswith("—— 伤害结算结束"):
+            depth = max(0, depth - 1)
+        out.append("  " * depth + stripped if depth else stripped)
+        if any(stripped.startswith(p) for p in _SETTLE_OPEN):
+            depth += 1
+    return out
+
+
 def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
-    """把自游标 seen 以来的结算明细增量入打印队列（边播边操作：入队即返回，
+    """把自游标 seen 以来的合并时间线增量入打印队列（边播边操作：入队即返回，
     播放由 SettlePrinter 后台线程按块消费），返回新游标。空块不入队。"""
-    lines = game.state.settle_log[seen:]
-    if lines:
-        printer.enqueue(format_settle_lines(lines))
-    return len(game.state.settle_log)
+    entries = game.state.timeline[seen:]
+    if entries:
+        printer.enqueue(format_timeline_lines(entries))
+    return len(game.state.timeline)
+
+
+def _show_field(game: Game, printer: SettlePrinter, viewer: int | None = None) -> None:
+    """空闲点场况：作为一块入打印队列尾——排在已入队的结算明细之后播完再显示
+    （thoughts(1)：每次操作的结算细节全部打印完之后再显示场况）。对局已结束
+    不再显示场况（终局只打印结果块）。"""
+    if game.state.winner is not None:
+        return
+    printer.enqueue(render(game, viewer=viewer).split("\n"))
 
 
 def parse_ref(code: str, active: int) -> Ref:
@@ -161,11 +189,26 @@ def _card_color(game: Game, p, c) -> int | None:
     return SEAT_COLORS[seat]
 
 
+def _live_enhance(p, c) -> int:
+    """实时增强计数：持久 store（card_mods，打出时才装配快照）+ 实例已装配
+    （add_mod to=hand 的按实例写入）。手牌展示用——实例 mods 在打出前不含持久计数。"""
+    store = p.card_mods.get(c.id, {})
+    return int(store.get("enhance", 0)) + int(c.mods.get("enhance", 0))
+
+
+# 带 {"enhance": true, "base": n} amount 的法术/能力步骤 → 手牌实时数值段标签
+_ENHANCE_OP_CN = {"damage": "伤害", "heal": "治疗", "set_health": "生命变为"}
+
+
 def _stats_label(game: Game, p, c) -> str:
-    """数值段（按实例已装配的增强/修饰求值）：
-    战斗牌战力与一次性护甲、形态身材、觉醒永久身材。"""
+    """数值段（按实时增强计数求值）：
+    战斗牌战力与一次性护甲、形态身材、觉醒永久身材、增强类效果数值（伤害/治疗/生命变为）。"""
     cd = game.db.cards[c.id]
     parts: list[str] = []
+    live = _live_enhance(p, c)
+    if live != int(c.mods.get("enhance", 0)):
+        # 持久计数未装配进实例：用副本求值，不改实例（打出装配语义见 engine._materialize）
+        c = c.model_copy(update={"mods": {**c.mods, "enhance": live}})
     if cd.card_type == "combat":
         seat = _seat_map(p).get(cd.shikigami) if cd.shikigami is not None else None
         s = p.shikigami[seat] if seat is not None else None
@@ -176,6 +219,12 @@ def _stats_label(game: Game, p, c) -> str:
             parts.append(f"护甲+{shield}")
     elif cd.card_type == "form" and cd.form_power is not None:
         parts.append(f"身材{cd.form_power}/{cd.form_health}")
+    else:
+        for stp in cd.effects.steps:
+            amt = (stp.model_extra or {}).get("amount")
+            if isinstance(amt, dict) and amt.get("enhance") and stp.op in _ENHANCE_OP_CN:
+                val = int(amt.get("base", 0)) + live
+                parts.append(f"{_ENHANCE_OP_CN[stp.op]}{val}")
     if cd.subtype == "awaken":
         pw = hp = 0
         for st in cd.effects.steps:
@@ -329,8 +378,6 @@ def render(game: Game, viewer: int | None = None) -> str:
                  f"{p.name} 手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）：")
     lines.extend(format_hand_lines(game, p, hand_sorted(game, p)))
     lines.append("")
-    if st.winner is not None:
-        lines.append(f"***** {st.players[st.winner].name} 获胜！*****")
     return "\n".join(lines)
 
 
@@ -350,8 +397,9 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
         kws = _kw_labels(list(cd.keywords) + list(c.mods.get("keywords_add", [])))
         if kws:
             parts.append(f"[{'/'.join(kws)}]")
-        if c.mods.get("enhance"):
-            parts.append(f"增强+{c.mods['enhance']}")
+        live = _live_enhance(p, c)
+        if live:
+            parts.append(f"增强+{live}")
         return " ".join(parts)
 
     idx_w = max((_display_width(str(len(hand))), 1))
@@ -552,11 +600,21 @@ def run_battle(db) -> None:
         tui.set_status(None)
 
 
+def result_text(winner: int, player_names, viewer: int | None = None) -> str:
+    """对局结果文本（thoughts(1)）：viewer 指定（联机视角）时按视角打印
+    "自身胜利/自身落败"，否则（热坐共享屏）按玩家名；winner=-1 为长对局平局。"""
+    if winner == -1:
+        return "双方平局"
+    if viewer is None:
+        return f"{player_names[winner]} 获胜！"
+    return "自身胜利！" if winner == viewer else "自身落败……"
+
+
 def _battle_loop(game: Game, printer: SettlePrinter) -> None:
     if game.state.phase == "mulligan":
         run_mulligan(game)
     settle_seen = _play_settle(game, 0, printer)  # 先手首回合的回合开始阶段起：调度后首块明细
-    print(render(game))
+    _show_field(game, printer)
     while game.state.winner is None:
         if game.state.pending_choice is not None:
             # 结算中交互选择（青灯夜谈）：展示可检视牌并等待选择
@@ -566,13 +624,13 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
             print(f"—— {p.name} 检视牌库顶 {len(opts)} 张牌 ——")
             for i, c in enumerate(opts):
                 cd = game.db.cards[c.id]
-                print(f"  [{i + 1}]《{cd.name}》 {cd.text}")
+                print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
             try:
                 pick = int(tui.prompt("选择一张置入手牌 > ")) - 1
                 game.apply({"op": "choose", "uid": opts[pick].uid,
                             "player": pend["player"]})
                 settle_seen = _play_settle(game, settle_seen, printer)
-                print(render(game))
+                _show_field(game, printer)
             except (IllegalAction, ValueError, IndexError):
                 print("参数有误，输入序号选择")
             continue
@@ -603,7 +661,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 if dcmd:
                     game.apply(dcmd)
                     settle_seen = _play_settle(game, settle_seen, printer)
-                    print(render(game))
+                    _show_field(game, printer)
             elif cmd == "play":
                 hand = hand_sorted(game, game.current)
                 card = hand[int(args[0]) - 1]
@@ -618,7 +676,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                         pick = int(rest.pop(0))
                     else:
                         for i, o in enumerate(options):
-                            print(f"  [{i}]《{o.name}》 {o.text}")
+                            print(f"  [{i}]【{o.name}】 {o.text}")
                         pick = int(tui.prompt("子选项 > "))
                     cmd_dict["choice"] = pick
                     eff = options[pick]
@@ -637,7 +695,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                     cmd_dict["play_method"] = rest.pop(0)  # 使用方式，如 burst
                 game.apply(cmd_dict)
                 settle_seen = _play_settle(game, settle_seen, printer)
-                print(render(game))
+                _show_field(game, printer)
             elif cmd in ("assault", "upgrade"):
                 cmd_dict: dict = {"op": cmd, "index": int(args[0]) - 1}
                 if cmd == "assault":
@@ -659,20 +717,22 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                                 cmd_dict["target"] = parse_ref(code, game.state.active)
                 game.apply(cmd_dict)
                 settle_seen = _play_settle(game, settle_seen, printer)
-                print(render(game))
+                _show_field(game, printer)
             elif cmd == "end":
                 game.apply({"op": "end_turn"})
                 settle_seen = _play_settle(game, settle_seen, printer)
-                print(render(game))
+                _show_field(game, printer)
             else:
                 print("未知指令，输入 help 查看帮助")
         except IllegalAction as e:
             print(f"无效操作: {e}")
         except (ValueError, IndexError):
             print("参数有误，输入 help 查看帮助")
-    # 对局结束：显示最终场况（含胜负），等待确认后回主菜单
-    print("")
-    print(render(game))
+    # 对局结束（thoughts(1)）：不立即打印结果——剩余结算按固定速度播完，
+    # 最后打印结果块（不再额外打印场况）；结果文本按视角（热坐共享屏用玩家名）
+    names = [pl.name for pl in game.state.players]
+    printer.enqueue([f"***** {result_text(game.state.winner, names)} *****"])
+    printer.wait_idle(timeout=60)
     try:
         tui.prompt("按 Enter 返回主菜单 > ")
     except EOFError:

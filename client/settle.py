@@ -46,12 +46,24 @@ class SettlePrinter:
             block = self._q.get()
             if block is None:  # 停止信号
                 return
-            print("")
-            for line in block:
-                print(line)
-                if self.interval > 0:
-                    self._fast.wait(self.interval)  # flush/stop 置位时立即返回
-            print("")
+            try:
+                print("")
+                for line in block:
+                    print(line)
+                    if self.interval > 0:
+                        self._fast.wait(self.interval)  # flush/stop 置位时立即返回
+                print("")
+            finally:
+                self._q.task_done()  # wait_idle 的完成计数
+
+    def wait_idle(self, timeout: float = 30.0) -> bool:
+        """等待已入队的块按正常节奏全部播完（对局结束等场景：先播完剩余结算，
+        再打印结果）。返回是否排空（False = 超时，调用方可走 flush 兜底）。"""
+        import time
+        deadline = time.monotonic() + timeout
+        while self._q.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.02)
+        return not self._q.unfinished_tasks
 
     def stop(self, flush: bool = True, timeout: float = 5.0) -> None:
         """停止打印者：flush=True 把队列剩余块快速播完（不 sleep）；

@@ -89,6 +89,37 @@ def test_hand_stats_labels(db, make_game):
     assert "觉醒+1/+2" in out
 
 
+def test_hand_stats_live_enhance(db, make_game):
+    """手牌实时增强：持久 store（card_mods，打出时装配）未入实例也计入显示；
+    法术/能力的增强效果数值（伤害/生命变为）实时求值。"""
+    db.cards[10010164] = F.card(
+        10010164, card_type="combat", token=True,
+        steps=[F.Step(op="buff_power", amount={"enhance": True, "base": 1},
+                      target=T(kind="self"))])
+    db.cards[10010165] = F.card(
+        10010165, card_type="spell", token=True,
+        steps=[F.Step(op="damage", amount={"enhance": True, "base": 5},
+                      target=T(kind="all", pool="projectile"))])
+    db.cards[10010166] = F.card(
+        10010166, card_type="spell", token=True,
+        steps=[F.Step(op="set_health", amount={"enhance": True, "base": 10},
+                      target=T(kind="all", pool="self_player"))])
+    g = make_game()
+    p = g.state.players[0]
+    give(g, 0, 10010164)
+    give(g, 0, 10010165)
+    give(g, 0, 10010166)
+    for cid in (10010164, 10010165, 10010166):
+        p.card_mods[cid] = {"enhance": 2}
+    out = cli.render(g)
+    assert "战力+3" in out      # 战斗牌：base 1 + 持久增强 2（未装配也显示）
+    assert "伤害7" in out       # 法术：base 5 + 持久增强 2
+    assert "生命变为12" in out
+    assert out.count("增强+2") == 3
+    # 实例未被显示层污染（装配只发生在打出时）
+    assert all("enhance" not in c.mods for c in p.hand)
+
+
 def test_color_off_when_disabled(db, make_game, color_off):
     """关闭颜色（管道/NO_COLOR）时输出不含任何 ANSI 序列。"""
     g = make_game()
@@ -514,8 +545,8 @@ def test_settle_log_channels(db, make_game):
 
 
 def test_play_settle_enqueue_block_and_blank_lines(db, make_game, capsys):
-    """_play_settle：按游标增量入打印队列（interval=0 立即播完），整块前后各空一行，
-    无新增明细时不入队。"""
+    """_play_settle：按合并时间线游标增量入打印队列（interval=0 立即播完），整块前后
+    各空一行，无新增明细时不入队。"""
     from client.settle import SettlePrinter
     g = make_game()
     pa, pb = F.battle_setup(g)
@@ -524,7 +555,7 @@ def test_play_settle_enqueue_block_and_blank_lines(db, make_game, capsys):
     seen = cli._play_settle(g, 0, printer)
     printer.stop(flush=True)
     out = capsys.readouterr().out
-    assert seen == len(g.state.settle_log) and seen > 0
+    assert seen == len(g.state.timeline) and seen > 0
     assert out.startswith("\n") and out.endswith("\n\n")
     assert "回合开始阶段" in out
     seen2 = cli._play_settle(g, seen, printer)
@@ -547,6 +578,57 @@ def test_settle_printer_block_order_no_interleave(capsys):
     idx = [out.index(x) for x in ("b1-l1", "b1-l2", "b1-l3", "b2-l1", "b2-l2")]
     assert idx == sorted(idx)
     assert "已略过" not in out and p._thread is None
+
+
+def test_timeline_merges_log_and_settle_in_order(db, make_game):
+    """合并时间线（thoughts(1) 打印顺序修复）：叙事行与结算明细按真实发生顺序
+    合流——"使用了【x】"先于其引发的结算明细；kind 标记区分两通道（s=结算 l=叙事）。"""
+    cid = 10010155
+    db.cards[cid] = F.card(cid, shikigami=100101, level=1, token=True,
+                           steps=[F.Step(op="heal", amount=2, target=T(kind="self"))])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    pa.shikigami[0].health = 1
+    g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
+    kinds = [e["k"] for e in g.state.timeline]
+    msgs = [e["m"] for e in g.state.timeline]
+    assert set(kinds) == {"s", "l"}
+    i_use = next(i for i, m in enumerate(msgs) if "使用了【" in m)
+    i_heal = next(i for i, m in enumerate(msgs) if m.startswith("【治疗】"))
+    assert kinds[i_use] == "l" and kinds[i_heal] == "s"
+    assert i_use < i_heal            # 触发行先于其引发的结算行
+
+
+def test_result_text_by_viewer():
+    """对局结果按视角（thoughts(1)）：联机自身胜利/落败/双方平局；热坐共享屏用玩家名。"""
+    names = ["玩家A", "玩家B"]
+    assert cli.result_text(0, names, viewer=0) == "自身胜利！"
+    assert cli.result_text(0, names, viewer=1) == "自身落败……"
+    assert cli.result_text(-1, names, viewer=0) == "双方平局"
+    assert cli.result_text(1, names) == "玩家B 获胜！"
+    assert cli.result_text(-1, names) == "双方平局"
+
+
+def test_net_can_act_gates_input_by_turn(db, make_game):
+    """对手回合不显示输入提示符（thoughts(1)）：_can_act 仅自己调度未完成 /
+    待自己作答的结算中选择 / 自己回合为真。"""
+    from client.net import NetClient
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    c = NetClient(db, None, "me")
+    c.me = 1
+    assert not c._can_act(g.state)            # pa（0）行动中：对手回合
+    c.me = 0
+    assert c._can_act(g.state)                # 己方回合
+    g.state.pending_choice = {"kind": "deck_top_pick", "player": 1,
+                              "options": [1], "remaining": 1}
+    assert not c._can_act(g.state)            # 待对方作答
+    c.me = 1
+    assert c._can_act(g.state)                # 待己作答（非己方回合也可输入）
+    g.state.pending_choice = None
+    g.state.phase = "mulligan"
+    pb.mulligan_done = True
+    assert not c._can_act(g.state)            # 已完成调度：等待对手，不提示
 
 
 def test_settle_printer_discard_on_stop(capsys):
@@ -678,9 +760,9 @@ def test_net_state_enqueues_settle_and_log_block(db, make_game, capsys):
     c = NetClient(db, None, "乙", printer)
     c.me = 1
     c.handle({"type": "state", "payload": g.state.model_dump(mode="json"),
-              "log": ["A 使用了《测试牌》"],
+              "log": ["A 使用了【测试牌】"],
               "settle": ["—— 战斗开始：式神100101 ——", "—— 战斗结束 ——"]})
     printer.stop(flush=True)
     out = capsys.readouterr().out
     assert out.index("—— 战斗开始：式神100101 ——") \
-        < out.index("  | A 使用了《测试牌》")
+        < out.index("  | A 使用了【测试牌】")

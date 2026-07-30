@@ -37,6 +37,7 @@ class NetClient:
         self.payload: dict | None = None  # 最近一次 state 的 payload
         self.timer: dict | None = None    # 最近一次 state 附带的计时器（kind/deadline）
         self._seq = 0  # 服务端回推计数（state/error 各 +1）：发指令后等待回推用
+        self.result_text: str | None = None  # 终局结果文本（按视角；run() 收尾等待播完用）
         self.over = threading.Event()
 
     # ---------- 接收 ----------
@@ -64,11 +65,15 @@ class NetClient:
             self._seq += 1
             self.payload = msg["payload"]
             self.timer = msg.get("timer")
-            # 结算明细 + 叙事 log 作为一块入打印队列（入队即返回，播放不阻塞
-            # 接收/输入；播放中到达的新 state 块排入队尾，当前块播完再播）
+            # 结算播放入打印队列（入队即返回，播放不阻塞接收/输入；播放中到达的
+            # 新 state 块排入队尾，当前块播完再播）：合并时间线（结算/叙事按真实
+            # 发生顺序合流）优先，旧字段 settle+log 兜底
             if self.printer is not None:
-                block = cli.format_settle_lines(msg.get("settle") or [])
-                block += [f"  | {line}" for line in msg.get("log", [])]
+                if msg.get("timeline"):
+                    block = cli.format_timeline_lines(msg["timeline"])
+                else:
+                    block = cli.format_settle_lines(msg.get("settle") or [])
+                    block += [f"  | {line}" for line in msg.get("log", [])]
                 self.printer.enqueue(block)
             self._show()
             tui.invalidate()  # 状态栏（阶段/回合归属/倒计时）立即按新状态重绘
@@ -82,8 +87,15 @@ class NetClient:
             if winner is None:
                 print(f"对局终止（{msg.get('reason')}）")
             elif self.payload is not None:
-                wname = self.payload["players"][winner]["name"]
-                print(f"***** {wname} 获胜！*****")
+                # thoughts(1)：按视角打印结果（不固定哪方获胜）；作为末块入队——
+                # 剩余结算按固定速度播完后才显示，不重复打印、不附场况
+                names = [p["name"] for p in self.payload["players"]]
+                text = cli.result_text(winner, names, viewer=self.me)
+                self.result_text = text
+                if self.printer is not None:
+                    self.printer.enqueue([f"***** {text} *****"])
+                else:
+                    print(f"***** {text} *****")
             self.over.set()
 
     def _show(self) -> None:
@@ -99,7 +111,10 @@ class NetClient:
                 for line in cli.format_hand_lines(game, p, p.hand):
                     print(line)
             return
-        print(cli.render(game, viewer=self.me))
+        if self.printer is not None:
+            cli._show_field(game, self.printer, viewer=self.me)  # 场况入队尾：结算播完再显示
+        else:
+            print(cli.render(game, viewer=self.me))
 
     # ---------- 发送 ----------
 
@@ -118,10 +133,27 @@ class NetClient:
 
     # ---------- 输入循环 ----------
 
+    def _can_act(self, st) -> bool:
+        """当前是否有合法输入场景（thoughts(1)）：自己调度未完成 / 待自己作答的
+        结算中选择（pending_choice）/ 自己的回合。其余（对手回合、已完成调度等待）
+        不显示输入提示符、不接受操作指令。"""
+        if st.phase == "mulligan":
+            return not st.players[self.me].mulligan_done
+        if st.pending_choice is not None:
+            return st.pending_choice.get("player") == self.me
+        return st.active == self.me
+
     def input_loop(self) -> None:
         with tui.activate():
             while not self.over.is_set():
                 game = self.wrapper()
+                if game is not None and not self._can_act(game.state):
+                    # 对手回合/等待期：不显示输入提示符，轮询状态直到可行动
+                    try:
+                        time.sleep(0.1)
+                    except KeyboardInterrupt:
+                        break
+                    continue
                 prompt = f"[{self.name}]"
                 if game is not None:
                     st = game.state
@@ -130,6 +162,8 @@ class NetClient:
                         prompt = f"[{self.name} 调度（剩 {p.mulligans_left} 次）]"
                     elif st.phase == "upgrade" and st.active == self.me:
                         prompt = f"[{self.name} 升级阶段（剩 {st.players[self.me].upgrades} 次）]"
+                    elif st.pending_choice is not None:
+                        prompt = f"[{self.name} 检视选牌]"
                 try:
                     line = tui.prompt(f"{prompt} > ").strip()
                 except (EOFError, KeyboardInterrupt):
@@ -197,7 +231,7 @@ class NetClient:
             print("—— 检视牌库顶：输入 choose <序号> 选择一张置入手牌 ——")
             for i, c in enumerate(opts):
                 cd = self.db.cards[c.id]
-                print(f"  [{i + 1}]《{cd.name}》 {cd.text}")
+                print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
             return
         if st.active != self.me:
             print("还没到你的回合")
@@ -216,7 +250,7 @@ class NetClient:
                     pick = int(rest.pop(0))
                 else:
                     for i, o in enumerate(options):
-                        print(f"  [{i}]《{o.name}》 {o.text}")
+                        print(f"  [{i}]【{o.name}】 {o.text}")
                     pick = int(tui.prompt("子选项 > "))
                 cmd_dict["choice"] = pick
                 eff = options[pick]
@@ -339,6 +373,9 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         finally:
             tui.stop_ticker()
             tui.set_status(None)
+            if client.result_text is not None:
+                # 对局正常结束：剩余结算按固定速度播完（结果块已入队尾）再收尾
+                printer.wait_idle(timeout=60)
             printer.stop(flush=True)  # 终局/退出：剩余明细快速播完，线程不泄漏
     # 对局结束（含 quit/断线）：等待确认后回主菜单；服务端负责房间清理
     try:

@@ -112,7 +112,7 @@ def cmd_play_card(game, ctx, *, player: int, uid: int, target: dict | None = Non
     chosen: list[Ref] = [Ref(**target)] if target else []
     game.move_card(p, card, "graveyard")
     how = f"（{method.text or method.id}）" if method else ""
-    game._log(f"[调试] {p.name} 强制使用《{cdef.name}》{how}")
+    game._log(f"[调试] {p.name} 强制使用【{cdef.name}】{how}")
     block = method.effects if (method and method.effects is not None) else cdef.effects
 
     game._resolve_block(block, ExecContext(controller=player, source=source, card=card, chosen=chosen))
