@@ -18,16 +18,18 @@ import threading
 import time
 
 from client import cli, deckbuilder, tui
+from client.settle import SettlePrinter
 from core.engine import Game
 from core.model import GameState
 from db.loader import CardDatabase
 
 
 class NetClient:
-    def __init__(self, db, ws, name: str) -> None:
+    def __init__(self, db, ws, name: str, printer: SettlePrinter | None = None) -> None:
         self.db = db
         self.ws = ws
         self.name = name
+        self.printer = printer  # 结算打印队列（边播边操作）；None = 不入队（测试）
         self.room_id: str | None = None
         self.token: str | None = None
         self.me: int | None = None  # 自己在 state.players 中的下标
@@ -62,17 +64,12 @@ class NetClient:
             self._seq += 1
             self.payload = msg["payload"]
             self.timer = msg.get("timer")
-            settle = msg.get("settle") or []
-            if settle:
-                # 结算明细：0.4s 每条逐条打印（嵌套层级缩进），整块前后各空一行（热坐同一节奏）
-                print("")
-                for line in cli.format_settle_lines(settle):
-                    print(line)
-                    if cli.SETTLE_INTERVAL > 0:
-                        time.sleep(cli.SETTLE_INTERVAL)
-                print("")
-            for line in msg.get("log", []):
-                print(f"  | {line}")
+            # 结算明细 + 叙事 log 作为一块入打印队列（入队即返回，播放不阻塞
+            # 接收/输入；播放中到达的新 state 块排入队尾，当前块播完再播）
+            if self.printer is not None:
+                block = cli.format_settle_lines(msg.get("settle") or [])
+                block += [f"  | {line}" for line in msg.get("log", [])]
+                self.printer.enqueue(block)
             self._show()
             tui.invalidate()  # 状态栏（阶段/回合归属/倒计时）立即按新状态重绘
         elif t == "error":
@@ -302,8 +299,10 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         print(f"无法连接服务器 {server_url}（{e}）")
         return
     with ws:
-        client = NetClient(db, ws, name)
+        printer = SettlePrinter(cli.SETTLE_INTERVAL)
+        client = NetClient(db, ws, name, printer)
         client.send(hello)
+        printer.start()
         tui.set_status(lambda: _net_status(client))
         try:
             def recv_loop() -> None:
@@ -323,6 +322,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         finally:
             tui.stop_ticker()
             tui.set_status(None)
+            printer.stop(flush=True)  # 终局/退出：剩余明细快速播完，线程不泄漏
     # 对局结束（含 quit/断线）：等待确认后回主菜单；服务端负责房间清理
     try:
         tui.prompt("按 Enter 返回主菜单 > ")

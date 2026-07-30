@@ -479,7 +479,7 @@ def test_debug_disabled(db, make_game):
 
 
 # ==========================================================================
-# 结算明细通道（settle_log 记录 + drain_settle 空闲点打印）
+# 结算明细通道（settle_log 记录 + SettlePrinter 队列播放）
 # ==========================================================================
 
 def test_settle_log_channels(db, make_game):
@@ -513,19 +513,54 @@ def test_settle_log_channels(db, make_game):
     assert any("【伤害】B 受到 7 点伤害（生命 30→23）" in x for x in slog)
 
 
-def test_drain_settle_increment_and_blank_lines(db, make_game, capsys):
-    """drain_settle：按游标增量打印（0 间隔测试模式），整块前后各空一行，
-    无新增明细时不输出、游标不动。"""
+def test_play_settle_enqueue_block_and_blank_lines(db, make_game, capsys):
+    """_play_settle：按游标增量入打印队列（interval=0 立即播完），整块前后各空一行，
+    无新增明细时不入队。"""
+    from client.settle import SettlePrinter
     g = make_game()
     pa, pb = F.battle_setup(g)
-    seen = cli.drain_settle(g, 0, interval=0)
+    printer = SettlePrinter(interval=0)
+    printer.start()
+    seen = cli._play_settle(g, 0, printer)
+    printer.stop(flush=True)
     out = capsys.readouterr().out
     assert seen == len(g.state.settle_log) and seen > 0
     assert out.startswith("\n") and out.endswith("\n\n")
     assert "回合开始阶段" in out
-    seen2 = cli.drain_settle(g, seen, interval=0)
-    assert seen2 == seen
+    seen2 = cli._play_settle(g, seen, printer)
+    assert seen2 == seen  # 无新增明细：不入队
+    printer.start()
+    printer.stop(flush=True)
     assert capsys.readouterr().out == ""
+
+
+def test_settle_printer_block_order_no_interleave(capsys):
+    """打印队列：播放中入队的新块等当前块完整播完再播——块序保持、块间不穿插、
+    flush 快速播完不略过。"""
+    from client.settle import SettlePrinter
+    p = SettlePrinter(interval=0.05)
+    p.start()
+    p.enqueue(["b1-l1", "b1-l2", "b1-l3"])
+    p.enqueue(["b2-l1", "b2-l2"])  # 第一块播放中入队
+    p.stop(flush=True)
+    out = capsys.readouterr().out
+    idx = [out.index(x) for x in ("b1-l1", "b1-l2", "b1-l3", "b2-l1", "b2-l2")]
+    assert idx == sorted(idx)
+    assert "已略过" not in out and p._thread is None
+
+
+def test_settle_printer_discard_on_stop(capsys):
+    """stop(flush=False)：队列剩余块丢弃并提示略过行数，线程退出不泄漏。"""
+    from client.settle import SettlePrinter
+    p = SettlePrinter(interval=0.2)
+    p.start()
+    p.enqueue(["slow1", "slow2", "slow3"])
+    p.enqueue(["drop-me-1", "drop-me-2"])
+    p.stop(flush=False)
+    out = capsys.readouterr().out
+    assert "已略过" in out
+    assert "drop-me-2" not in out
+    assert p._thread is None
 
 
 # ==========================================================================
@@ -628,3 +663,23 @@ def test_net_status_phase_hint(db, make_game):
     c.me = 1
     _, mid, _ = _net_status(c)
     assert "对手行动中" in mid
+
+
+def test_net_state_enqueues_settle_and_log_block(db, make_game, capsys):
+    """联机 state 消息：settle 增量与叙事 log 合成一块入打印队列（入队即返回，
+    不在接收线程 sleep）；块内 settle 在前、log 在后。"""
+    from client.net import NetClient
+    from client.settle import SettlePrinter
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    printer = SettlePrinter(interval=0)
+    printer.start()
+    c = NetClient(db, None, "乙", printer)
+    c.me = 1
+    c.handle({"type": "state", "payload": g.state.model_dump(mode="json"),
+              "log": ["A 使用了《测试牌》"],
+              "settle": ["—— 战斗开始：式神100101 ——", "—— 战斗结束 ——"]})
+    printer.stop(flush=True)
+    out = capsys.readouterr().out
+    assert out.index("—— 战斗开始：式神100101 ——") \
+        < out.index("  | A 使用了《测试牌》")

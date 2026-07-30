@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import time
 from client import cardfmt, deckbuilder, textutil, tui
+from client.settle import SettlePrinter
 from client.textutil import display_width as _display_width, pad as _pad
 from core.engine import Game, IllegalAction
 from core.model import Ref
@@ -82,7 +83,7 @@ _SETTLE_OPEN = ("—— 战斗开始", "—— 伤害结算开始")
 def format_settle_lines(lines: list[str]) -> list[str]:
     """结算明细排版：嵌套块（战斗/伤害结算的开始-结束）按层级缩进两个空格，
     结束行与对应开始行同级。阶段分隔行（—— 回合开始/结束阶段 ——）不缩进、
-    不计层级。热坐 drain_settle 与联机 state.settle 共用，保证两端格式一致。"""
+    不计层级。热坐 _play_settle 与联机 state.settle 共用，保证两端格式一致。"""
     out: list[str] = []
     depth = 0
     for line in lines:
@@ -95,24 +96,12 @@ def format_settle_lines(lines: list[str]) -> list[str]:
     return out
 
 
-def drain_settle(game: Game, seen: int, interval: float | None = None) -> int:
-    """打印自游标 seen 以来积累的结算明细（GameState.settle_log 增量），返回新游标。
-
-    空闲点（回合开始/结束阶段结算完、主要阶段每次指令结算完）调用：0.4s 每条
-    逐条打印（嵌套层级缩进，见 format_settle_lines），整块前后各空一行；
-    无新增明细时不输出（不空打印空行）。
-    纯展示层行为——引擎/服务端只记录，不 sleep；interval 供测试置 0。
-    """
+def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
+    """把自游标 seen 以来的结算明细增量入打印队列（边播边操作：入队即返回，
+    播放由 SettlePrinter 后台线程按块消费），返回新游标。空块不入队。"""
     lines = game.state.settle_log[seen:]
-    if not lines:
-        return seen
-    delay = SETTLE_INTERVAL if interval is None else interval
-    print("")
-    for line in format_settle_lines(lines):
-        print(line)
-        if delay > 0:
-            time.sleep(delay)
-    print("")
+    if lines:
+        printer.enqueue(format_settle_lines(lines))
     return len(game.state.settle_log)
 
 
@@ -554,16 +543,19 @@ def run_battle(db) -> None:
         seed=42,
     )
     tui.set_status(lambda: _battle_status(game))
+    printer = SettlePrinter(SETTLE_INTERVAL)
+    printer.start()
     try:
-        _battle_loop(game)
+        _battle_loop(game, printer)
     finally:
+        printer.stop(flush=True)  # 终局/退出：剩余明细快速播完，线程不泄漏
         tui.set_status(None)
 
 
-def _battle_loop(game: Game) -> None:
+def _battle_loop(game: Game, printer: SettlePrinter) -> None:
     if game.state.phase == "mulligan":
         run_mulligan(game)
-    settle_seen = drain_settle(game, 0)  # 先手首回合的回合开始阶段起：调度后首块明细
+    settle_seen = _play_settle(game, 0, printer)  # 先手首回合的回合开始阶段起：调度后首块明细
     print(render(game))
     while game.state.winner is None:
         prompt = f"[{game.current.name}]"
@@ -592,7 +584,7 @@ def _battle_loop(game: Game) -> None:
                 dcmd = run_debug(game, args)
                 if dcmd:
                     game.apply(dcmd)
-                    settle_seen = drain_settle(game, settle_seen)
+                    settle_seen = _play_settle(game, settle_seen, printer)
                     print(render(game))
             elif cmd == "play":
                 hand = hand_sorted(game, game.current)
@@ -626,7 +618,7 @@ def _battle_loop(game: Game) -> None:
                 if rest:
                     cmd_dict["play_method"] = rest.pop(0)  # 使用方式，如 burst
                 game.apply(cmd_dict)
-                settle_seen = drain_settle(game, settle_seen)
+                settle_seen = _play_settle(game, settle_seen, printer)
                 print(render(game))
             elif cmd in ("assault", "upgrade"):
                 cmd_dict: dict = {"op": cmd, "index": int(args[0]) - 1}
@@ -648,11 +640,11 @@ def _battle_loop(game: Game) -> None:
                             if code:
                                 cmd_dict["target"] = parse_ref(code, game.state.active)
                 game.apply(cmd_dict)
-                settle_seen = drain_settle(game, settle_seen)
+                settle_seen = _play_settle(game, settle_seen, printer)
                 print(render(game))
             elif cmd == "end":
                 game.apply({"op": "end_turn"})
-                settle_seen = drain_settle(game, settle_seen)
+                settle_seen = _play_settle(game, settle_seen, printer)
                 print(render(game))
             else:
                 print("未知指令，输入 help 查看帮助")
