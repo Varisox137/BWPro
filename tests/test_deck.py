@@ -333,23 +333,32 @@ def test_choose_deck_custom_rules(db, tmp_path, monkeypatch):
     assert len(cards) == 28
 
 
-def test_choose_deck_invalid_slot_falls_back(db, tmp_path, monkeypatch):
+def test_choose_deck_invalid_slot_reprompt(db, tmp_path, monkeypatch):
+    """序号越界：提示并重新选择（无默认卡组回退）。"""
     p = tmp_path / "decks.json"
     deckstore.save_decks(db, [mk_entry(db)], p)
-    feed(monkeypatch, ["9"])
-    ids, cards, _ = deckbuilder.choose_deck(db, "玩家A", p)
-    assert (ids, cards) == deckcode.default_deck(db)
+    feed(monkeypatch, ["9", "1"])
+    ids, cards, got = deckbuilder.choose_deck(db, "玩家A", p)
+    assert got == mk_code(db) and ids == list(F.TEAM) and cards == F.deck_of(*F.TEAM)
 
 
-def test_choose_deck_empty_store(db, tmp_path, monkeypatch):
-    """卡组文件为空：回退到卡组码输入（回车 = 默认卡组）。"""
+def test_choose_deck_cancel(db, tmp_path, monkeypatch):
+    """回车 = 取消选择：返回 None（不开局）。"""
     p = tmp_path / "decks.json"
-    feed(monkeypatch, [mk_code(db)])
-    ids, cards, _ = deckbuilder.choose_deck(db, "玩家A", p)
-    assert ids == list(F.TEAM) and cards == F.deck_of(*F.TEAM)
+    deckstore.save_decks(db, [mk_entry(db)], p)
     feed(monkeypatch, [""])
-    ids, cards, _ = deckbuilder.choose_deck(db, "玩家A", p)
-    assert (ids, cards) == deckcode.default_deck(db)
+    assert deckbuilder.choose_deck(db, "玩家A", p) is None
+
+
+def test_choose_deck_empty_store(db, tmp_path, monkeypatch, capsys):
+    """本地无可用卡组（文件为空或全部不满足规则）：打印构筑引导并返回 None。"""
+    p = tmp_path / "decks.json"
+    assert deckbuilder.choose_deck(db, "玩家A", p) is None
+    assert "卡组构筑" in capsys.readouterr().out
+    bad = {"name": "三人队", "groups": mk_groups(db, F.TEAM[:3])}
+    deckstore.save_decks(db, [bad], p)
+    assert deckbuilder.choose_deck(db, "玩家A", p) is None
+    assert "卡组构筑" in capsys.readouterr().out
 
 
 # ---------- 构筑（槽位管理） ----------

@@ -61,10 +61,12 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": null, "debug": false }
-{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": null, "token": null }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false }
+{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null }
 { "type": "cmd", "cmd": { "op": "end_turn" } }
 ```
+
+`deck_code` 为必填（入座时校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
 
 服务端 → 客户端：
 

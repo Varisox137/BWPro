@@ -104,10 +104,10 @@ class Room:
         return None
 
     def _parse_deck(self, deck_code: str | None) -> tuple[list[int], list[int]]:
-        """解析卡组码（空 = 默认卡组）；非法抛 ValueError。"""
-        if deck_code:
-            return deckcode.deck_from_code(self.db, deck_code)
-        return deckcode.default_deck(self.db)
+        """解析卡组码（必须提供，无默认卡组）；非法抛 ValueError。"""
+        if not deck_code:
+            raise ValueError("必须提供卡组码（无默认卡组）")
+        return deckcode.deck_from_code(self.db, deck_code)
 
     async def join(self, seat: int, name: str, ws, deck_code: str | None) -> Connection:
         """新玩家入座。卡组码非法时抛 ValueError（房间保留，可重新入座）。"""

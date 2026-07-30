@@ -13,9 +13,9 @@
   单式神携带 ≤2 与全卡组同名 ≤2（validate_deck 全局计数）。
 - 编辑在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号重新严格选满其
   8 张牌，"h <序号>" 更换式神（清空其已选卡牌并重新选牌）。
-- choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择；所选卡组
-  须满足对战模式的组卡规则，否则要求重选；联机时服务端入座会再次核验；
-  文件为空时回退到卡组码输入 / 默认卡组）。
+- choose_deck：热坐对战与联机对战开局前的统一选卡入口（本地槽位选择，回车取消；
+  所选卡组须满足对战模式的组卡规则，否则要求重选；联机时服务端入座会再次核验；
+  本地无卡组或全部不满足规则时打印引导并返回 None，不开局）。
 - 卡牌列表与对局手牌显示共用 client/cardfmt.py 的对齐流程。
 - 卡组码格式见 db/deckcode.py；主菜单入口见 client/cli.py。
 """
@@ -339,46 +339,40 @@ def _deck_summary(db: CardDatabase, ids: list[int]) -> str:
 def choose_deck(db: CardDatabase, label: str,
                 store_path=deckstore.PATH,
                 rules: DeckRules = STANDARD_RULES
-                ) -> tuple[list[int], list[int], str]:
-    """热坐/联机开局前选卡：读取本地卡组文件并要求从中选择槽位；
-    文件为空时回退到卡组码输入（Enter = 默认卡组）。
+                ) -> tuple[list[int], list[int], str] | None:
+    """热坐/联机开局前选卡：从本地卡组文件的槽位中选择——不提供默认卡组/跳过
+    （对局强制使用本地卡组）。回车 = 取消（返回 None）。
 
     所选卡组须满足对战模式的组卡规则（rules；本地 is_standard 标记对应天梯
     规则）；不满足时提示并重新选择。联机对战时服务端还会再次核验（房间入座
     时 deck_from_code 校验，见 server/room.py）。
-    返回 (式神 ids, 卡牌 ids, 卡组码)。"""
+    本地无卡组（文件不存在/为空）或全部不满足 rules 时，打印引导
+    （主菜单「卡组构筑」创建）并返回 None——调用方据此取消开局、回主菜单。
+    返回 (式神 ids, 卡牌 ids, 卡组码)；取消时为 None。"""
     decks = deckstore.load_decks(db, store_path)
-    if decks:
-        print(f"[{label}] 选择卡组（亮蓝 = 满足天梯规则）：")
-        _deck_list_lines(decks)
-        while True:
-            line = _input(f"[{label}] 卡组序号 > ")
-            try:
-                entry = decks[int(line) - 1]
-            except (ValueError, IndexError):
-                print("序号有误，改用默认卡组")
-                break
-            if not deckstore.check_deck(db, entry["groups"], rules):
-                print(f"卡组「{entry['name']}」不满足当前对战模式的组卡规则，"
-                      "请重新选择")
-                continue
-            ids, cards = deckstore.entry_deck(entry)
-            print(f"[{label}] 使用卡组「{entry['name']}」")
-            return ids, cards, deckstore.entry_code(entry)
-    else:
-        print(f"[{label}] 本地卡组文件为空（可先在主菜单「卡组构筑」中创建）")
-        code_in = _input(f"[{label}] 卡组码（Enter 跳过 = 默认卡组）> ")
-        if code_in:
-            try:
-                ids, cards = deckcode.deck_from_code(db, code_in)
-                code = code_in
-                print(f"[{label}] 卡组：{_deck_summary(db, ids)}")
-                print(f"[{label}] 卡组码（导出/分享）：{code}")
-                return ids, cards, code
-            except ValueError as e:
-                print(f"卡组码无效（{e}），改用默认卡组")
-    ids, cards = deckcode.default_deck(db)
-    code = deckcode.encode_deck(deckcode.group_deck(db, ids, cards))
-    print(f"[{label}] 卡组（默认）：{_deck_summary(db, ids)}")
-    print(f"[{label}] 卡组码（导出/分享）：{code}")
-    return ids, cards, code
+    if not decks:
+        print(f"[{label}] 本地卡组文件为空（请先在主菜单「卡组构筑」中创建卡组）")
+        return None
+    if not any(deckstore.check_deck(db, e["groups"], rules) for e in decks):
+        print(f"[{label}] 本地卡组均不满足当前对战模式的组卡规则"
+              "（请先在主菜单「卡组构筑」中创建/调整卡组）")
+        return None
+    print(f"[{label}] 选择卡组（亮蓝 = 满足天梯规则，回车取消）：")
+    _deck_list_lines(decks)
+    while True:
+        line = _input(f"[{label}] 卡组序号 > ")
+        if not line:
+            print(f"[{label}] 已取消选择")
+            return None
+        try:
+            entry = decks[int(line) - 1]
+        except (ValueError, IndexError):
+            print("序号有误，请重新选择")
+            continue
+        if not deckstore.check_deck(db, entry["groups"], rules):
+            print(f"卡组「{entry['name']}」不满足当前对战模式的组卡规则，"
+                  "请重新选择")
+            continue
+        ids, cards = deckstore.entry_deck(entry)
+        print(f"[{label}] 使用卡组「{entry['name']}」")
+        return ids, cards, deckstore.entry_code(entry)

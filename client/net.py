@@ -258,7 +258,11 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
 
     choice = _input("[1] 创建房间 [2] 加入房间（含重连）> ")
     if choice == "1":
-        _, _, deck_code = deckbuilder.choose_deck(db, name)
+        picked = deckbuilder.choose_deck(db, name)
+        if picked is None:
+            print("未选择卡组，返回主菜单")
+            return
+        _, _, deck_code = picked
         hello = {"type": "create", "name": name, "deck_code": deck_code,
                  "debug": debug}
     elif choice == "2":
@@ -266,7 +270,11 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         token = _input("重连令牌（首次加入 Enter 跳过）> ") or None
         deck_code = None
         if not token:
-            _, _, deck_code = deckbuilder.choose_deck(db, name)
+            picked = deckbuilder.choose_deck(db, name)
+            if picked is None:
+                print("未选择卡组，返回主菜单")
+                return
+            _, _, deck_code = picked
         hello = {"type": "join", "room_id": room_id, "name": name,
                  "deck_code": deck_code, "token": token}
     else:

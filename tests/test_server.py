@@ -97,6 +97,13 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def _deck_code(db) -> str:
+    """测试用合法卡组码（TEAM 全员满编）。"""
+    from db import deckcode
+    return deckcode.encode_deck(
+        deckcode.group_deck(db, list(F.TEAM), F.deck_of(*F.TEAM)))
+
+
 def mk_room(db, **kw) -> Room:
     kw.setdefault("rng", random.Random(1))
     return Room("TEST01", db, **kw)
@@ -106,8 +113,8 @@ async def _started_room(db, **kw):
     """两名玩家就位并已开局的 (room, ws0, ws1)。"""
     room = mk_room(db, **kw)
     ws0, ws1 = FakeWS(), FakeWS()
-    await room.join(0, "甲", ws0, None)
-    await room.join(1, "乙", ws1, None)
+    await room.join(0, "甲", ws0, _deck_code(db))
+    await room.join(1, "乙", ws1, _deck_code(db))
     await room.start_if_ready()
     return room, ws0, ws1
 
@@ -135,6 +142,9 @@ def test_invalid_deck_code_rejected(db):
         with pytest.raises(ValueError, match="卡组"):
             await room.join(0, "甲", FakeWS(), "not-a-code")
         assert room.conns[0] is None  # 校验失败不占座，房间保留
+        with pytest.raises(ValueError, match="卡组"):
+            await room.join(0, "甲", FakeWS(), None)  # 无默认卡组：必须提供卡组码
+        assert room.conns[0] is None
     run(go())
 
 
@@ -376,15 +386,16 @@ def server():
     srv.should_exit = True
 
 
-def test_full_match_flow(server):
+def test_full_match_flow(server, db):
     a = WsClient()
-    a.send({"type": "create", "name": "甲", "deck_code": None})
+    a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db)})
     ja = a.recv_until("joined", "error")
     assert ja["type"] == "joined"
     room_id, token_a = ja["room_id"], ja["token"]
 
     b = WsClient()
-    b.send({"type": "join", "room_id": room_id, "name": "乙", "deck_code": None})
+    b.send({"type": "join", "room_id": room_id, "name": "乙",
+            "deck_code": _deck_code(db)})
     jb = b.recv_until("joined")
     assert jb["type"] == "joined"
 

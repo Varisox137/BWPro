@@ -7,7 +7,7 @@
 一级菜单：卡组构筑（client/deckbuilder.py）/ 本地热坐 / 联机对战（client/net.py，
 服务端见 server/main.py）。数据为正式 YAML（CardDatabase.load：db/cards、
 db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwp.decks.json，
-db/deckstore.py）选择卡组，文件为空时回退到卡组码输入或默认卡组。
+db/deckstore.py）选择卡组，本地无可用卡组或取消选择时不开局、回主菜单。
 
 显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
 倒计时/战力/保甲/免疫/延迟能力/鼓舞/手牌修饰（增强/费用修正）均在场况中显示。
@@ -485,10 +485,13 @@ def run_debug(game: Game, args: list[str]) -> dict:
     raise ValueError(f"未知调试子命令: {sub}")
 
 
-def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]]:
+def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]] | None:
     """热坐开局前：从本地卡组文件（~/.bwp.decks.json）选择卡组槽位；
-    文件为空时回退到卡组码输入或默认卡组（见 client/deckbuilder.choose_deck）。"""
-    ids, cards, _ = deckbuilder.choose_deck(db, player_name)
+    无可用卡组/取消时返回 None（不开局，见 client/deckbuilder.choose_deck）。"""
+    picked = deckbuilder.choose_deck(db, player_name)
+    if picked is None:
+        return None
+    ids, cards, _ = picked
     return ids, cards
 
 
@@ -504,9 +507,18 @@ def _battle_status(game: Game) -> tuple[str, str, str]:
 
 
 def run_battle(db) -> None:
-    """热坐对战：双方依次选择卡组（卡组码导入或默认）后开局。"""
-    a_ids, a_cards = _choose_deck(db, "玩家A")
-    b_ids, b_cards = _choose_deck(db, "玩家B")
+    """热坐对战：双方依次从本地卡组文件选择卡组后开局；
+    任一方取消/无可用卡组则不开局，返回主菜单。"""
+    a = _choose_deck(db, "玩家A")
+    if a is None:
+        print("玩家A 未选择卡组，返回主菜单")
+        return
+    b = _choose_deck(db, "玩家B")
+    if b is None:
+        print("玩家B 未选择卡组，返回主菜单")
+        return
+    a_ids, a_cards = a
+    b_ids, b_cards = b
     game = new_game(
         db,
         ("玩家A", a_ids, a_cards),
