@@ -99,6 +99,7 @@
 4. 己方鬼火设置为 0。
 5. 己方获得 2 点鬼火（先手第 1 回合为 1 点）。
    - **鬼火变化时**（即时时机）：各能力触发。
+   - 【实现侧：`Game._turn_start_gain_orb`；鬼火储存已实现——己方在场已觉醒且觉醒牌 tags 含 `orb_store` 的式神存在时（觉醒·青行灯），步骤 4 的清零跳过、改为在现有鬼火上累加，封顶 4 点（`min(4, orb+gain)`；`_orb_stored` 扫描在场式神的觉醒牌 tags）】
 6. 己方战斗区的非召唤物式神：触发（延时）移至准备区。
 7. **回合开始时**（延时时机）：各能力触发。
 8. 己方式神按角色入场顺序依次进行：若未气绝，立即执行“非灵咒的倒计时 -1”事件（已实现为通用式神级倒计时框架：`Game._turn_start_countdown`，归零流程见 ch12；增减事件暂不拆）。
@@ -197,7 +198,7 @@
 
 ## 五、伤害事件完整流程（经测试）
 
-【实现侧（`Game._run_damage_queue`）：各时点批次事件 on_before_damage / on_damage_start / on_before_shield / on_after_shield / on_before_health（均即时时机，payload 含可变 damage 对象——boost_damage 动作在此类批次改写伤害值，只增）+ 穿刺（批次0，只移除正护甲/屏障，不动破甲，与伤害是否生效无关）+ 贯通修正（溢出同队列、提前结算扣减生命前；只吸收正护甲，跳过破甲计算）+ 屏障（批次3）+ 护甲计算（破甲 = 负 shield：移除并增加等量伤害；正护甲吸收）+ 合并 + 不屈（扣减生命）+ 濒死标记（扣减生命至 ≤0 先标 `dying`，再按受伤顺序延时生成气绝事件）+ 吸血（批次 10①，延时优先级 1 锚点：来源式神持 lifesteal 则合成 _Pending 入队，走 Game.heal 管线恢复牌手等量生命）+ on_damage/on_player_damaged（伤害后，延时）+ 按受伤顺序生成气绝事件均已实现；免疫两分支在"伤害开始时"批次内判定——作用域战斗伤害免疫（仅 combat/counter）在前，非战斗伤害免疫（immunities 条目 {"kind": "effect", "from": "enemy"}，grant_immunity kind/from_side 参数，觉醒·山童）在后；子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者再拆；伤害转移/改非伤害、幻境耐久尚未实现】
+【实现侧（`Game._run_damage_queue`）：各时点批次事件 on_before_damage / on_damage_start / on_before_shield / on_after_shield / on_before_health（均即时时机，payload 含可变 damage 对象——boost_damage 动作在此类批次改写伤害值，只增）+ 穿刺（批次0，只移除正护甲/屏障，不动破甲，与伤害是否生效无关）+ 贯通修正（溢出同队列、提前结算扣减生命前；只吸收正护甲，跳过破甲计算）+ 屏障（批次3）+ 护甲计算（破甲 = 负 shield：移除并增加等量伤害；正护甲吸收）+ 合并 + 不屈（扣减生命）+ 濒死标记（扣减生命至 ≤0 先标 `dying`，再按受伤顺序延时生成气绝事件）+ 吸血（批次 10①，延时优先级 1 锚点：来源式神持 lifesteal 则合成 _Pending 入队，走 Game.heal 管线恢复牌手等量生命）+ on_damage/on_player_damaged（伤害后，延时）+ 按受伤顺序生成气绝事件均已实现；免疫两分支在"伤害开始时"批次内判定——作用域战斗伤害免疫（仅 combat/counter）在前，非战斗伤害免疫（immunities 条目 {"kind": "effect", "from": "enemy"}，grant_immunity kind/from_side 参数，觉醒·山童）在后；另有牌手级全伤害免疫（`PlayerState.immunities` 条目 {"kind": "all", "turn": n}，grant_immunity 牌手目标 + kind="all"，舍生"你的牌手免疫所有伤害"，`_player_immune` 在伤害管线入口判定）；伤害管线（`deal` / `deal_to_*`）返回实际伤害合计（按扣减生命口径：护甲吸收不计、过量击杀按面板值计），供块内合计类效果使用（巨浪，memo 键 `last_damage_total`）；子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者再拆；伤害转移/改非伤害、幻境耐久尚未实现】
 
 要素：**伤害来源，受伤者，是否贯通，伤害值，伤害原因**（战斗、某法术牌、某能力）。
 
@@ -217,6 +218,8 @@
 9. **扣减生命**：伤害来源令受伤者扣减等同伤害值的生命（可能受影响：【狂啸】后续效果、关键字"不屈"、幻境"铃鹿山的秘宝"等）。然后若受伤者是牌手，其幻境队列的首个幻境减少等量耐久值。【已实现狂啸钳制：`ext["min_health_turn"]` 置位时伤害压到至多 当前生命-1（不屈判定之后），生命已为 1 时压为 0 提前终止（0 伤不触发受伤能力）；该标记半回合作用域——任一回合开始双方清除。扣减生命后按实际伤害值记账 `ext["damage_taken_turn"]`（百鬼夜行 X"本回合所受伤害之和"用，同半回合作用域）】
 10. **造成/受到伤害后**（延时时机；同一时机的不同优先级）：①关键字"吸血"；②（各类能力）。
 11. **生成气绝事件**：将所有生命值 ≤ 0 的受伤者，以与伤害队列相同的顺序生成（延时的）气绝事件队列。
+
+【附：治疗（恢复生命）事件流程——实现侧（`Game.heal`）：heal_reversal 判定（治疗来源方在场形态 tags 含 heal_reversal 法界唯心时，对**敌方**目标的恢复改为走伤害管线造成等量伤害；对己方目标不受影响）→ on_before_heal（即时）→ 实际治疗量 = min(治疗量, 已损失生命) → 增加生命 → 实际治疗量 0 终止（不发 on_heal——满血不触发转化类能力，维护者答复）→ on_heal / on_after_heal（延时；payload 带 `overheal` = max(0, 治疗量 − 实际治疗量)，海坊主"过量治疗转化"通道；heal 动作把本步治疗目标记入块内暂存 `last_heal_targets`，佛光池 `side_of_last_heal` 读取）。濒死/气绝者不受治疗。"你恢复生命时"（青坊主）= 己方任一角色实际恢复生命（含牌手），on_heal 触发方按治疗目标所属方判定】
 
 ## 六、护甲/破甲变化事件流程
 
@@ -526,13 +529,14 @@
 - **命名**：数据 id 叫 `id`；局内对象 id 叫 `uid`（CardInstance.uid；召唤物/衍生卡生成时既需数据 id 初始化也需 uid 引用）。
 - **卡牌主类型**：spell / combat / form / field（幻境，预留）/ reinforce（协战，预留）。**觉醒牌不是主类型**，而是子类型（`subtype=awaken`）；任意主类型的牌都可以是觉醒牌。
 - **子类型 `subtype`**：引擎可见的分类，会影响效果结算与目标选择（例如“从牌库获取一张非觉醒牌”）。当前仅 `awaken`（觉醒牌），保留给未来式神专属子类型扩展。
-- **tags**：仅用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等），**引擎不使用**。机制未实现前不建议放入数据，避免静默失效。
+- **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、heal_reversal 治疗反转等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
 - **稀有度 rarity**：R/SR/SSR（良/优/极）预留，供抽卡/账号系统。
 - **关键词**：数据侧接受的关键字见 db/schema.py `KEYWORDS`（含 fast/trigger/combo/initiative/piercing/pierce/remote/unyielding/haste/barrier/enraged/lifesteal/hunt/direct/veil/lethal 等；定义见术语表）。机制未实现的关键词不放进数据，避免静默失效。
 - **区域 zones**：deck/hand/graveyard/exiled 为标准区域，可扩展；墓地仅 UI 层隐藏（引擎可查看并保留对象引用，区域移动需要）；同名卡靠 uid 区分，实例差异放 mods（目前认识 cost_delta；对局中动态赋予卡牌效果为预留能力）。
 - **使用位置 play_from / 使用方式 play_method**：均可扩展；多择牌仅保留核心方式、参数可变（PlayMethod.param，如爆能 burst + 参数，参数可被效果增减）。
 - **数据兼容**：字段只增不改、未知字段保留、加载即校验；version 为 8 位日期（YYYYMMDD）。
 - **本批数据侧登记**（2026-07 第二阶段）：`ShikigamiDef.keywords` 式神基础关键字（进场入 perm_keywords 永久类别——山童先天[贯通]）；条件迷你语言新增 `{字段_not: 值}`（≠ 判等；{shikigami_not: null} = 专属牌/非中立）与 `{orb_ge: n}`（控制者当前鬼火 ≥ n）；语境目标 `victim_player`（气绝事件被消灭者所属牌手，敌己两向——引燃）；目标池 `enemy_bench`（敌方全部准备区式神——崩山）；步骤数值形式 `{"perm_power": "self", "base": n}`（使用时以来源永久力量快照求值——崩山增强）。法术回响序列 `spell_echo` 见术语表（涅槃业火）。
+- **本批数据侧登记**（2026-07 第九阶段）：治疗管线扩展——on_heal/on_after_heal payload 带 `overheal`（实际治疗量 0 不发 on_heal）、tags 标记 `heal_reversal`（治疗反转，法界唯心）；tags 标记 `orb_store`（鬼火储存，觉醒·青行灯）；牌手级全伤害免疫（grant_immunity 牌手目标 + kind="all"，舍生）；结算中交互选择 `pending_choice` + `choose` 指令（牌库顶挑选，青灯夜谈；触发式块不挂起）；条件迷你语言新增 `{字段_ge: n}`（数值字段下限，如 overheal_ge）、`{victim_lethal: true}`（事件 victim 将受致命伤害，舍生）、`{victim_in_combat: true}`（victim 在战斗区，沧海之盾）；目标池新增 friendly_character / friendly_others_character / any_character / friendly_lowest_level / side_of_last_heal；动态数值 `{half_shield_of: "self"|"source"}`（沧海之盾）与 `{memo: key}` 泛化到伤害数值（巨浪 last_damage_total）；新 op：repeat（含 clear_orb）/ deck_top_pick / consume_orb / set_health / level_up / revive / reattach_form；扩展 op：delay_grant `bind="chosen"`（沧海之盾）、discard `card_id`（百闻一得弃明灯）。细节见术语表「结算与事件」。
 - 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位。
 
 ## 二十三、组卡规则

@@ -1,0 +1,22 @@
+id: 10011108
+version: 20260730
+name: 轮回
+shikigami: 100111  # 派系：紫岩（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps:
+    # "你的生命变为10" + 增强每被攻击一次 +1：set_health 非治疗非伤害，不触发任何
+    # 治疗/伤害事件，钳制 [1, max_health]；X=0 时按原文仍可使用（变为 10）
+    - {op: set_health, amount: {enhance: true, base: 10},
+       target: {kind: all, pool: self_player}}
+triggers:
+  # 增强计数（维护者答复 8）：对你的牌手发起的攻击（on_before_assault 最终目标为
+  # 牌手；含反击、无论是否受伤均计；不计以式神为目标的攻击）。计数归防守方
+  - when: on_before_assault
+    condition: {victim_side: friendly, victim_kind: player, attacker_side: enemy}
+    steps:
+      - {op: add_mod, to: persistent, key: enhance, amount: 1}
+text: 你的生命变为10。[增强]：{本局游戏你每被对手攻击过一次，此牌效果+1。}

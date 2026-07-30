@@ -1,0 +1,19 @@
+id: 10010702
+version: 20260730
+name: 灵能
+shikigami: 100107  # 派系：青岚（继承自式神数据）
+card_type: form
+rarity: SR
+level: 1
+cost: 1
+form_power: 3
+form_health: 6
+effects:
+  steps: []
+abilities:
+  # "当海坊主为牌手恢复生命时，他恢复等量的生命"：source=海坊主、target 为牌手（任一方）
+  - when: on_heal
+    condition: {source_shikigami: self, target_kind: player}
+    steps:
+      - {op: heal, amount: {event: amount}, target: {kind: self}}
+text: 当海坊主为牌手恢复生命时，他恢复等量的生命。

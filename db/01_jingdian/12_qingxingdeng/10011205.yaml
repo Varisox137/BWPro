@@ -1,0 +1,20 @@
+id: 10011205
+version: 20260730
+name: 百物语之火
+shikigami: 100112  # 派系：青岚（继承自式神数据）
+card_type: form
+rarity: SR
+level: 2
+cost: 1
+form_power: 4
+form_health: 5
+effects:
+  steps: []
+abilities:
+  # 己方回合结束时获得 1 点鬼火（on_turn_end 即时时机；未觉醒时鬼火回合开始清零，
+  # 此火主要为留火响应/配合觉醒储存）
+  - when: on_turn_end
+    condition: {player: self}
+    steps:
+      - {op: gain_orb, amount: 1}
+text: 己方回合结束时，你获得1点鬼火。

@@ -222,14 +222,48 @@
 | 21 刃影鹤唳 | ✅ | 协战主牌（姑获鸟&妖刀姬）：options [10010651 鹤唳回风, 10012351 刃影叠岚]；构筑池双归属 |
 | 51 鹤唳回风 | ✅ | 协战子选项（姑获鸟侧法术觉醒，+1/+1）：[觉醒]强化基础能力——攻击后移回准备区 +1 力量并恢复所有生命（heal {missing_health: self}）；羁绊 launch_attack 妖刀姬（未出战/气绝空操作——刃影叠岚先例） |
 
+## 海坊主（100107）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | on_heal 过量转化：payload 新增 overheal（治疗量-实际治疗量）；{source_shikigami: self, target_side: friendly, overheal_ge 1} → 目标获得等量护甲。实际恢复 0（满血）不发 on_heal、不触发转化（答复 0） |
+| 01 治愈之水 | ✅ | [瞬发]；{base: 3, half_shield_of: self} 动态数值（海坊主护甲 //2，向下取整）；choose any_character 新池 |
+| 02 灵能 | ✅ | 形态 3/6：on_heal {source_shikigami: self, target_kind: player} → 自身恢复等量（按实际治疗量） |
+| 03 沧海之盾 | ✅ | +2 甲 + delay_grant **bind=chosen**（延迟能力绑定被选式神；scope=turn）：其造成战斗伤害（kind≠effect，含反击）时为牌手恢复 2；[响应]挂 on_before_assault {victim_in_combat: true} 新条件键，choose 自动取事件 victim（古尘之盾先例） |
+| 04 水龙卷 | ✅ | 先自身 +3 甲，再按 {shield_of: self} 快照造伤（含本牌刚获得的 3 甲） |
+| 05 祝福之水 | ✅ | [瞬发]；friendly_character 新池（己方在场式神 + 己方牌手） |
+| 06 巨浪 | ✅ | damage 记录块内暂存 last_damage_total（实际造成伤害合计，扣减生命口径，护甲吸收不计）→ heal {memo: last_damage_total} 恢复自身 |
+| 07 蹈海 | ✅ | 形态 4/9：on_damage {source_shikigami: self, kind_not: effect} → friendly_others_character 新池（己方其他角色，排除来源含牌手）恢复等量 |
+| 08 觉醒·海坊主 | ✅ | +1/+3；恢复 3；觉醒替换 = 基础保留 + 过量治疗额外转等量力量（buff_power 临时修正） |
+
+## 青坊主（100111）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | "你恢复生命时"口径 = 己方任意角色实际恢复（target_side friendly）；turn_mark 门控每回合合计一次 → random_damage 敌方角色 2×1 |
+| 01 佛印 | ✅ | [瞬发]；两条 heal step（self_player / enemy_player） |
+| 02 禅心 | ✅ | 形态 1/6：同口径 + turn_mark 门控 → draw 1 |
+| 03 慈悲 | ✅ | grant_keyword unyielding |
+| 04 佛光 | ✅ | heal 记录块内暂存 last_heal_targets → side_of_last_heal 新池（上一步治疗目标所属方的所有角色）恢复 3 |
+| 05 舍生 | ✅ | [瞬发][响应]；destroy 青坊主 + grant_immunity kind=all scope=turn（**牌手级免疫**新通道：PlayerState.immunities，按回合号过期）；响应挂 on_damage_start {victim_lethal: true} 新条件键（面板伤害 ≥ 当前生命，护甲计算前判定） |
+| 06 法界唯心 | ✅ | 形态 5/6，tags [heal_reversal]：引擎 heal() 前置检查——控制者对敌方的恢复改为等额伤害（不发出任何治疗事件，伤害事件照常）；进场恢复 4 选择敌方角色时同样被反转 |
+| 07 觉醒·青坊主 | ✅ | +0/+2；恢复 8 目标 = 你的牌手（答复 2）；觉醒替换（原文不含基础）：无门控，恢复时对所有敌人（enemy_character）1 伤 |
+| 08 轮回 | ✅ | set_health 新 op（非治疗非伤害，钳制 [1, max_health]）{enhance: true, base: 10}；增强计数 = on_before_assault 最终目标为你的牌手（含反击、无论是否受伤；以式神为目标不计；答复 8）；X=0 按原文仍可使用（变为 10） |
+
 ## 青行灯（100112）
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | on_turn_start {player: opponent, orb_ge: 1} → generate 明灯（敌方回合开始时有剩余鬼火） |
 | 01 明灯 | ✅ | [瞬发] gain_orb 1；凤凰火/青行灯协战与青行灯基础能力的产物 |
-
-（青行灯其余 7 张卡未引入，不可构筑——yaml 标 wip: true，构筑池过滤已排除。）
+| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**新机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（0 鬼火无效果、清空仍执行，答复 4），每次选择入手后洗牌库，末次后清空鬼火续块；联机 sanitize 对非选择方抹除 options |
+| 03 幽光之火 | ✅ | 形态 4/5：on_before_assault {attacker_shikigami: self} → generate 明灯（发起攻击即计，含出击/战斗牌/效果发起） |
+| 04 百闻一得 | ✅ | discard card_id 精确弃明灯（无明灯不弃、升级仍执行）；friendly_lowest_level 新池（并列全入池由使用者选择，答复 7）；level_up 新 op 不走升级次数，满 3 级 overflow_draw 改抽 1 |
+| 05 百物语之火 | ✅ | 形态 4/5：on_turn_end {player: self} → gain_orb 1 |
+| 06 不灭之火 | ✅ | 形态 4/5：on_form_destroyed {target_shikigami: self, orb_ge: 1}（离场前 emit 收集，含被替换/气绝连带，鸩先例）→ consume_orb 1 → revive（气绝先复活）→ reattach_form 新 op（墓地同一实例重新结附，不生成新牌，答复 6） |
+| 07 吸魂灯 | ✅ | repeat 新 op（次数={orb: true}，0 鬼火无效果、清空仍执行）：投射 5 ×鬼火，独立求值，clear_orb 清空 |
+| 08 觉醒·青行灯 | ✅ | +1/+1；tags [awaken, orb_store]：觉醒替换 = 基础保留 + 鬼火储存（引擎回合开始不清零、储存累加封顶 4，答复 3） |
+| 51 烛火重燃 | ❌ | 协战子选项（青行灯侧幻境）：幻境机制未实现，暂缓 |
 
 ## 酒吞童子（100109）
 

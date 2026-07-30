@@ -1,0 +1,21 @@
+id: 10011208
+version: 20260730
+name: 觉醒·青行灯
+shikigami: 100112  # 派系：青岚（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1
+awaken_health: 1
+tags: [awaken, orb_store]  # orb_store：引擎回合开始鬼火重置改为储存累加、封顶 4 点
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps: []
+abilities:
+  # 觉醒替换 = 基础能力保留（维护者答复：替换含基础全文）+ 鬼火储存（引擎 orb_store 通道）
+  - when: on_turn_start
+    condition: {player: opponent, orb_ge: 1}
+    steps:
+      - {op: generate, card_id: 10011201, zone: hand}
+text: "[觉醒]：{敌方回合开始时若你有剩余鬼火，获得一张‘明灯’。你的鬼火不会自动清除，最大可储存4点。}"

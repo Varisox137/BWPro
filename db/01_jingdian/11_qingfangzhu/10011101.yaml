@@ -1,0 +1,14 @@
+id: 10011101
+version: 20260730
+name: 佛印
+shikigami: 100111  # 派系：紫岩（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [fast]
+effects:
+  steps:
+    - {op: heal, amount: 4, target: {kind: all, pool: self_player}}
+    - {op: heal, amount: 4, target: {kind: all, pool: enemy_player}}
+text: "[瞬发]。为双方牌手恢复4生命。"

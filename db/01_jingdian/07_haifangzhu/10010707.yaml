@@ -1,0 +1,21 @@
+id: 10010707
+version: 20260730
+name: 蹈海
+shikigami: 100107  # 派系：青岚（继承自式神数据）
+card_type: form
+rarity: SR
+level: 3
+cost: 1
+form_power: 4
+form_health: 9
+effects:
+  steps: []
+abilities:
+  # "当海坊主造成战斗伤害时"：kind ≠ effect（combat/counter）；"己方其他角色"
+  # = 己方其他在场式神 + 己方牌手（friendly_others_character 池排除来源）
+  - when: on_damage
+    condition: {source_shikigami: self, kind_not: effect}
+    steps:
+      - {op: heal, amount: {event: amount},
+         target: {kind: all, pool: friendly_others_character}}
+text: 当海坊主造成战斗伤害时，为己方其他角色恢复等量生命。

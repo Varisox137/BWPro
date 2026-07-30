@@ -1,0 +1,28 @@
+id: 10010703
+version: 20260730
+name: 沧海之盾
+shikigami: 100107  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [trigger]
+target: {kind: choose, pool: friendly_shikigami}
+effects:
+  steps:
+    - {op: gain_shield, amount: 2}
+    # "本回合获得'当他造成战斗伤害时，为你恢复2点生命'"：延迟能力绑定到被选式神
+    # （bind=chosen），scope=turn 本回合未消耗则己方回合开始清除
+    - {op: delay_grant, bind: chosen, scope: turn, when: on_damage,
+       condition: {source_shikigami: self, kind_not: effect},
+       steps: [{op: heal, amount: 2, target: {kind: all, pool: self_player}}]}
+response:
+  # 响应：当你战斗区式神被攻击时，自动对其使用（choose 目标自动取事件 victim）
+  when: on_before_assault
+  condition: {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true}
+  steps:
+    - {op: gain_shield, amount: 2}
+    - {op: delay_grant, bind: chosen, scope: turn, when: on_damage,
+       condition: {source_shikigami: self, kind_not: effect},
+       steps: [{op: heal, amount: 2, target: {kind: all, pool: self_player}}]}
+text: 使一个己方式神获得2护甲并本回合获得‘当他造成战斗伤害时，为你恢复2点生命’。[响应]：{当你战斗区式神被攻击时，自动对其使用。}

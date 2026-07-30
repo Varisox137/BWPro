@@ -1,0 +1,15 @@
+id: 10010706
+version: 20260730
+name: 巨浪
+shikigami: 100107  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 2
+cost: 1
+effects:
+  steps:
+    # damage 记录块内暂存 last_damage_total = 本步实际造成的伤害合计（扣减生命口径）
+    - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami}}
+    # "每造成1点伤害，海坊主便恢复1生命"：按实际造成总点数恢复
+    - {op: heal, amount: {memo: last_damage_total}, target: {kind: self}}
+text: 对所有敌方式神造成2点伤害，每造成1点伤害，海坊主恢复1生命。

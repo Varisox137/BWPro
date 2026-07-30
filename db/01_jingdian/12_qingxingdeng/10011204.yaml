@@ -1,0 +1,17 @@
+id: 10011204
+version: 20260730
+name: 百闻一得
+shikigami: 100112  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 2
+cost: 1
+# 己方最低等级在场式神（并列全部入池，由使用者选择——维护者答复 7）
+target: {kind: choose, pool: friendly_lowest_level}
+effects:
+  steps:
+    # "弃掉一张'明灯'"：按数据 id 精确弃牌；手牌无明灯时不弃，等级提升仍执行
+    - {op: discard, card_id: 10011201, count: 1}
+    # 等级 +1 不走升级次数；已为 3 级改为抽一张牌（overflow_draw）
+    - {op: level_up, amount: 1, overflow_draw: true}
+text: 弃掉一张‘明灯’，使一个己方最低等级的式神等级+1。若其等级已为3则改为抽一张牌。

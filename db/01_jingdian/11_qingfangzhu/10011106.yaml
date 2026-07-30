@@ -1,0 +1,17 @@
+id: 10011106
+version: 20260730
+name: 法界唯心
+shikigami: 100111  # 派系：紫岩（继承自式神数据）
+card_type: form
+rarity: R
+level: 3
+cost: 1
+form_power: 5
+form_health: 6
+tags: [heal_reversal]  # 引擎 heal() 读取：控制者对敌方的恢复改为等额伤害（不走治疗事件）
+target: {kind: choose, pool: any_character}
+effects:
+  # 进场时效果（形态牌 effects 块结附时结算）；若选择敌方角色，该恢复同样被反转为伤害
+  steps:
+    - {op: heal, amount: 4}
+text: 进场时，为一个角色恢复4生命。你对敌方的恢复生命效果改为伤害效果。

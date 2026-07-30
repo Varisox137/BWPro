@@ -1,12 +1,9 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 100112
-version: 20260729
+version: 20260730
 name: 青行灯
-wip: true  # WIP：仅基础数据+明灯，卡牌未齐
 faction: 青岚
 power: 2
 health: 5
-# ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）
 ability:
   # 敌方回合开始时若你有剩余鬼火（≥1），获得一张'明灯'
   when: on_turn_start
