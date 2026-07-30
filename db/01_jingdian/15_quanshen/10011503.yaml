@@ -1,0 +1,16 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011503
+version: 20260731
+name: 心即归处
+shikigami: 100115  # 派系：红莲（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 2
+cost: 1
+keywords: [fast]
+playable_when_defeated: true  # （仅在犬神气绝时可用）：气绝可用；存活时使用为 revive 空操作
+effects:
+  # [瞬发]。复活犬神
+  steps:
+    - {op: revive, target: {kind: self}}
+text: "[瞬发]。复活犬神。（仅在犬神气绝时可用）"

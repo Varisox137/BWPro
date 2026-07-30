@@ -1,0 +1,16 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011902
+version: 20260731
+name: 花信风
+shikigami: 100119  # 派系：红莲（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 1
+cost: 1
+keywords: [fast]
+target: {kind: choose, pool: friendly_shikigami}
+effects:
+  # [瞬发]。选择一个己方式神，将牌库中随机一张该式神的牌置入手牌，然后洗牌库
+  steps:
+    - {op: search_deck}
+text: "[瞬发]。选择一个己方式神，将牌库中随机一张该式神的牌置入手牌，然后洗牌库。"

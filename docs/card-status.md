@@ -280,6 +280,36 @@
 | 08 百鬼夜行 | ✅ | [瞬发]；X = ext["damage_taken_turn"]（本回合所受伤害之和，伤害扣减生命处记账、半回合作用域）；两段 damage：friendly_others（排除自身）+ enemy_shikigami（答复4） |
 | 51 醉酒当歌 | ✅ | 协战子选项（酒吞侧战斗牌）：[不屈]；自伤 3 → gain_shield 3 标 no_extract（不提取为战斗牌护甲前置结算——否则被自己的自伤消耗；按步骤顺序自伤后获得）；羁绊 generate 茨木当前等级战斗牌（level="shikigami" 精确匹配，未出战/未在场空操作） |
 
+## 犬神（100115）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | on_upgrade {target_shikigami: self} → generate 心身炼磨（指令升级与 level_up op 两来源均触发——on_upgrade payload 新增 target Ref，level_up 补 emit） |
+| 01 羁绊的价值 | ✅ | heal {missing_health: self}（姑获鸟觉醒先例，恢复全部已损失生命） |
+| 02 心斩 | ✅ | 战斗 +0/+2 |
+| 03 心即归处 | ✅ | [瞬发] revive self；playable_when_defeated（存活时使用为 revive 空操作——"仅在犬神气绝时可用"无硬门控，边界） |
+| 04 恶·即·斩 | ✅ | 战斗 +4/+0 |
+| 05 心技一体 | ✅ | 形态 3/5：card_aura scope=form 新作用域（绑定持有者、随形态离场移除，气绝经 _destroy_form 同路径）+ power_ext/shield_ext 新参数（ext 数值通道，读 lianmo_used_game——心身炼磨 tags [lianmo] 出牌记账）；显示边界：光环数值手牌不显示（同刃影叠岚既有行为） |
+| 06 守护 | ✅ | 战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；边界：追猎类定向战斗不触发（victim_in_combat 限定） |
+| 07 心剑乱舞 | ✅ | 形态 4/9：card_aura scope=form keywords [fast]（犬神的牌获得[瞬发]，读取时求值） |
+| 08 觉醒·犬神 | ✅ | +1/+1；on_turn_end {player: self, holder_defeated: true} + trigger_when_defeated 新字段（能力收集对气绝者放行——仅气绝时触发）：revive + perm +1/+1 |
+| 51 心身炼磨 | ✅ | 衍生（升级产物）：perm +1/+1；tags [lianmo]；conditional_keywords 新字段（{keyword: fast, level_ge: 2}）+ cost_zero_if 扩 {level_ge: 3} |
+
+## 桃花妖（100119）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | on_heal {source_shikigami: self, target_side: friendly, target_kind: shikigami} / on_shikigami_revived {source_shikigami: self, shikigami_side: friendly} → 临时 +1 力量（revive op 补 source/reason="effect" 传递；倒计时复活 source=None 不触发） |
+| 01 桃之馨息 | ✅ | choose any_character heal 5 |
+| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，未命中也洗牌库）；边界：选择池 friendly_shikigami 限在场式神（气绝/未升级式神暂不可选） |
+| 03 桃之夭夭 | ✅ | cost 0 + keywords [inspire]（鼓舞关键字登记）；basic_boost +2/+2 出击加成 |
+| 04 丰实 | ✅ | 形态 3/7：进场与 on_turn_start {player: self} → heal 3，friendly_injured 新池 + TargetSpec {random: 1} 新键（rng.sample，repeat 每轮重解析重随机） |
+| 05 桃语春风 | ✅ | choose friendly_defeated 新池 revive + grant_keyword haste（迅捷天然一次性类别） |
+| 06 盛开 | ✅ | 形态 4/9：进场与 on_turn_start → repeat 3 × heal 2（friendly_injured + random 1） |
+| 07 桃华灼灼 | ✅ | conditional_keywords {keyword: fast, if_alive: true}（未气绝得[瞬发]）+ playable_when_defeated；revive friendly_defeated 全体 → grant_keyword haste 全体（第二步在复活后解析，复活者同获迅捷） |
+| 08 觉醒·桃花妖 | ✅ | +2/+1；choose any_character heal 5；同基础两 trigger 改 perm +2/+2 |
+| 51 桃红簇簇 | ✅ | 协战子选项（桃花妖侧形态 3/6；21 繁花似锦主牌待樱花妖 100403）：on_enter_combat/on_leave_combat 新事件 {player: self} → heal 2 context shikigami（治疗来源=桃花妖→连锁基础赋益）；on_damage_start {victim_side: friendly, victim_kind: shikigami, victim_lethal: true, victim_in_combat: false} → grant_immunity kind=all scope=once 新作用域（消耗式，_combat_immune/_effect_immune 命中即移除）→ destroy_form self；羁绊 step 级 condition {shikigami_active: 100403} 门控恒 False（樱花妖未加入） |
+
 ## 与原版描述的出入（已决议，2026-07）
 
 1. **妖刀姬基础/觉醒能力**：按原版"对敌方牌手造成**伤害**时"（任意伤害）实现。

@@ -399,7 +399,7 @@
 - **"本回合"类增益**：buff_power 的 `scope="turn"`（武士之笛）与 player_aura 的 `scope="turn"`（鼓舞）——临时力量记账 `ext["turn_power"]`、牌手监听存 `PlayerState.auras`，均于己方回合开始统一清除（与 delayed 的 scope="turn" 同批次）。
 - **护甲 shield**：被伤害优先消耗；己方回合开始阶段清除（可因效果改变）。**破甲 fragile**：独立"给与破甲"流程（见专节），非简单负护甲。
 - **派系 faction**：红莲/紫岩/青岚/苍叶/无相（red/purple/blue/green/white）；对局中可被效果改变（构筑规则仅校验时检查，对局中改变不受限）。
-- **免疫 immune**：免疫某类伤害/效果。【战斗伤害免疫已实现：战斗牌授予绑定本次战斗上下文（可声明覆盖嵌套战斗）、回合级按回合号记账（grant_immunity，unique=True 时"若不具有该能力则获得"——不可饶恕多次使用黄金羽不重复授予）；**非战斗伤害免疫已实现**：grant_immunity 的 kind="effect" + from_side 参数（from_side="enemy" 只免疫敌方来源，scope="perm" 持续在场期间、气绝清除、复活重新授予——觉醒·山童"免疫敌方非战斗伤害"）；通用免疫（免疫效果/指定）未实现】
+- **免疫 immune**：免疫某类伤害/效果。【战斗伤害免疫已实现：战斗牌授予绑定本次战斗上下文（可声明覆盖嵌套战斗）、回合级按回合号记账（grant_immunity，unique=True 时"若不具有该能力则获得"——不可饶恕多次使用黄金羽不重复授予）；**非战斗伤害免疫已实现**：grant_immunity 的 kind="effect" + from_side 参数（from_side="enemy" 只免疫敌方来源，scope="perm" 持续在场期间、气绝清除、复活重新授予——觉醒·山童"免疫敌方非战斗伤害"）；**消耗式免疫已实现**：scope="once" + kind="all" 命中任意一类伤害即免疫一次并移除（桃红簇簇"免疫此次伤害"）；通用免疫（免疫效果/指定）未实现】
 - 弃牌 discard = 进入墓地；移除 remove = 移出游戏（如孟婆），二者区分。
 - **变形 transform**：式神本身或其结附的形态可被变形，身材数据可能变化，视作原能力离场、新能力进场，不视为气绝；可能导致无法使用专属牌等限制；结束条件依来源而定，一般在气绝时解除。【未实现】
 
@@ -531,13 +531,14 @@
 - **子类型 `subtype`**：引擎可见的分类，会影响效果结算与目标选择（例如“从牌库获取一张非觉醒牌”）。当前仅 `awaken`（觉醒牌），保留给未来式神专属子类型扩展。
 - **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、heal_reversal 治疗反转等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
 - **稀有度 rarity**：R/SR/SSR（良/优/极）预留，供抽卡/账号系统。
-- **关键词**：数据侧接受的关键字见 db/schema.py `KEYWORDS`（含 fast/trigger/combo/initiative/piercing/pierce/remote/unyielding/haste/barrier/enraged/lifesteal/hunt/direct/veil/lethal 等；定义见术语表）。机制未实现的关键词不放进数据，避免静默失效。
+- **关键词**：数据侧接受的关键字见 db/schema.py `KEYWORDS`（含 fast/trigger/combo/initiative/piercing/pierce/remote/unyielding/haste/barrier/enraged/lifesteal/hunt/direct/veil/lethal/inspire 等；定义见术语表）。机制未实现的关键词不放进数据，避免静默失效。
 - **区域 zones**：deck/hand/graveyard/exiled 为标准区域，可扩展；墓地仅 UI 层隐藏（引擎可查看并保留对象引用，区域移动需要）；同名卡靠 uid 区分，实例差异放 mods（目前认识 cost_delta；对局中动态赋予卡牌效果为预留能力）。
 - **使用位置 play_from / 使用方式 play_method**：均可扩展；多择牌仅保留核心方式、参数可变（PlayMethod.param，如爆能 burst + 参数，参数可被效果增减）。
 - **数据兼容**：字段只增不改、未知字段保留、加载即校验；version 为 8 位日期（YYYYMMDD）。
 - **本批数据侧登记**（2026-07 第二阶段）：`ShikigamiDef.keywords` 式神基础关键字（进场入 perm_keywords 永久类别——山童先天[贯通]）；条件迷你语言新增 `{字段_not: 值}`（≠ 判等；{shikigami_not: null} = 专属牌/非中立）与 `{orb_ge: n}`（控制者当前鬼火 ≥ n）；语境目标 `victim_player`（气绝事件被消灭者所属牌手，敌己两向——引燃）；目标池 `enemy_bench`（敌方全部准备区式神——崩山）；步骤数值形式 `{"perm_power": "self", "base": n}`（使用时以来源永久力量快照求值——崩山增强）。法术回响序列 `spell_echo` 见术语表（涅槃业火）。
 - **本批数据侧登记**（2026-07 第九阶段）：治疗管线扩展——on_heal/on_after_heal payload 带 `overheal`（实际治疗量 0 不发 on_heal）、tags 标记 `heal_reversal`（治疗反转，法界唯心）；tags 标记 `orb_store`（鬼火储存，觉醒·青行灯）；牌手级全伤害免疫（grant_immunity 牌手目标 + kind="all"，舍生）；结算中交互选择 `pending_choice` + `choose` 指令（牌库顶挑选，青灯夜谈；触发式块不挂起）；条件迷你语言新增 `{字段_ge: n}`（数值字段下限，如 overheal_ge）、`{victim_lethal: true}`（事件 victim 将受致命伤害，舍生）、`{victim_in_combat: true}`（victim 在战斗区，沧海之盾）；目标池新增 friendly_character / friendly_others_character / any_character / friendly_lowest_level / side_of_last_heal；动态数值 `{half_shield_of: "self"|"source"}`（沧海之盾）与 `{memo: key}` 泛化到伤害数值（巨浪 last_damage_total）；新 op：repeat（含 clear_orb）/ deck_top_pick / consume_orb / set_health / level_up / revive / reattach_form；扩展 op：delay_grant `bind="chosen"`（沧海之盾）、discard `card_id`（百闻一得弃明灯）。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-07 第十阶段）：治疗时机分层——on_heal 实际恢复 0 也触发（amount=0，取代第九阶段"0 不发"口径）、on_after_heal 仅实际恢复 >0 触发；青坊主基础/禅心/觉醒改挂 on_after_heal，海坊主系留 on_heal 以 overheal_ge 门控（满血治疗照常转化）。鬼火语义重做——repeat/deck_top_pick 的 {"orb": true} = **1 + 效果结算时剩余鬼火**（0 火仍基础 1 次）；新 op `clear_orb`（side 参数）；新事件 `on_orb_changed`（即时时机，付费点先于效果结算；条件通道 {player: opponent, new: 1}）。觉醒牌替换前触发 `on_before_awaken`（妖琴师"觉醒前倒计时归零"四块改挂）。turn 作用域免疫条目回合开始清理（防显示残留）。联机——state 消息新增 `timeline` 合并时间线（结算/叙事按真实顺序合流）、pending_choice 超时随机作答、resync 补发计时器。手牌实时增强数值显示（持久 store 未装配也计入，client `_live_enhance`）。细节见术语表「结算与事件」。
+- **本批数据侧登记**（2026-07 第十二阶段）：新事件 `on_enter_combat`/`on_leave_combat`（进出战斗区，延时时机；气绝移动不发 leave）；`EffectBlock.trigger_when_defeated`（气绝者能力收集放行——觉醒·犬神）与条件 `{holder_defeated: bool}`；`{victim_in_combat}` 支持 false（准备区限定）；on_upgrade payload 新增 `target`=Ref 且 level_up op 实际升级后同事件 emit（犬神"升级时"两来源均触发）；revive op 传 source/reason="effect"（桃花妖"由桃花妖复活时"）；`CardDef.conditional_keywords`（level_ge / if_alive——心身炼磨/桃华灼灼）与 cost_zero_if 扩 `{"level_ge": n}`；card_aura 新参数 `power_ext`/`shield_ext`（ext 数值通道）与新作用域 `scope="form"`（随形态离场移除）；grant_immunity 新作用域 `scope="once"`（消耗式）+ kind="all" 扩展至式神目标；目标池新增 `friendly_injured`/`friendly_defeated` 与 TargetSpec 扩展键 `{"random": n}`（rng.sample）；tags 标记 `lianmo`（出牌记账 ext["lianmo_used_game"]）；关键字 `inspire`（卡面[鼓舞]标记）；新 op `search_deck`（牌库按式神检索+洗牌）。细节见术语表「结算与事件」。
 - 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位。
 
 ## 二十三、组卡规则

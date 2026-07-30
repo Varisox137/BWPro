@@ -1,0 +1,20 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011506
+version: 20260731
+name: 守护
+shikigami: 100115  # 派系：红莲（继承自式神数据）
+card_type: combat
+rarity: SR
+level: 2
+cost: 1
+keywords: [trigger]
+effects:
+  # 响应"当你其他式神被敌方攻击时"（先例 伺机 10011607）：+0/+4 经战斗牌数值通道；
+  # 响应插入使用把犬神移入防守方战斗区，无目标战斗重读目标即"将攻击目标改为犬神"
+  # （追猎类定向战斗不触发——victim_in_combat 限定，实现边界见 docs/card-status.md）
+  when: on_before_assault
+  condition: {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true,
+              victim_not_shikigami: 100115, attacker_side: enemy}
+  steps:
+    - {op: gain_shield, amount: 4, target: {kind: self}}
+text: "[响应]：{当你其他式神被敌方攻击时，自动使用并将攻击目标改为犬神。}"

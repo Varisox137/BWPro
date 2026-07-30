@@ -1,0 +1,25 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011508
+version: 20260731
+name: 觉醒·犬神
+shikigami: 100115  # 派系：红莲（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
+awaken_health: 1
+rarity: SSR
+level: 3
+cost: 1
+effects:
+  steps: []
+abilities:
+  # [觉醒]：{己方回合结束时，复活犬神并永久获得1力量和1生命}——仅气绝时触发
+  # （trigger_when_defeated 放行收集 + holder_defeated 限定；存活时不触发不增益）
+  - when: on_turn_end
+    condition: {player: self, holder_defeated: true}
+    trigger_when_defeated: true
+    steps:
+      - {op: revive, target: {kind: self}}
+      - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+      - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+text: "[觉醒]：{己方回合结束时，复活犬神并永久获得1力量和1生命。}"

@@ -1288,3 +1288,258 @@ def test_token_fast_gains_orb(real_game):
     orb = pa.orb
     play(g, 0, MD)
     assert pa.orb == orb + 1
+
+
+# ==========================================================================
+# 犬神（100115）
+#
+# 覆盖：升级生成'心身炼磨'（指令升级与 level_up op 两来源）、心身炼磨动态
+# 瞬发/费用、心技一体计数光环（scope=form 随形态离场）、心剑乱舞瞬发光环、
+# 守护响应换人改目标、心即归处气绝可用、觉醒·犬神仅气绝触发。
+# 队伍固定 [犬神, 白狼, 妖刀姬, 山童]，犬神 0 号位。
+# ==========================================================================
+
+QS = 100115      # 犬神（双方 0 号位）
+XINZHAN = 10011502        # 心斩
+XINGUI = 10011503         # 心即归处
+XINJI = 10011505          # 心技一体
+SHOUHU = 10011506         # 守护
+XINJIAN = 10011507        # 心剑乱舞
+QS_AWAKEN = 10011508      # 觉醒·犬神
+LIANMO = 10011551         # 心身炼磨（衍生）
+
+QS_TEAM = [100115, 100101, 100123, 100116]
+
+
+def test_upgrade_generates_token(real_game):
+    """升级生成衍生牌：犬神升级时'心身炼磨'置入手牌——指令升级与 level_up op
+    （百闻一得类效果升级）两来源均触发。"""
+    from core.model import ExecContext
+    g = real_game(QS_TEAM, auto_skip_upgrade=False)
+    pa, pb = F.battle_setup(g, {1: 1, 2: 1, 3: 1})   # 全员 1 级（0 号位开局自动 1 级）
+    g.apply({"op": "upgrade", "index": 0})    # 指令升级 1→2
+    assert sum(1 for c in pa.hand if c.id == LIANMO) == 1
+    g._resolve_block(EffectBlock(steps=[Step(op="level_up", target=TargetSpec(kind="self"))]),
+                     ExecContext(controller=0, source=Ref(player=0, shikigami=IDX)))
+    assert pa.shikigami[IDX].level == 3
+    assert sum(1 for c in pa.hand if c.id == LIANMO) == 2
+
+
+def test_conditional_keyword_and_cost_by_level(real_game):
+    """动态关键字/费用（心身炼磨）：犬神 2 级获得[瞬发]、3 级不消耗鬼火；1 级均无。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 1})
+    cdef = g.db.cards[LIANMO]
+    card = give(g, 0, LIANMO)
+    assert "fast" not in g._card_keywords(pa, cdef, card)
+    assert g._effective_cost(pa, cdef, card) == 1
+    pa.shikigami[IDX].level = 2
+    assert "fast" in g._card_keywords(pa, cdef, card)
+    assert g._effective_cost(pa, cdef, card) == 0   # 2 级：[瞬发]首张免费
+    pa.fast_used = True
+    assert g._effective_cost(pa, cdef, card) == 1   # 瞬发名额已用：照常付 1 火
+    pa.shikigami[IDX].level = 3
+    assert g._effective_cost(pa, cdef, card) == 0   # 3 级：不消耗鬼火
+
+
+def test_tag_count_aura(real_game):
+    """计数光环（心技一体）：本局每使用过一张'心身炼磨'（tags lianmo 记账），犬神
+    战斗牌额外 +1/+1（读取时求值）；形态离场光环移除（scope=form）。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
+    play(g, 0, XINJI)
+    cdef = g.db.cards[XINZHAN]
+    card = give(g, 0, XINZHAN)
+    stats = lambda: g.combat_card_stats(cdef.effects, card, pa.shikigami[IDX], pa)
+    assert stats() == (0, 2)                        # 心斩 +0/+2
+    play(g, 0, LIANMO)                              # 第 1 张（2 级瞬发免费）
+    play(g, 0, LIANMO)                              # 第 2 张（付 1 火）
+    assert stats() == (2, 4)
+    g._destroy_form(pa, IDX, "effect")
+    assert stats() == (0, 2)
+
+
+def test_form_aura_grants_fast(real_game):
+    """关键字光环（心剑乱舞）：犬神的牌获得[瞬发]；形态离场失去（scope=form）。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 3})
+    cdef = g.db.cards[XINZHAN]
+    card = give(g, 0, XINZHAN)
+    assert "fast" not in g._card_keywords(pa, cdef, card)
+    play(g, 0, XINJIAN)
+    assert "fast" in g._card_keywords(pa, cdef, card)
+    g._destroy_form(pa, IDX, "effect")
+    assert "fast" not in g._card_keywords(pa, cdef, card)
+
+
+def test_response_combat_swaps_target(real_game):
+    """守护：其他式神被攻击时响应插入使用——犬神移入战斗区、攻击目标改为犬神，
+    +4 护甲吸收本次伤害（追猎类定向战斗不触发为既定边界，不测）。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 1, 1: 1})
+    pb.shikigami[0].level = 2                 # 守护为 2 级牌
+    pb.orb = 1                                # 响应付 1 火
+    give(g, 1, SHOUHU)
+    move(g, 1, 1)                             # B1 白狼入战斗区（A 回合内）
+    g.apply({"op": "assault", "index": 0})    # A0 犬神 2 出击 → B 响应守护
+    b0 = pb.shikigami[0]
+    assert pb.combat_index == 0               # 犬神被移入战斗区（目标改为犬神）
+    assert pb.shikigami[1].health == 4        # 白狼未受伤
+    assert (b0.health, b0.shield) == (5, 2)   # 2 攻 vs 守护 4 护甲
+    assert pa.shikigami[IDX].health == 3      # 犬神反击 2
+    assert any(c.id == SHOUHU for c in pb.graveyard)
+
+
+def test_revive_self_playable_when_defeated(real_game):
+    """气绝时可用（心即归处）：[瞬发]复活犬神。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    play(g, 0, XINGUI)
+    assert not pa.shikigami[IDX].defeated
+
+
+def test_awaken_trigger_only_when_defeated(real_game):
+    """觉醒·犬神：己方回合结束时仅气绝才触发——复活并永久 +1/+1；存活不触发。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 3})
+    play(g, 0, QS_AWAKEN)
+    s = pa.shikigami[IDX]
+    assert (s.perm_power, s.perm_health) == (1, 1)    # 觉醒 +1/+1
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    pass_turns(g, 1)                          # A 回合结束：复活 +1/+1
+    assert not s.defeated
+    assert (s.perm_power, s.perm_health) == (2, 2)
+    pass_turns(g, 2)                          # 再过一轮 A 回合结束：存活不触发
+    assert (s.perm_power, s.perm_health) == (2, 2)
+
+
+# ==========================================================================
+# 桃花妖（100119）
+#
+# 覆盖：治疗/复活赋益（基础临时 +1、觉醒永久 +2/+2、倒计时复活不触发）、
+# 桃红簇簇进出战斗区治疗连锁赋益、致命免疫一次+移除形态、桃华灼灼群体复活
+# 迅捷+气绝可用+动态瞬发、花信风检索洗牌、丰实/盛开随机受伤治疗、桃之夭夭鼓舞。
+# 队伍固定 [桃花妖, 白狼, 妖刀姬, 山童]，桃花妖 0 号位。
+# ==========================================================================
+
+THY = 100119     # 桃花妖（双方 0 号位）
+XINXI = 10011901          # 桃之馨息
+HUAXIN = 10011902         # 花信风
+YAOYAO = 10011903         # 桃之夭夭
+FENGSHI = 10011904        # 丰实
+CHUNFENG = 10011905       # 桃语春风
+SHENGKAI = 10011906       # 盛开
+ZHUOZHUO = 10011907       # 桃华灼灼
+THY_AWAKEN = 10011908     # 觉醒·桃花妖
+TAOHONG = 10011951        # 桃红簇簇（衍生）
+
+THY_TEAM = [100119, 100101, 100123, 100116]
+
+
+def test_heal_revive_buff(real_game):
+    """治疗/复活赋益（桃花妖基础能力）：治疗或复活己方式神时该式神 +1 力量（临时）；
+    倒计时复活（来源为空）不触发。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 2, 1: 1, 2: 1})
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 2, None)   # 白狼 4→2
+    play(g, 0, XINXI, target=Ref(player=0, shikigami=1))       # 桃之馨息
+    s1 = pa.shikigami[1]
+    assert s1.health == 4 and s1.temp_power == 1
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
+    play(g, 0, CHUNFENG, target=Ref(player=0, shikigami=1))    # 桃语春风
+    assert not s1.defeated and s1.temp_power == 1              # 复活赋益（临时气绝已清）
+    assert "haste" in s1.one_shot_keywords                     # 获得[迅捷]（一次性）
+    g.deal_to_shikigami(Ref(player=0, shikigami=2), 99, None)
+    pass_turns(g, 6)                          # 3 个 A 回合开始：倒计时归零复活
+    s2 = pa.shikigami[2]
+    assert not s2.defeated and s2.temp_power == 0
+
+
+def test_enter_leave_combat_heal(real_game):
+    """进出战斗区治疗（桃红簇簇）：己方式神进入/离开战斗区时恢复 2 生命，
+    治疗来源=桃花妖→连锁基础赋益 +1 力量。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 2, 1: 1})
+    play(g, 0, TAOHONG)
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, None)   # 白狼 4→1
+    s1 = pa.shikigami[1]
+    move(g, 0, 1)                             # 进入战斗区：+2 → 3，赋益 +1
+    assert s1.health == 3 and s1.temp_power == 1
+    g._retreat(pa, 1)                         # 离开战斗区：+2（封顶 4），赋益再 +1
+    g._drain_queue()                          # 引擎内直接调用需手动排空延时队列
+    assert s1.health == 4 and s1.temp_power == 2
+
+
+def test_lethal_immunity_once_then_form_removed(real_game):
+    """致命免疫（桃红簇簇）：己方准备区式神受到致命伤害时免疫一次并移除此形态；
+    形态不再后第二次致命伤害正常气绝。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 2, 1: 1})
+    play(g, 0, TAOHONG)
+    s1 = pa.shikigami[1]
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, Ref(player=1, shikigami=0))
+    assert s1.health == 4 and not s1.defeated   # 免疫此次伤害（一次消耗）
+    assert pa.shikigami[IDX].form is None       # 然后移除此形态
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, Ref(player=1, shikigami=0))
+    assert s1.defeated
+
+
+def test_mass_revive_haste(real_game):
+    """群体复活（桃华灼灼）：复活己方所有式神并全员获得[迅捷]；桃花妖未气绝时
+    [瞬发]、气绝时可用。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 3, 1: 1, 2: 1})
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
+    g.deal_to_shikigami(Ref(player=0, shikigami=2), 99, None)
+    orb = pa.orb
+    play(g, 0, ZHUOZHUO)                      # 桃花妖未气绝：[瞬发]首张免费
+    assert pa.orb == orb
+    assert not pa.shikigami[1].defeated and not pa.shikigami[2].defeated
+    assert all("haste" in s.one_shot_keywords for s in pa.shikigami if s.in_play)
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
+    play(g, 0, ZHUOZHUO)                      # 气绝时可用：桃花妖自身一并复活
+    assert not pa.shikigami[IDX].defeated and not pa.shikigami[1].defeated
+
+
+def test_awaken_heal_revive_buff_perm(real_game):
+    """觉醒·桃花妖：赋益改为永久 +2/+2（替换基础能力）；满血治疗（实际恢复 0）
+    仍触发；复活赋益与既有永久增益累加。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 3, 1: 1})
+    s1 = pa.shikigami[1]
+    play(g, 0, THY_AWAKEN, target=Ref(player=0, shikigami=1))   # 进场治疗 5（满血）
+    assert (s1.perm_power, s1.perm_health) == (2, 2)
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
+    play(g, 0, CHUNFENG, target=Ref(player=0, shikigami=1))     # 复活再赋益
+    assert (s1.perm_power, s1.perm_health) == (4, 4)
+
+
+def test_search_deck(real_game):
+    """检索（花信风）：[瞬发]选择己方式神，牌库随机一张该式神的牌置入手牌并洗牌。"""
+    g, pa, pb = _game(real_game, THY_TEAM)
+    deck0, orb = len(pa.deck), pa.orb
+    play(g, 0, HUAXIN, target=Ref(player=0, shikigami=IDX))
+    assert pa.orb == orb                      # 瞬发首张免费
+    assert len(pa.deck) == deck0 - 1          # 检索自牌库（非凭空生成）
+    assert any(c.id // 100 == THY and c.id != HUAXIN for c in pa.hand)
+
+
+def test_random_injured_heal(real_game):
+    """随机受伤治疗（丰实/盛开）：进场与己方回合开始时随机为受伤己方式神恢复
+    （丰实 3×1；盛开 2×3 可集中于同一目标）。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 3, 1: 1, 2: 1})
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, None)   # 白狼 4→1
+    g.deal_to_shikigami(Ref(player=0, shikigami=2), 3, None)   # 山童 4→1
+    total = sum(s.health for s in pa.shikigami[1:])   # 排除桃花妖（结附形态身材变化）
+    play(g, 0, FENGSHI)
+    assert sum(s.health for s in pa.shikigami[1:]) == total + 3    # 进场随机一个 +3
+    pass_turns(g, 2)
+    assert sum(s.health for s in pa.shikigami[1:]) == total + 6    # 己方回合开始再 +3
+    g2, pa2, pb2 = _game(real_game, THY_TEAM, {IDX: 3, 1: 1})
+    g2.deal_to_shikigami(Ref(player=0, shikigami=1), 3, None)  # 白狼 4→1（唯一受伤）
+    play(g2, 0, SHENGKAI)
+    assert pa2.shikigami[1].health == 4        # 2×3 集中于唯一受伤者：回满
+
+
+def test_inspire_assault_boost(real_game):
+    """鼓舞（桃之夭夭）：不消耗鬼火；+2战力/+2护甲出击加成下一次出击全部消耗。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 2})
+    move(g, 1, 0)                             # B0 桃花妖入战斗区（1/6）
+    orb = pa.orb
+    play(g, 0, YAOYAO)
+    assert pa.orb == orb                      # 不消耗鬼火
+    hp = pb.shikigami[0].health
+    g.apply({"op": "assault", "index": 0})    # A0 桃花妖 1+2=3 战力出击
+    assert pb.shikigami[0].health == hp - 3
+    assert not pa.assault_boosts              # 出击后全部消耗
