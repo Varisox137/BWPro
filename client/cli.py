@@ -35,8 +35,8 @@ HELP = """指令（括号内为 alias，序号从 1 开始）：
   debug (d) <子命令> [参数...]          调试命令（见 debug help）
   help (h) / quit (q)
 
-目标代码：e=敌方 f=己方；0=牌手，1-4=座次式神，5=召唤物（如有）
-         （如 e0=敌方牌手，f2=己方 2 号位式神；与场况左侧 [] 内座次编号一致）
+目标代码：s=己方 e=敌方；0=牌手，1-4=座次式神，5=召唤物（如有）
+         （如 s2=己方 2 号位式神，e0=敌方牌手；与场况左侧 [] 内座次编号一致）
 
 座次颜色：1=黄 2=青 3=紫 4=红（己方场上式神名与手牌卡牌名按座次着色；
 管道输出或 NO_COLOR 环境变量时自动关闭）
@@ -65,7 +65,7 @@ DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
   draw <player> [count=1]                              强制抽牌
   set_turn [active] [turn]                             设置当前回合方/半回合数
 
-  target 代码同 HELP 目标代码（0=牌手，1-4=座次式神，5=召唤物；e=敌方 f=己方）
+  target 代码同 HELP 目标代码（0=牌手，1-4=座次式神，5=召唤物；s=己方 e=敌方）
   key 示例：health, orb, shield, level, defeated, despawned
   value 为 bool 时：true/false
   keyword 示例：combo, initiative, piercing, pierce, remote, unyielding, haste, barrier
@@ -117,20 +117,25 @@ def drain_settle(game: Game, seen: int, interval: float | None = None) -> int:
 
 
 def parse_ref(code: str, active: int) -> Ref:
-    """把目标代码解析为 Ref：f=己方 e=敌方；0（或 p）=牌手，1-4=座次式神，
-    5=召唤物（如有）。编号与场况显示一致（1 基）；引擎内部式神下标 0 基，
-    本翻译层做 ±1 转换。"""
+    """把目标代码解析为 Ref：s=己方（self；兼容 f 与无前缀裸数字）e=敌方；
+    0（或 p）=牌手，1-4=座次式神，5=召唤物（如有）。编号与场况显示一致
+    （1 基）；引擎内部式神下标 0 基，本翻译层做 ±1 转换。"""
     code = code.strip().lower()
-    player = active if code.startswith("f") else 1 - active
-    rest = code[1:]
+    if code[0] == "e":
+        player, rest = 1 - active, code[1:]
+    elif code[0] in ("s", "f"):
+        player, rest = active, code[1:]
+    else:  # 无前缀 = 己方（如 "2" 等价 "s2"）
+        player, rest = active, code
     if rest in ("p", "0"):
         return Ref(player=player)
     return Ref(player=player, shikigami=int(rest) - 1)
 
 
 def ref_code(ref: Ref, active: int) -> str:
-    """把 Ref 渲染为目标代码（parse_ref 的逆）：牌手 = e0/f0，座次式神 1 基。"""
-    side = "f" if ref.player == active else "e"
+    """把 Ref 渲染为目标代码（parse_ref 的逆）：己方前缀 s，牌手 = s0/e0，
+    座次式神 1 基。"""
+    side = "s" if ref.player == active else "e"
     return f"{side}0" if ref.shikigami is None else f"{side}{ref.shikigami + 1}"
 
 

@@ -335,6 +335,35 @@ def test_state_sanitized_per_viewer(db):
     run(go())
 
 
+def test_mulligan_hidden_from_opponent(db):
+    """调度阶段信息隐藏：对方调度行为行（泄露次数）不广播给另一方，
+    对方 payload 中剩余调度次数抹除为 0；"完成调度"为无信息状态保留；
+    resync 全量补发同样过滤。"""
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        g = room.game
+        p0 = room.seat_to_player[0]
+        uid = g.state.players[p0].hand[0].uid
+        await room.handle_cmd(0, {"op": "mulligan", "uid": uid})
+        log0 = ws0.messages[-1]["log"]
+        log1 = ws1.messages[-1]["log"]
+        assert any("调度了一张手牌" in l for l in log0)      # 自己可见
+        assert not any("调度了一张手牌" in l for l in log1)  # 对方不可见
+        # 对方 payload 中的剩余调度次数被抹除
+        assert ws1.messages[-1]["payload"]["players"][p0]["mulligans_left"] == 0
+        # 完成调度行保留（无信息状态）
+        await room.handle_cmd(0, {"op": "ready"})
+        assert any("完成调度" in l for l in ws1.messages[-1]["log"])
+        # resync 全量补发同样过滤（仅 p0 调度过）
+        room.disconnect(room.conns[1])
+        ws_new = FakeWS()
+        await room.reconnect(room.conns[1].token, ws_new)
+        await room.resync(room.conns[1])
+        full = [m for m in ws_new.messages if m["type"] == "state"][-1]["log"]
+        assert not any("调度了一张手牌" in l for l in full)
+    run(go())
+
+
 def test_sanitize_hides_secret_delayed_chosen():
     """会（secret 延迟能力）：对手视角抹除选择目标；非 secret 条目与原始状态不受影响。"""
     from server.room import sanitize_state

@@ -34,6 +34,7 @@ _HIDDEN_CARD = {"uid": 0, "id": 0, "mods": {}, "hand_seq": 0}
 def sanitize_state(payload: dict, viewer: int) -> dict:
     """按视角脱敏完整状态：对手的手牌与牌库以占位卡替换（张数公开、内容保密），
     对手式神标记 secret 的延迟能力（会）抹除选择目标，防止修改客户端窥探。
+    对手的剩余调度次数一并抹除（调度阶段信息隐藏；mulligan_done 状态保留）。
     墓地/计数器等在本游戏中为公开信息，保留。"""
     import copy
 
@@ -43,11 +44,21 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
     for zone in ("hand", "deck"):
         if zone in zones:
             zones[zone] = [dict(_HIDDEN_CARD) for _ in zones[zone]]
+    opponent["mulligans_left"] = 0  # 调度次数对对手隐藏
     for s in opponent.get("shikigami", []):
         for entry in s.get("delayed", []):
             if entry.get("secret"):
                 entry["chosen"] = None
     return payload
+
+
+def _hide_mulligan_log(lines: list[str], st, viewer: int) -> list[str]:
+    """调度阶段信息隐藏（协议层过滤，引擎/state 不动）：对方的调度行为行
+    （"X 调度了一张手牌（剩余 N 次）"泄露调度次数）不发给 viewer；
+    "X 完成调度"为无信息状态，保留。"""
+    prefix = f"{st.players[1 - viewer].name} "
+    return [l for l in lines
+            if not (l.startswith(prefix) and "调度了一张手牌" in l)]
 
 
 class Connection:
@@ -226,7 +237,8 @@ class Room:
             timer = {"kind": key[0], "deadline": self._timer_deadline}
         for c in self.conns:
             viewer = self.seat_to_player[c.seat]
-            await c.send(protocol.state(sanitize_state(base, viewer), log,
+            vlog = _hide_mulligan_log(log, st, viewer)  # 对方调度行为行不发给 viewer
+            await c.send(protocol.state(sanitize_state(base, viewer), vlog,
                                         timer=timer, settle=settle))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
@@ -240,7 +252,9 @@ class Room:
         st = self.game.state
         base = st.model_dump(mode="json")
         viewer = self.seat_to_player[conn.seat]
-        await conn.send(protocol.state(sanitize_state(base, viewer), list(st.log)))
+        await conn.send(protocol.state(
+            sanitize_state(base, viewer),
+            _hide_mulligan_log(list(st.log), st, viewer)))  # 全量补发同样隐藏对方调度明细
 
     # ---------- 计时器 ----------
 

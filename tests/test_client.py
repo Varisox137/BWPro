@@ -533,16 +533,20 @@ def test_drain_settle_increment_and_blank_lines(db, make_game, capsys):
 # ==========================================================================
 
 def test_target_code_one_based_numbering():
-    """主动目标编号与场况座次一致（1 基）：0=牌手，1-4=座次式神，5=召唤物；
-    引擎内部式神下标 0 基，parse_ref/ref_code 翻译层 ±1 转换；ep/fp 兼容。"""
+    """主动目标编号与场况座次一致（1 基）：s=己方（兼容 f/无前缀裸数字）e=敌方；
+    0=牌手，1-4=座次式神，5=召唤物；引擎内部式神下标 0 基，翻译层 ±1 转换。"""
     assert cli.parse_ref("e0", 0) == Ref(player=1)
-    assert cli.parse_ref("fp", 0) == Ref(player=0)
+    assert cli.parse_ref("s0", 0) == Ref(player=0)
+    assert cli.parse_ref("sp", 0) == Ref(player=0)               # p 兼容
     assert cli.parse_ref("e1", 0) == Ref(player=1, shikigami=0)
     assert cli.parse_ref("E4", 0) == Ref(player=1, shikigami=3)
-    assert cli.parse_ref("f5", 0) == Ref(player=0, shikigami=4)
+    assert cli.parse_ref("s5", 0) == Ref(player=0, shikigami=4)
+    assert cli.parse_ref("f2", 0) == Ref(player=0, shikigami=1)  # f 兼容
+    assert cli.parse_ref("2", 0) == Ref(player=0, shikigami=1)   # 无前缀 = 己方
     assert cli.ref_code(Ref(player=1), 0) == "e0"
     assert cli.ref_code(Ref(player=1, shikigami=2), 0) == "e3"
-    assert cli.ref_code(Ref(player=0, shikigami=0), 0) == "f1"
+    assert cli.ref_code(Ref(player=0, shikigami=0), 0) == "s1"
+    assert cli.ref_code(Ref(player=0), 0) == "s0"
 
 
 def test_format_settle_lines_nesting():
