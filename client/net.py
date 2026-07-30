@@ -117,7 +117,7 @@ class NetClient:
                     print(line)
             return
         if self.printer is not None:
-            cli._show_field(game, self.printer, viewer=self.me)  # 场况入队尾：结算播完再显示
+            cli.show_field(game, self.printer, viewer=self.me)  # 场况入队尾：结算播完再显示
         else:
             print(cli.render(game, viewer=self.me))
 

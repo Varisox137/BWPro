@@ -384,7 +384,7 @@ def _lk_setup(db, make_game, level=3):
 
 # ---------- 倒计时循环与投射 ----------
 
-def test_po_countdown_cycle_projectile(db, make_game):
+def test_countdown_cycle_projectile(db, make_game):
     """风符·破：己方回合开始 -1，归零先重置再触发；投射优先命中战斗区式神。"""
     cid = po_form(db)
     g, pa, s = _lk_setup(db, make_game, level=1)
@@ -412,7 +412,7 @@ def test_po_countdown_cycle_projectile(db, make_game):
     assert s.countdown == 2      # 循环继续
 
 
-def test_po_projectile_falls_back_to_player(db, make_game):
+def test_projectile_falls_back_to_player(db, make_game):
     """风符·破：敌方战斗区为空时，投射退回敌方牌手。"""
     cid = po_form(db)
     g, pa, s = _lk_setup(db, make_game, level=1)
@@ -425,7 +425,7 @@ def test_po_projectile_falls_back_to_player(db, make_game):
     assert s.countdown == 2
 
 
-def test_hu_grants_player_shield(db, make_game):
+def test_player_shield_on_countdown(db, make_game):
     """风符·护：倒计时触发，己方牌手获得 5 护甲（回合开始清甲之后）。"""
     cid = _lk_form(db, 10010452, countdown=2, cd_steps=[
         F.Step(op="gain_shield", amount=5, target=T(kind="all", pool="self_player"))])
@@ -438,7 +438,7 @@ def test_hu_grants_player_shield(db, make_game):
 
 # ---------- 鼓舞（出击加成） ----------
 
-def test_shi_boost_consumed_by_assault_only(db, make_game):
+def test_assault_boost_assault_only(db, make_game):
     """风符·势：鼓舞登记出击加成；战斗牌不消耗；出击时力量本次生效、护甲保留。"""
     cid = _lk_form(db, 10010453, countdown=2, cd_steps=[
         F.Step(op="basic_boost", power=3, shield=3)])
@@ -464,7 +464,7 @@ def test_shi_boost_consumed_by_assault_only(db, make_game):
 
 # ---------- 离场/消灭触发（一目连基础能力） ----------
 
-def test_galewind_destroy_form_triggers_and_draws(db, make_game):
+def test_destroy_form_triggers_countdown_and_draw(db, make_game):
     """罡风：消灭一目连的形态触发其倒计时（破投射 3），并抽两张牌。"""
     po_form(db)
     db.cards[GALE] = F.card(
@@ -515,7 +515,7 @@ def test_defeat_form_destruction_still_triggers(db, make_game):
 
 # ---------- 湮 / 龙 / 瞬 ----------
 
-def test_yan_destroys_enemy_combat(db, make_game):
+def test_destroy_enemy_combat(db, make_game):
     """风符·湮：倒计时触发，直接消灭敌方战斗区式神。"""
     cid = _lk_form(db, 10010455, countdown=2, level=3, cd_steps=[
         F.Step(op="destroy", target=T(kind="all", pool="enemy_combat"))])
@@ -531,7 +531,7 @@ def test_yan_destroys_enemy_combat(db, make_game):
     assert pb.combat_index is None
 
 
-def test_long_target_count_scales(db, make_game):
+def test_instance_counter_target_scaling(db, make_game):
     """风符·龙：实例计数器——每次触发后目标数 +1（1 → 2 个随机敌方角色）。"""
     cid = _lk_form(db, 10010456, countdown=2, level=3, cd_steps=[
         F.Step(op="random_damage", amount=6, pool="enemy_character",
@@ -559,7 +559,7 @@ def test_long_target_count_scales(db, make_game):
     assert total_damage(pb) == 18
 
 
-def test_shun_self_destruct_at_turn_end(db, make_game):
+def test_form_self_destruct_turn_end(db, make_game):
     """风符·瞬：回合结束自毁（形态能力块）；无倒计时效果，离场为空操作。"""
     cid = _lk_form(db, 10010459, level=2, keywords=["fast"], abilities=[
         F.EffectBlock(when="on_turn_end",
@@ -576,7 +576,7 @@ def test_shun_self_destruct_at_turn_end(db, make_game):
 
 # ---------- 觉醒·一目连 / 杀念（随机生成） ----------
 
-def test_awaken_ichimokuren_generate_and_attach_trigger(db, make_game):
+def test_awaken_generate_and_attach_trigger_countdown(db, make_game):
     """觉醒·一目连：+2 永久力量、生成 1 张形态牌；觉醒后形态进场也触发倒计时。"""
     po_form(db, token=False)  # 生成池只取非衍生卡
     awk = 10010460
@@ -605,7 +605,7 @@ def test_awaken_ichimokuren_generate_and_attach_trigger(db, make_game):
     assert b.health == 1         # 进场即触发破的投射
 
 
-def test_sanen_generates_three_combat_cards(db, make_game):
+def test_generate_three_combat_cards(db, make_game):
     """杀念：随机生成 3 张妖刀姬的战斗牌置入手牌（可重复）。"""
     c1, c2 = 10010152, 10010153
     for c in (c1, c2):

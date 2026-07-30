@@ -144,16 +144,6 @@ def test_deck_top_pick_suspend_resume(make_game, db):
     assert pa2.orb == 0
 
 
-def test_pending_choice_sanitized_for_opponent():
-    """联机信息隐藏：pending_choice 的可检视牌仅选择方可见，其余视角抹除为占位。"""
-    from server.room import sanitize_state
-    payload = {"players": [{"zones": {}}, {"zones": {}}],
-               "pending_choice": {"kind": "deck_top_pick", "player": 0,
-                                  "options": [11, 12, 13]}}
-    assert sanitize_state(payload, 0)["pending_choice"]["options"] == [11, 12, 13]
-    assert sanitize_state(payload, 1)["pending_choice"]["options"] == [0, 0, 0]
-
-
 # ---------- 形态返场（不灭之火 consume_orb + revive + reattach_form） ----------
 
 def _return_form(db):

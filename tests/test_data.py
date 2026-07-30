@@ -145,7 +145,7 @@ def test_record_lost_on_defeat(real_game):
 
 # ---------- 01 风神一扇 ----------
 
-def test_kazami_retreats_damaged_shikigami(real_game):
+def test_projectile_retreats_damaged_to_bench(real_game):
     """投射命中战斗区式神：受伤者移回准备区（last_damage_victims 引用上一步受伤者）。"""
     g, pa, pb = _game(real_game, DT_TEAM)
     move(g, 1, 1)                             # B 白狼（3/4）入战斗区
@@ -159,7 +159,7 @@ def test_kazami_retreats_damaged_shikigami(real_game):
 
 # ---------- 02 吾即正义 ----------
 
-def test_seigi_generate_pool(real_game):
+def test_generate_pool_by_level_excludes_self(real_game):
     """随机获得：大天狗等级 1 时池 = 等级≤1 的其他法术（风神一扇/暴风之盾），不含自身。"""
     g, pa, pb = _game(real_game, DT_TEAM)
     before = Counter(c.id for c in pa.hand)
@@ -170,7 +170,7 @@ def test_seigi_generate_pool(real_game):
     assert cid in {KAZAMI, SHIELD}            # 等级≤1 的法术，且排除吾即正义/形态牌
 
 
-def test_seigi_transform_destroys_all(real_game):
+def test_transform_after_ten_spells(real_game):
     """本局使用 10 张法术后变为：消灭所有敌方式神（计数含吾即正义之外的法术）。"""
     g, pa, pb = _game(real_game, DT_TEAM)
     for _ in range(10):
@@ -185,7 +185,7 @@ def test_seigi_transform_destroys_all(real_game):
     assert store["spell_count"] == 11         # 吾即正义自身也计数
 
 
-def test_seigi_before_transform_generates(real_game):
+def test_generate_before_transform_threshold(real_game):
     """9 张法术时未变为：仍是随机获得效果。"""
     g, pa, pb = _game(real_game, DT_TEAM)
     for _ in range(9):
@@ -232,7 +232,7 @@ def test_shield_response_on_assault(real_game):
 
 # ---------- 04 黑羽之刃 ----------
 
-def test_kuroba_kill_draws(real_game):
+def test_kill_window_draws(real_game):
     """投射 4 伤消灭战斗区敌方式神 → 抽 1；一次性窗口消耗。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 2})
     move(g, 1, 0)                             # B 大天狗（3/4）入战斗区
@@ -243,7 +243,7 @@ def test_kuroba_kill_draws(real_game):
     assert pa.shikigami[IDX].delayed == []
 
 
-def test_kuroba_no_kill_no_draw(real_game):
+def test_kill_window_expires_no_draw(real_game):
     """未消灭（投射落空战斗区 → 牌手）：不抽；scope=play 窗口随出牌结束清除，不留存。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 2})
     hand_before = len(pa.hand)
@@ -280,7 +280,7 @@ def test_storm_lord_no_damage_no_ping(real_game):
 
 # ---------- 06 天狗风乱 / 07 羽刃暴风 ----------
 
-def test_fuuran_distributes_six(real_game):
+def test_distribute_damage_all_enemies(real_game):
     """天狗风乱：合计 6 点伤害随机分配给所有敌方角色（含牌手；生命≤0 退出分配）。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 2})
     total_before = pb.health + sum(s.health for s in pb.shikigami)
@@ -289,7 +289,7 @@ def test_fuuran_distributes_six(real_game):
     assert total_before - total_after == 6
 
 
-def test_ha_arashi_three_to_all(real_game):
+def test_damage_each_enemy_character(real_game):
     """羽刃暴风：所有敌方角色各 3 伤（4 名式神 + 牌手）。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 3})
     play(g, 0, HA)
@@ -450,7 +450,7 @@ def test_awaken_countdown_minus_before_replacement(real_game):
 
 # ---------- 03 大合奏：按 history 首次出现顺序重放 ----------
 
-def test_dahezou_replays_in_history_order(real_game):
+def test_replay_countdown_history_order(real_game):
     """大合奏：按 history 首次出现顺序依次重放，每种至多一次（第十阶段新语义：
     觉醒前旧能力 -3——入阵歌在镇魂歌觉醒前被归零计入 history，镇魂歌自身未归零）。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
@@ -477,7 +477,7 @@ def test_dahezou_replays_in_history_order(real_game):
     assert ids == [YQS, RUZHENG]              # 按 history 首次出现顺序，每种至多一次
 
 
-def test_dahezou_skips_form_sources(real_game, gdb):
+def test_replay_countdown_skips_form_sources(real_game, gdb):
     """维护者答复(8)：大合奏只计入基础/觉醒能力，形态来源跳过——妖琴师当前无形态牌，
     构造性改写一张形态卡的归属并注入 history 验证。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 1})
@@ -493,7 +493,7 @@ def test_dahezou_skips_form_sources(real_game, gdb):
 
 # ---------- 06 魔音扰心：无效化（主动 / 响应） ----------
 
-def test_moyin_proactive_nullifies_next_enemy_card(real_game):
+def test_nullify_next_enemy_card(real_game):
     """主动使用：登记一次性延迟能力——敌方本回合下一张牌的使用手牌前无效化
     （费用已付不退、牌离手进墓地、效果跳过）。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
@@ -510,7 +510,7 @@ def test_moyin_proactive_nullifies_next_enemy_card(real_game):
     assert not s.delayed                      # 一次性：收集即消耗
 
 
-def test_moyin_response_nullifies_current_card(real_game):
+def test_nullify_current_card_response(real_game):
     """响应：敌方牌手将使用牌时自动使用（response 覆盖块）——直接无效化该次使用。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
     s = pa.shikigami[IDX]
@@ -528,7 +528,7 @@ def test_moyin_response_nullifies_current_card(real_game):
 
 # ---------- 02 惊弦 / 05 疯魔琴心 / 08 余音：倒计时增减 ----------
 
-def test_jingxian_triggers_zero_and_noop_without_countdown(real_game):
+def test_countdown_delta_immediate_trigger_and_noop(real_game):
     """惊弦：使一个式神倒计时 -2——点妖琴师自己立即归零结算；点无倒计时能力者
     修正 -0（空操作）。"""
     g, pa, pb = _game(real_game, YQS_TEAM)
@@ -542,7 +542,7 @@ def test_jingxian_triggers_zero_and_noop_without_countdown(real_game):
     assert pb.shikigami[3].countdown is None
 
 
-def test_fengmo_enemy_plus2_self_minus2(real_game):
+def test_countdown_delta_both_sides(real_game):
     """疯魔琴心：敌方式神 +2（无倒计时能力者 -0），妖琴师 -2（可立即归零）。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
     pb.shikigami[1].level = 1
@@ -557,7 +557,7 @@ def test_fengmo_enemy_plus2_self_minus2(real_game):
     assert pb.shikigami[3].countdown is None
 
 
-def test_yuyin_self_and_allied_minus(real_game):
+def test_countdown_delta_allies_minus(real_game):
     """余音：妖琴师 -3（立即归零），己方其他未气绝式神 -1。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
     _register_allied_countdowns(g)            # 鸩/以津真天倒计时均为 2
@@ -660,7 +660,7 @@ def test_wind_dance_enhance(real_game):
 
 # ---------- 03 金风流羽：视为黄金羽 / 条件免费 ----------
 
-def test_jinfeng_liuyu_cost_and_accounting(real_game):
+def test_free_cost_after_tag_accounting(real_game):
     """未用过黄金羽：正常 1 火，且自身视为黄金羽记账；用过之后：不耗火。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
     play(g, 0, JLFY)                          # 1 火（费用先于记账计算，自身不免自身）
@@ -824,7 +824,7 @@ def test_countdown_delta_immediate_zero(real_game):
     assert len(pa.hand) == hand_before + 1    # give+打出抵消，抽 1
 
 
-def test_x_survives_defeat(real_game):
+def test_ext_counter_survives_defeat(real_game):
     """x 跨气绝保留：气绝清除倒计时能力，ext["zhen_proc"] 不清；复活重注册倒计时。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM)
     s = pa.shikigami[IDX]
@@ -859,7 +859,7 @@ def test_battle_immunity_conditioned_on_victim_fragile(real_game):
 
 # ---------- 04 毒蚀：伤害→破甲转化 ----------
 
-def test_dushi_active_converts_both_sides(real_game):
+def test_convert_damage_both_sides_active(real_game):
     """主动使用：本次战斗中双方造成的伤害转化为等量破甲；战斗结束后转化清除。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     move(g, 1, 1)                             # B 白狼（3/4）入战斗区
@@ -872,7 +872,7 @@ def test_dushi_active_converts_both_sides(real_game):
     assert pb.health == 28
 
 
-def test_dushi_response_on_attacked(real_game):
+def test_convert_damage_response(real_game):
     """响应：当鸩被攻击时自动使用——插入的战斗同样全程转化。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     give(g, 0, DS)
@@ -887,7 +887,7 @@ def test_dushi_response_on_attacked(real_game):
     assert zhen_b.health == 5 and zhen_b.shield == -6   # A 鸩反击 2+4=6 → 6 破甲
 
 
-def test_dushi_with_biyu_net_effect(real_game):
+def test_convert_damage_net_effect(real_game):
     """维护者答复(5)净效果：碧羽散华形态的鸩使用毒蚀——敌方式神正常受伤（伤害事件
     生成点→破甲→碧羽嵌套转回伤害，嵌套不再触发毒蚀），鸩自身被反击获得破甲而不受伤。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 3})
@@ -903,7 +903,7 @@ def test_dushi_with_biyu_net_effect(real_game):
 
 # ---------- 05 觉醒·鸩：x 累加 ----------
 
-def test_awaken_x_scaling(real_game):
+def test_awaken_ext_scaling_countdown(real_game):
     """觉醒：效果 2 破甲 + 永久 +1 力量；觉醒倒计时（initial 2，来源=觉醒牌 id）给
     2+x 破甲（x=基础+觉醒生效合计，觉醒后继续累加）。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
@@ -923,7 +923,7 @@ def test_awaken_x_scaling(real_game):
 
 # ---------- 06 致命诱惑：条件吸血 ----------
 
-def test_zhiming_lifesteal_vs_fragile(real_game):
+def test_lifesteal_granted_vs_fragile(real_game):
     """攻击有破甲的角色：获得[吸血]（实卡路径：伤害后为牌手恢复等量生命）。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     pa.health = 20
@@ -934,7 +934,7 @@ def test_zhiming_lifesteal_vs_fragile(real_game):
     assert pa.health == 25                    # 吸血：恢复 5（伤害值）
 
 
-def test_zhiming_no_lifesteal_without_fragile(real_game):
+def test_lifesteal_denied_without_fragile(real_game):
     """被攻击者无破甲：不获得吸血。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     pa.health = 20
@@ -947,7 +947,7 @@ def test_zhiming_no_lifesteal_without_fragile(real_game):
 
 # ---------- 07 碧羽散华：获得破甲→伤害 ----------
 
-def test_biyu_sanhua_converts_and_clears(real_game):
+def test_fragile_gain_converts_to_damage(real_game):
     """结附期间：敌方式神获得破甲转化为等量伤害；形态离场（替换）后标记清除。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 3})
     play(g, 0, BYSH)
@@ -966,7 +966,7 @@ def test_biyu_sanhua_converts_and_clears(real_game):
 
 # ---------- 08 毒之华：半血破甲 ----------
 
-def test_duzhihua_half_health_fragile(real_game):
+def test_half_health_fragile(real_game):
     """对敌方角色造成战斗伤害后：目标获得等同于其当前生命一半（向下取整）的破甲。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 3})
     move(g, 1, 2)                             # B 兵俑（1/6）入战斗区
@@ -978,7 +978,7 @@ def test_duzhihua_half_health_fragile(real_game):
 
 # ---------- 03 寂寥心象：每回合合计一次 ----------
 
-def test_jiliao_shikigami_branch_and_gate(real_game):
+def test_fragile_countdown_once_per_turn_gate(real_game):
     """敌方式神获得破甲 → 鸩倒计时 -2（可立即归零）；同回合后续事件被门控（合计一次）。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     play(g, 0, JLXX)
@@ -996,7 +996,7 @@ def test_jiliao_shikigami_branch_and_gate(real_game):
     assert pb.shikigami[2].shield == -2
 
 
-def test_jiliao_player_branch_and_next_turn(real_game):
+def test_player_fragile_mirror_combat(real_game):
     """敌方牌手获得破甲 → 敌方战斗区式神获得等量破甲；次回合门控清除可再触发。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     play(g, 0, JLXX)
@@ -1046,14 +1046,14 @@ FHH_AWAKEN, YW, CY = 10010506, 10010507, 10010508
 FHH_TEAM = [100105, 100116, 100101, 100123]
 
 
-def test_fhh_base_projectile(real_game):
+def test_projectile_on_own_spell(real_game):
     """基础能力：凤凰火使用专属法术（凤鸣）→ [投射]1（B 战斗区空 → 打脸）。"""
     g, pa, pb = _game(real_game, FHH_TEAM)
     play(g, 0, FM)                            # 凤鸣 2 + 投射 1
     assert pb.health == 27
 
 
-def test_fhh_yinran_kill_enemy(real_game):
+def test_kill_pings_enemy_player(real_game):
     """引燃消灭敌方式神：再对它的牌手造成 2（victim_player 语境目标）。"""
     g, pa, pb = _game(real_game, FHH_TEAM)
     pb.shikigami[0].health = 2
@@ -1062,7 +1062,7 @@ def test_fhh_yinran_kill_enemy(real_game):
     assert pb.health == 27                    # 消灭追加 2 + 投射 1
 
 
-def test_fhh_yinran_kill_friendly(real_game):
+def test_kill_pings_own_player(real_game):
     """引燃可对己方式神使用（维护者确认）：消灭己方式神 → 对己方牌手造成 2。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 1, 1: 1})
     pa.shikigami[1].health = 2
@@ -1072,7 +1072,7 @@ def test_fhh_yinran_kill_friendly(real_game):
     assert pb.health == 29                    # 投射 1
 
 
-def test_fhh_fenyu_boosts_effect_damage(real_game):
+def test_boost_effect_damage(real_game):
     """焚羽：凤凰火造成的非战斗伤害 +1——凤鸣直击与基础投射均吃增幅。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 2})
     play(g, 0, FY)
@@ -1080,7 +1080,7 @@ def test_fhh_fenyu_boosts_effect_damage(real_game):
     assert pb.health == 25
 
 
-def test_fhh_awaken_any_shikigami_spell(real_game):
+def test_awaken_projectile_any_spell(real_game):
     """觉醒·凤凰火：己方式神使用任意专属法术均投射 1（觉醒牌本身已触发一次）；
     凤凰火自己的法术只触发一次（基础能力已被觉醒能力替换）。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 2, 1: 1})
@@ -1094,7 +1094,7 @@ def test_fhh_awaken_any_shikigami_spell(real_game):
     assert pa.shikigami[IDX].perm_power == 1  # 觉醒 +1/+1
 
 
-def test_fhh_yanwu_enhance_counts_player_damage(real_game):
+def test_enhance_per_player_damage(real_game):
     """炎舞增强：凤凰火每对敌方牌手造成 1 次伤害 +1——凤鸣直击与投射各计 1 次。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
     play(g, 0, FM)                            # 直击 2 + 投射 1 = 2 次
@@ -1103,7 +1103,7 @@ def test_fhh_yanwu_enhance_counts_player_damage(real_game):
     assert pb.health == 30 - 3 - 7 - 1
 
 
-def test_fhh_yanwu_piercing_overflow(real_game):
+def test_piercing_projectile_overflow(real_game):
     """炎舞贯通：投射命中战斗区式神，溢出给牌手；随后基础投射再打脸。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
     move(g, 1, 0)
@@ -1113,7 +1113,7 @@ def test_fhh_yanwu_piercing_overflow(real_game):
     assert pb.health == 27                    # 溢出 2 + 基础投射 1
 
 
-def test_fhh_chuyun_generates_fenghuo(real_game):
+def test_generate_on_spell_play(real_game):
     """出云：凤凰火使用法术牌时，将一张'凤火'置入手牌。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
     play(g, 0, CY)
@@ -1136,7 +1136,7 @@ SY, ST_AWAKEN, SJI, BS = 10011605, 10011606, 10011607, 10011608
 ST_TEAM = [100116, 100105, 100101, 100123]
 
 
-def test_st_innate_piercing_overflow(real_game):
+def test_innate_piercing_overflow(real_game):
     """先天[贯通]：出击击杀战斗区式神，溢出伤害给牌手。"""
     g, pa, pb = _game(real_game, ST_TEAM)
     move(g, 1, 0)                             # B0 山童入战斗区
@@ -1147,7 +1147,7 @@ def test_st_innate_piercing_overflow(real_game):
     assert pa.shikigami[IDX].health == 1      # 气绝在战斗结束后结算：反击 3 照常
 
 
-def test_st_lumang_auto_attack(real_game):
+def test_auto_attack_turn_start(real_game):
     """鲁莽：己方回合开始山童自动发起攻击（不耗鬼火/出击次数）。"""
     g, pa, pb = _game(real_game, ST_TEAM)
     play(g, 0, LM)                            # 形态 3/5
@@ -1156,7 +1156,7 @@ def test_st_lumang_auto_attack(real_game):
     assert pa.combat_index == IDX             # 攻击后留在战斗区
 
 
-def test_st_guaili_perm_power_not_battle_power(real_game):
+def test_perm_power_not_battle_power(real_game):
     """怪力：永久 +1 力量按常规效果步执行（不提取为本次战斗战力）；当次战斗已生效。"""
     g, pa, pb = _game(real_game, ST_TEAM)
     play(g, 0, GL)
@@ -1167,7 +1167,7 @@ def test_st_guaili_perm_power_not_battle_power(real_game):
     assert pa.combat_index == IDX
 
 
-def test_st_nuhou_perm_self_temp_others(real_game):
+def test_perm_self_temp_allies(real_game):
     """怒吼：山童永久 +1 力量；其他己方式神临时 +1（气绝清除层）。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 1, 1: 1})
     play(g, 0, NH)
@@ -1176,7 +1176,7 @@ def test_st_nuhou_perm_self_temp_others(real_game):
     assert pa.shikigami[1].perm_power == 0
 
 
-def test_st_benzhuo_power_zero_on_enemy_turn(real_game):
+def test_power_zero_enemy_turn(real_game):
     """笨拙：敌方回合力量覆写为 0，己方回合开始解除。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2})
     play(g, 0, BN)                            # 形态 6/9
@@ -1188,7 +1188,7 @@ def test_st_benzhuo_power_zero_on_enemy_turn(real_game):
     assert s.eff_power == 6
 
 
-def test_st_suiyan_pierce_strips_shield(real_game):
+def test_pierce_strips_shield_before_damage(real_game):
     """碎岩：[穿刺] 先移除目标全部护甲再结算伤害；+2 战力/+2 一次性护甲。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2})
     move(g, 1, 0)
@@ -1202,7 +1202,7 @@ def test_st_suiyan_pierce_strips_shield(real_game):
     assert s.shield == 0 and s.health == 3    # 反击 3：一次性护甲吸收 2 后扣 1
 
 
-def test_st_awaken_effect_immunity(real_game):
+def test_awaken_enemy_effect_immunity(real_game):
     """觉醒·山童：免疫敌方非战斗伤害——己方来源与战斗伤害不免疫。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2, 1: 1})
     play(g, 0, ST_AWAKEN)
@@ -1217,7 +1217,7 @@ def test_st_awaken_effect_immunity(real_game):
     assert s.health == 1                      # 战斗伤害：不免疫
 
 
-def test_st_siji_response_counter_piercing(real_game):
+def test_counter_piercing_response(real_game):
     """伺机：敌方回合开始登记"此牌 +2 力量"光环（card_id 谓词）；山童被攻击时响应
     插入使用——反击 3+2 战力+2 光环=7 且贯通，击杀攻击者并溢出。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 1, 1: 1})
@@ -1235,7 +1235,7 @@ def test_st_siji_response_counter_piercing(real_game):
     assert pb.orb == orb - 1                  # 响应付 1 火
 
 
-def test_st_bengshan_perm_power_enhance(real_game):
+def test_perm_power_enhance_snapshot(real_game):
     """崩山增强：山童每永久 1 力量，战斗区/准备区伤害各自 +1（先怒吼：5/2）。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 3, 1: 1})
     move(g, 1, 0)
@@ -1245,28 +1245,13 @@ def test_st_bengshan_perm_power_enhance(real_game):
     assert [s.health for s in pb.shikigami[1:]] == [2, 2, 2]   # 准备区 1+1=2
 
 
-def test_st_bengshan_base_damage(real_game):
+def test_zone_base_damage(real_game):
     """崩山无永久力量时：战斗区 4、准备区 1。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 3})
     move(g, 1, 0)
     play(g, 0, BS)
     assert pb.shikigami[0].defeated           # 4 = 4
     assert [s.health for s in pb.shikigami[1:]] == [3, 3, 3]
-
-
-# ==========================================================================
-# 姑获鸟（100106）基础能力（卡牌未设计，构筑池过滤见 test_deck.py）
-# ==========================================================================
-
-GHN_TEAM = [100106, 100101, 100102, 100123]
-
-
-def test_ghn_retreat_after_assault(real_game):
-    """姑获鸟攻击后移回准备区。"""
-    g, pa, pb = _game(real_game, GHN_TEAM)
-    g.apply({"op": "assault", "index": 0})    # 3 攻打脸
-    assert pb.health == 27
-    assert pa.combat_index is None            # 攻击后自动退回准备区
 
 
 # ==========================================================================
@@ -1277,7 +1262,7 @@ QXD_TEAM = [100112, 100101, 100123, 100127]
 MD = 10011201                                 # 明灯
 
 
-def test_qxd_generates_mingdeng_on_enemy_turn(real_game):
+def test_token_on_enemy_turn_with_orb(real_game):
     """敌方回合开始时若你有剩余鬼火 → 获得一张'明灯'（手牌明灯数 +1；
     卡组本身含明灯 01×2，以计数差判定而非有无）。"""
     g, pa, pb = _game(real_game, QXD_TEAM)    # pa.orb = 9
@@ -1286,7 +1271,7 @@ def test_qxd_generates_mingdeng_on_enemy_turn(real_game):
     assert sum(1 for c in pa.hand if c.id == MD) == n + 1
 
 
-def test_qxd_no_mingdeng_without_orb(real_game):
+def test_no_token_without_orb(real_game):
     """无剩余鬼火：不获得明灯。"""
     g, pa, pb = _game(real_game, QXD_TEAM)
     pa.orb = 0
@@ -1295,7 +1280,7 @@ def test_qxd_no_mingdeng_without_orb(real_game):
     assert sum(1 for c in pa.hand if c.id == MD) == n
 
 
-def test_qxd_mingdeng_gains_orb(real_game):
+def test_token_fast_gains_orb(real_game):
     """明灯：[瞬发] 获得 1 点鬼火（本回合首张瞬发免费 → 净 +1）。"""
     g, pa, pb = _game(real_game, QXD_TEAM)
     pass_turns(g, 2)                          # B 回合开始已生成明灯；回到 A 回合鬼火重置

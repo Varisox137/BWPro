@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.model import ExecContext, Ref, ShikigamiState
+from core.model import ExecContext, PlayerState, Ref, ShikigamiState
 
 ACTIONS: dict[str, Callable] = {}
 
@@ -1265,22 +1265,27 @@ def power_override(game, ctx, *, targets: list[Ref], on: bool = True) -> None:
             s.ext.pop("power_zero", None)
 
 
+def _orb_count(value: int | dict, p: PlayerState, base_default: int) -> int:
+    """次数参数解析：int 直取；{"orb": true} = 1 + 效果结算时剩余鬼火（基础 1 次 +
+    每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——第十阶段维护者答复）；
+    其它 dict 取 base（缺省 base_default）。repeat/deck_top_pick 共用。"""
+    if isinstance(value, dict):
+        return 1 + p.orb if value.get("orb") else int(value.get("base", base_default))
+    return int(value)
+
+
 @action("repeat")
 def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
            steps: list, clear_orb: bool = False) -> None:
     """重复执行一组子步骤（吸魂灯"你每有 1 点鬼火便重复一次"；targets 忽略）。
 
-    count 为整数或 {"orb": true}（= 1 + 效果结算时控制者剩余鬼火：基础 1 次 +
-    每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——第十阶段维护者答复）；子步骤在
-    同一块上下文（共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复结束后一次性
+    count 为整数或 {"orb": true}（解析见 _orb_count）；子步骤在同一块上下文
+    （共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复结束后一次性
     清空控制者鬼火（2→0 不经过 1）。
     """
     from db.schema import Step
     p = game.state.players[ctx.controller]
-    if isinstance(count, dict):
-        n = 1 + p.orb if count.get("orb") else int(count.get("base", 0))
-    else:
-        n = int(count)
+    n = _orb_count(count, p, 0)
     sub = [Step.model_validate(st) for st in steps]
     for _ in range(max(0, n)):
         for st in sub:
@@ -1295,15 +1300,11 @@ def deck_top_pick(game, ctx, *, targets: list[Ref], count: int = 3,
     """检视牌库顶 count 张牌，选一张置入手牌，然后洗牌库；重复 times 次（青灯夜谈；
     targets 忽略）。通过 pending_choice 挂起等 choose 指令作答（见 Game._cmd_choose）。
 
-    times 为整数或 {"orb": true}（= 1 + 效果结算时控制者剩余鬼火，0 火仍执行基础
-    1 次——第十阶段维护者答复）。牌库无可检视牌 = 不挂起；clear_orb=True 的清空仍
-    执行（挂起时延后到末次选择后）。
+    times 为整数或 {"orb": true}（解析见 _orb_count）。牌库无可检视牌 = 不挂起；
+    clear_orb=True 的清空仍执行（挂起时延后到末次选择后）。
     """
     p = game.state.players[ctx.controller]
-    if isinstance(times, dict):
-        n = 1 + p.orb if times.get("orb") else int(times.get("base", 1))
-    else:
-        n = int(times)
+    n = _orb_count(times, p, 1)
     if not game._open_deck_top_pick(ctx.controller, int(count), n, clear_orb):
         if clear_orb:
             game._clear_orb(p, ctx.controller)

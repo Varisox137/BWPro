@@ -199,7 +199,7 @@ def test_jieqie_active_play(db, make_game):
 
 # ---------- 3. 风符·瞬（响应形态牌插入使用） ----------
 
-def test_shun_response_attach(db, make_game):
+def test_response_form_attach_insert(db, make_game):
     """风符·瞬响应：一目连被攻击时立即结附 6/9——受 3 余 6，反击 6 击杀攻击者；
     瞬发响应免费（0 火可触发）。"""
     _shun(db)

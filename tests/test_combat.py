@@ -631,7 +631,7 @@ def test_awaken_persists_through_revive(db, make_game):
     assert pl.health == 26  # 觉醒能力仍触发（-4）
 
 
-def test_awaken_hyottoko_shield_kept_and_stacked(db, make_game):
+def test_awaken_shield_kept_and_stacked(db, make_game):
     """觉醒·兵俑：打出 +3 护甲且不再于己方回合开始移除；之后每己方回合开始 +3（替换基础 +2）。"""
     db.shikigami[100102].ability = F.EffectBlock(  # 基础能力（应被觉醒替换）
         when="on_turn_start", condition={"player": "self"},
@@ -1096,7 +1096,7 @@ def test_hunt_followup_attack(real_game):
     assert sum(s.defeated for s in pb.shikigami) == 2  # 追加攻击再杀一名生命最低者
 
 
-def test_qiannu_bench_damage_on_combat_kill(real_game):
+def test_bench_damage_on_combat_kill(real_game):
     """迁怒：茨木消灭敌方战斗区式神时，对其准备区式神各造成 2 点伤害。"""
     g = real_game(CM_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})

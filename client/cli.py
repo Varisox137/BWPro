@@ -124,7 +124,7 @@ def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
     return len(game.state.timeline)
 
 
-def _show_field(game: Game, printer: SettlePrinter, viewer: int | None = None) -> None:
+def show_field(game: Game, printer: SettlePrinter, viewer: int | None = None) -> None:
     """空闲点场况：作为一块入打印队列尾——排在已入队的结算明细之后播完再显示
     （thoughts(1)：每次操作的结算细节全部打印完之后再显示场况）。对局已结束
     不再显示场况（终局只打印结果块）。"""
@@ -620,7 +620,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
     if game.state.phase == "mulligan":
         run_mulligan(game)
     settle_seen = _play_settle(game, 0, printer)  # 先手首回合的回合开始阶段起：调度后首块明细
-    _show_field(game, printer)
+    show_field(game, printer)
     while game.state.winner is None:
         if game.state.pending_choice is not None:
             # 结算中交互选择（青灯夜谈）：展示可检视牌并等待选择
@@ -636,7 +636,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 game.apply({"op": "choose", "uid": opts[pick].uid,
                             "player": pend["player"]})
                 settle_seen = _play_settle(game, settle_seen, printer)
-                _show_field(game, printer)
+                show_field(game, printer)
             except (IllegalAction, ValueError, IndexError):
                 print("参数有误，输入序号选择")
             continue
@@ -667,7 +667,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 if dcmd:
                     game.apply(dcmd)
                     settle_seen = _play_settle(game, settle_seen, printer)
-                    _show_field(game, printer)
+                    show_field(game, printer)
             elif cmd == "play":
                 hand = hand_sorted(game, game.current)
                 card = hand[int(args[0]) - 1]
@@ -701,7 +701,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                     cmd_dict["play_method"] = rest.pop(0)  # 使用方式，如 burst
                 game.apply(cmd_dict)
                 settle_seen = _play_settle(game, settle_seen, printer)
-                _show_field(game, printer)
+                show_field(game, printer)
             elif cmd in ("assault", "upgrade"):
                 cmd_dict: dict = {"op": cmd, "index": int(args[0]) - 1}
                 if cmd == "assault":
@@ -723,11 +723,11 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                                 cmd_dict["target"] = parse_ref(code, game.state.active)
                 game.apply(cmd_dict)
                 settle_seen = _play_settle(game, settle_seen, printer)
-                _show_field(game, printer)
+                show_field(game, printer)
             elif cmd == "end":
                 game.apply({"op": "end_turn"})
                 settle_seen = _play_settle(game, settle_seen, printer)
-                _show_field(game, printer)
+                show_field(game, printer)
             else:
                 print("未知指令，输入 help 查看帮助")
         except IllegalAction as e:

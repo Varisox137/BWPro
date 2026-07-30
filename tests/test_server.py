@@ -288,7 +288,7 @@ def test_turn_timeout_pending_choice_random_choose(db):
     流程（升级/结束回合）——否则 apply 拒绝 choose 以外的指令，计时器 key
     不变也不会重启，房间死局。"""
     async def go():
-        room, ws0, _ = await _started_room(db, turn_timeout=60)
+        room, ws0, _ = await _started_room(db, turn_timeout=0.05)
         g = room.game
         for pi in (0, 1):
             g.apply({"op": "ready", "player": pi})
@@ -300,7 +300,12 @@ def test_turn_timeout_pending_choice_random_choose(db):
         assert g._open_deck_top_pick(0, 2, 1, False)  # 青灯夜谈式挂起（无续块）
         assert g.state.pending_choice is not None
         turn = g.state.turn
-        await room._on_timeout(("turn", turn))
+        room.reschedule_timer()  # 调度→回合切换后刷新计时 key，走真实超时路径
+        for _ in range(50):  # 等首次超时完整收尾（换手即回调结束）
+            if g.state.active == 1:
+                break
+            await asyncio.sleep(0.02)
+        room._cancel_timer()  # 防 0.05s 计时器二次超时循环换手干扰断言
         assert g.state.pending_choice is None
         assert len(p0.hand) == hand_n + 1  # 随机作答：检视牌已入手
         assert g.state.active == 1 and g.state.turn > turn  # 常规超时收尾完成
@@ -411,6 +416,16 @@ def test_mulligan_hidden_from_opponent(db):
         full = [m for m in ws_new.messages if m["type"] == "state"][-1]["log"]
         assert not any("调度了一张手牌" in l for l in full)
     run(go())
+
+
+def test_pending_choice_sanitized_for_opponent():
+    """联机信息隐藏：pending_choice 的可检视牌仅选择方可见，其余视角抹除为占位。"""
+    from server.room import sanitize_state
+    payload = {"players": [{"zones": {}}, {"zones": {}}],
+               "pending_choice": {"kind": "deck_top_pick", "player": 0,
+                                  "options": [11, 12, 13]}}
+    assert sanitize_state(payload, 0)["pending_choice"]["options"] == [11, 12, 13]
+    assert sanitize_state(payload, 1)["pending_choice"]["options"] == [0, 0, 0]
 
 
 def test_sanitize_hides_secret_delayed_chosen():

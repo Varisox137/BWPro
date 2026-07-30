@@ -552,7 +552,7 @@ def test_reinforce_main_cards_dual_ownership(gdb):
     assert KGHQ in {c.id for c in buildable_cards(gdb, 100109)}
 
 
-def test_play_kuangge_haoqing_jiutun_side(make_game):
+def test_play_sub_side_bond_generate(make_game):
     """狂歌豪情选副侧醉酒当歌：主牌离手放逐；酒吞自伤 3（触发基础能力）+ 等量
     护甲 3；[羁绊]获得茨木当前等级（1 级）的战斗牌——唯一为鬼之手。"""
     g, pa, pb = _game(make_game, levels={0: 1, 1: 1}, team=KG_TEAM)
