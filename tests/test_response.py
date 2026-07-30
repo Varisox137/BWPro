@@ -1014,3 +1014,28 @@ def test_combat_victim_response_with_delayed_heal(db, make_game):
     assert s.shield == 0              # 2 护甲被 3 伤消耗
     assert s.health == 5              # 6 - 1
     assert pa.health == 27            # 反击（kind=counter 战斗伤害）触发延迟恢复 2
+
+
+# ==========================================================================
+# 响应座次排序·真实数据（暴风之盾/沧海之盾冒泡交换）
+# ==========================================================================
+
+def test_response_seat_order_bubble_swap(real_game):
+    """响应触发顺序按所属式神座次从左往右，与入手顺序无关（冒泡排序）：
+    大天狗（座次 0）先于海坊主（座次 3）——沧海之盾(10010703)先入手、
+    暴风之盾(10010403)后抽到，两张牌响应时机完全一致（战斗区式神被攻击时）
+    且均满足使用合法性时，暴风之盾先响应；同时机限一张，沧海之盾留在手牌。"""
+    g = real_game(team=[100104, 100106, 100112, 100107])  # 大天狗/姑获鸟/青行灯/海坊主
+    pa, pb = g.state.players
+    pa.shikigami[3].level = 1            # 海坊主可用（大天狗 0 号位开局自动 1 级）
+    pa.shikigami[1].level = 1            # 姑获鸟在场（0 级不在合法目标池，响应会空发）
+    move(g, 0, 1)                        # 姑获鸟进战斗区作为被攻击者
+    give(g, 0, 10010703)                 # 沧海之盾先入手
+    give(g, 0, 10010403)                 # 暴风之盾后抽到——应冒泡到沧海之盾之前
+    g.apply({"op": "end_turn"})          # A 留 1 火（响应费）
+    g.apply({"op": "assault", "index": 0})   # B 大天狗 3/4 出击被姑获鸟拦下 → 响应
+    assert any(c.id == 10010403 for c in pa.graveyard)   # 暴风之盾（左侧式神）先响应
+    assert any(c.id == 10010703 for c in pa.hand)        # 沧海之盾未触发留手
+    assert g.history.count("on_trigger") == 1
+    s = pa.shikigami[1]
+    assert s.shield == 0 and s.health == 3               # +2 甲挡 3 伤余 1（4-1）
