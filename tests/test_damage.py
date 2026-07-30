@@ -184,8 +184,8 @@ def test_heal_capped_by_lost_health(db, make_game):
     assert s.health == 4             # 只回 3，不超过上限
 
 
-def test_heal_zero_terminates(db, make_game):
-    """满血治疗：治疗前（即时）照常发出，治疗量为 0 终止——无治疗时/治疗后。"""
+def test_heal_zero_fires_on_heal_not_after(db, make_game):
+    """满血治疗（实际恢复 0）：治疗前照常发出，治疗时 on_heal 仍触发，治疗后 on_after_heal 不触发。"""
     cid = 10010155
     db.cards[cid] = F.card(cid, shikigami=SID, level=1, token=True,
                            steps=[F.Step(op="heal", amount=5, target=T(kind="self"))])
@@ -194,8 +194,8 @@ def test_heal_zero_terminates(db, make_game):
     play(g, 0, cid)
     assert s.health == 4
     assert "on_before_heal" in g.history
-    assert "on_heal" not in g.history
-    assert "on_after_heal" not in g.history
+    assert "on_heal" in g.history            # 治疗时：0 量也触发
+    assert "on_after_heal" not in g.history  # 治疗后：仅实际恢复 > 0
 
 
 def test_heal_event_order(db, make_game):
@@ -548,8 +548,8 @@ def test_lethal_not_damage_property(db, make_game):
 
 def test_overheal_converts_on_friendly_heal(db, make_game):
     """过量治疗转化（海坊主）：on_heal payload 带 overheal = 治疗量-实际治疗量；
-    己方目标获得等量护甲（觉醒另加等量力量）。满血治疗（实际恢复 0）不发 on_heal、
-    不触发转化。"""
+    己方目标获得等量护甲（觉醒另加等量力量）。满血治疗（实际恢复 0）on_heal 仍触发，
+    overheal = 全额 → 全额转护甲。"""
     overheal_block = lambda extra: F.block(   # noqa: E731
         F.Step(op="gain_shield", amount={"event": "overheal"},
                target=T(kind="context", key="target")),
@@ -571,9 +571,10 @@ def test_overheal_converts_on_friendly_heal(db, make_game):
     play(g, 0, 10010155, target=Ref(player=0, shikigami=1))
     assert s2.health == 6            # 实际恢复 2
     assert s2.shield == 3            # 过量 3 转护甲
-    # 满血治疗：不触发转化
+    # 满血治疗：on_heal 0 量仍触发，overheal=5 全额转护甲
     play(g, 0, 10010155, target=Ref(player=0, shikigami=1))
-    assert s2.shield == 3
+    assert s2.health == 6
+    assert s2.shield == 8
     # 觉醒：过量部分转护甲 + 力量
     db.shikigami[SID].ability = overheal_block(
         [F.Step(op="buff_power", amount={"event": "overheal"},
@@ -612,12 +613,14 @@ def test_heal_reversal_to_enemy(db, make_game):
 
 
 def test_heal_trigger_abilities_once_per_turn(db, make_game):
-    """恢复触发型能力（青坊主/禅心）：己方任意角色实际恢复即触发（含式神与牌手）；
+    """恢复触发型能力（青坊主/禅心）：挂治疗后 on_after_heal——己方任意角色实际恢复
+    即触发（含式神与牌手），0 量治疗（on_heal 触发但 after 不触发）不触发；
     turn_mark 门控每回合合计一次、任一回合开始清除；觉醒版无门控每次触发。"""
     db.shikigami[100102].ability = F.block(
         F.Step(op="turn_mark", key="qfz"),
         F.Step(op="random_damage", amount=1, pool="enemy_character", count=2),
-        when="on_heal", condition={"target_side": "friendly", "turn_mark_not": "qfz"})
+        when="on_after_heal",
+        condition={"target_side": "friendly", "turn_mark_not": "qfz"})
     db.cards[10010155] = F.card(
         10010155, shikigami=SID, level=1, token=True,
         steps=[F.Step(op="heal", amount=2, target=T(kind="self"))])
@@ -636,10 +639,19 @@ def test_heal_trigger_abilities_once_per_turn(db, make_game):
     play(g, 0, 10010155)
     hurt3 = (30 - pb.health) + sum(s.max_health - s.health for s in pb.shikigami)
     assert hurt3 == 4
+    # 0 量治疗（满血）：on_heal 触发但 on_after_heal 不触发 → 不触发
+    pass_turns(g, 2)
+    pa.shikigami[IDX].health = pa.shikigami[IDX].max_health
+    n = len(g.history)
+    play(g, 0, 10010155)             # 满血目标：实际恢复 0
+    assert "on_heal" in g.history[n:]
+    assert "on_after_heal" not in g.history[n:]
+    hurt4 = (30 - pb.health) + sum(s.max_health - s.health for s in pb.shikigami)
+    assert hurt4 == 4
     # 觉醒版（无 turn_mark 门控）：每次恢复都对所有敌人造成 1 伤
     db.shikigami[100102].ability = F.block(
         F.Step(op="damage", amount=1, target=T(kind="all", pool="enemy_character")),
-        when="on_heal", condition={"target_side": "friendly"})
+        when="on_after_heal", condition={"target_side": "friendly"})
     g2, pa2, pb2 = _game(make_game)
     pa2.shikigami[IDX].health = 1
     pa2.shikigami[1].level = 1
@@ -655,7 +667,8 @@ def test_heal_trigger_draw_once_per_turn(db, make_game):
     db.shikigami[100102].ability = F.block(
         F.Step(op="turn_mark", key="zx"),
         F.Step(op="draw", count=1),
-        when="on_heal", condition={"target_side": "friendly", "turn_mark_not": "zx"})
+        when="on_after_heal",
+        condition={"target_side": "friendly", "turn_mark_not": "zx"})
     db.cards[10010155] = F.card(
         10010155, shikigami=SID, level=1, token=True,
         steps=[F.Step(op="heal", amount=2, target=T(kind="self"))])

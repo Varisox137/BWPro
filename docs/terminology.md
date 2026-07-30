@@ -157,8 +157,8 @@
 | 凭空自动使用 | `recast_recorded`（动作） | 凭空生成 `ext["recorded_card"]` 记录卡 id 的同名牌并免费自动使用（不耗鬼火、非从手牌、无主动目标；大天狗倒计时）；`gain_orb`：获得鬼火 | ✅ |
 | Step 级条件 | `Step.condition` | 结算时以条件迷你语言求值，不满足则跳过该 step（op 自身声明 condition 参数者——如 delay_grant——仍作 op 参数传递） | ✅ |
 | 扩展数据 | `ext` | 少数卡专用的运行时数据（`ShikigamiState.ext` / `PlayerState.ext`，约定键见下表） | ✅ |
-| 治疗（恢复生命） | `Game.heal` / `heal`（动作） | 治疗事件流程：治疗反转判定（heal_reversal）→ on_before_heal（即时）→ 实际治疗量 = min(治疗量, 已损失生命) → 增加生命 → 实际治疗量 0 终止（不发 on_heal，满血不触发转化/恢复时能力——维护者答复）→ on_heal / on_after_heal（延时，payload 带 overheal）；濒死/气绝者不受治疗；"你恢复生命时"= 己方任一角色（含牌手）实际恢复（青坊主） | ✅ |
-| 过量治疗 | `overheal`（on_heal payload 键） | max(0, 治疗量 − 实际治疗量)；海坊主"过量治疗转化护甲"通道——能力块挂 on_heal 以 {overheal_ge: 1} 门控，转化量取 payload overheal | ✅ |
+| 治疗（恢复生命） | `Game.heal` / `heal`（动作） | 治疗事件流程：治疗反转判定（heal_reversal）→ on_before_heal（即时）→ 实际治疗量 = min(治疗量, 已损失生命) → 增加生命 → on_heal（延时，**实际恢复 0 也触发**，amount=0）→ on_after_heal（延时，**仅实际恢复 > 0 触发**）；濒死/气绝者不受治疗。挂点口径："过量治疗转化"（海坊主）、"为牌手恢复生命时"（灵能）挂 on_heal；"你恢复生命时"= 己方任一角色（含牌手）实际恢复（青坊主基础/禅心/觉醒）挂 on_after_heal | ✅ |
+| 过量治疗 | `overheal`（on_heal payload 键） | max(0, 治疗量 − 实际治疗量)；海坊主"过量治疗转化护甲"通道——能力块挂 on_heal 以 {overheal_ge: 1} 门控，转化量取 payload overheal（满血治疗 overheal=全额，照常转化） | ✅ |
 | 治疗反转 | `heal_reversal`（tags） | 法界唯心：其控制者在场形态含此标记时，该方效果对**敌方**目标的恢复生命改为走伤害管线造成等量伤害（受伤害批次/免疫影响）；对己方目标恢复不受影响（`_field_form_has_tag` 扫描在场形态 tags） | ✅ |
 | 气绝前 1 | `on_before_defeat` | 气绝/消灭事件开头（`check_defeated`）的即时时机；响应牌挂此时机（射怪鸟事类） | ✅ |
 | 使用手牌前 | `on_before_card_play` / `nullify_card_play`（动作） | 付费/打出装配后、类型分支前的即时时机；`nullify_card_play` 置位 payload 可变标记 `nullified` 终止该次使用（牌入墓地、跳过效果与 on_card_played）；"一次性无效化"能力用 `delay_grant(scope="turn")` 表达（魔音扰心） | ✅ |
@@ -173,7 +173,7 @@
 | 伤害→破甲转化 | `convert_damage`（动作） | 战斗作用域（毒蚀"双方造成的伤害转化为等量破甲"）：答复(5)——伤害事件生成点全额转化（`_battle_convert`，护甲不再先吸收；不再视为伤害），战斗终止点清除；已转化的伤害（converted）不再转化，防与获得破甲→伤害转化循环 | ✅ |
 | 战斗条件授予 | `defender_has_fragile`（条件运算符） | 战斗牌效果块中的 grant_keyword / battle_immunity step 由战斗流程提取为战斗作用域授予，Step.condition 在战斗开始时以 {"defender": 被攻击者} 求值（鸩羽/致命诱惑"若攻击有破甲的角色"） | ✅ |
 | 玩家扩展条件 | `player_ext`（条件运算符） | {player_ext: key}：控制者 `PlayerState.ext[key]` 为真值（"本回合若使用过黄金羽"= feather_used_turn；千羽风之舞 step 级条件用） | ✅ |
-| 战斗/非战斗伤害免疫 | `grant_immunity`（动作） | scope="turn"：目标式神免疫战斗伤害到当前回合结束——以回合号记账（immunities 条目 {"turn": n}），`_combat_immune` 按回合号比对自然过期（不可饶恕用）；scope="perm"：持续在场期间有效（气绝清除、复活重新授予）；kind="effect" + from_side="enemy"：非战斗伤害免疫、只免疫敌方来源（无来源或己方来源不免疫——觉醒·山童，`_effect_immune` 在伤害流程"伤害开始时"批次内判定）；kind="all"（仅牌手目标）：牌手免疫所有伤害——条目存 `PlayerState.immunities`、同样按 turn 回合号过期，`_player_immune` 在伤害管线入口判定（舍生"你的牌手免疫所有伤害"） | ✅ |
+| 战斗/非战斗伤害免疫 | `grant_immunity`（动作） | scope="turn"：目标式神免疫战斗伤害到当前回合结束——以回合号记账（immunities 条目 {"turn": n}），过期条目于回合开始清理（`_start_turn` 双方过滤，防显示残留——不可饶恕用）；scope="perm"：持续在场期间有效（气绝清除、复活重新授予）；kind="effect" + from_side="enemy"：非战斗伤害免疫、只免疫敌方来源（无来源或己方来源不免疫——觉醒·山童，`_effect_immune` 在伤害流程"伤害开始时"批次内判定）；kind="all"（仅牌手目标）：牌手免疫所有伤害——条目存 `PlayerState.immunities`、同样按 turn 回合号记账+回合开始清理，`_player_immune` 在伤害管线入口判定（舍生"你的牌手免疫所有伤害"） | ✅ |
 | 弃牌计数暂存 | `discarded_count`（memo 键） | discard 动作结算后把实际弃牌数写入块内暂存 `ctx.memo["discarded_count"]`；draw 的 count 支持 {"memo": key} 读取（射怪鸟事"弃多少抽多少"两步组合） | ✅ |
 | 使用方式觉醒门控 | `requires_awaken`（PlayMethod 扩展字段） | 选择该使用方式时所属式神须已觉醒且未气绝/离场（气绝时觉醒能力不在场——答复(11)），否则 IllegalAction（黄金羽觉醒后"以敌方角色为目标"方式） | ✅ |
 | 响应效果覆盖 | `response`（CardDef） | 响应牌的效果块覆盖：主动使用效果与响应效果结构不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/结算改读本块；缺省用 effects | ✅ |
@@ -206,9 +206,10 @@
 | 精确等级生成 | `level`（generate 参数） | int 或 "shikigami"：后者按 shikigami 参数所指式神当前等级精确匹配生成（醉酒当歌羁绊"获得一张茨木童子当前等级的战斗牌"；所指式神未出战/未在场空操作） | ✅ |
 | 战斗牌数值不提取 | `no_extract`（step 参数） | 战斗牌的 buff_power/gain_shield(self) step 缺省提取为战力/一次性护甲在效果步之前结算；标 no_extract 则不提取、按步骤顺序执行（醉酒当歌"先自伤 3 再获得等量护甲"——前置结算会被自己的自伤消耗） | ✅ |
 | 鬼火储存 | `orb_store`（tags） | 觉醒·青行灯：己方在场有已觉醒且觉醒牌含此标记的式神时，回合开始鬼火不清零、改为累加并封顶 4 点（`min(4, orb+gain)`；`_orb_stored` 扫在场式神觉醒牌 tags；结算见 rules.md 回合流程步骤 5 注记） | ✅ |
-| 结算中交互选择 | `pending_choice` / `choose`（指令） / `deck_top_pick`（动作） | 效果结算中挂起等待玩家作答：deck_top_pick 检视牌库顶 count 张选 1 入手再洗牌、重复 times 次（times 可为 {"orb": true} = 当前鬼火数；青灯夜谈）；挂起点存 `_suspended` 续点（不序列化——断线重连不续跑）、`GameState.pending_choice` 记 {kind, options, remaining}；pending 期间 apply() 只接受 choose 指令；触发式（triggered）块不挂起、空发即弃；联机 sanitize 对非选择方把 options 脱敏为等长占位（room.py），CLI/net 以 `choose <序号>` 作答 | ✅ |
-| 重复执行 | `repeat`（动作） | 子步骤组重复 count 次（int 或 {"orb": true}；吸魂灯"每有 1 点鬼火重复一次"），同块上下文共享 ctx.memo；clear_orb=True 重复后清空控制者鬼火（0 鬼火无重复效果但清空仍执行——维护者答复） | ✅ |
-| 鬼火消耗 | `consume_orb`（动作） | 直接扣控制者鬼火 amount（不灭之火"消耗 1 点鬼火"；不视作使用牌，emit on_orb_changed） | ✅ |
+| 结算中交互选择 | `pending_choice` / `choose`（指令） / `deck_top_pick`（动作） | 效果结算中挂起等待玩家作答：deck_top_pick 检视牌库顶 count 张选 1 入手再洗牌、重复 times 次（times 可为 {"orb": true} = **1 + 效果结算时剩余鬼火**，0 火仍执行基础 1 次——第十阶段维护者答复；青灯夜谈）；挂起点存 `_suspended` 续点（内存态，随服务端房间的 Game 实例存活——客户端断线不丢，重连 resync 全量 state 带 pending_choice 可续答）、`GameState.pending_choice` 记 {kind, options, remaining}；pending 期间 apply() 只接受 choose 指令；触发式（triggered）块不挂起、空发即弃；联机 sanitize 对非选择方把 options 脱敏为等长占位（room.py），CLI/net 以 `choose <序号>` 作答；回合超时先随机作答到底再走常规超时流程（否则回合无法收尾、计时器不重启——room._on_timeout） | ✅ |
+| 重复执行 | `repeat`（动作） | 子步骤组重复 count 次（int 或 {"orb": true} = **1 + 效果结算时控制者剩余鬼火**：基础 1 次 + 每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——第十阶段维护者答复；吸魂灯），同块上下文共享 ctx.memo；clear_orb=True 重复后一次性清空控制者鬼火（2→0 不经过 1） | ✅ |
+| 鬼火消耗/清空 | `consume_orb` / `clear_orb`（动作） | consume_orb：扣控制者鬼火 amount（不灭之火；不视作使用牌）；clear_orb：一次性清空一方鬼火（side="self"/"opponent"，月食类"清空敌方的鬼火"——月食卡不入数据，机制可用）；均 emit on_orb_changed（old→new 单事件，清空不经过中间值） | ✅ |
+| 鬼火变化事件 | `on_orb_changed` / `_pay_orb` | 即时时机（insert），payload {player, old, new, reason}；每处变化点发出：回合开始获得、使用牌/出击/响应付费（付费点先于效果结算，响应可插入效果前）、gain_orb/consume_orb/clear_orb/清空。条件通道示例："当敌方鬼火变为 1 时" = {player: opponent, new: 1}（月食类响应，合成卡测试） | ✅ |
 | 生命设置 | `set_health`（动作） | 目标牌手生命直接设为 amount、钳制 [1, max_health]（轮回"生命变为 10"——X=0 按原文仍可使用；非治疗非伤害、不触发对应事件） | ✅ |
 | 直接升级 | `level_up`（动作） | 目标式神等级 +amount（不走升级次数/不受升级阶段限制、封顶 3；百闻一得）；overflow_draw=True 时已 3 级改为抽 1；0 级未在场/气绝空操作 | ✅ |
 | 复活（动作） | `revive`（动作） | 复活目标气绝式神（走 `Game._revive` 完整复活流程；不灭之火"返回场上"前置步骤） | ✅ |

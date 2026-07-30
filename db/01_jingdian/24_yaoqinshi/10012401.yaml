@@ -15,9 +15,10 @@ abilities:
   - countdown: 3
     steps:
       - {op: distribute_damage, amount: 5, pool: enemy_character}
-  # 使用妖琴师的觉醒法术牌时：倒计时-3（含本张——同次出牌先注册新倒计时再 -3 至 0 立即归零）
-  - when: on_card_played
-    condition: {player: self, card_type: spell, subtype: awaken, shikigami: 100124}
+  # 使用妖琴师的觉醒法术牌时：倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
+  # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
+  - when: on_before_awaken
+    condition: {player: self, target_shikigami: self}
     steps:
       - {op: countdown_delta, amount: -3, target: {kind: self}}
 text: "[觉醒]：{[倒计时3]：{造成5点伤害，随机分配给所有敌方角色}。当你使用妖琴师的[觉醒]法术牌时，使妖琴师的倒计时-3。}"

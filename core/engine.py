@@ -421,7 +421,7 @@ class Game:
         if card is None:
             raise IllegalAction("该牌已不在牌库中")
         self.move_card(p, card, "hand")
-        self._log(f"{p.name} 将检视的《{self.db.cards[card.id].name}》置入手牌")
+        self._log(f"{p.name} 将检视的【{self.db.cards[card.id].name}】置入手牌")
         self.rng.shuffle(p.deck)  # 按原文"然后洗牌库"：每次选择后都洗牌
         self.state.pending_choice = None
         if not self._open_deck_top_pick(pi, pending["count"],
@@ -450,11 +450,22 @@ class Game:
         return True
 
     def _clear_orb(self, p: PlayerState, pi: int) -> None:
-        """清空玩家鬼火（吸魂灯/青灯夜谈"清空你的鬼火"）；emit on_orb_changed。"""
+        """清空玩家鬼火（吸魂灯/青灯夜谈"清空你的鬼火"）；emit on_orb_changed。
+        一次性变化（如 2→0 不经过 1，不触发"鬼火变为 1"类条件）。"""
         old = p.orb
         p.orb = 0
         if old != 0:
             self.emit("on_orb_changed", player=pi, old=old, new=0, reason="清空鬼火")
+
+    def _pay_orb(self, p: PlayerState, pi: int, cost: int, reason: str) -> None:
+        """支付鬼火（使用牌/出击/响应的消耗）：变化后 emit on_orb_changed（old→new）。
+        即时时机——付费点先于效果结算，"鬼火变为 1"类响应可插入于效果之前。"""
+        if cost <= 0:
+            return
+        old = p.orb
+        p.orb = max(0, p.orb - cost)
+        if p.orb != old:
+            self.emit("on_orb_changed", player=pi, old=old, new=p.orb, reason=reason)
 
     # ---------- 调度（游戏开始阶段） ----------
 
@@ -517,14 +528,14 @@ class Game:
         """
         owners = [sid for sid in (cdef.shikigami, cdef.shikigami2) if sid is not None]
         if not any(self._find_shikigami(p, sid) is not None for sid in owners):
-            raise IllegalAction(f"《{cdef.name}》的所属式神（{cdef.shikigami} / "
+            raise IllegalAction(f"【{cdef.name}】的所属式神（{cdef.shikigami} / "
                                 f"{cdef.shikigami2}）均未出战")
         options = list(cdef.options)
         if len(options) != 2:
-            raise IllegalAction(f"《{cdef.name}》缺少子选项数据")
+            raise IllegalAction(f"【{cdef.name}】缺少子选项数据")
         choice = cmd.get("choice")
         if choice not in (0, 1):
-            names = " / ".join(f"[{i}]《{self.db.cards[o].name}》"
+            names = " / ".join(f"[{i}]【{self.db.cards[o].name}】"
                                for i, o in enumerate(options))
             raise IllegalAction(f"协战牌需要选择子选项（choice 0/1）：{names}")
         sub = self.db.cards[options[choice]]
@@ -533,12 +544,12 @@ class Game:
             si = self._find_shikigami(p, sub.shikigami)
             sname = self.db.shikigami[sub.shikigami].name
             if si is None:
-                raise IllegalAction(f"子选项《{sub.name}》的所属式神{sname}未出战")
+                raise IllegalAction(f"子选项【{sub.name}】的所属式神{sname}未出战")
             s = p.shikigami[si]
             if s.defeated and not sub.playable_when_defeated:
-                raise IllegalAction(f"{sname} 气绝中，无法使用《{sub.name}》")
+                raise IllegalAction(f"{sname} 气绝中，无法使用【{sub.name}】")
             if s.level < sub.level:
-                raise IllegalAction(f"《{sub.name}》需要 {sname} 达到 {sub.level} 级"
+                raise IllegalAction(f"【{sub.name}】需要 {sname} 达到 {sub.level} 级"
                                     f"（当前 {s.level} 级）")
         cost = self._effective_cost(p, sub)
         if p.orb < cost:
@@ -559,7 +570,7 @@ class Game:
         inst = CardInstance(uid=self.state.next_uid, id=sub.id)
         self.state.next_uid += 1
         self.move_card(p, inst, "hand")
-        self._log(f"{p.name} 使用《{cdef.name}》：选择子选项《{sub.name}》")
+        self._log(f"{p.name} 使用【{cdef.name}】：选择子选项【{sub.name}】")
         sub_cmd: dict = {"op": "play_card", "uid": inst.uid}
         if cmd.get("target") is not None:
             sub_cmd["target"] = cmd["target"]
@@ -602,14 +613,14 @@ class Game:
             self._cmd_play_reinforce(p, card, cdef, cmd)
             return
         if cdef.card_type == "field":
-            raise IllegalAction(f"《{cdef.name}》的卡牌类型 {cdef.card_type} 尚未实现")
+            raise IllegalAction(f"【{cdef.name}】的卡牌类型 {cdef.card_type} 尚未实现")
         # 使用方式（多择子选项，仅保留核心方式、参数可变；按 id 匹配，param 为数据预留）
         method: PlayMethod | None = None
         method_id = cmd.get("play_method")
         if method_id is not None:
             method = next((m for m in cdef.methods if m.id == method_id), None)
             if method is None:
-                raise IllegalAction(f"《{cdef.name}》没有使用方式「{method_id}」")
+                raise IllegalAction(f"【{cdef.name}】没有使用方式「{method_id}」")
         # 生效的等级要求与目标（使用方式可覆盖）
         eff_level = method.level if (method and method.level is not None) else cdef.level
         eff_target = method.target if (method and method.target is not None) else cdef.target
@@ -624,7 +635,7 @@ class Game:
             if s.defeated and not self._playable_when_defeated(cdef, card):
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
             if s.level < eff_level:
-                raise IllegalAction(f"《{cdef.name}》需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
+                raise IllegalAction(f"【{cdef.name}】需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
         # 使用方式的觉醒门控（黄金羽觉醒后"以敌方角色为目标"方式：requires_awaken 数据标记）。
         # 维护者答复(11)：气绝时觉醒能力不在场——门控要求未气绝/未离场（觉醒标记本身
         # 跨气绝保留，但能力在场才生效）
@@ -661,10 +672,10 @@ class Game:
                 chosen = [want]
         if self._fast_applies(p, cdef, card):
             p.fast_used = True
-        p.orb -= cost
+        self._pay_orb(p, self.state.active, cost, reason="使用卡牌")
         self._materialize(p, card, cdef)  # 打出装配：付费后、效果结算前快照持久修饰
         how = f"（{method.text or method.id}）" if method else ""
-        self._log(f"{p.name} 使用了《{cdef.name}》{how}")
+        self._log(f"{p.name} 使用了【{cdef.name}】{how}")
         # 使用手牌前（即时时机）：合法性检查与支付之后、效果结算之前。payload 的
         # nullified 为可变标记（参照伤害管线的可变 payload 模式）——监听者（魔音扰心）
         # 置位后本次使用终止结算：跳过效果块，牌照常离手进墓地（费用/瞬发名额已付不退）
@@ -673,7 +684,7 @@ class Game:
                   nullified=marker)
         if marker["nullified"]:
             self.move_card(p, card, "graveyard")
-            self._log(f"《{cdef.name}》的使用被无效化")
+            self._log(f"【{cdef.name}】的使用被无效化")
             return
         self._affected_stack.append({"controller": self.state.active, "refs": []})
         try:
@@ -1332,7 +1343,7 @@ class Game:
         else:
             if p.orb < 1:
                 raise IllegalAction("出击需要 1 点鬼火")
-            p.orb -= 1
+            self._pay_orb(p, self.state.active, 1, reason="出击")
         p.assaults_left -= 1
         atk_ref = Ref(player=self.state.active, shikigami=i)
         self._consume_assault_boosts(p, atk_ref, s)
@@ -1439,8 +1450,8 @@ class Game:
         for kw in cdef.keywords:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._grant_keyword(s, kw)
-        self._log(f"{self.db.shikigami[s.id].name} 结附形态《{cdef.name}》")
-        self._settle(f"【形态】{self.db.shikigami[s.id].name} 结附《{cdef.name}》"
+        self._log(f"{self.db.shikigami[s.id].name} 结附形态【{cdef.name}】")
+        self._settle(f"【形态】{self.db.shikigami[s.id].name} 结附【{cdef.name}】"
                      f"（身材 {s.base_power}/{s.max_health}，生命回满）")
         pi = self.state.players.index(p)
         # form_changed：无当前形态或新旧形态不同（萤草"使用与当前形态不同的形态牌时"）
@@ -1498,8 +1509,8 @@ class Game:
         s.base_power = d.power
         s.base_health = d.health
         s.health = s.max_health
-        self._log(f"{d.name} 的形态《{cdef.name}》被消灭（原因：{reason}）")
-        self._settle(f"【形态】{d.name} 的形态《{cdef.name}》离场"
+        self._log(f"{d.name} 的形态【{cdef.name}】被消灭（原因：{reason}）")
+        self._settle(f"【形态】{d.name} 的形态【{cdef.name}】离场"
                      f"（身材回退 {s.base_power}/{s.max_health}，生命回满）")
 
     # ---------- 升级 / 结束回合 ----------
@@ -1628,12 +1639,18 @@ class Game:
         p.ext.pop("feather_used_turn", None)
         # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）；
         # 狂啸"本回合生命不降到1以下"（min_health_turn）与百鬼夜行 X 计数
-        # （damage_taken_turn，本回合所受伤害之和）同为半回合作用域，双方清除
+        # （damage_taken_turn，本回合所受伤害之和）同为半回合作用域，双方清除；
+        # scope="turn" 免疫条目（immunities {"turn": n}，不可饶恕/舍生类）按回合号比对
+        # 过期——此处同步清理过期条目，避免状态残留与显示残留
         for pl in self.state.players:
             pl.ext.pop("turn_marks", None)
+            pl.immunities[:] = [e for e in pl.immunities
+                                if "turn" not in e or e["turn"] == self.state.turn]
             for s in pl.shikigami:
                 s.ext.pop("min_health_turn", None)
                 s.ext.pop("damage_taken_turn", None)
+                s.immunities[:] = [e for e in s.immunities
+                                   if "turn" not in e or e["turn"] == self.state.turn]
         self._turn_start_revive(p, pi)
         self._turn_start_gain_orb(p, first, pi)
         pending_retreat = self._turn_start_schedule_retreat(p)
@@ -1751,7 +1768,7 @@ class Game:
                                         s.countdown_initial, s.countdown_source)
         if block is not None and block.steps:
             card = s.form if (s.form is not None and s.form.id == source) else None
-            cname = f"（《{self.db.cards[card.id].name}》）" if card is not None else ""
+            cname = f"（【{self.db.cards[card.id].name}】）" if card is not None else ""
             self._settle(f"【倒计时】{self.db.shikigami[s.id].name} 的倒计时归零，效果生效{cname}")
             self._resolve_block(block, ExecContext(
                 controller=pi, source=Ref(player=pi, shikigami=si), card=card,
@@ -2211,9 +2228,11 @@ class Game:
         """治疗（恢复生命）事件流程（thoughts.txt；要素：来源、执行者、治疗量、原因）。
 
         治疗前（即时 on_before_heal）→ 治疗量 = min(治疗量, 执行者已损失生命) →
-        增加生命 → 治疗量为 0 终止 → 治疗时 on_heal / 治疗后 on_after_heal（均延时）。
+        增加生命 → 治疗时 on_heal（延时，实际恢复为 0 也触发）→
+        治疗后 on_after_heal（延时，仅实际恢复 > 0 才触发）。
         on_heal/on_after_heal 的 payload 带 overheal = max(0, 治疗量 - 实际治疗量)
-        （海坊主"过量治疗转化"）；实际恢复 > 0 才发出（满血治疗不触发任何治疗时/后事件）。
+        （海坊主"过量治疗转化"：满血治疗 overheal = 全额，照常转化）。
+        "恢复生命时"类能力（青坊主/禅心）挂 on_after_heal——仅实际恢复触发。
         濒死/气绝（未在场）的式神与气绝的牌手不受治疗（早退，不产生任何事件）。
         法界唯心（形态 tags 含 heal_reversal）：其控制者对敌方的恢复生命效果改为
         等额伤害效果——直接走伤害管线，不发出任何治疗事件（伤害事件照常）。
@@ -2242,7 +2261,9 @@ class Game:
                          f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
             # 不写 _log 孪生行：归 settle 通道，避免双通道重复
         if healed <= 0:
-            return  # 治疗量为 0：终止结算
+            self.emit("on_heal", target=ref, amount=0, overheal=overheal,
+                      source=source, reason=reason)
+            return  # 实际恢复为 0：治疗时仍触发，治疗后不触发
         self.emit("on_heal", target=ref, amount=healed, overheal=overheal,
                   source=source, reason=reason)
         self.emit("on_after_heal", target=ref, amount=healed, overheal=overheal,
@@ -2525,13 +2546,13 @@ class Game:
         if (cdef.card_type == "combat" and si is not None
                 and p.combat_index is not None and p.combat_index != si
                 and self._combat_zone_locked(ctx.controller)):
-            self._log(f"{p.name} 的响应牌《{cdef.name}》受尘缚之阵锁定，未能触发")
+            self._log(f"{p.name} 的响应牌【{cdef.name}】受尘缚之阵锁定，未能触发")
             return True
         cost = self._effective_cost(p, cdef, card=ctx.card)
         if p.orb < cost:
-            self._log(f"{p.name} 鬼火不足，响应牌《{cdef.name}》未能触发")
+            self._log(f"{p.name} 鬼火不足，响应牌【{cdef.name}】未能触发")
             return True
-        p.orb -= cost
+        self._pay_orb(p, ctx.controller, cost, reason="响应使用")
         if self._fast_applies(p, cdef, ctx.card):
             p.fast_used = True
         # choose 目标的响应牌：自动选择事件中的被攻击者（rules.md:36"执行效果时选择目标"；
@@ -2541,7 +2562,7 @@ class Game:
             if isinstance(v, Ref) and v in targets.pool_refs(self, cdef.target.pool, ctx.controller):
                 ctx.chosen = [v]
         self._response_used_emit = emit_id  # 成功结算才占用本时机的响应名额
-        self._log(f"{p.name} 的响应牌《{cdef.name}》触发")
+        self._log(f"{p.name} 的响应牌【{cdef.name}】触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
         if cdef.card_type == "combat" and si is not None:
             if not self._battle_stack:
@@ -2680,9 +2701,12 @@ class Game:
 
     def _log(self, msg: str) -> None:
         self.state.log.append(msg)
+        self.state.timeline.append({"k": "l", "m": msg})
 
     def _settle(self, msg: str) -> None:
         """结算明细记录（GameState.settle_log）：等级/力量/战力/生命/护甲/破甲变化与
         各事件开始结束。纯记录不打印——CLI 在空闲点取增量逐条展示（client/cli.py）。
-        数值类事件只记本通道、不再写 _log 孪生行（避免联机端双通道同屏重复）。"""
+        数值类事件只记本通道、不再写 _log 孪生行（避免联机端双通道同屏重复）。
+        两通道同步记入 timeline 合流（结算播放按真实发生顺序）。"""
         self.state.settle_log.append(msg)
+        self.state.timeline.append({"k": "s", "m": msg})

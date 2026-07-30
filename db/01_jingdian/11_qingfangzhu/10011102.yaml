@@ -11,8 +11,9 @@ form_health: 6
 effects:
   steps: []
 abilities:
-  # 每回合一次（turn_mark 门控）；"你恢复生命时" = 己方任意角色实际恢复
-  - when: on_heal
+  # 每回合一次（turn_mark 门控）；"你恢复生命时" = 己方任意角色实际恢复——
+  # 挂治疗后 on_after_heal（仅实际恢复 > 0 触发）
+  - when: on_after_heal
     condition: {target_side: friendly, turn_mark_not: zenxin}
     steps:
       - {op: turn_mark, key: zenxin}

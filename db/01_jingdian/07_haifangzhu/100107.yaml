@@ -5,8 +5,8 @@ faction: 青岚
 power: 2
 health: 6
 ability:
-  # 过量治疗转化：on_heal 仅在实际恢复 > 0 时发出（满血治疗不触发，维护者答复 0）；
-  # overheal = 治疗量 - 实际治疗量（payload 字段，engine.heal 计算）
+  # 过量治疗转化：on_heal（治疗时）在实际恢复为 0 时也触发（第十阶段维护者答复），
+  # 满血治疗 overheal = 全额 → 全额转护甲；overheal = 治疗量 - 实际治疗量（payload 字段）
   when: on_heal
   condition: {source_shikigami: self, target_side: friendly, overheal_ge: 1}
   steps:

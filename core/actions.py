@@ -442,7 +442,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             inst = CardInstance(uid=game.state.next_uid, id=int(card_id))
             game.state.next_uid += 1
             game.move_card(p, inst, zone)
-            game._log(f"生成了《{game.db.cards[int(card_id)].name}》")
+            game._log(f"生成了【{game.db.cards[int(card_id)].name}】")
         return
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -482,7 +482,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         inst = CardInstance(uid=game.state.next_uid, id=cid)
         game.state.next_uid += 1
         game.move_card(p, inst, zone)
-        game._log(f"生成了《{game.db.cards[cid].name}》")
+        game._log(f"生成了【{game.db.cards[cid].name}】")
 
 
 @action("random_damage")
@@ -716,7 +716,7 @@ def random_enhance(game, ctx, *, targets: list[Ref], card_id: int,
             if k not in ("key", "min", "keywords_add", "form_power_delta",
                          "form_health_delta"):
                 c.mods[k] = v
-        game._log(f"《{game.db.cards[c.id].name}》获得了强化（{t['key']}）")
+        game._log(f"【{game.db.cards[c.id].name}】获得了强化（{t['key']}）")
 
 
 @action("random_aura")
@@ -890,7 +890,7 @@ def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "s
             continue
         seen.add(src)
         cname = game.db.cards[ctx.card.id].name if ctx.card is not None else "效果"
-        game._log(f"《{cname}》重放了{game.db.shikigami[sid].name}的倒计时效果（来源 {src}）")
+        game._log(f"【{cname}】重放了{game.db.shikigami[sid].name}的倒计时效果（来源 {src}）")
         game._resolve_block(block, ExecContext(
             controller=ctx.controller, source=ctx.source, card=ctx.card))
 
@@ -914,7 +914,7 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     cdef = game.db.cards[cid]
     inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进入任何区域
     game.state.next_uid += 1
-    game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了《{cdef.name}》")
+    game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
@@ -983,7 +983,7 @@ def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
         pool = targets_mod.pool_refs(game, cdef.target.pool, ctx.controller, targeted=True)
         if pool:
             chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选择
-    game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了《{cdef.name}》")
+    game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
@@ -1054,7 +1054,7 @@ def trigger_form_enter(game, ctx, *, targets: list[Ref],
         return  # 未结附形态：空操作
     cdef = game.db.cards[s.form.id]
     if cdef.effects.steps and cdef.effects.when == "on_play":
-        game._log(f"触发了{game.db.shikigami[s.id].name}当前形态《{cdef.name}》的进场效果")
+        game._log(f"触发了{game.db.shikigami[s.id].name}当前形态【{cdef.name}】的进场效果")
         game._resolve_block(cdef.effects, ExecContext(
             controller=ctx.controller,
             source=Ref(player=ctx.controller, shikigami=si), card=s.form))
@@ -1101,7 +1101,7 @@ def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     if count is not None:
         pool = pool[:count]
     for c in pool:
-        game._log(f"{p.name} 弃掉了《{game.db.cards[c.id].name}》")
+        game._log(f"{p.name} 弃掉了【{game.db.cards[c.id].name}】")
         game.move_card(p, c, "graveyard")
     if ctx.memo is not None:
         ctx.memo["discarded_count"] = len(pool)
@@ -1270,14 +1270,15 @@ def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
            steps: list, clear_orb: bool = False) -> None:
     """重复执行一组子步骤（吸魂灯"你每有 1 点鬼火便重复一次"；targets 忽略）。
 
-    count 为整数或 {"orb": true}（= 控制者当前鬼火数）；子步骤在同一块上下文
-    （共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复结束后清空控制者鬼火
-    （"清空你的鬼火"——维护者答复：0 鬼火 = 无重复效果，但清空仍执行）。
+    count 为整数或 {"orb": true}（= 1 + 效果结算时控制者剩余鬼火：基础 1 次 +
+    每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——第十阶段维护者答复）；子步骤在
+    同一块上下文（共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复结束后一次性
+    清空控制者鬼火（2→0 不经过 1）。
     """
     from db.schema import Step
     p = game.state.players[ctx.controller]
     if isinstance(count, dict):
-        n = p.orb if count.get("orb") else int(count.get("base", 0))
+        n = 1 + p.orb if count.get("orb") else int(count.get("base", 0))
     else:
         n = int(count)
     sub = [Step.model_validate(st) for st in steps]
@@ -1294,12 +1295,13 @@ def deck_top_pick(game, ctx, *, targets: list[Ref], count: int = 3,
     """检视牌库顶 count 张牌，选一张置入手牌，然后洗牌库；重复 times 次（青灯夜谈；
     targets 忽略）。通过 pending_choice 挂起等 choose 指令作答（见 Game._cmd_choose）。
 
-    times 为整数或 {"orb": true}（= 控制者当前鬼火数）。0 鬼火/牌库无可检视牌 =
-    无效果不挂起；clear_orb=True 的清空仍执行（维护者答复；挂起时延后到末次选择后）。
+    times 为整数或 {"orb": true}（= 1 + 效果结算时控制者剩余鬼火，0 火仍执行基础
+    1 次——第十阶段维护者答复）。牌库无可检视牌 = 不挂起；clear_orb=True 的清空仍
+    执行（挂起时延后到末次选择后）。
     """
     p = game.state.players[ctx.controller]
     if isinstance(times, dict):
-        n = p.orb if times.get("orb") else int(times.get("base", 1))
+        n = 1 + p.orb if times.get("orb") else int(times.get("base", 1))
     else:
         n = int(times)
     if not game._open_deck_top_pick(ctx.controller, int(count), n, clear_orb):
@@ -1316,6 +1318,17 @@ def consume_orb(game, ctx, *, targets: list[Ref], amount: int = 1) -> None:
     if p.orb != old:
         game.emit("on_orb_changed", player=ctx.controller, old=old, new=p.orb,
                   reason="consume_orb")
+
+
+@action("clear_orb")
+def clear_orb(game, ctx, *, targets: list[Ref], side: str = "self") -> None:
+    """一次性清空一方鬼火（月食类响应"清空敌方的鬼火"；targets 忽略）。
+
+    一次性变化：如 2→0 不经过 1，不触发"鬼火变为 1"类条件（on_orb_changed
+    old→new 单事件）。side="self"（默认，控制者）/ "opponent"（对方）。
+    """
+    pi = ctx.controller if side == "self" else 1 - ctx.controller
+    game._clear_orb(game.state.players[pi], pi)
 
 
 @action("set_health")

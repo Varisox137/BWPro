@@ -346,10 +346,10 @@ def test_awaken_replace_and_initial_one(real_game):
 # ==========================================================================
 # 妖琴师（100124）（原 test_yaqinshi.py）
 #
-# 覆盖：基础倒计时治疗、三觉醒替换+同次出牌 -3 立即归零（A2 路径）、大合奏按
-# countdown_history 首次出现顺序重放（replay_countdown + _countdown_block_for）、
-# 魔音扰心无效化（主动 delay_grant / 响应 response 覆盖块两路径）、惊弦/疯魔琴心/余音
-# 的 countdown_delta（含无倒计时修正 -0）、镇魂歌抽牌+鬼火。
+# 覆盖：基础倒计时治疗、三觉醒替换+"觉醒前"旧能力倒计时 -3 再完成替换（on_before_awaken，
+# 第十阶段维护者答复）、大合奏按 countdown_history 首次出现顺序重放（replay_countdown +
+# _countdown_block_for）、魔音扰心无效化（主动 delay_grant / 响应 response 覆盖块两路径）、
+# 惊弦/疯魔琴心/余音的 countdown_delta（含无倒计时修正 -0）、镇魂歌抽牌+鬼火。
 # 队伍固定 [妖琴师, 鸩, 以津真天, 妖刀姬]，妖琴师 0 号位开局自动 1 级（静态倒计时开局
 # 注册 3、对局开始批次已 -1，故开局 countdown == 2）。
 # ==========================================================================
@@ -393,70 +393,88 @@ def test_base_countdown_heals(real_game):
     assert pa.ext["countdown_history"] == [YQS]
 
 
-# ---------- 法术觉醒：替换 + 同次 -3 立即归零（三张不同卡牌用例） ----------
+# ---------- 法术觉醒："觉醒前"旧能力倒计时 -3，再完成替换（三张不同卡牌用例） ----------
 
-def test_awaken_spell_immediate_countdown_zero(real_game):
-    """法术觉醒牌共用流程（觉醒·入阵歌/神乐歌/镇魂歌）：永久身材修正 + 觉醒替换注册
-    倒计时 3（来源=觉醒牌 id）→ 同次出牌触发 -3 至 0 立即归零执行归零效果并循环重置。"""
-    # 入阵歌：+0/+1 永久；归零 5 伤随机分配给所有敌方角色
+def test_awaken_countdown_minus_before_replacement(real_game):
+    """法术觉醒牌共用流程（觉醒·入阵歌/神乐歌/镇魂歌；第十阶段维护者答复）：
+    永久身材修正 + 觉醒替换注册倒计时 3（来源=觉醒牌 id）；同名触发挂"觉醒前"
+    （on_before_awaken，能力替换前）——对被替换掉的旧能力倒计时 -3，归零则先结算
+    旧倒计时效果，再完成替换（新注册倒计时不受本次 -3 影响）。"""
+    # 入阵歌：+0/+1 永久；旧能力（基础）倒计时 -3 → 归零治疗（不触发入阵歌的 5 伤）
     g, pa, pb = _game(real_game, YQS_TEAM)
     s = pa.shikigami[IDX]
+    pa.health = 20
     enemy_total = sum(x.health for x in pb.shikigami) + pb.health
     play(g, 0, RUZHENG)
+    assert pa.health == 23                    # 旧能力（基础）归零：治疗 3
     assert s.awakened == RUZHENG
     assert s.perm_health == 1
-    assert s.countdown == 3 and s.countdown_source == RUZHENG   # 归零后循环重置
-    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 5
-    assert pa.ext["countdown_history"] == [RUZHENG]
-    # 神乐歌：+1/+0 永久；归零己方其他在场式神倒计时 -1 并获得 1 力量与 1 生命（临时）
+    assert s.countdown == 3 and s.countdown_source == RUZHENG   # 新倒计时注册 3，不受 -3
+    assert enemy_total == sum(x.health for x in pb.shikigami) + pb.health  # 无 5 伤
+    assert pa.ext["countdown_history"] == [YQS]
+    # 神乐歌：+1/+0 永久；旧能力归零治疗，己方其他式神倒计时/增益不变（神乐歌不归零）
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
     _register_allied_countdowns(g)            # 鸩/以津真天倒计时均为 2
     s = pa.shikigami[IDX]
     play(g, 0, SHENYUE)
     assert s.awakened == SHENYUE and s.perm_power == 1
     zhen, yjzt = pa.shikigami[1], pa.shikigami[2]
-    assert zhen.countdown == 1 and yjzt.countdown == 1          # 倒计时 -1
-    assert zhen.temp_power == 1 and zhen.temp_health == 1
-    assert zhen.health == 6                   # 5 + 1（临时上限同步增加）
-    assert yjzt.temp_power == 1 and yjzt.health == 6
+    assert zhen.countdown == 2 and yjzt.countdown == 2          # 不变（神乐歌未归零）
+    assert zhen.temp_power == 0 and zhen.temp_health == 0
     assert s.countdown == 3 and s.countdown_source == SHENYUE
-    assert pa.ext["countdown_history"] == [SHENYUE]
-    # 镇魂歌：+1/+1 永久；归零抽一张牌、获得 1 点鬼火
+    assert pa.ext["countdown_history"] == [YQS]
+    # 镇魂歌：+1/+1 永久；旧能力归零治疗，不抽牌不得火（镇魂歌未归零）
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
     s = pa.shikigami[IDX]
     hand_before = len(pa.hand)
-    play(g, 0, ZHENHUN)                       # 1 火；归零 +1 火
+    play(g, 0, ZHENHUN)                       # 1 火
     assert s.awakened == ZHENHUN
     assert s.perm_power == 1 and s.perm_health == 1
-    assert pa.orb == 9                        # 9 - 1 + 1
-    assert len(pa.hand) == hand_before + 1    # give+打出抵消，归零抽 1
+    assert pa.orb == 8                        # 9 - 1（镇魂歌未归零，无 +1 火）
+    assert len(pa.hand) == hand_before        # 不抽牌
     assert s.countdown == 3 and s.countdown_source == ZHENHUN
-    assert pa.ext["countdown_history"] == [ZHENHUN]
+    assert pa.ext["countdown_history"] == [YQS]
+    # 二次觉醒：旧能力 = 上一个觉醒能力——入阵歌先觉醒，再打镇魂歌时入阵歌倒计时
+    # -3 归零（5 伤生效）后才替换为镇魂歌
+    g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
+    s = pa.shikigami[IDX]
+    play(g, 0, RUZHENG)                       # 基础归零治疗，替换为入阵歌
+    assert pa.ext["countdown_history"] == [YQS]
+    enemy_total = sum(x.health for x in pb.shikigami) + pb.health
+    play(g, 0, ZHENHUN)                       # 觉醒前：入阵歌倒计时 -3 → 归零 5 伤
+    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 5
+    assert s.awakened == ZHENHUN
+    assert s.countdown == 3 and s.countdown_source == ZHENHUN
+    assert pa.ext["countdown_history"] == [YQS, RUZHENG]
 
 
 # ---------- 03 大合奏：按 history 首次出现顺序重放 ----------
 
 def test_dahezou_replays_in_history_order(real_game):
-    """大合奏：基础（先归零）→ 入阵歌 → 镇魂歌的生效顺序依次重放，每种至多一次。"""
+    """大合奏：按 history 首次出现顺序依次重放，每种至多一次（第十阶段新语义：
+    觉醒前旧能力 -3——入阵歌在镇魂歌觉醒前被归零计入 history，镇魂歌自身未归零）。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
     pa.health = 20
     pass_turns(g, 4)                          # 基础归零：pa 20→23，history [100124]
     assert pa.ext["countdown_history"] == [YQS]
     pa.orb = 9                                # 回合开始已重置鬼火：重设便于核算
     enemy_total = sum(x.health for x in pb.shikigami) + pb.health
-    play(g, 0, RUZHENG)                       # 立即归零：敌方合计 -5
-    play(g, 0, ZHENHUN)                       # 立即归零：抽 1 + 1 火（orb 9-2+1=8）
-    assert pa.ext["countdown_history"] == [YQS, RUZHENG, ZHENHUN]
+    play(g, 0, RUZHENG)                       # 觉醒前：基础归零治疗 23→26（history 追加 YQS）
+    play(g, 0, ZHENHUN)                       # 觉醒前：入阵歌归零 5 伤（history 追加 RUZHENG）
+    assert pa.ext["countdown_history"] == [YQS, YQS, RUZHENG]
+    assert pa.health == 26
+    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 5
+    assert pa.orb == 7                        # 9 - 2（镇魂歌未归零，无 +1 火）
     log_before = len(g.state.log)
     play(g, 0, DAHEZOU)                       # 瞬发免费
-    # 依次重放：基础治疗（23→26）、入阵歌（敌方再 -5）、镇魂歌（抽 1、+1 火）
-    assert pa.health == 26
+    # 依次重放：基础治疗（26→29）、入阵歌（敌方再 -5）；镇魂歌不在 history 不重放
+    assert pa.health == 29
     assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 10
-    assert pa.orb == 9                        # 8 + 1（重放镇魂歌）
+    assert pa.orb == 7
     replay_logs = [m for m in g.state.log[log_before:] if "重放" in m]
     ids = [next(sid for sid in (YQS, RUZHENG, ZHENHUN) if f"来源 {sid}）" in m)
            for m in replay_logs]
-    assert ids == [YQS, RUZHENG, ZHENHUN]     # 按 history 首次出现顺序，每种至多一次
+    assert ids == [YQS, RUZHENG]              # 按 history 首次出现顺序，每种至多一次
 
 
 def test_dahezou_skips_form_sources(real_game, gdb):
@@ -672,6 +690,9 @@ def test_turn_scoped_immunity_grant(real_game):
     entries = [e for e in pa.shikigami[IDX].immunities
                if e.get("kind") == "combat_damage"]
     assert len(entries) == 1
+    # turn 级条目在下一半回合开始由状态层清理（显示残留修复：对手回合场况不再显示"免疫"）
+    pass_turns(g, 1)
+    assert not [e for e in pa.shikigami[IDX].immunities if "turn" in e]
 
 
 # ---------- 05 射怪鸟事：气绝前响应弃抽 ----------

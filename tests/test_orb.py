@@ -1,9 +1,12 @@
 """鬼火主题测试：储存（觉醒 orb_store 标记）/ 回合结束得火 / 消耗（consume_orb）/
 清空重复（repeat）/ 结算中交互选择（pending_choice 检视选牌续结算）/
-形态返场（consume_orb + revive + reattach_form）/ 精确弃牌与等级提升（百闻一得）。
+形态返场（consume_orb + revive + reattach_form）/ 精确弃牌与等级提升（百闻一得）/
+鬼火变化事件与响应通道（on_orb_changed old→new，月食类合成卡）。
 
-对应 thoughts.txt 答复：0 鬼火 = 无效果但清空仍执行；返场同一实例不生成新牌；
-鬼火储存封顶 4 点；百闻一得并列由使用者选择。0 号位（100101）为持卡式神。
+对应维护者答复（第十阶段）：「每有1点鬼火便重复一次」总次数 = 1 + 效果结算时
+剩余鬼火（0 火仍执行基础 1 次），随后一次性清空（2→0 不经过 1）；鬼火变化逐个
+发事件（old→new），付费点先于效果结算。返场同一实例不生成新牌；鬼火储存封顶 4 点；
+百闻一得并列由使用者选择。0 号位（100101）为持卡式神。
 """
 import pytest
 
@@ -78,8 +81,8 @@ def test_orb_gain_on_turn_end_form(make_game, db):
 # ---------- 清空重复（吸魂灯 repeat） ----------
 
 def test_repeat_per_orb_and_clear(make_game, db):
-    """按鬼火重复并清空（吸魂灯）：重复次数 = 付费后当前鬼火；投射目标每次独立求值；
-    结束后清空鬼火。0 鬼火 = 无效果，清空仍执行（答复 4）。"""
+    """按鬼火重复并清空（吸魂灯）：重复次数 = 1 + 付费后剩余鬼火（基础 1 次 + 每点
+    剩余鬼火重复 1 次）；投射目标每次独立求值；结束后一次性清空鬼火。"""
     db.cards[REPEAT_SPELL] = F.card(
         REPEAT_SPELL, shikigami=SID, level=3, token=True,
         steps=[F.Step(op="repeat", count={"orb": True}, clear_orb=True,
@@ -89,14 +92,14 @@ def test_repeat_per_orb_and_clear(make_game, db):
     pa.shikigami[IDX].level = 3
     pa.orb = 3
     g.apply({"op": "play_card", "uid": give(g, 0, REPEAT_SPELL).uid})
-    assert pb.health == 30 - 2 * 5   # 付费后 2 火 → 重复 2 次（战斗区空 → 敌方牌手）
+    assert pb.health == 30 - 3 * 5   # 付费后 2 火 → 1+2=3 次（战斗区空 → 敌方牌手）
     assert pa.orb == 0               # 清空
-    # 0 鬼火：无伤害，清空仍执行
+    # 0 剩余鬼火：仍执行基础 1 次，清空仍执行
     g2, pa2, pb2 = _game(make_game)
     pa2.shikigami[IDX].level = 3
     pa2.orb = 1
     g2.apply({"op": "play_card", "uid": give(g2, 0, REPEAT_SPELL).uid})
-    assert pb2.health == 30
+    assert pb2.health == 30 - 5      # 1+0=1 次
     assert pa2.orb == 0
 
 
@@ -104,7 +107,7 @@ def test_repeat_per_orb_and_clear(make_game, db):
 
 def test_deck_top_pick_suspend_resume(make_game, db):
     """检视选牌（青灯夜谈）：pending_choice 挂起期间只接受 choose 指令；每次选择
-    置入手牌后洗牌库，重复次数耗尽后清空鬼火并续跑挂起块。"""
+    置入手牌后洗牌库，重复次数（1 + 付费后剩余鬼火）耗尽后清空鬼火并续跑挂起块。"""
     db.cards[PICK_SPELL] = F.card(
         PICK_SPELL, shikigami=SID, level=1, token=True,
         steps=[F.Step(op="deck_top_pick", count=3, times={"orb": True},
@@ -115,26 +118,29 @@ def test_deck_top_pick_suspend_resume(make_game, db):
     g.apply({"op": "play_card", "uid": give(g, 0, PICK_SPELL).uid})
     pend = g.state.pending_choice
     assert pend is not None and pend["kind"] == "deck_top_pick"
-    assert pend["player"] == 0 and pend["remaining"] == 2   # 付费后 2 火 → 2 次
+    assert pend["player"] == 0 and pend["remaining"] == 3   # 付费后 2 火 → 1+2=3 次
     assert pend["options"] == [c.uid for c in pa.deck[:3]]  # 牌库顶 3 张
     with pytest.raises(IllegalAction):
         g.apply({"op": "end_turn"})                          # 挂起期间非 choose 指令拒绝
-    uid1 = pend["options"][0]
-    g.apply({"op": "choose", "uid": uid1, "player": 0})
-    assert any(c.uid == uid1 for c in pa.hand)               # 入手
-    pend2 = g.state.pending_choice
-    assert pend2 is not None and pend2["remaining"] == 1     # 洗牌后第二次检视
-    uid2 = pend2["options"][0]
-    g.apply({"op": "choose", "uid": uid2, "player": 0})
+    for left in (2, 1, 0):
+        pend = g.state.pending_choice
+        assert pend is not None and pend["remaining"] == left + 1
+        uid = pend["options"][0]
+        g.apply({"op": "choose", "uid": uid, "player": 0})
+        assert any(c.uid == uid for c in pa.hand)            # 入手
     assert g.state.pending_choice is None                    # 次数耗尽 → 续块完毕
-    assert any(c.uid == uid2 for c in pa.hand)
-    assert len(pa.hand) == hand_before + 2
+    assert len(pa.hand) == hand_before + 3
     assert pa.orb == 0                                       # 清空鬼火
-    # 0 鬼火：不挂起、无效果，清空仍执行
+    # 0 剩余鬼火：仍执行基础 1 次（挂起一次），选择后清空
     g2, pa2, _ = _game(make_game)
     pa2.orb = 1
+    hand2 = len(pa2.hand)
     g2.apply({"op": "play_card", "uid": give(g2, 0, PICK_SPELL).uid})
+    pend = g2.state.pending_choice
+    assert pend is not None and pend["remaining"] == 1
+    g2.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
     assert g2.state.pending_choice is None
+    assert len(pa2.hand) == hand2 + 1
     assert pa2.orb == 0
 
 
@@ -229,3 +235,80 @@ def test_level_up_lowest_pool_and_overflow(make_game, db):
     g.apply({"op": "play_card", "uid": give(g, 0, LEVEL_SPELL).uid,
              "target": Ref(player=0, shikigami=2).model_dump()})
     assert pa.shikigami[2].level == 3
+
+
+# ---------- 鬼火变化事件与响应通道（月食类合成卡；月食本身不入数据） ----------
+
+ECLIPSE = 10010167            # 假月食：敌方鬼火变为 1 时响应清空敌方鬼火
+
+
+def _eclipse(db):
+    db.cards[ECLIPSE] = F.card(
+        ECLIPSE, shikigami=100102, cost=0, level=1, keywords=["trigger"], token=True,
+        when="on_orb_changed",
+        block_kw={"condition": {"player": "opponent", "new": 1}},
+        steps=[F.Step(op="clear_orb", side="opponent")])
+    return ECLIPSE
+
+
+def test_orb_becomes_one_response_clears_before_effect(make_game, db):
+    """鬼火变为 1 响应（维护者示例 1）：2 火用青灯夜谈 → 付费 1 火后鬼火 2→1 →
+    敌方响应插入清空为 0 → 效果按结算时剩余鬼火执行 1+0=1 次。"""
+    db.cards[PICK_SPELL] = F.card(
+        PICK_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="deck_top_pick", count=3, times={"orb": True},
+                      clear_orb=True)])
+    _eclipse(db)
+    g, pa, pb = _game(make_game)
+    pa.orb = 2
+    pb.shikigami[1].level = 1
+    give(g, 1, ECLIPSE)                  # pb 持响应；pa 为回合方
+    g.apply({"op": "play_card", "uid": give(g, 0, PICK_SPELL).uid})
+    assert pa.orb == 0                   # 响应已清空（付费后效果前）
+    assert any(c.id == ECLIPSE for c in pb.graveyard)   # 响应牌已用掉
+    pend = g.state.pending_choice
+    assert pend is not None and pend["remaining"] == 1  # 1+0=1 次
+    g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
+    assert g.state.pending_choice is None
+
+
+def test_orb_clear_is_single_change_skips_one(make_game, db):
+    """清空是一次性变化（维护者示例 2）：3 火用青灯夜谈 → 付费后 2 火（3→2 不触发
+    变为 1 响应）→ 效果执行 1+2=3 次 → 清空 2→0 不经过 1、仍不触发——响应留手。"""
+    db.cards[PICK_SPELL] = F.card(
+        PICK_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="deck_top_pick", count=3, times={"orb": True},
+                      clear_orb=True)])
+    _eclipse(db)
+    g, pa, pb = _game(make_game)
+    pa.orb = 3
+    pb.shikigami[1].level = 1
+    give(g, 1, ECLIPSE)
+    hand_before = len(pa.hand)
+    g.apply({"op": "play_card", "uid": give(g, 0, PICK_SPELL).uid})
+    for _ in range(3):                   # 1+2=3 次检视选择
+        pend = g.state.pending_choice
+        assert pend is not None
+        g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
+    assert g.state.pending_choice is None
+    assert len(pa.hand) == hand_before + 3
+    assert pa.orb == 0                   # 已清空（2→0 一次性）
+    assert any(c.id == ECLIPSE for c in pb.hand)        # 全程未触发，留手
+
+
+def test_orb_payment_emits_change_event(make_game, db):
+    """鬼火变化逐个发事件：使用牌付费（2→1）与出击付费均 emit on_orb_changed。"""
+    db.cards[PICK_SPELL] = F.card(
+        PICK_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="deck_top_pick", count=3, times=1)])
+    g, pa, pb = _game(make_game)
+    pa.orb = 2
+    n = len(g.history)
+    g.apply({"op": "play_card", "uid": give(g, 0, PICK_SPELL).uid})
+    assert "on_orb_changed" in g.history[n:]
+    g.apply({"op": "choose", "uid": g.state.pending_choice["options"][0], "player": 0})
+    n = len(g.history)
+    pa.orb = 1
+    pa.shikigami[IDX].level = 1
+    g.apply({"op": "assault", "index": IDX})
+    assert "on_orb_changed" in g.history[n:]
