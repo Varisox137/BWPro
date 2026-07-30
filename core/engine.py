@@ -1678,7 +1678,6 @@ class Game:
         if block is not None and block.steps:
             card = s.form if (s.form is not None and s.form.id == source) else None
             cname = f"（《{self.db.cards[card.id].name}》）" if card is not None else ""
-            self._log(f"{self.db.shikigami[s.id].name} 的倒计时效果生效{cname}")
             self._settle(f"【倒计时】{self.db.shikigami[s.id].name} 的倒计时归零，效果生效{cname}")
             self._resolve_block(block, ExecContext(
                 controller=pi, source=Ref(player=pi, shikigami=si), card=card,
@@ -1953,7 +1952,7 @@ class Game:
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
                          f"（生命 {s.health + ev.amount}→{s.health}）")
-            self._log(f"{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害（剩余生命 {s.health}）")
+            # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
@@ -1978,7 +1977,6 @@ class Game:
             p.health -= ev.amount
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
-            self._log(f"{p.name} 受到 {ev.amount} 点伤害（剩余生命 {p.health}）")
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind)
@@ -2084,7 +2082,7 @@ class Game:
                 owner.combat_index = None  # 气绝者移动至准备区
             s.revive_countdown = self.config.revive_countdown
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
-            self._log(f"{name} 气绝")
+            # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
                   in_combat=in_combat, summon=(s.kind == "summon"),
                   battle=self._battle_stack[-1] if self._battle_stack else None)
@@ -2122,7 +2120,7 @@ class Game:
             holder.health += healed
             self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
                          f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
-            self._log(f"{self.db.shikigami[s.id].name if s is not None else p.name} 恢复了 {healed} 点生命")
+            # 不写 _log 孪生行：归 settle 通道，避免双通道重复
         if healed <= 0:
             return  # 治疗量为 0：终止结算
         self.emit("on_heal", target=ref, amount=healed, source=source, reason=reason)
@@ -2547,5 +2545,6 @@ class Game:
 
     def _settle(self, msg: str) -> None:
         """结算明细记录（GameState.settle_log）：等级/力量/战力/生命/护甲/破甲变化与
-        各事件开始结束。纯记录不打印——CLI 在空闲点取增量逐条展示（client/cli.py）。"""
+        各事件开始结束。纯记录不打印——CLI 在空闲点取增量逐条展示（client/cli.py）。
+        数值类事件只记本通道、不再写 _log 孪生行（避免联机端双通道同屏重复）。"""
         self.state.settle_log.append(msg)

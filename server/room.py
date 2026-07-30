@@ -233,6 +233,15 @@ class Room:
             await self._broadcast(protocol.game_over(st.winner, "player_defeated"))
             self._cancel_timer()
 
+    async def resync(self, conn: Connection) -> None:
+        """断线重连后的全量补发（仅发给该连接，不动广播游标）：
+        断线期间的广播游标照常前进，重连者错过的日志按全量 state.log 补发；
+        结算明细历史不补（回放节奏打扰），以最新完整 state 场况为准。"""
+        st = self.game.state
+        base = st.model_dump(mode="json")
+        viewer = self.seat_to_player[conn.seat]
+        await conn.send(protocol.state(sanitize_state(base, viewer), list(st.log)))
+
     # ---------- 计时器 ----------
 
     def current_timer_key(self) -> tuple | None:

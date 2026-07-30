@@ -35,7 +35,8 @@ HELP = """指令（括号内为 alias，序号从 1 开始）：
   debug (d) <子命令> [参数...]          调试命令（见 debug help）
   help (h) / quit (q)
 
-目标代码：e=敌方 f=己方；e0=敌方 0 号式神，f1=己方 1 号式神，ep=敌方牌手，fp=己方牌手
+目标代码：e=敌方 f=己方；0=牌手，1-4=座次式神，5=召唤物（如有）
+         （如 e0=敌方牌手，f2=己方 2 号位式神；与场况左侧 [] 内座次编号一致）
 
 座次颜色：1=黄 2=青 3=紫 4=红（己方场上式神名与手牌卡牌名按座次着色；
 管道输出或 NO_COLOR 环境变量时自动关闭）
@@ -64,6 +65,7 @@ DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
   draw <player> [count=1]                              强制抽牌
   set_turn [active] [turn]                             设置当前回合方/半回合数
 
+  target 代码同 HELP 目标代码（0=牌手，1-4=座次式神，5=召唤物；e=敌方 f=己方）
   key 示例：health, orb, shield, level, defeated, despawned
   value 为 bool 时：true/false
   keyword 示例：combo, initiative, piercing, pierce, remote, unyielding, haste, barrier
@@ -74,12 +76,31 @@ DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
 
 SETTLE_INTERVAL = float(os.environ.get("BWP_SETTLE_INTERVAL", "0.4"))  # 每条明细的打印间隔（秒）
 
+_SETTLE_OPEN = ("—— 战斗开始", "—— 伤害结算开始")
+
+
+def format_settle_lines(lines: list[str]) -> list[str]:
+    """结算明细排版：嵌套块（战斗/伤害结算的开始-结束）按层级缩进两个空格，
+    结束行与对应开始行同级。阶段分隔行（—— 回合开始/结束阶段 ——）不缩进、
+    不计层级。热坐 drain_settle 与联机 state.settle 共用，保证两端格式一致。"""
+    out: list[str] = []
+    depth = 0
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("—— 战斗结束") or stripped.startswith("—— 伤害结算结束"):
+            depth = max(0, depth - 1)
+        out.append("  " * depth + stripped if depth else stripped)
+        if any(stripped.startswith(p) for p in _SETTLE_OPEN):
+            depth += 1
+    return out
+
 
 def drain_settle(game: Game, seen: int, interval: float | None = None) -> int:
     """打印自游标 seen 以来积累的结算明细（GameState.settle_log 增量），返回新游标。
 
     空闲点（回合开始/结束阶段结算完、主要阶段每次指令结算完）调用：0.4s 每条
-    逐条打印，整块前后各空一行；无新增明细时不输出（不空打印空行）。
+    逐条打印（嵌套层级缩进，见 format_settle_lines），整块前后各空一行；
+    无新增明细时不输出（不空打印空行）。
     纯展示层行为——引擎/服务端只记录，不 sleep；interval 供测试置 0。
     """
     lines = game.state.settle_log[seen:]
@@ -87,7 +108,7 @@ def drain_settle(game: Game, seen: int, interval: float | None = None) -> int:
         return seen
     delay = SETTLE_INTERVAL if interval is None else interval
     print("")
-    for line in lines:
+    for line in format_settle_lines(lines):
         print(line)
         if delay > 0:
             time.sleep(delay)
@@ -96,19 +117,21 @@ def drain_settle(game: Game, seen: int, interval: float | None = None) -> int:
 
 
 def parse_ref(code: str, active: int) -> Ref:
-    """把目标代码解析为 Ref：f=己方 e=敌方 p=牌手 数字=式神下标。"""
+    """把目标代码解析为 Ref：f=己方 e=敌方；0（或 p）=牌手，1-4=座次式神，
+    5=召唤物（如有）。编号与场况显示一致（1 基）；引擎内部式神下标 0 基，
+    本翻译层做 ±1 转换。"""
     code = code.strip().lower()
     player = active if code.startswith("f") else 1 - active
     rest = code[1:]
-    if rest == "p":
+    if rest in ("p", "0"):
         return Ref(player=player)
-    return Ref(player=player, shikigami=int(rest))
+    return Ref(player=player, shikigami=int(rest) - 1)
 
 
 def ref_code(ref: Ref, active: int) -> str:
-    """把 Ref 渲染为目标代码（parse_ref 的逆）。"""
+    """把 Ref 渲染为目标代码（parse_ref 的逆）：牌手 = e0/f0，座次式神 1 基。"""
     side = "f" if ref.player == active else "e"
-    return f"{side}p" if ref.shikigami is None else f"{side}{ref.shikigami}"
+    return f"{side}0" if ref.shikigami is None else f"{side}{ref.shikigami + 1}"
 
 
 # ---------- 座次配色 ----------

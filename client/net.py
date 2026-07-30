@@ -34,6 +34,7 @@ class NetClient:
         self.room_debug = False
         self.payload: dict | None = None  # 最近一次 state 的 payload
         self.timer: dict | None = None    # 最近一次 state 附带的计时器（kind/deadline）
+        self._seq = 0  # 服务端回推计数（state/error 各 +1）：发指令后等待回推用
         self.over = threading.Event()
 
     # ---------- 接收 ----------
@@ -58,13 +59,14 @@ class NetClient:
                   f"，对手：{msg['opponent']}")
             tui.start_ticker(1.0)  # 驱动状态栏倒计时逐秒重绘
         elif t == "state":
+            self._seq += 1
             self.payload = msg["payload"]
             self.timer = msg.get("timer")
             settle = msg.get("settle") or []
             if settle:
-                # 结算明细：0.4s 每条逐条打印，整块前后各空一行（热坐同一节奏）
+                # 结算明细：0.4s 每条逐条打印（嵌套层级缩进），整块前后各空一行（热坐同一节奏）
                 print("")
-                for line in settle:
+                for line in cli.format_settle_lines(settle):
                     print(line)
                     if cli.SETTLE_INTERVAL > 0:
                         time.sleep(cli.SETTLE_INTERVAL)
@@ -72,7 +74,9 @@ class NetClient:
             for line in msg.get("log", []):
                 print(f"  | {line}")
             self._show()
+            tui.invalidate()  # 状态栏（阶段/回合归属/倒计时）立即按新状态重绘
         elif t == "error":
+            self._seq += 1  # 指令的否定回推：解除 send_cmd 的等待
             print(f"无效操作: {msg.get('reason')}")
         elif t == "notice":
             print(f"** {msg.get('text')}")
@@ -106,7 +110,14 @@ class NetClient:
         self.ws.send(json.dumps(msg, ensure_ascii=False))
 
     def send_cmd(self, cmd: dict) -> None:
+        """发指令并等服务端回推（state/error，最长 2s）再返回——随后的输入提示
+        （升级阶段/回合归属等）始终基于最新已应用状态，不会慢一个阶段。"""
+        seq = self._seq
         self.send({"type": "cmd", "cmd": cmd})
+        deadline = time.monotonic() + 2.0
+        while self._seq == seq and not self.over.is_set() \
+                and time.monotonic() < deadline:
+            time.sleep(0.02)
 
     # ---------- 输入循环 ----------
 
@@ -227,7 +238,7 @@ def _fmt_timer(timer: dict, now: float) -> str:
 
 
 def _net_status(client: NetClient) -> tuple[str, ...]:
-    """底部状态栏三段：左=己方牌手、中=回合+倒计时（居中）、右=敌方牌手。
+    """底部状态栏三段：左=己方牌手、中=阶段提示+回合+倒计时（居中）、右=敌方牌手。
     未开局时为两段（房间提示）。"""
     game = client.wrapper()
     if game is None or client.me is None:
@@ -239,7 +250,12 @@ def _net_status(client: NetClient) -> tuple[str, ...]:
         mid = _fmt_timer(client.timer, time.time()) if client.timer else "调度阶段"
     else:
         active = st.players[st.active]
-        mid = f"总第 {st.turn - 1} 回合 · {active.name} 第 {active.turn_count} 回合"
+        if st.active == client.me:
+            hint = ("你的回合" if st.phase != "upgrade"
+                    else f"升级阶段（剩 {st.players[client.me].upgrades} 次）")
+        else:
+            hint = "对手行动中"
+        mid = f"{hint} · 总第 {st.turn - 1} 回合 · {active.name} 第 {active.turn_count} 回合"
         if client.timer:
             mid += " " + _fmt_timer(client.timer, time.time())
     return left, mid, right

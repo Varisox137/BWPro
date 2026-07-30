@@ -146,12 +146,17 @@ def start_ticker(interval: float = 1.0) -> None:
 
     def _run() -> None:
         while not _ticker_stop.wait(interval):
-            app = _session.app if _session is not None else None
-            if app is not None and app.is_running:
-                app.invalidate()
+            invalidate()
 
     _ticker = threading.Thread(target=_run, daemon=True)
     _ticker.start()
+
+
+def invalidate() -> None:
+    """立即重绘一次状态栏（不等 ticker 周期；联机收到新 state 时调用）。"""
+    app = _session.app if _session is not None else None
+    if app is not None and app.is_running:
+        app.invalidate()
 
 
 def stop_ticker() -> None:

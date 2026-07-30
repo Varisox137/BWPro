@@ -228,6 +228,24 @@ def test_reconnect_by_token(db):
     run(go())
 
 
+def test_reconnect_resync_full_log(db):
+    """断线期间的日志不被广播游标吞掉：重连后 resync 向重连者全量补发
+    state.log（不动广播游标，在线玩家不会收到重复日志）。"""
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        conn0 = room.conns[0]
+        room.disconnect(conn0)
+        await room.handle_cmd(1, {"op": "ready"})  # 断线期间产生新日志并广播
+        ws_new = FakeWS()
+        await room.reconnect(conn0.token, ws_new)
+        await room.resync(conn0)
+        msg = [m for m in ws_new.messages if m["type"] == "state"][-1]
+        assert len(msg["log"]) == len(room.game.state.log)  # 全量补发
+        await room.broadcast_state()
+        assert ws1.messages[-1]["log"] == []  # 游标未动：在线方无重复
+    run(go())
+
+
 # ---------- 计时器 ----------
 
 def test_mulligan_timeout_forces_ready(db):

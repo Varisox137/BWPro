@@ -122,7 +122,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10) -> FastAPI:
                             player_index=room.seat_to_player[conn.seat],
                             debug=room.debug))
                         if room.game is not None:
-                            await room.broadcast_state()
+                            await room.resync(conn)  # 全量补发（不动广播游标）
                         continue
                     try:
                         conn = await room.join(1, name, ws, deck_code)

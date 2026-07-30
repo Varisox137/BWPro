@@ -526,3 +526,101 @@ def test_drain_settle_increment_and_blank_lines(db, make_game, capsys):
     seen2 = cli.drain_settle(g, seen, interval=0)
     assert seen2 == seen
     assert capsys.readouterr().out == ""
+
+
+# ==========================================================================
+# 目标编号（1 基翻译层）、结算明细排版与双通道去重、联机提示即时性
+# ==========================================================================
+
+def test_target_code_one_based_numbering():
+    """主动目标编号与场况座次一致（1 基）：0=牌手，1-4=座次式神，5=召唤物；
+    引擎内部式神下标 0 基，parse_ref/ref_code 翻译层 ±1 转换；ep/fp 兼容。"""
+    assert cli.parse_ref("e0", 0) == Ref(player=1)
+    assert cli.parse_ref("fp", 0) == Ref(player=0)
+    assert cli.parse_ref("e1", 0) == Ref(player=1, shikigami=0)
+    assert cli.parse_ref("E4", 0) == Ref(player=1, shikigami=3)
+    assert cli.parse_ref("f5", 0) == Ref(player=0, shikigami=4)
+    assert cli.ref_code(Ref(player=1), 0) == "e0"
+    assert cli.ref_code(Ref(player=1, shikigami=2), 0) == "e3"
+    assert cli.ref_code(Ref(player=0, shikigami=0), 0) == "f1"
+
+
+def test_format_settle_lines_nesting():
+    """结算明细排版：战斗/伤害结算的开始-结束块按层级缩进两格，结束行与开始行
+    同级；阶段分隔行不缩进不计层级。"""
+    lines = [
+        "—— 回合开始阶段（A 的第 1 回合）——",
+        "—— 战斗开始：式神100101 ——",
+        "【战力】式神100101 战力 +2（本次战斗）",
+        "—— 伤害结算开始 ——",
+        "【伤害】B 受到 7 点伤害（生命 30→23）",
+        "—— 伤害结算结束 ——",
+        "—— 战斗结束 ——",
+        "【升级】A 的式神100102升至 1 级",
+    ]
+    assert cli.format_settle_lines(lines) == [
+        "—— 回合开始阶段（A 的第 1 回合）——",
+        "—— 战斗开始：式神100101 ——",
+        "  【战力】式神100101 战力 +2（本次战斗）",
+        "  —— 伤害结算开始 ——",
+        "    【伤害】B 受到 7 点伤害（生命 30→23）",
+        "  —— 伤害结算结束 ——",
+        "—— 战斗结束 ——",
+        "【升级】A 的式神100102升至 1 级",
+    ]
+
+
+def test_settle_numeric_events_not_duplicated_in_log(db, make_game):
+    """数值类事件（伤害等）只记 settle 明细通道、不再写 log 孪生行——
+    联机端同屏打印两通道时不重复。"""
+    g = make_game(auto_skip_upgrade=False)
+    pa, pb = F.battle_setup(g)
+    g.apply({"op": "upgrade", "index": 1})
+    slog_before, log_before = len(g.state.settle_log), len(g.state.log)
+    cid = 10010153
+    db.cards[cid] = F.card(
+        cid, card_type="combat",
+        steps=[F.Step(op="buff_power", amount=2, target=T(kind="self"))],
+        token=True)
+    F.play(g, 0, cid)  # 战斗牌 → 交战伤害
+    assert any("【伤害】" in x for x in g.state.settle_log[slog_before:])
+    assert not any("点伤害（剩余生命" in x for x in g.state.log[log_before:])
+
+
+def test_net_send_cmd_waits_for_reply(db):
+    """联机发指令后等待服务端回推（state/error）再返回——随后的输入提示
+    （升级阶段/回合归属）基于最新已应用状态，不慢一个阶段。"""
+    import threading
+    import time
+
+    from client.net import NetClient
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        def send(self, raw):
+            self.sent.append(raw)
+
+    c = NetClient(db, FakeWS(), "甲")
+    threading.Timer(0.1, lambda: c.handle({"type": "error", "reason": "x"})).start()
+    t0 = time.monotonic()
+    c.send_cmd({"op": "end_turn"})
+    assert 0.05 <= time.monotonic() - t0 < 1.0  # 回推到达即解除等待
+    assert len(c.ws.sent) == 1
+
+
+def test_net_status_phase_hint(db, make_game):
+    """联机状态栏中段即时反映最新阶段：己方升级阶段含剩余次数、
+    主要阶段=你的回合、非己方=对手行动中。"""
+    from client.net import NetClient, _net_status
+    g = make_game(auto_skip_upgrade=False)
+    pa, pb = F.battle_setup(g)
+    c = NetClient(db, None, "甲")
+    c.payload = g.state.model_dump(mode="json")
+    c.me = 0
+    _, mid, _ = _net_status(c)
+    assert "升级阶段（剩" in mid
+    c.me = 1
+    _, mid, _ = _net_status(c)
+    assert "对手行动中" in mid
