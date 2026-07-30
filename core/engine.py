@@ -77,6 +77,7 @@ class _DamageEvent:
     # 跳过毒蚀的伤害→破甲转化，防止两个转化类效果来回循环
     fragile: int = 0  # 护甲计算批次消耗的破甲数量（破甲受伤即消耗；on_damage payload
     # 携带，蚀刃毒羽"攻击后使其获得相同数量的破甲"读取）
+    dealt: int = 0  # 实际造成伤害值（走到扣减生命批次即视为造成；巨浪"每造成 1 点伤害"统计）
 
 
 @dataclass
@@ -120,6 +121,8 @@ class Game:
         # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
         # 战斗终止点清理后依次结算，不享受原战斗牌的力量/关键字加成——地狱之手）
         self._battle_followups: dict[int, list[Ref]] = {}
+        # 结算中交互选择（青灯夜谈）的挂起块续点：(block, ctx, 下一步下标)；内存态不序列化
+        self._suspended: tuple | None = None
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -257,7 +260,8 @@ class Game:
     @staticmethod
     def _step_amount(step: Step, card: CardInstance | None,
                      s: ShikigamiState | None = None,
-                     event: dict | None = None, game=None) -> int:
+                     event: dict | None = None, game=None,
+                     memo: dict | None = None) -> int:
         """解析步骤的 amount 参数（docs/enhance-design.md 数值解析流水线）：
 
         - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
@@ -272,6 +276,10 @@ class Game:
         - {"max_power_gap": "self"}：来源式神历史峰值力量（ext["max_power"]）与当前
           eff_power 之差（断臂"力量变为本局游戏曾有的最大值"的差值补偿形式，≥0）。
         - {"missing_health": "self"}：来源式神已损失生命（鹤唳回风"恢复所有生命"）。
+        - {"half_shield_of": "self"|"source"}：来源式神当前护甲的一半（向下取整，
+          治愈之水"海坊主每有 2 护甲则效果+1"）。
+        - {"memo": key}：块内暂存 ctx.memo 的数值（巨浪"每造成 1 点伤害恢复 1 生命"
+          读 damage 记录的 last_damage_total）。
         前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
         """
         raw = (step.model_extra or {}).get("amount", 0)
@@ -281,6 +289,8 @@ class Game:
                 base += int(card.mods.get("enhance", 0))
             if raw.get("shield_of") and s is not None:
                 base += s.shield
+            if raw.get("half_shield_of") and s is not None:
+                base += max(0, s.shield) // 2  # "每有 2 护甲"：向下取整；破甲不计
             if raw.get("power_of") and s is not None:
                 base += s.eff_power
             if raw.get("perm_power") and s is not None:
@@ -289,6 +299,8 @@ class Game:
                 base += int(s.ext.get(raw["ext"], 0))
             if raw.get("event") and event is not None:
                 base += int(event.get(raw["event"], 0))
+            if raw.get("memo") and memo is not None:
+                base += int(memo.get(raw["memo"], 0))  # 块内暂存（巨浪 last_damage_total）
             if raw.get("half_health_of") and event is not None and game is not None:
                 ref = event.get(raw["half_health_of"])
                 if isinstance(ref, Ref):
@@ -360,10 +372,13 @@ class Game:
             "end_turn": self._cmd_end_turn,
             "mulligan": self._cmd_mulligan,
             "ready": self._cmd_ready,
+            "choose": self._cmd_choose,
         }
         handler = handlers.get(op)
         if handler is None:
             raise IllegalAction(f"未知指令: {op}")
+        if self.state.pending_choice is not None and op != "choose":
+            raise IllegalAction("存在待处理的选择（请先完成检视选牌）")
         if self.state.phase == "mulligan" and op not in ("mulligan", "ready"):
             raise IllegalAction("调度阶段：请先完成调度（mulligan/ready）")
         if self.state.phase == "upgrade" and op not in ("upgrade",):
@@ -381,6 +396,65 @@ class Game:
             raise IllegalAction(f"未知调试指令: {name}")
         ctx = ExecContext(controller=cmd.get("player", self.state.active))
         fn(self, ctx, **cmd.get("args", {}))
+
+    # ---------- 结算中交互选择（青灯夜谈：检视牌库顶选牌） ----------
+
+    def _cmd_choose(self, cmd: dict) -> None:
+        """choose 指令：从 pending_choice 的 options 中选一张置入手牌，然后洗牌库。
+
+        每次重复都重新检视（洗牌后）牌库顶 count 张；最后一次选择后按 pending 的
+        clear_orb 清空鬼火，并续跑挂起块的剩余步骤（_suspended）。
+        """
+        pending = self.state.pending_choice
+        if pending is None:
+            raise IllegalAction("当前没有待处理的选择")
+        if pending.get("kind") != "deck_top_pick":
+            raise IllegalAction(f"未知选择类型: {pending.get('kind')}")
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        p = self.state.players[pi]
+        uid = cmd.get("uid")
+        if uid not in pending["options"]:
+            raise IllegalAction("不在可检视的牌之列")
+        card = next((c for c in p.deck if c.uid == uid), None)
+        if card is None:
+            raise IllegalAction("该牌已不在牌库中")
+        self.move_card(p, card, "hand")
+        self._log(f"{p.name} 将检视的《{self.db.cards[card.id].name}》置入手牌")
+        self.rng.shuffle(p.deck)  # 按原文"然后洗牌库"：每次选择后都洗牌
+        self.state.pending_choice = None
+        if not self._open_deck_top_pick(pi, pending["count"],
+                                        pending["remaining"] - 1, pending["clear_orb"]):
+            # 重复结束（或牌库已空无可检视）：清空鬼火（0 鬼火开局挂起时同样执行）并续块
+            if pending["clear_orb"]:
+                self._clear_orb(p, pi)
+            if self._suspended is not None:
+                block, ctx, start = self._suspended
+                self._suspended = None
+                self._resolve_block(block, ctx, start)
+
+    def _open_deck_top_pick(self, pi: int, count: int, remaining: int,
+                            clear_orb: bool) -> bool:
+        """开启一次牌库顶挑选：设置 pending_choice 挂起等待 choose 指令；返回是否挂起。
+        重复次数耗尽或牌库无可检视牌时不挂起（返回 False，由调用方走收尾）。"""
+        p = self.state.players[pi]
+        options = [c.uid for c in p.deck[:count]]
+        if remaining <= 0 or not options:
+            return False
+        self.state.pending_choice = {
+            "kind": "deck_top_pick", "player": pi, "count": count,
+            "options": options, "remaining": remaining, "clear_orb": clear_orb,
+        }
+        self._log(f"{p.name} 检视牌库顶 {len(options)} 张牌（选择一张置入手牌）")
+        return True
+
+    def _clear_orb(self, p: PlayerState, pi: int) -> None:
+        """清空玩家鬼火（吸魂灯/青灯夜谈"清空你的鬼火"）；emit on_orb_changed。"""
+        old = p.orb
+        p.orb = 0
+        if old != 0:
+            self.emit("on_orb_changed", player=pi, old=old, new=0, reason="清空鬼火")
 
     # ---------- 调度（游戏开始阶段） ----------
 
@@ -1713,16 +1787,31 @@ class Game:
                     self._revive(p, pi, i)
 
     def _turn_start_gain_orb(self, p: PlayerState, first: bool, pi: int) -> None:
-        """回合开始阶段 steps 4-5：鬼火重置为 0 再获得；emit on_orb_changed。"""
+        """回合开始阶段 steps 4-5：鬼火重置为 0 再获得；emit on_orb_changed。
+
+        觉醒·青行灯（觉醒牌 tags 含 orb_store）：鬼火不清除，储存累加、封顶 4 点
+        （"你的鬼火不会自动清除，最大可储存 4 点"——超出 4 点的部分被清除）。
+        """
         cfg = self.config
         gain = cfg.first_turn_orb if first else self.cfg(pi, "orb_per_turn")
         if cfg.orb_cap is not None:
             gain = min(gain, cfg.orb_cap)
         old_orb = p.orb
-        p.orb = 0
-        p.orb += gain
+        if self._orb_stored(p):
+            p.orb = min(4, p.orb + gain)
+        else:
+            p.orb = 0
+            p.orb += gain
         if p.orb != old_orb:
             self.emit("on_orb_changed", player=pi, old=old_orb, new=p.orb, reason="回合开始")
+
+    def _orb_stored(self, p: PlayerState) -> bool:
+        """该玩家是否有已觉醒且带 orb_store 标记觉醒牌的式神在场（鬼火储存）。"""
+        for s in p.shikigami:
+            if s.in_play and s.awakened is not None \
+                    and "orb_store" in self.db.cards[s.awakened].tags:
+                return True
+        return False
 
     def _turn_start_schedule_retreat(self, p: PlayerState) -> int | None:
         """回合开始阶段 step 6：登记战斗区非召唤物式神延时移回（召唤物留在战斗区）。"""
@@ -1787,21 +1876,22 @@ class Game:
 
     def deal_to_shikigami(self, ref: Ref, amount: int, source: Ref | None,
                           *, kind: str = "effect", piercing: bool = False,
-                          converted: bool = False) -> None:
-        """对式神造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
-        self._run_damage_queue([_DamageEvent(source=source, victim=ref,
-                                             amount=amount, kind=kind, piercing=piercing,
-                                             converted=converted)])
+                          converted: bool = False) -> int:
+        """对式神造成伤害（单事件伤害队列，走完整伤害事件流程）；返回实际造成伤害值。"""
+        return self._run_damage_queue([_DamageEvent(source=source, victim=ref,
+                                                    amount=amount, kind=kind, piercing=piercing,
+                                                    converted=converted)])
 
     def deal_to_player(self, player_index: int, amount: int, source: Ref | None,
-                       *, kind: str = "effect", converted: bool = False) -> None:
-        """对牌手造成伤害（单事件伤害队列，走完整伤害事件流程）。"""
-        self._run_damage_queue([_DamageEvent(source=source, victim=Ref(player=player_index),
-                                             amount=amount, kind=kind, converted=converted)])
+                       *, kind: str = "effect", converted: bool = False) -> int:
+        """对牌手造成伤害（单事件伤害队列，走完整伤害事件流程）；返回实际造成伤害值。"""
+        return self._run_damage_queue([_DamageEvent(source=source, victim=Ref(player=player_index),
+                                                    amount=amount, kind=kind, converted=converted)])
 
     def _run_damage_queue(self, events: list[_DamageEvent],
-                          defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None) -> None:
+                          defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None) -> int:
         """伤害事件队列：并行伤害、贯通溢出、伤害合并都在同一队列结算（rules.md 第五章）。
+        返回本队列实际造成的伤害合计（扣减生命口径，巨浪"每造成 1 点伤害"统计用）。
 
         每个事件依次经过时点批次：造成伤害前（穿刺）→ 伤害开始时 → 贯通修正 → 护甲计算前（屏障）→ 护甲计算 →
         护甲计算后 → 扣减生命前 → 合并 → 扣减生命（不屈）→ 伤害后。队列清空后按受伤顺序
@@ -1811,18 +1901,21 @@ class Game:
         """
         dq: deque[_DamageEvent] = deque(events)
         victims: list[tuple[Ref, Ref | None, str]] = []  # (受伤式神, 来源, 气绝原因) 按受伤顺序
+        total_dealt = 0  # 本队列实际造成的伤害合计（巨浪"每造成 1 点伤害"统计口径）
         self._settle("—— 伤害结算开始 ——")
         while dq:
             ev = dq.popleft()
             self._damage_event_flow(ev, dq, victims)
+            total_dealt += ev.dealt
             if self.state.winner is not None:
-                return
+                return total_dealt
         for ref, source, reason in victims:
             if defer_defeats is not None:
                 defer_defeats.append((ref, source, reason))
             else:
                 self.check_defeated(ref, source=source, reason=reason)
         self._settle("—— 伤害结算结束 ——")
+        return total_dealt
 
     def _emit_damage_batch(self, name: str, ev: _DamageEvent) -> None:
         """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。"""
@@ -1871,6 +1964,10 @@ class Game:
             # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）
             if ev.kind == "effect" and s is not None and self._effect_immune(s, ev):
                 self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
+                return
+            # 牌手级伤害免疫（舍生"本回合你免疫所有伤害"；PlayerState.immunities 按回合号过期）
+            if s is None and self._player_immune(p, ev):
+                self._log(f"{p.name} 免疫了本次伤害")
                 return
         skip_shield_calc = False
         skip_before_health = False
@@ -1948,6 +2045,7 @@ class Game:
                 if ev.amount <= 0:
                     return
             s.health -= ev.amount
+            ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
@@ -1975,6 +2073,7 @@ class Game:
                       battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
             p.health -= ev.amount
+            ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -1999,6 +2098,14 @@ class Game:
             op="heal", amount=ev.amount, target=TargetSpec(kind="all", pool="self_player"))])
         self.queue.append(_Pending(block, ExecContext(
             controller=ev.source.player, source=ev.source, is_ability=True)))
+
+    def _player_immune(self, p: PlayerState, ev: _DamageEvent) -> bool:
+        """牌手伤害免疫（舍生"本回合你免疫所有伤害"）：条目 {"kind": "all", "turn": 回合号}；
+        scope=turn 按回合号比对过期（条目无需清理）。"""
+        for e in p.immunities:
+            if e.get("kind") == "all" and ("turn" not in e or e["turn"] == self.state.turn):
+                return True
+        return False
 
     def _combat_immune(self, s: ShikigamiState) -> bool:
         """式神在当前战斗上下文中是否免疫战斗伤害（作用域由授予效果指定）。
@@ -2105,8 +2212,20 @@ class Game:
 
         治疗前（即时 on_before_heal）→ 治疗量 = min(治疗量, 执行者已损失生命) →
         增加生命 → 治疗量为 0 终止 → 治疗时 on_heal / 治疗后 on_after_heal（均延时）。
+        on_heal/on_after_heal 的 payload 带 overheal = max(0, 治疗量 - 实际治疗量)
+        （海坊主"过量治疗转化"）；实际恢复 > 0 才发出（满血治疗不触发任何治疗时/后事件）。
         濒死/气绝（未在场）的式神与气绝的牌手不受治疗（早退，不产生任何事件）。
+        法界唯心（形态 tags 含 heal_reversal）：其控制者对敌方的恢复生命效果改为
+        等额伤害效果——直接走伤害管线，不发出任何治疗事件（伤害事件照常）。
         """
+        if source is not None and ref.player != source.player \
+                and self._field_form_has_tag(source.player, "heal_reversal"):
+            self._log(f"恢复生命效果被改为伤害效果（法界唯心）")
+            if ref.shikigami is None:
+                self.deal_to_player(ref.player, amount, source, kind="effect")
+            else:
+                self.deal_to_shikigami(ref, amount, source, kind="effect")
+            return
         p = self.state.players[ref.player]
         s = p.shikigami[ref.shikigami] if ref.shikigami is not None else None
         if s is not None and (not s.in_play or s.dying):
@@ -2116,6 +2235,7 @@ class Game:
         holder = s if s is not None else p
         self.emit("on_before_heal", target=ref, amount=amount, source=source, reason=reason)
         healed = min(amount, holder.max_health - holder.health)
+        overheal = max(0, amount - healed)  # 过量治疗量（海坊主转化通道）
         if healed > 0:
             holder.health += healed
             self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
@@ -2123,8 +2243,18 @@ class Game:
             # 不写 _log 孪生行：归 settle 通道，避免双通道重复
         if healed <= 0:
             return  # 治疗量为 0：终止结算
-        self.emit("on_heal", target=ref, amount=healed, source=source, reason=reason)
-        self.emit("on_after_heal", target=ref, amount=healed, source=source, reason=reason)
+        self.emit("on_heal", target=ref, amount=healed, overheal=overheal,
+                  source=source, reason=reason)
+        self.emit("on_after_heal", target=ref, amount=healed, overheal=overheal,
+                  source=source, reason=reason)
+
+    def _field_form_has_tag(self, pi: int, tag: str) -> bool:
+        """玩家 pi 在场式神结附的形态中是否有 tags 含 tag 者（法界唯心 heal_reversal；
+        硬编码扫描的先例见 _combat_zone_locked 的 destroy_immune 标记形态）。"""
+        for s in self.state.players[pi].shikigami:
+            if s.in_play and s.form is not None and tag in self.db.cards[s.form.id].tags:
+                return True
+        return False
 
     def draw_cards(self, player_index: int, count: int) -> None:
         """效果抽牌（Phase 1 简化版）。
@@ -2436,11 +2566,13 @@ class Game:
         self.move_card(p, ctx.card, "graveyard")
         return False
 
-    def _resolve_block(self, block: EffectBlock, ctx: ExecContext) -> None:
+    def _resolve_block(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> None:
         """结算一个效果块：先处理响应牌的额外开销与限制（_settle_response_card），再依次执行 steps。
 
         按 block.steps 顺序执行动作。mode="interleaved" 时每步后清空队列，
         允许其它效果插入；mode="atomic" 时步骤连发，队列留到块外统一结算。
+        步骤产生结算中交互选择（pending_choice，青灯夜谈）时挂起：续点存入
+        self._suspended（内存态），由 choose 指令续跑剩余步骤（start 为续跑起点）。
         """
         if ctx.memo is None:
             ctx.memo = {}  # 块内步骤间暂存（damage 记录 last_damage_victims 等）
@@ -2452,10 +2584,15 @@ class Game:
                 return
             self._affected_stack.append({"controller": ctx.controller, "refs": []})  # 响应法术：记录该次使用伤害过的敌方式神
         try:
-            for step in block.steps:
-                self._run_step(step, ctx)
+            for idx in range(start, len(block.steps)):
+                self._run_step(block.steps[idx], ctx)
                 if block.mode == "interleaved":
                     self._drain_queue()  # 步骤之间允许其它效果结算
+                if self.state.pending_choice is not None and not ctx.triggered:
+                    # 交互选择挂起（响应牌无此类步骤，triggered 块不挂起：
+                    # 避免响应开销/受影响栈被重复结算）
+                    self._suspended = (block, ctx, idx + 1)
+                    return
         finally:
             if ctx.triggered and ctx.card is not None:
                 affected = self._affected_stack.pop()["refs"]
@@ -2485,7 +2622,8 @@ class Game:
             src = (self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
                    if ctx.source is not None and ctx.source.shikigami is not None else None)
             params["amount"] = self._step_amount(step, ctx.card, src,
-                                                 event=ctx.event, game=self)
+                                                 event=ctx.event, game=self,
+                                                 memo=ctx.memo)
         fn(self, ctx, targets=refs, **params)
 
     def _op_params(self, op: str, fn) -> frozenset:

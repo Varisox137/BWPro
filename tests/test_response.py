@@ -927,3 +927,90 @@ def test_spell_echo_random_choose_target(db, make_game):
     play(g, 0, ECHO_GRANT)
     play(g, 0, TRIG_SPELL)
     assert pb.shikigami[0].health == 2    # 合法池中仅 B0（4 - 2）
+
+
+# ==========================================================================
+# 致命响应（舍生 victim_lethal）/ 带目标响应（沧海之盾 victim_in_combat + bind=chosen）
+# ==========================================================================
+
+SHE = 10010261   # 舍生：致命响应，消灭所属式神位 + 牌手免疫所有伤害
+DUN2 = 10010262  # 沧海之盾：战斗区式神被攻击响应，+2 甲 + 延迟恢复
+
+
+def _she(db, cid=SHE):
+    db.cards[cid] = F.card(
+        cid, shikigami=BING, cost=1, level=2, keywords=["fast", "trigger"], token=True,
+        when="on_damage_start",
+        block_kw={"condition": {"victim_side": "friendly", "victim_kind": "player",
+                                "victim_lethal": True}},
+        steps=[F.Step(op="destroy",
+                      target=T(kind="all", pool="friendly_shikigami", shikigami=BING)),
+               F.Step(op="grant_immunity", kind="all", scope="turn",
+                      target=T(kind="all", pool="self_player"))])
+    return cid
+
+
+def test_lethal_response_player_immunity(db, make_game):
+    """致命响应（舍生）：你（牌手）将受到致命伤害（面板伤害 ≥ 当前生命）时自动使用——
+    消灭所属式神位，本回合牌手免疫所有伤害；非致命伤害不响应。"""
+    _she(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.shikigami[BING_IDX].level = 2
+    pb.shikigami[0].level = 1
+    pa.health = 3                     # 3/4 攻击者 → 3 伤 = 致命
+    give(g, 0, SHE)
+    pass_turns(g, 1)
+    g.apply({"op": "assault", "index": 0})
+    assert pa.shikigami[BING_IDX].defeated      # 消灭青坊主位
+    assert pa.health == 3                       # 免疫了本次伤害
+    assert any("免疫了本次伤害" in l for l in g.state.log)
+    # 非致命：不响应
+    g2 = make_game()
+    pa2, pb2 = g2.state.players
+    pb2.shield = 0
+    pa2.shikigami[BING_IDX].level = 2
+    pb2.shikigami[0].level = 1
+    give(g2, 0, SHE)
+    pass_turns(g2, 1)
+    g2.apply({"op": "assault", "index": 0})     # 30 血吃 3 伤，非致命
+    assert pa2.health == 27
+    assert not pa2.shikigami[BING_IDX].defeated
+    assert any(c.id == SHE for c in pa2.hand)   # 响应牌留在手牌
+
+
+def _dun2(db, cid=DUN2):
+    db.cards[cid] = F.card(
+        cid, shikigami=BING, cost=1, level=1, keywords=["trigger"], token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        when="on_before_assault",
+        block_kw={"condition": {"victim_side": "friendly", "victim_kind": "shikigami",
+                                "victim_in_combat": True}},
+        steps=[F.Step(op="gain_shield", amount=2),
+               F.Step(op="delay_grant", bind="chosen", scope="turn", when="on_damage",
+                      condition={"source_shikigami": "self", "kind_not": "effect"},
+                      steps=[{"op": "heal", "amount": 2,
+                              "target": {"kind": "all", "pool": "self_player"}}])])
+    return cid
+
+
+def test_combat_victim_response_with_delayed_heal(db, make_game):
+    """战斗区式神被攻击响应（沧海之盾）：自动对被攻击者使用（choose 取事件 victim）
+    +2 护甲；延迟能力绑定被选式神（bind=chosen）——其造成战斗伤害（含反击）时为
+    牌手恢复 2。"""
+    _dun2(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.shikigami[BING_IDX].level = 1
+    pb.shikigami[0].level = 1
+    pa.health = 25
+    move(g, 0, BING_IDX)              # 兵俑位（1/6）进战斗区
+    give(g, 0, DUN2)
+    pass_turns(g, 1)
+    g.apply({"op": "assault", "index": 0})   # 3/4 出击被战斗区兵俑拦下 → 响应
+    s = pa.shikigami[BING_IDX]
+    assert s.shield == 0              # 2 护甲被 3 伤消耗
+    assert s.health == 5              # 6 - 1
+    assert pa.health == 27            # 反击（kind=counter 战斗伤害）触发延迟恢复 2

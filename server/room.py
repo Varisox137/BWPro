@@ -49,6 +49,10 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
         for entry in s.get("delayed", []):
             if entry.get("secret"):
                 entry["chosen"] = None
+    pending = payload.get("pending_choice")
+    if pending is not None and pending.get("player") != viewer:
+        # 结算中交互选择（青灯夜谈）：可检视牌内容仅选择方可见，其余视角以占位 uid 抹除
+        pending["options"] = [0] * len(pending.get("options", []))
     return payload
 
 

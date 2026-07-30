@@ -40,22 +40,30 @@ def damage(game, ctx, *, targets: list[Ref], amount: int,
     if ctx.card is not None:
         amount += int(ctx.card.mods.get("damage_boost", 0))
     pierce = piercing if piercing is not None else game._ability_piercing(ctx)
+    total = 0
     for ref in targets:
         if ref.shikigami is None:
-            game.deal_to_player(ref.player, amount, ctx.source)
+            total += game.deal_to_player(ref.player, amount, ctx.source)
         else:
-            game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce)
+            total += game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce)
     if ctx.memo is not None:
         # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用（风神一扇）
         ctx.memo["last_damage_victims"] = [r for r in targets if r.shikigami is not None]
+        # 记录本步实际造成的伤害合计（扣减生命口径），供同块后续 step 以 {"memo": key}
+        # 动态数值引用（巨浪"每造成 1 点伤害，海坊主便恢复 1 生命"）
+        ctx.memo["last_damage_total"] = total
 
 
 @action("heal")
 def heal(game, ctx, *, targets: list[Ref], amount: int) -> None:
     """恢复生命（走 Game.heal 治疗事件流程）：治疗量 = min(amount, 已损失生命)，
-    0 终止；濒死/气绝（未在场）式神与气绝牌手不受治疗。"""
+    0 终止；濒死/气绝（未在场）式神与气绝牌手不受治疗。
+    结算后把本步治疗目标写入块内暂存 ctx.memo["last_heal_targets"]（供佛光
+    "为其操控者的所有角色"以 side_of_last_heal 池引用）。"""
     for ref in targets:
         game.heal(ref, amount, ctx.source, reason="heal")
+    if ctx.memo is not None:
+        ctx.memo["last_heal_targets"] = list(targets)
 
 
 @action("draw")
@@ -558,7 +566,8 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> N
 @action("delay_grant")
 def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                 condition: dict | None = None, steps: list | None = None,
-                secret: bool = False, scope: str | None = None) -> None:
+                secret: bool = False, scope: str | None = None,
+                bind: str = "source") -> None:
     """给来源式神登记一个一次性延迟能力（会；targets 忽略）。
 
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
@@ -567,13 +576,21 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     scope="play"："本次使用期间"类（黑羽之刃的消灭抽牌）——该次出牌结算结束时清除。
     secret=True 时选择目标对敌方保密（会：所选目标仅己方可见）——联机状态脱敏
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
+    bind="chosen"：改登记到选择目标式神上（沧海之盾"使一个己方式神获得……当他造成
+    战斗伤害时……"——延迟能力的持有者与条件 self 基准均为被选式神）。
     """
-    if ctx.source is None or ctx.source.shikigami is None:
-        raise ValueError("delay_grant 需要来源式神")
+    if bind == "chosen":
+        if not ctx.chosen or ctx.chosen[0].shikigami is None:
+            raise ValueError("delay_grant(bind=chosen) 需要选择目标式神")
+        holder_ref = ctx.chosen[0]
+    else:
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("delay_grant 需要来源式神")
+        holder_ref = ctx.source
     from db.schema import EffectBlock, Step
     block = EffectBlock(when=when, condition=condition,
                         steps=[Step.model_validate(st) for st in (steps or [])])
-    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    s = game.state.players[holder_ref.player].shikigami[holder_ref.shikigami]
     s.delayed.append({
         "block": block,
         "chosen": ctx.chosen[0] if ctx.chosen else None,
@@ -1059,16 +1076,19 @@ def retreat(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("discard")
 def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
-            count: int | None = None) -> None:
+            count: int | None = None, card_id: int | None = None) -> None:
     """弃掉控制者手牌中符合谓词的牌（移入墓地；targets 忽略）。
 
     shikigami="self" 弃来源式神所属的牌（射怪鸟事 = discard + draw 两步组合）；
-    shikigami="all" 弃全部手牌；count 限制弃牌张数（缺省弃全部符合者）。
+    shikigami="all" 弃全部手牌；count 限制弃牌张数（缺省弃全部符合者）；
+    card_id 指定时按数据 id 精确弃牌（百闻一得"弃掉一张'明灯'"，优先于 shikigami）。
     结算后把实际弃牌数写入块内暂存 ctx.memo["discarded_count"]（供后续 step 的
     {"memo": key} 动态数值引用，如 draw"弃多少抽多少"）。
     """
     p = game.state.players[ctx.controller]
-    if shikigami == "all":
+    if card_id is not None:
+        pool = [c for c in p.hand if c.id == int(card_id)]
+    elif shikigami == "all":
         pool = list(p.hand)
     else:
         if shikigami == "self":
@@ -1091,12 +1111,12 @@ def discard(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
                    kind: str = "combat_damage", from_side: str | None = None,
                    unique: bool = False) -> None:
-    """授予目标式神伤害免疫（不可饶恕"本回合用过黄金羽则免疫战斗伤害"；觉醒·山童
-    "免疫敌方非战斗伤害"）。
+    """授予目标式神/牌手伤害免疫（不可饶恕"本回合用过黄金羽则免疫战斗伤害"；觉醒·山童
+    "免疫敌方非战斗伤害"；舍生"本回合你免疫所有伤害"——目标为牌手）。
 
     kind="combat_damage"（缺省）：免疫 kind ∈ (combat, counter) 的战斗伤害；
     kind="effect"：免疫非战斗伤害（法术/能力等），from_side="enemy" 限定伤害来源
-    属于敌方（无来源/己方来源不免疫）。
+    属于敌方（无来源/己方来源不免疫）；kind="all"：免疫全部伤害（仅牌手目标使用）。
     scope="turn"：免疫到当前回合结束——以回合号记账（{"turn": 当前回合}），
     按回合号比对，跨回合自然过期，无需清理；scope="perm"：无过期键，
     持续在场期间有效，随气绝清除（immunities 气绝清空，复活需重新授予）。
@@ -1105,20 +1125,24 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
     """
     if scope not in ("turn", "perm"):
         raise ValueError(f"未知 grant_immunity 作用域: {scope}")
-    if kind not in ("combat_damage", "effect"):
+    if kind not in ("combat_damage", "effect", "all"):
         raise ValueError(f"未知 grant_immunity 免疫类别: {kind}")
     if from_side not in (None, "enemy"):
         raise ValueError(f"未知 grant_immunity 来源限定: {from_side}")
     for ref in targets:
+        entry: dict = {"kind": kind}
+        if from_side is not None:
+            entry["from"] = from_side
+        if scope == "turn":
+            entry["turn"] = game.state.turn
         if ref.shikigami is None:
+            # 牌手级免疫（舍生）：存 PlayerState.immunities，伤害管线按回合号过期
+            pl = game.state.players[ref.player]
+            pl.immunities.append(entry)
+            game._log(f"{pl.name} 免疫所有伤害（本回合）")
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if s.in_play:
-            entry: dict = {"kind": kind}
-            if from_side is not None:
-                entry["from"] = from_side
-            if scope == "turn":
-                entry["turn"] = game.state.turn
             if unique and any(e.get("kind") == kind and e.get("from") == from_side
                               and (scope == "perm" or e.get("turn") == game.state.turn)
                               for e in s.immunities):
@@ -1239,3 +1263,130 @@ def power_override(game, ctx, *, targets: list[Ref], on: bool = True) -> None:
             s.ext["power_zero"] = True
         else:
             s.ext.pop("power_zero", None)
+
+
+@action("repeat")
+def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
+           steps: list, clear_orb: bool = False) -> None:
+    """重复执行一组子步骤（吸魂灯"你每有 1 点鬼火便重复一次"；targets 忽略）。
+
+    count 为整数或 {"orb": true}（= 控制者当前鬼火数）；子步骤在同一块上下文
+    （共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复结束后清空控制者鬼火
+    （"清空你的鬼火"——维护者答复：0 鬼火 = 无重复效果，但清空仍执行）。
+    """
+    from db.schema import Step
+    p = game.state.players[ctx.controller]
+    if isinstance(count, dict):
+        n = p.orb if count.get("orb") else int(count.get("base", 0))
+    else:
+        n = int(count)
+    sub = [Step.model_validate(st) for st in steps]
+    for _ in range(max(0, n)):
+        for st in sub:
+            game._run_step(st, ctx)
+    if clear_orb:
+        game._clear_orb(p, ctx.controller)
+
+
+@action("deck_top_pick")
+def deck_top_pick(game, ctx, *, targets: list[Ref], count: int = 3,
+                  times: int | dict = 1, clear_orb: bool = False) -> None:
+    """检视牌库顶 count 张牌，选一张置入手牌，然后洗牌库；重复 times 次（青灯夜谈；
+    targets 忽略）。通过 pending_choice 挂起等 choose 指令作答（见 Game._cmd_choose）。
+
+    times 为整数或 {"orb": true}（= 控制者当前鬼火数）。0 鬼火/牌库无可检视牌 =
+    无效果不挂起；clear_orb=True 的清空仍执行（维护者答复；挂起时延后到末次选择后）。
+    """
+    p = game.state.players[ctx.controller]
+    if isinstance(times, dict):
+        n = p.orb if times.get("orb") else int(times.get("base", 1))
+    else:
+        n = int(times)
+    if not game._open_deck_top_pick(ctx.controller, int(count), n, clear_orb):
+        if clear_orb:
+            game._clear_orb(p, ctx.controller)
+
+
+@action("consume_orb")
+def consume_orb(game, ctx, *, targets: list[Ref], amount: int = 1) -> None:
+    """消耗控制者鬼火（不灭之火"消耗 1 点鬼火"；不视作使用牌；targets 忽略）。"""
+    p = game.state.players[ctx.controller]
+    old = p.orb
+    p.orb = max(0, p.orb - int(amount))
+    if p.orb != old:
+        game.emit("on_orb_changed", player=ctx.controller, old=old, new=p.orb,
+                  reason="consume_orb")
+
+
+@action("set_health")
+def set_health(game, ctx, *, targets: list[Ref], amount: int) -> None:
+    """把目标牌手的生命直接设置为 amount（轮回"你的生命变为 10"；非治疗也非伤害，
+    不触发治疗/伤害事件）；钳制在 [1, max_health]。"""
+    for ref in targets:
+        if ref.shikigami is not None:
+            continue
+        p = game.state.players[ref.player]
+        if p.defeated:
+            continue
+        old = p.health
+        p.health = max(1, min(int(amount), p.max_health))
+        game._settle(f"【生命设置】{p.name} 生命变为 {p.health}（{old}→{p.health}）")
+
+
+@action("level_up")
+def level_up(game, ctx, *, targets: list[Ref], amount: int = 1,
+             overflow_draw: bool = False) -> None:
+    """目标式神等级 +amount（百闻一得；不走升级次数、不受升级阶段限制，封顶 3 级）。
+
+    overflow_draw=True：目标已为 3 级时改为控制者抽 1 张牌（"若其等级已为 3 则改为
+    抽一张牌"）。0 级未在场/气绝式神为目标为空操作。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if not s.in_play:
+            continue
+        if s.level >= 3:
+            if overflow_draw:
+                game.draw_cards(ctx.controller, 1)
+            continue
+        s.level = min(3, s.level + int(amount))
+        game._log(f"{game.db.shikigami[s.id].name} 升至 {s.level} 级")
+        game._register_ability_countdown(ref.player, ref.shikigami)  # 能力进场（同升级）
+
+
+@action("revive")
+def revive(game, ctx, *, targets: list[Ref]) -> None:
+    """复活目标式神（不灭之火"返回场上"前若气绝先复活；走 Game._revive 复活流程：
+    生命回满、重注册倒计时能力、emit on_shikigami_revived）。未气绝/已离场为空操作。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        p = game.state.players[ref.player]
+        s = p.shikigami[ref.shikigami]
+        if not s.defeated or s.despawned:
+            continue
+        game._revive(p, ref.player, ref.shikigami)
+
+
+@action("reattach_form")
+def reattach_form(game, ctx, *, targets: list[Ref]) -> None:
+    """把触发事件（on_form_destroyed）中被消灭的形态卡实例从控制者墓地找回并重新
+    结附给来源式神（不灭之火"返回场上"；维护者答复：同一实例，不生成新牌；targets 忽略）。
+
+    实例不在墓地（被其它效果移走）、来源式神已离场或气绝（配合 revive 使用）时为空操作。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("reattach_form 需要来源式神")
+    ev = ctx.event or {}
+    uid = ev.get("uid")
+    pi, si = ctx.source.player, ctx.source.shikigami
+    p = game.state.players[pi]
+    s = p.shikigami[si]
+    if not s.in_play:
+        return
+    card = next((c for c in p.graveyard if c.uid == uid), None)
+    if card is None:
+        return
+    game._remove_from_zone(p, card)
+    game._attach_form(p, si, card, game.db.cards[card.id])

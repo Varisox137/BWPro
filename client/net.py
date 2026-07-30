@@ -182,6 +182,23 @@ class NetClient:
             card = p.hand[int(cmd) - 1]  # 调度直接输入手牌序号
             self.send_cmd({"op": "mulligan", "uid": card.uid})
             return
+        if st.pending_choice is not None:
+            # 结算中交互选择（青灯夜谈）：choose <序号> 作答；对方的选择只提示等待
+            pend = st.pending_choice
+            if pend.get("player") != self.me:
+                print("等待对方完成检视选牌")
+                return
+            p = st.players[self.me]
+            opts = [c for u in pend["options"]
+                    for c in [next((x for x in p.deck if x.uid == u), None)] if c]
+            if cmd == "choose" and args:
+                self.send_cmd({"op": "choose", "uid": opts[int(args[0]) - 1].uid})
+                return
+            print("—— 检视牌库顶：输入 choose <序号> 选择一张置入手牌 ——")
+            for i, c in enumerate(opts):
+                cd = self.db.cards[c.id]
+                print(f"  [{i + 1}]《{cd.name}》 {cd.text}")
+            return
         if st.active != self.me:
             print("还没到你的回合")
             return

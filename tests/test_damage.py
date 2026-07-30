@@ -540,3 +540,185 @@ def test_lethal_not_damage_property(db, make_game):
     b.immunities.append({"kind": "combat_damage", "turn": g.state.turn})
     g.apply({"op": "assault", "index": 0})
     assert b.health == 4 and not b.defeated  # 未造成伤害：必杀不触发
+
+
+# ==========================================================================
+# 治疗管线扩展（过量治疗转化 / 反转 / 恢复触发 / 伤害合计 memo / 治疗目标池）
+# ==========================================================================
+
+def test_overheal_converts_on_friendly_heal(db, make_game):
+    """过量治疗转化（海坊主）：on_heal payload 带 overheal = 治疗量-实际治疗量；
+    己方目标获得等量护甲（觉醒另加等量力量）。满血治疗（实际恢复 0）不发 on_heal、
+    不触发转化。"""
+    overheal_block = lambda extra: F.block(   # noqa: E731
+        F.Step(op="gain_shield", amount={"event": "overheal"},
+               target=T(kind="context", key="target")),
+        *extra,
+        when="on_heal",
+        condition={"source_shikigami": "self", "target_side": "friendly",
+                   "overheal_ge": 1})
+    heal_spell = lambda: F.card(   # noqa: E731
+        10010155, shikigami=SID, level=1, token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        steps=[F.Step(op="heal", amount=5)])
+    # 基础：过量部分转护甲
+    db.shikigami[SID].ability = overheal_block([])
+    db.cards[10010155] = heal_spell()
+    g, pa, pb = _game(make_game)
+    s2 = pa.shikigami[1]
+    s2.level = 1
+    s2.health = 4                    # 已损失 2
+    play(g, 0, 10010155, target=Ref(player=0, shikigami=1))
+    assert s2.health == 6            # 实际恢复 2
+    assert s2.shield == 3            # 过量 3 转护甲
+    # 满血治疗：不触发转化
+    play(g, 0, 10010155, target=Ref(player=0, shikigami=1))
+    assert s2.shield == 3
+    # 觉醒：过量部分转护甲 + 力量
+    db.shikigami[SID].ability = overheal_block(
+        [F.Step(op="buff_power", amount={"event": "overheal"},
+                target=T(kind="context", key="target"))])
+    db.cards[10010156] = heal_spell()
+    g2, pa2, _ = _game(make_game)
+    t2 = pa2.shikigami[1]
+    t2.level = 1
+    t2.health = 4
+    play(g2, 0, 10010156, target=Ref(player=0, shikigami=1))
+    assert t2.shield == 3 and t2.eff_power == t2.base_power + 3
+
+
+def test_heal_reversal_to_enemy(db, make_game):
+    """治疗反转（法界唯心 heal_reversal 标记形态在场）：控制者对敌方的恢复生命
+    效果改为等额伤害（不发出任何治疗事件，伤害事件照常）；对己方的恢复不受影响。"""
+    db.cards[10010157] = F.card(
+        10010157, shikigami=SID, card_type="form", level=1,
+        form_power=5, form_health=6, tags=["heal_reversal"], token=True)
+    db.cards[10010158] = F.card(
+        10010158, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=4, target=T(kind="all", pool="enemy_player"))])
+    db.cards[10010159] = F.card(
+        10010159, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=4, target=T(kind="all", pool="self_player"))])
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010157)             # 结附反转形态
+    pa.health = 25
+    n = len(g.history)
+    play(g, 0, 10010158)             # 对敌方牌手的"恢复"→ 等额伤害
+    assert pb.health == 30 - 4
+    assert "on_heal" not in g.history[n:]
+    assert "on_player_damaged" in g.history[n:]
+    play(g, 0, 10010159)             # 对己方的恢复不受影响
+    assert pa.health == 29
+
+
+def test_heal_trigger_abilities_once_per_turn(db, make_game):
+    """恢复触发型能力（青坊主/禅心）：己方任意角色实际恢复即触发（含式神与牌手）；
+    turn_mark 门控每回合合计一次、任一回合开始清除；觉醒版无门控每次触发。"""
+    db.shikigami[100102].ability = F.block(
+        F.Step(op="turn_mark", key="qfz"),
+        F.Step(op="random_damage", amount=1, pool="enemy_character", count=2),
+        when="on_heal", condition={"target_side": "friendly", "turn_mark_not": "qfz"})
+    db.cards[10010155] = F.card(
+        10010155, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=2, target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    pa.shikigami[IDX].health = 1
+    pa.shikigami[1].level = 1        # 青坊主位在场
+    pb.shikigami[0].level = 1        # 敌方角色池 = 式神0 + 牌手
+    play(g, 0, 10010155)
+    hurt = (30 - pb.health) + sum(s.max_health - s.health for s in pb.shikigami)
+    assert hurt == 2                 # 随机两个敌方角色各 1
+    play(g, 0, 10010155)             # 本回合第二次恢复：不再触发
+    hurt2 = (30 - pb.health) + sum(s.max_health - s.health for s in pb.shikigami)
+    assert hurt2 == 2
+    pass_turns(g, 2)                 # 任一回合开始清除标记 → 下轮可再触发
+    pa.shikigami[IDX].health = 1
+    play(g, 0, 10010155)
+    hurt3 = (30 - pb.health) + sum(s.max_health - s.health for s in pb.shikigami)
+    assert hurt3 == 4
+    # 觉醒版（无 turn_mark 门控）：每次恢复都对所有敌人造成 1 伤
+    db.shikigami[100102].ability = F.block(
+        F.Step(op="damage", amount=1, target=T(kind="all", pool="enemy_character")),
+        when="on_heal", condition={"target_side": "friendly"})
+    g2, pa2, pb2 = _game(make_game)
+    pa2.shikigami[IDX].health = 1
+    pa2.shikigami[1].level = 1
+    pb2.shikigami[0].level = 1
+    play(g2, 0, 10010155)
+    play(g2, 0, 10010155)
+    assert pb2.health == 30 - 2      # 两次恢复各 1
+    assert pb2.shikigami[0].health == pb2.shikigami[0].max_health - 2
+
+
+def test_heal_trigger_draw_once_per_turn(db, make_game):
+    """恢复抽牌（禅心）：每回合一次，恢复时抽 1。"""
+    db.shikigami[100102].ability = F.block(
+        F.Step(op="turn_mark", key="zx"),
+        F.Step(op="draw", count=1),
+        when="on_heal", condition={"target_side": "friendly", "turn_mark_not": "zx"})
+    db.cards[10010155] = F.card(
+        10010155, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=2, target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    pa.shikigami[IDX].health = 1
+    pa.shikigami[1].level = 1
+    n0 = len(pa.hand)
+    play(g, 0, 10010155)
+    assert len(pa.hand) == n0 + 1    # 抽 1
+    play(g, 0, 10010155)
+    assert len(pa.hand) == n0 + 1    # 本回合不再触发
+
+
+def test_damage_total_memo_heal(db, make_game):
+    """伤害合计 memo（巨浪）：damage 记录 last_damage_total（扣减生命口径，护甲吸收
+    部分不计），后续 step 以 {memo: ...} 动态数值引用恢复来源式神。"""
+    db.cards[10010155] = F.card(
+        10010155, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="enemy_shikigami")),
+               F.Step(op="heal", amount={"memo": "last_damage_total"},
+                      target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    s.health = 1                     # 已损失 3
+    pb.shikigami[0].level = 1
+    pb.shikigami[1].level = 1
+    pb.shikigami[0].shield = 1       # 吸收 1：实际造成 1 + 2 = 3
+    play(g, 0, 10010155)
+    assert pb.shikigami[0].health == pb.shikigami[0].max_health - 1
+    assert pb.shikigami[1].health == pb.shikigami[1].max_health - 2
+    assert s.health == 4             # 按实际总点数恢复 3
+
+
+def test_side_of_last_heal_pool(db, make_game):
+    """side_of_last_heal 池（佛光）：为上一步治疗目标所属方的所有角色恢复。"""
+    db.cards[10010155] = F.card(
+        10010155, shikigami=SID, level=1, token=True,
+        target=T(kind="choose", pool="any_character"),
+        steps=[F.Step(op="heal", amount=4),
+               F.Step(op="heal", amount=3, target=T(kind="all", pool="side_of_last_heal"))])
+    g, pa, pb = _game(make_game)
+    pb.health = 24
+    pb.shikigami[0].level = 1
+    pb.shikigami[0].health = 1
+    play(g, 0, 10010155, target=Ref(player=1))   # 目标 = 敌方牌手
+    assert pb.health == 30                       # 24 +4 +3（满 30 封顶）
+    assert pb.shikigami[0].health == 4           # 其操控者所有角色：1 +3
+    assert pa.health == 30                       # 己方不受影响
+
+
+def test_heal_player_triggers_self_heal(db, make_game):
+    """灵能：来源式神为牌手恢复生命时，自身恢复等量（按实际治疗量）。"""
+    db.shikigami[SID].ability = F.block(
+        F.Step(op="heal", amount={"event": "amount"}, target=T(kind="self")),
+        when="on_heal",
+        condition={"source_shikigami": "self", "target_kind": "player"})
+    db.cards[10010155] = F.card(
+        10010155, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=4, target=T(kind="all", pool="self_player"))])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    s.health = 1                     # 已损失 3
+    pa.health = 25
+    play(g, 0, 10010155)
+    assert pa.health == 29           # 牌手实际恢复 4
+    assert s.health == 4             # 灵能恢复等量 3（ capped by 已损失）

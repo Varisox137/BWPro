@@ -558,6 +558,24 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
     settle_seen = _play_settle(game, 0, printer)  # 先手首回合的回合开始阶段起：调度后首块明细
     print(render(game))
     while game.state.winner is None:
+        if game.state.pending_choice is not None:
+            # 结算中交互选择（青灯夜谈）：展示可检视牌并等待选择
+            pend = game.state.pending_choice
+            p = game.state.players[pend["player"]]
+            opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
+            print(f"—— {p.name} 检视牌库顶 {len(opts)} 张牌 ——")
+            for i, c in enumerate(opts):
+                cd = game.db.cards[c.id]
+                print(f"  [{i + 1}]《{cd.name}》 {cd.text}")
+            try:
+                pick = int(tui.prompt("选择一张置入手牌 > ")) - 1
+                game.apply({"op": "choose", "uid": opts[pick].uid,
+                            "player": pend["player"]})
+                settle_seen = _play_settle(game, settle_seen, printer)
+                print(render(game))
+            except (IllegalAction, ValueError, IndexError):
+                print("参数有误，输入序号选择")
+            continue
         prompt = f"[{game.current.name}]"
         if game.state.phase == "upgrade":
             prompt = f"[{game.current.name} 升级阶段（剩 {game.current.upgrades} 次）]"

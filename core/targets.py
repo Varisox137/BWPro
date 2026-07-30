@@ -13,6 +13,12 @@ pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / sel
      / projectile（投射：敌方战斗区式神，空则敌方牌手）/ enemy_combat（敌方战斗区式神）
      / enemy_bench（敌方准备区：在场且不在战斗区的敌方式神）
      / enemy_character（敌方在场式神 + 敌方牌手）/ friendly_others（己方其他在场式神，排除来源）
+     / friendly_character（己方在场式神 + 己方牌手，祝福之水"己方所有角色"）
+     / friendly_others_character（己方其他在场式神 + 己方牌手，排除来源；蹈海"己方其他角色"）
+     / any_character（双方在场式神 + 双方牌手，治愈之水/佛光"一个角色"）
+     / friendly_lowest_level（己方在场式神中等级最低者；并列全部入池由使用者选择，百闻一得）
+     / side_of_last_heal（本块上一步 heal 目标所属方的所有角色——在场式神 + 牌手；佛光
+       "为其操控者的所有角色"，仅 kind=all 可用，读 ctx.memo["last_heal_targets"]）
 """
 from __future__ import annotations
 
@@ -29,6 +35,11 @@ POOLS = frozenset({
     "enemy_bench",
     "enemy_character",
     "friendly_others",
+    "friendly_character",
+    "friendly_others_character",
+    "any_character",
+    "friendly_lowest_level",
+    "side_of_last_heal",
 })
 
 
@@ -99,6 +110,23 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
         return [Ref(player=enemy)]
     if pool == "enemy_character":
         return alive_shiki(enemy) + [Ref(player=enemy)]
+    if pool == "friendly_character":
+        return alive_shiki(controller) + [Ref(player=controller)]
+    if pool == "friendly_others_character":
+        # 己方其他角色：排除来源由 resolve() 处理（此处与 friendly_character 相同）
+        return alive_shiki(controller) + [Ref(player=controller)]
+    if pool == "any_character":
+        return (alive_shiki(controller) + alive_shiki(enemy)
+                + [Ref(player=controller), Ref(player=enemy)])
+    if pool == "friendly_lowest_level":
+        # 己方在场式神中等级最低者（并列全部入池，choose 时由使用者选择；百闻一得）
+        refs = alive_shiki(controller)
+        if not refs:
+            return []
+        lowest = min(game.state.players[controller].shikigami[r.shikigami].level
+                     for r in refs)
+        return [r for r in refs
+                if game.state.players[controller].shikigami[r.shikigami].level == lowest]
     raise ValueError(f"未知目标池: {pool}")
 
 
@@ -119,6 +147,19 @@ def resolve(game, spec, ctx) -> list[Ref]:
             # 己方其他在场式神：排除效果来源（古尘之壁）
             refs = [r for r in pool_refs(game, "friendly_shikigami", ctx.controller)
                     if r != ctx.source]
+        elif spec.pool == "friendly_others_character":
+            # 己方其他角色（式神 + 牌手）：排除效果来源（蹈海）
+            refs = [r for r in pool_refs(game, "friendly_character", ctx.controller)
+                    if r != ctx.source]
+        elif spec.pool == "side_of_last_heal":
+            # 上一步 heal 目标所属方的所有角色（佛光"为其操控者的所有角色"）
+            memo = getattr(ctx, "memo", None) or {}
+            healed = memo.get("last_heal_targets") or []
+            if not healed:
+                return []
+            side = healed[0].player
+            refs = [r for r in pool_refs(game, "any_character", ctx.controller)
+                    if r.player == side]
         else:
             refs = pool_refs(game, spec.pool, ctx.controller)
         sid = (spec.model_extra or {}).get("shikigami")
@@ -175,6 +216,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - {shikigami_active: <式神id>}  ：控制者的式神（按数据 id）在场——等级 ≥1、未气绝、
       未离场（[羁绊]触发条件："使用此牌时，对应式神等级不为 0 且未气绝"）
+    - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
+      orb_ge 为控制者鬼火的专用键，语义不同）
+    - {victim_lethal: true}    ：事件 victim 当前生命 ≤ 事件伤害值 amount（"将受到致命
+      伤害"——舍生响应；on_damage_start 时机在护甲计算前，按面板伤害判定）
+    - {victim_in_combat: true} ：事件 victim 是其控制者战斗区式神（"战斗区式神被攻击"
+      ——沧海之盾响应）
     - 其余按键值相等比较
     """
     if not condition:
@@ -207,6 +254,27 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             # 指定方战斗区为空（偷袭响应"（敌方）战斗区没有式神"）：self=控制者 / opponent=对方
             cp = game.state.players[controller if want == "self" else 1 - controller]
             if cp.combat_index is not None:
+                return False
+        elif key == "victim_lethal":
+            # 事件 victim 将受致命伤害：面板伤害值 ≥ victim 当前生命（on_damage_start
+            # 时机在护甲计算前；舍生"当你将受到致命伤害时"）
+            v = event.get("victim")
+            if not isinstance(v, Ref):
+                return False
+            vp = game.state.players[v.player]
+            hp = vp.shikigami[v.shikigami].health if v.shikigami is not None else vp.health
+            if int(event.get("amount", 0)) < hp:
+                return False
+        elif key == "victim_in_combat":
+            # 事件 victim 是其控制者的战斗区式神（沧海之盾"当你战斗区式神被攻击时"）
+            v = event.get("victim")
+            if not isinstance(v, Ref) or v.shikigami is None:
+                return False
+            if game.state.players[v.player].combat_index != v.shikigami:
+                return False
+        elif key.endswith("_ge"):
+            # 通用数值下限：事件字段 ≥ n（如 overheal_ge: 1 = 存在过量治疗）
+            if int(event.get(key[:-3], 0)) < int(want):
                 return False
         elif key.endswith("_side"):
             ref = event.get(key[:-5])

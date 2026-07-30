@@ -194,6 +194,8 @@ class PlayerState(BaseModel):
     # 回合开始不清除（player_aura 动作写入，emit 时按注册顺序收集）
     assault_boosts: list[dict[str, Any]] = Field(default_factory=list)  # 出击加成（鼓舞）：
     # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
+    immunities: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级伤害免疫条目
+    # （舍生"本回合你免疫所有伤害"；{"kind": "all", "turn": 回合号}，按回合号比对过期）
     ext: dict[str, Any] = Field(default_factory=dict)  # 牌手级专用运行时数据（约定键见
     # docs/terminology.md：countdown_history 本局倒计时能力生效序列 等）
 
@@ -238,6 +240,10 @@ class GameState(BaseModel):
     log: list[str] = Field(default_factory=list)
     settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；CLI 空闲点逐条展示用，与 log 指令回显分离）
     temp_grants: list[TempGrant] = Field(default_factory=list)  # 一次性临时触发注册表
+    pending_choice: dict | None = None  # 结算中交互选择（青灯夜谈 deck_top_pick：
+    # {"kind", "player", "options": [uid], "remaining", "clear_orb"}）；挂起期间只接受
+    # choose 指令；options 对非选择方脱敏（server/room.py sanitize_state）。块续点
+    # （Game._suspended）为内存态不序列化——断线重连后挂起块不续跑（已知限制）
 
     def next_emit_seq(self) -> int:
         """取下一个事件编号并递增。"""

@@ -7,7 +7,7 @@
 """
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give, move
+from tests.factories import give, move, pass_turns, play
 
 T = F.T
 SELF = T(kind="self")
@@ -431,3 +431,42 @@ def test_hand_trigger_fast_aura(real_game):
     pa.orb = 0
     with pytest.raises(IllegalAction):
         F.play(g, 0, 10010601)
+
+
+# ==========================================================================
+# 攻击计数增强（轮回）：on_before_assault 卡牌触发器 + set_health
+# ==========================================================================
+
+def test_assault_on_player_counter_enhance(db, make_game):
+    """攻击计数增强（轮回）：对手对你的牌手发起的攻击每次 +1（on_before_assault
+    最终目标为牌手，计数归防守方；以式神为目标的攻击不计）；打出时生命变为 10+X
+    （set_health 非治疗非伤害，不触发治疗/伤害事件）。"""
+    cid = 10010161
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="set_health", amount={"enhance": True, "base": 10},
+                      target=T(kind="all", pool="self_player"))],
+        triggers=[F.block(
+            F.Step(op="add_mod", to="persistent", key="enhance", amount=1),
+            when="on_before_assault",
+            condition={"victim_side": "friendly", "victim_kind": "player",
+                       "attacker_side": "enemy"})])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    pb.shikigami[0].level = 1
+    give(g, 0, cid)
+    pass_turns(g, 1)                          # → B 回合
+    g.apply({"op": "assault", "index": 0})    # B 出击 A 牌手（A 战斗区空）
+    assert pa.card_mods[cid]["enhance"] == 1  # 对牌手的攻击 +1（无论是否受伤均计）
+    pass_turns(g, 1)                          # → A 回合
+    move(g, 0, 0)                             # A 式神进战斗区
+    pass_turns(g, 1)                          # → B 回合
+    g.apply({"op": "assault", "index": 0})    # 被战斗区式神拦下：victim 为式神
+    assert pa.card_mods[cid]["enhance"] == 1  # 不计
+    pass_turns(g, 1)                          # → A 回合
+    n = len(g.history)
+    play(g, 0, cid)
+    assert pa.health == 11                    # 10 + 1
+    assert "on_heal" not in g.history[n:]     # 非治疗：不触发治疗事件
