@@ -65,6 +65,15 @@ def _hide_mulligan_log(lines: list[str], st, viewer: int) -> list[str]:
             if not (l.startswith(prefix) and "调度了一张手牌" in l)]
 
 
+def _hide_mulligan_timeline(entries: list[dict], st, viewer: int) -> list[dict]:
+    """合并时间线的调度信息隐藏：与 _hide_mulligan_log 同一谓词，只过滤叙事行
+    （k="l"），结算行（k="s"）不含调度行为内容、全保留。"""
+    prefix = f"{st.players[1 - viewer].name} "
+    return [e for e in entries
+            if not (e.get("k") == "l" and e.get("m", "").startswith(prefix)
+                    and "调度了一张手牌" in e["m"])]
+
+
 class Connection:
     """一名玩家的连接槽位（seat 固定，断线只换 ws 不换槽）。"""
 
@@ -104,6 +113,7 @@ class Room:
         self._timer_deadline: float | None = None  # 当前计时器的 unix 截止时刻（随 state 下发）
         self._sent_log = 0
         self._sent_settle = 0
+        self._sent_timeline = 0
         self._over_sent = False
 
     # ---------- 加入 / 重连 / 断线 ----------
@@ -225,6 +235,14 @@ class Room:
             if c is not None:
                 await c.send(msg)
 
+    def _current_timer(self) -> dict | None:
+        """当前有效计时器（kind/deadline），随 state 下发；无或已过期切换时为 None。"""
+        key = self._timer_key
+        if key is not None and self._timer_deadline is not None \
+                and key == self.current_timer_key():
+            return {"kind": key[0], "deadline": self._timer_deadline}
+        return None
+
     async def broadcast_state(self) -> None:
         """向双方下发完整状态（按各自视角脱敏）+ 新增日志；对局结束时补发 game_over。
         附带当前计时器的 timer（kind/deadline），客户端状态栏倒计时显示用。"""
@@ -233,17 +251,17 @@ class Room:
         self._sent_log = len(st.log)
         settle = st.settle_log[self._sent_settle:]
         self._sent_settle = len(st.settle_log)
+        timeline = st.timeline[self._sent_timeline:]
+        self._sent_timeline = len(st.timeline)
         base = st.model_dump(mode="json")
-        key = self._timer_key
-        timer = None
-        if key is not None and self._timer_deadline is not None \
-                and key == self.current_timer_key():
-            timer = {"kind": key[0], "deadline": self._timer_deadline}
+        timer = self._current_timer()
         for c in self.conns:
             viewer = self.seat_to_player[c.seat]
             vlog = _hide_mulligan_log(log, st, viewer)  # 对方调度行为行不发给 viewer
+            vtimeline = _hide_mulligan_timeline(timeline, st, viewer)  # 合流同样过滤
             await c.send(protocol.state(sanitize_state(base, viewer), vlog,
-                                        timer=timer, settle=settle))
+                                        timer=timer, settle=settle,
+                                        timeline=vtimeline))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
             await self._broadcast(protocol.game_over(st.winner, "player_defeated"))
@@ -252,13 +270,16 @@ class Room:
     async def resync(self, conn: Connection) -> None:
         """断线重连后的全量补发（仅发给该连接，不动广播游标）：
         断线期间的广播游标照常前进，重连者错过的日志按全量 state.log 补发；
-        结算明细历史不补（回放节奏打扰），以最新完整 state 场况为准。"""
+        结算明细历史不补（回放节奏打扰），以最新完整 state 场况为准。
+        payload 全量含 pending_choice——重连者若正待检视选牌，客户端按状态提示作答；
+        计时器一并补发（状态栏倒计时不断档）。"""
         st = self.game.state
         base = st.model_dump(mode="json")
         viewer = self.seat_to_player[conn.seat]
         await conn.send(protocol.state(
             sanitize_state(base, viewer),
-            _hide_mulligan_log(list(st.log), st, viewer)))  # 全量补发同样隐藏对方调度明细
+            _hide_mulligan_log(list(st.log), st, viewer),  # 全量补发同样隐藏对方调度明细
+            timer=self._current_timer()))
 
     # ---------- 计时器 ----------
 
@@ -313,7 +334,18 @@ class Room:
                 await self._broadcast(protocol.notice(
                     f"{st.players[pi].name} 调度超时，自动结束调度"))
                 self.game.apply({"op": "ready", "player": pi})
-            else:  # 回合超时：升级阶段先随机升级，再结束回合
+            else:  # 回合超时：先收尾结算中交互选择，升级阶段先随机升级，再结束回合
+                if st.pending_choice is not None:
+                    # 检视选牌（青灯夜谈）挂起时随机作答到底——否则 apply 拒绝 choose
+                    # 以外的指令，回合无法超时收尾、计时器 key 不变也不会重启（死局）
+                    chooser = st.players[st.pending_choice["player"]].name
+                    while st.pending_choice is not None:
+                        pend = st.pending_choice
+                        self.game.apply({"op": "choose",
+                                         "uid": self.rng.choice(pend["options"]),
+                                         "player": pend["player"]})
+                    await self._broadcast(protocol.notice(
+                        f"{chooser} 的检视选牌超时，已随机选择"))
                 p = st.players[st.active]
                 if st.phase == "upgrade":
                     while st.phase == "upgrade" and p.upgrades > 0:

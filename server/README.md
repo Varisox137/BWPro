@@ -74,7 +74,8 @@ server/
 { "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
 { "type": "start", "player_index": 0, "opponent": "乙", "you_first": true }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
-  "timer": { "kind": "turn", "deadline": 1735689600.0 } }
+  "timer": { "kind": "turn", "deadline": 1735689600.0 },
+  "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }] }
 { "type": "error", "reason": "..." }
 { "type": "notice", "text": "..." }
 { "type": "game_over", "winner": 0, "reason": "player_defeated" }
@@ -87,8 +88,12 @@ server/
 | 阶段 | 默认 | 超时行为 |
 |------|------|----------|
 | 起始手牌调度 | 30s/人 | 自动 `ready`，立即结束该玩家调度 |
-| 回合（含升级阶段） | 120s | 升级阶段先由系统在可升级式神中随机升级，再立即 `end_turn` |
+| 回合（含升级阶段） | 120s | 结算中交互选择（检视选牌）挂起时先随机作答到底；升级阶段再由系统在可升级式神中随机升级，最后立即 `end_turn` |
 
+- `settle`/`timeline` 为结算明细增量：timeline 是结算（k="s"）与叙事日志（k="l"）
+  按真实发生顺序的合流，客户端结算播放以它为准（settle/log 字段保留兼容）；
+  断线重连 resync 只发全量 payload+log（含 pending_choice 与当前 timer），
+  结算明细历史不补。
 - 每 Room 一个 `asyncio` 计时器；计时对象（调度中的玩家 / 回合号）变化时重启，
   同一回合内的操作不重置计时。
 - `state` 消息附带当前计时器的 `timer`（`kind`: mulligan/turn，`deadline`: unix

@@ -283,6 +283,55 @@ def test_turn_timeout_random_upgrade_then_end(db):
     run(go())
 
 
+def test_turn_timeout_pending_choice_random_choose(db):
+    """回合超时遇结算中交互选择（检视选牌）挂起：先随机作答到底，再走常规超时
+    流程（升级/结束回合）——否则 apply 拒绝 choose 以外的指令，计时器 key
+    不变也不会重启，房间死局。"""
+    async def go():
+        room, ws0, _ = await _started_room(db, turn_timeout=60)
+        g = room.game
+        for pi in (0, 1):
+            g.apply({"op": "ready", "player": pi})
+        while g.state.phase == "upgrade":  # 检视选牌只会在战斗阶段出现
+            idx = g.legal_upgrade_indices(0)[0]
+            g.apply({"op": "upgrade", "player": 0, "index": idx})
+        p0 = g.state.players[0]
+        hand_n = len(p0.hand)
+        assert g._open_deck_top_pick(0, 2, 1, False)  # 青灯夜谈式挂起（无续块）
+        assert g.state.pending_choice is not None
+        turn = g.state.turn
+        await room._on_timeout(("turn", turn))
+        assert g.state.pending_choice is None
+        assert len(p0.hand) == hand_n + 1  # 随机作答：检视牌已入手
+        assert g.state.active == 1 and g.state.turn > turn  # 常规超时收尾完成
+        assert any(m.get("type") == "notice" and "随机选择" in m.get("text", "")
+                   for m in ws0.messages)
+    run(go())
+
+
+def test_reconnect_resync_pending_choice(db):
+    """结算中交互选择期间断线重连：resync 全量 state 的 pending_choice 对选择方
+    保留真实 options（客户端据此提示作答），并附带当前计时器。"""
+    async def go():
+        room, _, _ = await _started_room(db, turn_timeout=60)
+        g = room.game
+        for pi in (0, 1):
+            g.apply({"op": "ready", "player": pi})
+        assert g._open_deck_top_pick(0, 2, 1, False)
+        real_opts = list(g.state.pending_choice["options"])
+        room.reschedule_timer()  # 调度→回合切换后刷新计时 key
+        seat0 = room.seat_to_player.index(0)
+        conn = room.conns[seat0]
+        room.disconnect(conn)
+        ws_new = FakeWS()
+        await room.reconnect(conn.token, ws_new)
+        await room.resync(conn)
+        msg = [m for m in ws_new.messages if m["type"] == "state"][-1]
+        assert msg["payload"]["pending_choice"]["options"] == real_opts  # 选择方视角不脱敏
+        assert msg.get("timer", {}).get("kind") == "turn"
+    run(go())
+
+
 def test_timer_not_reset_by_actions_within_turn(db):
     """同一回合内的操作不重置回合计时器（120s 覆盖整个回合）。"""
     async def go():
