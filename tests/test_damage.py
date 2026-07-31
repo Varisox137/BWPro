@@ -763,27 +763,30 @@ def test_damage_to_fragile_conversion(db, make_game):
     assert b0.health == 13
 
 
-def test_blessing_negates_enemy_effect_damage(db, make_game):
-    """庇佑（消耗型关键字）：抵消一次敌方造成的非战斗伤害并失去；战斗伤害、
-    己方来源伤害不触发；被护甲完全吸收的伤害不消耗。"""
+def test_blessing_negates_enemy_spell_damage(db, make_game):
+    """庇佑（消耗型关键字）：抵消一次敌方造成的法术伤害（法术牌效果伤害，spell=True）
+    并失去；战斗伤害、式神能力伤害（非法术的非战斗伤害——答复(7)）、己方来源伤害
+    不触发；被护甲完全吸收的伤害不消耗。"""
     g, pa, pb = _game(make_game)
     b = pb.shikigami[0]
     b.health = 20
     bref = Ref(player=1, shikigami=0)
     enemy = Ref(player=0, shikigami=IDX)
     b.one_shot_keywords.append("blessing")
-    g.deal_to_shikigami(bref, 3, enemy, kind="effect")
-    assert b.health == 20 and "blessing" not in b.one_shot_keywords  # 抵消并失去
+    g.deal_to_shikigami(bref, 3, enemy, spell=True)
+    assert b.health == 20 and "blessing" not in b.one_shot_keywords  # 法术伤害：抵消并失去
     b.one_shot_keywords.append("blessing")
     g.deal_to_shikigami(bref, 2, enemy, kind="combat")             # 战斗伤害不触发
     assert b.health == 18 and "blessing" in b.one_shot_keywords
-    g.deal_to_shikigami(bref, 1, Ref(player=1, shikigami=1), kind="effect")  # 己方不触发
+    g.deal_to_shikigami(bref, 1, enemy)                            # 能力伤害（非法术）不触发
     assert b.health == 17 and "blessing" in b.one_shot_keywords
+    g.deal_to_shikigami(bref, 1, Ref(player=1, shikigami=1), spell=True)  # 己方法术不触发
+    assert b.health == 16 and "blessing" in b.one_shot_keywords
     b.shield = 5
-    g.deal_to_shikigami(bref, 2, enemy, kind="effect")             # 护甲全吸收不消耗
-    assert b.health == 17 and b.shield == 3 and "blessing" in b.one_shot_keywords
-    g.deal_to_shikigami(bref, 4, enemy, kind="effect")             # 穿透护甲部分被抵消
-    assert b.health == 17 and b.shield == 0
+    g.deal_to_shikigami(bref, 2, enemy, spell=True)                # 护甲全吸收不消耗
+    assert b.health == 16 and b.shield == 3 and "blessing" in b.one_shot_keywords
+    g.deal_to_shikigami(bref, 4, enemy, spell=True)                # 穿透护甲部分被抵消
+    assert b.health == 16 and b.shield == 0
     assert "blessing" not in b.one_shot_keywords
 
 

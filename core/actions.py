@@ -40,12 +40,14 @@ def damage(game, ctx, *, targets: list[Ref], amount: int,
     if ctx.card is not None:
         amount += int(ctx.card.mods.get("damage_boost", 0))
     pierce = piercing if piercing is not None else game._ability_piercing(ctx)
+    spell = game._spell_damage(ctx)  # 法术伤害标记（庇佑判定用，答复(7)）
     total = 0
     for ref in targets:
         if ref.shikigami is None:
-            total += game.deal_to_player(ref.player, amount, ctx.source)
+            total += game.deal_to_player(ref.player, amount, ctx.source, spell=spell)
         else:
-            total += game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce)
+            total += game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce,
+                                            spell=spell)
     if ctx.memo is not None:
         # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用（风神一扇）
         ctx.memo["last_damage_victims"] = [r for r in targets if r.shikigami is not None]
@@ -585,14 +587,12 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 @action("search_deck")
 def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target",
                 card_type: str | None = None, max_level: int | str | None = None,
-                direct_play_power_ge: int | None = None,
-                shuffle: bool = True) -> None:
+                direct_play_power_ge: int | None = None) -> None:
     """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
     shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
     "self"=来源式神；或给出数据 id。仅实际检索到卡牌才洗牌库（未命中不洗——
-    维护者定案第十三阶段）。shuffle=False 时命中也不洗牌（森佑灵引——raw 无
-    "然后洗牌库"句，区别于花信风，维护者定案第十四阶段）。
+    维护者定案第十三阶段；检索类效果命中即洗，答复(5)）。
     card_type：限定卡牌主类型（森佑灵引 card_type=form）；max_level="target"：卡牌
     等级 ≤ 选择目标式神当前等级（"不高于该式神等级"）。
     direct_play_power_ge：选择目标式神存活且力量 ≥ 该值时改为直接使用（森佑灵引
@@ -644,9 +644,8 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
     game.move_card(p, card, "hand")
     game._materialize(p, card, cdef)  # 生成点统一快照（置入手牌即获"本局游戏"类增强）
     game._log(f"从牌库检索了【{cdef.name}】")
-    if shuffle:
-        game.rng.shuffle(p.deck)
-        game._log(f"{p.name} 洗了牌库")
+    game.rng.shuffle(p.deck)
+    game._log(f"{p.name} 洗了牌库")
 
 
 @action("random_damage")
@@ -670,10 +669,11 @@ def random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
     n = min(n, len(refs))
     chosen = game.rng.sample(refs, n)
     pierce = piercing if piercing is not None else game._ability_piercing(ctx)
+    spell = game._spell_damage(ctx)
     from core.engine import _DamageEvent  # 避免模块顶层循环引用
     game._run_damage_queue([
         _DamageEvent(source=ctx.source, victim=r, amount=amount, kind="effect",
-                     piercing=pierce)
+                     piercing=pierce, spell=spell)
         for r in chosen
     ])
 
@@ -693,6 +693,7 @@ def distribute_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
     if not refs:
         return
     pierce = piercing if piercing is not None else game._ability_piercing(ctx)
+    spell = game._spell_damage(ctx)
     from core.engine import _DamageEvent  # 避免模块顶层循环引用
     deferred: list[tuple[Ref, Ref | None, str]] = []
     for _ in range(amount):
@@ -703,7 +704,7 @@ def distribute_damage(game, ctx, *, targets: list[Ref], amount: int, pool: str,
         r = game.rng.choice(legal)
         game._run_damage_queue(
             [_DamageEvent(source=ctx.source, victim=r, amount=1, kind="effect",
-                          piercing=pierce)],
+                          piercing=pierce, spell=spell)],
             defer_defeats=deferred)
     for ref, source, reason in deferred:
         game.check_defeated(ref, source=source, reason=reason)

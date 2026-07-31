@@ -63,6 +63,7 @@ class _DamageEvent:
     """伤害事件要素（docs/rules.md 第五章）：来源、受伤者、伤害值、原因、是否贯通。
 
     kind: "combat"（攻击方战斗伤害）/ "counter"（反击战斗伤害）/ "effect"（法术、能力等）。
+    spell: 法术伤害标记（法术牌效果伤害；≠ 非战斗伤害——式神能力伤害不算，答复(7)）。
     skip_early: 贯通溢出产生的新事件跳过早期流程，从"护甲计算前"开始结算（rules.md:199③）。
     时点批次监听者可通过事件 payload 中的 damage 引用直接修改 amount（扣减生命前锁定）。
     """
@@ -71,6 +72,7 @@ class _DamageEvent:
     victim: Ref  # shikigami 字段为 None 表示牌手
     amount: int
     kind: str = "effect"
+    spell: bool = False
     piercing: bool = False
     skip_early: bool = False
     converted: bool = False  # 已经历过一次转化的伤害（碧羽散华破甲→伤害）：
@@ -2079,6 +2081,12 @@ class Game:
 
     # ==================== 伤害 / 抽牌 / 气绝（动作层共用管线） ====================
 
+    def _spell_damage(self, ctx: ExecContext) -> bool:
+        """法术伤害判定（答复(7)）：伤害来自法术牌的效果（ctx.card 为法术牌且非能力
+        来源）。法术伤害 ≠ 非战斗伤害——式神能力（基础/觉醒/形态/延迟）伤害不算。"""
+        return (ctx.card is not None and not ctx.is_ability
+                and self.db.cards[ctx.card.id].card_type == "spell")
+
     def _ability_piercing(self, ctx: ExecContext) -> bool:
         """能力伤害的贯通继承：仅当伤害来自式神能力（is_ability：基础/觉醒/形态/延迟能力）
         且来源式神具有贯通时成立；卡牌效果伤害不继承（terminology.md「贯通」）。"""
@@ -2089,17 +2097,19 @@ class Game:
 
     def deal_to_shikigami(self, ref: Ref, amount: int, source: Ref | None,
                           *, kind: str = "effect", piercing: bool = False,
-                          converted: bool = False) -> int:
+                          spell: bool = False, converted: bool = False) -> int:
         """对式神造成伤害（单事件伤害队列，走完整伤害事件流程）；返回实际造成伤害值。"""
         return self._run_damage_queue([_DamageEvent(source=source, victim=ref,
                                                     amount=amount, kind=kind, piercing=piercing,
-                                                    converted=converted)])
+                                                    spell=spell, converted=converted)])
 
     def deal_to_player(self, player_index: int, amount: int, source: Ref | None,
-                       *, kind: str = "effect", converted: bool = False) -> int:
+                       *, kind: str = "effect", spell: bool = False,
+                       converted: bool = False) -> int:
         """对牌手造成伤害（单事件伤害队列，走完整伤害事件流程）；返回实际造成伤害值。"""
         return self._run_damage_queue([_DamageEvent(source=source, victim=Ref(player=player_index),
-                                                    amount=amount, kind=kind, converted=converted)])
+                                                    amount=amount, kind=kind, spell=spell,
+                                                    converted=converted)])
 
     def _run_damage_queue(self, events: list[_DamageEvent],
                           defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None) -> int:
@@ -2211,7 +2221,8 @@ class Game:
                 overflow = ev.amount - s.health
                 ev.amount = s.health
                 dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
-                                       amount=overflow, kind=ev.kind, skip_early=True))
+                                       amount=overflow, kind=ev.kind, spell=ev.spell,
+                                       skip_early=True))
             # 提前结算"扣减生命前"批次，后续不再结算该批次
             self._emit_damage_batch("on_before_health", ev)
             skip_before_health = True
@@ -2249,15 +2260,17 @@ class Game:
             return
         # 批次 7：合并——队列中 (来源, 受伤者, 原因) 均相同的伤害事件合并进最前者
         for other in list(dq):
-            if other.source == ev.source and other.victim == ev.victim and other.kind == ev.kind:
+            if other.source == ev.source and other.victim == ev.victim \
+                    and other.kind == ev.kind and other.spell == ev.spell:
                 ev.amount += other.amount
                 dq.remove(other)
         # 批次 8：扣减生命
         if s is not None:
-            # 庇佑（消耗型关键字）：抵消一次敌方来源的非战斗（法术）伤害，抵消后失去；
-            # 灵咒抵消半侧随灵咒机制引入（docs/rules.md 锚点）。置于扣减生命前——
-            # 被护甲完全吸收/屏障归零的伤害不消耗庇佑
-            if (ev.kind == "effect" and ev.source is not None
+            # 庇佑（消耗型关键字）：抵消一次敌方来源的法术伤害（法术牌效果伤害；
+            # 非战斗伤害 ≠ 法术伤害——白狼基础能力、觉醒·入阵歌等能力伤害不抵消，
+            # 答复(7)），抵消后失去；灵咒抵消半侧随灵咒机制引入（docs/rules.md 锚点）。
+            # 置于扣减生命前——被护甲完全吸收/屏障归零的伤害不消耗庇佑
+            if (ev.kind == "effect" and ev.spell and ev.source is not None
                     and ev.source.player != ev.victim.player
                     and "blessing" in s.one_shot_keywords):
                 s.one_shot_keywords.remove("blessing")

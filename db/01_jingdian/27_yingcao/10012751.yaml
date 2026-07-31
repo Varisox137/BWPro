@@ -10,11 +10,10 @@ cost: 1
 target: {kind: choose, pool: friendly_shikigami}
 effects:
   # 从牌库中抽取1张不高于该式神等级的形态牌；若该式神力量>=4且存活，改为直接使用
-  # （不耗鬼火、play_from=deck）。不洗牌库——raw 无"然后洗牌库"句（区别于花信风，
-  # 维护者定案第十四阶段）
+  # （不耗鬼火、play_from=deck）。检索成功则洗牌库（维护者答复(5)：检索类效果命中即洗）
   steps:
     - {op: search_deck, shikigami: target, card_type: form, max_level: target,
-       direct_play_power_ge: 4, shuffle: false}
+       direct_play_power_ge: 4}
     # [羁绊]：白狼获得[庇佑]（一次性关键字：抵消下一次敌方来源的效果伤害；
     # 池过滤自带在场门控，白狼未出战/不在场为空操作）
     - {op: grant_keyword, keyword: blessing,

@@ -565,9 +565,9 @@ def test_play_sub_side_bond_generate(make_game):
 # 森佑灵矢（10010121，协战：白狼×萤草；第十四阶段）
 #
 # 子卡：灵矢贯虹（白狼侧，10010151）/ 森佑灵引（萤草侧，10012751）。
-# 森佑灵引：从牌库抽取 1 张不高于目标式神等级的形态牌（不洗牌库——raw 无
-# "然后洗牌库"句）；目标力量>=4且存活改为直接使用（从牌库直接结附）；
-# [羁绊]白狼获得[庇佑]。队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]。
+# 森佑灵引：从牌库抽取 1 张不高于目标式神等级的形态牌（命中后洗牌库——答复(5)）；
+# 目标力量>=4且存活改为直接使用（从牌库直接结附）；[羁绊]白狼获得[庇佑]。
+# 队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]。
 # ==========================================================================
 
 SYLS = 10010121   # 森佑灵矢
@@ -584,7 +584,7 @@ def test_reinforce_main_dual_ownership(gdb):
 
 def test_search_deck_form_filtered_by_target_level(make_game):
     """森佑灵引（目标力量<4）：从牌库抽取 1 张不高于目标等级的形态牌置入手牌
-    ——不洗牌库（其余牌顺序保持）；[羁绊]白狼获得[庇佑]。"""
+    并洗牌库（检索命中即洗——维护者答复(5)）；[羁绊]白狼获得[庇佑]。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 2, WOLF_IDX: 1}, team=YC_TEAM)
     for c in [c for c in pa.hand if c.id == 10012702]:
         g.move_card(pa, c, "deck")            # 保证牌库内有可检索的 1 级形态
@@ -599,7 +599,8 @@ def test_search_deck_form_filtered_by_target_level(make_game):
     assert len(new) == 1 and g.db.cards[new[0].id].card_type == "form"
     assert new[0].id // 100 == YC
     rest = [c.uid for c in pa.deck]
-    assert rest == [u for u in before if u != new[0].uid]     # 不洗牌：顺序保持
+    assert sorted(rest) == sorted(u for u in before if u != new[0].uid)  # 牌集合一致
+    assert any("洗了牌库" in l for l in g.state.log)          # 命中后洗牌（答复(5)）
     assert "blessing" in pa.shikigami[WOLF_IDX].one_shot_keywords
 
 

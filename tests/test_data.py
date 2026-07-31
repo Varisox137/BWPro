@@ -1835,16 +1835,17 @@ def test_deck_out_burn_instead_of_loss(real_game):
 # ==========================================================================
 # 萤草（100127）卡牌（第十四阶段；基础能力测试见前段）
 #
-# 覆盖：吸取（投射+鼓舞）、治愈之光/勇气之光/安魂之光（进场+回合开始循环）、
+# 覆盖：吸取（选目标伤害+鼓舞）、治愈之光/勇气之光/安魂之光（进场+回合开始循环）、
 # 萤火点点（双择+有形态增强）、闪烁（本回合力量覆写+条件瞬发）、觉醒（形态进场
 # 效果再触发）、虹彩（三形态置入手牌）。测试形态 A/B 为 gdb 覆盖的衍生号段卡。
 # ==========================================================================
 
-def test_projectile_damage_with_boost_shield(real_game):
-    """吸取：造成 2 点伤害（raw 无目标限定词，定案按投射）+ [鼓舞] 获得 2 护甲。"""
+def test_choose_target_damage_with_boost_shield(real_game):
+    """吸取：使用时主动选择目标造成 2 点伤害（维护者答复(4)）+ [鼓舞] 获得 2 护甲。"""
     g, pa, pb = _game(real_game, YC_TEAM)
-    play(g, 0, 10012701)
-    assert pb.health == 28
+    play(g, 0, 10012701, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].health == 3         # 萤草 5→3
+    assert pb.health == 30                     # 不再走投射打玩家
     assert pa.assault_boosts == [{"power": 0, "shield": 2}]
 
 
