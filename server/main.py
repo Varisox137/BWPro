@@ -57,11 +57,20 @@ def _text(msg: dict, key: str, maxlen: int) -> str | None:
     return v
 
 
-def create_app(manager: RoomManager, *, rate_limit: int = 10) -> FastAPI:
+CLIENT_UA = "BWPro-CLI"  # 客户端握手 User-Agent 前缀（软门槛：挡浏览器/扫描器，非访问凭证）
+
+
+def create_app(manager: RoomManager, *, rate_limit: int = 10,
+               require_client_ua: bool = True) -> FastAPI:
     app = FastAPI(title="BWPro 联机服务端")
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
+        # 软门槛：User-Agent 不以 BWPro-CLI 开头的连接在握手阶段直接拒绝（403）。
+        # 注意这只是噪声过滤，header 可伪造，真正的访问控制要靠访问口令。
+        if require_client_ua and not ws.headers.get("user-agent", "").startswith(CLIENT_UA):
+            await ws.close(code=1008)
+            return
         await ws.accept()
         limiter = RateLimiter(rate_limit)
         room = None
@@ -199,6 +208,8 @@ def main() -> None:
     parser.add_argument("--ssl-keyfile", default=None, help="TLS 私钥路径")
     parser.add_argument("--debug-console", action="store_true",
                         help="开启服务端 debug 控制台（stdin）")
+    parser.add_argument("--no-require-ua", action="store_true",
+                        help="关闭 User-Agent 软门槛（默认要求 BWPro-CLI 前缀）")
     args = parser.parse_args()
 
     import uvicorn
@@ -207,7 +218,8 @@ def main() -> None:
     manager = RoomManager(db, turn_timeout=args.turn_timeout,
                           mulligan_timeout=args.mulligan_timeout,
                           max_rooms=args.max_rooms)
-    app = create_app(manager, rate_limit=args.rate_limit)
+    app = create_app(manager, rate_limit=args.rate_limit,
+                     require_client_ua=not args.no_require_ua)
     config = uvicorn.Config(app, host=args.host, port=args.port,
                             ws_ping_interval=10, ws_ping_timeout=5,
                             ws_max_size=1024 * 1024,  # 单条消息最大 1MB

@@ -350,7 +350,8 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         print("已取消")
         return
     try:
-        ws = connect(server_url)
+        # User-Agent 软门槛：服务端要求 BWPro-CLI 前缀（server.main.CLIENT_UA）
+        ws = connect(server_url, additional_headers={"User-Agent": "BWPro-CLI/1.0"})
     except Exception as e:
         print(f"无法连接服务器 {server_url}（{e}）")
         return

@@ -463,9 +463,10 @@ URL = f"ws://127.0.0.1:{PORT}/ws"
 
 
 class WsClient:
-    def __init__(self):
+    def __init__(self, headers: dict | None = None):
         from websockets.sync.client import connect
-        self.ws = connect(URL)
+        hdrs = {"User-Agent": "BWPro-CLI/1.0"} if headers is None else headers
+        self.ws = connect(URL, additional_headers=hdrs)
 
     def send(self, msg: dict):
         self.ws.send(json.dumps(msg))
@@ -565,3 +566,15 @@ def test_full_match_flow(server, db):
     assert st2["turn"] == st["turn"]
     a2.ws.close()
     b.ws.close()
+
+
+def test_client_ua_soft_gate(server):
+    """User-Agent 软门槛：握手 header 不以 BWPro-CLI 开头（浏览器/扫描器等）
+    在握手阶段即被拒绝；携带正确前缀的客户端正常连接。"""
+    import websockets.exceptions
+    with pytest.raises((websockets.exceptions.InvalidStatus,
+                        websockets.exceptions.InvalidStatusCode,
+                        websockets.exceptions.ConnectionClosed)):
+        WsClient(headers={"User-Agent": "Mozilla/5.0"})
+    c = WsClient()  # 默认 BWPro-CLI/1.0：正常
+    c.ws.close()
