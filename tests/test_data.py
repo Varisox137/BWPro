@@ -37,7 +37,7 @@ def _game(real_game, team, levels=None):
 
 YC = 100127       # 萤草（双方 0 号位）
 YC_TEAM = [100127, 100101, 100102, 100123]
-YC_FORM_A, YC_FORM_B = 10012701, 10012702  # 测试库注册的萤草形态牌
+YC_FORM_A, YC_FORM_B = 10012752, 10012753  # 测试库注册的萤草形态牌（衍生号段）
 
 
 def _yc_form(cid: int, name: str, steps=()) -> CardDef:
@@ -49,8 +49,8 @@ def _yc_form(cid: int, name: str, steps=()) -> CardDef:
 
 @pytest.fixture
 def gdb():
-    """真实 db + 测试库临时注册：萤草形态牌 A（空白进场）/B（进场 +2 护甲）
-    与凑卡组的空白法术 03/04（萤草 8 卡未加入，mk_game 卡组构造需要 01-04）；
+    """真实 db + 测试库临时注册：萤草测试形态牌 A（空白进场）/B（进场 +2 护甲，
+    衍生号段 52/53——萤草 01-08 已于第十四阶段补齐真卡）；
     姑获鸟（卡牌未设计，10010601-04 全空白）与青行灯（仅明灯 01 为真卡，
     10011202-04 空白）同样补足 01-04。
     本覆盖原属 test_yingcao.py，合并后萤草基础能力测试（本文件）与灵矢贯虹测试
@@ -59,11 +59,6 @@ def gdb():
     db.cards[YC_FORM_A] = _yc_form(YC_FORM_A, "测试形态·花")
     db.cards[YC_FORM_B] = _yc_form(YC_FORM_B, "测试形态·叶", steps=[
         Step(op="gain_shield", amount=2, target=TargetSpec(kind="self"))])
-    for n in (3, 4):
-        cid = YC * 100 + n
-        db.cards[cid] = CardDef(id=cid, version=20260728, name=f"萤草空白卡{n}",
-                                shikigami=YC, card_type="spell", level=1, cost=1,
-                                effects=EffectBlock(), text="")
     for sid, nums in ((100106, (1, 2, 3, 4)), (100112, (2, 3, 4))):
         for n in nums:
             cid = sid * 100 + n
@@ -1600,3 +1595,336 @@ def test_inspire_assault_boost(real_game):
     g.apply({"op": "assault", "index": 0})    # A0 桃花妖 1+2=3 战力出击
     assert pb.shikigami[0].health == hp - 3
     assert not pa.assault_boosts              # 出击后全部消耗
+
+
+# ==========================================================================
+# 判官（100110）（第十四阶段）
+#
+# 覆盖：基础能力（消灭→敌方牌手 1 伤+己方恢复 1）、墨笔夺魂/勾诀连招（降身材+
+# 力量过滤消灭）、生死无常（战斗区双清）、无情（敌方气绝倒计时+1）、觉醒替换
+# （消灭来源放宽至己方任意式神）、死之宣告（任意式神直接消灭）、断罪（击杀计数
+# form_power_delta 快照）。夺命"变为"路径由机制同构测试覆盖
+# （tests/test_combat.py::test_destroy_on_combat_damage_transformed）。
+# 队伍固定 [判官, 白狼, 姑获鸟, 妖刀姬]（派系 ≤2），判官 0 号位。
+# ==========================================================================
+
+PG = 100110
+PG_TEAM = [100110, 100101, 100106, 100123]  # 青岚+苍叶（派系 ≤2）
+
+
+def test_panguan_base_ability(real_game):
+    """基础能力：判官消灭一个式神 → 对敌方牌手造成 1 点伤害且你恢复 1 生命。"""
+    g, pa, pb = _game(real_game, PG_TEAM)
+    pa.health = 25
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 99,
+                        Ref(player=0, shikigami=0), kind="combat")
+    g._drain_queue()
+    assert pb.health == 29 and pa.health == 26
+
+
+def test_mobi_then_goujue(real_game):
+    """墨笔夺魂（-2力量/-1生命，非永久，上限下调同步钳当前生命）接勾诀
+    （力量<=2 才可被指定）连招。"""
+    g, pa, pb = _game(real_game, PG_TEAM)
+    b1 = pb.shikigami[1]                      # 白狼 3/4
+    with pytest.raises(IllegalAction):
+        play(g, 0, 10011002, target=Ref(player=1, shikigami=1))   # 3 力量超标
+    play(g, 0, 10011001, target=Ref(player=1, shikigami=1))
+    assert b1.eff_power == 1 and b1.max_health == 3 and b1.health == 3
+    play(g, 0, 10011002, target=Ref(player=1, shikigami=1))
+    assert b1.defeated
+
+
+def test_shengshiwuchang_clears_both_combat(real_game):
+    """生死无常（主动使用）：消灭己方战斗区的式神，然后消灭敌方战斗区的式神。"""
+    g, pa, pb = _game(real_game, PG_TEAM, {0: 2})
+    move(g, 0, 0)
+    move(g, 1, 0)
+    play(g, 0, 10011003)
+    assert pa.shikigami[0].defeated and pb.shikigami[0].defeated
+    assert pa.combat_index is None and pb.combat_index is None
+
+
+def test_wuqing_enemy_revive_countdown(real_game):
+    """无情：敌方式神进入气绝的[倒计时]+1（基础 3 → 4）。"""
+    g, pa, pb = _game(real_game, PG_TEAM, {0: 2})
+    play(g, 0, 10011004)
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 99,
+                        Ref(player=0, shikigami=1), kind="combat")
+    g._drain_queue()
+    assert pb.shikigami[0].revive_countdown == 4
+
+
+def test_awaken_panguan(real_game):
+    """觉醒·判官：+1/+1 永久；进场使一个敌方式神 -2力量/-1生命；[觉醒]能力——
+    己方任意式神消灭式神即触发（来源不限判官，比基础能力宽）。"""
+    g, pa, pb = _game(real_game, PG_TEAM, {0: 2})
+    a = pa.shikigami[IDX]
+    pa.health = 25
+    play(g, 0, 10011005, target=Ref(player=1, shikigami=0))
+    assert (a.perm_power, a.perm_health) == (1, 1) and a.awakened == 10011005
+    assert pb.shikigami[0].eff_power == 1 and pb.shikigami[0].max_health == 3
+    g.deal_to_shikigami(Ref(player=1, shikigami=1), 99,
+                        Ref(player=0, shikigami=1), kind="combat")   # 白狼消灭
+    g._drain_queue()
+    assert pb.health == 29 and pa.health == 26
+
+
+def test_sizhi_xuangao_any_shikigami(real_game):
+    """死之宣告：消灭一个式神（任意方——可指定己方式神）。"""
+    g, pa, pb = _game(real_game, PG_TEAM, {0: 3, 1: 1})
+    play(g, 0, 10011007, target=Ref(player=0, shikigami=1))
+    assert pa.shikigami[1].defeated
+
+
+def test_duanzui_kill_count_form_power(real_game):
+    """断罪：本局你每消灭过一个式神（己方来源）此牌 +1 力量（结附时快照 4+击杀数）。"""
+    g, pa, pb = _game(real_game, PG_TEAM, {0: 3})
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 99,
+                        Ref(player=0, shikigami=1), kind="combat")
+    g._drain_queue()
+    play(g, 0, 10011008)
+    a = pa.shikigami[IDX]
+    assert a.eff_power == 5 and a.max_health == 8
+
+
+# ==========================================================================
+# 清姬（100114）（第十四阶段）
+#
+# 覆盖：先天伤害转化（无破甲→等量破甲）、蛇行击（弹回+破甲加伤）、焚身之火
+# （指定破甲+有破甲者全体伤害）、无名之毒（瞬发投射）、觉醒（破甲保留）、
+# 火吻之蛇（敌方回合开始破甲 + 破甲降力量光环）。
+# 队伍固定 [清姬, 茨木童子, 山童, 犬神]（派系 ≤2），清姬 0 号位。
+# ==========================================================================
+
+QJ = 100114
+QJ_TEAM = [100114, 100103, 100116, 100115]  # 紫岩+红莲（派系 ≤2）
+
+
+def test_cuidu_fragile_conversion(real_game):
+    """清姬伤害转化（先天 damage_to_fragile）：淬毒对无破甲角色不扣血、改为等量
+    破甲；蛇行击命中有破甲者按破甲加伤（破甲受伤即消耗），使用后弹回回手。"""
+    g, pa, pb = _game(real_game, QJ_TEAM)
+    b0 = pb.shikigami[0]                      # 清姬 4/4
+    play(g, 0, 10011402)                      # 淬毒：敌方全体 2 伤 → 全转 2 破甲
+    assert b0.health == 4 and b0.shield == -2
+    assert pb.health == 30 and pb.shield == -2
+    play(g, 0, 10011401, target=Ref(player=1, shikigami=0))  # 蛇行击
+    assert b0.defeated and b0.shield == 0     # 4 - (2+2)，破甲消耗
+    assert any(c.id == 10011401 for c in pa.hand)            # 弹回回手
+
+
+def test_fenshen_fire(real_game):
+    """焚身之火：使一个角色获得 2 破甲，然后对所有有破甲的敌方角色造成 3 点伤害
+    （无破甲者不受影响；刚被赋予破甲的选择目标被命中）。"""
+    g, pa, pb = _game(real_game, QJ_TEAM, {0: 3})
+    b1 = pb.shikigami[1]                      # 茨木童子 3/4
+    play(g, 0, 10011406, target=Ref(player=1, shikigami=1))
+    assert b1.defeated and b1.shield == 0     # 4 - (3+2)，破甲消耗
+    assert pb.health == 30 and pb.shikigami[0].health == 4
+
+
+def test_wuming_zhi_du(real_game):
+    """无名之毒：[瞬发]投射 4（战斗区为空打敌方牌手；牌手无破甲 → 伤害转化
+    为等量破甲，不扣生命）。"""
+    g, pa, pb = _game(real_game, QJ_TEAM, {0: 2})
+    orb = pa.orb
+    play(g, 0, 10011405)
+    assert pb.health == 30 and pb.shield == -4
+    assert pa.orb == orb                      # 瞬发首张免费
+
+
+def test_awaken_qingji_fragile_kept(real_game):
+    """觉醒·清姬：+3/+3 永久；所有敌方角色获得 1 破甲；在场已觉醒期间
+    敌方角色的破甲在回合开始不清除（keep_enemy_fragile）。"""
+    g, pa, pb = _game(real_game, QJ_TEAM, {0: 3})
+    a = pa.shikigami[IDX]
+    play(g, 0, 10011407)
+    assert (a.perm_power, a.perm_health) == (3, 3) and a.awakened == 10011407
+    assert pb.shikigami[0].shield == -1 and pb.shield == -1
+    pass_turns(g, 1)                          # B 回合开始：破甲保留
+    assert pb.shikigami[0].shield == -1 and pb.shield == -1
+
+
+def test_huowen_snake(real_game):
+    """火吻之蛇：敌方回合开始时使所有敌方角色获得 1 破甲（回合开始的破甲清除
+    先于触发，故每半回合重置为 -1）；敌方有破甲的式神降低等于其破甲的力量。"""
+    g, pa, pb = _game(real_game, QJ_TEAM, {0: 3})
+    b0 = pb.shikigami[0]                      # 清姬 4/4
+    b0.shield = -2
+    play(g, 0, 10011408)
+    assert b0.eff_power == 2                  # 4 - 2 破甲
+    pass_turns(g, 1)                          # B 回合开始：清破甲后全体 +1 破甲
+    assert b0.shield == -1 and b0.eff_power == 3
+    assert pb.shikigami[1].shield == -1 and pb.shield == -1
+
+
+# ==========================================================================
+# 书翁（100118）（第十四阶段）
+#
+# 覆盖：基础能力（起始手牌+1）、开卷/墨染（抽牌+手牌半数伤害）、纪行（伤害牌手抽牌）、
+# 明心（回合抽牌改检视三选一）、万象之书（其他己方式神各一张）、觉醒（空库燃烧替换）。
+# 队伍固定 [书翁, 白狼, 姑获鸟, 妖刀姬]（派系 ≤2），书翁 0 号位。
+# ==========================================================================
+
+SW = 100118
+SW_TEAM = [100118, 100101, 100106, 100123]  # 青岚+苍叶（派系 ≤2）
+
+
+def test_shuweng_game_start_draw(real_game):
+    """基础能力（起始手牌数量+1）：游戏开始时抽一张牌——先手 7 张、后手 6 张。"""
+    g = real_game(SW_TEAM)
+    pa, pb = g.state.players
+    assert len(pa.hand) == 7 and len(pb.hand) == 6
+
+
+def test_kaijuan_and_moran(real_game):
+    """开卷抽两张牌；墨染先抽 1 再按当前手牌数一半（向下取整）造成伤害。"""
+    g, pa, pb = _game(real_game, SW_TEAM, {0: 2})
+    play(g, 0, 10011803)                      # 开卷：7 → 8-1+2 = 9
+    assert len(pa.hand) == 9
+    b0 = pb.shikigami[0]                      # 书翁 1/5
+    play(g, 0, 10011804, target=Ref(player=1, shikigami=0))  # 9+1=10 → 5 伤
+    assert len(pa.hand) == 10 and b0.defeated
+
+
+def test_jixing_draw_on_player_damage(real_game):
+    """纪行（[迅捷]形态 2/5）：当书翁对敌方牌手造成伤害时抽一张牌。"""
+    g, pa, pb = _game(real_game, SW_TEAM)
+    play(g, 0, 10011801)
+    hand = len(pa.hand)
+    g.apply({"op": "assault", "index": 0})    # 迅捷出击，空战斗区打牌手
+    assert pb.health == 28
+    assert len(pa.hand) == hand + 1
+
+
+def test_wanxiang_book(real_game):
+    """万象之书：[瞬发]随机将其他己方式神的各一张牌置入手牌。"""
+    g, pa, pb = _game(real_game, SW_TEAM, {0: 3})
+    hand0 = {c.uid for c in pa.hand}
+    play(g, 0, 10011807)
+    new = [c for c in pa.hand if c.uid not in hand0]
+    assert len(new) == 3
+    assert {c.id // 100 for c in new} == {100101, 100106, 100123}
+
+
+def test_mingxin_turn_draw_pick(real_game):
+    """明心：回合开始的抽牌改为检视牌库顶三张牌选一张置入手牌。"""
+    g, pa, pb = _game(real_game, SW_TEAM, {0: 2})
+    play(g, 0, 10011805)
+    hand = len(pa.hand)
+    pass_turns(g, 2)
+    pend = g.state.pending_choice
+    assert pend and pend["kind"] == "deck_top_pick" and len(pend["options"]) == 3
+    g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
+    assert len(pa.hand) == hand + 1
+
+
+def test_awaken_shuweng_deck_out_burn(real_game):
+    """觉醒·书翁：+2/+2 永久；牌库为空时抽牌改为对敌方牌手造成 10 点伤害，
+    自己不因此落败。"""
+    g, pa, pb = _game(real_game, SW_TEAM, {0: 3})
+    a = pa.shikigami[IDX]
+    play(g, 0, 10011808)
+    assert (a.perm_power, a.perm_health) == (2, 2) and a.awakened == 10011808
+    pa.deck.clear()
+    pass_turns(g, 2)
+    assert pb.health == 20 and g.state.winner is None
+
+
+# ==========================================================================
+# 萤草（100127）卡牌（第十四阶段；基础能力测试见前段）
+#
+# 覆盖：吸取（投射+鼓舞）、治愈之光/勇气之光/安魂之光（进场+回合开始循环）、
+# 萤火点点（双择+有形态增强）、闪烁（本回合力量覆写+条件瞬发）、觉醒（形态进场
+# 效果再触发）、虹彩（三形态置入手牌）。测试形态 A/B 为 gdb 覆盖的衍生号段卡。
+# ==========================================================================
+
+def test_xiqu_projectile_and_boost(real_game):
+    """吸取：造成 2 点伤害（raw 无目标限定词，定案按投射）+ [鼓舞] 获得 2 护甲。"""
+    g, pa, pb = _game(real_game, YC_TEAM)
+    play(g, 0, 10012701)
+    assert pb.health == 28
+    assert pa.assault_boosts == [{"power": 0, "shield": 2}]
+
+
+def test_zhiyu_light_form(real_game):
+    """治愈之光：[瞬发]进场与己方回合开始时为己方所有式神恢复 2 点生命。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 1, 1: 1})
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, None)   # 白狼 4→1
+    orb = pa.orb
+    play(g, 0, 10012702)
+    assert pa.orb == orb                       # 瞬发首张免费
+    assert pa.shikigami[1].health == 3         # 进场 +2
+    pass_turns(g, 2)
+    assert pa.shikigami[1].health == 4         # 己方回合开始再 +2（封顶 4）
+
+
+def test_yinghuo_methods_and_enhance(real_game):
+    """萤火点点：双择（己方式神+1生命 / 敌方式神 1 伤害）；[增强]己方回合开始时
+    若萤草上有形态，此牌效果+1。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 1, 1: 1})
+    b0 = pb.shikigami[0]                      # 萤草 2/5
+    c = give(g, 0, 10012703)
+    g.apply({"op": "play_card", "uid": c.uid, "play_method": "damage",
+             "target": Ref(player=1, shikigami=0)})
+    assert b0.health == 4                     # 基础 1 伤
+    play(g, 0, YC_FORM_A)                     # 结附测试形态
+    pass_turns(g, 2)                          # 己方回合开始：有形态 → enhance+1
+    assert pa.card_mods[10012703]["enhance"] == 1
+    c = give(g, 0, 10012703)
+    g.apply({"op": "play_card", "uid": c.uid, "play_method": "heal",
+             "target": Ref(player=0, shikigami=1)})
+    s1 = pa.shikigami[1]                      # 白狼 4/4
+    assert s1.max_health == 6 and s1.health == 6   # +1生命 + enhance 1 = +2
+
+
+def test_yongqi_light_boost(real_game):
+    """勇气之光：[瞬发]进场与己方回合开始 [鼓舞]+1战力/+2护甲。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
+    play(g, 0, 10012704)
+    assert pa.assault_boosts == [{"power": 1, "shield": 2}]
+    pass_turns(g, 2)
+    assert pa.assault_boosts == [{"power": 1, "shield": 2}] * 2
+
+
+def test_shanshuo_power_zero_turn(real_game):
+    """闪烁（主动使用）：敌方战斗区的式神本回合力量变为 0（任一回合开始解除）；
+    己方战斗区无人时无[瞬发]、正常收费。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
+    move(g, 1, 0)
+    b0 = pb.shikigami[0]                      # 萤草 2/5
+    orb = pa.orb
+    play(g, 0, 10012705)
+    assert pa.orb == orb - 1                  # 己方战斗区无人：条件瞬发不生效
+    assert b0.eff_power == 0
+    pass_turns(g, 1)                          # B 回合开始：覆写解除
+    assert b0.eff_power == 2
+
+
+def test_awaken_yingcao_form_enter(real_game):
+    """觉醒·萤草：+1/+1 永久；进场触发当前形态的进场效果；[觉醒]当萤草使用形态牌时
+    触发其进场效果并抽一张牌。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
+    s = pa.shikigami[IDX]
+    play(g, 0, YC_FORM_B)                     # 结附测试形态 B：进场 +2 护甲
+    assert s.shield == 2
+    play(g, 0, 10012706)                      # 觉醒进场：形态 B 进场效果再触发
+    assert s.shield == 4
+    assert (s.perm_power, s.perm_health) == (1, 1) and s.awakened == 10012706
+    hand = len(pa.hand)
+    play(g, 0, YC_FORM_A)                     # 换形态：触发进场（空白）+ 抽 1
+    assert len(pa.hand) == hand + 1
+
+
+def test_anhun_and_hongcai(real_game):
+    """安魂之光：[瞬发]进场获得 1 鬼火并为牌手恢复 2；虹彩：三种形态牌置入手牌。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 3})
+    pa.health = 25
+    orb = pa.orb
+    play(g, 0, 10012707)                      # 瞬发首张免费 + 1 鬼火
+    assert pa.orb == orb + 1 and pa.health == 27
+    play(g, 0, 10012708)                      # 瞬发名额已用，1 火
+    assert pa.orb == orb
+    ids = {c.id for c in pa.hand}
+    assert {10012702, 10012704, 10012707} <= ids

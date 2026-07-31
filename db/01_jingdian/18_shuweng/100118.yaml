@@ -1,0 +1,13 @@
+id: 100118
+version: 20260731
+name: 书翁
+faction: 青岚
+power: 1
+health: 5
+ability:
+  # 游戏开始时抽一张牌（0 级未在场也触发——开局必然未升级）
+  when: on_game_start
+  trigger_when_not_in_play: true
+  steps:
+    - {op: draw, count: 1}
+text: 游戏开始时，抽一张牌。

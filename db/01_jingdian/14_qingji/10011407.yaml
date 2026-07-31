@@ -1,0 +1,19 @@
+id: 10011407
+version: 20260731
+name: 觉醒·清姬
+shikigami: 100114  # 派系：紫岩（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 3   # 永久身材增益："觉醒后"延时时机之后授予
+awaken_health: 3
+rarity: SSR
+level: 3
+cost: 1
+tags: [keep_enemy_fragile]  # 在场已觉醒：敌方角色的破甲不会在回合开始时清除
+effects:
+  # 所有敌方角色获得1破甲（伤害转化/破甲保留由先天关键字 damage_to_fragile 与
+  # keep_enemy_fragile 标记承担，觉醒替换能力后仍生效——均为永久/在场判定）
+  steps:
+    - {op: gain_shield, amount: 1, kind: fragile,
+       target: {kind: all, pool: enemy_character}}
+text: "所有敌方角色获得1破甲。[觉醒]：{清姬对无破甲角色造成的伤害会转化为等量的破甲。敌方角色的破甲不会在回合开始时清除。}"

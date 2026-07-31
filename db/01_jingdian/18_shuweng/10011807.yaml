@@ -1,0 +1,15 @@
+id: 10011807
+version: 20260731
+name: 万象之书
+shikigami: 100118  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 3
+cost: 1
+keywords: [fast]
+effects:
+  # 随机将其他己方式神的各一张牌置入手牌（出战队列中除来源外逐个各 1 张，
+  # 含 0 级/气绝；生成点统一做"本局游戏"类增强快照）
+  steps:
+    - {op: generate, shikigami: friendly_others}
+text: "[瞬发]。随机将其他己方式神的各一张牌置入手牌。"

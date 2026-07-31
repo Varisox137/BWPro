@@ -1,0 +1,23 @@
+id: 10012706
+version: 20260731
+name: 觉醒·萤草
+shikigami: 100127  # 派系：苍叶（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予
+awaken_health: 1
+rarity: SR
+level: 2
+cost: 1
+effects:
+  # 触发萤草当前形态的进场效果（未结附形态空操作）
+  steps:
+    - {op: trigger_form_enter}
+abilities:
+  # [觉醒]：当萤草使用形态牌时，触发当前形态的进场效果，抽一张牌
+  - when: on_form_attached
+    condition: {target_shikigami: self}
+    steps:
+      - {op: trigger_form_enter}
+      - {op: draw, count: 1}
+text: "触发萤草当前形态的进场效果。[觉醒]：{当萤草使用形态牌时，触发当前形态的进场效果，抽一张牌。}"

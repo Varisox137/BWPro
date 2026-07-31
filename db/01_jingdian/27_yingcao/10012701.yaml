@@ -1,0 +1,15 @@
+id: 10012701
+version: 20260731
+name: 吸取
+shikigami: 100127  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+effects:
+  # 造成2点伤害（raw 无目标限定词，维护者定案按投射处理：优先敌方战斗区式神，
+  # 战斗区为空时打敌方牌手）；[鼓舞]：获得2护甲
+  steps:
+    - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
+    - {op: basic_boost, shield: 2}
+text: "造成2点伤害。[鼓舞]：{获得2护甲}。"

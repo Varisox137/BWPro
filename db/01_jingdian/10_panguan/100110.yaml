@@ -1,0 +1,14 @@
+id: 100110
+version: 20260731
+name: 判官
+faction: 青岚
+power: 3
+health: 4
+ability:
+  # 当判官消灭一个式神时（来源为判官的任意消灭：伤害/直接消灭/必杀均可）
+  when: on_shikigami_defeated
+  condition: {victim_kind: shikigami, source_shikigami: self}
+  steps:
+    - {op: damage, amount: 1, target: {kind: all, pool: enemy_player}}
+    - {op: heal, amount: 1, target: {kind: all, pool: self_player}}
+text: 当判官消灭一个式神时，对敌方牌手造成1点伤害且你恢复1生命。

@@ -343,7 +343,7 @@ YC_IDX, WOLF_IDX = 0, 1
 YC_TEAM = [100127, 100101, 100102, 100123]
 QIGONG = 10010101  # 起弓（+1 力量 & 穿刺）
 LI = 10010104      # 离（+3 力量）
-YC_FORM_A, YC_FORM_B = 10012701, 10012702  # 测试库注册的萤草形态牌
+YC_FORM_A, YC_FORM_B = 10012752, 10012753  # 测试库注册的萤草形态牌（衍生号段）
 
 
 def _yc_form(cid: int, name: str, steps=()):
@@ -356,8 +356,8 @@ def _yc_form(cid: int, name: str, steps=()):
 
 @pytest.fixture
 def gdb():
-    """真实 db + 测试库临时注册：萤草形态牌 A（空白进场）/B（进场 +2 护甲）
-    与凑卡组的空白法术 03/04（萤草 8 卡未加入，mk_game 卡组构造需要 01-04）。
+    """真实 db + 测试库临时注册：萤草测试形态牌 A（空白进场）/B（进场 +2 护甲，
+    衍生号段 52/53——萤草 01-08 已于第十四阶段补齐真卡）。
 
     覆盖链：本文件 gdb 覆盖 conftest gdb → real_game(gdb) → make_game(real_game)，
     灵矢贯虹羁绊 1 测试需要萤草形态牌；只新增卡牌定义，不影响本文件其他测试。"""
@@ -367,11 +367,6 @@ def gdb():
     db.cards[YC_FORM_A] = _yc_form(YC_FORM_A, "测试形态·花")
     db.cards[YC_FORM_B] = _yc_form(YC_FORM_B, "测试形态·叶", steps=[
         Step(op="gain_shield", amount=2, target=TargetSpec(kind="self"))])
-    for n in (3, 4):
-        cid = YC * 100 + n
-        db.cards[cid] = CardDef(id=cid, version=20260728, name=f"萤草空白卡{n}",
-                                shikigami=YC, card_type="spell", level=1, cost=1,
-                                effects=EffectBlock(), text="")
     # 姑获鸟（卡牌未设计，10010601-04 全空白）与青行灯（仅明灯 01 为真卡，
     # 10011202-04 空白）补足 01-04：刃影叠岚/涅槃业火节的队伍需要
     for sid, nums in ((100106, (1, 2, 3, 4)), (100112, (2, 3, 4))):
@@ -564,3 +559,64 @@ def test_play_sub_side_bond_generate(make_game):
     assert jt.shield == 3                     # 等量护甲（自伤后获得，不被消耗）
     assert jt.temp_power == 1                 # 基础能力：受伤 +1 力量
     assert any(c.id == 10010301 for c in pa.hand)   # 鬼之手（茨木 1 级唯一战斗牌）
+
+
+# ==========================================================================
+# 森佑灵矢（10010121，协战：白狼×萤草；第十四阶段）
+#
+# 子卡：灵矢贯虹（白狼侧，10010151）/ 森佑灵引（萤草侧，10012751）。
+# 森佑灵引：从牌库抽取 1 张不高于目标式神等级的形态牌（不洗牌库——raw 无
+# "然后洗牌库"句）；目标力量>=4且存活改为直接使用（从牌库直接结附）；
+# [羁绊]白狼获得[庇佑]。队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]。
+# ==========================================================================
+
+SYLS = 10010121   # 森佑灵矢
+SYLY = 10012751   # 森佑灵引（萤草侧子卡）
+
+
+def test_senyou_main_dual_ownership(gdb):
+    """森佑灵矢：options 登记与构筑池双归属（白狼/萤草两侧均可编入）。"""
+    from client.deckbuilder import buildable_cards
+    assert gdb.cards[SYLS].options == [LSGH, SYLY]
+    assert SYLS in {c.id for c in buildable_cards(gdb, 100101)}
+    assert SYLS in {c.id for c in buildable_cards(gdb, 100127)}
+
+
+def test_senyou_lingyin_search_form_to_hand(make_game):
+    """森佑灵引（目标力量<4）：从牌库抽取 1 张不高于目标等级的形态牌置入手牌
+    ——不洗牌库（其余牌顺序保持）；[羁绊]白狼获得[庇佑]。"""
+    g, pa, pb = _game(make_game, levels={YC_IDX: 2, WOLF_IDX: 1}, team=YC_TEAM)
+    for c in [c for c in pa.hand if c.id == 10012702]:
+        g.move_card(pa, c, "deck")            # 保证牌库内有可检索的 1 级形态
+    before = [c.uid for c in pa.deck]
+    hand0 = {c.uid for c in pa.hand}
+    _play_reinforce(g, 0, SYLS, 1, target=Ref(player=0, shikigami=YC_IDX))
+    assert not any(c.id == SYLS for c in pa.hand)
+    assert any(c.id == SYLS for c in pa.zones["exiled"])      # 主牌离手放逐
+    new = [c for c in pa.hand if c.uid not in hand0]
+    # 目标萤草 1 级……（levels 给 2 以满足子卡等级，检索按目标当前等级 ≤2：
+    # 牌库内 ≤1 级形态仅治愈之光——上面已确保其在库）
+    assert len(new) == 1 and g.db.cards[new[0].id].card_type == "form"
+    assert new[0].id // 100 == YC
+    rest = [c.uid for c in pa.deck]
+    assert rest == [u for u in before if u != new[0].uid]     # 不洗牌：顺序保持
+    assert "blessing" in pa.shikigami[WOLF_IDX].one_shot_keywords
+
+
+def test_senyou_lingyin_direct_play_form(make_game):
+    """森佑灵引（目标力量>=4且存活）：形态牌改为直接使用——从牌库直接结附给
+    目标式神，不入手牌。"""
+    g, pa, pb = _game(make_game, levels={YC_IDX: 2, WOLF_IDX: 1}, team=YC_TEAM)
+    yc = pa.shikigami[YC_IDX]
+    yc.perm_power = 2                         # 萤草 2+2=4 力量（≥4 且存活）
+    for c in [c for c in pa.hand if c.id in (10012702, 10012704)]:
+        g.move_card(pa, c, "deck")            # 保证牌库内有 ≤2 级形态可检索
+    deck0 = len(pa.deck)
+    hand0 = len(pa.hand)
+    _play_reinforce(g, 0, SYLS, 1, target=Ref(player=0, shikigami=YC_IDX))
+    assert yc.form is not None and yc.form.id in (10012702, 10012704)
+    # 牌库 -2：直接使用的形态 + 萤草基础能力（使用形态牌抽 1）；
+    # 手牌 +1：发主牌（hand0 快照在发牌前）后打出离手，基础能力抽 1
+    assert len(pa.deck) == deck0 - 2
+    assert len(pa.hand) == hand0 + 1
+    assert "blessing" in pa.shikigami[WOLF_IDX].one_shot_keywords

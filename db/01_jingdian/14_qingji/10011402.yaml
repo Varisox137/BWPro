@@ -1,0 +1,13 @@
+id: 10011402
+version: 20260731
+name: 淬毒
+shikigami: 100114  # 派系：紫岩（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+effects:
+  # 对所有敌方角色造成2点伤害（无破甲者经清姬伤害转化改为等量破甲）
+  steps:
+    - {op: damage, amount: 2, target: {kind: all, pool: enemy_character}}
+text: "对所有敌方角色造成2点伤害。"

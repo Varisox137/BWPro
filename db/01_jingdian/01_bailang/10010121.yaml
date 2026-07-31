@@ -1,0 +1,13 @@
+id: 10010121
+version: 20260731
+name: 森佑灵矢
+shikigami: 100101  # 派系：苍叶（继承自式神数据）
+shikigami2: 100127  # 协战副归属
+card_type: reinforce
+rarity: SSR
+level: 2
+cost: 1  # 展示用；实际费用/等级/目标按所选子选项
+options: [10010151, 10012751]  # [0] 主式神侧：灵矢贯虹 / [1] 副式神侧：森佑灵引
+effects:
+  steps: []
+text: "选择使用一项：白狼-灵矢贯虹；萤草-森佑灵引"

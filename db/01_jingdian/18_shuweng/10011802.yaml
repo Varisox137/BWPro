@@ -1,0 +1,15 @@
+id: 10011802
+version: 20260731
+name: 云游
+shikigami: 100118  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [fast]
+effects:
+  # 调度你的手牌（3 次调度次数，可提前结束），然后洗牌库——战中调度
+  # （pending mulligan_pick，choose 作答：uid=手牌换该张，缺省=提前结束）
+  steps:
+    - {op: mulligan_hand, times: 3, shuffle: true}
+text: "[瞬发]。调度你的手牌，然后洗牌库。（3次调度次数）"

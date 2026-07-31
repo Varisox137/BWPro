@@ -1,0 +1,30 @@
+id: 10011403
+version: 20260731
+name: 剧毒之盾
+shikigami: 100114  # 派系：紫岩（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [trigger]
+target: {kind: choose, pool: friendly_shikigami}
+effects:
+  steps:
+    - {op: gain_shield, amount: 2}
+    # 本回合获得"使受到它战斗伤害的式神获得3破甲"：延迟能力绑定被选式神
+    # （bind=chosen），scope=turn + uses=99 = 回合内不限次，己方回合开始清除
+    - {op: delay_grant, bind: chosen, scope: turn, uses: 99, when: on_damage,
+       condition: {source_shikigami: self, kind: combat},
+       steps: [{op: gain_shield, amount: 3, kind: fragile,
+                target: {kind: context, key: victim}}]}
+response:
+  # [响应]：当你战斗区式神被攻击时，自动对其使用（choose 目标自动取事件 victim）
+  when: on_before_assault
+  condition: {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true}
+  steps:
+    - {op: gain_shield, amount: 2}
+    - {op: delay_grant, bind: chosen, scope: turn, uses: 99, when: on_damage,
+       condition: {source_shikigami: self, kind: combat},
+       steps: [{op: gain_shield, amount: 3, kind: fragile,
+                target: {kind: context, key: victim}}]}
+text: "使一个己方式神获得2护甲且本回合获得‘使受到它战斗伤害的式神获得3破甲’。[响应]：{当你战斗区式神被攻击时，自动对其使用。}"

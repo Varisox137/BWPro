@@ -585,12 +585,14 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 @action("search_deck")
 def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target",
                 card_type: str | None = None, max_level: int | str | None = None,
-                direct_play_power_ge: int | None = None) -> None:
+                direct_play_power_ge: int | None = None,
+                shuffle: bool = True) -> None:
     """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
     shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
     "self"=来源式神；或给出数据 id。仅实际检索到卡牌才洗牌库（未命中不洗——
-    维护者定案第十三阶段）。
+    维护者定案第十三阶段）。shuffle=False 时命中也不洗牌（森佑灵引——raw 无
+    "然后洗牌库"句，区别于花信风，维护者定案第十四阶段）。
     card_type：限定卡牌主类型（森佑灵引 card_type=form）；max_level="target"：卡牌
     等级 ≤ 选择目标式神当前等级（"不高于该式神等级"）。
     direct_play_power_ge：选择目标式神存活且力量 ≥ 该值时改为直接使用（森佑灵引
@@ -642,8 +644,9 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
     game.move_card(p, card, "hand")
     game._materialize(p, card, cdef)  # 生成点统一快照（置入手牌即获"本局游戏"类增强）
     game._log(f"从牌库检索了【{cdef.name}】")
-    game.rng.shuffle(p.deck)
-    game._log(f"{p.name} 洗了牌库")
+    if shuffle:
+        game.rng.shuffle(p.deck)
+        game._log(f"{p.name} 洗了牌库")
 
 
 @action("random_damage")

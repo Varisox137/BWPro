@@ -1,0 +1,32 @@
+id: 10011006
+version: 20260731
+name: 夺命
+shikigami: 100110  # 派系：青岚（继承自式神数据）
+card_type: combat
+rarity: SSR
+level: 2
+cost: 1
+keywords: [lethal, pierce]
+effects:
+  steps: []
+triggers:
+  # [增强]计数：本局游戏你每消灭过一个式神 → kill_count+1；
+  # 消灭过 13 个式神 → 此牌"变为"（persistent transformed，本局所有同名卡生效）
+  - when: on_shikigami_defeated
+    condition: {victim_kind: shikigami, source_side: friendly}
+    steps:
+      - {op: add_mod, to: persistent, key: kill_count}
+      - {op: add_mod, to: persistent, key: transformed,
+         require: {key: kill_count, ge: 13}}
+temp_grants:
+  # 变后效果：消灭受到判官战斗伤害的角色——式神走 on_damage 的 victim、
+  # 牌手走 on_player_damaged 的 damaged_player（card_transformed 门控，未变前不生效）
+  - when: on_damage
+    condition: {source_shikigami: self, kind: combat, card_transformed: 10011006}
+    steps:
+      - {op: destroy, target: {kind: context, key: victim}}
+  - when: on_player_damaged
+    condition: {source_shikigami: self, kind: combat, card_transformed: 10011006}
+    steps:
+      - {op: destroy, target: {kind: context, key: damaged_player}}
+text: "[必杀]，[穿刺]。[增强]：{本局游戏若你消灭过13个式神，改为‘消灭受到判官战斗伤害的角色’。}"

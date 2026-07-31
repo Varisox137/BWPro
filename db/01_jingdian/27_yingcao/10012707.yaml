@@ -1,0 +1,24 @@
+id: 10012707
+version: 20260731
+name: 安魂之光
+shikigami: 100127  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: SR
+level: 3
+cost: 1
+form_power: 4
+form_health: 5
+keywords: [fast]
+effects:
+  # 进场你获得1点鬼火，为你恢复2点生命
+  steps:
+    - {op: gain_orb, amount: 1}
+    - {op: heal, amount: 2, target: {kind: all, pool: self_player}}
+abilities:
+  # 己方回合开始时你获得1点鬼火，为你恢复2点生命
+  - when: on_turn_start
+    condition: {player: self}
+    steps:
+      - {op: gain_orb, amount: 1}
+      - {op: heal, amount: 2, target: {kind: all, pool: self_player}}
+text: "[瞬发]。进场和己方回合开始时，你获得1点鬼火，为你恢复2点生命。"

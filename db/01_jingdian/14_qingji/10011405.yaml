@@ -1,0 +1,14 @@
+id: 10011405
+version: 20260731
+name: 无名之毒
+shikigami: 100114  # 派系：紫岩（继承自式神数据）
+card_type: spell
+rarity: R
+level: 2
+cost: 1
+keywords: [fast]
+effects:
+  # [投射]：造成4点伤害（优先敌方战斗区式神，战斗区为空时打敌方牌手）
+  steps:
+    - {op: damage, amount: 4, target: {kind: all, pool: projectile}}
+text: "[瞬发]。[投射]：{造成4点伤害}。"

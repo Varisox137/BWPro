@@ -1,0 +1,16 @@
+id: 10011806
+version: 20260731
+name: 闻世
+shikigami: 100118  # 派系：青岚（继承自式神数据）
+card_type: form
+rarity: SR
+level: 3
+cost: 1
+form_power: 1
+form_health: 1
+effects:
+  # 每有一张其他手牌此牌便获得1力量与1生命（stat_aura 动态光环，读取时求值；
+  # 形态在场上，手牌皆为"其他"）
+  steps:
+    - {op: stat_aura, kind: self_hand_count}
+text: "每有一张其他手牌此牌便获得1力量与1生命。"

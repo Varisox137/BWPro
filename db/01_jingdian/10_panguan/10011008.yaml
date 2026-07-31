@@ -1,0 +1,20 @@
+id: 10011008
+version: 20260731
+name: 断罪
+shikigami: 100110  # 派系：青岚（继承自式神数据）
+card_type: form
+rarity: R
+level: 3
+cost: 1
+form_power: 4
+form_health: 8
+effects:
+  steps: []
+triggers:
+  # [增强]：本局游戏你每消灭过一个式神，此牌便获得1力量
+  # （persistent form_power_delta；结附时 _materialize 快照进形态战力）
+  - when: on_shikigami_defeated
+    condition: {victim_kind: shikigami, source_side: friendly}
+    steps:
+      - {op: add_mod, to: persistent, key: form_power_delta}
+text: "[增强]：{本局游戏你每消灭过一个式神，此牌便获得1力量。}"

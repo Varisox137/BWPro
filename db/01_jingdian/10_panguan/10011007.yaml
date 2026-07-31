@@ -1,0 +1,13 @@
+id: 10011007
+version: 20260731
+name: 死之宣告
+shikigami: 100110  # 派系：青岚（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 3
+cost: 1
+target: {kind: choose, pool: any_shikigami}
+effects:
+  steps:
+    - {op: destroy}
+text: "消灭一个式神。"

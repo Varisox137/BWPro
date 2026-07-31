@@ -1,0 +1,21 @@
+id: 10011404
+version: 20260731
+name: 氤氲蛇姬
+shikigami: 100114  # 派系：紫岩（继承自式神数据）
+card_type: form
+rarity: SR
+level: 2
+cost: 1
+form_power: 4
+form_health: 6
+effects:
+  # 进场时对敌方战斗区式神造成2点伤害
+  steps:
+    - {op: damage, amount: 2, target: {kind: all, pool: enemy_combat}}
+abilities:
+  # 己方回合开始时对敌方战斗区式神造成2点伤害
+  - when: on_turn_start
+    condition: {player: self}
+    steps:
+      - {op: damage, amount: 2, target: {kind: all, pool: enemy_combat}}
+text: "进场和己方回合开始时，对敌方战斗区式神造成2点伤害。"
