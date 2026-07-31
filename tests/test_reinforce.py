@@ -574,7 +574,7 @@ SYLS = 10010121   # 森佑灵矢
 SYLY = 10012751   # 森佑灵引（萤草侧子卡）
 
 
-def test_senyou_main_dual_ownership(gdb):
+def test_reinforce_main_dual_ownership(gdb):
     """森佑灵矢：options 登记与构筑池双归属（白狼/萤草两侧均可编入）。"""
     from client.deckbuilder import buildable_cards
     assert gdb.cards[SYLS].options == [LSGH, SYLY]
@@ -582,7 +582,7 @@ def test_senyou_main_dual_ownership(gdb):
     assert SYLS in {c.id for c in buildable_cards(gdb, 100127)}
 
 
-def test_senyou_lingyin_search_form_to_hand(make_game):
+def test_search_deck_form_filtered_by_target_level(make_game):
     """森佑灵引（目标力量<4）：从牌库抽取 1 张不高于目标等级的形态牌置入手牌
     ——不洗牌库（其余牌顺序保持）；[羁绊]白狼获得[庇佑]。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 2, WOLF_IDX: 1}, team=YC_TEAM)
@@ -603,7 +603,7 @@ def test_senyou_lingyin_search_form_to_hand(make_game):
     assert "blessing" in pa.shikigami[WOLF_IDX].one_shot_keywords
 
 
-def test_senyou_lingyin_direct_play_form(make_game):
+def test_search_deck_direct_play_form(make_game):
     """森佑灵引（目标力量>=4且存活）：形态牌改为直接使用——从牌库直接结附给
     目标式神，不入手牌。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 2, WOLF_IDX: 1}, team=YC_TEAM)

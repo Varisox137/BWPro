@@ -12,4 +12,4 @@ effects:
   steps:
     - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
     - {op: basic_boost, shield: 2}
-text: "造成2点伤害。[鼓舞]：{获得2护甲}。"
+text: "造成2点伤害。[鼓舞]：{获得2护甲。}"

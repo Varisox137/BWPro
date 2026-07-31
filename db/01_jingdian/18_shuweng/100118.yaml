@@ -10,4 +10,4 @@ ability:
   trigger_when_not_in_play: true
   steps:
     - {op: draw, count: 1}
-text: 游戏开始时，抽一张牌。
+text: 起始手牌数量+1。

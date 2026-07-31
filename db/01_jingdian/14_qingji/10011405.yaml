@@ -11,4 +11,4 @@ effects:
   # [投射]：造成4点伤害（优先敌方战斗区式神，战斗区为空时打敌方牌手）
   steps:
     - {op: damage, amount: 4, target: {kind: all, pool: projectile}}
-text: "[瞬发]。[投射]：{造成4点伤害}。"
+text: "[瞬发]。[投射]：{造成4点伤害。}"

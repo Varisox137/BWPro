@@ -111,13 +111,16 @@
 | 连击 | `combo` | 先攻阶段与交战阶段各造成一次战斗伤害 | ✅ |
 | 暴击 | `critical` | | 🔧 |
 | 激怒 | `enraged` | 状态关键字：己方被激怒式神中存在满足出击合法性者时，其他无激怒式神不能出击；在发起战斗的流程（战斗准备前）移除攻击者的激怒（尘缚之阵授予） | ✅ |
+| 弹回 | `rebound` | **卡牌级**关键字：使用后（效果/战斗结算完毕、牌在墓地时）移回手牌而非留墓（`_rebound_check`，主动与响应两路径同检；蛇行击）；回手后可再次打出，持久修饰快照按实例去重不重复合并 | ✅ |
+| 庇佑 | `blessing` | 一次性：抵消一次敌方来源的非战斗伤害（kind=effect 且来源为敌方），抵消后失去；判定在伤害流程扣减生命前、不屈之前——被护甲完全吸收/屏障归零的伤害不消耗（森佑灵矢羁绊；灵咒抵消半侧随灵咒机制引入） | ✅ |
+| 伤害转化（伪关键字） | `damage_to_fragile` | 卡面不出现的关键字通道（清姬先天，永久类别入列死亡不清）：来源式神持标记且受伤者当前无破甲时，其伤害在事件生成点全额转化为等量破甲（不再视为伤害；受伤者已有破甲正常造伤；与毒蚀转化同位置，converted 防循环） | ✅ |
 | （引擎级） | `keep_attack_buffs` | 攻击后到期强化不因攻击移除（残心；卡面不出现此关键字） | ✅ |
 
 **关键字持久性三类**（每类均为可重复多重集，存于 `ShikigamiState`）：
 
 | 类别 | 字段 | 语义 |
 |---|---|---|
-| 一次性 | `one_shot_keywords` | 触发后移除（迅捷/不屈/屏障为天然一次性）；气绝时清除 |
+| 一次性 | `one_shot_keywords` | 触发后移除（迅捷/不屈/屏障/庇佑为天然一次性）；气绝时清除 |
 | 持续性 | `keywords` | 触发后不移除（远程/贯通/连击/穿刺/先攻/连击等）；气绝时清除 |
 | 永久 | `perm_keywords` | 气绝时不清除 = 复活后自动重新获得；永久是授予方式而非关键字属性 |
 
@@ -125,7 +128,7 @@
 
 ## 预留机制（译名确认，规则 Phase 5+）
 
-弹回 `rebound`、融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
+融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`、变形 `transform`（视作原能力离场、新能力进场，非气绝；气绝时一般解除）。
 
 ## 结算与事件
 
@@ -228,6 +231,25 @@
 | 动态关键字 | `conditional_keywords`（CardDef） | 满足条件的条目把 keyword 加入实际关键字（读取点 `_card_keywords`，对手中/生成的一切副本生效）：`level_ge`=所属式神当前等级 ≥ n（心身炼磨"犬神 2 级获得[瞬发]"）；`if_alive`=所属式神在场未气绝（桃华灼灼"若桃花妖未气绝，此牌得[瞬发]"）；式神未出战条件不满足 | ✅ |
 | 状态目标池 | `friendly_injured` / `friendly_defeated`（目标池） | 己方在场且已受伤（生命 < 上限）的式神（丰实/盛开"己方受伤式神"）/ 己方已气绝式神（未离场、等级 ≥1；桃华灼灼/桃语春风复活池）；`TargetSpec` 扩展键 `{"random": n}`：kind=all 解析结果中随机取 n 个（rng.sample，不足取全部；配合 repeat 每轮重解析重随机——盛开"再重复2次"） | ✅ |
 | 炼磨计数 | `lianmo`（tags）/ `lianmo_used_game` | 出牌统一记账：tags 含 lianmo 的牌（心身炼磨）使用时 `PlayerState.ext["lianmo_used_game"]` +1（本局累计不清）；心技一体 card_aura power_ext/shield_ext 数值通道读取 | ✅ |
+| 动态身材光环 | `stat_aura`（动作）/ `stat_auras`（`PlayerState.ext` 注册表） | 连续型"读取时求值"修饰：不写死数值，`Game._refresh_stat_auras` 在手牌数变化（move_card）/事件发出（emit）/战斗快照前等读取点全量重算缓存（`ext["dyn_power"]/["dyn_health"]`，eff_power/max_health 读取时叠加）；kind="self_hand_count"（持有者每有一张其他手牌 +1/+1——闻世）/"enemy_fragile_power"（敌方有破甲式神降等量力量——火吻之蛇）；scope="form" 绑定来源式神当前形态、形态离场移除（`_destroy_form` 同路径）；登记时持有者当前生命按新上限回满；动态上限降低时钳当前生命（不触发事件） | ✅ |
+| 抽牌替换 | `draw_to_pick`（tags） | 明心：在场形态含此标记时，回合开始抽牌改为检视牌库顶 3 张选 1 置入手牌（choose 作答后洗牌库；牌库不足 3 张全部检视，为空走空库分支——`_turn_start_draw`） | ✅ |
+| 战中调度 | `mulligan_hand`（动作）/ `mulligan_pick`（pending kind） | 调度控制者手牌至多 times 次：经 pending_choice 挂起，choose 作答（uid=手牌换该张——`_swap_hand_card` 核心与开局调度共用；uid 缺省/次数用尽提前结束并洗牌库、续跑挂起块）；`shuffle: false` 结束不洗牌（云游） | ✅ |
+| 空库燃烧 | `deck_out_burn`（tags） | 觉醒·书翁：己方在场已觉醒且觉醒牌含此标记时，空库抽牌改为对敌方牌手造成 10 点伤害（每张空抽各触发一次），自己不判负（`_deck_out_burner`，draw_cards 空库分支） | ✅ |
+| 破甲保留 | `keep_enemy_fragile`（tags） | 觉醒·清姬：对方在场已觉醒且觉醒牌含此标记时，己方角色的破甲不在回合开始清除（护甲照常；`_fragile_kept_by_enemy`，扫描模式同 orb_store） | ✅ |
+| 爆牌 | `hand_cap`（move_card 统一路径） | 移入手牌后超出手牌上限时该牌转而置入墓地——抽牌/生成/调度等所有进手路径共用（第十四阶段维护者定案） | ✅ |
+| 先攻快照时机 | （`_battle_flow` 攻击时后重读） | 攻击方战斗关键字快照与动态身材缓存在"（被）攻击时"结算后重读——"攻击时获得[先攻]/[贯通]"类授予（火吻之蛇）赶上本场战斗判定 | ✅ |
+| 装配快照去重 | `_mat`（实例 mods 键） | `_materialize` 持久修饰快照记账上次合并值：同名卡回手/再次装配只补差值、不重复合并；快照键扩至 form_power_delta/form_health_delta，生成点统一快照（弹回配套） | ✅ |
+| 半回合力量覆写 | `power_zero_turn`（ext 键，power_override scope="turn"） | 力量覆写半回合作用域：任一回合开始双方清除（min_health_turn 先例） | ✅ |
+| 检索扩展 | `card_type` / `max_level` / `direct_play_power_ge` / `shuffle`（search_deck 参数） | card_type 限定卡牌主类型；max_level="target"：卡牌等级 ≤ 选择目标式神当前等级（"不高于该式神等级"）；direct_play_power_ge=n：选择目标式神存活且力量 ≥ n 时改为直接使用（不耗鬼火、play_from=deck、triggered=auto；目前仅支持形态牌直接结附给选择目标——森佑灵引"若该式神力量≥4且存活，改为直接使用"；置入手牌/直接使用前按生成点统一快照 _materialize）；shuffle=false 命中也不洗牌库（森佑灵引——raw 无"然后洗牌库"句，区别于花信风，维护者定案第十四阶段） | ✅ |
+| 生成友方其他式神 | `shikigami="friendly_others"`（generate 参数） | 逐各其他己方式神（出战队列中除来源外，含 0 级/气绝——万象之书"其他己方式神"按出战队列全体取池，维护者定案）各随机生成一张其卡牌；generate `_spawn` 重构统一生成路径 | ✅ |
+| 目标池与过滤扩展 | `friendly_combat`（池）/ `power_le` / `has_fragile`（TargetSpec 过滤键） | friendly_combat=己方战斗区式神；power_le=n 过滤力量 ≤ n、has_fragile 过滤持破甲者（spec_pool_refs 统一校验/展示——判官夺命/勾魂索） | ✅ |
+| 条件算子扩展 | `shikigami_has_form` / `card_transformed` / `combat_nonempty` | {shikigami_has_form: <式神id>}=控制者的式神（按数据 id）结附着形态；{card_transformed: <卡牌id>}=控制者持久 store 中该同名卡已"变为"；combat_nonempty 为 conditional_keywords 判定键（己方战斗区有人时获得关键字——闪烁"战斗区有式神时得[瞬发]"，engine:284 行，式神未出战不满足） | ✅ |
+| 语境目标扩展 | `damaged_player`（TargetSpec context 键） | 事件中受到伤害的牌手（on_player_damaged payload 的 player 下标 → Ref；夺命"消灭受到判官战斗伤害的角色"的牌手分支） | ✅ |
+| 数值键扩展 | `{"hand_count_half": "controller"}`（动态数值） | 效果归属玩家当前手牌数的一半（向下取整；判官"手牌数的一半"类 X） | ✅ |
+| 牌手直接消灭 | destroy 动作 targets 可为牌手 Ref | 消灭牌手 = 直接获胜：牌手气绝、对局进入待结束（夺命增强变后"消灭受到判官战斗伤害的角色"的牌手分支；维护者定案第十四阶段） | ✅ |
+| 延迟能力次数 | `uses`（delay_grant 参数） | 延迟能力可触发次数（默认 1；uses=99 表示回合内不限次） | ✅ |
+| 生命增益钳制 | buff_health 负值 | 上限下调（负值，墨笔夺魂"降低生命"）：同步钳当前生命到新上限；上限降至 ≤0 时目标气绝（维护者定案第十四阶段） | ✅ |
+| 战斗绑定临时触发 | `battle`（on_player_damaged payload 键） | 牌手伤害事件补战斗上下文键——战斗牌绑定注册的 temp_grants（uses 递减）对牌手伤害也生效 | ✅ |
 
 **ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）：
 
@@ -247,6 +269,9 @@
 | `min_health_turn` | `ShikigamiState.ext` | 生命下限钳制标记（狂啸 bump_ext 置位；伤害"扣减生命"批次把生命保持在 ≥1；任一回合开始双方清除——半回合作用域） |
 | `damage_taken_turn` | `ShikigamiState.ext` | 本回合所受伤害之和（伤害"扣减生命"处按实际伤害值累加；任一回合开始双方清除——百鬼夜行 X 用） |
 | `lianmo_used_game` | `PlayerState.ext` | 本局'心身炼磨'（tags lianmo）使用计数（出牌统一记账 `_account_card_played`；心技一体 card_aura power_ext/shield_ext 数值通道读取） |
+| `stat_auras` | `PlayerState.ext` | 动态身材光环注册表（stat_aura 动作登记，元素 {"kind", "scope", "holder"}；`_refresh_stat_auras` 读取点全量重算；scope="form" 条目形态离场移除——闻世/火吻之蛇） |
+| `dyn_power` / `dyn_health` | `ShikigamiState.ext` | 动态身材光环缓存通道（`_refresh_stat_auras` 重算写入；eff_power/max_health 读取时叠加——model.ShikigamiState；动态上限降低时钳当前生命） |
+| `power_zero_turn` | `ShikigamiState.ext` | 半回合力量覆写标记（power_override scope="turn" 置位；任一回合开始双方清除——min_health_turn 先例） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 
