@@ -321,10 +321,43 @@ def _input(prompt: str) -> str:
         return ""
 
 
+def normalize_server_url(raw: str) -> str:
+    """把用户输入的服务器地址规范化为 ws(s)://host[:port]/ws。
+
+    接受 ws://、wss://、http(s)://（内网穿透/反代给出的网址）以及裸
+    host[:port]；无路径时自动补 /ws。
+    """
+    s = raw.strip()
+    if s.startswith("https://"):
+        s = "wss://" + s[len("https://"):]
+    elif s.startswith("http://"):
+        s = "ws://" + s[len("http://"):]
+    if not s.startswith(("ws://", "wss://")):
+        s = "ws://" + s
+    if "/" not in s.split("://", 1)[1]:
+        s = s + "/ws"
+    return s
+
+
+def probe_connection(server_url: str) -> str | None:
+    """试连服务器（仅握手）：成功返回 None，失败返回错误信息。"""
+    from websockets.sync.client import connect
+    try:
+        with connect(server_url, open_timeout=5,
+                     additional_headers={"User-Agent": "BWPro-CLI/1.0"}):
+            return None
+    except Exception as e:
+        msg = str(e)
+        if "HTTP 200" in msg:
+            msg += "；对端以普通网页应答，可能被穿透服务拦截/映射未生效"
+        return msg
+
+
 def run(db, server_url: str, name: str, debug: bool) -> None:
     """联机入口：创建/加入房间 → 收发线程 + 输入循环。"""
     from websockets.sync.client import connect
 
+    server_url = normalize_server_url(server_url)
     choice = _input("[1] 创建房间 [2] 加入房间（含重连）> ")
     if choice == "1":
         picked = deckbuilder.choose_deck(db, name)
@@ -392,7 +425,10 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="BWPro 联机客户端")
-    parser.add_argument("--server", default="ws://127.0.0.1:1037/ws")
+    parser.add_argument("--server", default=os.environ.get(
+        "BWP_SERVER", "ws://127.0.0.1:1037/ws"),
+        help="服务器地址（默认环境变量 BWP_SERVER 或本机；"
+             "ws(s)://、http(s)://、裸 host[:port] 均可）")
     parser.add_argument("--name", default=None, help="玩家名（默认交互输入）")
     parser.add_argument("--debug", action="store_true",
                         help="创建 debug 对局（房间内允许 debug 指令）")

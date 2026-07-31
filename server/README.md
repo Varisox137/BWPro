@@ -12,18 +12,26 @@ uv run python -m server.main [--host 0.0.0.0] [--port 1037] \
 ```
 
 客户端：`uv run python -m client.net`（或主菜单 [3] 联机对战），
-`--debug` 创建 debug 对局（房间内允许 debug 指令，需服务端 `--allow-debug-rooms`）。
+`--debug` 创建 debug 对局（房间内允许 debug 指令，需服务端 `--allow-debug-rooms`），
+服务器地址可用 `BWP_SERVER` 环境变量作默认；地址输入接受 ws://、wss://、
+http(s)://（穿透/反代给出的网址）及裸 host[:port]，自动规范化为
+ws(s)://.../ws，并在询问玩家名/卡组前先试连，失败则要求重新输入。
 
 ## 内网穿透 / 公网联机
 
 可以。服务端以 `--host 0.0.0.0` 监听（默认端口 1037）后：
 
-- **TCP 穿透**（frp、nps 等把公网 IP 的某端口转发到本机 1037）：
-  客户端输入 `ws://<公网IP或域名>:<端口>/ws` 即可联机。
+- **HTTPS 映射（推荐，当前部署方式）**：花生壳"网站应用类型"HTTPS 映射
+  （外网 `https://<域名>` → 内网 `127.0.0.1:1037`），支持 WebSocket 透传，
+  TLS 由映射边缘终止，本机无需证书。客户端输 `https://<域名>`（自动转
+  `wss://<域名>/ws`）即可联机。浏览器访问拦截在花生壳侧配置
+  （"禁止浏览器访问"），与服务端 UA 软门槛并存互补。
 - **HTTP 穿透 / 反代**（cloudflared、nginx、Caddy 等，要求支持 WebSocket 升级）：
   客户端输入 `ws://<域名>/ws`；若对方提供 TLS 终止，则输 `wss://<域名>/ws`。
 - 服务端也可直接配置 TLS（`--ssl-certfile/--ssl-keyfile`），此后客户端用
   `wss://<地址>:1037/ws`。
+- 注意：纯 TCP 映射（花生壳 TCP 类型等）会识别并拦截 HTTP 格式流量，
+  WebSocket 握手本质即 HTTP 请求，**无法**经此类映射透传。
 
 ## 安全性（基本保障）
 

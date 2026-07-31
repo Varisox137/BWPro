@@ -428,6 +428,22 @@ def test_fmt_timer():
     assert _fmt_timer({"kind": "turn", "deadline": 100.0}, 130.0) == "⏱ 0:00"  # 超时封顶
 
 
+# ---------- 服务器地址规范化 ----------
+
+def test_normalize_server_url():
+    from client.net import normalize_server_url
+    assert normalize_server_url("ws://a.top:1037/ws") == "ws://a.top:1037/ws"
+    assert normalize_server_url("wss://a.top/ws") == "wss://a.top/ws"
+    # 内网穿透/反代给出的 http(s) 网址
+    assert normalize_server_url("https://a.top") == "wss://a.top/ws"
+    assert normalize_server_url("http://a.top:8080") == "ws://a.top:8080/ws"
+    # 裸 host[:port]
+    assert normalize_server_url("a.top:1037") == "ws://a.top:1037/ws"
+    assert normalize_server_url("  127.0.0.1:1037  ") == "ws://127.0.0.1:1037/ws"
+    # 已带路径则不补 /ws
+    assert normalize_server_url("wss://a.top/custom") == "wss://a.top/custom"
+
+
 # ==========================================================================
 # 调试指令（原 test_debug.py）
 # ==========================================================================

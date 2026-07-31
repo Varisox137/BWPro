@@ -771,8 +771,15 @@ def main() -> None:
                 run_battle(db)
             elif choice == "3":
                 from client import net
-                server = tui.prompt("服务器地址（Enter = ws://127.0.0.1:1037/ws）> ").strip()
-                net.run(db, server or "ws://127.0.0.1:1037/ws",
+                default_server = os.environ.get("BWP_SERVER", "ws://127.0.0.1:1037/ws")
+                while True:
+                    raw = tui.prompt(f"服务器地址（Enter = {default_server}）> ").strip()
+                    server = net.normalize_server_url(raw or default_server)
+                    err = net.probe_connection(server)
+                    if err is None:
+                        break
+                    print(f"无法连接服务器 {server}（{err}），请重新输入")
+                net.run(db, server,
                         tui.prompt("玩家名 > ").strip() or "玩家", debug=False)
             elif choice in ("q", "quit", "exit"):
                 break
