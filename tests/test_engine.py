@@ -4,7 +4,7 @@ import pytest
 from core.engine import IllegalAction
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give
+from tests.factories import give, pass_turns, play
 
 
 def test_game_start_setup(make_game):
@@ -310,3 +310,109 @@ def test_defeat_event_has_source_and_reason(db, make_game):
     assert seen[0]["victim"] == Ref(player=1, shikigami=0)
     assert seen[0]["source"] == Ref(player=0, shikigami=0)   # 伤害来源 = 出牌式神的所属
     assert seen[0]["reason"] == "伤害"
+
+
+# ==========================================================================
+# 第十四阶段：爆牌 / 空库替换 / 战中调度 / 抽牌替换
+# ==========================================================================
+
+def test_hand_cap_burns_excess(db, make_game):
+    """爆牌（hand_cap=12）：移入手牌超上限的牌转而置入墓地——抽牌与
+    生成置入手牌共用 move_card 同一条路径。"""
+    gen, token_cid = 10010167, 10010166
+    db.cards[token_cid] = F.card(token_cid, token=True)
+    db.cards[gen] = F.card(
+        gen, steps=[F.Step(op="generate", card_id=token_cid, count=2)], token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    for _ in range(12 - len(pa.hand)):
+        give(g, 0, token_cid)
+    assert len(pa.hand) == 12
+    grave_before = len(pa.zones.get("graveyard", []))
+    g.draw_cards(0, 1)                            # 抽牌爆牌：牌库顶牌转墓地
+    assert len(pa.hand) == 12
+    assert len(pa.zones["graveyard"]) == grave_before + 1
+    # 生成置入手牌同路径：腾 1 格后打出生成 2 张 → 1 张入手、1 张爆掉
+    g.move_card(pa, pa.hand[0], "graveyard")
+    pa.orb = 9
+    play(g, 0, gen)
+    assert len(pa.hand) == 12
+    burned = [c for c in pa.zones["graveyard"] if c.id == token_cid]
+    assert len(burned) >= 1
+
+
+def test_empty_deck_burn_replaces_loss(db, make_game):
+    """觉醒·书翁型空库替换（觉醒牌 tags 含 deck_out_burn）：牌库为空时抽牌改为
+    对敌方牌手造成 10 点伤害（每张空抽各触发一次），伤害致死走正常牌手气绝判负。"""
+    awaken_cid = 10010168
+    db.cards[awaken_cid] = F.card(awaken_cid, subtype="awaken",
+                                  tags=["deck_out_burn"], token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.shikigami[0].awakened = awaken_cid         # 在场（1 级）且已觉醒
+    pa.deck.clear()
+    for expected in (20, 10):
+        pass_turns(g, 2)                          # A 回合开始空抽 → 烧 10
+        assert pb.health == expected and g.state.winner is None
+    pass_turns(g, 2)                              # 再空抽 → 30→0，敌方牌手气绝
+    assert pb.defeated and g.state.winner == 0
+    # 对照：无该标记的空库抽牌照常判负
+    g2 = make_game()
+    g2.state.players[0].deck.clear()
+    pass_turns(g2, 2)
+    assert g2.state.winner == 1
+
+
+def test_battle_mulligan_flow(db, make_game):
+    """战中调度（云游，mulligan_hand）：出牌挂起 pending mulligan_pick——choose 带
+    uid 换 1 张（返回牌库随机位置再随机抽 1），choose 不带 uid 提前结束并洗牌库，
+    随后续跑挂起块的剩余步骤。"""
+    cid = 10010169
+    db.cards[cid] = F.card(
+        cid, steps=[F.Step(op="mulligan_hand", times=3, shuffle=True),
+                    F.Step(op="draw", count=1)], token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    hand_before = len(pa.hand)                    # 打出后净手牌（不含本牌）
+    c = give(g, 0, cid)
+    g.apply({"op": "play_card", "uid": c.uid})
+    pend = g.state.pending_choice
+    assert pend and pend["kind"] == "mulligan_pick" and pend["remaining"] == 3
+    uid = pa.hand[0].uid
+    g.apply({"op": "choose", "uid": uid, "player": 0})       # 换 1 张
+    assert g.state.pending_choice["remaining"] == 2
+    assert uid not in [c.uid for c in pa.hand]
+    g.apply({"op": "choose", "player": 0})                   # 提前结束 → 洗牌续块
+    assert g.state.pending_choice is None
+    assert len(pa.hand) == hand_before + 1        # 续块的 draw 1 已结算
+
+
+def test_draw_to_pick_replaces_turn_draw(db, make_game):
+    """明心型抽牌替换（在场形态 tags 含 draw_to_pick）：回合开始的抽牌改为检视牌库顶
+    3 张选 1 置入手牌（然后洗牌库）；牌库不足 3 张全检视；牌库为空走空库分支（判负）。"""
+    cid = 10010170
+    db.cards[cid] = F.card(cid, card_type="form", form_power=4, form_health=5,
+                           tags=["draw_to_pick"], token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, cid)
+    hand_before = len(pa.hand)
+    pass_turns(g, 2)                              # → A 第 2 回合开始：挂起检视
+    pend = g.state.pending_choice
+    assert pend and pend["kind"] == "deck_top_pick" and len(pend["options"]) == 3
+    g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
+    assert g.state.pending_choice is None
+    assert len(pa.hand) == hand_before + 1
+    # 牌库不足 3 张：全部检视（截断到 2）
+    del pa.deck[2:]
+    pass_turns(g, 2)
+    pend = g.state.pending_choice
+    assert len(pend["options"]) == 2
+    g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
+    # 牌库为空：走空库抽牌分支（无 deck_out_burn → 判负）
+    pa.deck.clear()
+    pass_turns(g, 2)
+    assert g.state.winner == 1

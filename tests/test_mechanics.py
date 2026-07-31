@@ -966,3 +966,93 @@ def test_bond_generate_exact_level(real_game):
     assert jt.shield == 3
     assert jt.temp_power == 1                  # 基础能力：受伤 +1
     assert any(c.id == 10010303 for c in pa.hand)   # 黑焰之手（茨木 2 级唯一战斗牌）
+
+
+# ---------- 弹回 / 本回合力量覆写 / 目标池过滤（第十四阶段） ----------
+
+def test_rebound_returns_to_hand(db, make_game):
+    """弹回（蛇行击型）：使用后回手而非入墓；再次打出时持久修饰快照按实例去重
+    （_materialize 只补差值，不重复合并）。"""
+    cid = 10010156
+    db.cards[cid] = F.card(
+        cid, keywords=["rebound"], steps=[F.dmg(1)], target=CHOOSE_ENEMY, token=True,
+        triggers=[F.EffectBlock(
+            when="on_shikigami_defeated",
+            condition={"victim_kind": "shikigami", "source_side": "friendly"},
+            steps=[F.Step(op="add_mod", to="persistent", key="enhance", amount=2)],
+        )])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 99,
+                        Ref(player=0, shikigami=0), kind="combat")
+    g._drain_queue()
+    assert pa.card_mods[cid]["enhance"] == 2     # 本局击杀计数已入持久 store
+    move(g, 1, 1)
+    pb.shikigami[1].level = 1                    # 0 级不在场，须先入场才可被指定
+    c = give(g, 0, cid)
+    tgt = Ref(player=1, shikigami=1)
+    g.apply({"op": "play_card", "uid": c.uid, "target": tgt})
+    assert c in pa.hand                          # 回手而非入墓
+    assert c.mods["enhance"] == 2                # 首次打出快照
+    g.apply({"op": "play_card", "uid": c.uid, "target": tgt})
+    assert c in pa.hand
+    assert c.mods["enhance"] == 2                # 再次打出不重复合并
+
+
+def test_power_override_turn_scope(db, make_game):
+    """闪烁型"本回合力量变为 0"：scope=turn 的力量覆写在任一回合开始时解除
+    （半回合作用域，min_health_turn 先例）。"""
+    cid = 10010157
+    db.cards[cid] = F.card(
+        cid, steps=[F.Step(op="power_override", scope="turn",
+                           target=T(kind="all", pool="enemy_combat"))], token=True)
+    g = make_game()
+    move(g, 1, 0)
+    b = g.state.players[1].shikigami[0]
+    play(g, 0, cid)
+    assert b.eff_power == 0
+    assert b.ext.get("power_zero_turn")
+    pass_turns(g, 1)                             # → B 回合开始：覆写到期解除
+    assert b.eff_power == 3
+    assert not b.ext.get("power_zero")
+
+
+def test_choose_pool_power_le_filter(db, make_game):
+    """勾诀型目标过滤：choose 池 power_le —— 力量超标者不可被指定（合法性校验拒绝），
+    达标者可指定并消灭。"""
+    cid = 10010158
+    db.cards[cid] = F.card(
+        cid, target=T(kind="choose", pool="enemy_shikigami", power_le=2),
+        steps=[F.Step(op="destroy")], token=True)
+    g = make_game()
+    pb = g.state.players[1]
+    pb.shikigami[0].level = 1                    # 3 力量（超标）
+    pb.shikigami[2].level = 1                    # 100103 2 力量（达标）
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": give(g, 0, cid).uid,
+                 "target": Ref(player=1, shikigami=0)})
+    g.apply({"op": "play_card", "uid": give(g, 0, cid).uid,
+             "target": Ref(player=1, shikigami=2)})
+    assert pb.shikigami[2].defeated
+
+
+def test_all_pool_has_fragile_filter(db, make_game):
+    """焚身之火型全体伤害：all 池 has_fragile 过滤 —— 仅命中持有破甲的角色
+    （式神与牌手均按 shield<0 判定；破甲受伤即消耗）。"""
+    cid = 10010159
+    db.cards[cid] = F.card(
+        cid, steps=[F.Step(op="damage", amount=3,
+                           target=T(kind="all", pool="enemy_character",
+                                    has_fragile=True))], token=True)
+    g = make_game()
+    pb = g.state.players[1]
+    pb.shield = -1
+    for s in pb.shikigami:
+        s.level = 1
+    pb.shikigami[1].shield = -2                  # 100102 6 血持 2 破甲
+    play(g, 0, cid)
+    assert pb.shikigami[1].health == 1           # 6 - (3+2)
+    assert pb.health == 26                       # 30 - (3+1)
+    assert pb.shikigami[0].health == 4           # 无破甲者不受伤害
+    assert pb.shikigami[1].shield == 0           # 破甲受伤即消耗

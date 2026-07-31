@@ -1241,3 +1241,123 @@ def test_turn_end_response_after_queue_effects(db, make_game):
     give(g2, 1, cid)
     pass_turns(g2, 1)
     assert pa2.health == 25
+
+
+# ==========================================================================
+# 第十四阶段：先攻快照时机 / 动态身材光环 / 增强变后消灭
+# ==========================================================================
+
+def test_initiative_granted_on_attack_strikes_first(db, make_game):
+    """火吻之蛇型先攻：攻击时结算（on_before_assault）授予的先攻在伤害快照前生效
+    ——先攻阶段击杀 4 血被攻击者且不受反击；战斗终止点 attack_buffs 统一核销。"""
+    cid = 10010170
+    db.cards[cid] = F.card(
+        cid, card_type="form", form_power=4, form_health=5,
+        abilities=[F.EffectBlock(
+            when="on_before_assault",
+            condition={"attacker_shikigami": "self"},
+            steps=[F.Step(op="attack_buff", keywords=["initiative"], target=SELF)],
+        )], token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    move(g, 1, 0)
+    b = g.state.players[1].shikigami[0]          # 3/4
+    play(g, 0, cid)
+    a = g.state.players[0].shikigami[0]          # 结附后 4/5
+    assert "initiative" not in a.keywords
+    g.apply({"op": "assault", "index": 0})
+    assert b.defeated                            # 先攻阶段 4 伤击杀
+    assert a.health == 5                         # 未吃反击
+    assert not a.attack_buffs                    # 先攻随"直到攻击后"核销
+
+
+def test_dynamic_stat_aura(db, make_game):
+    """动态身材光环（stat_aura，ext dyn_power/dyn_health 通道）：
+    - 闻世型（self_hand_count）：打出后身材 = 1+手牌数，抽牌即变；形态离场光环移除。
+    - 火吻之蛇型（enemy_fragile_power）：敌方式神按持有破甲降力量，破甲消失即恢复。"""
+    ws, hs = 10010171, 10010172
+    db.cards[ws] = F.card(
+        ws, card_type="form", form_power=1, form_health=1,
+        steps=[F.Step(op="stat_aura", kind="self_hand_count")], token=True)
+    db.cards[hs] = F.card(
+        hs, card_type="form", form_power=4, form_health=9,
+        steps=[F.Step(op="stat_aura", kind="enemy_fragile_power")], token=True)
+
+    g = make_game()
+    pa, pb = g.state.players
+    a = pa.shikigami[0]                          # 基础 3/4
+    play(g, 0, ws)
+    assert a.eff_power == 1 + len(pa.hand)
+    assert a.max_health == 1 + len(pa.hand)
+    assert a.health == a.max_health              # 登记时按新上限回满
+    g.draw_cards(0, 1)
+    assert a.eff_power == 1 + len(pa.hand)       # 手牌数变化即时反映
+    g._destroy_form(pa, 0, "effect")
+    assert a.eff_power == 3                      # 形态离场：光环移除回基础值
+    assert not pa.ext.get("stat_auras")
+
+    g2 = make_game()
+    b = g2.state.players[1].shikigami[0]         # 3/4
+    b.level = 1
+    play(g2, 0, hs)
+    g2._change_shield(Ref(player=1, shikigami=0), 2, "test", kind="fragile")
+    assert b.shield == -2 and b.eff_power == 1   # 3 - 2 破甲
+    g2._change_shield(Ref(player=1, shikigami=0), -2, "test", kind="fragile")
+    assert b.shield == 0 and b.eff_power == 3    # 破甲消失即恢复
+
+
+def test_destroy_on_combat_damage_transformed(db, make_game):
+    """夺命型"变为"：本局消灭计数 ≥2 置位 transformed（card_mods 持久 store），
+    之后该式神造成战斗伤害时消灭受伤角色——式神走 context victim、牌手走
+    on_player_damaged 的 context damaged_player（card_transformed 门控，未变前不生效）。"""
+    cid = 10010173
+    gate = {"source_shikigami": "self", "kind": "combat", "card_transformed": cid}
+    db.cards[cid] = F.card(
+        cid, card_type="combat", steps=[],
+        triggers=[F.EffectBlock(
+            when="on_shikigami_defeated",
+            condition={"victim_kind": "shikigami", "source_side": "friendly",
+                       "source_shikigami": 100101},   # 卡牌触发器无 holder，"self" 不可用
+            steps=[F.Step(op="add_mod", to="persistent", key="kill_count"),
+                   F.Step(op="add_mod", to="persistent", key="transformed",
+                          require={"key": "kill_count", "ge": 2})])],
+        temp_grants=[
+            F.EffectBlock(
+                when="on_damage", condition=gate,
+                steps=[F.Step(op="destroy", target=T(kind="context", key="victim"))]),
+            F.EffectBlock(
+                when="on_player_damaged", condition=gate,
+                steps=[F.Step(op="destroy",
+                              target=T(kind="context", key="damaged_player"))]),
+        ], token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.shikigami[0].health = 99                  # 扛住两轮反击，专注验证消灭逻辑
+    # 第 1 杀：计数 1，未"变为"
+    pa.orb = 9
+    move(g, 1, 0)
+    pb.shikigami[0].health = 1
+    play(g, 0, cid)
+    assert pb.shikigami[0].defeated
+    assert pa.card_mods[cid]["kill_count"] == 1
+    assert not pa.card_mods[cid].get("transformed")
+    # 未变前打空战斗区：牌手受伤但不被消灭（每次出击各占一个 A 回合）
+    pass_turns(g, 2)
+    pa.orb = 9
+    play(g, 0, cid)
+    assert pb.health == 27 and not pb.defeated
+    # 第 2 杀：计数 2 → 置位 transformed
+    pass_turns(g, 2)
+    pa.orb = 9
+    move(g, 1, 1)
+    pb.shikigami[1].health = 1
+    play(g, 0, cid)
+    assert pb.shikigami[1].defeated
+    assert pa.card_mods[cid].get("transformed")
+    # 变后战斗伤害命中牌手 → 直接消灭牌手获胜
+    pass_turns(g, 2)
+    pa.orb = 9
+    play(g, 0, cid)
+    assert pb.defeated and g.state.winner == 0

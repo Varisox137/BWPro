@@ -7,7 +7,7 @@
 """
 from core.model import Ref
 from tests import factories as F
-from tests.factories import give, move, pass_turns, play
+from tests.factories import CHOOSE_ENEMY, give, move, pass_turns, play
 
 T = F.T
 SELF = T(kind="self")
@@ -470,3 +470,123 @@ def test_assault_on_player_counter_enhance(db, make_game):
     play(g, 0, cid)
     assert pa.health == 11                    # 10 + 1
     assert "on_heal" not in g.history[n:]     # 非治疗：不触发治疗事件
+
+
+# ==========================================================================
+# 第十四阶段：形态身材 delta / 生成点快照 / 条件瞬发 / 手牌半数 / 形态条件算子
+# ==========================================================================
+
+def test_form_power_delta_persistent_snapshot(db, make_game):
+    """断罪型形态增强：本局击杀计数经 persistent form_power_delta 写入，
+    形态结附时战力/生命 = 卡面 + 累计差值（_materialize 快照键扩展）。"""
+    cid = 10010170
+    db.cards[cid] = F.card(
+        cid, card_type="form", form_power=4, form_health=8,
+        triggers=[F.EffectBlock(
+            when="on_shikigami_defeated",
+            condition={"victim_kind": "shikigami", "source_side": "friendly"},
+            steps=[F.Step(op="add_mod", to="persistent",
+                          key="form_power_delta", amount=2)])],
+        token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 99,
+                        Ref(player=0, shikigami=0), kind="combat")
+    g._drain_queue()
+    assert pa.card_mods[cid]["form_power_delta"] == 2
+    play(g, 0, cid)
+    a = pa.shikigami[0]
+    assert a.eff_power == 6 and a.max_health == 8   # 4+2 / 8
+
+
+def test_generate_snapshots_persistent_mods(db, make_game):
+    """生成点快照：generate 置入手牌即装配持久修饰；之后计数再涨，
+    打出时 _materialize 只补差值（不重复合并）。"""
+    cid, gen = 10010171, 10010172
+    _jingu_card(db, cid)
+    db.cards[gen] = F.card(
+        gen, steps=[F.Step(op="generate", card_id=cid)], token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    def kill(si: int) -> None:
+        g.deal_to_shikigami(Ref(player=1, shikigami=si), 99,
+                            Ref(player=0, shikigami=0), kind="combat")
+        g._drain_queue()
+    kill(0)
+    assert pa.card_mods[cid]["enhance"] == 2
+    play(g, 0, gen)                               # 生成 1 张禁锢之刀型入手
+    inst = next(c for c in pa.hand if c.id == cid)
+    assert inst.mods["enhance"] == 2              # 生成点已快照
+    kill(1)                                       # 计数再涨 → store = 4
+    assert pa.card_mods[cid]["enhance"] == 4
+    g.apply({"op": "play_card", "uid": inst.uid})
+    assert inst.mods["enhance"] == 4              # 只补差值 2
+    assert pb.health == 30 - (3 + 4)              # 实战 7 伤（而非 2+4 重复合并的 9）
+
+
+def test_conditional_keywords_combat_nonempty(db, make_game):
+    """闪烁型条件瞬发（conditional_keywords combat_nonempty）：己方战斗区有人时
+    该牌具有[瞬发]（首次使用不耗鬼火）；退回准备区后条件失效、正常收费。"""
+    cid = 10010173
+    db.cards[cid] = F.card(
+        cid, conditional_keywords=[{"keyword": "fast", "combat_nonempty": True}],
+        token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 3
+    play(g, 0, cid)                               # 战斗区无人：无瞬发，正常收费
+    assert pa.orb == 2
+    move(g, 0, 0)                                 # 己方战斗区有人
+    play(g, 0, cid)                               # 条件瞬发：不耗鬼火
+    assert pa.orb == 2
+    g._retreat(pa, 0)                             # 退回准备区
+    play(g, 0, cid)                               # 条件失效：正常收费
+    assert pa.orb == 1
+
+
+def test_hand_count_half_amount(db, make_game):
+    """墨染型数值键 hand_count_half：先抽 1 再按控制者当前手牌数一半
+    （向下取整）造成伤害。"""
+    cid = 10010174
+    db.cards[cid] = F.card(
+        cid, steps=[F.Step(op="draw", count=1),
+                    F.Step(op="damage", amount={"hand_count_half": "controller"})],
+        target=CHOOSE_ENEMY, token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shikigami[0].level = 1
+    b = pb.shikigami[0]                           # 3/4
+    play(g, 0, cid, target=Ref(player=1, shikigami=0))
+    # 打出后手牌 6 → 抽 1 = 7 → 7//2 = 3
+    assert len(pa.hand) == 7 and b.health == 4 - 3
+
+
+def test_shikigami_has_form_condition(db, make_game):
+    """萤火点点型形态条件算子（shikigami_has_form）：己方回合开始时，若来源式神
+    结附着形态才计数增强；未结附的回合开始不计。"""
+    cid, fid = 10010175, 10010176
+    db.cards[cid] = F.card(
+        cid, steps=[F.Step(op="damage", amount={"enhance": True, "base": 1})],
+        target=CHOOSE_ENEMY,
+        triggers=[F.EffectBlock(
+            when="on_turn_start",
+            condition={"player": "self", "shikigami_has_form": 100101},
+            steps=[F.Step(op="add_mod", to="persistent", key="enhance")])],
+        token=True)
+    db.cards[fid] = F.card(fid, card_type="form", form_power=2, form_health=2,
+                           token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    give(g, 0, cid)
+    pass_turns(g, 2)                              # 未结附形态：不计数
+    assert not pa.card_mods.get(cid)
+    play(g, 0, fid)                               # 结附形态
+    pass_turns(g, 2)                              # 结附后回合开始：+1
+    assert pa.card_mods[cid]["enhance"] == 1
+    pass_turns(g, 2)
+    assert pa.card_mods[cid]["enhance"] == 2

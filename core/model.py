@@ -57,7 +57,8 @@ class ShikigamiState(BaseModel):
     身材组成（thoughts.txt）：基础值（式神基础值/当前形态基础值）
     + 永久增减益修正 + 临时增减益修正。
     临时/永久的区分标准是"气绝后复活能否保留"：临时修正在气绝时清除，
-    永久修正复活后保留（光环类属临时修正的细分，Phase 5）。
+    永久修正复活后保留（光环类属临时修正的细分——连续型动态身材光环走
+    ext["dyn_power"]/["dyn_health"] 缓存通道，见 engine._refresh_stat_auras）。
     """
 
     id: int  # 数据 id：对应 db 中式神的 id
@@ -103,18 +104,22 @@ class ShikigamiState(BaseModel):
 
     @property
     def eff_power(self) -> int:
-        """有效力量 = 基础 + 永久修正 + 临时修正 + 本次战斗战力。
+        """有效力量 = 基础 + 永久修正 + 临时修正 + 本次战斗战力 + 动态光环缓存。
 
         覆写层：ext["power_zero"] 置位时力量视为 0（power_override op 授予，
         覆盖全部加成层；形态离场/气绝时清除）。
+        ext["dyn_power"]：连续型动态身材光环的缓存通道（闻世/火吻之蛇；
+        由 engine._refresh_stat_auras 在手牌数/破甲变化等读取点统一刷新）。
         """
         if self.ext.get("power_zero"):
             return 0
-        return self.base_power + self.perm_power + self.temp_power + self.combat_power
+        return (self.base_power + self.perm_power + self.temp_power
+                + self.combat_power + int(self.ext.get("dyn_power", 0)))
 
     @property
     def max_health(self) -> int:
-        return self.base_health + self.perm_health + self.temp_health
+        return (self.base_health + self.perm_health + self.temp_health
+                + int(self.ext.get("dyn_health", 0)))  # dyn 通道同 eff_power
 
     @property
     def in_play(self) -> bool:

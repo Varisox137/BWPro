@@ -114,6 +114,8 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
     复活时按新上限回满）；0 级未在场/已离场式神不受影响。
     上限上调伴随的当前生命等量增加是直改而非治疗：不走 heal 事件、不触发
     "恢复生命时"类能力（维护者确认：古尘之壁"获得x生命"不算治疗）。
+    上限下调（负值，墨笔夺魂"降低生命"）：同步钳当前生命到新上限；上限降至
+    不大于 0 时目标气绝（维护者定案第十四阶段）。
     """
     for ref in targets:
         if ref.shikigami is not None:
@@ -122,13 +124,19 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
                 continue
             if perm:
                 s.perm_health += amount
-                if not s.defeated:
+                if not s.defeated and amount > 0:
                     s.health += amount
             else:
                 s.temp_health += amount
                 # 临时增加上限时，当前生命同步增加等量数值（不超过新上限）
                 if amount > 0:
                     s.health = min(s.max_health, s.health + amount)
+            if amount < 0 and not s.defeated:
+                s.health = min(s.health, s.max_health)  # 上限降低钳当前生命
+                if s.max_health <= 0:
+                    s.health = 0
+                    game.check_defeated(ref, source=ctx.source, reason="消灭")
+                    continue
             game._settle(f"【生命】{game.db.shikigami[s.id].name} "
                          f"{'永久' if perm else '临时'}生命上限 {amount:+d}"
                          f"（现 {s.health}/{s.max_health}）")
@@ -340,6 +348,55 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     game._log(f"{game.db.shikigami[sid].name} 的卡牌光环生效（{scope}）")
 
 
+@action("stat_aura")
+def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form") -> None:
+    """登记连续型动态身材光环（targets 忽略；闻世/火吻之蛇）——读取时求值的通用修饰：
+    不写死数值，由 Game._refresh_stat_auras 在手牌数/破甲变化等读取点重算
+    ext["dyn_power"]/["dyn_health"] 缓存通道（eff_power/max_health 读取时叠加）。
+
+    kind="self_hand_count"：持有者每有一张其他手牌 +1/+1（闻世）；
+    kind="enemy_fragile_power"：敌方有破甲的式神降低等于其破甲的力量（火吻之蛇）。
+    scope="form"（缺省）：绑定来源式神当前形态，形态离场时移除（气绝经
+    _destroy_form 同路径）。登记时持有者当前生命按新上限回满（形态结附生命回满
+    在光环登记之前，此处补齐动态上限部分）。
+    """
+    if kind not in ("self_hand_count", "enemy_fragile_power"):
+        raise ValueError(f"未知 stat_aura 类型: {kind}")
+    if scope != "form":
+        raise ValueError(f"未知 stat_aura 作用域: {scope}")
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("stat_aura 需要来源式神")
+    p = game.state.players[ctx.controller]
+    p.ext.setdefault("stat_auras", []).append({
+        "kind": kind, "scope": scope,
+        "holder": [ctx.source.player, ctx.source.shikigami],
+    })
+    game._refresh_stat_auras()
+    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    s.health = s.max_health
+    game._log(f"{game.db.shikigami[s.id].name} 的动态光环生效")
+
+
+@action("mulligan_hand")
+def mulligan_hand(game, ctx, *, targets: list[Ref], times: int = 3,
+                  shuffle: bool = True) -> None:
+    """战中调度（云游；targets 忽略）：调度控制者手牌至多 times 次——每次把一张手牌
+    返回牌库随机位置再随机抽一张（_swap_hand_card 核心，与游戏开始阶段调度共用），
+    choose 指令作答（uid=手牌；uid 缺省 = 提前结束），结束后洗牌库。
+    通过 pending_choice（kind="mulligan_pick"）挂起，由 choose 指令续跑（deck_top_pick 先例）。"""
+    p = game.state.players[ctx.controller]
+    if int(times) <= 0 or not p.hand:
+        if shuffle:
+            game.rng.shuffle(p.deck)
+            game._log(f"{p.name} 洗了牌库")
+        return
+    game.state.pending_choice = {
+        "kind": "mulligan_pick", "player": ctx.controller,
+        "remaining": int(times), "shuffle": bool(shuffle),
+    }
+    game._log(f"{p.name} 调度手牌（至多 {times} 次）")
+
+
 @action("grant_keyword")
 def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str) -> None:
     """授予目标式神一个关键字（按关键字的天然持久性类别入列，见 engine._grant_keyword）。"""
@@ -387,10 +444,17 @@ def destroy_form(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("destroy")
 def destroy(game, ctx, *, targets: list[Ref]) -> None:
-    """直接消灭目标式神（非伤害：生命归零走气绝流程；尘缚之阵的免疫直接消灭在此判定）。
-    濒死者不能再次被消灭（早退）。"""
+    """直接消灭目标（非伤害：生命归零走气绝流程；尘缚之阵的免疫直接消灭在此判定）。
+    濒死者不能再次被消灭（早退）。
+    目标为牌手时（夺命增强变后"消灭受到判官战斗伤害的角色"）：消灭牌手 = 直接获胜——
+    牌手气绝、对局进入待结束（维护者定案第十四阶段）。"""
     for ref in targets:
         if ref.shikigami is None:
+            pl = game.state.players[ref.player]
+            if pl.defeated:
+                continue
+            game._log(f"{pl.name} 被直接消灭")
+            game._set_pending_end(loser=ref.player, defeat=True)
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if not s.in_play or s.dying:
@@ -449,15 +513,38 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     exclude_self=True：排除来源卡牌同 id（"其他法术牌"）。
     level="shikigami"：卡牌等级 == shikigami 参数所指式神的当前等级（精确匹配；
     醉酒当歌"茨木童子当前等级的战斗牌"）——该式神未出战/未在场为空操作。
+    shikigami="friendly_others"：逐各其他己方式神（出战队列中除来源外）各随机
+    生成 1 张牌（万象之书"随机将其他己方式神的各一张牌置入手牌"；count 忽略）。
+    生成置入手牌统一做持久修饰快照（_materialize——"本局游戏"类增强生成点生效）
+    并经 move_card 的手牌上限路径（爆牌）。
     """
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
+
+    def _spawn(cid: int) -> None:
+        inst = CardInstance(uid=game.state.next_uid, id=cid)
+        game.state.next_uid += 1
+        game.move_card(p, inst, zone)
+        game._materialize(p, inst, game.db.cards[cid])  # 生成点统一快照
+        game._log(f"生成了【{game.db.cards[cid].name}】")
+
     if card_id is not None:
         for _ in range(count):
-            inst = CardInstance(uid=game.state.next_uid, id=int(card_id))
-            game.state.next_uid += 1
-            game.move_card(p, inst, zone)
-            game._log(f"生成了【{game.db.cards[int(card_id)].name}】")
+            _spawn(int(card_id))
+        return
+    if shikigami == "friendly_others":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("generate(shikigami=friendly_others) 需要来源式神")
+        src_id = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+        for s in p.shikigami:
+            if s.id == src_id or s.kind != "shikigami":
+                continue
+            pool = [c.id for c in game.db.cards.values()
+                    if not c.token and c.shikigami == s.id
+                    and (card_type is None or c.card_type == card_type)]
+            if not pool:
+                continue
+            _spawn(game.rng.choice(pool))
         return
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -491,26 +578,29 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             and not (exclude_self and ctx.card is not None and c.id == ctx.card.id)]
     if not pool:
         return
-    p = game.state.players[ctx.controller]
     for _ in range(count):
-        cid = game.rng.choice(pool)
-        inst = CardInstance(uid=game.state.next_uid, id=cid)
-        game.state.next_uid += 1
-        game.move_card(p, inst, zone)
-        game._log(f"生成了【{game.db.cards[cid].name}】")
+        _spawn(game.rng.choice(pool))
 
 
 @action("search_deck")
-def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target") -> None:
+def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target",
+                card_type: str | None = None, max_level: int | str | None = None,
+                direct_play_power_ge: int | None = None) -> None:
     """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
     shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
     "self"=来源式神；或给出数据 id。仅实际检索到卡牌才洗牌库（未命中不洗——
     维护者定案第十三阶段）。
+    card_type：限定卡牌主类型（森佑灵引 card_type=form）；max_level="target"：卡牌
+    等级 ≤ 选择目标式神当前等级（"不高于该式神等级"）。
+    direct_play_power_ge：选择目标式神存活且力量 ≥ 该值时改为直接使用（森佑灵引
+    "若该式神力量>=4且存活，改为直接使用"——不耗鬼火、play_from=deck、triggered=auto；
+    目前仅支持形态牌直接结附给选择目标）。置入手牌/直接使用前按生成点统一做
+    持久修饰快照（_materialize）。
     """
     p = game.state.players[ctx.controller]
+    ref = targets[0] if targets else None
     if shikigami == "target":
-        ref = targets[0] if targets else None
         if ref is None or ref.shikigami is None:
             return  # 无有效目标：检索落空，不洗牌
         sid = game.state.players[ref.player].shikigami[ref.shikigami].id
@@ -520,12 +610,38 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
         sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
     else:
         sid = int(shikigami)
-    pool = [c for c in p.deck if game.db.cards[c.id].shikigami == sid]
+    lv: int | None = None
+    if max_level is not None:
+        if max_level == "target":
+            if ref is None or ref.shikigami is None:
+                return
+            lv = game.state.players[ref.player].shikigami[ref.shikigami].level
+        else:
+            lv = int(max_level)
+    pool = [c for c in p.deck
+            if game.db.cards[c.id].shikigami == sid
+            and (card_type is None or game.db.cards[c.id].card_type == card_type)
+            and (lv is None or game.db.cards[c.id].level <= lv)]
     if not pool:
         return  # 未命中：不洗牌
     card = game.rng.choice(pool)
+    cdef = game.db.cards[card.id]
+    if direct_play_power_ge is not None and ref is not None and ref.shikigami is not None:
+        ts = game.state.players[ref.player].shikigami[ref.shikigami]
+        if ts.in_play and ts.eff_power >= int(direct_play_power_ge):
+            # 改为直接使用（森佑灵引；凭空自动使用管线先例 spell_echo_recast）
+            if cdef.card_type != "form":
+                raise ValueError("search_deck 直接使用目前仅支持形态牌")
+            game._remove_from_zone(p, card)
+            game._materialize(p, card, cdef)  # 生成点统一快照（断罪 form_power_delta 等）
+            game._log(f"{p.name} 直接使用了牌库中的【{cdef.name}】")
+            game._play_form_card(p, ref.shikigami, card, cdef, ctx.controller, [])
+            game._emit_card_played(ctx.controller, card.uid, cdef,
+                                   play_from="deck", triggered="auto")
+            return
     game.move_card(p, card, "hand")
-    game._log(f"从牌库检索了【{game.db.cards[card.id].name}】")
+    game._materialize(p, card, cdef)  # 生成点统一快照（置入手牌即获"本局游戏"类增强）
+    game._log(f"从牌库检索了【{cdef.name}】")
     game.rng.shuffle(p.deck)
     game._log(f"{p.name} 洗了牌库")
 
@@ -612,11 +728,13 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> N
 def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                 condition: dict | None = None, steps: list | None = None,
                 secret: bool = False, scope: str | None = None,
-                bind: str = "source") -> None:
-    """给来源式神登记一个一次性延迟能力（会；targets 忽略）。
+                bind: str = "source", uses: int = 1) -> None:
+    """给来源式神登记一个延迟能力（会；targets 忽略）。
 
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
     随条目存储，触发结算时作为效果目标。气绝时清除（变形离场保留——变形未实现）。
+    uses 为剩余触发次数（缺省 1 = 一次性；剧毒之盾"本回合获得…"配 scope="turn"
+    uses=99 表示回合内不限次）。
     scope="turn"："本回合"类（魔音扰心主动使用）——己方回合开始清除（未消耗时）。
     scope="play"："本次使用期间"类（黑羽之刃的消灭抽牌）——该次出牌结算结束时清除。
     secret=True 时选择目标对敌方保密（会：所选目标仅己方可见）——联机状态脱敏
@@ -639,7 +757,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     s.delayed.append({
         "block": block,
         "chosen": ctx.chosen[0] if ctx.chosen else None,
-        "uses": 1,
+        "uses": int(uses),
         "secret": secret,
         "scope": scope,
     })
@@ -1301,17 +1419,23 @@ def boost_damage(game, ctx, *, targets: list[Ref], amount: int = 0) -> None:
 
 
 @action("power_override")
-def power_override(game, ctx, *, targets: list[Ref], on: bool = True) -> None:
+def power_override(game, ctx, *, targets: list[Ref], on: bool = True,
+                   scope: str | None = None) -> None:
     """力量覆写（山童笨拙类）：on=True 时目标式神力量视为 0（覆盖基础+永久+临时+
-    战力全部，eff_power 覆写层）；on=False 解除。形态离场、式神气绝时自动清除。"""
+    战力全部，eff_power 覆写层）；on=False 解除。形态离场、式神气绝时自动清除。
+    scope="turn"（闪烁"本回合力量变为 0"）：半回合作用域——任一回合开始时随
+    ext["power_zero_turn"] 通道一并解除（min_health_turn 先例，双方清除）。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if on:
             s.ext["power_zero"] = True
+            if scope == "turn":
+                s.ext["power_zero_turn"] = True
         else:
             s.ext.pop("power_zero", None)
+            s.ext.pop("power_zero_turn", None)
 
 
 def _orb_count(value: int | dict, p: PlayerState, base_default: int) -> int:

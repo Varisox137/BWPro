@@ -735,3 +735,89 @@ def test_heal_player_triggers_self_heal(db, make_game):
     play(g, 0, 10010155)
     assert pa.health == 29           # 牌手实际恢复 4
     assert s.health == 4             # 灵能恢复等量 3（ capped by 已损失）
+
+
+# ---------- 清姬伤害转化 / 庇佑 / 生命钳制 / 破甲保留（第十四阶段） ----------
+
+def test_damage_to_fragile_conversion(db, make_game):
+    """清姬型伤害转化（伪关键字 damage_to_fragile）：来源持标记且受伤者无破甲 →
+    伤害事件生成点全额转化为等量破甲（无扣减/无 on_damage）；受伤者已有破甲
+    或来源无标记则正常结算；牌手同样适用（获得破甲先抵消已有护甲）。"""
+    g, pa, pb = _game(make_game)
+    src = pa.shikigami[IDX]
+    src.keywords.append("damage_to_fragile")
+    sref = Ref(player=0, shikigami=IDX)
+    b0 = pb.shikigami[0]
+    bref = Ref(player=1, shikigami=0)
+    g.deal_to_shikigami(bref, 3, sref)
+    assert b0.shield == -3 and b0.health == 4        # 转化：不产生伤害
+    assert "on_damage" not in g.history
+    b0.health = 20
+    g.deal_to_shikigami(bref, 2, sref)             # 已有破甲：正常伤害并消耗破甲
+    assert b0.health == 15 and b0.shield == 0        # 20 - (2+3)
+    pb.shield = 5
+    g.deal_to_player(1, 4, sref)                     # 牌手无破甲：转化（先抵消护甲）
+    assert pb.shield == 1 and pb.health == 30
+    # 其他来源的伤害不转化
+    g.deal_to_shikigami(bref, 2, Ref(player=0, shikigami=1))
+    assert b0.health == 13
+
+
+def test_blessing_negates_enemy_effect_damage(db, make_game):
+    """庇佑（消耗型关键字）：抵消一次敌方造成的非战斗伤害并失去；战斗伤害、
+    己方来源伤害不触发；被护甲完全吸收的伤害不消耗。"""
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]
+    b.health = 20
+    bref = Ref(player=1, shikigami=0)
+    enemy = Ref(player=0, shikigami=IDX)
+    b.one_shot_keywords.append("blessing")
+    g.deal_to_shikigami(bref, 3, enemy, kind="effect")
+    assert b.health == 20 and "blessing" not in b.one_shot_keywords  # 抵消并失去
+    b.one_shot_keywords.append("blessing")
+    g.deal_to_shikigami(bref, 2, enemy, kind="combat")             # 战斗伤害不触发
+    assert b.health == 18 and "blessing" in b.one_shot_keywords
+    g.deal_to_shikigami(bref, 1, Ref(player=1, shikigami=1), kind="effect")  # 己方不触发
+    assert b.health == 17 and "blessing" in b.one_shot_keywords
+    b.shield = 5
+    g.deal_to_shikigami(bref, 2, enemy, kind="effect")             # 护甲全吸收不消耗
+    assert b.health == 17 and b.shield == 3 and "blessing" in b.one_shot_keywords
+    g.deal_to_shikigami(bref, 4, enemy, kind="effect")             # 穿透护甲部分被抵消
+    assert b.health == 17 and b.shield == 0
+    assert "blessing" not in b.one_shot_keywords
+
+
+def test_buff_health_negative_clamps_current(db, make_game):
+    """墨笔夺魂型"降低生命"：上限下调同步钳当前生命；上限降至不大于 0 目标气绝。"""
+    cid = 10010155
+    db.cards[cid] = F.card(cid, steps=[
+        F.Step(op="buff_health", amount=-1),
+        F.Step(op="buff_power", amount=-2)], target=CHOOSE_ENEMY_DMG, token=True)
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]                              # 3/4
+    b.level = 1
+    tgt = Ref(player=1, shikigami=0)
+    play(g, 0, cid, target=tgt)
+    assert b.max_health == 3 and b.health == 3 and b.eff_power == 1
+    play(g, 0, cid, target=tgt)
+    play(g, 0, cid, target=tgt)
+    assert b.max_health == 1 and b.health == 1
+    play(g, 0, cid, target=tgt)                      # 上限 1 → 0
+    assert b.defeated
+
+
+def test_fragile_kept_by_enemy_awaken(db, make_game):
+    """觉醒·清姬型破甲保留（keep_enemy_fragile 标记觉醒牌在场）：己方回合开始时
+    破甲不被清除；护甲照常清除。"""
+    awaken_cid = 10010160
+    db.cards[awaken_cid] = F.card(awaken_cid, subtype="awaken",
+                                  tags=["keep_enemy_fragile"], token=True)
+    g, pa, pb = _game(make_game)
+    pa.shikigami[IDX].awakened = awaken_cid          # A 侧已觉醒（B 的"对方"）
+    b0, b1 = pb.shikigami[0], pb.shikigami[1]
+    b0.shield = -3
+    b1.shield = 4
+    pb.shield = -2
+    g.apply({"op": "end_turn"})                      # → B 回合开始：破甲保留、护甲清除
+    assert b0.shield == -3 and pb.shield == -2
+    assert b1.shield == 0

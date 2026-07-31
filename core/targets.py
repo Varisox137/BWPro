@@ -17,6 +17,7 @@ pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / sel
      / friendly_others_character（己方其他在场式神 + 己方牌手，排除来源；蹈海"己方其他角色"）
      / any_character（双方在场式神 + 双方牌手，治愈之水/佛光"一个角色"）
      / friendly_lowest_level（己方在场式神中等级最低者；并列全部入池由使用者选择，百闻一得）
+     / friendly_combat（己方战斗区式神；生死无常"消灭己方战斗区的式神"）
      / side_of_last_heal（本块上一步 heal 目标所属方的所有角色——在场式神 + 牌手；佛光
        "为其操控者的所有角色"，仅 kind=all 可用，读 ctx.memo["last_heal_targets"]）
      / friendly_injured（己方在场且已受伤（生命 < 上限）的式神；丰实/盛开"受伤的己方式神"）
@@ -25,6 +26,10 @@ pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / sel
 TargetSpec 额外键：
 - {"random": n}：kind=all 时在解析结果中随机取 n 个（盛开"随机一个受伤己方式神"，
   配合 repeat 每轮重新随机）；不足 n 个时取全部
+- {"power_le": n}：按 eff_power ≤ n 过滤式神目标（勾诀"力量<=2的敌方式神"；choose
+  合法性校验经 spec_pool_refs、kind=all 解析经 resolve 应用）
+- {"has_fragile": true|false}：按是否持有破甲过滤角色目标（焚身之火"所有有破甲的
+  敌方角色"，kind=all 解析时应用）
 """
 from __future__ import annotations
 
@@ -45,6 +50,7 @@ POOLS = frozenset({
     "friendly_others_character",
     "any_character",
     "friendly_lowest_level",
+    "friendly_combat",
     "side_of_last_heal",
     "friendly_injured",
     "friendly_defeated",
@@ -100,6 +106,13 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
                 return []
             return [Ref(player=enemy, shikigami=ci)]
         return []
+    if pool == "friendly_combat":
+        # 己方战斗区式神（生死无常"消灭己方战斗区的式神"）
+        cp = game.state.players[controller]
+        ci = cp.combat_index
+        if ci is not None and cp.shikigami[ci].in_play:
+            return [Ref(player=controller, shikigami=ci)]
+        return []
     if pool == "enemy_bench":
         # 敌方准备区：在场且不在战斗区的敌方式神（山童类"攻击准备区式神"）
         ep = game.state.players[enemy]
@@ -150,6 +163,29 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
     raise ValueError(f"未知目标池: {pool}")
 
 
+def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
+    """TargetSpec 额外过滤键（model_extra）统一应用：power_le（勾诀）/ has_fragile（焚身之火）。"""
+    pw = extra.get("power_le")
+    if pw is not None:
+        refs = [r for r in refs if r.shikigami is not None
+                and game.state.players[r.player].shikigami[r.shikigami].eff_power <= int(pw)]
+    hf = extra.get("has_fragile")
+    if hf is not None:
+        def _fragile(r: Ref) -> bool:
+            pl = game.state.players[r.player]
+            holder = pl.shikigami[r.shikigami] if r.shikigami is not None else pl
+            return holder.shield < 0
+        refs = [r for r in refs if _fragile(r) == bool(hf)]
+    return refs
+
+
+def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> list[Ref]:
+    """choose 目标合法性校验用：pool_refs + TargetSpec 额外过滤键（勾诀 power_le；
+    legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。"""
+    refs = pool_refs(game, spec.pool, controller, targeted=targeted)
+    return _spec_filtered(game, refs, spec.model_extra or {})
+
+
 def resolve(game, spec, ctx) -> list[Ref]:
     """把 step 的 TargetSpec 解析为 Ref 列表。spec 为 None 时回退到卡牌的选择目标。
 
@@ -187,6 +223,7 @@ def resolve(game, spec, ctx) -> list[Ref]:
             # 按数据 id 过滤式神（豪焰固定项 buff 茨木、羁绊伤酒吞类"指定式神"）
             refs = [r for r in refs if r.shikigami is not None
                     and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
+        refs = _spec_filtered(game, refs, spec.model_extra or {})
         rnd = (spec.model_extra or {}).get("random")
         if rnd is not None and len(refs) > int(rnd):
             # 随机取 n 个（盛开"随机一个受伤己方式神"；repeat 每轮重新解析重新随机）
@@ -200,6 +237,11 @@ def resolve(game, spec, ctx) -> list[Ref]:
             # 消灭己方式神则打己方牌手；delay_grant 触发块内可用）
             v = (ctx.event or {}).get("victim")
             return [Ref(player=v.player)] if isinstance(v, Ref) else []
+        if spec.key == "damaged_player":
+            # 事件中受到伤害的牌手（on_player_damaged payload 的 player 下标 → Ref；
+            # 夺命"消灭受到判官战斗伤害的角色"的牌手分支）
+            pl = (ctx.event or {}).get("player")
+            return [Ref(player=pl)] if isinstance(pl, int) and pl in (0, 1) else []
         val = (ctx.event or {}).get(spec.key)
         if val is None and getattr(ctx, "memo", None):
             val = ctx.memo.get(spec.key)  # 块内暂存（last_damage_victims）
@@ -240,6 +282,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - {shikigami_active: <式神id>}  ：控制者的式神（按数据 id）在场——等级 ≥1、未气绝、
       未离场（[羁绊]触发条件："使用此牌时，对应式神等级不为 0 且未气绝"）
+    - {shikigami_has_form: <式神id>} ：控制者的式神（按数据 id）结附着形态
+      （萤火点点"若萤草上有形态"）
+    - {card_transformed: <卡牌id>}  ：控制者持久 store 中该同名卡已"变为"
+      （夺命增强变后消灭路径的触发门控，读 card_mods transformed 快照位）
     - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
       orb_ge 为控制者鬼火的专用键，语义不同）
     - {victim_lethal: true}    ：事件 victim 当前生命 ≤ 事件伤害值 amount（"将受到致命
@@ -275,6 +321,16 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             ap = game.state.players[controller]
             ai = next((i for i, s in enumerate(ap.shikigami) if s.id == want), None)
             if ai is None or not ap.shikigami[ai].in_play:
+                return False
+        elif key == "shikigami_has_form":
+            # 控制者的式神（按数据 id）结附着形态（萤火点点"若萤草上有形态"）
+            ap = game.state.players[controller]
+            ai = next((i for i, s in enumerate(ap.shikigami) if s.id == want), None)
+            if ai is None or ap.shikigami[ai].form is None:
+                return False
+        elif key == "card_transformed":
+            # 控制者持久 store 中该同名卡已"变为"（夺命 temp_grants 门控）
+            if not game.state.players[controller].card_mods.get(int(want), {}).get("transformed"):
                 return False
         elif key == "combat_empty":
             # 指定方战斗区为空（偷袭响应"（敌方）战斗区没有式神"）：self=控制者 / opponent=对方
