@@ -108,8 +108,10 @@ class NetClient:
         if st.phase == "mulligan":
             p = st.players[self.me]
             if not p.mulligan_done:
-                if not self._seats_shown:  # 调度前先展示己方先后手与四座次（仅一次）
-                    print("\n" + cli.format_seat_line(game, self.me))
+                if not self._seats_shown:  # 调度前先展示双方先后手与四座次（仅一次）
+                    print("")
+                    for pi in (0, 1):
+                        print(cli.format_seat_line(game, pi))
                     self._seats_shown = True
                 print(f"\n—— 调度阶段（剩 {p.mulligans_left} 次）："
                       "输入手牌序号调度，done 结束 ——")

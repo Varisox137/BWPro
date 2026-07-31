@@ -808,7 +808,7 @@ def test_net_state_enqueues_settle_and_log_block(db, make_game, capsys):
 
 
 def test_net_mulligan_shows_seats_once(db, make_game, capsys):
-    """联机调度阶段：首次进入时先打印己方先后手与四座次行（与热坐同一 format_seat_line），
+    """联机调度阶段：首次进入时先打印双方先后手与四座次行（与热坐同一 format_seat_line），
     且只打印一次（后续 state 刷新不重复）。"""
     from client.net import NetClient
     g = make_game(mulligan=True)
@@ -817,7 +817,8 @@ def test_net_mulligan_shows_seats_once(db, make_game, capsys):
     c.me = 1  # 后手视角
     c._show()
     out1 = capsys.readouterr().out
-    assert "B（后手）座位：" in out1 and "1.式神100101" in out1  # 名字取 state 侧（与服务端一致）
+    assert "A（先手）座位：" in out1 and "B（后手）座位：" in out1
+    assert "1.式神100101" in out1  # 名字取 state 侧（与服务端一致）
     c._show()
     out2 = capsys.readouterr().out
     assert "座位：" not in out2
