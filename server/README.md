@@ -7,11 +7,12 @@
 ```bash
 uv run python -m server.main [--host 0.0.0.0] [--port 1037] \
     [--turn-timeout 120] [--mulligan-timeout 30] [--rate-limit 10] \
-    [--max-rooms 1000] [--ssl-certfile CER --ssl-keyfile KEY] [--debug-console]
+    [--max-rooms 1000] [--ssl-certfile CER --ssl-keyfile KEY] [--debug-console] \
+    [--no-require-ua] [--allow-debug-rooms]
 ```
 
 客户端：`uv run python -m client.net`（或主菜单 [3] 联机对战），
-`--debug` 创建 debug 对局（房间内允许 debug 指令）。
+`--debug` 创建 debug 对局（房间内允许 debug 指令，需服务端 `--allow-debug-rooms`）。
 
 ## 内网穿透 / 公网联机
 
@@ -34,6 +35,8 @@ uv run python -m server.main [--host 0.0.0.0] [--port 1037] \
 - **客户端软门槛**：握手要求 `User-Agent` 以 `BWPro-CLI` 开头，否则握手阶段
   拒绝（`--no-require-ua` 关闭）。仅过滤浏览器/扫描器等噪声，header 可伪造，
   不构成访问控制。
+- **debug 对局门控**：客户端创建 debug 对局需服务端 `--allow-debug-rooms`
+  （默认拒绝；公网部署勿开）。debug 指令可任意改对局状态，仅本机调试使用。
 - **滥用防护**：每连接每秒最多 10 条消息（`--rate-limit`）；单条 WS 消息最大
   1MB；输入字段长度上限（名字 32 / 房间 id 16 / 令牌 64 / 卡组码 1024）；
   房间总数上限 1000（`--max-rooms`）。

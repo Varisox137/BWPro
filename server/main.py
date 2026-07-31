@@ -2,6 +2,7 @@
 
 运行：uv run python -m server.main [--host 0.0.0.0] [--port 1037]
       [--turn-timeout 120] [--mulligan-timeout 30] [--debug-console]
+      [--allow-debug-rooms] [--no-require-ua]
 
 - 客户端只提交指令（与 client/cli.py 完全相同的 cmd dict 协议），服务端用
   core.engine.Game 校验、执行并广播新状态（server/room.py、server/manager.py）。
@@ -61,7 +62,7 @@ CLIENT_UA = "BWPro-CLI"  # 客户端握手 User-Agent 前缀（软门槛：挡�
 
 
 def create_app(manager: RoomManager, *, rate_limit: int = 10,
-               require_client_ua: bool = True) -> FastAPI:
+               require_client_ua: bool = True, allow_debug_rooms: bool = False) -> FastAPI:
     app = FastAPI(title="BWPro 联机服务端")
 
     @app.websocket("/ws")
@@ -94,6 +95,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                 if t == "pong":
                     continue
                 if t == "create":
+                    if msg.get("debug") and not allow_debug_rooms:
+                        await reject("服务器未开放 debug 对局")
+                        continue
                     try:
                         name = _text(msg, "name", MAX_NAME) or "玩家A"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
@@ -210,6 +214,8 @@ def main() -> None:
                         help="开启服务端 debug 控制台（stdin）")
     parser.add_argument("--no-require-ua", action="store_true",
                         help="关闭 User-Agent 软门槛（默认要求 BWPro-CLI 前缀）")
+    parser.add_argument("--allow-debug-rooms", action="store_true",
+                        help="允许客户端创建 debug 对局（公网部署勿开）")
     args = parser.parse_args()
 
     import uvicorn
@@ -219,7 +225,8 @@ def main() -> None:
                           mulligan_timeout=args.mulligan_timeout,
                           max_rooms=args.max_rooms)
     app = create_app(manager, rate_limit=args.rate_limit,
-                     require_client_ua=not args.no_require_ua)
+                     require_client_ua=not args.no_require_ua,
+                     allow_debug_rooms=args.allow_debug_rooms)
     config = uvicorn.Config(app, host=args.host, port=args.port,
                             ws_ping_interval=10, ws_ping_timeout=5,
                             ws_max_size=1024 * 1024,  # 单条消息最大 1MB

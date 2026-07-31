@@ -578,3 +578,13 @@ def test_client_ua_soft_gate(server):
         WsClient(headers={"User-Agent": "Mozilla/5.0"})
     c = WsClient()  # 默认 BWPro-CLI/1.0：正常
     c.ws.close()
+
+
+def test_debug_room_rejected_by_default(server, db):
+    """debug 建房门控：服务端未开 --allow-debug-rooms 时，create 带 debug=true 被拒。"""
+    a = WsClient()
+    a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),
+            "debug": True})
+    e = a.recv_until("error")
+    assert "debug" in e["reason"]
+    a.ws.close()
