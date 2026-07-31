@@ -287,10 +287,10 @@
 | 基础能力 | ✅ | on_upgrade {target_shikigami: self} → generate 心身炼磨（指令升级与 level_up op 两来源均触发——on_upgrade payload 新增 target Ref，level_up 补 emit） |
 | 01 羁绊的价值 | ✅ | heal {missing_health: self}（姑获鸟觉醒先例，恢复全部已损失生命） |
 | 02 心斩 | ✅ | 战斗 +0/+2 |
-| 03 心即归处 | ✅ | [瞬发] revive self；playable_when_defeated（存活时使用为 revive 空操作——"仅在犬神气绝时可用"无硬门控，边界） |
+| 03 心即归处 | ✅ | [瞬发] revive self；playable_when_defeated + only_when_defeated 新字段（第十三阶段）："仅在犬神气绝时可用"硬门控——存活时主动使用报错、响应收集直接跳过 |
 | 04 恶·即·斩 | ✅ | 战斗 +4/+0 |
-| 05 心技一体 | ✅ | 形态 3/5：card_aura scope=form 新作用域（绑定持有者、随形态离场移除，气绝经 _destroy_form 同路径）+ power_ext/shield_ext 新参数（ext 数值通道，读 lianmo_used_game——心身炼磨 tags [lianmo] 出牌记账）；显示边界：光环数值手牌不显示（同刃影叠岚既有行为） |
-| 06 守护 | ✅ | 战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；边界：追猎类定向战斗不触发（victim_in_combat 限定） |
+| 05 心技一体 | ✅ | 形态 3/5：card_aura scope=form 新作用域（绑定持有者、随形态离场移除，气绝经 _destroy_form 同路径）+ power_ext/shield_ext 新参数（ext 数值通道，读 lianmo_used_game——心身炼磨 tags [lianmo] 出牌记账）；手牌数值显示已含光环 ext 通道（第十三阶段，刃影叠岚同解） |
+| 06 守护 | ✅ | 战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；追猎类定向战斗可响应——守护者照常移入并获得 +0/+4，但目标不转移仍打原定目标（第十三阶段定案） |
 | 07 心剑乱舞 | ✅ | 形态 4/9：card_aura scope=form keywords [fast]（犬神的牌获得[瞬发]，读取时求值） |
 | 08 觉醒·犬神 | ✅ | +1/+1；on_turn_end {player: self, holder_defeated: true} + trigger_when_defeated 新字段（能力收集对气绝者放行——仅气绝时触发）：revive + perm +1/+1 |
 | 51 心身炼磨 | ✅ | 衍生（升级产物）：perm +1/+1；tags [lianmo]；conditional_keywords 新字段（{keyword: fast, level_ge: 2}）+ cost_zero_if 扩 {level_ge: 3} |
@@ -301,7 +301,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | on_heal {source_shikigami: self, target_side: friendly, target_kind: shikigami} / on_shikigami_revived {source_shikigami: self, shikigami_side: friendly} → 临时 +1 力量（revive op 补 source/reason="effect" 传递；倒计时复活 source=None 不触发） |
 | 01 桃之馨息 | ✅ | choose any_character heal 5 |
-| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，未命中也洗牌库）；边界：选择池 friendly_shikigami 限在场式神（气绝/未升级式神暂不可选） |
+| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，命中才洗牌库、未命中不洗——第十三阶段定案）；边界：选择池 friendly_shikigami 限在场式神（气绝/未升级式神暂不可选） |
 | 03 桃之夭夭 | ✅ | cost 0 + keywords [inspire]（鼓舞关键字登记）；basic_boost +2/+2 出击加成 |
 | 04 丰实 | ✅ | 形态 3/7：进场与 on_turn_start {player: self} → heal 3，friendly_injured 新池 + TargetSpec {random: 1} 新键（rng.sample，repeat 每轮重解析重随机） |
 | 05 桃语春风 | ✅ | choose friendly_defeated 新池 revive + grant_keyword haste（迅捷天然一次性类别） |

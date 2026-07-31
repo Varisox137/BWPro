@@ -8,7 +8,8 @@ rarity: SR
 level: 2
 cost: 1
 keywords: [fast]
-playable_when_defeated: true  # （仅在犬神气绝时可用）：气绝可用；存活时使用为 revive 空操作
+playable_when_defeated: true  # 气绝时可用
+only_when_defeated: true      # （仅在犬神气绝时可用）：存活时主动使用与响应均非法
 effects:
   # [瞬发]。复活犬神
   steps:

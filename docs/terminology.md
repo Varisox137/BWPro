@@ -76,6 +76,7 @@
 | 使用位置 | `play_from` | play_card 参数，默认 hand，任意区域可扩展 | ✅ |
 | 使用方式 | `play_method` / `PlayMethod` | 多择子选项；仅保留核心方式、参数可变（`param`，如爆能{2}） | ✅ |
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
+| 仅气绝时可用 | `only_when_defeated` | 卡牌字段（第十三阶段）：硬门控——式神存活时主动使用报错、响应收集直接跳过（心即归处）；需搭配 `playable_when_defeated` | ✅ |
 | 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（青行灯）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
 | 实例修饰 | `mods` | CardInstance 级差异（同名卡可不同），目前认识 `cost_delta` | ✅ |
 
@@ -221,7 +222,7 @@
 | 战斗区受害者条件 | `{victim_in_combat: true\|false}`（条件运算符） | 事件 victim 是否其控制者战斗区式神（true="战斗区式神被攻击时"——沧海之盾响应门控；false=准备区式神——桃红簇簇"准备区式神受到致命伤害"） | ✅ |
 | 角色目标池 | friendly_character / friendly_others_character / any_character / friendly_lowest_level / side_of_last_heal | 含牌手的"角色"池：己方角色（祝福之水）/ 己方其他角色（蹈海）/ 任一角色（治愈之水、佛光）/ 己方等级最低式神（并列全入池，百闻一得）/ 上一步 heal 目标所属方全部角色（佛光，仅 kind=all，读 memo last_heal_targets） | ✅ |
 | 半数护甲数值 | `{half_shield_of: "self"\|"source"}`（动态数值） | 取所指式神当前护甲一半（向下取整；沧海之盾"获得等同于其护甲一半的生命"类）；`_step_amount` 同时支持 `{memo: key}` 读取块内暂存数值（巨浪 X = last_damage_total） | ✅ |
-| 检索牌库 | `search_deck`（动作） | 从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；shikigami="target" 缺省按卡牌选择目标所指式神，"self"=来源式神，或数据 id；未命中也照常洗牌——按原文"然后洗牌库"） | ✅ |
+| 检索牌库 | `search_deck`（动作） | 从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；shikigami="target" 缺省按卡牌选择目标所指式神，"self"=来源式神，或数据 id；仅实际检索到才洗牌，未命中不洗——第十三阶段定案） | ✅ |
 | 进出战斗区事件 | `on_enter_combat` / `on_leave_combat` | 式神进入/离开战斗区（延时时机，payload {player, shikigami: Ref}）：`_enter_combat`/`_retreat` 发出（被换下的驻留者经 _retreat 发 leave）；**气绝移动不经 _retreat 不发 leave**；桃红簇簇"进入或离开战斗区时恢复2生命"挂点 | ✅ |
 | 气绝触发能力 | `trigger_when_defeated`（EffectBlock）/ `{holder_defeated: bool}`（条件运算符） | 能力收集门控：离场（despawned）恒跳过；气绝者仅带此标记的能力块放行收集（觉醒·犬神"气绝时也能触发"）；0 级未在场仍走 trigger_when_not_in_play。holder_defeated 判能力持有者当前是否气绝（配合前者做"仅气绝时触发"——存活不触发） | ✅ |
 | 动态关键字 | `conditional_keywords`（CardDef） | 满足条件的条目把 keyword 加入实际关键字（读取点 `_card_keywords`，对手中/生成的一切副本生效）：`level_ge`=所属式神当前等级 ≥ n（心身炼磨"犬神 2 级获得[瞬发]"）；`if_alive`=所属式神在场未气绝（桃华灼灼"若桃花妖未气绝，此牌得[瞬发]"）；式神未出战条件不满足 | ✅ |
@@ -255,7 +256,7 @@
 | 实时监测 | `monitors` / Monitor | 卡面"增强"等的实现机制之一：状态谓词 + 修饰，读取/打出装配时求值，不存储 | 🔧 |
 | 即时装配 | `_materialize` | 打出时由"定义块 ⊕ 活跃修饰"装配本次实际效果（persistent 快照入实例 mods），用完即弃 | ✅ |
 | 修饰 | `mods` | 实例级（`CardInstance.mods`：enhance 数值/keywords_add/cost_delta，mod_hand 写入的 playable_when_defeated/damage_boost/revive_haste，及 random_enhance 写入的 form_power_delta/form_health_delta（`_attach_form` 结附时叠加形态身材）/revive_on_play（气绝中使用该形态先复活来源式神，`_play_form_card` 读取）/enhance_got（实例已获强化 key 去重表）等读取点键）与 (玩家, card_id) 级持久 store（`PlayerState.card_mods`，"本局游戏每……"类计数） | ✅ |
-| 卡牌光环 | `card_auras` | 谓词匹配的卡牌获得关键词/不耗鬼火/数值加成（读取时求值，覆盖已有与新生成的牌）；scope 决定失效时机（"turn"=己方回合开始清除；**"form"=绑定来源式神当前形态、形态离场移除**——心技一体/心剑乱舞，气绝经 _destroy_form 同路径；连续型/属性型光环为扩展锚点）。谓词通道：shikigami（必）/ card_type / **card_id**（"此牌"自指——伺机）/ **turn**（"self"/"opponent" 限定回合方——伺机"敌方回合时此牌+2力量"）；**数值通道 power/shield 为战斗牌战力/一次性护甲加值，可叠加**（多次授予累加，与 keywords 的集合语义不同——刃影叠岚；combat_card_stats 读取时叠加）；**power_ext/shield_ext 数值改读 `PlayerState.ext[key]`**（心技一体"本局每使用过一张'心身炼磨'+1/+1"——出牌记账 lianmo_used_game，读取时求值；手牌数值显示不含光环 ext 通道，同刃影叠岚既有边界） | ✅ |
+| 卡牌光环 | `card_auras` | 谓词匹配的卡牌获得关键词/不耗鬼火/数值加成（读取时求值，覆盖已有与新生成的牌）；scope 决定失效时机（"turn"=己方回合开始清除；**"form"=绑定来源式神当前形态、形态离场移除**——心技一体/心剑乱舞，气绝经 _destroy_form 同路径；连续型/属性型光环为扩展锚点）。谓词通道：shikigami（必）/ card_type / **card_id**（"此牌"自指——伺机）/ **turn**（"self"/"opponent" 限定回合方——伺机"敌方回合时此牌+2力量"）；**数值通道 power/shield 为战斗牌战力/一次性护甲加值，可叠加**（多次授予累加，与 keywords 的集合语义不同——刃影叠岚；combat_card_stats 读取时叠加）；**power_ext/shield_ext 数值改读 `PlayerState.ext[key]`**（心技一体"本局每使用过一张'心身炼磨'+1/+1"——出牌记账 lianmo_used_game，读取时求值；手牌数值显示已含光环 ext 通道——第十三阶段，刃影叠岚同解） | ✅ |
 | 追加块 | `pre_grants` / `grants` | 可被监测/触发器按索引注入结算的候选效果块（前置/后置） | 🔧 |
 | 临时触发 | `temp_grants` / `TempGrant` | 一次性注册的触发（uses 递减移除）；战斗牌携带者绑定该次战斗注册（如不祥之刃击杀抽牌） | ✅ |
 | 写入目标 | `to`（hand/persistent/instance/turn） | 写入原语（add_mod）的修饰存储目标：手牌实例 / 持久 store / 来源实例自身（实例计数器，如风符·龙的目标数）/ 回合 store（turn 未实现，"本回合"类由 card_auras 覆盖） | ✅ |

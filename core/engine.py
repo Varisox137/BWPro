@@ -654,6 +654,8 @@ class Game:
             s = p.shikigami[si]
             if s.defeated and not self._playable_when_defeated(cdef, card):
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
+            if not s.defeated and cdef.only_when_defeated:
+                raise IllegalAction(f"【{cdef.name}】仅在{sname}气绝时可用")
             if s.level < eff_level:
                 raise IllegalAction(f"【{cdef.name}】需要 {sname} 达到 {eff_level} 级（当前 {s.level} 级）")
         # 使用方式的觉醒门控（黄金羽觉醒后"以敌方角色为目标"方式：requires_awaken 数据标记）。
@@ -2539,6 +2541,8 @@ class Game:
                 s = p.shikigami[si]
                 if s.defeated and not self._playable_when_defeated(cdef, card):
                     continue  # 对应式神气绝且无"气绝时可用"
+                if not s.defeated and cdef.only_when_defeated:
+                    continue  # "仅在气绝时可用"：存活不可用（心即归处）
                 if s.level < cdef.level:
                     continue  # 响应其余要求照常：等级不足不可用
             # 瞬发：每（半）回合各自第一张免费，其余照常支付（含 mods.cost_delta）
@@ -2594,6 +2598,8 @@ class Game:
             s = p.shikigami[si]
             if s.defeated and not self._playable_when_defeated(cdef, ctx.card):
                 return True
+            if not s.defeated and cdef.only_when_defeated:
+                return True  # "仅在气绝时可用"：复查时存活不可用（心即归处）
             if s.level < cdef.level:
                 return True
         # 尘缚之阵：响应战斗牌插入使用会把所属式神移入战斗区；若这会替换被锁定的

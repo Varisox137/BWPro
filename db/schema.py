@@ -142,6 +142,8 @@ class CardDef(BaseModel):
     rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）
     token: bool = False  # 衍生卡：对局中由系统/效果生成，不可编入卡组
     playable_when_defeated: bool = False  # 气绝时可用（与是否响应牌无关）
+    only_when_defeated: bool = False  # 仅在所属式神气绝时可用（心即归处；主动使用与响应均门控，
+    # 与 playable_when_defeated 配对使用——后者放宽气绝可用、前者收紧存活不可用）
     level: int = 1  # 使用所需式神等级（中立牌无等级，忽略此字段）
     cost: int = 1  # 鬼火消耗
     form_power: int | None = None  # 形态牌结附时的基础力量（card_type=form 时使用）

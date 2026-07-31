@@ -1295,7 +1295,8 @@ def test_token_fast_gains_orb(real_game):
 #
 # 覆盖：升级生成'心身炼磨'（指令升级与 level_up op 两来源）、心身炼磨动态
 # 瞬发/费用、心技一体计数光环（scope=form 随形态离场）、心剑乱舞瞬发光环、
-# 守护响应换人改目标、心即归处气绝可用、觉醒·犬神仅气绝触发。
+# 守护响应换人改目标（追猎类定向战斗可响应但不转移目标）、心即归处气绝
+# 可用+气绝限定门控、觉醒·犬神仅气绝触发。
 # 队伍固定 [犬神, 白狼, 妖刀姬, 山童]，犬神 0 号位。
 # ==========================================================================
 
@@ -1371,7 +1372,7 @@ def test_form_aura_grants_fast(real_game):
 
 def test_response_combat_swaps_target(real_game):
     """守护：其他式神被攻击时响应插入使用——犬神移入战斗区、攻击目标改为犬神，
-    +4 护甲吸收本次伤害（追猎类定向战斗不触发为既定边界，不测）。"""
+    +4 护甲吸收本次伤害。"""
     g, pa, pb = _game(real_game, QS_TEAM, {IDX: 1, 1: 1})
     pb.shikigami[0].level = 2                 # 守护为 2 级牌
     pb.orb = 1                                # 响应付 1 火
@@ -1386,12 +1387,51 @@ def test_response_combat_swaps_target(real_game):
     assert any(c.id == SHOUHU for c in pb.graveyard)
 
 
+def test_response_vs_hunt_no_retarget(real_game):
+    """守护 vs 追猎：响应有目标的战斗（追猎类）时守护者照常移入战斗区并获得
+    +0/+4，但攻击目标不转移——仍打原定目标（维护者定案第十三阶段）。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 1, 1: 1})
+    pb.shikigami[0].level = 2                 # 守护为 2 级牌
+    pb.orb = 1                                # 响应付 1 火
+    give(g, 1, SHOUHU)                        # B1 白狼留准备区
+    g._resolve_combat(Ref(player=0, shikigami=IDX), pa.shikigami[IDX],
+                      target=Ref(player=1, shikigami=1), origin="card")
+    b0 = pb.shikigami[0]
+    assert any(c.id == SHOUHU for c in pb.graveyard)
+    assert pb.orb == 0                        # 响应鬼火已付
+    assert pb.combat_index == 0               # 犬神被移入战斗区
+    assert (b0.health, b0.shield) == (5, 4)   # +0/+4 生效但未挨打
+    assert pb.shikigami[1].health == 2        # 目标未转移：白狼 4-2
+    assert pa.shikigami[IDX].health == 2      # 白狼反击 3
+
+
 def test_revive_self_playable_when_defeated(real_game):
     """气绝时可用（心即归处）：[瞬发]复活犬神。"""
     g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     play(g, 0, XINGUI)
     assert not pa.shikigami[IDX].defeated
+
+
+def test_only_when_defeated_gate(real_game):
+    """气绝限定（心即归处）：only_when_defeated 硬门控——犬神存活时既不能主动
+    使用，也不会被响应结算（维护者定案第十三阶段）。"""
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
+    with pytest.raises(IllegalAction, match="气绝时可用"):
+        play(g, 0, XINGUI)                        # 存活时主动使用被拒
+    # 响应侧：挂上触发关键字后，犬神存活仍不结算（响应收集即被门控跳过）
+    cdef = g.db.cards[XINGUI]
+    cdef.keywords.append("trigger")
+    cdef.effects.when = "on_before_assault"
+    cdef.effects.condition = {}
+    give(g, 0, XINGUI)
+    move(g, 0, 0)                                 # A0 犬神入战斗区
+    pass_turns(g, 1)                              # → B 回合，A 成非回合方
+    orb = pa.orb
+    g.apply({"op": "assault", "index": 0})        # B0 出击 → 不响应
+    assert any(c.id == XINGUI for c in pa.hand)
+    assert not any(c.id == XINGUI for c in pa.graveyard)
+    assert pa.orb == orb
 
 
 def test_awaken_trigger_only_when_defeated(real_game):
@@ -1413,7 +1453,7 @@ def test_awaken_trigger_only_when_defeated(real_game):
 #
 # 覆盖：治疗/复活赋益（基础临时 +1、觉醒永久 +2/+2、倒计时复活不触发）、
 # 桃红簇簇进出战斗区治疗连锁赋益、致命免疫一次+移除形态、桃华灼灼群体复活
-# 迅捷+气绝可用+动态瞬发、花信风检索洗牌、丰实/盛开随机受伤治疗、桃之夭夭鼓舞。
+# 迅捷+气绝可用+动态瞬发、花信风检索（命中才洗牌）、丰实/盛开随机受伤治疗、桃之夭夭鼓舞。
 # 队伍固定 [桃花妖, 白狼, 妖刀姬, 山童]，桃花妖 0 号位。
 # ==========================================================================
 
@@ -1506,13 +1546,30 @@ def test_awaken_heal_revive_buff_perm(real_game):
 
 
 def test_search_deck(real_game):
-    """检索（花信风）：[瞬发]选择己方式神，牌库随机一张该式神的牌置入手牌并洗牌。"""
+    """检索（花信风）：[瞬发]选择己方式神，牌库随机一张该式神的牌置入手牌并洗牌
+    （命中才洗牌：牌库内容多重集不变，仅重排）。"""
     g, pa, pb = _game(real_game, THY_TEAM)
     deck0, orb = len(pa.deck), pa.orb
+    hand0 = {c.uid for c in pa.hand}
+    before = sorted(c.uid for c in pa.deck)
     play(g, 0, HUAXIN, target=Ref(player=0, shikigami=IDX))
     assert pa.orb == orb                      # 瞬发首张免费
     assert len(pa.deck) == deck0 - 1          # 检索自牌库（非凭空生成）
-    assert any(c.id // 100 == THY and c.id != HUAXIN for c in pa.hand)
+    drawn = [c for c in pa.hand if c.uid not in hand0]
+    assert len(drawn) == 1 and drawn[0].id // 100 == THY   # 该式神的牌（含花信风自身）
+    assert sorted([c.uid for c in pa.deck] + [drawn[0].uid]) == before   # 只重排不增删
+
+
+def test_search_deck_miss_no_shuffle(real_game):
+    """检索未命中（花信风）：牌库中没有该式神的牌时检索落空——不补牌也不洗牌
+    （维护者定案第十三阶段）。"""
+    g, pa, pb = _game(real_game, THY_TEAM)
+    pa.deck[:] = [c for c in pa.deck if c.id // 100 != THY]   # 清空牌库中桃花妖的牌
+    before = [c.uid for c in pa.deck]
+    hand0 = len(pa.hand)
+    play(g, 0, HUAXIN, target=Ref(player=0, shikigami=IDX))
+    assert [c.uid for c in pa.deck] == before                 # 未命中不洗牌
+    assert len(pa.hand) == hand0                              # 未补牌（give 补的已打出）
 
 
 def test_random_injured_heal(real_game):

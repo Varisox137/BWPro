@@ -505,16 +505,14 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
     """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
     shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
-    "self"=来源式神；或给出数据 id。按原文"然后洗牌库"：即使未命中（牌库无该式神
-    的牌）也照常洗牌。
+    "self"=来源式神；或给出数据 id。仅实际检索到卡牌才洗牌库（未命中不洗——
+    维护者定案第十三阶段）。
     """
     p = game.state.players[ctx.controller]
     if shikigami == "target":
         ref = targets[0] if targets else None
         if ref is None or ref.shikigami is None:
-            game.rng.shuffle(p.deck)  # 无有效目标：检索落空，洗牌照常
-            game._log(f"{p.name} 洗了牌库")
-            return
+            return  # 无有效目标：检索落空，不洗牌
         sid = game.state.players[ref.player].shikigami[ref.shikigami].id
     elif shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -523,10 +521,11 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
     else:
         sid = int(shikigami)
     pool = [c for c in p.deck if game.db.cards[c.id].shikigami == sid]
-    if pool:
-        card = game.rng.choice(pool)
-        game.move_card(p, card, "hand")
-        game._log(f"从牌库检索了【{game.db.cards[card.id].name}】")
+    if not pool:
+        return  # 未命中：不洗牌
+    card = game.rng.choice(pool)
+    game.move_card(p, card, "hand")
+    game._log(f"从牌库检索了【{game.db.cards[card.id].name}】")
     game.rng.shuffle(p.deck)
     game._log(f"{p.name} 洗了牌库")
 

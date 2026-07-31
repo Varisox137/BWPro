@@ -212,7 +212,7 @@ def _stats_label(game: Game, p, c) -> str:
     if cd.card_type == "combat":
         seat = _seat_map(p).get(cd.shikigami) if cd.shikigami is not None else None
         s = p.shikigami[seat] if seat is not None else None
-        power, shield = game.combat_card_stats(cd.effects, c, s)
+        power, shield = game.combat_card_stats(cd.effects, c, s, p)
         if power:
             parts.append(f"战力{power:+d}")
         if shield:
@@ -391,10 +391,11 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
         return f"费用{cd.cost + c.mods.get('cost_delta', 0)}"
 
     def _data_label(c) -> str:
-        """数据段：关键字（含实例修饰 keywords_add，中文化）+ 增强数值。"""
+        """数据段：关键字（引擎统一读取点 _card_keywords——含实例修饰、命中光环与
+        条件关键字，中文化）+ 增强数值。"""
         cd = game.db.cards[c.id]
         parts = []
-        kws = _kw_labels(list(cd.keywords) + list(c.mods.get("keywords_add", [])))
+        kws = _kw_labels(sorted(game._card_keywords(p, cd, c)))
         if kws:
             parts.append(f"[{'/'.join(kws)}]")
         live = _live_enhance(p, c)

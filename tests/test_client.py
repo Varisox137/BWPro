@@ -120,6 +120,29 @@ def test_hand_stats_live_enhance(db, make_game):
     assert all("enhance" not in c.mods for c in p.hand)
 
 
+def test_hand_aura_display_live(db, make_game):
+    """手牌光环实时显示：卡牌光环的数值（含 ext 通道求值）与授予关键字
+    在手牌数值段/关键字段即时反映（维护者定案第十三阶段）。"""
+    db.cards[10010167] = F.card(
+        10010167, card_type="combat", token=True,
+        steps=[F.Step(op="buff_power", amount=1, target=T(kind="self")),
+               F.Step(op="gain_shield", amount=2, target=T(kind="self"))])
+    g = make_game()
+    p = g.state.players[0]
+    p.card_auras.append({
+        "shikigami": 100101, "card_type": None, "card_id": None,
+        "keywords": ["fast"], "cost_zero": False,
+        "power": 0, "shield": 1, "power_ext": "x",
+        "turn": None, "scope": "form", "holder": [0, 0],
+    })
+    p.ext["x"] = 3
+    give(g, 0, 10010167)
+    out = cli.render(g)
+    assert "战力+4" in out      # base 1 + 光环 ext 3
+    assert "护甲+3" in out      # base 2 + 光环 1
+    assert "[瞬发]" in out      # 光环授予
+
+
 def test_color_off_when_disabled(db, make_game, color_off):
     """关闭颜色（管道/NO_COLOR）时输出不含任何 ANSI 序列。"""
     g = make_game()
