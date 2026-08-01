@@ -58,7 +58,9 @@ def _text(msg: dict, key: str, maxlen: int) -> str | None:
     return v
 
 
-CLIENT_UA = "BWPro-CLI"  # 客户端握手 User-Agent 前缀（软门槛：挡浏览器/扫描器，非访问凭证）
+CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫描器，非访问凭证）
+
+AUTH_TIMEOUT = 5.0  # 连接后需在该时间内发送带合法 client 标识的 create/join，否则断联
 
 
 def create_app(manager: RoomManager, *, rate_limit: int = 10,
@@ -67,11 +69,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
-        # 软门槛：User-Agent 不以 BWPro-CLI 开头的连接在握手阶段直接拒绝（403）。
-        # 注意这只是噪声过滤，header 可伪造，真正的访问控制要靠访问口令。
-        if require_client_ua and not ws.headers.get("user-agent", "").startswith(CLIENT_UA):
-            await ws.close(code=1008)
-            return
+        # 软门槛在应用层（不用握手 User-Agent header）：内网穿透等中间代理可能
+        # 改写 HTTP 头，握手一律放行；create/join 消息必须带 client 字段且以
+        # BWPro-CLI 开头，否则拒绝并断联；超时未完成合法 hello 的连接也会被关闭。
         await ws.accept()
         limiter = RateLimiter(rate_limit)
         room = None
@@ -79,6 +79,17 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
 
         async def reject(reason: str) -> None:
             await ws.send_text(json.dumps(protocol.error(reason), ensure_ascii=False))
+
+        async def _auth_watchdog() -> None:
+            await asyncio.sleep(AUTH_TIMEOUT)
+            if conn is None:
+                await ws.close(code=1008)
+
+        watchdog = asyncio.create_task(_auth_watchdog())
+
+        def client_ok(msg: dict) -> bool:
+            return not require_client_ua \
+                or str(msg.get("client", "")).startswith(CLIENT_UA)
 
         try:
             while True:
@@ -94,6 +105,10 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                 t = msg["type"]
                 if t == "pong":
                     continue
+                if t in ("create", "join") and not client_ok(msg):
+                    await reject("客户端标识无效，请使用 BWPro CLI 联机")
+                    await ws.close(code=1008)
+                    return
                 if t == "create":
                     if msg.get("debug") and not allow_debug_rooms:
                         await reject("服务器未开放 debug 对局")
@@ -153,6 +168,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
         except WebSocketDisconnect:
             pass
         finally:
+            watchdog.cancel()
             if room is not None and conn is not None:
                 room.disconnect(conn)
                 manager.sweep()
@@ -213,7 +229,8 @@ def main() -> None:
     parser.add_argument("--debug-console", action="store_true",
                         help="开启服务端 debug 控制台（stdin）")
     parser.add_argument("--no-require-ua", action="store_true",
-                        help="关闭 User-Agent 软门槛（默认要求 BWPro-CLI 前缀）")
+                        help="关闭客户端标识软门槛（默认要求 create/join 消息带 "
+                             "BWPro-CLI 前缀的 client 字段）")
     parser.add_argument("--allow-debug-rooms", action="store_true",
                         help="允许客户端创建 debug 对局（公网部署勿开）")
     args = parser.parse_args()

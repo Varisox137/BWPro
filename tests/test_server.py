@@ -469,6 +469,8 @@ class WsClient:
         self.ws = connect(URL, additional_headers=hdrs)
 
     def send(self, msg: dict):
+        if msg.get("type") in ("create", "join"):
+            msg.setdefault("client", "BWPro-CLI/1.0")  # 应用层客户端标识软门槛
         self.ws.send(json.dumps(msg))
 
     def recv_until(self, *types: str, limit: int = 50) -> dict:
@@ -568,16 +570,21 @@ def test_full_match_flow(server, db):
     b.ws.close()
 
 
-def test_client_ua_soft_gate(server):
-    """User-Agent 软门槛：握手 header 不以 BWPro-CLI 开头（浏览器/扫描器等）
-    在握手阶段即被拒绝；携带正确前缀的客户端正常连接。"""
+def test_client_id_soft_gate(server, db):
+    """客户端标识软门槛（应用层）：握手一律放行（穿透代理可能改写 HTTP 头）；
+    create/join 不带合法 client 标识则拒绝并断联，携带正确前缀的正常建房。"""
     import websockets.exceptions
-    with pytest.raises((websockets.exceptions.InvalidStatus,
-                        websockets.exceptions.InvalidStatusCode,
-                        websockets.exceptions.ConnectionClosed)):
-        WsClient(headers={"User-Agent": "Mozilla/5.0"})
-    c = WsClient()  # 默认 BWPro-CLI/1.0：正常
-    c.ws.close()
+    c = WsClient(headers={"User-Agent": "Mozilla/5.0"})  # 握手不再看 UA：可连接
+    c.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),
+            "client": "Mozilla/5.0"})
+    e = c.recv_until("error")
+    assert "客户端标识" in e["reason"]
+    with pytest.raises(websockets.exceptions.ConnectionClosed):
+        c.recv_until("state", limit=3)  # 服务端随后断联
+    d = WsClient()
+    d.send({"type": "create", "name": "乙", "deck_code": _deck_code(db)})
+    assert d.recv_until("joined", "error")["type"] == "joined"  # 默认合法标识：正常
+    d.ws.close()
 
 
 def test_debug_room_rejected_by_default(server, db):

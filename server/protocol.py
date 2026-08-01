@@ -1,6 +1,7 @@
 """联机协议：WebSocket JSON 消息信封。
 
-客户端 → 服务端：create / join / cmd / pong
+客户端 → 服务端：create / join / cmd / pong（create/join 需带 client 标识字段，
+服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA）
 服务端 → 客户端：joined / state / log / error / game_over / notice / ping
 
 所有消息均为 JSON object，必带 "type" 字段。游戏指令复用 core.engine.Game.apply

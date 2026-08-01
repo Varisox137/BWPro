@@ -23,6 +23,8 @@ from core.engine import Game
 from core.model import GameState
 from db.loader import CardDatabase
 
+CLIENT_ID = "BWPro-CLI/1.0"  # 客户端标识：服务端软门槛（server.main.CLIENT_UA 前缀）
+
 
 class NetClient:
     def __init__(self, db, ws, name: str, printer: SettlePrinter | None = None) -> None:
@@ -346,7 +348,7 @@ def probe_connection(server_url: str) -> str | None:
     from websockets.sync.client import connect
     try:
         with connect(server_url, open_timeout=5,
-                     additional_headers={"User-Agent": "BWPro-CLI/1.0"}):
+                     additional_headers={"User-Agent": CLIENT_ID}):
             return None
     except Exception as e:
         msg = str(e)
@@ -368,7 +370,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
             return
         _, _, deck_code = picked
         hello = {"type": "create", "name": name, "deck_code": deck_code,
-                 "debug": debug}
+                 "debug": debug, "client": CLIENT_ID}
     elif choice == "2":
         room_id = _input("房间 id > ")
         token = _input("重连令牌（首次加入 Enter 跳过）> ") or None
@@ -380,13 +382,13 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
                 return
             _, _, deck_code = picked
         hello = {"type": "join", "room_id": room_id, "name": name,
-                 "deck_code": deck_code, "token": token}
+                 "deck_code": deck_code, "token": token, "client": CLIENT_ID}
     else:
         print("已取消")
         return
     try:
-        # User-Agent 软门槛：服务端要求 BWPro-CLI 前缀（server.main.CLIENT_UA）
-        ws = connect(server_url, additional_headers={"User-Agent": "BWPro-CLI/1.0"})
+        # 客户端标识软门槛：create/join 需带 client 字段（server.main.CLIENT_UA 前缀）
+        ws = connect(server_url, additional_headers={"User-Agent": CLIENT_ID})
     except Exception as e:
         print(f"无法连接服务器 {server_url}（{e}）")
         return
