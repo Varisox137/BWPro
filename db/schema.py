@@ -107,6 +107,10 @@ class EffectBlock(BaseModel):
     trigger_when_defeated: bool = False
     countdown: int | None = None  # 非 None = 倒计时能力块（不作事件监听）：初值=countdown，
     # 归零时执行 steps（式神级倒计时框架，core/engine.py；形态牌倒计时仍用 CardDef.countdown）
+    luck: int | dict[str, Any] | None = None  # 运势门控（第十五阶段）：触发后对控制者做
+    # 运势判定，按结果决定是否结算 steps。int = 成功所需点数 X（成功才结算）；
+    # {"x": X, "on": "fail"} = 判定失败才结算（家内安全/和气满满）。判定者默认控制者；
+    # 并行入队/同步推进由引擎负责（core/engine.py 运势管线）
 
 
 class PlayMethod(BaseModel):
@@ -178,6 +182,8 @@ class CardDef(BaseModel):
     options: list[int] = Field(default_factory=list)  # 协战牌（card_type=reinforce）：
     # 子选项 token 卡 id，有序（[0]=主式神侧子卡，[1]=副式神侧子卡）；打出时 cmd.choice 选择，
     # 生成对应 token 并视作从手牌使用，主牌离手移除（不进墓地）
+    play_condition: dict[str, Any] | None = None  # [条件] 使用前提（福满乾坤）：以条件迷你语言
+    # 对控制者求值，不满足则任何方式都不能使用（主动/响应/自动使用统一校验；CLI 可用性显示置灰）
     temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、
     # 绑定该次战斗的一次性触发（uses=1，战斗终止点移除未用者）
     methods: list[PlayMethod] = Field(default_factory=list)  # 使用方式（多择子选项）
@@ -202,7 +208,8 @@ class ShikigamiDef(BaseModel):
     id: int
     version: int
     name: str
-    kind: Literal["shikigami", "summon"] = "shikigami"  # 式神（非召唤物）/ 召唤物
+    kind: Literal["shikigami", "summon", "transform"] = "shikigami"  # 式神（非召唤物）/ 召唤物 / 变形物
+    # （变形物：视同召唤物类不入构筑池/测试卡组；由 transform 动作变入，untransform/气绝前2 还原）
     faction: str = "无相"  # 派系：红莲/紫岩/青岚/苍叶/无相（对战中可被效果改变）
     origin: str | None = None  # 同源标识：原形/SP 等共享 origin，不能同时出战
     power: int  # 基础力量

@@ -1,0 +1,20 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 100117
+version: 20260802
+name: 山兔
+faction: 苍叶
+power: 3
+health: 4
+ability:
+  # 倒计时-1 含气绝复活倒计时；同段 +1 力量只给存活者（countdown_power_boost 原子语义，契约 §3.5）
+  when: on_turn_start
+  condition: {player: self}
+  luck: 6
+  steps:
+    - {op: countdown_power_boost, countdown: -1, power: 1,
+       target: {kind: all, pool: friendly_others}}
+    # 气绝者只减复活倒计时、不追加力量（friendly_others 池不含气绝式神，另拆一步；
+    # 被本次 -1 归零复活者不追加力量由 op 语义保证）
+    - {op: countdown_power_boost, countdown: -1, power: 0,
+       target: {kind: all, pool: friendly_defeated}}
+text: "己方回合开始时，[运势6]：{其他己方式神的[倒计时]-1并获得1力量。}"

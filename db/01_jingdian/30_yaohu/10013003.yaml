@@ -1,0 +1,17 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10013003
+version: 20260802
+name: 爱意绵绵
+shikigami: 100130  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: R
+level: 1
+cost: 1
+form_power: 4
+form_health: 5
+effects:
+  steps:
+    # 手牌光环：手牌中妖狐的法术牌伤害效果+1（心技一体 card_aura 先例；
+    # spell_damage 通道为契约 §4 注记的契约外扩展，Agent A 实现）
+    - {op: card_aura, shikigami: self, card_type: spell, spell_damage: 1, scope: form}
+text: "你手牌中所有妖狐的法术牌伤害效果+1。"

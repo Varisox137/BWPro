@@ -1,0 +1,22 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10012906
+version: 20260802
+name: 觉醒·座敷童子
+shikigami: 100129  # 派系：苍叶（继承自式神数据）
+card_type: spell
+subtype: awaken
+awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+awaken_health: 3
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps: []
+abilities:
+  # 判定时（即时时机）：判定者=己方且将失败（dice_below_x：当前骰点 < 所需 X，
+  # targets.py 条件算子）重投一次；强制 6 不豁免本流程（规则要点）
+  - when: on_luck_judge
+    condition: {judge: self, dice_below_x: true}
+    steps:
+      - {op: luck_reroll}
+text: "[觉醒]：{每次[运势]判定中，当你[运势]判定失败时，重投一次。}"

@@ -1,0 +1,30 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10012903
+version: 20260802
+name: 福寿双全
+shikigami: 100129  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: SR
+level: 1
+cost: 1
+form_power: 4
+form_health: 5
+# [增强]：座敷童子有形态牌时获得[瞬发]（conditional_keywords 条件键先例：闪烁 combat_nonempty）
+conditional_keywords:
+  - {keyword: fast, shikigami_has_form: 100129}
+effects:
+  steps:
+    # 增强同条件：使用时抽一张牌
+    - {op: draw, count: 1, condition: {shikigami_has_form: 100129}}
+    # 进场时双方各获得1点鬼火（gain_orb side 参数为契约外扩展，需引擎侧支持）
+    - {op: gain_orb, amount: 1, side: self}
+    - {op: gain_orb, amount: 1, side: opponent}
+abilities:
+  # 离场时双方各+1鬼火——仅形态被替换离场触发（reason=replace 已有挂点，
+  # _attach_form 旧形态以 "replace" 消灭；气绝导致消灭不触发，规则要点）
+  - when: on_form_destroyed
+    condition: {target_shikigami: self, reason: replace}
+    steps:
+      - {op: gain_orb, amount: 1, side: self}
+      - {op: gain_orb, amount: 1, side: opponent}
+text: "[增强]：{座敷童子有形态牌时，此牌获得[瞬发]且使用时抽一张牌}。此牌进场或离场时，双方各获得1点鬼火。"

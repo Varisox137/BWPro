@@ -71,7 +71,7 @@ class CardDatabase:
             if s.kind == "shikigami":
                 if not 100_000 <= s.id <= 199_999:
                     errors.append(f"{where}: 式神 id 须为 1avvss（1 + 1 位异画位 + 2 位卡包 + 2 位序号）")
-            else:  # summon：8 位 = 从属式神 id + 序号（衍生物从 99 开始递减分配；结构与卡牌相同）
+            else:  # summon/transform：8 位 = 从属式神 id + 序号（衍生物/变形物从 99 开始递减分配；结构与卡牌相同）
                 owner = self.shikigami.get(s.id // 100)
                 if not 10_000_000 <= s.id <= 99_999_999:
                     errors.append(f"{where}: 召唤物 id 须为 8 位（从属式神 id + 2 位序号）")
@@ -183,6 +183,13 @@ class CardDatabase:
                     errors.append(f"{where}: summon 引用的式神 {sid} 不存在")
                 elif d.kind != "summon":
                     errors.append(f"{where}: summon 只能召唤 kind=summon 的式神（{sid} 不是）")
+            elif step.op == "transform":
+                sid = (step.model_extra or {}).get("into")
+                d = self.shikigami.get(sid)
+                if d is None:
+                    errors.append(f"{where}: transform 引用的式神 {sid} 不存在")
+                elif d.kind != "transform":
+                    errors.append(f"{where}: transform 只能变形成 kind=transform 的式神（{sid} 不是）")
             elif step.op == "emit":
                 # 自定义事件须在核心事件或 events.yaml 中声明
                 event_name = (step.model_extra or {}).get("event")

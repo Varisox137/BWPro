@@ -1,0 +1,27 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011705
+version: 20260802
+name: 这把算我赢
+shikigami: 100117  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: SR
+level: 2
+cost: 1
+keywords: [fast]
+alt_remove_keywords: [fast]  # 增强变身后失去[瞬发]（吾即正义先例）
+effects:
+  steps:
+    # 来源级必6：写山兔式神 ext dice_force_six_once，下次以其为来源的判定首投 6 并消耗
+    - {op: set_dice_modifier, mode: six_once}
+alt_effects:
+  steps:
+    - {op: win_game, target: {kind: all, pool: self_player}}
+triggers:
+  # 投出 6 达 10 次（牌手 ext dice_six_count 由引擎骰点记账点维护）置位 transformed
+  # （吾即正义 alt_effects 先例）；挂 on_luck_success——判定失败但投出 6 的边角情形
+  # 由引擎记账点补充触发（本批无"6 算失败"的判定）
+  - when: on_luck_success
+    condition: {judge: self, dice_six_ge: 10}
+    steps:
+      - {op: add_mod, to: persistent, key: transformed, cap: 1}
+text: "[瞬发]。山兔下一次投骰子必定会投出6点。[增强]：{本局游戏若你骰子投出十次6点，则你获得本局游戏的胜利。}"

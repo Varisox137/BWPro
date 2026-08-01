@@ -286,6 +286,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       （萤火点点"若萤草上有形态"）
     - {card_transformed: <卡牌id>}  ：控制者持久 store 中该同名卡已"变为"
       （夺命增强变后消灭路径的触发门控，读 card_mods transformed 快照位）
+    - {dice_six_ge: n}         ：控制者骰子投出 6 次数（ext dice_six_count）≥ n
+    - {dice_distinct_ge: n}    ：控制者骰子历史（ext dice_history）去重数 ≥ n
+    - {luck_success_total_ge: n} ：双方判定成功次数（ext luck_success_game）合计 ≥ n
+    - {dice_below_x: true}     ：运势判定时事件当前骰点 < 所需点数 X（"将失败"重投门控）
     - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
       orb_ge 为控制者鬼火的专用键，语义不同）
     - {victim_lethal: true}    ：事件 victim 当前生命 ≤ 事件伤害值 amount（"将受到致命
@@ -331,6 +335,23 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
         elif key == "card_transformed":
             # 控制者持久 store 中该同名卡已"变为"（夺命 temp_grants 门控）
             if not game.state.players[controller].card_mods.get(int(want), {}).get("transformed"):
+                return False
+        elif key == "dice_six_ge":
+            # 控制者本局投出 6 的次数 ≥ n（送祝福/萌即正义增强；ext dice_six_count）
+            if int(game.state.players[controller].ext.get("dice_six_count", 0)) < int(want):
+                return False
+        elif key == "dice_distinct_ge":
+            # 控制者骰子历史去重数 ≥ n（九莲宝灯动态身材；ext dice_history）
+            if len(set(game.state.players[controller].ext.get("dice_history", []))) < int(want):
+                return False
+        elif key == "luck_success_total_ge":
+            # 双方运势判定成功合计 ≥ n（福满乾坤 [条件] 使用前提）
+            total = sum(int(q.ext.get("luck_success_game", 0)) for q in game.state.players)
+            if total < int(want):
+                return False
+        elif key == "dice_below_x":
+            # 运势判定时"将失败"（觉醒·座敷童子重投门控）：事件当前骰点 < 所需点数 X
+            if (int(event.get("dice", 0)) < int(event.get("x", 0))) != bool(want):
                 return False
         elif key == "combat_empty":
             # 指定方战斗区为空（偷袭响应"（敌方）战斗区没有式神"）：self=控制者 / opponent=对方

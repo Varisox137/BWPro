@@ -1,0 +1,17 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 100130
+version: 20260802
+name: 妖狐
+faction: 苍叶
+power: 2
+health: 4
+ability:
+  # 妖狐使用法术牌时（on_card_played payload shikigami=牌所属式神数据 id，吾即正义先例）：
+  # 运势4 → 随机打一敌方角色 2+聚气加成（amount_ext_source=shikigami 改读来源式神 ext，契约 §3.4）
+  when: on_card_played
+  condition: {player: self, card_type: spell, shikigami: 100130}
+  luck: 4
+  steps:
+    - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,
+       amount_ext_source: shikigami, pool: enemy_character, count: 1}
+text: "当妖狐使用法术牌时，[运势4]：{随机对一个敌方角色造成2点伤害。}"

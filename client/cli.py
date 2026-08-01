@@ -268,7 +268,7 @@ def hand_sorted(game: Game, p) -> list:
 
 
 def _player_segment(game: Game, pi: int, viewer: int | None = None) -> str:
-    """单方牌手信息段：`> 名字（你） 生命h[护甲s] 手牌n 牌库n 墓地n[鼓舞+bp/bs]`。
+    """单方牌手信息段：`> 名字（你） 生命h[护甲s] 手牌n 牌库n 墓地n[鼓舞+bp/bs][眩晕]`。
     `>` 标行动方（非行动方前缀空格）；viewer 匹配时名字后加（你）。"""
     st = game.state
     p = st.players[pi]
@@ -279,8 +279,9 @@ def _player_segment(game: Game, pi: int, viewer: int | None = None) -> str:
         bs = sum(b.get("shield", 0) for b in p.assault_boosts)
         boost = f" 鼓舞+{bp}/{bs}"
     you = "（你）" if viewer is not None and pi == viewer else ""
+    stun = " 眩晕" if p.is_stunned else ""
     return (f"{marker} {p.name}{you} 生命{p.health}[护甲{p.shield}] "
-            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}")
+            f"手牌{len(p.hand)} 牌库{len(p.deck)} 墓地{len(p.graveyard)}{boost}{stun}")
 
 
 def player_segments(game: Game, viewer: int | None = None) -> tuple[str, str]:
@@ -341,6 +342,8 @@ def render(game: Game, viewer: int | None = None) -> str:
                     mods.append("保甲")
                 if s.immunities:
                     mods.append("免疫")
+                if s.stuns:
+                    mods.append("眩晕")
                 if s.delayed:
                     mods.append(f"延迟×{len(s.delayed)}")
                 kws = _kw_labels(s.keywords + s.one_shot_keywords + s.perm_keywords)
@@ -422,7 +425,11 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
     for row, c in zip(cardfmt.align_rows(rows), hand):
         cells = list(row)
         cells[1] = _colored(cells[1], _card_color(game, p, c))
-        out.append("    " + " ".join(cells).rstrip())
+        line = "    " + " ".join(cells).rstrip()
+        cd = game.db.cards[c.id]
+        if cd.play_condition is not None and not game._play_condition_met(p, cd):
+            line = _colored(line, 90)  # [条件] 不满足：整行置灰（不可使用）
+        out.append(line)
     return out
 
 

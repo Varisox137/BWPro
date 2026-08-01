@@ -1,0 +1,31 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10012902
+version: 20260802
+name: 五谷丰壤
+shikigami: 100129  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: R
+level: 1
+cost: 1
+form_power: 2
+form_health: 7
+effects:
+  steps:
+    # 进场：双方牌手各做运势4判定；判定者各自恢复其牌手3生命
+    # （then 步以判定者为效果归属——self_player 即判定者牌手，需引擎侧确认）
+    - op: luck_roll
+      x: 4
+      judge: both
+      then:
+        - {op: heal, amount: 3, target: {kind: all, pool: self_player}}
+abilities:
+  # 己方回合开始时：同上
+  - when: on_turn_start
+    condition: {player: self}
+    steps:
+      - op: luck_roll
+        x: 4
+        judge: both
+        then:
+          - {op: heal, amount: 3, target: {kind: all, pool: self_player}}
+text: "进场和己方回合开始时，双方牌手[运势4]：{恢复3生命。}"

@@ -46,6 +46,10 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_before_card_play",  # 使用手牌前 {player, uid, card, nullified（可变标记 dict）}
     "on_enter_combat",      # 式神进入战斗区 {player, shikigami: Ref}（延时时机）
     "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
+    # ---- 运势事件时点（第十五阶段；thoughts.txt 运势事件流程，core/engine.py 运势管线）----
+    "on_luck_judge",        # 运势判定时 {luck（可变事件 dict）, judge, source, x, dice}（座敷童子重投）
+    "on_luck_success",      # 运势判定后（成功）{judge, source, x, dice}（青蛙瓷器/岭上开花/觉醒妖狐）
+    "on_luck_effect_after",  # 运势生效后 {judge, source, x, dice}（预留）
 })
 
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）
@@ -66,4 +70,5 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
     "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程，thoughts.txt）
+    "on_luck_judge": "insert",        # 运势判定时：即时时机（重投改写骰点后再确定结果）
 }

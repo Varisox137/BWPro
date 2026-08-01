@@ -84,7 +84,10 @@ class ShikigamiState(BaseModel):
                     # 被伤害时正护甲优先吸收、负破甲加成伤害；己方回合开始阶段双向清除。
     defeated: bool = False  # 气绝
     dying: bool = False  # 濒死：生命 ≤ 0 但气绝事件尚未结算（通用状态标记，语义见 docs/rules.md）
-    stunned: bool = False  # 眩晕（Phase 5）：不能主动行动/被指定/升级，但能力仍可触发
+    stuns: list[dict[str, Any]] = Field(default_factory=list)  # 眩晕条目（第十五阶段）：
+    # {"kind": "normal", "turn": 施加时控制者回合号}（普通眩晕，己方回合结束批次移除非本回合
+    # 施加者）/ {"kind": "lasting", "until": ...}（持续眩晕，预留）；非空 = 眩晕：
+    # 不能出击、不能主动使用/响应使用其卡牌（能力仍可触发）；气绝时清除
     despawned: bool = False  # 召唤物离场标记（不进复活流程；保留坑位稳定下标）
     revive_countdown: int = 0
     form: CardInstance | None = None  # 当前结附的形态牌（card_type=form）
@@ -100,7 +103,17 @@ class ShikigamiState(BaseModel):
     # （形态授予判定 = countdown_source == 当前形态牌 id；countdown_history 记账用）
     ext: dict[str, Any] = Field(default_factory=dict)  # 少数卡专用的式神级运行时数据（约定键见 docs/terminology.md）
     delayed: list[dict[str, Any]] = Field(default_factory=list)  # 绑定式神的一次性延迟能力（会）：
-    # {"block": EffectBlock, "chosen": Ref|None, "uses": 1}；气绝清除（变形离场保留——变形未实现，见 rules.md）
+    # {"block": EffectBlock, "chosen": Ref|None, "uses": 1}；气绝清除（变形离场保留——快照随
+    # transform_origin 一并还原）
+    transform_owner: int | None = None  # 变形物的"所属式神" = 原式神 id（变形物无法使用原式神
+    # 的卡牌——出牌校验按此拒绝；万象之书类按原式神取牌的读取处预留，本批仅作字段）
+    transform_origin: dict | None = None  # 变形还原式神快照（ShikigamiState dump，不含本字段）：
+    # 被变形时 = 原式神快照；原式神该值非空则继承之（连续变形解除时还原到最初的原式神状态）
+
+    @property
+    def is_stunned(self) -> bool:
+        """是否眩晕：眩晕条目（普通/持续）非空。"""
+        return bool(self.stuns)
 
     @property
     def eff_power(self) -> int:
@@ -215,6 +228,12 @@ class PlayerState(BaseModel):
     @property
     def graveyard(self) -> list[CardInstance]:
         return self.zones.setdefault("graveyard", [])
+
+    @property
+    def is_stunned(self) -> bool:
+        """牌手是否眩晕：眩晕条目挂 ext["stuns"]（同 ShikigamiState.stuns 结构）；
+        眩晕牌手不能使己方式神出击（全体）。"""
+        return bool(self.ext.get("stuns"))
 
 
 class TempGrant(BaseModel):

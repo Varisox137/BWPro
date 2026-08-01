@@ -1,0 +1,20 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011306
+version: 20260802
+name: 骰子炸弹
+shikigami: 100113  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: R
+level: 2
+cost: 1
+keywords: [fast]
+target: {kind: choose, pool: enemy_character}
+effects:
+  steps:
+    # 骰点存入效果上下文 luck_dice（契约 §3.2）；then 步继承出牌选择目标
+    - op: luck_roll
+      x: 1
+      judge: self
+      then:
+        - {op: damage, amount: 0, amount_ctx: luck_dice}
+text: "[瞬发]。[运势1]：{对一个敌方角色造成等同于骰子点数的伤害。}"

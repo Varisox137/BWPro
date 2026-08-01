@@ -1,0 +1,26 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011305
+version: 20260802
+name: 门前清
+shikigami: 100113  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: R
+level: 2
+cost: 1
+form_power: 2
+form_health: 9
+effects:
+  steps: []
+abilities:
+  # 出击或被攻击时（同一事件两个挂点，条件迷你语言不支持或运算，拆两块）
+  - when: on_before_assault
+    condition: {attacker_shikigami: self}
+    luck: 4
+    steps:
+      - {op: gain_shield, amount: 2, target: {kind: self}}
+  - when: on_before_assault
+    condition: {victim_shikigami: self}
+    luck: 4
+    steps:
+      - {op: gain_shield, amount: 2, target: {kind: self}}
+text: "当青蛙瓷器出击或被攻击时，[运势4]：{获得2护甲。}"

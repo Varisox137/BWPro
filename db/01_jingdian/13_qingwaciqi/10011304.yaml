@@ -1,0 +1,24 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011304
+version: 20260802
+name: 立直
+shikigami: 100113  # 派系：苍叶（继承自式神数据）
+card_type: combat
+rarity: SR
+level: 1
+cost: 1
+keywords: [trigger]
+effects:
+  # +0/+0 无战斗加成；响应=青蛙瓷器被攻击时自动使用（援护先例：when/condition 写 effects 块）
+  when: on_before_assault
+  condition: {victim_shikigami: 100113}
+  steps:
+    # 立直：有形态则阈值视为 1（必定成功；骰子照投照计）
+    # 免疫战斗伤害 scope=turn（不可饶恕先例，覆盖攻击与反击全程）
+    - op: luck_roll
+      x: 4
+      judge: self
+      force_x1_if: {shikigami_has_form: 100113}
+      then:
+        - {op: grant_immunity, target: {kind: self}, scope: turn}
+text: "[运势4]：{免疫战斗伤害}。若青蛙瓷器有形态，本次运势判定必定成功。[响应]：{当青蛙瓷器被攻击时，自动使用。}"

@@ -1,0 +1,15 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10013001
+version: 20260802
+name: 风刃
+shikigami: 100130  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [fast]
+target: {kind: choose, pool: enemy_character}
+effects:
+  steps:
+    - {op: damage, amount: 2}
+text: "[瞬发]。对一个敌方角色造成2点伤害。"

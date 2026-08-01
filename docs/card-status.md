@@ -359,6 +359,69 @@
 | 07 万象之书 | ✅ | [瞬发]；generate shikigami=friendly_others——按座次顺序逐个其他己方式神（含 0 级/气绝）各随机 1 张可构筑牌（非衍生，与本局卡组无关；维护者答复(6)确认）入手 |
 | 08 觉醒·书翁 | ✅ | deck_out_burn tags 空库燃烧：空库抽牌改为对敌方牌手打 10、自己不判负（每张空抽各触发一次） |
 
+## 青蛙瓷器（100113）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | on_luck_success（判定者=己方）→ 记 luck_success_turn=当前回合号；光环：判定成功过的回合在场的青蛙瓷器 +2 力量（引擎读取，不叠加、不分敌我回合） |
+| 01 出千 | ✅ | 战斗 +0/+1；luck_roll{x:4, then:[generate 出千置手]} |
+| 02 岭上开花 | ✅ | 形态 2/7；on_luck_success → buff_power 1（一次性临时持久增益） |
+| 03 九莲宝灯 | ✅ | 形态 3/3；增强 = 进场按 dice_history 去重数 +N/+N |
+| 04 立直 | ✅ | 战斗 +0/+0；luck_roll force_x1_if（有形态阈值视为 1，骰子照投照计）→ grant_immunity；[响应] 青蛙瓷器被攻击时自动使用 |
+| 05 门前清 | ✅ | 形态 2/9；出击或被攻击时 EffectBlock.luck:4 → gain_shield 2 |
+| 06 骰子炸弹 | ✅ | [瞬发]；luck_roll{x:1} → damage amount_ctx:luck_dice（造成等同骰点的伤害） |
+| 07 转运 | ✅ | 攻击后 luck_roll{x:4} → discard_random 2 + reuse_card（战斗流程重走，不耗火） |
+| 08 觉醒·青蛙瓷器 | ✅ | +2/+2；觉醒能力 = 基础同款 + 翻倍标记（判定者方未气绝觉醒青蛙：成功效果执行两次，不重新掷骰；on_luck_success 延时触发同样翻倍、自身光环不翻倍、失败效果不翻倍） |
+
+## 山兔（100117）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | 己方回合开始 luck:6 → countdown_power_boost{countdown:-1, power:1, friendly_others}（气绝者只减复活倒计时、归零复活者不追加力量；存活者含无倒计时能力的 +1 力量） |
+| 01 谁还不听话 | ✅ | [瞬发][投射2]；增强 = damage amount_ext:dice_six_count（每次投出 6 伤害+1） |
+| 02 送祝福 | ✅ | buff 1/1 + 抽 1；增强{dice_six_ge:3}→ 合并一次性 +3/+3+[迅捷] |
+| 03 快来保护我 | ✅ | 形态 6/6；增强{dice_six_ge:3}→ 获得[不屈] |
+| 04 觉醒·山兔 | ✅ | +1/+1；己方回合开始两次独立 luck:6 → countdown_power_boost{power:2}（两个独立 block） |
+| 05 这把算我赢 | ✅ | [瞬发]；set_dice_modifier{mode:six_once}；增强{dice_six_ge:10}→ alt_effects 变后：失去[瞬发] + win_game（吾即正义先例） |
+| 06 戏谑套索 | ✅ | transform{into:10011799 纸人, 敌方战斗区式神}+抽 1；增强{dice_six_ge:3}→ into:10011798 小纸人；[响应] 山兔被攻击时自动使用 |
+| 07 来打我呀 | ✅ | launch_attack shikigami="target"（使一敌方式神立刻攻击）；增强 = 本回合该式神 -dice_six_count 力量（amount_ext + amount_sign:-1） |
+| 08 萌即正义 | ✅ | 形态 6/6；进场/离场 set_dice_modifier{mode:six}（判定者级必 6 光环，dice_force_six + dice_force_six_holder）；增强 = 进场按 dice_six_count +N/+N |
+| 21 福星高照 | ✅ | 协战主牌（山兔&座敷童子，id 10011721）：options [10011751 幸运兔兔, 10012951 鸿运当头] |
+| 51 幸运兔兔 | ✅ | 协战子选项（山兔侧[瞬发]）：增强{dice_six_ge:3}→ cost_delta_player{opponent, +1, next_turn}（[不消耗鬼火]/首张[瞬发]仍免费、非手牌使用不受影响）；羁绊（座敷在场，{shikigami_active:100129}）：luck_roll{x:4} → power_override scope=turn 敌方全式神 |
+| 99 纸人 | ✅ | 变形物 3/3（kind=transform）；己方回合结束 untransform self |
+| 98 小纸人 | ✅ | 变形物 0/1（kind=transform）；同上 |
+
+变形机制已知缺口（rules.md 第十七章末同载）：①战斗事件中变形不继承交战方——无战斗中止钩子，未实现；②觉醒牌使用事件中变形仅部分实现——快照记 `awakened`，"觉醒替换对原式神生效"的完整管线未落地。
+
+## 座敷童子（100129）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | on_luck_judge（即时；判定者=己方且骰=1）→ luck_reroll（同一判定每个来源能力至多一次，重投同样吃必 6 修饰） |
+| 01 金运大吉 | ✅ | 形态 3/6；进场和己方回合开始 luck_roll{x:4, judge:both, then:[抽1]}（双方各生成事件、当前回合玩家先、判定者各自抽） |
+| 02 五谷丰壤 | ✅ | 形态 2/7；同上 then:[恢复 3 生命] |
+| 03 福寿双全 | ✅ | 形态 4/5；增强{shikigami_has_form:100129}→[瞬发]+使用时抽 1；进场或仅替换离场时双方各 +1 鬼火（气绝消灭不触发） |
+| 04 家内安全 | ✅ | 形态 3/7；式神攻击后 luck:{x:4, on:fail} → stun{攻击者} |
+| 05 福运昌隆 | ✅ | 抽 1；luck_roll{x:4} → 获得 2 鬼火 |
+| 06 觉醒·座敷童子 | ✅ | +1/+3；on_luck_judge（判定者=己方且将失败，{dice_below_x: true}）→ luck_reroll |
+| 07 和气满满 | ✅ | 形态 0/7；式神攻击时 luck:{x:4, on:fail} → 攻击者本次战斗力量变 0（power_override 战斗作用域） |
+| 08 福满乾坤 | ✅ | [条件] play_condition{luck_success_total_ge:12}（不满足任何方式不能用）；依次双方生命变 30（set_health 非治疗）→ 双方抽至 10 张（draw hand_to/side）→ 双方各 +3 鬼火（gain_orb side） |
+| 51 鸿运当头 | ✅ | 协战子选项（座敷侧）：luck_roll{x:4, then:[复活己方全部式神]} → random_play_form{friendly 在场}（各随机使用 1 张等级 ≤ 当前等级的专属形态牌，无池/气绝跳过）；羁绊（山兔在场，{shikigami_active:100117}）：search_deck card_id 检索'这把算我赢'置手 |
+
+## 妖狐（100130）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | 妖狐使用法术牌时 luck:4 → random_damage{2 + amount_ext:yaohu_dmg_bonus(amount_ext_source:shikigami), enemy_character}；伤害流程按来源=妖狐每次伤害事件记 yaohu_damage_count +1 |
+| 01 风刃 | ✅ | [瞬发]；对一敌方角色造成 2 伤害 |
+| 02 聚气 | ✅ | [瞬发]；bump_ext{yaohu_dmg_bonus, self} + 抽 1（永久含基础与觉醒能力，跨气绝保留） |
+| 03 爱意绵绵 | ✅ | 形态 4/5；card_aura 手牌光环——手牌中妖狐法术牌伤害效果 +1（spell_damage 通道） |
+| 04 命运之人 | ✅ | 形态 4/6；己方回合开始 generate '风刃' 置手 |
+| 05 无羁风弹 | ✅ | repeat_random_damage{2, all_other_shikigami, max:10, stop_on_defeat}（逐次插入结算，任一式神气绝即停） |
+| 06 叠风斩 | ✅ | 对一式神造成 2 伤害 → reuse_card（同目标，恰好两次；触发两次妖狐能力） |
+| 07 狂风刃卷 | ✅ | random_damage{2, enemy_character, sequential:true, count:5}（逐次独立随机、有放回）；增强{yaohu_damage_count>=20}→ count:10 |
+| 08 觉醒·妖狐 | ✅ | +2/+2；觉醒能力两段：你使用法术牌（含中立法术牌）或运势判定成功时随机打一敌方角色 2（吃 yaohu_dmg_bonus；可因觉醒青蛙瓷器翻倍） |
+
 ## 与原版描述的出入（已决议，2026-07）
 
 1. **妖刀姬基础/觉醒能力**：按原版"对敌方牌手造成**伤害**时"（任意伤害）实现。
@@ -420,5 +483,6 @@
   - 风之乐章 = 10012421（妖琴师 100124 < 一目连 100125）；子选项 幻音绝弦 = 10012451、风韵雅乐 = 10012551
   - 致命之羽 = 10012621（以津真天 100126 < 鸩 100128）；子选项 鎏金幻羽 = 10012652、蚀刃毒羽 = 10012851
   - 涅槃明灯 = 10010521（凤凰火 100105 < 青行灯 100112）；子选项 涅槃业火 = 10010551、烛火重燃 = 10011251（主牌与烛火重燃未实现）
+  - 福星高照 = 10011721（山兔 100117 < 座敷童子 100129）；子选项 幸运兔兔 = 10011751、鸿运当头 = 10012951（已入库）
 - 主牌均须等两位所属式神都已引入才能进 db（loader 校验 shikigami2 存在）；
   剩余主牌待子选项机制：涅槃明灯（烛火重燃）；森佑灵矢已于第十四阶段齐备。

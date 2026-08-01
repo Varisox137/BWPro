@@ -1,0 +1,17 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011701
+version: 20260802
+name: 谁还不听话
+shikigami: 100117  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: R
+level: 1
+cost: 1
+keywords: [fast]
+effects:
+  steps:
+    # [投射]2（投射池先例：觉醒·凤凰火）；增强=牌手 ext dice_six_count 每点伤害+1
+    # （amount_ext 读来源式神所属牌手 ext，契约 §3.4）
+    - {op: damage, amount: 2, amount_ext: dice_six_count,
+       target: {kind: all, pool: projectile}}
+text: "[瞬发]。[投射]：{造成2点伤害}。[增强]：{本局游戏你骰子每投出一次6点，此牌效果+1。}"

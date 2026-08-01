@@ -1,0 +1,22 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011706
+version: 20260802
+name: 戏谑套索
+shikigami: 100117  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: R
+level: 2
+cost: 1
+keywords: [trigger]
+effects:
+  # 响应=山兔被攻击时自动使用（援护先例：when/condition 写 effects 块）
+  when: on_before_assault
+  condition: {victim_shikigami: 100117}
+  steps:
+    - {op: transform, into: 10011799, target: {kind: all, pool: enemy_combat}}
+    # 增强（投出三次6点）"改为将其变成小纸人"：连续变形——transform_origin 继承
+    # 还原到最初原式神（契约 §2），第二步条件命中即覆盖为 10011798
+    - {op: transform, into: 10011798, target: {kind: all, pool: enemy_combat},
+       condition: {dice_six_ge: 3}}
+    - {op: draw, count: 1}
+text: "将敌方战斗区式神变成‘纸人’，抽一张牌。[增强]：{本局游戏若你骰子投出三次6点，改为将其变成‘小纸人’}。[响应]：{当山兔被攻击时，自动使用。}"

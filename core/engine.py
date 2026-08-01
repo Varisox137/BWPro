@@ -57,6 +57,12 @@ CARD_LEVEL_KEYWORDS = ("fast", "trigger", "rebound")
 # 收集门在 Game._collect_abilities（持有者以外的式神从手牌使用法术牌时）
 _SPELL_ECHO_BLOCK = EffectBlock(steps=[Step(op="spell_echo_recast")])
 
+# 运势批次引擎直读的式神 id（契约 .tokensave/opmap_luck_batch.md"引擎读"语义）：
+# 青蛙瓷器——运势翻倍标记（判定者方有未气绝觉醒青蛙瓷器）与判定成功回合 +2 力量光环；
+# 妖狐——伤害流程按来源 = 妖狐时计数牌手 ext yaohu_damage_count
+_QINGWA_SHIKIGAMI = 100113
+_YAOHU_SHIKIGAMI = 100130
+
 
 @dataclass
 class _DamageEvent:
@@ -197,6 +203,14 @@ class Game:
                     for s in self.state.players[1 - pi].shikigami:
                         if s.in_play and s.shield < 0:
                             s.ext["dyn_power"] += s.shield  # shield 为负值即减力
+        for pi, pl in enumerate(self.state.players):
+            # 青蛙瓷器光环（契约"引擎读"）：其控制者本回合（含敌方回合）运势判定成功过
+            # （ext luck_success_turn == 当前回合号）则在场的青蛙瓷器 +2 力量——不叠加、
+            # 气绝复活保留（动态读取通道，非实例增益）
+            if pl.ext.get("luck_success_turn") == self.state.turn:
+                for s in pl.shikigami:
+                    if s.in_play and s.id == _QINGWA_SHIKIGAMI:
+                        s.ext["dyn_power"] += 2
         for s in holders:
             # 动态上限降低时钳当前生命（仅动态通道实际变小时钳——不触碰正常超出
             # 上限的当前生命，如测试/调试直改的健康值）
@@ -244,6 +258,11 @@ class Game:
                     return 0
         if "fast" in self._card_keywords(p, cdef, card) and not p.fast_used:
             cost = 0
+        if cost > 0:
+            # 幸运兔兔类手牌费用修正（cost_delta_player 登记于 ext["cost_mods"]，回合号过期）；
+            # [不消耗鬼火]与回合内首张[瞬发]已在上方归零，不受修正影响
+            cost += sum(int(e.get("amount", 0)) for e in p.ext.get("cost_mods", [])
+                        if e.get("turn") == self.state.turn)
         return cost
 
     def _match_auras(self, p: PlayerState, cdef: CardDef) -> list[dict]:
@@ -283,8 +302,8 @@ class Game:
         （瞬发判定等的统一读取点）。
 
         conditional_keywords（心身炼磨/桃华灼灼/闪烁）：按卡牌所属式神在座次中的状态
-        判定（level_ge = 等级下限；if_alive = 在场；combat_nonempty = 己方战斗区有人）；
-        式神未出战时条件不满足。"""
+        判定（level_ge = 等级下限；if_alive = 在场；combat_nonempty = 己方战斗区有人；
+        shikigami_has_form = 控制者指定式神结附着形态）；式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
@@ -301,6 +320,13 @@ class Game:
                 continue
             if ck.get("combat_nonempty") and p.combat_index is None:
                 continue  # 己方战斗区有人（闪烁型条件瞬发）
+            if ck.get("shikigami_has_form") is not None:
+                # 控制者的式神（按数据 id）结附着形态（福寿双全条件瞬发；
+                # 与 targets.match_condition 同名算子同语义）
+                want = int(ck["shikigami_has_form"])
+                ai = next((i for i, s in enumerate(p.shikigami) if s.id == want), None)
+                if ai is None or p.shikigami[ai].form is None:
+                    continue
             kws.add(ck["keyword"])
         if cdef.alt_remove_keywords and self._is_transformed(p, cdef, card):
             kws -= set(cdef.alt_remove_keywords)  # "变为"后失去关键字（如瞬发）
@@ -732,6 +758,9 @@ class Game:
             return
         if cdef.card_type == "field":
             raise IllegalAction(f"【{cdef.name}】的卡牌类型 {cdef.card_type} 尚未实现")
+        # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（响应/自动使用同检）
+        if not self._play_condition_met(p, cdef):
+            raise IllegalAction(f"【{cdef.name}】的使用条件未满足")
         # 使用方式（多择子选项，仅保留核心方式、参数可变；按 id 匹配，param 为数据预留）
         method: PlayMethod | None = None
         method_id = cmd.get("play_method")
@@ -748,8 +777,13 @@ class Game:
             si = self._find_shikigami(p, cdef.shikigami)
             sname = self.db.shikigami[cdef.shikigami].name
             if si is None:
+                if any(st.transform_owner == cdef.shikigami for st in p.shikigami):
+                    # 变形物保留"所属式神"= 原式神 id：原式神被变形中，其任何牌都不能使用
+                    raise IllegalAction(f"{sname} 被变形中，不能使用其卡牌")
                 raise IllegalAction(f"{sname} 未出战")
             s = p.shikigami[si]
+            if s.stuns:
+                raise IllegalAction(f"{sname} 眩晕中，不能使用其卡牌")
             if s.defeated and not self._playable_when_defeated(cdef, card):
                 raise IllegalAction(f"{sname} 气绝中，无法使用其卡牌")
             if not s.defeated and cdef.only_when_defeated:
@@ -884,6 +918,14 @@ class Game:
         if card is not None and card.mods.get("transformed"):
             return True
         return bool(p.card_mods.get(cdef.id, {}).get("transformed"))
+
+    def _play_condition_met(self, p: PlayerState, cdef: CardDef) -> bool:
+        """[条件] 使用前提（CardDef.play_condition，福满乾坤）：以条件迷你语言对控制者求值
+        （事件载荷为空——dice_six_ge 等控制者 ext 算子；主动/响应/自动使用统一校验，
+        CLI 可用性显示同读）。"""
+        if cdef.play_condition is None:
+            return True
+        return self._match(cdef.play_condition, {}, self.state.players.index(p))
 
     def _played_block(self, p: PlayerState, cdef: CardDef, card: CardInstance,
                       method: PlayMethod | None) -> EffectBlock:
@@ -1464,6 +1506,10 @@ class Game:
         s = self._own_shikigami(p, i)
         if not s.in_play:
             raise IllegalAction("该式神未在场（0 级），不能出击")
+        if p.is_stunned:
+            raise IllegalAction("牌手眩晕中，己方所有式神不能出击")
+        if s.stuns:
+            raise IllegalAction(f"{self.db.shikigami[s.id].name} 眩晕中，不能出击")
         if p.assaults_left < 1:
             raise IllegalAction("本回合已没有出击次数")
         # 激怒：己方存在"被激怒且满足出击合法性（在场 + 有出击次数）"的式神时，
@@ -1587,6 +1633,49 @@ class Game:
             }
         self._log(f"{d.name} 离场")
 
+    # ---------- 变形（transform；契约 §2，thoughts.txt 变形相关） ----------
+
+    def _transform_shikigami(self, p: PlayerState, i: int, into: int) -> None:
+        """把座次 i 的式神灵变为变形物 into：A 离场（能力先离场）→ B 继承座位进场
+        （能力后进场）。B 不继承 A 的增减益；A 的完整状态快照存入 B.transform_origin，
+        解除变形时原样还原（连续变形继承最初的快照）；B 保留"所属式神"= 原式神 id
+        （transform_owner，变形物无法使用原式神的任何牌）。"""
+        d = self.db.shikigami[into]
+        if d.kind != "transform":
+            raise ValueError(f"transform 的目标 {into} 不是变形物（kind=transform）")
+        s = p.shikigami[i]
+        origin = (s.transform_origin if s.transform_origin is not None
+                  else s.model_dump(exclude={"transform_origin"}))
+        owner_id = s.transform_owner if s.transform_owner is not None else s.id
+        pi = self.state.players.index(p)
+        b = ShikigamiState(
+            id=into, kind="transform", faction=d.faction,
+            level=s.level, home_slot=s.home_slot, entry_order=s.entry_order,
+            base_power=d.power, base_health=d.health, health=d.health,
+            transform_owner=owner_id, transform_origin=origin,
+            ext={"max_power": d.power},  # 力量历史峰值初值（断臂记账）
+            perm_keywords=list(d.keywords))  # 先天关键字按永久类别入列
+        p.shikigami[i] = b
+        self._log(f"{self.db.shikigami[s.id].name} 变形为 {d.name}")
+        self._settle(f"【变形】{self.db.shikigami[s.id].name} 变形为 {d.name}"
+                     f"（身材 {b.base_power}/{b.max_health}）")
+        self._register_ability_countdown(pi, i)  # 能力后进场：注册变形物的倒计时能力块
+
+    def _untransform(self, pi: int, i: int) -> None:
+        """解除座次 i 变形物的变形：按 transform_origin 快照还原原式神当时状态
+        （身材/增减益/能力；变形物在场期间的改动不保留）。无快照（非变形物）为空操作。"""
+        p = self.state.players[pi]
+        s = p.shikigami[i]
+        if s.transform_origin is None:
+            return
+        restored = ShikigamiState.model_validate(s.transform_origin)
+        p.shikigami[i] = restored
+        self._log(f"{self.db.shikigami[s.id].name} 变回 {self.db.shikigami[restored.id].name}")
+        self._settle(f"【变形】{self.db.shikigami[s.id].name} 解除变形，"
+                     f"还原为 {self.db.shikigami[restored.id].name}")
+        if restored.in_play:
+            self._register_ability_countdown(pi, i)  # 能力后进场（同复活/升级路径）
+
     def _attach_form(self, p: PlayerState, i: int, card: CardInstance, cdef: CardDef) -> None:
         """为式神结附形态牌：先消灭旧形态，再用形态身材覆盖基础身材。
 
@@ -1666,6 +1755,10 @@ class Game:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._remove_keyword(s, kw)
         s.ext.pop("power_zero", None)  # 力量覆写随形态离场清除（power_override）
+        if p.ext.get("dice_force_six_holder") == [pi, i]:
+            # 萌即正义离场：其授予的判定者级必 6 修饰随形态离场通道解除
+            p.ext.pop("dice_force_six", None)
+            p.ext.pop("dice_force_six_holder", None)
         # 移除绑定该形态持有者的 scope="form" 卡牌光环（心技一体"形态离场时光环结束"；
         # 气绝经 _destroy_form 同路径一并移除）
         p.card_auras[:] = [a for a in p.card_auras
@@ -1750,6 +1843,7 @@ class Game:
         self._drain_queue()  # 回合结束的队列效果结算完再换手
         if self.state.winner is not None:
             return
+        self._remove_expired_stuns(p)  # 己方回合结束批次：解除非本回合施加的眩晕
         ev = {"name": "on_turn_end", "_emit": self.state.next_emit_seq(),
               "player": self.state.active}
         for pend in self._collect_responses(ev, 1 - self.state.active):
@@ -1759,6 +1853,28 @@ class Game:
             return
         self.state.active = 1 - self.state.active
         self._start_turn()
+
+    def _remove_expired_stuns(self, p: PlayerState) -> None:
+        """己方回合结束批次（契约 §1）：移除"非本回合施加"的普通眩晕（turn != 当前
+        控制者回合号）；持续眩晕（预留）按 until 回合号移除。式神圣条与牌手 ext 同构。"""
+        for s in p.shikigami:
+            kept = [e for e in s.stuns if not self._stun_expired(e, p)]
+            if len(kept) != len(s.stuns):
+                s.stuns[:] = kept
+                self._log(f"{self.db.shikigami[s.id].name} 的眩晕解除")
+        stuns = p.ext.get("stuns")
+        if stuns:
+            kept = [e for e in stuns if not self._stun_expired(e, p)]
+            if len(kept) != len(stuns):
+                p.ext["stuns"] = kept
+                self._log(f"{p.name} 的眩晕解除")
+
+    @staticmethod
+    def _stun_expired(e: dict, p: PlayerState) -> bool:
+        if e.get("kind") == "lasting":
+            until = e.get("until")  # 持续眩晕（预留）：until 回合号到达即解除
+            return until is not None and p.turn_count >= int(until)
+        return e.get("turn") != p.turn_count  # 普通眩晕：非本回合施加的解除
 
     def _start_turn(self) -> None:
         """回合开始阶段（对应 docs/rules.md「单个回合流程」）。
@@ -1816,6 +1932,10 @@ class Game:
             pl.ext.pop("turn_marks", None)
             pl.immunities[:] = [e for e in pl.immunities
                                 if "turn" not in e or e["turn"] == self.state.turn]
+            if pl.ext.get("cost_mods") is not None:
+                # 手牌费用修正（cost_delta_player scope=next_turn）按回合号过期清理
+                pl.ext["cost_mods"] = [e for e in pl.ext["cost_mods"]
+                                       if e.get("turn", 0) >= self.state.turn]
             for s in pl.shikigami:
                 s.ext.pop("min_health_turn", None)
                 s.ext.pop("damage_taken_turn", None)
@@ -2293,6 +2413,7 @@ class Game:
                     return
             s.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
+            self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
@@ -2321,6 +2442,7 @@ class Game:
         else:
             p.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
+            self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -2330,6 +2452,17 @@ class Game:
             if p.health <= 0:
                 # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
                 self._set_pending_end(loser=ev.victim.player, defeat=True)
+
+    def _account_yaohu_damage(self, ev: _DamageEvent) -> None:
+        """妖狐伤害计数（契约 §3.6）：伤害事件来源 = 妖狐且实际造成（走到扣减生命批次）
+        时，其控制者牌手 ext["yaohu_damage_count"] +1——每次伤害事件计 1（狂风刃卷增强读数）。"""
+        if ev.source is None or ev.source.shikigami is None or ev.dealt <= 0:
+            return
+        src = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+        if src.id != _YAOHU_SHIKIGAMI:
+            return
+        pl = self.state.players[ev.source.player]
+        pl.ext["yaohu_damage_count"] = pl.ext.get("yaohu_damage_count", 0) + 1
 
     def _queue_lifesteal(self, ev: _DamageEvent) -> None:
         """关键字"吸血"（rules.md ch5 批次 10①；thoughts.txt 答复 (5)）：
@@ -2414,6 +2547,16 @@ class Game:
                   battle=self._battle_stack[-1] if self._battle_stack else None)
         if s.defeated:
             return  # 气绝前 1 的插入结算中已被其它事件标记气绝
+        if s.transform_origin is not None:
+            # 变形物"气绝前2"（契约 §2）：解除变形、原式神以已气绝状态进场——快照还原
+            # 到原座次后继续正常气绝流程（形态消灭/非永久修正清除/复活倒计时/气绝事件）
+            restored = ShikigamiState.model_validate(s.transform_origin)
+            restored.health = 0
+            restored.dying = False
+            self.state.players[ref.player].shikigami[ref.shikigami] = restored
+            self._log(f"{self.db.shikigami[s.id].name} 的变形解除，"
+                      f"{self.db.shikigami[restored.id].name} 以已气绝状态进场")
+            s = restored
         owner = self.state.players[ref.player]
         in_combat = owner.combat_index == ref.shikigami  # 气绝时是否在战斗区（迁怒/罗生门条件）
         # 气绝流程 step 3（rules.md 第七章）：先消灭形态牌——此时能力尚未离场（step 6），
@@ -2432,7 +2575,8 @@ class Game:
         s.one_shot_keywords.clear()
         s.immunities.clear()
         s.attack_buffs.clear()  # 攻击后到期强化挂账随临时修正一并清空（keep_shield/awakened 保留）
-        s.delayed.clear()  # 绑定式神的一次性延迟能力气绝时消失（会；变形离场保留——变形未实现）
+        s.delayed.clear()  # 绑定式神的一次性延迟能力气绝时消失（会；变形离场保留——快照随 transform_origin 还原）
+        s.stuns.clear()  # 眩晕随气绝清除（复活后需重新施加）
         s.health = 0
         name = self.db.shikigami[s.id].name
         if s.kind == "summon":
@@ -2740,8 +2884,10 @@ class Game:
             si = self._find_shikigami(p, cdef.shikigami) if cdef.shikigami is not None else None
             if cdef.shikigami is not None:
                 if si is None:
-                    continue  # 对应式神未出战
+                    continue  # 对应式神未出战（含被变形中——变形物无法使用原式神的牌）
                 s = p.shikigami[si]
+                if s.stuns:
+                    continue  # 眩晕式神不能响应使用其卡牌
                 if s.defeated and not self._playable_when_defeated(cdef, card):
                     continue  # 对应式神气绝且无"气绝时可用"
                 if not s.defeated and cdef.only_when_defeated:
@@ -2787,6 +2933,9 @@ class Game:
         emit_id = (ctx.event or {}).get("_emit")
         if emit_id is not None and self._response_used_emit == emit_id:
             return True  # 同一时机至多成功结算一张响应牌（复查失败不占名额）
+        # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（复查失败不占名额）
+        if not self._play_condition_met(p, cdef):
+            return True
         # 收集到结算之间局面可能已变化：响应牌结算时必须复查条件、鬼火、消耗、使用者
         if ctx.card not in p.hand:
             return True
@@ -2799,6 +2948,8 @@ class Game:
             if si is None:
                 return True
             s = p.shikigami[si]
+            if s.stuns:
+                return True  # 眩晕式神不能响应使用其卡牌
             if s.defeated and not self._playable_when_defeated(cdef, ctx.card):
                 return True
             if not s.defeated and cdef.only_when_defeated:
@@ -2859,6 +3010,8 @@ class Game:
         允许其它效果插入；mode="atomic" 时步骤连发，队列留到块外统一结算。
         步骤产生结算中交互选择（pending_choice，青灯夜谈）时挂起：续点存入
         self._suspended（内存态），由 choose 指令续跑剩余步骤（start 为续跑起点）。
+        block.luck 非 None 时走运势门控（契约 §3.1）：先做运势判定，按结果决定是否
+        结算 steps（choose 续跑 start > 0 时不再重复判定）。
         """
         if ctx.memo is None:
             ctx.memo = {}  # 块内步骤间暂存（damage 记录 last_damage_victims 等）
@@ -2870,15 +3023,10 @@ class Game:
                 return
             self._affected_stack.append({"controller": ctx.controller, "refs": []})  # 响应法术：记录该次使用伤害过的敌方式神
         try:
-            for idx in range(start, len(block.steps)):
-                self._run_step(block.steps[idx], ctx)
-                if block.mode == "interleaved":
-                    self._drain_queue()  # 步骤之间允许其它效果结算
-                if self.state.pending_choice is not None and not ctx.triggered:
-                    # 交互选择挂起（响应牌无此类步骤，triggered 块不挂起：
-                    # 避免响应开销/受影响栈被重复结算）
-                    self._suspended = (block, ctx, idx + 1)
-                    return
+            if block.luck is not None and start == 0:
+                self._run_luck_events([self._luck_event_for_block(block, ctx)])
+            else:
+                self._run_block_steps(block, ctx, start)
         finally:
             if ctx.triggered and ctx.card is not None:
                 affected = self._affected_stack.pop()["refs"]
@@ -2889,6 +3037,122 @@ class Game:
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
                                    triggered="response")
             self._rebound_check(p, ctx.card, cdef)  # 弹回：响应使用同样回手
+
+    def _run_block_steps(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> None:
+        """依次执行效果块的 steps（_resolve_block 与运势门控续段共用）。"""
+        for idx in range(start, len(block.steps)):
+            self._run_step(block.steps[idx], ctx)
+            if block.mode == "interleaved":
+                self._drain_queue()  # 步骤之间允许其它效果结算
+            if self.state.pending_choice is not None and not ctx.triggered:
+                # 交互选择挂起（响应牌无此类步骤，triggered 块不挂起：
+                # 避免响应开销/受影响栈被重复结算）
+                self._suspended = (block, ctx, idx + 1)
+                return
+
+    # ==================== 运势管线（契约 §3；thoughts.txt 运势事件流程） ====================
+
+    def _luck_doublers(self, judge: int) -> list[int]:
+        """判定者方的运势翻倍提供者（契约"引擎读：判定者方有未气绝觉醒青蛙瓷器"）：
+        在场未气绝、已觉醒的青蛙瓷器座次下标。"""
+        return [i for i, s in enumerate(self.state.players[judge].shikigami)
+                if s.id == _QINGWA_SHIKIGAMI and s.in_play and s.awakened is not None]
+
+    def _luck_event_for_block(self, block: EffectBlock, ctx: ExecContext) -> dict:
+        """EffectBlock.luck 门控 → 运势事件要素：luck: 4 = 成功才结算 steps；
+        luck: {"x": 4, "on": "fail"} = 判定失败才结算。判定者默认控制者。"""
+        spec = block.luck
+        on_fail = isinstance(spec, dict) and spec.get("on") == "fail"
+        x = int(spec.get("x", 1)) if isinstance(spec, dict) else int(spec)
+        return {"judge": ctx.controller, "x": x, "source": ctx.source, "card": ctx.card,
+                "ctx": ctx, "block": block, "on_fail": on_fail}
+
+    def _run_luck_events(self, events: list[dict]) -> None:
+        """并行运势事件同步推进：同一触发点产生的运势事件先全部入队，各时机依次推进
+        （当前回合玩家先，再非回合玩家——事件顺序由调用方排定）。
+
+        时机：投掷骰子（必 6 修饰：萌即正义判定者级 / 这把算我赢来源级首投并消耗）→
+        判定时（on_luck_judge 即时时机，座敷童子重投改写骰点）→ 确定结果（掷骰记账：
+        dice_history 只记最终有效骰点、dice_six_count 同步维护）→ 判定后
+        （on_luck_success 延时时机，整队生效完毕后由队列统一结算）→ 执行成功/失败效果
+        （成功效果在翻倍标记下执行两次，不重新掷骰；失败效果不翻倍）→ 生效后
+        （on_luck_effect_after 延时，预留）。
+        """
+        if not events:
+            return
+        # 1. 投掷骰子（修饰：必 6）
+        for ev in events:
+            dice = self.rng.randint(1, 6)
+            src = ev.get("source")
+            s = (self.state.players[src.player].shikigami[src.shikigami]
+                 if src is not None and src.shikigami is not None else None)
+            if s is not None and s.ext.pop("dice_force_six_once", False):
+                dice = 6  # 这把算我赢：下次以其为来源的判定首投必 6（消耗）
+            elif self.state.players[ev["judge"]].ext.get("dice_force_six"):
+                dice = 6  # 萌即正义：判定者级光环必 6
+            ev["dice"] = dice
+        # 2. 判定时（即时时机；重投改写 ev["dice"]，强制 6 不豁免本时机）
+        for ev in events:
+            self.emit("on_luck_judge", luck=ev, judge=ev["judge"],
+                      source=ev.get("source"), x=ev["x"], dice=ev["dice"])
+        # 3. 确定结果 + 掷骰记账（只记最终有效骰点；被重投覆盖的首投不计入）
+        for ev in events:
+            ev["success"] = ev["dice"] >= ev["x"]
+            jp = self.state.players[ev["judge"]]
+            jp.ext.setdefault("dice_history", []).append(ev["dice"])
+            if ev["dice"] == 6:
+                jp.ext["dice_six_count"] = jp.ext.get("dice_six_count", 0) + 1
+        # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）
+        for ev in events:
+            judge = ev["judge"]
+            success = ev["success"]
+            ctx = ev["ctx"]
+            if ctx.memo is None:
+                ctx.memo = {}
+            ctx.memo["luck_dice"] = ev["dice"]  # 效果上下文变量：amount_ctx 读取点
+            if success:
+                jp = self.state.players[judge]
+                jp.ext["luck_success_game"] = jp.ext.get("luck_success_game", 0) + 1
+                jp.ext["luck_success_turn"] = self.state.turn  # 最近一次成功的回合号（青蛙光环读）
+                self._emit_luck_success(ev)
+            if success != ev.get("on_fail", False):
+                # 翻倍（觉醒青蛙瓷器）：成功效果执行两次；失败效果（on: fail）不翻倍
+                times = 2 if (success and self._luck_doublers(judge)) else 1
+                for _ in range(times):
+                    self._run_luck_continuation(ev)
+                self.emit("on_luck_effect_after", luck=ev, judge=judge,
+                          source=ev.get("source"), x=ev["x"], dice=ev["dice"])
+
+    def _run_luck_continuation(self, ev: dict) -> None:
+        """执行运势事件的成功/失败效果：步骤级 then 子步骤 / 块级门控的块 steps。"""
+        ctx = ev["ctx"]
+        if ev.get("block") is not None:
+            self._run_block_steps(ev["block"], ctx)
+            return
+        for st in ev.get("then") or ():
+            self._run_step(st, ctx)
+            self._drain_queue()  # 与 interleaved 块一致：步骤之间允许其它效果结算
+
+    def _emit_luck_success(self, ev: dict) -> None:
+        """判定后（延时时机 on_luck_success）：正常发出；判定者方翻倍标记生效时，
+        各延时 handler 追加执行一次（岭上开花/觉醒妖狐同样翻倍；翻倍提供者自身的能力、
+        响应牌与一次性临时触发不翻倍）。"""
+        judge = ev["judge"]
+        self.emit("on_luck_success", luck=ev, judge=judge,
+                  source=ev.get("source"), x=ev["x"], dice=ev["dice"])
+        doublers = self._luck_doublers(judge)
+        if not doublers:
+            return
+        event = {"name": "on_luck_success", "_emit": self.state.next_emit_seq(),
+                 "luck": ev, "judge": judge, "source": ev.get("source"),
+                 "x": ev["x"], "dice": ev["dice"]}
+        for pend in self._collect(event):
+            if pend.temp_grant is not None or pend.ctx.triggered or pend.ctx.card is not None:
+                continue  # 响应牌/一次性临时触发不参与翻倍
+            src = pend.ctx.source
+            if src is not None and src.player == judge and src.shikigami in doublers:
+                continue  # 翻倍提供者（觉醒青蛙瓷器）自身的能力不翻倍
+            self.queue.append(pend)
 
     def _run_step(self, step: Step, ctx: ExecContext) -> None:
         fn = actions.ACTIONS.get(step.op)

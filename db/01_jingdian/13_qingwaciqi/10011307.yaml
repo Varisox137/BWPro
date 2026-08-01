@@ -1,0 +1,24 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011307
+version: 20260802
+name: 转运
+shikigami: 100113  # 派系：苍叶（继承自式神数据）
+card_type: combat
+rarity: SR
+level: 3
+cost: 1
+effects:
+  steps:
+    # +0/+0 无战斗加成；"攻击后"经延迟能力挂点（攻击中气绝则延迟能力清除、不触发）
+    - op: delay_grant
+      when: on_after_assault
+      condition: {attacker_shikigami: self}
+      uses: 1
+      steps:
+        - op: luck_roll
+          x: 4
+          judge: self
+          then:
+            - {op: discard_random, count: 2}
+            - {op: reuse_card}
+text: "攻击后[运势4]：{随机弃两张手牌并再次使用此牌。}"

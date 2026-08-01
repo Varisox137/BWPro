@@ -127,7 +127,7 @@
 
 #### 四、回合结束阶段
 
-1. 所有己方角色按角色进场顺序依次进行：若具有“眩晕”状态，对每个不是本回合被赋予的“普通眩晕”状态，将其移除。
+1. 所有己方角色按角色进场顺序依次进行：若具有“眩晕”状态，对每个不是本回合被赋予的“普通眩晕”状态，将其移除。【已实现：`Game._remove_expired_stuns`——眩晕条目列表（`ShikigamiState.stuns` / 牌手 `PlayerState.ext["stuns"]`）中 turn ≠ 当前回合号的普通眩晕条目移除；持续眩晕（预留）按 until 移除。见「二十八、眩晕」】
 2. **回合结束时**（即时时机）：各能力触发。【已实现：手牌响应不在此处收集——当前回合方的回合结束**延时效果**（队列，如"回合结束时……"的能力）先全部结算完，再以同一时机收集对方手牌响应牌（偷袭答复3）；延时效果改变局面后响应条件按新局面前复查（如延时效果使战斗区变得非空，则"战斗区没有式神"的响应不再触发）。实现侧：`_suppress_responses` 抑制即时批次的响应收集，队列清空后以合成 on_turn_end 事件（独立时机实例）手动收集并结算响应】
 3. 进入对方玩家的回合。
 
@@ -256,7 +256,7 @@
 要素：**来源、气绝者、原因**。
 
 1. **气绝前/消灭前1**：（多种能力）。【已实现：即时时机 `on_before_defeat`（`check_defeated` 开头 emit；响应挂此时机）。濒死已实现：伤害扣减生命至 ≤0 先标 `ShikigamiState.dying`（时机位于伤害流程"生成气绝事件"前），濒死者不受伤害/治疗、不进随机与选择目标池、不能再次被消灭，能力照常、可以攻击；check_defeated 标 defeated 时清除。已气绝式神可获得永久增益、不能获得非永久增益（buff_power/buff_health 按 perm 拦截）】
-2. **气绝前/消灭前2**：【判官-基础/觉醒能力】、解除变形、[英雄无畏]卡牌效果的后续效果等。【未实现】
+2. **气绝前/消灭前2**：【判官-基础/觉醒能力】、解除变形、[英雄无畏]卡牌效果的后续效果等。【解除变形已实现：变形物的气绝事件在此处按 `transform_origin` 快照还原、原式神以已气绝状态进场后继续正常气绝流程（`check_defeated`，见「十七、变形事件流程」）；判官能力与英雄无畏后续效果未实现】
 3. 消灭气绝者的形态牌。【已实现：先于"能力离场"（step 6）执行——一目连类"形态离场时触发"能力仍会触发；形态离场/气绝同时清除倒计时】
 4. 移除气绝者的所有非永久 buff。（实现侧：临时修正与护甲在气绝时清除）
 5. **气绝前/消灭前3**：关键字"替身"。【未实现】
@@ -404,7 +404,7 @@
 - **派系 faction**：红莲/紫岩/青岚/苍叶/无相（red/purple/blue/green/white）；对局中可被效果改变（构筑规则仅校验时检查，对局中改变不受限）。
 - **免疫 immune**：免疫某类伤害/效果。【战斗伤害免疫已实现：战斗牌授予绑定本次战斗上下文（可声明覆盖嵌套战斗）、回合级按回合号记账（grant_immunity，unique=True 时"若不具有该能力则获得"——不可饶恕多次使用黄金羽不重复授予）；**非战斗伤害免疫已实现**：grant_immunity 的 kind="effect" + from_side 参数（from_side="enemy" 只免疫敌方来源，scope="perm" 持续在场期间、气绝清除、复活重新授予——觉醒·山童"免疫敌方非战斗伤害"）；**消耗式免疫已实现**：scope="once" + kind="all" 命中任意一类伤害即免疫一次并移除（桃红簇簇"免疫此次伤害"）；通用免疫（免疫效果/指定）未实现】
 - 弃牌 discard = 进入墓地；移除 remove = 移出游戏（如孟婆），二者区分。
-- **变形 transform**：式神本身或其结附的形态可被变形，身材数据可能变化，视作原能力离场、新能力进场，不视为气绝；可能导致无法使用专属牌等限制；结束条件依来源而定，一般在气绝时解除。【未实现】
+- **变形 transform**：式神本身或其结附的形态可被变形，身材数据可能变化，视作原能力离场、新能力进场，不视为气绝；可能导致无法使用专属牌等限制；结束条件依来源而定，一般在气绝时解除。【已实现（第十五阶段）：流程见「十七、变形事件流程」；变形物 kind=transform、快照还原与所属式神、气绝前2 解除、纸人/小纸人均已落地，事件交互存在已知缺口（见第十七章末）】
 
 ## 十六、式神与召唤物
 
@@ -455,7 +455,7 @@
 - 若在卡牌使用事件中变形，新式神不会继承原式神而成为卡牌的目标。
 - 若在战斗事件中变形，不会继承交战方。
 
-【未实现——变形机制 Phase 5+ 引入】
+【已实现（第十五阶段）：`ShikigamiDef.kind="transform"` 变形物定义（视同召唤物类不入构筑池/测试卡组，loader 校验 transform op 只能指向 kind=transform 定义）；`transform` / `untransform` 动作——`_transform_shikigami` 原式神完整状态快照存入变形物 `transform_origin`（连续变形继承最初的快照）、变形物保留"所属式神" `transform_owner`（出牌校验按所属式神拒绝原式神的任何牌，`_cmd_play_card`）；增减益不继承（变形物为新鲜 State，仅继承座位/进场顺序/等级）；`_untransform` 按快照还原原式神当时状态（身材/增减益/能力）；气绝前2 在 `check_defeated` 还原为已气绝状态的原式神后继续气绝流程；纸人/小纸人"己方回合结束变回原式神"为变形物能力块（on_turn_end → untransform self）。已知缺口：①战斗事件中变形不继承交战方——无战斗中止钩子，未实现；②觉醒牌使用事件中变形仅部分实现——快照记 `awakened`，"觉醒替换对原式神生效"的完整管线未落地】
 
 ## 十八、移动事件流程
 
@@ -546,6 +546,7 @@
 - **本批数据侧登记**（2026-07 第十阶段）：治疗时机分层——on_heal 实际恢复 0 也触发（amount=0，取代第九阶段"0 不发"口径）、on_after_heal 仅实际恢复 >0 触发；青坊主基础/禅心/觉醒改挂 on_after_heal，海坊主系留 on_heal 以 overheal_ge 门控（满血治疗照常转化）。鬼火语义重做——repeat/deck_top_pick 的 {"orb": true} = **1 + 效果结算时剩余鬼火**（0 火仍基础 1 次）；新 op `clear_orb`（side 参数）；新事件 `on_orb_changed`（即时时机，付费点先于效果结算；条件通道 {player: opponent, new: 1}）。觉醒牌替换前触发 `on_before_awaken`（妖琴师"觉醒前倒计时归零"四块改挂）。turn 作用域免疫条目回合开始清理（防显示残留）。联机——state 消息新增 `timeline` 合并时间线（结算/叙事按真实顺序合流）、pending_choice 超时随机作答、resync 补发计时器。手牌实时增强数值显示（持久 store 未装配也计入，client `_live_enhance`）。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-07 第十二阶段）：新事件 `on_enter_combat`/`on_leave_combat`（进出战斗区，延时时机；气绝移动不发 leave）；`EffectBlock.trigger_when_defeated`（气绝者能力收集放行——觉醒·犬神）与条件 `{holder_defeated: bool}`；`{victim_in_combat}` 支持 false（准备区限定）；on_upgrade payload 新增 `target`=Ref 且 level_up op 实际升级后同事件 emit（犬神"升级时"两来源均触发）；revive op 传 source/reason="effect"（桃花妖"由桃花妖复活时"）；`CardDef.conditional_keywords`（level_ge / if_alive——心身炼磨/桃华灼灼）与 cost_zero_if 扩 `{"level_ge": n}`；card_aura 新参数 `power_ext`/`shield_ext`（ext 数值通道）与新作用域 `scope="form"`（随形态离场移除）；grant_immunity 新作用域 `scope="once"`（消耗式）+ kind="all" 扩展至式神目标；目标池新增 `friendly_injured`/`friendly_defeated` 与 TargetSpec 扩展键 `{"random": n}`（rng.sample）；tags 标记 `lianmo`（出牌记账 ext["lianmo_used_game"]）；关键字 `inspire`（卡面[鼓舞]标记）；新 op `search_deck`（牌库按式神检索+洗牌）。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-07 第十三阶段，犬神/桃花妖批次修正）：`CardDef.only_when_defeated`（"仅在气绝时可用"硬门控——主动使用报错、响应收集跳过，心即归处）；守护响应条件去掉 `victim_in_combat`——追猎类有目标战斗可响应，守护者照常移入战斗区并获得加成，但攻击目标不转移仍打原定目标；`search_deck` 改为仅实际检索到才洗牌库（未命中不洗）；手牌数值/关键字显示改为读取时求值（`combat_card_stats`/`_card_keywords` 带玩家视角），卡牌光环数值（含 power_ext/shield_ext 通道）与授予关键字在手牌即时显示。细节见术语表「结算与事件」。
+- **本批数据侧登记**（2026-08 第十五阶段，运势批次）：`EffectBlock.luck` 运势门控（int=成功才结算 / {"x":X,"on":"fail"}=失败才结算）；`CardDef.play_condition`（[条件] 使用前提，主动/响应/自动统一校验）；`ShikigamiDef.kind="transform"` 变形物；新 op `stun`/`transform`/`untransform`/`luck_roll`/`luck_reroll`/`win_game`/`repeat_random_damage`/`reuse_card`/`cost_delta_player`/`countdown_power_boost`/`random_play_form`/`set_dice_modifier`/`discard_random`；既有 op 扩展（伤害类 amount_ctx/amount_ext/amount_ext_source、buff 类 amount_sign、random_damage sequential、draw hand_to/side、gain_orb side、search_deck card_id、launch_attack shikigami="target"）；条件算子 dice_six_ge/dice_distinct_ge/luck_success_total_ge/dice_below_x；新事件 on_luck_judge（即时）/on_luck_success（延时）/on_luck_effect_after（延时，预留）；运势 ext 记账键（dice_history 等，见术语表 ext 登记表）。细节见术语表「结算与事件」。
 - 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位。
 
 ## 二十三、组卡规则
@@ -635,3 +636,30 @@
 - **随机强化**：`random_enhance`（罗生门之鬼）：按 ext 计数次档（at=[1,3,5]）对控制者所有区域及在场形态的同卡 id 实例各自随机赋予一项强化（tiers 按 min 门控、实例 `mods["enhance_got"]` 去重）；强化写入 mods——keywords_add 并入、form_power_delta/form_health_delta 于 `_attach_form` 结附时叠加形态身材、playable_when_defeated+revive_on_play 使气绝中可用该形态并先复活（`_play_form_card` 读取）。【已实现】
 - **即时装配模型**：结算效果 = 定义块 ⊕ 活跃修饰（打出/读取时装配，用完即弃）；效果块永远共享不可变，块间唯一耦合是事件总线。【已实现：打出装配 _materialize（persistent→实例快照）、enhance 数值参数（{"enhance": true, "base": n}）、卡牌光环 card_auras（关键词/cost_zero 读取时求值）、战斗绑定一次性触发 temp_grants】
 - **架构不变式**：CardInstance 是对局卡牌唯一身份（区域/形态转换传递同一实例及 mods）；战斗上下文对象化；额外攻击 `launch_attack` 走正常战斗流程（不耗鬼火/出击次数、无战斗牌加成）；`on_card_played` 携带使用位置/方式（play_from/play_method/triggered）。【已实现：play_from ∈ hand/deck/void、triggered ∈ active/response/auto】
+
+## 二十七、运势判定事件流程（已实现）
+
+要素：**运势来源（式神/牌）、判定者（牌手）、成功所需点数 X、成功效果**。「A 令 B [运势X]：{Y}」= 生成一个 A 为运势来源、B 为判定者、阈值 X、成功效果 Y 的运势事件。
+
+- **[运势X]**：掷 1d6（1-6 均等概率，`game.rng`），骰点 ≥ X 判定成功，触发成功效果；失败无效果（写明「失败则」的除外——`EffectBlock.luck` 的 `{"x": X, "on": "fail"}` 形式为判定失败才结算）。
+- **并行结算**：同一触发点产生的多个运势事件先全部入队，各时机**同步推进**（对队列中每个事件依次执行完一个时机后，再执行下一个时机）；只对玩家生效的效果按**当前回合玩家、非回合玩家**的顺序并行生效（如座敷童子多种形态双方判定）。
+
+时机序列：
+
+1. **投掷骰子**（产生影响：必 6 修饰——「萌即正义」判定者级光环 `dice_force_six`；「这把算我赢」来源级一次性 `dice_force_six_once`，下次以其为来源的判定首投必 6 并消耗）。
+2. **判定时**（即时时机 `on_luck_judge`）：座敷童子基础能力（骰点 = 1）/ 觉醒能力（判定将失败）重投一次（`luck_reroll`，同一判定中每个来源能力至多一次，重投同样吃必 6 修饰）。强制 6 不豁免本时机——仅因 6 ≠ 1、6 通常成功而自然不触发重投；若判定写明 6 算失败，觉醒座敷重投照常。
+3. **确定判定结果**：骰子历史只记**最终有效骰点**（被重投覆盖的首投不计入）；判定成功次数按「一次判定」计。
+4. **判定后**（延时时机 `on_luck_success`）：青蛙瓷器光环记账、岭上开花、觉醒妖狐等触发类；整队运势事件生效完毕后由队列统一结算。
+5. **生效前**（即时时机）：觉醒青蛙瓷器的重复执行标记生效。
+6. **执行成功效果**：判定者方有未气绝的觉醒青蛙瓷器时，成功效果执行两次（不重新掷骰）；判定后延时触发（岭上开花/觉醒妖狐）同样翻倍；翻倍提供者自身的光环不翻倍；失败效果（on: fail）不翻倍。
+7. **生效后**（延时时机 `on_luck_effect_after`）：预留。
+
+【实现侧（`Game._run_luck_events`）：两入口——块级门控 `EffectBlock.luck`（触发后对控制者做判定，按结果决定是否结算块 steps；家内安全/和气满满为 on: fail）与步骤级 `luck_roll`（x/judge=self|opponent|both/then 子步骤/force_x1_if 阈值视为 1——立直；judge=both 时双方各生成事件、当前回合玩家先，各判定者以自己的控制者视角结算 then）；骰点写块内暂存 `ctx.memo["luck_dice"]` 供 `amount_ctx` 读取（骰子炸弹）；确定结果时记账 `ext["dice_history"]`（只记最终有效骰点）/`dice_six_count`/`luck_success_game`/`luck_success_turn`；翻倍判定 `_luck_doublers`（判定者方在场未气绝的觉醒青蛙瓷器），on_luck_success 的翻倍经二次收集追加（排除翻倍提供者自身能力、响应牌与一次性临时触发）；青蛙瓷器光环 = 引擎读取 `luck_success_turn == 当前回合号` 时在场的青蛙瓷器 +2 力量（不叠加、不分敌我回合）】
+
+## 二十八、眩晕（已实现）
+
+- **「眩晕XX」** = 令 XX 角色获得「眩晕」状态；**「若 XX 角色具有眩晕」** = 该角色具有任意未解除的普通或持续眩晕。
+- **数据**：眩晕条目列表——式神 `ShikigamiState.stuns`、牌手 `PlayerState.ext["stuns"]`（同构）；条目 `{"kind": "normal", "turn": n}`（普通眩晕，记施加时的控制者回合号）或 `{"kind": "lasting", "until": n}`（持续眩晕，本批预留——依来源有对应结束时机）。角色眩晕（`is_stunned`）= 列表非空：一名角色需所有（普通/持续）眩晕都消除才算解除。
+- **门控**：眩晕的式神不能出击、不能主动使用/响应使用其卡牌（化身使用未加入）；眩晕的牌手不能使己方式神出击（全体）。挂点：出击校验、`_cmd_play_card`、响应收集与结算复查（`_collect_responses`）。
+- **解除**：己方回合结束批次（按角色进场顺序）移除「非本回合施加」的普通眩晕（turn ≠ 当前回合号，`Game._remove_expired_stuns`）；持续眩晕按 until 移除；气绝时清除（复活后需重新施加）。
+- **施加**：`stun` 动作（target 可为式神或牌手，kind 默认 normal）。

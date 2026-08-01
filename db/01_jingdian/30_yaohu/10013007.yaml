@@ -1,0 +1,18 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10013007
+version: 20260802
+name: 狂风刃卷
+shikigami: 100130  # 派系：苍叶（继承自式神数据）
+card_type: spell
+rarity: SSR
+level: 3
+cost: 1
+effects:
+  steps:
+    # sequential：每次独立随机、插入结算、有放回（契约 §3.4）
+    - {op: random_damage, amount: 2, pool: enemy_character, sequential: true, count: 5}
+    # 增强（妖狐造成过20次伤害，牌手 ext yaohu_damage_count）：额外重复5次；
+    # yaohu_damage_count_ge 为契约外牌手 ext 条件算子，需引擎侧支持（同 §3.7 通道）
+    - {op: random_damage, amount: 2, pool: enemy_character, sequential: true, count: 5,
+       condition: {yaohu_damage_count_ge: 20}}
+text: "随机对一个敌方角色造成2点伤害，重复5次。[增强]：{若本局游戏妖狐造成过20次伤害，额外重复5次。}"

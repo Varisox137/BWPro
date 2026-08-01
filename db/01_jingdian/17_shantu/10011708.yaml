@@ -1,0 +1,20 @@
+# 脚手架生成（db.scaffold），待补效果块与卡面文本
+id: 10011708
+version: 20260802
+name: 萌即正义
+shikigami: 100117  # 派系：苍叶（继承自式神数据）
+card_type: form
+rarity: SSR
+level: 3
+cost: 1
+form_power: 6
+form_health: 6
+effects:
+  steps:
+    # 判定者级"必6"光环：形态进场 on（写牌手 ext dice_force_six）；
+    # 离场 off 由引擎随形态离场清理（仿 power_override 形态离场清除通道）
+    - {op: set_dice_modifier, mode: six, value: true}
+    # 增强：进场按 dice_six_count +N/+N（buff 系 op 的 amount_ext 扩展，需引擎侧支持）
+    - {op: buff_power, amount: 0, amount_ext: dice_six_count, target: {kind: self}}
+    - {op: buff_health, amount: 0, amount_ext: dice_six_count, target: {kind: self}}
+text: "你投骰子总是会投出6点。[增强]：{本局游戏你骰子每投出一次6点，此牌便获得+1力量与+1生命。}"
