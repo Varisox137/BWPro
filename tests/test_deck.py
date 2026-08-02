@@ -392,10 +392,11 @@ def test_deckbuilder_edit_keep_name(db, tmp_path, monkeypatch):
 
 
 def test_deckbuilder_new_interactive(db, tmp_path, monkeypatch):
-    """交互式构筑：严格输入 4 名式神 + 每人恰好 8 个卡牌序号 → 自动保存。"""
+    """交互式构筑：二级目录选 4 名式神 + 每人恰好 8 个卡牌序号 → 自动保存。"""
     p = tmp_path / "decks.json"
     feed(monkeypatch, ["", "", "",        # 新建 → 名称回车（自动命名）→ 交互式
-                       "1 2 3 4",          # 4 名式神
+                       "1",               # 进入经典包（唯一非空包）
+                       "1", "2", "3", "4",  # 依次选 4 名式神
                        "1 2 3 4 5 6 7 8",  # 1 号式神 8 张（8 种各 1 张）
                        "1 1 2 2 3 3 4 4",  # 2 号式神 8 张（4 种各 2 张）
                        "1 2 3 4 5 6 7 8",
@@ -408,14 +409,15 @@ def test_deckbuilder_new_interactive(db, tmp_path, monkeypatch):
     assert ids == list(F.TEAM) and len(cards) == 32
 
 
-def test_new_build_shikigami_strict(db, tmp_path, monkeypatch, capsys):
-    """新建选式神：数量不符/重复/不存在都会被拒绝并要求重新输入。"""
+def test_new_build_shikigami_browser_strict(db, tmp_path, monkeypatch, capsys):
+    """二级目录选式神：未知名称/重复选择都会被拒绝并要求重新输入。"""
     p = tmp_path / "decks.json"
     feed(monkeypatch, ["", "", "",
-                       "1 2 3",        # 数量不足
-                       "1 1 2 3",      # 重复
-                       "1 2 3 99",     # 序号不存在
-                       "1 2 3 4",      # 合法
+                       "不存在者",      # 全名未找到
+                       "1",             # 进入经典包
+                       "1",             # 选第 1 名
+                       "1",             # 重复选择 → 拒绝
+                       "2", "3", "4",   # 补足 4 名
                        "1 2 3 4 5 6 7 8",
                        "1 2 3 4 5 6 7 8",
                        "1 2 3 4 5 6 7 8",
@@ -423,10 +425,28 @@ def test_new_build_shikigami_strict(db, tmp_path, monkeypatch, capsys):
                        ""])
     deckbuilder.run_deckbuilder(db, p)
     out = capsys.readouterr().out
-    assert "须恰好输入 4 个序号" in out
+    assert "未找到式神" in out
     assert "式神不能重复" in out
-    assert "序号不存在" in out
-    assert deckstore.load_decks(db, p)[0]["standard"]
+    decks = deckstore.load_decks(db, p)
+    assert len(decks) == 1 and decks[0]["standard"]
+
+
+def test_new_build_shikigami_by_full_name(gdb, tmp_path, monkeypatch):
+    """新建卡组支持直接输入式神全名（可空格分隔多名），跳过目录浏览。"""
+    p = tmp_path / "decks.json"
+    feed(monkeypatch, ["", "", "",
+                       "白狼 兵俑 山兔 座敷童子",   # 一行 4 个全名直选
+                       "1 2 3 4 5 6 7 8",  # 白狼 8 种各 1 张
+                       "1 2 3 4 5 6 7 8",  # 兵俑
+                       "1 2 3 4 5 6 7 8",  # 山兔（协战牌列最后，1-8 为本家卡）
+                       "1 2 3 4 5 6 7 8",  # 座敷童子（同上）
+                       ""])
+    deckbuilder.run_deckbuilder(gdb, p)
+    decks = deckstore.load_decks(gdb, p)
+    assert len(decks) == 1 and decks[0]["standard"]
+    ids, cards = deckstore.entry_deck(decks[0])
+    assert ids == [100101, 100102, 100117, 100129]
+    assert len(cards) == 32
 
 
 def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
@@ -434,7 +454,8 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
     仅一次性提示标准规则，卡组仍保存但不标记为标准。"""
     p = tmp_path / "decks.json"
     feed(monkeypatch, ["", "", "",
-                       "1 2 3 4",
+                       "1",                 # 进入经典包
+                       "1", "2", "3", "4",  # 依次选 4 名式神
                        "1 2 3",              # 数量不足
                        "1 2 3 4 5 6 7 99",   # 序号不存在
                        "1 1 1 2 3 4 5 6",    # 同种卡 3 张 → 接受（仅提示）
@@ -456,6 +477,17 @@ def test_buildable_cards_reinforce_listed_under_both_owners(gdb):
     """协战牌同时列入两位所属式神的可选卡牌（风之乐章 = 妖琴师 & 一目连）。"""
     assert any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100124))
     assert any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100125))
+
+
+def test_buildable_cards_main_first_reinforce_last(gdb):
+    """可携带卡牌排序：本家 8 张（01-08）按 id 升序在前，协战牌列最后——
+    协战第二所属式神（福星高照主式神 id 更小）的列表中协战牌不再排最前。"""
+    zuofu = deckbuilder.buildable_cards(gdb, 100129)
+    assert [c.id for c in zuofu[:8]] == [10012900 + n for n in range(1, 9)]
+    assert zuofu[-1].id == 10011721            # 福星高照列最后
+    shantu = deckbuilder.buildable_cards(gdb, 100117)
+    assert [c.id for c in shantu[:8]] == [10011700 + n for n in range(1, 9)]
+    assert shantu[-1].id == 10011721
 
 
 def test_deckbuilder_rename(db, tmp_path, monkeypatch):
@@ -503,7 +535,8 @@ def test_edit_change_shikigami_clears_cards(db, tmp_path, monkeypatch):
     deckstore.save_decks(db, [mk_entry(db, "旧")], p)
     feed(monkeypatch, ["1", "", "",       # 编辑槽位 1
                        "h 1",            # 更换 1 号式神
-                       "1",               # 备选池只有 100105
+                       "1",              # 进入经典包（备选池只有 100105）
+                       "1",              # 选择 100105
                        "1 2 3 4 5 6 7 8",  # 新式神严格选满 8 张（8 种各 1 张）
                        ""])               # 完成
     deckbuilder.run_deckbuilder(db, p)

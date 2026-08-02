@@ -6,10 +6,12 @@
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
   自动创建；文件格式异常时提示并删除该文件）。
 - 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
-  反复询问直到合法；新建时还必须恰好 4 个不重复的有效式神序号。同名卡张数不做
+  反复询问直到合法；新建时经二级目录（版本包 → 式神，翻页显示，支持式神全名
+  直选、可空格分隔多名）选择恰好 4 名不重复式神。同名卡张数不做
   强制校验——每次构筑（新建/编辑）仅打印一次标准规则细节（db.deck.rules_summary），
   超限卡组仍可保存，仅在完成时不满足 is_standard（不以亮蓝标明）。
-- 协战牌同时列入两位所属式神的可选卡牌；完成时的 is_standard 检查含
+- 可携带卡牌列表：本家 8 张（01-08）按 id 升序在前，协战牌列最后；
+  协战牌同时列入两位所属式神的可选卡牌；完成时的 is_standard 检查含
   单式神携带 ≤2 与全卡组同名 ≤2（validate_deck 全局计数）。
 - 编辑在当前卡组基础上按"单个式神 ↔ 其卡牌"修改——输入式神序号重新严格选满其
   8 张牌，"h <序号>" 更换式神（清空其已选卡牌并重新选牌）。
@@ -28,6 +30,7 @@ from client.textutil import colored
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, DeckRules, rules_summary, validate_deck
 from db.loader import CardDatabase
+from db.packs import PACK_NAMES, PACKS
 
 # 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
 STANDARD_COLOR = 94
@@ -45,12 +48,14 @@ def available_shikigami(db: CardDatabase) -> list:
 
 
 def buildable_cards(db: CardDatabase, sid: int) -> list:
-    """某式神全部可构筑（非衍生）卡牌，按 id 排序。协战牌同时列入两位所属式神。"""
-    return sorted((c for c in db.cards.values()
-                   if not c.token and (c.shikigami == sid
-                                       or (c.card_type == "reinforce"
-                                           and c.shikigami2 == sid))),
-                  key=lambda c: c.id)
+    """某式神全部可构筑（非衍生）卡牌：本家卡（含作为主式神的协战牌）按 id 升序
+    在前（01-08 即 1-8 号），作为第二所属式神的协战牌列最后。协战牌同时列入
+    两位所属式神。"""
+    cards = [c for c in db.cards.values()
+             if not c.token and (c.shikigami == sid
+                                 or (c.card_type == "reinforce"
+                                     and c.shikigami2 == sid))]
+    return sorted(cards, key=lambda c: (0 if c.shikigami == sid else 1, c.id))
 
 
 def _input(prompt: str) -> str:
@@ -69,9 +74,115 @@ def _shiki_rows(defs: list) -> list[tuple[str, ...]]:
     return cardfmt.align_rows(rows)
 
 
-def _print_shikigami(defs: list) -> None:
-    for r in _shiki_rows(defs):
-        print(f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]} {r[4]}".rstrip())
+def _print_shikigami(defs: list, marked: set[int] | None = None) -> None:
+    for d, r in zip(defs, _shiki_rows(defs)):
+        mark = " ✓" if marked and d.id in marked else ""
+        print(f"  {r[0]} {r[1]}{mark}｜{r[2]}｜{r[3]} {r[4]}".rstrip())
+
+
+# ---------- 式神选择（版本包二级目录 + 翻页 + 全名直选）----------
+
+PAGE_SIZE = 10  # 式神列表每页条数
+
+
+def _pack_groups(pool: list) -> list[tuple[str, list]]:
+    """可构筑式神按版本包分组（db.packs.PACKS 登记序；空包不列出）。"""
+    groups = []
+    for num in PACKS:
+        members = [d for d in pool if str(d.id)[2:4] == num]
+        if members:
+            groups.append((PACK_NAMES.get(num, num), members))
+    return groups
+
+
+def _select_shikigami(db: CardDatabase, *, need: int = 1,
+                      exclude: set[int] | None = None) -> list | None:
+    """二级目录（版本包 → 式神，翻页显示）+ 全名直选的式神选择器。
+
+    need=1 选 1 名（编辑更换式神），need=4 选 4 名（新建卡组）；q 取消返回 None。
+    输入：当前列表序号 / n p 翻页 / b 返回包列表 / 式神全名（可空格分隔多名）。
+    """
+    pool = [d for d in available_shikigami(db)
+            if exclude is None or d.id not in exclude]
+    chosen: list = []
+    chosen_ids: set[int] = set()
+    in_pack: tuple[str, list] | None = None
+    page = 0
+    while len(chosen) < need:
+        if in_pack is None:
+            groups = _pack_groups(pool)
+            print("")
+            print(f"—— 选择式神（已选 {len(chosen)}/{need}："
+                  f"{'、'.join(d.name for d in chosen) or '无'}）——")
+            for i, (name, members) in enumerate(groups):
+                print(f"  [{i + 1}] {name}（{len(members)} 名）")
+            prompt = "包序号进入；式神全名直选（可空格分隔多名）；q 取消 > "
+            listing: list = groups
+        else:
+            pack_name, members = in_pack
+            pages = (len(members) + PAGE_SIZE - 1) // PAGE_SIZE
+            page = max(0, min(page, pages - 1))
+            shown = members[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+            print("")
+            print(f"—— {pack_name}（第 {page + 1}/{pages} 页；已选 "
+                  f"{'、'.join(d.name for d in chosen) or '无'}）——")
+            _print_shikigami(shown, marked=chosen_ids)
+            prompt = "序号选择；n 下页 p 上页 b 返回包列表；全名直选 > "
+            listing = shown
+        try:  # EOF（输入关闭）= 取消选择，避免 _input 吞 EOF 后空行死循环
+            line = tui.prompt(prompt).strip()
+        except EOFError:
+            return None
+        if not line:
+            continue
+        low = line.lower()
+        if low in ("q", "quit", "exit"):
+            return None
+        if in_pack is not None and low in ("n", "next"):
+            page += 1
+            continue
+        if in_pack is not None and low in ("p", "prev"):
+            page -= 1
+            continue
+        if in_pack is not None and low in ("b", "back"):
+            in_pack = None
+            continue
+        tokens = line.split()
+        if len(tokens) == 1 and tokens[0].isdigit():
+            try:
+                pick = listing[int(tokens[0]) - 1]
+            except (ValueError, IndexError):
+                print("序号不存在，请重新输入")
+                continue
+            if in_pack is None:
+                in_pack = pick
+                page = 0
+                continue
+            candidates = [pick]
+        else:
+            candidates = []
+            for t in tokens:
+                d = next((x for x in pool if x.name == t), None)
+                if d is None:
+                    print(f"未找到式神「{t}」，请重新输入")
+                    candidates = None
+                    break
+                candidates.append(d)
+            if candidates is None:
+                continue
+        if any(d.id in chosen_ids for d in candidates) \
+                or len({d.id for d in candidates}) != len(candidates):
+            print("式神不能重复，请重新输入")
+            continue
+        if len(chosen) + len(candidates) > need:
+            print(f"还需 {need - len(chosen)} 名（本次输入 {len(candidates)} 名超出）")
+            continue
+        for d in candidates:
+            chosen.append(d)
+            chosen_ids.add(d.id)
+        if len(chosen) < need:
+            print(f"已选 {'、'.join(d.name for d in chosen)}（{len(chosen)}/{need}）")
+    return chosen
 
 
 def _print_cards(cards: list, copies: Counter | None = None) -> None:
@@ -138,17 +249,13 @@ def _edit_deck(db: CardDatabase, team: list[int],
             except (ValueError, IndexError):
                 print("序号有误")
                 continue
-            pool = [d for d in available_shikigami(db) if d.id not in team]
-            print("")
-            _print_shikigami(pool)
-            try:
-                new = pool[int(_input(f"更换 {db.shikigami[old].name} 为 > ")) - 1]
-            except (ValueError, IndexError):
-                print("序号有误")
+            result = _select_shikigami(db, need=1, exclude=set(team))
+            if result is None:
+                print("已取消更换")
                 continue
+            new = result[0]
             team[slot] = new.id
             picks.pop(old, None)      # 式神变更：清空其携带卡牌
-            picks[new.id] = []
             print(f"已更换为 {new.name}（需重新选牌）")
             picks[new.id] = _pick_cards_strict(db, new.id)
             continue
@@ -161,29 +268,6 @@ def _edit_deck(db: CardDatabase, team: list[int],
 
 
 # ---------- 新建卡组的严格输入 ----------
-
-def _pick_shikigami_strict(db: CardDatabase) -> list:
-    """新建卡组选式神：必须恰好 4 个空格分隔的序号，不重复且均存在；反复询问直到合法。"""
-    pool = available_shikigami(db)
-    print("")
-    print("—— 选择 4 名出战式神 ——")
-    _print_shikigami(pool)
-    print("")
-    while True:
-        tokens = _input("式神序号（恰好 4 个，空格分隔，不能重复）> ").split()
-        if len(tokens) != 4:
-            print(f"须恰好输入 4 个序号（当前 {len(tokens)} 个）")
-            continue
-        try:
-            chosen = [pool[int(x) - 1] for x in tokens]
-        except (ValueError, IndexError):
-            print("序号不存在，请重新输入")
-            continue
-        if len({d.id for d in chosen}) != 4:
-            print("式神不能重复，请重新输入")
-            continue
-        return chosen
-
 
 def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
     """新建/编辑选牌：必须恰好 8 个空格分隔的序号（序号须存在）；反复询问直到合法。
@@ -209,8 +293,12 @@ def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
 
 
 def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
-    """新建卡组：严格选择 4 名式神 → 各严格选 8 张牌 → 进入增量编辑循环（Enter 完成）。"""
-    chosen = _pick_shikigami_strict(db)
+    """新建卡组：二级目录选择 4 名式神（可全名直选）→ 各严格选 8 张牌 →
+    进入增量编辑循环（Enter 完成）。选择阶段取消返回 None。"""
+    chosen = _select_shikigami(db, need=4)
+    if chosen is None:
+        print("已取消")
+        return None
     team = [d.id for d in chosen]
     picks: dict[int, list[int]] = {}
     for d in chosen:
