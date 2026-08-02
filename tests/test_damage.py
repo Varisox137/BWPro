@@ -196,6 +196,8 @@ def test_heal_zero_fires_on_heal_not_after(db, make_game):
     assert "on_before_heal" in g.history
     assert "on_heal" in g.history            # 治疗时：0 量也触发
     assert "on_after_heal" not in g.history  # 治疗后：仅实际恢复 > 0
+    # 结算明细：0 量治疗也明示一行（过量转化类配合可读）
+    assert any("【治疗】" in l and "恢复 0 点生命" in l for l in g.state.settle_log)
 
 
 def test_heal_event_order(db, make_game):

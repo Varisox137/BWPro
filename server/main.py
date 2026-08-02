@@ -132,7 +132,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     try:
                         name = _text(msg, "name", MAX_NAME) or "玩家A"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
-                        room = manager.create(debug=bool(msg.get("debug")))
+                        want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
+                        room = manager.create(debug=bool(msg.get("debug")),
+                                              room_id=want_id)
                         conn = await room.join(0, name, ws, deck_code)
                     except ValueError as e:
                         if room is not None:
@@ -140,9 +142,12 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                             room = None
                         await reject(str(e))
                         continue
+                    print(f"[房间 {room.id}] {name}（{client_ip}）创建房间"
+                          f"{'（自建房码）' if want_id else ''}"
+                          f"{'（debug 对局）' if room.debug else ''}", flush=True)
                     await conn.send(protocol.joined(room.id, conn.token, 0,
                                                     debug=room.debug))
-                    await room.start_if_ready()
+                    await room.on_seat_filled()
                 elif t == "join":
                     try:
                         room_id = _text(msg, "room_id", MAX_ROOM_ID) or ""
@@ -173,9 +178,23 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     except ValueError as e:
                         await reject(str(e))
                         continue
+                    print(f"[房间 {room.id}] {name}（{client_ip}）加入房间", flush=True)
                     await conn.send(protocol.joined(room.id, conn.token, 1,
                                                     debug=room.debug))
-                    await room.start_if_ready()
+                    await room.on_seat_filled()
+                elif t == "ready":  # 准备阶段确认准备（双方都位后有效）
+                    if room is None or conn is None:
+                        await reject("尚未加入房间")
+                        continue
+                    await room.lobby_ready(conn.seat)
+                elif t == "leave":  # 准备阶段主动离开：释放座位并断连
+                    if room is not None and conn is not None \
+                            and room.game is None:
+                        await conn.send(protocol.left())
+                        await room.lobby_leave(conn.seat)
+                        return
+                    await reject("当前不能离开房间")
+                    continue
                 elif t == "cmd":
                     if room is None or conn is None:
                         await reject("尚未加入房间")
@@ -186,8 +205,16 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
         finally:
             watchdog.cancel()
             if room is not None and conn is not None:
-                room.disconnect(conn)
-                manager.sweep()
+                if room.game is None:
+                    # 准备阶段断线 = 离开房间：释放座位（无对局可重连）；
+                    # 房间空无一人时直接回收
+                    await room.lobby_leave(conn.seat)
+                    if not any(room.conns):
+                        print(f"[房间 {room.id}] 房间已空，回收", flush=True)
+                        manager.remove(room.id)
+                else:
+                    room.disconnect(conn)
+                    manager.sweep()
 
     return app
 

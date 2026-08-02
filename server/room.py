@@ -99,14 +99,19 @@ class Connection:
 class Room:
     def __init__(self, room_id: str, db, *, debug: bool = False,
                  turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
+                 ready_timeout: float = 15.0,
                  rng: random.Random | None = None) -> None:
         self.id = room_id
         self.db = db
         self.debug = debug
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
+        self.ready_timeout = ready_timeout  # 准备阶段自动准备时长（双方都位起计）
         self.rng = rng or random.Random()
         self.conns: list[Connection | None] = [None, None]
+        self.ready_seats: set[int] = set()  # 准备阶段已确认准备的座位
+        self._lobby_timer: asyncio.Task | None = None
+        self._lobby_deadline: float | None = None
         self.game: Game | None = None
         self.seat_to_player = [0, 1]
         self._timer: asyncio.Task | None = None
@@ -165,11 +170,74 @@ class Room:
         """可回收：两名玩家都曾入座且均已断线。"""
         return self.full and not any(c.connected for c in self.conns)
 
-    # ---------- 开局 ----------
+    # ---------- 开局前：准备阶段 ----------
 
-    async def start_if_ready(self) -> None:
+    def _log(self, msg: str) -> None:
+        print(f"[房间 {self.id}] {msg}", flush=True)
+
+    async def on_seat_filled(self) -> None:
+        """双方都位后进入准备阶段（不直接开局）：广播 lobby（含自动准备截止时刻）
+        并启动自动准备计时；双方 ready 或计时到期才真正开局。"""
         if self.game is not None or not self.full:
             return
+        self._lobby_deadline = time.time() + self.ready_timeout
+        self._lobby_timer = asyncio.ensure_future(self._run_lobby_timer())
+        await self._broadcast(protocol.lobby(self._lobby_deadline))
+        self._log(f"双方都位（{self.conns[0].name} / {self.conns[1].name}），"
+                  f"进入准备阶段（{self.ready_timeout:.0f}s 自动开始）")
+
+    async def _run_lobby_timer(self) -> None:
+        try:
+            await asyncio.sleep(self.ready_timeout)
+        except asyncio.CancelledError:
+            return
+        if self.game is not None or not self.full:
+            return
+        await self._broadcast(protocol.notice("准备计时结束，自动开始对局"))
+        self._log("准备计时结束，自动开始")
+        await self.start_game()
+
+    def _cancel_lobby_timer(self) -> None:
+        if self._lobby_timer is not None:
+            self._lobby_timer.cancel()
+            self._lobby_timer = None
+        self._lobby_deadline = None
+
+    async def lobby_ready(self, seat: int) -> None:
+        """准备阶段确认准备；双方均准备后立即开局。"""
+        if self.game is not None or not self.full or seat in self.ready_seats:
+            return
+        self.ready_seats.add(seat)
+        name = self.conns[seat].name
+        self._log(f"{name} 已准备（{len(self.ready_seats)}/2）")
+        await self._broadcast(protocol.notice(
+            f"{name} 已准备（{len(self.ready_seats)}/2）"))
+        if len(self.ready_seats) == 2:
+            await self.start_game()
+
+    async def lobby_leave(self, seat: int) -> bool:
+        """准备阶段主动离开或断线：清出座位并通知对手，房间回到等人状态。
+        对局已开始则不允许（断线走断线重连通道）。"""
+        if self.game is not None:
+            return False
+        conn = self.conns[seat]
+        if conn is None:
+            return False
+        self.conns[seat] = None
+        self.ready_seats.discard(seat)
+        self._cancel_lobby_timer()
+        self._log(f"{conn.name} 离开房间")
+        peer = self.conns[1 - seat]
+        if peer is not None:
+            await peer.send(protocol.peer_left(conn.name))
+        return True
+
+    # ---------- 开局 ----------
+
+    async def start_game(self) -> None:
+        if self.game is not None or not self.full:
+            return
+        self._cancel_lobby_timer()
         first = self.rng.randint(0, 1)  # players[0] 恒为先手
         self.seat_to_player = [0, 1] if first == 0 else [1, 0]
         by_player = sorted(self.conns, key=lambda c: self.seat_to_player[c.seat])
@@ -182,6 +250,7 @@ class Room:
             config=config,
             first=0,  # by_player 已按先手排序，无需 new_game 再换
         )
+        self._log(f"对战开始：{by_player[0].name}（先手） vs {by_player[1].name}")
         for c in self.conns:
             await c.send(protocol.start(
                 self.seat_to_player[c.seat],
@@ -221,6 +290,7 @@ class Room:
                 await self.conns[seat].send(protocol.error(str(e)))
             return
         except Exception as e:  # 引擎异常：终止对局，避免房间卡死
+            self._log(f"引擎异常，对局终止（{e}）")
             await self._broadcast(protocol.error(f"引擎异常，对局终止（{e}）"))
             await self._broadcast(protocol.game_over(None, "engine_error"))
             self._over_sent = True
@@ -265,6 +335,7 @@ class Room:
                                         timeline=vtimeline))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
+            self._log(f"对战结束：{st.players[st.winner].name} 获胜")
             await self._broadcast(protocol.game_over(st.winner, "player_defeated"))
             self._cancel_timer()
 

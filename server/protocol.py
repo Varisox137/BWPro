@@ -1,8 +1,9 @@
 """联机协议：WebSocket JSON 消息信封。
 
-客户端 → 服务端：create / join / cmd / pong（create/join 需带 client 标识字段，
-服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA）
-服务端 → 客户端：joined / state / log / error / game_over / notice / ping
+客户端 → 服务端：create / join / ready / leave / cmd / pong（create/join 需带 client
+标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA；ready/leave
+为开局前准备阶段指令——双方都位后需准备确认（或 15s 自动准备）才开局，期间可离开）
+服务端 → 客户端：joined / lobby / left / state / log / error / game_over / notice / ping
 
 所有消息均为 JSON object，必带 "type" 字段。游戏指令复用 core.engine.Game.apply
 的 cmd dict 协议（{"op": ...}），原样嵌在 {"type": "cmd", "cmd": {...}} 中。
@@ -14,7 +15,7 @@ import json
 from typing import Any
 
 # 客户端消息类型
-CLIENT_TYPES = {"create", "join", "cmd", "pong"}
+CLIENT_TYPES = {"create", "join", "ready", "leave", "cmd", "pong"}
 
 
 def parse_client_message(raw: str | bytes) -> dict[str, Any]:
@@ -34,6 +35,21 @@ def parse_client_message(raw: str | bytes) -> dict[str, Any]:
 
 def joined(room_id: str, token: str, seat: int, **extra) -> dict:
     return {"type": "joined", "room_id": room_id, "token": token, "seat": seat, **extra}
+
+
+def lobby(deadline: float) -> dict:
+    """双方都位、进入准备阶段：deadline 为自动准备的 unix 时刻（15s）。"""
+    return {"type": "lobby", "deadline": deadline}
+
+
+def left() -> dict:
+    """确认离开房间（准备阶段主动 leave 的应答，服务端随后关闭连接）。"""
+    return {"type": "left"}
+
+
+def peer_left(name: str) -> dict:
+    """准备阶段对手离开房间：客户端据此退回"等待对手加入"状态。"""
+    return {"type": "peer_left", "name": name}
 
 
 def start(player_index: int, opponent: str, you_first: bool) -> dict:

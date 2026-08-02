@@ -2643,6 +2643,10 @@ class Game:
                          f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
             # 不写 _log 孪生行：归 settle 通道，避免双通道重复
         if healed <= 0:
+            # 实际恢复为 0 也明示一行（治疗时时机仍触发；海坊主过量治疗转化可读）
+            self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
+                         f"恢复 0 点生命（治疗量 {amount}，"
+                         f"生命 {holder.health}/{holder.max_health}）")
             self.emit("on_heal", target=ref, amount=0, overheal=overheal,
                       source=source, reason=reason)
             return  # 实际恢复为 0：治疗时仍触发，治疗后不触发
@@ -3088,9 +3092,12 @@ class Game:
                  if src is not None and src.shikigami is not None else None)
             if s is not None and s.ext.pop("dice_force_six_once", False):
                 dice = 6  # 这把算我赢：下次以其为来源的判定首投必 6（消耗）
+                ev["forced"] = True
             elif self.state.players[ev["judge"]].ext.get("dice_force_six"):
                 dice = 6  # 萌即正义：判定者级光环必 6
+                ev["forced"] = True
             ev["dice"] = dice
+            ev["first_dice"] = dice  # 重投检测用（判定时 on_luck_judge 可改写骰点）
         # 2. 判定时（即时时机；重投改写 ev["dice"]，强制 6 不豁免本时机）
         for ev in events:
             self.emit("on_luck_judge", luck=ev, judge=ev["judge"],
@@ -3102,6 +3109,14 @@ class Game:
             jp.ext.setdefault("dice_history", []).append(ev["dice"])
             if ev["dice"] == 6:
                 jp.ext["dice_six_count"] = jp.ext.get("dice_six_count", 0) + 1
+            # 结算明细：运势判定全程可见（重投/必 6 修饰一并标注）
+            cast = f"掷出 {ev['dice']} 点"
+            if ev["dice"] != ev["first_dice"]:
+                cast = f"掷出 {ev['first_dice']} 点，重投为 {ev['dice']} 点"
+            mods = ["必 6"] if ev.get("forced") else []
+            mods.append(f"需 ≥{ev['x']}")
+            self._settle(f"【运势】{jp.name} {cast}（{'；'.join(mods)}）："
+                         f"{'成功' if ev['success'] else '失败'}")
         # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）
         for ev in events:
             judge = ev["judge"]
@@ -3118,6 +3133,9 @@ class Game:
             if success != ev.get("on_fail", False):
                 # 翻倍（觉醒青蛙瓷器）：成功效果执行两次；失败效果（on: fail）不翻倍
                 times = 2 if (success and self._luck_doublers(judge)) else 1
+                if times == 2:
+                    self._settle(f"【运势】{self.state.players[judge].name} "
+                                 "的成功效果翻倍（觉醒青蛙瓷器）")
                 for _ in range(times):
                     self._run_luck_continuation(ev)
                 self.emit("on_luck_effect_after", luck=ev, judge=judge,

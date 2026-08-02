@@ -110,12 +110,14 @@ def mk_room(db, **kw) -> Room:
 
 
 async def _started_room(db, **kw):
-    """两名玩家就位并已开局的 (room, ws0, ws1)。"""
+    """两名玩家就位、完成准备确认并已开局的 (room, ws0, ws1)。"""
     room = mk_room(db, **kw)
     ws0, ws1 = FakeWS(), FakeWS()
     await room.join(0, "甲", ws0, _deck_code(db))
     await room.join(1, "乙", ws1, _deck_code(db))
-    await room.start_if_ready()
+    await room.on_seat_filled()
+    await room.lobby_ready(0)
+    await room.lobby_ready(1)
     return room, ws0, ws1
 
 
@@ -145,6 +147,72 @@ def test_invalid_deck_code_rejected(db):
         with pytest.raises(ValueError, match="卡组"):
             await room.join(0, "甲", FakeWS(), None)  # 无默认卡组：必须提供卡组码
         assert room.conns[0] is None
+    run(go())
+
+
+# ---------- 准备阶段（lobby）与自建房码 ----------
+
+def test_custom_room_id(db):
+    """自建房间代码：6 位大小写字母/数字；格式非法或冲突均拒绝。"""
+    mgr = RoomManager(db)
+    mgr.create(room_id="Ab12cd")
+    assert mgr.get("Ab12cd") is not None
+    with pytest.raises(ValueError, match="已被占用"):
+        mgr.create(room_id="Ab12cd")
+    for bad in ("abc", "abcdefg", "ab cd!", "中文房间码"):
+        with pytest.raises(ValueError, match="6 位"):
+            mgr.create(room_id=bad)
+
+
+def test_lobby_manual_ready_and_leave(db):
+    """准备阶段（双方都位后不直接开局）：一方准备不开始，双方准备立即开局；
+    开局后不允许 lobby 离开（断线走重连通道）。"""
+    async def go():
+        room = mk_room(db)
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", ws1, _deck_code(db))
+        assert room.game is None
+        await room.on_seat_filled()
+        lobby = [m for m in ws0.messages if m["type"] == "lobby"][-1]
+        assert lobby["deadline"] > time.time()  # 附带自动开始截止时刻
+        await room.lobby_ready(0)
+        assert room.game is None  # 仅一方准备不开局
+        await room.lobby_ready(1)
+        assert room.game is not None
+        assert not await room.lobby_leave(0)  # 已开局：不可从 lobby 离开
+    run(go())
+
+
+def test_lobby_auto_ready(db):
+    """准备计时（15s，测试 0.05s）到期未手动准备则自动开局。"""
+    async def go():
+        room = mk_room(db, ready_timeout=0.05)
+        ws0, _ = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", FakeWS(), _deck_code(db))
+        await room.on_seat_filled()
+        await asyncio.sleep(0.15)
+        assert room.game is not None
+        assert "start" in ws0.types()
+    run(go())
+
+
+def test_lobby_leave_frees_seat(db):
+    """准备阶段离开/断线：座位释放、对手收到 peer_left，新玩家可再入座。"""
+    async def go():
+        room = mk_room(db)
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", ws1, _deck_code(db))
+        await room.on_seat_filled()
+        assert await room.lobby_leave(1)
+        assert room.conns[1] is None and room._lobby_timer is None
+        assert any(m["type"] == "peer_left" and m["name"] == "乙"
+                   for m in ws0.messages)
+        await room.join(1, "丙", FakeWS(), _deck_code(db))  # 座位可再入座
+        await room.on_seat_filled()
+        room._cancel_lobby_timer()  # 收尾：防 15s 计时任务悬置
     run(go())
 
 
@@ -524,6 +592,13 @@ def test_full_match_flow(server, db):
             "deck_code": _deck_code(db)})
     jb = b.recv_until("joined")
     assert jb["type"] == "joined"
+
+    # 准备阶段：双方收到 lobby（含自动开始截止时刻）后手动确认准备
+    la = a.recv_until("lobby")
+    assert la["deadline"] > time.time()
+    b.recv_until("lobby")
+    a.send({"type": "ready"})
+    b.send({"type": "ready"})
 
     sa = a.recv_until("start")
     sb = b.recv_until("start")

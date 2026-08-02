@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 import random
+import re
 
 from server.room import Room, new_room_id
+
+# 自建房间代码格式：6 位大小写字母/数字（随机分配的房间代码沿用 ROOM_ID_ALPHABET
+# 子集，自建代码允许全字符集，大小写敏感）
+ROOM_ID_RE = re.compile(r"^[A-Za-z0-9]{6}$")
 
 
 class RoomManager:
@@ -16,12 +21,19 @@ class RoomManager:
         self.rooms: dict[str, Room] = {}
         self._rng = random.Random()
 
-    def create(self, *, debug: bool = False) -> Room:
+    def create(self, *, debug: bool = False, room_id: str | None = None) -> Room:
+        """创建房间：room_id 为空随机分配；指定时须满足 6 位字母数字且不冲突。"""
         if len(self.rooms) >= self.max_rooms:
             raise ValueError("服务器房间数已达上限，请稍后再试")
-        room_id = new_room_id(self._rng)
-        while room_id in self.rooms:
+        if room_id:
+            if not ROOM_ID_RE.match(room_id):
+                raise ValueError("房间代码须为 6 位大小写字母或数字")
+            if room_id in self.rooms:
+                raise ValueError(f"房间代码 {room_id} 已被占用")
+        else:
             room_id = new_room_id(self._rng)
+            while room_id in self.rooms:
+                room_id = new_room_id(self._rng)
         room = Room(room_id, self.db, debug=debug,
                     turn_timeout=self.turn_timeout,
                     mulligan_timeout=self.mulligan_timeout)

@@ -70,8 +70,13 @@ server/
 - 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交
   `cmd dict`（与热坐 CLI 同一协议），服务端校验、执行并广播完整 `GameState` JSON
   + 新增日志。
-- 无登录态：创建房间分配随机 6 位房间 id；凭 id 加入；入座时下发 `player_token`，
-  断线后凭 房间id+token 重连（对局与计时器保留，双方断线才回收房间）。
+- 无登录态：创建房间可自建 6 位字母数字房间代码（缺省随机分配）；凭代码加入；
+  入座时下发 `player_token`，断线后凭 房间代码+token 重连（对局与计时器保留，
+  双方断线才回收房间）。
+- **准备阶段**：双方都位后不直接开局——广播 `lobby`（含 15s 自动开始截止时刻），
+  双方 `ready` 或计时到期才开局；期间可 `leave` 主动离开（断线视同离开），
+  座位释放、对手退回等人状态。准备阶段无对局，不可重连。
+- 服务端日志：连接来源、建房/加入/准备/离开/开局/终局/房间回收均打印到控制台。
 - 座位（seat）与 `players` 下标的映射在开局随机先手时确定；指令中的 `player`
   字段由服务端按座位强制改写；回合内操作（play_card/assault/upgrade/end_turn）
   只能由当前行动方发出。
@@ -81,17 +86,24 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd" }
 { "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null }
+{ "type": "ready" }
+{ "type": "leave" }
 { "type": "cmd", "cmd": { "op": "end_turn" } }
 ```
 
 `deck_code` 为必填（入座时校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
+`create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
+`ready`/`leave` 仅准备阶段（双方都位后、开局前）有效。
 
 服务端 → 客户端：
 
 ```json
 { "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
+{ "type": "lobby", "deadline": 1735689600.0 }
+{ "type": "peer_left", "name": "乙" }
+{ "type": "left" }
 { "type": "start", "player_index": 0, "opponent": "乙", "you_first": true }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
   "timer": { "kind": "turn", "deadline": 1735689600.0 },
@@ -107,6 +119,7 @@ server/
 
 | 阶段 | 默认 | 超时行为 |
 |------|------|----------|
+| 准备阶段 | 15s（双方都位起计） | 自动开始对局（期间双方 `ready` 立即开始，`leave` 离开） |
 | 起始手牌调度 | 30s（双方并行，自阶段开始共用截止时刻） | 超时将所有未完成调度的玩家自动 `ready` |
 | 回合（含升级阶段） | 120s | 结算中交互选择（检视选牌）挂起时先随机作答到底；升级阶段再由系统在可升级式神中随机升级，最后立即 `end_turn` |
 

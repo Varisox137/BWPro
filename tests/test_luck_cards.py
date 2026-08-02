@@ -82,6 +82,9 @@ def test_luck_roll_success_then_steps(gdb, monkeypatch):
     play(g, 0, CHUQIAN)
     assert sum(1 for c in pa.hand if c.id == CHUQIAN) == before + 1  # 生成 1（give+打出抵消）
     assert pa.ext["dice_history"] == [4]
+    # 结算明细：运势判定可见（骰点/门槛/结果）
+    assert any("【运势】" in l and "掷出 4 点" in l and "成功" in l
+               for l in g.state.settle_log)
 
 
 def test_luck_roll_failure_no_steps(gdb, monkeypatch):

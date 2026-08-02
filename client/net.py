@@ -2,8 +2,9 @@
 
 运行：uv run python -m client.net [--server ws://127.0.0.1:1037/ws] [--debug] [--name 名字]
 
-- 创建房间（随机分配房间 id）或按 id 加入；开局前从本地卡组文件
+- 创建房间（可自建 6 位字母数字房码，缺省随机）或按房码加入；开局前从本地卡组文件
   （~/.bwp.decks.json）选择卡组（client/deckbuilder.choose_deck）。
+- 准备阶段：双方都位后 r 准备 / q 离开，15s 自动开始。
 - 服务端权威：指令与热坐 CLI 同一 cmd dict 协议；客户端只渲染服务端下发的
   GameState（本地 CardDatabase + Game 包装，不开局），"己方"视角为自己的座位。
 - --debug：创建 debug 对局（房间内允许 debug 指令，解析复用 client/cli.py）。
@@ -14,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import threading
 import time
 
@@ -36,6 +38,8 @@ class NetClient:
         self.token: str | None = None
         self.me: int | None = None  # 自己在 state.players 中的下标
         self.room_debug = False
+        self.in_lobby = False            # 准备阶段（双方都位、等待准备确认/自动开始）
+        self.lobby_deadline: float | None = None  # 自动准备的 unix 截止时刻
         self.payload: dict | None = None  # 最近一次 state 的 payload
         self.timer: dict | None = None    # 最近一次 state 附带的计时器（kind/deadline）
         self._seq = 0  # 服务端回推计数（state/error 各 +1）：发指令后等待回推用
@@ -62,7 +66,25 @@ class NetClient:
             self.room_debug = bool(msg.get("debug"))
             print(f"已加入房间 {self.room_id}（重连令牌：{self.token}）"
                   f"{'【debug 对局】' if self.room_debug else ''}，等待对手……")
+        elif t == "lobby":
+            # 双方都位进入准备阶段：r 准备 / q 离开；deadline 到期自动开始
+            self.in_lobby = True
+            self.lobby_deadline = msg.get("deadline")
+            print("\n双方已就位，进入准备阶段：r 准备，q 离开房间"
+                  f"（{round(max(0.0, (self.lobby_deadline or 0) - time.time()))}s 后自动开始）")
+            tui.start_ticker(1.0)  # 状态栏准备倒计时
+            tui.invalidate()
+        elif t == "peer_left":
+            self.in_lobby = False
+            self.lobby_deadline = None
+            print(f"** {msg.get('name')} 已离开房间，等待新对手加入")
+            tui.invalidate()
+        elif t == "left":
+            self.ended_normally = True  # 主动离开房间：不当作断线
+            self.over.set()
         elif t == "start":
+            self.in_lobby = False
+            self.lobby_deadline = None
             self.me = msg["player_index"]
             self._seats_shown = False  # 新对局：调度前重新展示座次行
             self._mulligan_fp = None
@@ -174,7 +196,9 @@ class NetClient:
                         break
                     continue
                 prompt = f"[{self.name}]"
-                if game is not None:
+                if self.in_lobby:
+                    prompt = f"[{self.name} 准备阶段]"
+                elif game is not None:
                     st = game.state
                     if st.phase == "mulligan":
                         p = st.players[self.me]
@@ -200,6 +224,15 @@ class NetClient:
         parts = line.split()
         cmd, args = parts[0].lower(), parts[1:]
         cmd = cli.COMMAND_ALIASES.get(cmd, cmd)
+        if self.in_lobby:
+            # 准备阶段：r 准备 / q 离开（服务端确认 left 后断连，由 recv 循环收尾）
+            if cmd in ("ready", "r"):
+                self.send({"type": "ready"})
+            elif cmd in ("leave", "q", "quit", "exit"):
+                self.send({"type": "leave"})
+            else:
+                print("准备阶段：r 准备，q 离开房间")
+            return
         if cmd in ("quit", "exit"):
             self.ended_normally = True
             self.over.set()
@@ -308,8 +341,13 @@ def _fmt_timer(timer: dict, now: float) -> str:
 
 def _net_status(client: NetClient) -> tuple[str, ...]:
     """底部状态栏三段：左=己方牌手、中=阶段提示+回合+倒计时（居中）、右=敌方牌手。
-    未开局时为两段（房间提示）。"""
+    未开局时为两段（房间提示）；准备阶段中段显示自动开始倒计时。"""
     game = client.wrapper()
+    if client.in_lobby:
+        left = f"房间 {client.room_id}，双方已就位"
+        mid = ("准备中 " + _fmt_timer({"deadline": client.lobby_deadline}, time.time())
+               if client.lobby_deadline else "准备中")
+        return left, mid
     if game is None or client.me is None:
         left = f"房间 {client.room_id}，等待对手……" if client.room_id else "联机"
         return left, ""
@@ -389,6 +427,10 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
     server_url = normalize_server_url(server_url)
     choice = _input("[1] 创建房间 [2] 加入房间（含重连）> ")
     if choice == "1":
+        room_id = _input("房间代码（6 位字母或数字，Enter 随机分配）> ") or None
+        if room_id is not None and not re.fullmatch(r"[A-Za-z0-9]{6}", room_id):
+            print("房间代码须为 6 位大小写字母或数字")
+            return
         picked = deckbuilder.choose_deck(db, name)
         if picked is None:
             print("未选择卡组，返回主菜单")
@@ -396,6 +438,8 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         _, _, deck_code = picked
         hello = {"type": "create", "name": name, "deck_code": deck_code,
                  "debug": debug, "client": CLIENT_ID}
+        if room_id:
+            hello["room_id"] = room_id
     elif choice == "2":
         room_id = _input("房间 id > ")
         token = _input("重连令牌（首次加入 Enter 跳过）> ") or None
