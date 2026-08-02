@@ -75,7 +75,7 @@ DEBUG_HELP = """调试指令（仅本地开发/测试使用）：
 
 # ---------- 结算明细展示 ----------
 
-SETTLE_INTERVAL = float(os.environ.get("BWP_SETTLE_INTERVAL", "0.4"))  # 每条明细的打印间隔（秒）
+SETTLE_INTERVAL = float(os.environ.get("BWP_SETTLE_INTERVAL", "0.3"))  # 每条明细的打印间隔（秒）
 
 _SETTLE_OPEN = ("—— 战斗开始", "—— 伤害结算开始")
 
@@ -126,11 +126,11 @@ def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
 
 def show_field(game: Game, printer: SettlePrinter, viewer: int | None = None) -> None:
     """空闲点场况：作为一块入打印队列尾——排在已入队的结算明细之后播完再显示
-    （thoughts(1)：每次操作的结算细节全部打印完之后再显示场况）。对局已结束
-    不再显示场况（终局只打印结果块）。"""
+    （thoughts(1)：每次操作的结算细节全部打印完之后再显示场况）；整段一次性
+    直出（paced=False），不逐条 sleep。对局已结束不再显示场况（终局只打印结果块）。"""
     if game.state.winner is not None:
         return
-    printer.enqueue(render(game, viewer=viewer).split("\n"))
+    printer.enqueue(render(game, viewer=viewer).split("\n"), paced=False)
 
 
 def parse_ref(code: str, active: int) -> Ref:

@@ -6,8 +6,9 @@
 - **块为单位**：一次 state 消息（联机）/ 一次 apply 后增量（热坐）构成一块；
   块内顺序保持，块前后各空一行，块与块不穿插（播放中入队的新块等当前块
   播完再播）。空块不入队。
-- **节奏**：按 interval（默认 0.4s/条，BWP_SETTLE_INTERVAL 覆盖）消费；
-  输入循环与服务端接收线程不被播放阻塞。
+- **节奏**：按 interval（默认 0.3s/条，BWP_SETTLE_INTERVAL 覆盖）消费；
+  输入循环与服务端接收线程不被播放阻塞。enqueue(paced=False) 的块
+  （场况/手牌等静态信息）整段一次性直出，不逐条 sleep。
 - **退出**：stop(flush=True) 把剩余块快速播完（不再 sleep）；flush=False
   丢弃剩余并提示行数。join 等待线程退出，不留泄漏；守护线程兜底。
 - 打印者独占 settle/叙事 log 的输出顺序；场况 render、状态栏、错误/通知
@@ -22,9 +23,9 @@ import threading
 class SettlePrinter:
     """FIFO 结算打印队列 + 后台打印者（守护线程，可重复 start/stop）。"""
 
-    def __init__(self, interval: float = 0.4) -> None:
+    def __init__(self, interval: float = 0.3) -> None:
         self.interval = interval
-        self._q: queue.Queue[list[str] | None] = queue.Queue()
+        self._q: queue.Queue[tuple[list[str], bool] | None] = queue.Queue()
         self._fast = threading.Event()  # 置位后不再逐条 sleep（flush/停止用）
         self._thread: threading.Thread | None = None
 
@@ -36,21 +37,23 @@ class SettlePrinter:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def enqueue(self, lines: list[str]) -> None:
-        """追加一块（空块不入队）。线程安全（接收线程/主线程均可调用）。"""
+    def enqueue(self, lines: list[str], paced: bool = True) -> None:
+        """追加一块（空块不入队）。线程安全（接收线程/主线程均可调用）。
+        paced=False：整段一次性直出（场况/手牌等），不逐条 sleep。"""
         if lines:
-            self._q.put(list(lines))
+            self._q.put((list(lines), paced))
 
     def _run(self) -> None:
         while True:
-            block = self._q.get()
-            if block is None:  # 停止信号
+            item = self._q.get()
+            if item is None:  # 停止信号
                 return
+            block, paced = item
             try:
                 print("")
                 for line in block:
                     print(line)
-                    if self.interval > 0:
+                    if paced and self.interval > 0:
                         self._fast.wait(self.interval)  # flush/stop 置位时立即返回
                 print("")
             finally:
