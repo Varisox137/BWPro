@@ -780,7 +780,7 @@ def main() -> None:
                 from client import net
                 default_server = os.environ.get("BWP_SERVER", "ws://127.0.0.1:1037/ws")
                 while True:
-                    raw = tui.prompt(f"服务器地址（省略协议默认 ws；Enter = {default_server}）> ").strip()
+                    raw = tui.prompt(f"服务器地址（省略协议：无端口默认 wss，带端口默认 ws；Enter = {default_server}）> ").strip()
                     server = net.normalize_server_url(raw or default_server)
                     err = net.probe_connection(server)
                     if err is None:

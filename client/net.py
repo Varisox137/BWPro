@@ -329,7 +329,9 @@ def normalize_server_url(raw: str) -> str:
     """把用户输入的服务器地址规范化为 ws(s)://host[:port]/ws。
 
     接受 ws://、wss://、http(s)://（内网穿透/反代给出的网址）以及裸
-    host[:port]；无路径时自动补 /ws。
+    host[:port]；无路径时自动补 /ws。裸地址省略协议时：带端口默认 ws
+    （本机/局域网，如 127.0.0.1:1037），不带端口默认 wss（公网域名经
+    HTTPS 穿透/反代，TLS 在 443 终止）。
     """
     s = raw.strip()
     if s.startswith("https://"):
@@ -337,18 +339,31 @@ def normalize_server_url(raw: str) -> str:
     elif s.startswith("http://"):
         s = "ws://" + s[len("http://"):]
     if not s.startswith(("ws://", "wss://")):
-        s = "ws://" + s
+        host = s.split("/", 1)[0]
+        s = ("ws://" if ":" in host else "wss://") + s
     if "/" not in s.split("://", 1)[1]:
         s = s + "/ws"
     return s
 
 
-def probe_connection(server_url: str) -> str | None:
-    """试连服务器（仅握手）：成功返回 None，失败返回错误信息。"""
+def _open_ws(server_url: str, retries: int = 3, open_timeout: float = 5.0):
+    """建立 WS 连接（带客户端标识 UA）；穿透服务对来源 IP 首次请求的间歇
+    拦截（提示页等）按 1s 间隔重试。"""
     from websockets.sync.client import connect
+    for attempt in range(retries):
+        try:
+            return connect(server_url, open_timeout=open_timeout,
+                           additional_headers={"User-Agent": CLIENT_ID})
+        except Exception:
+            if attempt + 1 >= retries:
+                raise
+            time.sleep(1.0)
+
+
+def probe_connection(server_url: str, retries: int = 3) -> str | None:
+    """试连服务器（仅握手）：成功返回 None，失败返回错误信息。"""
     try:
-        with connect(server_url, open_timeout=5,
-                     additional_headers={"User-Agent": CLIENT_ID}):
+        with _open_ws(server_url, retries=retries):
             return None
     except Exception as e:
         msg = str(e)
@@ -359,8 +374,6 @@ def probe_connection(server_url: str) -> str | None:
 
 def run(db, server_url: str, name: str, debug: bool) -> None:
     """联机入口：创建/加入房间 → 收发线程 + 输入循环。"""
-    from websockets.sync.client import connect
-
     server_url = normalize_server_url(server_url)
     choice = _input("[1] 创建房间 [2] 加入房间（含重连）> ")
     if choice == "1":
@@ -388,7 +401,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         return
     try:
         # 客户端标识软门槛：create/join 需带 client 字段（server.main.CLIENT_UA 前缀）
-        ws = connect(server_url, additional_headers={"User-Agent": CLIENT_ID})
+        ws = _open_ws(server_url, open_timeout=10.0)
     except Exception as e:
         print(f"无法连接服务器 {server_url}（{e}）")
         return
@@ -432,7 +445,8 @@ def main() -> None:
     parser.add_argument("--server", default=os.environ.get(
         "BWP_SERVER", "ws://127.0.0.1:1037/ws"),
         help="服务器地址（默认环境变量 BWP_SERVER 或本机；"
-             "ws(s)://、http(s)://、裸 host[:port] 均可）")
+             "ws(s)://、http(s)://、裸 host[:port] 均可；裸地址省略协议时"
+             "无端口默认 wss、带端口默认 ws）")
     parser.add_argument("--name", default=None, help="玩家名（默认交互输入）")
     parser.add_argument("--debug", action="store_true",
                         help="创建 debug 对局（房间内允许 debug 指令）")

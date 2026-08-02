@@ -437,11 +437,44 @@ def test_normalize_server_url():
     # 内网穿透/反代给出的 http(s) 网址
     assert normalize_server_url("https://a.top") == "wss://a.top/ws"
     assert normalize_server_url("http://a.top:8080") == "ws://a.top:8080/ws"
-    # 裸 host[:port]
+    # 裸 host[:port]：带端口默认 ws（本机/局域网），无端口默认 wss（公网域名穿透）
     assert normalize_server_url("a.top:1037") == "ws://a.top:1037/ws"
     assert normalize_server_url("  127.0.0.1:1037  ") == "ws://127.0.0.1:1037/ws"
+    assert normalize_server_url("a.top") == "wss://a.top/ws"
+    assert normalize_server_url("bwpro.varisox137.top") == "wss://bwpro.varisox137.top/ws"
     # 已带路径则不补 /ws
     assert normalize_server_url("wss://a.top/custom") == "wss://a.top/custom"
+
+
+def test_probe_connection_retries(monkeypatch):
+    """穿透提示页（HTTP 200）是来源 IP 首次请求的间歇拦截：探针自动重试至放行。"""
+    import client.net as net
+    calls = []
+
+    class _FakeWs:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def flaky_connect(url, **kw):
+        calls.append(url)
+        if len(calls) < 3:
+            raise Exception("server rejected WebSocket connection: HTTP 200")
+        return _FakeWs()
+
+    monkeypatch.setattr("websockets.sync.client.connect", flaky_connect)
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    assert net.probe_connection("wss://a.top/ws") is None
+    assert len(calls) == 3
+    # 持续失败：返回末次错误信息（含穿透提示）
+    def always_fail(url, **kw):
+        raise Exception("server rejected WebSocket connection: HTTP 200")
+
+    monkeypatch.setattr("websockets.sync.client.connect", always_fail)
+    err = net.probe_connection("wss://a.top/ws", retries=2)
+    assert "HTTP 200" in err and "穿透" in err
 
 
 # ==========================================================================
