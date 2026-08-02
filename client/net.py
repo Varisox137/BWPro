@@ -49,6 +49,20 @@ class NetClient:
         self.ended_normally = False  # game_over/用户主动退出：断线提示据此抑制
         self.disconnect_reason: str | None = None  # 接收循环异常退出原因
         self._mulligan_fp: tuple | None = None  # 己方调度数据指纹（对手并行广播不重印）
+        self._ctx_seen: tuple | None = None  # 输入上下文指纹：变化时作废陈旧输入提示符
+
+    def _ctx_key(self, pl: dict) -> tuple | None:
+        """输入上下文指纹（原始 payload 直读，避免解析整份 GameState）：
+        与 _can_act/input_loop 的提示符分支一一对应；指纹变化 = 当前阻塞中的
+        提示符已陈旧（如调度超时自动 ready、回合超时自动结束、双方就绪开局）。"""
+        if self.me is None:
+            return None
+        if pl["phase"] == "mulligan":
+            return ("mulligan", pl["players"][self.me]["mulligan_done"])
+        pend = pl.get("pending_choice")
+        if pend is not None:
+            return ("choice", pend.get("player") == self.me)
+        return ("turn", pl["phase"], pl["active"] == self.me)
 
     # ---------- 接收 ----------
 
@@ -73,18 +87,23 @@ class NetClient:
             print("\n双方已就位，进入准备阶段：r 准备，q 离开房间"
                   f"（{round(max(0.0, (self.lobby_deadline or 0) - time.time()))}s 后自动开始）")
             tui.start_ticker(1.0)  # 状态栏准备倒计时
+            tui.cancel_prompt()    # 输入上下文切换：作废陈旧提示符
             tui.invalidate()
         elif t == "peer_left":
             self.in_lobby = False
             self.lobby_deadline = None
             print(f"** {msg.get('name')} 已离开房间，等待新对手加入")
+            tui.cancel_prompt()
             tui.invalidate()
         elif t == "left":
             self.ended_normally = True  # 主动离开房间：不当作断线
             self.over.set()
+            tui.cancel_prompt()
         elif t == "start":
             self.in_lobby = False
             self.lobby_deadline = None
+            self._ctx_seen = None
+            tui.cancel_prompt()  # 准备阶段提示符 → 调度阶段提示符
             self.me = msg["player_index"]
             self._seats_shown = False  # 新对局：调度前重新展示座次行
             self._mulligan_fp = None
@@ -95,6 +114,12 @@ class NetClient:
             self._seq += 1
             self.payload = msg["payload"]
             self.timer = msg.get("timer")
+            key = self._ctx_key(self.payload)
+            if self._ctx_seen is not None and key != self._ctx_seen:
+                # 输入上下文被服务端推送切换（超时自动 ready/结束回合、双方就绪
+                # 进入首回合等）：作废阻塞中的陈旧提示符，输入循环按最新状态重算
+                tui.cancel_prompt()
+            self._ctx_seen = key
             # 结算播放入打印队列（入队即返回，播放不阻塞接收/输入；播放中到达的
             # 新 state 块排入队尾，当前块播完再播）：合并时间线（结算/叙事按真实
             # 发生顺序合流）优先，旧字段 settle+log 兜底
@@ -114,6 +139,7 @@ class NetClient:
             print(f"** {msg.get('text')}")
         elif t == "game_over":
             self.ended_normally = True
+            tui.cancel_prompt()  # 解除阻塞中的输入提示符，输入循环随即按 over 退出
             winner = msg.get("winner")
             if winner is None:
                 print(f"对局终止（{msg.get('reason')}）")

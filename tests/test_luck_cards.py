@@ -122,6 +122,18 @@ def test_luck_success_trigger_buff(gdb, monkeypatch):
     assert s.temp_power == 1
 
 
+def test_luck_distinct_form_stats(gdb):
+    """九莲宝灯（amount dice_distinct）：进场时按本局骰子历史去重数字种数 +N/+N
+    （一次性 buff 叠加在基础 3/3 上；重复骰点不重复计）。"""
+    g, pa, pb = _game(gdb, QWQC_TEAM)
+    pa.ext["dice_history"] = [1, 1, 3, 6, 6, 6]  # 去重 3 种（1/3/6）
+    play(g, 0, JIULIAN)                          # 形态 3/3 + 3/+3
+    s = pa.shikigami[IDX]
+    assert s.form is not None and s.form.id == JIULIAN
+    assert s.eff_power == 6
+    assert (s.health, s.max_health) == (6, 6)
+
+
 def test_force_x1_if_form_guarantees_success(gdb, monkeypatch):
     """立直（force_x1_if）：青蛙瓷器有形态时阈值视为 1——骰点 1（照投照计）也成功。"""
     g, pa, pb = _game(gdb, QWQC_TEAM)

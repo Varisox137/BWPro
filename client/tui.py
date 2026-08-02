@@ -159,6 +159,27 @@ def invalidate() -> None:
         app.invalidate()
 
 
+def cancel_prompt() -> None:
+    """从其他线程作废当前阻塞中的 prompt（以空行返回）：联机接收线程在输入上下文
+    （阶段/行动权/作答归属）被服务端推送改变时调用，输入循环随即按最新状态重算
+    提示符，避免陈旧提示符残留且可输入。无活动 prompt、非 TTY 或竞态下 prompt
+    已结束均无作用。"""
+    app = _session.app if _session is not None else None
+    if app is None or not app.is_running or getattr(app, "loop", None) is None:
+        return
+
+    def _exit() -> None:
+        try:
+            app.exit(result="")
+        except Exception:  # 竞态：prompt 已自然结束（future 已设置）
+            pass
+
+    try:
+        app.loop.call_soon_threadsafe(_exit)
+    except Exception:
+        pass
+
+
 def stop_ticker() -> None:
     global _ticker
     _ticker_stop.set()

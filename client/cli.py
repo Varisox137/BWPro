@@ -218,7 +218,13 @@ def _stats_label(game: Game, p, c) -> str:
         if shield:
             parts.append(f"护甲+{shield}")
     elif cd.card_type == "form" and cd.form_power is not None:
-        parts.append(f"身材{cd.form_power}/{cd.form_health}")
+        # 动态身材增强（九莲宝灯 dice_distinct）：按骰子历史去重数实时求值
+        bonus = 0
+        if any(isinstance((stp.model_extra or {}).get("amount"), dict)
+               and (stp.model_extra or {})["amount"].get("dice_distinct")
+               for stp in cd.effects.steps):
+            bonus = len(set(p.ext.get("dice_history", [])))
+        parts.append(f"身材{cd.form_power + bonus}/{cd.form_health + bonus}")
     else:
         for stp in cd.effects.steps:
             amt = (stp.model_extra or {}).get("amount")

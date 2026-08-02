@@ -383,6 +383,8 @@ class Game:
           治愈之水"海坊主每有 2 护甲则效果+1"）。
         - {"memo": key}：块内暂存 ctx.memo 的数值（巨浪"每造成 1 点伤害恢复 1 生命"
           读 damage 记录的 last_damage_total）。
+        - {"dice_distinct": true}：效果归属玩家骰子历史（ext dice_history）的
+          去重数字种数（九莲宝灯"每投出过一个不重复数字 +1/+1"）。
         - {"hand_count_half": "controller"}：效果归属玩家当前手牌数的一半（向下取整，
           墨染"等同于你手牌数量一半的伤害"）。
         前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
@@ -408,6 +410,9 @@ class Game:
                 base += int(event.get(raw["event"], 0))
             if raw.get("memo") and memo is not None:
                 base += int(memo.get(raw["memo"], 0))  # 块内暂存（巨浪 last_damage_total）
+            if raw.get("dice_distinct") and game is not None and controller is not None:
+                # 骰子历史去重种数（九莲宝灯动态身材；ext dice_history 记最终有效骰点）
+                base += len(set(game.state.players[controller].ext.get("dice_history", [])))
             if raw.get("half_health_of") and event is not None and game is not None:
                 ref = event.get(raw["half_health_of"])
                 if isinstance(ref, Ref):

@@ -857,3 +857,31 @@ def test_net_mulligan_shows_seats_once(db, make_game, capsys):
     assert "座位：" not in out2
     c.handle({"type": "start", "player_index": 1, "you_first": False, "opponent": "乙"})
     assert c._seats_shown is False  # 新对局重置
+
+
+def test_net_ctx_change_cancels_stale_prompt(db, make_game, monkeypatch):
+    """输入上下文指纹：state 推送使阶段/行动权变化时作废阻塞中的陈旧提示符
+    （调度超时自动 ready、回合超时自动结束、双方就绪进入首回合的场景）；
+    同上下文内的推送（对手并行调度）不作废，保留正在输入的内容。"""
+    from client import tui
+    from client.net import NetClient
+    calls = []
+    monkeypatch.setattr(tui, "cancel_prompt", lambda: calls.append(1))
+    g = make_game(mulligan=True)
+    c = NetClient(db, None, "甲")
+    c.me = 0
+    c.handle({"type": "state", "payload": g.state.model_dump(mode="json"), "log": []})
+    assert calls == []  # 首次建立指纹，不作废
+    # 对手并行调度（阶段不变、己方未完成）：指纹不变，不作废
+    g.apply({"op": "mulligan", "uid": g.state.players[1].hand[0].uid, "player": 1})
+    c.handle({"type": "state", "payload": g.state.model_dump(mode="json"), "log": []})
+    assert calls == []
+    # 己方完成调度（含超时自动 ready）：指纹变化 → 作废
+    g.apply({"op": "ready", "player": 0})
+    c.handle({"type": "state", "payload": g.state.model_dump(mode="json"), "log": []})
+    assert len(calls) == 1
+    # 双方就绪进入首回合（mulligan → 升级/战斗阶段）→ 再作废
+    g.apply({"op": "ready", "player": 1})
+    assert g.state.phase != "mulligan"
+    c.handle({"type": "state", "payload": g.state.model_dump(mode="json"), "log": []})
+    assert len(calls) == 2
