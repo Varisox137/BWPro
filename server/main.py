@@ -63,6 +63,20 @@ CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫�
 AUTH_TIMEOUT = 5.0  # 连接后需在该时间内发送带合法 client 标识的 create/join，否则断联
 
 
+def _client_ip(ws: WebSocket) -> str:
+    """提取真实来源 IP：穿透/反代边缘做 L7 代理时，TCP 对端永远是本机回环
+    （客户端回连 127.0.0.1），真实 IP 只能由边缘透传在 X-Forwarded-For /
+    X-Real-IP 头中；取 XFF 首项（原始客户端）。该值由边缘写入、可被伪造，
+    仅作日志参考，不可作访问控制依据。"""
+    xff = ws.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    real = ws.headers.get("x-real-ip")
+    if real:
+        return real.strip()
+    return ws.client.host if ws.client else "unknown"
+
+
 def create_app(manager: RoomManager, *, rate_limit: int = 10,
                require_client_ua: bool = True, allow_debug_rooms: bool = False) -> FastAPI:
     app = FastAPI(title="BWPro 联机服务端")
@@ -73,6 +87,8 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
         # 改写 HTTP 头，握手一律放行；create/join 消息必须带 client 字段且以
         # BWPro-CLI 开头，否则拒绝并断联；超时未完成合法 hello 的连接也会被关闭。
         await ws.accept()
+        client_ip = _client_ip(ws)
+        print(f"[连接] 来源 {client_ip}")
         limiter = RateLimiter(rate_limit)
         room = None
         conn = None
