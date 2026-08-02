@@ -1,7 +1,8 @@
 """Room：一间对局房间 = 一个 authoritative Game + 两名玩家连接 + 计时器。
 
 - 座位（seat）固定：创建者 0、加入者 1；seat→players 下标映射在开局时按随机先手确定。
-- 计时器权威在服务端：调度每玩家 mulligan_timeout 秒，每回合 turn_timeout 秒
+- 计时器权威在服务端：并行调度全阶段共用 mulligan_timeout 秒（自调度阶段开始计，
+  一方 ready/超时不重置另一方倒计时），每回合 turn_timeout 秒
   （含升级阶段）。游戏逻辑在事件循环内同步执行，计时器回调只能排在当前 apply
   返回后运行——天然满足"回合超时等结算完后立即结束回合"。
 """
@@ -109,7 +110,7 @@ class Room:
         self.game: Game | None = None
         self.seat_to_player = [0, 1]
         self._timer: asyncio.Task | None = None
-        self._timer_key: tuple | None = None  # ("mulligan", player) / ("turn", 总回合数)
+        self._timer_key: tuple | None = None  # ("mulligan",)（并行共用）/ ("turn", 总回合数)
         self._timer_deadline: float | None = None  # 当前计时器的 unix 截止时刻（随 state 下发）
         self._sent_log = 0
         self._sent_settle = 0
@@ -291,9 +292,10 @@ class Room:
         if st.winner is not None or st.pending_end:
             return None
         if st.phase == "mulligan":
-            for pi in (0, 1):
-                if not st.players[pi].mulligan_done:
-                    return ("mulligan", pi)
+            # 并行调度：双方自阶段开始共用同一个截止时刻，不按玩家轮流计时
+            # （否则一方 ready/超时后会给另一方重启一个完整的调度时长）
+            if any(not p.mulligan_done for p in st.players):
+                return ("mulligan",)
             return None
         return ("turn", st.turn)
 
@@ -330,10 +332,13 @@ class Room:
         st = self.game.state
         try:
             if key[0] == "mulligan":
-                pi = key[1]
+                names = [st.players[pi].name for pi in (0, 1)
+                         if not st.players[pi].mulligan_done]
                 await self._broadcast(protocol.notice(
-                    f"{st.players[pi].name} 调度超时，自动结束调度"))
-                self.game.apply({"op": "ready", "player": pi})
+                    f"{'、'.join(names)} 调度超时，自动结束调度"))
+                for pi in (0, 1):  # 超时统一收尾所有未完成调度的玩家
+                    if not st.players[pi].mulligan_done:
+                        self.game.apply({"op": "ready", "player": pi})
             else:  # 回合超时：先收尾结算中交互选择，升级阶段先随机升级，再结束回合
                 if st.pending_choice is not None:
                     # 检视选牌（青灯夜谈）挂起时随机作答到底——否则 apply 拒绝 choose

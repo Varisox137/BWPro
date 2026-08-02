@@ -42,6 +42,9 @@ class NetClient:
         self._seats_shown = False  # 调度前先后手/座次行只打印一次（start 时重置）
         self.result_text: str | None = None  # 终局结果文本（按视角；run() 收尾等待播完用）
         self.over = threading.Event()
+        self.ended_normally = False  # game_over/用户主动退出：断线提示据此抑制
+        self.disconnect_reason: str | None = None  # 接收循环异常退出原因
+        self._mulligan_fp: tuple | None = None  # 己方调度数据指纹（对手并行广播不重印）
 
     # ---------- 接收 ----------
 
@@ -62,6 +65,7 @@ class NetClient:
         elif t == "start":
             self.me = msg["player_index"]
             self._seats_shown = False  # 新对局：调度前重新展示座次行
+            self._mulligan_fp = None
             print(f"对局开始：你是{'先手' if msg['you_first'] else '后手'}"
                   f"，对手：{msg['opponent']}")
             tui.start_ticker(1.0)  # 驱动状态栏倒计时逐秒重绘
@@ -87,6 +91,7 @@ class NetClient:
         elif t == "notice":
             print(f"** {msg.get('text')}")
         elif t == "game_over":
+            self.ended_normally = True
             winner = msg.get("winner")
             if winner is None:
                 print(f"对局终止（{msg.get('reason')}）")
@@ -110,6 +115,11 @@ class NetClient:
         if st.phase == "mulligan":
             p = st.players[self.me]
             if not p.mulligan_done:
+                # 并行调度：对手动作同样触发广播，己方调度数据未变时不重印整块
+                fp = (p.mulligans_left, tuple(c.uid for c in p.hand))
+                if fp == self._mulligan_fp:
+                    return
+                self._mulligan_fp = fp
                 if not self._seats_shown:  # 调度前先展示双方先后手与四座次（仅一次）
                     print("")
                     for pi in (0, 1):
@@ -176,6 +186,7 @@ class NetClient:
                 try:
                     line = tui.prompt(f"{prompt} > ").strip()
                 except (EOFError, KeyboardInterrupt):
+                    self.ended_normally = True  # 用户主动中断，不当作断线
                     break
                 if not line:
                     continue
@@ -190,6 +201,7 @@ class NetClient:
         cmd, args = parts[0].lower(), parts[1:]
         cmd = cli.COMMAND_ALIASES.get(cmd, cmd)
         if cmd in ("quit", "exit"):
+            self.ended_normally = True
             self.over.set()
             return
         if cmd == "help":
@@ -417,12 +429,22 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
                     for raw in ws:
                         try:
                             client.handle(json.loads(raw))
-                        except (ValueError, KeyError) as e:
-                            print(f"无法解析服务端消息（{e}）")
-                except Exception:
-                    pass
+                        except Exception as e:  # 单条坏消息不杀死接收循环
+                            print(f"无法处理服务端消息（{e}）")
+                except Exception as e:
+                    client.disconnect_reason = str(e)
                 finally:
                     client.over.set()
+                    if not client.ended_normally:
+                        # 非对局结束/主动退出：明确告知断线原因与重连方式，
+                        # 不再静默回退主菜单
+                        hint = (f"（{client.disconnect_reason}）"
+                                if client.disconnect_reason else "")
+                        print(f"\n** 与服务器的连接已断开{hint}")
+                        if client.room_id and client.token:
+                            print(f"** 可从主菜单进入 联机对战 → 加入房间，"
+                                  f"输入房间 {client.room_id} 与重连令牌 "
+                                  f"{client.token} 恢复对局")
 
             threading.Thread(target=recv_loop, daemon=True).start()
             client.input_loop()

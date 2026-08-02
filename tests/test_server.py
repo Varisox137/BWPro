@@ -249,18 +249,30 @@ def test_reconnect_resync_full_log(db):
 # ---------- 计时器 ----------
 
 def test_mulligan_timeout_forces_ready(db):
+    """并行调度超时：全阶段共用一个截止时刻，超时统一将所有未完成调度的玩家
+    自动 ready（旧行为按玩家轮流计时，一方超时后另一方会重置一整个调度时长）。"""
     async def go():
         room, _, _ = await _started_room(db, mulligan_timeout=0.1)
         g = room.game
         assert g.state.phase == "mulligan"
-        assert room.current_timer_key() == ("mulligan", 0)
+        assert room.current_timer_key() == ("mulligan",)
         await asyncio.sleep(0.15)
-        assert g.state.players[0].mulligan_done
-        assert not g.state.players[1].mulligan_done
-        assert room.current_timer_key() == ("mulligan", 1)
-        await asyncio.sleep(0.15)
-        assert g.state.players[1].mulligan_done
+        assert all(p.mulligan_done for p in g.state.players)
         assert g.state.phase != "mulligan"  # 已进入对战
+    run(go())
+
+
+def test_mulligan_shared_deadline_not_reset(db):
+    """一方提前完成调度：双方共用的截止时刻不重置、计时 key 不变（客户端状态栏
+    倒计时连续，另一方不会获得额外调度时间）。"""
+    async def go():
+        room, _, ws1 = await _started_room(db, mulligan_timeout=30)
+        dl = [m for m in ws1.messages if m["type"] == "state"][-1]["timer"]["deadline"]
+        await room.handle_cmd(0, {"op": "ready"})  # seat0 完成调度
+        timer = [m for m in ws1.messages if m["type"] == "state"][-1]["timer"]
+        assert timer["kind"] == "mulligan" and timer["deadline"] == dl
+        assert room.current_timer_key() == ("mulligan",)
+        room._cancel_timer()  # 收掉 30s 计时任务，防事件循环退出告警
     run(go())
 
 
