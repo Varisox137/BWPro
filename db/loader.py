@@ -33,16 +33,24 @@ class CardDatabase:
         cards: dict[int, CardDef],
         shikigami: dict[int, ShikigamiDef],
         custom_events: set[str],
+        raw_cards: dict[int, dict] | None = None,
+        raw_shikigami: dict[int, dict] | None = None,
     ) -> None:
         self.cards = cards
         self.shikigami = shikigami
         self.custom_events = custom_events
+        # 原始 yaml dict（含 versions 时间线）：环境解析（at_date）的输入；
+        # 测试工厂构造的库无原始 dict（at_date 退化为按 version 判可用）
+        self.raw_cards = raw_cards or {}
+        self.raw_shikigami = raw_shikigami or {}
 
     @classmethod
     def load(cls, root: Path | str | None = None, strict: bool = True) -> "CardDatabase":
         root = Path(root) if root else DB_ROOT
         cards: dict[int, CardDef] = {}
         shikigami: dict[int, ShikigamiDef] = {}
+        raw_cards: dict[int, dict] = {}
+        raw_shikigami: dict[int, dict] = {}
         custom_events: set[str] = set()
         # db/<pack>/<seq>_<slug>/*.yaml 递归收集；按有无 card_type 区分卡牌/式神定义
         for f in sorted(root.rglob("*.yaml")):
@@ -52,19 +60,59 @@ class CardDatabase:
                 continue
             data = yaml.safe_load(f.read_text(encoding="utf-8"))
             out: dict = cards if "card_type" in data else shikigami
+            raw_out: dict = raw_cards if out is cards else raw_shikigami
             obj = (CardDef if out is cards else ShikigamiDef).model_validate(data)
             if obj.id in cards or obj.id in shikigami:
                 raise RuntimeError(f"id 重复: {obj.id}（{f.name}）")
             out[obj.id] = obj
-        db = cls(cards, shikigami, custom_events)
+            raw_out[obj.id] = data
+        db = cls(cards, shikigami, custom_events, raw_cards, raw_shikigami)
         errors = db.validate()
         if errors and strict:
             raise RuntimeError("卡牌数据库校验失败：\n" + "\n".join(errors))
         return db
 
+    def at_date(self, date: int | None) -> "CardDatabase":
+        """环境解析：指定日期下的数据库（该日期未发布的 id 剔除）。
+        None = 最新数据（返回自身）。解析结果重新 schema 校验并全库 validate。"""
+        if date is None:
+            return self
+        from db.versioning import resolve_at_date
+        cards: dict[int, CardDef] = {}
+        shikigami: dict[int, ShikigamiDef] = {}
+        for i, c in self.cards.items():
+            raw = self.raw_cards.get(i)
+            if raw is None:  # 无原始 dict（测试工厂）：仅按 version 判可用
+                if c.version <= date:
+                    cards[i] = c
+                continue
+            r = resolve_at_date(raw, date)
+            if r is not None:
+                cards[i] = CardDef.model_validate(r)
+        for i, s in self.shikigami.items():
+            raw = self.raw_shikigami.get(i)
+            if raw is None:
+                if s.version <= date:
+                    shikigami[i] = s
+                continue
+            r = resolve_at_date(raw, date)
+            if r is not None:
+                shikigami[i] = ShikigamiDef.model_validate(r)
+        db = CardDatabase(cards, shikigami, set(self.custom_events),
+                          dict(self.raw_cards), dict(self.raw_shikigami))
+        errors = db.validate()
+        if errors:
+            raise RuntimeError(f"环境 {date} 解析结果校验失败：\n" + "\n".join(errors))
+        return db
+
     def validate(self) -> list[str]:
         """返回全部错误信息（空列表 = 通过）。"""
+        from db.versioning import validate_versions
         errors: list[str] = []
+        for i, raw in self.raw_cards.items():
+            errors += [f"卡牌 {i}: {e}" for e in validate_versions(raw)]
+        for i, raw in self.raw_shikigami.items():
+            errors += [f"式神 {i}: {e}" for e in validate_versions(raw)]
         known_events = CORE_EVENTS | self.custom_events | {"on_play"}
         for s in self.shikigami.values():
             where = f"式神 {s.id}《{s.name}》"

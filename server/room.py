@@ -100,9 +100,12 @@ class Room:
     def __init__(self, room_id: str, db, *, debug: bool = False,
                  turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
                  ready_timeout: float = 15.0, starting_timeout: float = 3.0,
+                 env_date: int | None = None,
                  rng: random.Random | None = None) -> None:
         self.id = room_id
         self.db = db
+        self.env_date = env_date  # 对局环境（平衡性版本日期；None = 最新数据）
+        self.env_db = db.at_date(env_date)  # 环境下解析后的数据库（构筑校验/开局/渲染用）
         self.debug = debug
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
@@ -139,10 +142,16 @@ class Room:
         return None
 
     def _parse_deck(self, deck_code: str | None) -> tuple[list[int], list[int]]:
-        """解析卡组码（必须提供，无默认卡组）；非法抛 ValueError。"""
+        """解析卡组码（必须提供，无默认卡组；按房间环境 env_db 校验）；非法抛 ValueError。"""
         if not deck_code:
             raise ValueError("必须提供卡组码（无默认卡组）")
-        return deckcode.deck_from_code(self.db, deck_code)
+        try:
+            return deckcode.deck_from_code(self.env_db, deck_code)
+        except ValueError as e:
+            if self.env_date is not None:
+                raise ValueError(
+                    f"卡组在当前环境（{self.env_date}）不可用：{e}") from e
+            raise
 
     async def join(self, seat: int, name: str, ws, deck_code: str | None) -> Connection:
         """新玩家入座。卡组码非法时抛 ValueError（房间保留，可重新入座）。"""
@@ -183,7 +192,35 @@ class Room:
         """当前 lobby 状态消息（广播与重连补发共用）：IDLE/STARTING 不带 deadline。"""
         ready = [self.conns[s].name for s in sorted(self.ready_seats) if self.conns[s]]
         deadline = self._lobby_deadline if self._lobby_phase == "countdown" else None
-        return protocol.lobby(ready, deadline)
+        return protocol.lobby(ready, deadline, env_date=self.env_date)
+
+    async def set_env(self, seat: int, date: int | None) -> None:
+        """更改对局环境（平衡性版本日期，None = 最新）：仅房主（seat 0）在双方
+        均未准备时可用；更改后重新校验双方已入座卡组，任一不可用则拒绝。"""
+        if self.game is not None or not self.full:
+            return
+        if seat != 0:
+            await self.conns[seat].send(protocol.error("只有房主可以更改对局环境"))
+            return
+        if self.ready_seats:
+            await self.conns[seat].send(
+                protocol.error("双方均未准备时才能更改环境（请先取消准备）"))
+            return
+        from db.deck import validate_deck
+        new_db = self.db.at_date(date)
+        for c in self.conns:
+            ids, cards = c.deck
+            errors = validate_deck(new_db, ids, cards)
+            if errors:
+                await self.conns[seat].send(protocol.error(
+                    f"{c.name} 的卡组在环境（{date}）下不可用：{'；'.join(errors)}"))
+                return
+        self.env_date = date
+        self.env_db = new_db
+        self._log(f"对局环境已更改为 {date or '最新'}")
+        await self._broadcast(protocol.notice(
+            f"对局环境已更改为 {date or '最新'}"))
+        await self._broadcast(self.lobby_msg())
 
     async def on_seat_filled(self) -> None:
         """双方都位后进入准备阶段（不计时）：广播 lobby 状态，等待玩家准备。"""
@@ -289,19 +326,21 @@ class Room:
         by_player = sorted(self.conns, key=lambda c: self.seat_to_player[c.seat])
         config = GameConfig(enable_debug_commands=self.debug)
         self.game = new_game(
-            self.db,
+            self.env_db,
             (by_player[0].name, *by_player[0].deck),
             (by_player[1].name, *by_player[1].deck),
             seed=self.rng.randrange(2**32),
             config=config,
             first=0,  # by_player 已按先手排序，无需 new_game 再换
         )
-        self._log(f"对战开始：{by_player[0].name}（先手） vs {by_player[1].name}")
+        env_note = f"，环境 {self.env_date}" if self.env_date else ""
+        self._log(f"对战开始{env_note}：{by_player[0].name}（先手） vs {by_player[1].name}")
         for c in self.conns:
             await c.send(protocol.start(
                 self.seat_to_player[c.seat],
                 self.conns[1 - c.seat].name,
-                self.seat_to_player[c.seat] == 0))
+                self.seat_to_player[c.seat] == 0,
+                env_date=self.env_date))
         self.reschedule_timer()
         await self.broadcast_state()
 

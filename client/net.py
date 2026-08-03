@@ -30,13 +30,18 @@ CLIENT_ID = "BWPro-CLI/1.0"  # 客户端标识：服务端软门槛（server.mai
 
 class NetClient:
     def __init__(self, db, ws, name: str, printer: SettlePrinter | None = None) -> None:
+        self._base_db = db      # 完整库（最新数据）；环境切换时 db = _base_db.at_date(env)
         self.db = db
         self.ws = ws
         self.name = name
         self.printer = printer  # 结算打印队列（边播边操作）；None = 不入队（测试）
         self.room_id: str | None = None
         self.token: str | None = None
+        self.seat: int | None = None  # 房间座位（0=房主，可改环境）
         self.me: int | None = None  # 自己在 state.players 中的下标
+        self.env_date: int | None = None  # 对局环境（lobby/start 消息下发）
+        self.join_hello: dict | None = None  # 加入房间的 hello（环境拒绝后换卡组重发用）
+        self.env_rejected = False  # 入座卡组被房间环境拒绝：输入循环重选卡组重发 join
         self.room_debug = False
         self.in_lobby = False            # 准备阶段（双方都位、等待准备/开始倒计时）
         self.lobby_ready: list[str] = []  # 已准备玩家名列表（lobby 消息维护）
@@ -68,6 +73,13 @@ class NetClient:
 
     # ---------- 接收 ----------
 
+    def _apply_env(self, env_date: int | None) -> None:
+        """对局环境切换（lobby/start 消息下发）：本地渲染库解析为环境版本。"""
+        if env_date == self.env_date:
+            return
+        self.env_date = env_date
+        self.db = self._base_db.at_date(env_date)
+
     def wrapper(self) -> Game | None:
         """由最新 state payload 构造只读渲染包装（不调用 start）。"""
         if self.payload is None:
@@ -79,6 +91,7 @@ class NetClient:
         if t == "joined":
             self.room_id = msg["room_id"]
             self.token = msg["token"]
+            self.seat = msg["seat"]
             self.room_debug = bool(msg.get("debug"))
             print(f"已加入房间 {self.room_id}（重连令牌：{self.token}）"
                   f"{'【debug 对局】' if self.room_debug else ''}，等待对手……")
@@ -86,6 +99,7 @@ class NetClient:
             # 准备阶段状态更新：ready 为已准备名单（空 = 无人准备、不计时）；
             # deadline 非空 = 一方已准备，未准备方超时将自动准备
             self.in_lobby = True
+            self._apply_env(msg.get("env_date"))
             self.lobby_ready = list(msg.get("ready") or [])
             self.lobby_deadline = msg.get("deadline")
             self.starting_deadline = None
@@ -96,7 +110,10 @@ class NetClient:
                 hint = f"对手已准备：r 准备（{left_s}s 后自动准备），q 离开房间"
             else:
                 hint = "r 准备，q 离开房间"
-            print(f"\n双方已就位，进入准备阶段：{hint}")
+                if self.seat == 0:
+                    hint += "；e <日期> 更改对局环境"
+            env_note = f"（环境：{self.env_date or '最新'}）"
+            print(f"\n双方已就位，进入准备阶段{env_note}：{hint}")
             tui.start_ticker(1.0)  # 状态栏准备倒计时
             tui.cancel_prompt()    # 输入上下文切换：作废陈旧提示符
             tui.invalidate()
@@ -125,6 +142,7 @@ class NetClient:
             self.lobby_ready = []
             self.lobby_deadline = None
             self.starting_deadline = None
+            self._apply_env(msg.get("env_date"))
             self._ctx_seen = None
             tui.cancel_prompt()  # 准备阶段提示符 → 调度阶段提示符
             self.me = msg["player_index"]
@@ -157,7 +175,12 @@ class NetClient:
             tui.invalidate()  # 状态栏（阶段/回合归属/倒计时）立即按新状态重绘
         elif t == "error":
             self._seq += 1  # 指令的否定回推：解除 send_cmd 的等待
-            print(f"无效操作: {msg.get('reason')}")
+            reason = msg.get("reason", "")
+            print(f"无效操作: {reason}")
+            if "环境" in reason and self.join_hello is not None and self.me is None:
+                # 入座卡组被房间环境拒绝：输入循环重选卡组并重发 join（连接保持）
+                self.env_rejected = True
+                tui.cancel_prompt()
         elif t == "notice":
             print(f"** {msg.get('text')}")
         elif t == "game_over":
@@ -236,6 +259,19 @@ class NetClient:
     def input_loop(self) -> None:
         with tui.activate():
             while not self.over.is_set():
+                if self.env_rejected:
+                    # 入座卡组被房间环境拒绝：重选卡组并重发 join（连接保持）
+                    self.env_rejected = False
+                    picked = deckbuilder.choose_deck(self._base_db, self.name)
+                    if picked is None:
+                        self.ended_normally = True
+                        self.over.set()
+                        break
+                    _, _, deck_code = picked
+                    hello = dict(self.join_hello)
+                    hello["deck_code"] = deck_code
+                    self.send(hello)
+                    continue
                 game = self.wrapper()
                 if game is not None and not self._can_act(game.state):
                     # 对手回合/等待期：不显示输入提示符，轮询状态直到可行动
@@ -275,11 +311,20 @@ class NetClient:
         cmd, args = parts[0].lower(), parts[1:]
         cmd = cli.COMMAND_ALIASES.get(cmd, cmd)
         if self.in_lobby:
-            # 准备阶段：r 准备/取消准备（服务端切换语义）、q 离开（left 应答后断连）
+            # 准备阶段：r 准备/取消准备（服务端切换语义）、q 离开（left 应答后断连）；
+            # 房主（seat 0）在双方均未准备时可 e <日期> 更改对局环境（e 无参 = 最新）
             if cmd in ("ready", "r"):
                 self.send({"type": "ready"})
             elif cmd in ("leave", "q", "quit", "exit"):
                 self.send({"type": "leave"})
+            elif cmd in ("env", "e"):
+                if self.seat != 0:
+                    print("只有房主可以更改对局环境")
+                elif self.lobby_ready:
+                    print("双方均未准备时才能更改环境（请先取消准备）")
+                else:
+                    date = int(args[0]) if args else None
+                    self.send({"type": "env", "date": date})
             else:
                 hint = ("已准备（r 取消准备）" if self.name in self.lobby_ready
                         else "r 准备")
@@ -397,7 +442,8 @@ def _net_status(client: NetClient) -> tuple[str, ...]:
     game = client.wrapper()
     if client.in_lobby:
         ready = "、".join(client.lobby_ready) or "无"
-        left = f"房间 {client.room_id}（已准备 {len(client.lobby_ready)}/2：{ready}）"
+        env = f"环境 {client.env_date or '最新'} · " if client.in_lobby else ""
+        left = f"房间 {client.room_id}（{env}已准备 {len(client.lobby_ready)}/2：{ready}）"
         if client.starting_deadline:
             mid = "即将开始 " + _fmt_timer(
                 {"deadline": client.starting_deadline}, time.time())
@@ -490,6 +536,15 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         if room_id is not None and not re.fullmatch(r"[A-Za-z0-9]{6}", room_id):
             print("房间代码须为 6 位大小写字母或数字")
             return
+        env_date = None
+        env_line = _input("对局环境日期（8 位 YYYYMMDD，Enter = 最新）> ")
+        if env_line:
+            try:
+                from db.schema import check_version_date
+                env_date = check_version_date(int(env_line))
+            except ValueError:
+                print("环境日期须为合法的 8 位日期（YYYYMMDD）")
+                return
         picked = deckbuilder.choose_deck(db, name)
         if picked is None:
             print("未选择卡组，返回主菜单")
@@ -499,6 +554,8 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
                  "debug": debug, "client": CLIENT_ID}
         if room_id:
             hello["room_id"] = room_id
+        if env_date:
+            hello["env_date"] = env_date
     elif choice == "2":
         room_id = _input("房间 id > ")
         token = _input("重连令牌（首次加入 Enter 跳过）> ") or None
@@ -523,6 +580,8 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
     with ws:
         printer = SettlePrinter(cli.SETTLE_INTERVAL)
         client = NetClient(db, ws, name, printer)
+        if choice == "2" and not token:
+            client.join_hello = hello  # 环境拒绝入座时换卡组重发
         client.send(hello)
         printer.start()
         tui.set_status(lambda: _net_status(client))

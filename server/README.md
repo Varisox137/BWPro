@@ -76,9 +76,15 @@ server/
 - 无登录态：创建房间可自建 6 位字母数字房间代码（缺省随机分配）；凭代码加入；
   入座时下发 `player_token`，断线后凭 房间代码+token 重连（对局与计时器保留，
   双方断线才回收房间）。
-- **准备阶段**：双方都位后不直接开局——广播 `lobby`（含 15s 自动开始截止时刻），
-  双方 `ready` 或计时到期才开局；期间可 `leave` 主动离开（断线视同离开），
-  座位释放、对手退回等人状态。准备阶段无对局，不可重连。
+- **准备阶段**：双方都位后不直接开局、不计时（IDLE）——任一方 `ready` 后对
+  未准备方计 15s 自动准备（COUNTDOWN），双方准备进入 3s 开始倒计时（STARTING）
+  后开局；已准备方可再次 `ready` 取消准备回到无计时状态（开始倒计时中不可取消）；
+  期间可 `leave` 主动离开（断线视同离开，含开始倒计时中），座位释放、对手退回
+  等人状态。准备阶段断线重连补发当前 lobby 状态。
+- **对局环境**：创建房间可带 `env_date`（平衡性版本日期，见 `db/versioning.py`），
+  该房间全部数据按不晚于该日期的最晚版本解析、该日期未发布的卡牌/式神不可用；
+  双方均未准备时房主可发 `env` 消息更改（更改后重新校验双方已入座卡组，
+  任一不可用则拒绝）；入座卡组校验按房间环境进行，不满足时报错并注明环境日期。
 - 服务端日志：连接来源、建房/加入/准备/离开/开局/终局/房间回收均打印到控制台。
 - 座位（seat）与 `players` 下标的映射在开局随机先手时确定；指令中的 `player`
   字段由服务端按座位强制改写；回合内操作（play_card/assault/upgrade/end_turn）
@@ -89,25 +95,28 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd" }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd", "env_date": null }
 { "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null }
 { "type": "ready" }
 { "type": "leave" }
+{ "type": "env", "date": 20250701 }
 { "type": "cmd", "cmd": { "op": "end_turn" } }
 ```
 
-`deck_code` 为必填（入座时校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
+`deck_code` 为必填（入座时按房间环境校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
-`ready`/`leave` 仅准备阶段（双方都位后、开局前）有效。
+`create.env_date` 可缺省（最新数据）；`env` 仅房主在双方均未准备时可用（date 缺省 = 最新）。
+`ready`/`leave` 仅准备阶段（双方都位后、开局前）有效；`ready` 为准备/取消准备切换。
 
 服务端 → 客户端：
 
 ```json
 { "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
-{ "type": "lobby", "deadline": 1735689600.0 }
+{ "type": "lobby", "ready": ["甲"], "deadline": 1735689600.0, "env_date": null }
+{ "type": "starting", "deadline": 1735689600.0 }
 { "type": "peer_left", "name": "乙" }
 { "type": "left" }
-{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true }
+{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "env_date": null }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
   "timer": { "kind": "turn", "deadline": 1735689600.0 },
   "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }] }
@@ -116,13 +125,16 @@ server/
 { "type": "game_over", "winner": 0, "reason": "player_defeated" }
 ```
 
+`lobby.deadline` 仅一方已准备时非空（未准备方的自动准备截止）；`ready` 为空 =
+双方未准备、不计时。`env_date` 为 null 时字段省略（最新数据）。
+
 心跳使用 WS 协议层 ping/pong（uvicorn `ws_ping_interval=10`，`ws_ping_timeout=5`）。
 
 ## 限时（权威在服务端）
 
 | 阶段 | 默认 | 超时行为 |
 |------|------|----------|
-| 准备阶段 | 15s（双方都位起计） | 自动开始对局（期间双方 `ready` 立即开始，`leave` 离开） |
+| 准备阶段 | 无人准备不计时；一方准备后 15s | 未准备方自动准备 → 双方准备后 3s 开始倒计时开局（期间 `ready` 准备/取消，`leave` 离开） |
 | 起始手牌调度 | 30s（双方并行，自阶段开始共用截止时刻） | 超时将所有未完成调度的玩家自动 `ready` |
 | 回合（含升级阶段） | 120s | 结算中交互选择（检视选牌）挂起时先随机作答到底；升级阶段再由系统在可升级式神中随机升级，最后立即 `end_turn` |
 

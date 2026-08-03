@@ -885,3 +885,73 @@ def test_net_ctx_change_cancels_stale_prompt(db, make_game, monkeypatch):
     assert g.state.phase != "mulligan"
     c.handle({"type": "state", "payload": g.state.model_dump(mode="json"), "log": []})
     assert len(calls) == 2
+
+
+# ---------- 构筑环境（卡组文件 v3 + env）----------
+
+def test_deckstore_env_roundtrip(db, tmp_path):
+    """v3 卡组文件：env 随条目保存/读取；is_standard 按各卡组环境校验——
+    环境早于数据 version 时卡组不可用（不标准），最新/不早于 version 时正常。"""
+    from db import deckstore
+    store = tmp_path / "decks.json"
+    entries = _store_entries(db)
+    entries[0]["env"] = 20200101          # 早于全部数据 version：不可用
+    entries[1]["env"] = 20991231          # 晚于全部数据 version：可用
+    deckstore.save_decks(db, entries, store)
+    loaded = deckstore.load_decks(db, store)
+    assert [d["env"] for d in loaded] == [20200101, 20991231]
+    assert [d["standard"] for d in loaded] == [False, True]
+
+
+def test_deckstore_v2_compat_and_bad_env(db, tmp_path):
+    """v2 文件（条目无 env）兼容读取（env 视为 None）；env 非法 = 文件异常删除。"""
+    import json
+
+    from db import deckcode, deckstore
+    store = tmp_path / "decks.json"
+    groups = deckcode.group_deck(db, list(F.TEAM), F.deck_of(*F.TEAM))
+    store.write_text(json.dumps(
+        {"version": 2, "decks": [[True, {"name": "旧", "groups": groups}]]},
+        ensure_ascii=False), encoding="utf-8")
+    loaded = deckstore.load_decks(db, store)
+    assert loaded[0]["env"] is None and loaded[0]["standard"]
+    store.write_text(json.dumps(
+        {"version": 3, "decks": [[True, {"name": "坏", "groups": groups,
+                                         "env": 20261301}]]},
+        ensure_ascii=False), encoding="utf-8")
+    assert deckstore.load_decks(db, store) == []
+    assert not store.exists()  # 文件异常：提示并删除
+
+
+def test_deckbuilder_new_deck_env_flow(db, monkeypatch, capsys, tmp_path):
+    """新建卡组先询问构筑环境：合法日期入库保存；非法日期提示后重问。"""
+    from client import deckbuilder
+    from db import deckstore
+    store = tmp_path / "decks.json"
+    team = list(F.TEAM)
+    # 环境询问（先非法后合法）→ 名称 → 不导入 → 选 4 式神（全名直选）
+    # → 各 8 张牌 → 编辑循环回车完成 → q 退出
+    lines = ["", "20261301", "20991231", "", ""]
+    lines += [" ".join(db.shikigami[s].name for s in team)]
+    for sid in team:
+        n = len(deckbuilder.buildable_cards(db, sid))
+        lines += [" ".join(str((i % n) + 1) for i in range(8))]
+    lines += ["", "q"]
+    feed(monkeypatch, lines)
+    deckbuilder.run_deckbuilder(db, store_path=store)
+    out = capsys.readouterr().out
+    assert "环境日期须为合法的 8 位日期" in out
+    loaded = deckstore.load_decks(db, store)
+    assert len(loaded) == 1 and loaded[0]["env"] == 20991231
+
+
+def test_net_client_env_date_switches_db(db):
+    """对局环境切换：客户端渲染库解析为环境版本（_apply_env，lobby/start 下发）。"""
+    from client.net import NetClient
+    c = NetClient(db, None, "甲")
+    c._apply_env(20200101)   # 早于全部数据 version：环境库为空
+    assert c.env_date == 20200101 and not c.db.cards
+    c._apply_env(20991231)   # 不早于数据 version：与最新一致
+    assert set(c.db.cards) == set(db.cards)
+    c._apply_env(None)       # 回到最新
+    assert c.db is c._base_db

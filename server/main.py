@@ -64,6 +64,21 @@ CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫�
 AUTH_TIMEOUT = 5.0  # 连接后需在该时间内发送带合法 client 标识的 create/join，否则断联
 
 
+def _env_date(msg: dict, key: str) -> int | None:
+    """解析 create/env 消息中的环境日期字段：缺省 None（最新）；
+    非 int 或非法 8 位日期抛 ValueError。"""
+    from db.schema import check_version_date
+    v = msg.get(key)
+    if v is None:
+        return None
+    if not isinstance(v, int):
+        raise ValueError("环境日期须为 8 位数字日期（YYYYMMDD）")
+    try:
+        return check_version_date(v)
+    except ValueError:
+        raise ValueError("环境日期须为合法的 8 位日期（YYYYMMDD）") from None
+
+
 def _client_ip(ws: WebSocket) -> str:
     """提取真实来源 IP：穿透/反代边缘做 L7 代理时，TCP 对端永远是本机回环
     （客户端回连 127.0.0.1），真实 IP 只能由边缘透传在 X-Forwarded-For /
@@ -134,8 +149,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         name = _text(msg, "name", MAX_NAME) or "玩家A"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                         want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
+                        env_date = _env_date(msg, "env_date")
                         room = manager.create(debug=bool(msg.get("debug")),
-                                              room_id=want_id)
+                                              room_id=want_id, env_date=env_date)
                         conn = await room.join(0, name, ws, deck_code)
                     except ValueError as e:
                         if room is not None:
@@ -145,7 +161,8 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         continue
                     print(f"[房间 {room.id}] {name}（{client_ip}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
-                          f"{'（debug 对局）' if room.debug else ''}", flush=True)
+                          f"{'（debug 对局）' if room.debug else ''}"
+                          f"{f'（环境 {env_date}）' if env_date else ''}", flush=True)
                     await conn.send(protocol.joined(room.id, conn.token, 0,
                                                     debug=room.debug))
                     await room.on_seat_filled()
@@ -199,6 +216,15 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         return
                     await reject("当前不能离开房间")
                     continue
+                elif t == "env":  # 房主更改对局环境（仅双方均未准备时）
+                    if room is None or conn is None:
+                        await reject("尚未加入房间")
+                        continue
+                    try:
+                        await room.set_env(conn.seat, _env_date(msg, "date"))
+                    except ValueError as e:
+                        await reject(str(e))
+                        continue
                 elif t == "cmd":
                     if room is None or conn is None:
                         await reject("尚未加入房间")

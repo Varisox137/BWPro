@@ -366,7 +366,7 @@ def test_choose_deck_empty_store(db, tmp_path, monkeypatch, capsys):
 def test_deckbuilder_new_via_code(db, tmp_path, monkeypatch):
     p = tmp_path / "decks.json"
     code = mk_code(db)
-    feed(monkeypatch, ["", "快攻队", code])  # 新建 → 命名 → 卡组码导入
+    feed(monkeypatch, ["", "", "快攻队", code])  # 新建 → 环境回车（最新）→ 命名 → 卡组码导入
     deckbuilder.run_deckbuilder(db, p)
     decks = deckstore.load_decks(db, p)
     assert decks[0]["name"] == "快攻队" and decks[0]["standard"]
@@ -394,7 +394,7 @@ def test_deckbuilder_edit_keep_name(db, tmp_path, monkeypatch):
 def test_deckbuilder_new_interactive(db, tmp_path, monkeypatch):
     """交互式构筑：二级目录选 4 名式神 + 每人恰好 8 个卡牌序号 → 自动保存。"""
     p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "",        # 新建 → 名称回车（自动命名）→ 交互式
+    feed(monkeypatch, ["", "", "", "",      # 新建 → 环境回车（最新）→ 名称回车 → 交互式
                        "1",               # 进入经典包（唯一非空包）
                        "1", "2", "3", "4",  # 依次选 4 名式神
                        "1 2 3 4 5 6 7 8",  # 1 号式神 8 张（8 种各 1 张）
@@ -412,7 +412,7 @@ def test_deckbuilder_new_interactive(db, tmp_path, monkeypatch):
 def test_new_build_shikigami_browser_strict(db, tmp_path, monkeypatch, capsys):
     """二级目录选式神：未知名称/重复选择都会被拒绝并要求重新输入。"""
     p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "",
+    feed(monkeypatch, ["", "", "", "",
                        "不存在者",      # 全名未找到
                        "1",             # 进入经典包
                        "1",             # 选第 1 名
@@ -434,7 +434,7 @@ def test_new_build_shikigami_browser_strict(db, tmp_path, monkeypatch, capsys):
 def test_new_build_shikigami_by_full_name(gdb, tmp_path, monkeypatch):
     """新建卡组支持直接输入式神全名（可空格分隔多名），跳过目录浏览。"""
     p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "",
+    feed(monkeypatch, ["", "", "", "",
                        "白狼 兵俑 山兔 座敷童子",   # 一行 4 个全名直选
                        "1 2 3 4 5 6 7 8",  # 白狼 8 种各 1 张
                        "1 2 3 4 5 6 7 8",  # 兵俑
@@ -453,7 +453,7 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
     """新建选牌：数量不符/序号不存在被拒并重问；同种卡超 2 张不强制——
     仅一次性提示标准规则，卡组仍保存但不标记为标准。"""
     p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "",
+    feed(monkeypatch, ["", "", "", "",
                        "1",                 # 进入经典包
                        "1", "2", "3", "4",  # 依次选 4 名式神
                        "1 2 3",              # 数量不足

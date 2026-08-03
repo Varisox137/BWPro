@@ -1,10 +1,13 @@
 """卡组构筑与战前选卡（交互式）。
 
-- 本地卡组文件（db/deckstore.py v2，~/.bwp.decks.json）：进入构筑时读取全部槽位
+- 本地卡组文件（db/deckstore.py v3，~/.bwp.decks.json）：进入构筑时读取全部槽位
   并按天梯规则重新校验（满足者以亮蓝色标明）；可编辑现有槽位、重命名
   （r <序号> <新名称>）、删除（d <序号>，二次确认）或新建；编辑/新建均支持
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
-  自动创建；文件格式异常时提示并删除该文件）。
+  自动创建；文件格式异常时提示并删除该文件）。每个卡组记录构筑环境 env
+  （平衡性版本日期，null=最新；v2 文件读取时视为 null）：新建时先询问环境，
+  编辑中可用 e <日期> 切换（环境下不存在的式神强制更换、卡牌自动移除）；
+  构筑与 is_standard 校验均按 db.at_date(env) 解析。
 - 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
   反复询问直到合法；新建时经二级目录（版本包 → 式神，翻页显示，支持式神全名
   直选、可空格分隔多名）选择恰好 4 名不重复式神。同名卡张数不做
@@ -31,9 +34,26 @@ from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, DeckRules, rules_summary, validate_deck
 from db.loader import CardDatabase
 from db.packs import PACK_NAMES, PACKS
+from db.schema import check_version_date
 
 # 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
 STANDARD_COLOR = 94
+
+
+def _env_label(env: int | None) -> str:
+    return "最新" if env is None else str(env)
+
+
+def _ask_env() -> int | None:
+    """构筑环境询问：Enter = 最新数据；输入 8 位日期（YYYYMMDD）反复校验直到合法。"""
+    while True:
+        line = _input("构筑环境日期（8 位 YYYYMMDD，Enter = 最新）> ")
+        if not line:
+            return None
+        try:
+            return check_version_date(int(line))
+        except ValueError:
+            print("环境日期须为合法的 8 位日期（YYYYMMDD）")
 
 
 def available_shikigami(db: CardDatabase) -> list:
@@ -202,9 +222,9 @@ def _print_cards(cards: list, copies: Counter | None = None) -> None:
 
 
 def _deck_list_lines(decks: list[dict]) -> None:
-    """本地卡组槽位列表：满足天梯规则的卡组以亮蓝色标明。"""
+    """本地卡组槽位列表：满足天梯规则的卡组以亮蓝色标明；附构筑环境标记。"""
     for i, d in enumerate(decks):
-        print(colored(f"  [{i + 1}] {d['name']}",
+        print(colored(f"  [{i + 1}] {d['name']}（环境：{_env_label(d.get('env'))}）",
                       STANDARD_COLOR if d.get("standard") else None))
 
 
@@ -224,24 +244,65 @@ def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]]) 
 
 # ---------- 增量编辑循环 ----------
 
-def _edit_deck(db: CardDatabase, team: list[int],
-               picks: dict[int, list[int]]) -> tuple[list[int], list[int]] | None:
-    """在当前基础上编辑：序号 = 编辑该式神卡牌；h <序号> = 更换式神（清空其卡牌）；
-    Enter = 完成。完成时做 is_standard 检查：不满足标准规则时打印错误但仍返回
-    （保存为非标准卡组），不强制要求合法。"""
+def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
+               picks: dict[int, list[int]]) -> tuple[list[int], list[int], int | None]:
+    """在当前基础上编辑（db 为完整库，内部按 env 解析出环境库 edb 使用）：
+    序号 = 编辑该式神卡牌；h <序号> = 更换式神（清空其卡牌）；
+    e <日期> = 更改构筑环境（环境下不存在的式神强制更换、卡牌自动移除）；Enter = 完成。
+    完成时做 is_standard 检查：不满足标准规则时打印错误但仍返回
+    （保存为非标准卡组），不强制要求合法。返回 (式神 ids, 卡牌 ids, env)。"""
+    edb = db.at_date(env)
     while True:
-        _print_deck(db, team, picks)
-        line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；Enter = 完成 > ")
+        _print_deck(edb, team, picks)
+        line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；"
+                      "e <日期> = 更改环境；Enter = 完成 > ")
         if not line:
             ids = list(team)
             card_ids = [cid for sid in team for cid in picks.get(sid, [])]
-            errors = validate_deck(db, ids, card_ids)
+            errors = validate_deck(edb, ids, card_ids)
             if errors:
                 print("")
                 print("卡组不满足标准规则（仍保存，不标记为标准卡组）：")
                 print("\n".join(errors))
-            return ids, card_ids
+            return ids, card_ids, env
         parts = line.lower().split()
+        if parts[0] in ("e", "env") and len(parts) == 2:
+            try:
+                new_env = check_version_date(int(parts[1]))
+            except ValueError:
+                print("环境日期须为合法的 8 位日期（YYYYMMDD）")
+                continue
+            new_edb = db.at_date(new_env)
+            # 新环境下不存在的式神需强制更换：先收集全部更换项，取消则整体放弃
+            # （避免部分更换后回退环境留下不一致状态）
+            swaps: dict[int, object] = {}
+            for slot, sid in enumerate(team):
+                if sid in new_edb.shikigami:
+                    continue
+                print(f"{db.shikigami[sid].name} 在该环境下不可用，请更换式神")
+                result = _select_shikigami(
+                    new_edb, need=1,
+                    exclude=(set(team) | {d.id for d in swaps.values()}) - {sid})
+                if result is None:
+                    print("已取消，保留原环境")
+                    swaps = None
+                    break
+                swaps[slot] = result[0]
+            if swaps is None:
+                continue
+            for slot, new in swaps.items():
+                picks.pop(team[slot], None)  # 旧式神卡牌一并清空
+                team[slot] = new.id
+                picks[new.id] = _pick_cards_strict(new_edb, new.id)
+            env, edb = new_env, new_edb
+            print(f"构筑环境已切换为 {_env_label(env)}")
+            for sid in list(picks):  # 新环境下不存在的卡牌：自动移除
+                kept = [c for c in picks[sid] if c in edb.cards]
+                if len(kept) != len(picks[sid]):
+                    print(f"{edb.shikigami[sid].name} 的 "
+                          f"{len(picks[sid]) - len(kept)} 张牌在该环境下不可用，已移除")
+                    picks[sid] = kept
+            continue
         if parts[0] in ("h", "change") and len(parts) == 2:
             try:
                 slot = int(parts[1]) - 1
@@ -249,7 +310,7 @@ def _edit_deck(db: CardDatabase, team: list[int],
             except (ValueError, IndexError):
                 print("序号有误")
                 continue
-            result = _select_shikigami(db, need=1, exclude=set(team))
+            result = _select_shikigami(edb, need=1, exclude=set(team))
             if result is None:
                 print("已取消更换")
                 continue
@@ -257,14 +318,14 @@ def _edit_deck(db: CardDatabase, team: list[int],
             team[slot] = new.id
             picks.pop(old, None)      # 式神变更：清空其携带卡牌
             print(f"已更换为 {new.name}（需重新选牌）")
-            picks[new.id] = _pick_cards_strict(db, new.id)
+            picks[new.id] = _pick_cards_strict(edb, new.id)
             continue
         try:
             sid = team[int(parts[0]) - 1]
         except (ValueError, IndexError):
             print("输入有误")
             continue
-        picks[sid] = _pick_cards_strict(db, sid)
+        picks[sid] = _pick_cards_strict(edb, sid)
 
 
 # ---------- 新建卡组的严格输入 ----------
@@ -292,18 +353,21 @@ def _pick_cards_strict(db: CardDatabase, sid: int) -> list[int]:
         return [c.id for c in picked]
 
 
-def _interactive_build(db: CardDatabase) -> tuple[list[int], list[int]] | None:
+def _interactive_build(db: CardDatabase, env: int | None,
+                       ) -> tuple[list[int], list[int], int | None] | None:
     """新建卡组：二级目录选择 4 名式神（可全名直选）→ 各严格选 8 张牌 →
-    进入增量编辑循环（Enter 完成）。选择阶段取消返回 None。"""
-    chosen = _select_shikigami(db, need=4)
+    进入增量编辑循环（Enter 完成）。选择阶段取消返回 None。
+    式神/卡牌池按构筑环境 env 解析（None = 最新）。"""
+    edb = db.at_date(env)
+    chosen = _select_shikigami(edb, need=4)
     if chosen is None:
         print("已取消")
         return None
     team = [d.id for d in chosen]
     picks: dict[int, list[int]] = {}
     for d in chosen:
-        picks[d.id] = _pick_cards_strict(db, d.id)
-    return _edit_deck(db, team, picks)
+        picks[d.id] = _pick_cards_strict(edb, d.id)
+    return _edit_deck(db, env, team, picks)
 
 
 # ---------- 本地卡组槽位管理 ----------
@@ -367,19 +431,25 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
             try:
                 index = int(line) - 1
                 entry = decks[index]
+                env = entry.get("env")
+                edb = db.at_date(env)
                 ids, cards = deckstore.entry_deck(entry)
-                deckcode.deck_from_code(db, deckstore.entry_code(entry))  # 校验可用性
+                deckcode.deck_from_code(edb, deckstore.entry_code(entry))  # 校验可用性
             except (ValueError, IndexError):
                 print("序号有误或槽位卡组已失效，已取消")
                 continue
             team = ids
             for cid in cards:  # 按所属式神分组（协战牌挂在队在的所属名下）
-                c = db.cards[cid]
+                c = edb.cards[cid]
                 owner = c.shikigami if c.shikigami in team else c.shikigami2
                 picks.setdefault(owner, []).append(cid)
             print()
-            print(f"编辑卡组「{entry['name']}」（在当前基础上修改）")
+            print(f"编辑卡组「{entry['name']}」（在当前基础上修改；"
+                  f"环境：{_env_label(env)}）")
             print(f"卡组码：{deckstore.entry_code(entry)}")
+        else:
+            env = _ask_env()  # 新建卡组：先定构筑环境（Enter = 最新）
+            edb = db.at_date(env)
         print()
         print("标准规则：")
         for line in rules_summary():
@@ -391,20 +461,21 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
         code_line = _input("粘贴卡组码导入覆盖（Enter = 交互式构筑/编辑）> ")
         if code_line:
             try:
-                ids, card_ids = deckcode.deck_from_code(db, code_line)
+                ids, card_ids = deckcode.deck_from_code(edb, code_line)
             except ValueError as e:
                 print(f"卡组码无效（{e}），未保存")
                 continue
         else:
-            result = (_edit_deck(db, team, picks) if team is not None
-                      else _interactive_build(db))
+            result = (_edit_deck(db, env, team, picks) if team is not None
+                      else _interactive_build(db, env))
             if result is None:
                 continue
-            ids, card_ids = result
+            ids, card_ids, env = result
+            edb = db.at_date(env)
         if not name:
-            name = decks[index]["name"] if index is not None else _deck_summary(db, ids)
-        groups = deckcode.group_deck(db, ids, card_ids)
-        entry = {"name": name, "groups": groups}
+            name = decks[index]["name"] if index is not None else _deck_summary(edb, ids)
+        groups = deckcode.group_deck(edb, ids, card_ids)
+        entry = {"name": name, "groups": groups, "env": env}
         if index is None:
             decks.append(entry)
             slot = len(decks)
@@ -441,7 +512,8 @@ def choose_deck(db: CardDatabase, label: str,
     if not decks:
         print(f"[{label}] 本地卡组文件为空（请先在主菜单「卡组构筑」中创建卡组）")
         return None
-    if not any(deckstore.check_deck(db, e["groups"], rules) for e in decks):
+    if not any(deckstore.check_deck(db, e["groups"], rules, e.get("env"))
+               for e in decks):
         print(f"[{label}] 本地卡组均不满足当前对战模式的组卡规则"
               "（请先在主菜单「卡组构筑」中创建/调整卡组）")
         return None
@@ -457,7 +529,7 @@ def choose_deck(db: CardDatabase, label: str,
         except (ValueError, IndexError):
             print("序号有误，请重新选择")
             continue
-        if not deckstore.check_deck(db, entry["groups"], rules):
+        if not deckstore.check_deck(db, entry["groups"], rules, entry.get("env")):
             print(f"卡组「{entry['name']}」不满足当前对战模式的组卡规则，"
                   "请重新选择")
             continue

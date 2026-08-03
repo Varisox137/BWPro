@@ -67,6 +67,8 @@
 | 稀有度 | `rarity` | R/SR/SSR（良/优/极；抽卡/账号系统预留） | 🔧 |
 | 卡包 | `cardpack` | 式神所属版本资料包，即 id 的 vv 段（式神 1avvss / 卡牌 1avvvvcc） | ✅ |
 | 异画 | alt art（id 的 a 位） | 式神/卡牌/中立牌 id 的第 2 位（'0' = 默认卡面）；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留 | 🔧 |
+| 平衡性版本 | `version` / `versions` | version = 最新平衡性日期（8 位 YYYYMMDD，无平衡史时 = 发布日期）；可选 versions 块：`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用），`history` = 版本时间线（首条目 = 发布版本完整快照、date = 发布日期；后续 = 字段差量，不允许含身份字段）；解析规则见 db/versioning.py | ✅ |
+| 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间可指定（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新 | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
 | 同源 | `origin` | 原形/SP 共享 origin，不能同时出战 | ✅ |
 | 衍生卡 | `token` | 对局中生成，不可入卡组（序号从 51 开始递增） | ✅ |

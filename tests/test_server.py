@@ -747,3 +747,49 @@ def test_debug_room_rejected_by_default(server, db):
     e = a.recv_until("error")
     assert "debug" in e["reason"]
     a.ws.close()
+
+
+# ---------- 对局环境（平衡性版本日期）----------
+
+def test_room_env_date_restricts_decks(db):
+    """房间环境早于数据版本：入座卡组校验失败（错误带环境日期）；最新环境正常。"""
+    async def go():
+        room = mk_room(db, env_date=20200101)  # 测试数据 version=20260720
+        with pytest.raises(ValueError, match="环境"):
+            await room.join(0, "甲", FakeWS(), _deck_code(db))
+        assert room.conns[0] is None
+        room2 = mk_room(db, env_date=20991231)
+        await room2.join(0, "甲", FakeWS(), _deck_code(db))
+        assert room2.conns[0] is not None
+    run(go())
+
+
+def test_room_set_env(db):
+    """房主在双方均未准备时可更改环境（广播 lobby 携带 env_date）；
+    非房主/已准备/使已入座卡组失效均拒绝。"""
+    async def go():
+        room = mk_room(db)
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", ws1, _deck_code(db))
+        await room.on_seat_filled()
+        await room.set_env(1, 20991231)  # 非房主
+        assert any(m["type"] == "error" and "房主" in m["reason"]
+                   for m in ws1.messages)
+        assert room.env_date is None
+        await room.lobby_ready(0)
+        await room.set_env(0, 20991231)  # 已准备状态：须先取消准备
+        assert any(m["type"] == "error" and "取消准备" in m["reason"]
+                   for m in ws0.messages)
+        assert room.env_date is None
+        await room.lobby_ready(0)  # 取消准备回 IDLE
+        await room.set_env(0, 20200101)  # 使双方已入座卡组失效：拒绝并保持原环境
+        assert room.env_date is None
+        assert any(m["type"] == "error" and "不可用" in m["reason"]
+                   for m in ws0.messages)
+        await room.set_env(0, 20991231)  # 合法更改：广播 lobby 携带 env_date
+        assert room.env_date == 20991231
+        lobby = [m for m in ws1.messages if m["type"] == "lobby"][-1]
+        assert lobby["env_date"] == 20991231
+        room._cancel_lobby_timer()  # 收尾：防计时任务悬置
+    run(go())

@@ -1,9 +1,11 @@
 """联机协议：WebSocket JSON 消息信封。
 
-客户端 → 服务端：create / join / ready / leave / cmd / pong（create/join 需带 client
-标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA；ready 为准备/
-取消准备切换，leave 离开房间——开局前准备阶段：双方都位后不计时，任一方准备后对
-未准备方计 15s，双方准备后 3s 开始倒计时开局，期间可离开）
+客户端 → 服务端：create / join / ready / leave / env / cmd / pong（create/join 需带
+client 标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA；ready
+为准备/取消准备切换，leave 离开房间——开局前准备阶段：双方都位后不计时，任一方
+准备后对未准备方计 15s，双方准备后 3s 开始倒计时开局，期间可离开；env 为房主
+在双方均未准备时更改对局环境（平衡性版本日期，date 缺省 = 最新），create 可带
+env_date 指定初始环境）
 服务端 → 客户端：joined / lobby / starting / left / state / log / error / game_over /
 notice / ping
 
@@ -17,7 +19,7 @@ import json
 from typing import Any
 
 # 客户端消息类型
-CLIENT_TYPES = {"create", "join", "ready", "leave", "cmd", "pong"}
+CLIENT_TYPES = {"create", "join", "ready", "leave", "env", "cmd", "pong"}
 
 
 def parse_client_message(raw: str | bytes) -> dict[str, Any]:
@@ -42,7 +44,8 @@ def joined(room_id: str, token: str, seat: int, **extra) -> dict:
 def lobby(ready: list[str], deadline: float | None,
           env_date: int | None = None) -> dict:
     """双方都位、进入准备阶段：ready 为已准备玩家名列表（空 = 无人准备、不计时）；
-    deadline 为未准备方自动准备的 unix 时刻（15s，仅一方已准备时非空）。"""
+    deadline 为未准备方自动准备的 unix 时刻（15s，仅一方已准备时非空）；
+    env_date 为对局环境（平衡性版本日期；None = 最新数据，字段省略）。"""
     msg = {"type": "lobby", "ready": ready, "deadline": deadline}
     if env_date is not None:
         msg["env_date"] = env_date
@@ -64,10 +67,14 @@ def peer_left(name: str) -> dict:
     return {"type": "peer_left", "name": name}
 
 
-def start(player_index: int, opponent: str, you_first: bool) -> dict:
-    """两人就位、随机先手已确定：告知客户端自己的 players 下标。"""
-    return {"type": "start", "player_index": player_index,
-            "opponent": opponent, "you_first": you_first}
+def start(player_index: int, opponent: str, you_first: bool,
+          env_date: int | None = None) -> dict:
+    """两人就位、随机先手已确定：告知客户端自己的 players 下标与对局环境。"""
+    msg = {"type": "start", "player_index": player_index,
+           "opponent": opponent, "you_first": you_first}
+    if env_date is not None:
+        msg["env_date"] = env_date
+    return msg
 
 
 def state(payload: dict, log: list[str], timer: dict | None = None,

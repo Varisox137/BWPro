@@ -23,8 +23,10 @@ class RoomManager:
         self.rooms: dict[str, Room] = {}
         self._rng = random.Random()
 
-    def create(self, *, debug: bool = False, room_id: str | None = None) -> Room:
-        """创建房间：room_id 为空随机分配；指定时须满足 6 位字母数字且不冲突。"""
+    def create(self, *, debug: bool = False, room_id: str | None = None,
+               env_date: int | None = None) -> Room:
+        """创建房间：room_id 为空随机分配；指定时须满足 6 位字母数字且不冲突。
+        env_date 为对局环境（平衡性版本日期，None = 最新数据）。"""
         if len(self.rooms) >= self.max_rooms:
             raise ValueError("服务器房间数已达上限，请稍后再试")
         if room_id:
@@ -39,7 +41,8 @@ class RoomManager:
         room = Room(room_id, self.db, debug=debug,
                     turn_timeout=self.turn_timeout,
                     mulligan_timeout=self.mulligan_timeout,
-                    starting_timeout=self.starting_timeout)
+                    starting_timeout=self.starting_timeout,
+                    env_date=env_date)
         self.rooms[room_id] = room
         return room
 

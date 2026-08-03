@@ -8,7 +8,12 @@
      协战牌双式神从属，规则见 docs/rules.md 第十四/十五章。末两位的分配约定保持不变。
    - 中立牌（无从属式神，实质为系统/效果生成的衍生卡）：8 位数字 9avvvvvv
      （'9' + 1 位异画位 + 6 位数字，默认异画自 90999999 开始递减分配），无等级
-2. version：8 位数字日期（YYYYMMDD），标记最近一次平衡性调整。
+2. version：8 位数字日期（YYYYMMDD），标记最近一次平衡性调整（无平衡史时 = 发布日期）。
+   同名卡的平衡性多版本见 db/versioning.py：可选 versions 块 = {best, history}，
+   best 为维护者手动标记的"历史最强"版本日期（仅元数据）；history 为版本时间线
+   （首条目 = 发布版本完整快照、其 date = 发布日期；后续条目 = 相对前一版本的字段
+   差量，不允许含 id/name 等身份字段）。环境（at_date）解析：取不晚于环境日期的
+   最晚版本逐条合并，早于发布日期则该 id 不可用。
 3. 字段只增不改；未知字段原样保留（extra="allow"），旧工具读新数据不丢信息。
 4. card_type 为规则级主类型；"觉醒"不是主类型，而是通用 tag（tags 含 awaken 即可，
    任何主类型的牌都可以是觉醒牌）。tags 为自由字符串（规则级或式神专属标记）。
@@ -58,7 +63,8 @@ RARITIES = frozenset({"R", "SR", "SSR"})  # 良 / 优 / 极（抽卡/账号系�
 NEUTRAL_PREFIX = 9  # 中立牌 id 首位（9avvvvvv：9 + 1 位异画位 + 6 位数字）
 
 
-def _check_version(v: int) -> int:
+def check_version_date(v: int) -> int:
+    """8 位数字日期（YYYYMMDD）校验；db/versioning.py 的版本时间线校验同用。"""
     s = str(v)
     if len(s) != 8:
         raise ValueError("version 须为 8 位数字日期（YYYYMMDD）")
@@ -199,7 +205,7 @@ class CardDef(BaseModel):
     @field_validator("version")
     @classmethod
     def _v_version(cls, v: int) -> int:
-        return _check_version(v)
+        return check_version_date(v)
 
 
 class ShikigamiDef(BaseModel):
@@ -239,4 +245,4 @@ class ShikigamiDef(BaseModel):
     @field_validator("version")
     @classmethod
     def _v_version(cls, v: int) -> int:
-        return _check_version(v)
+        return check_version_date(v)
