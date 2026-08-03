@@ -19,6 +19,7 @@ import threading
 import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 
 from db.loader import CardDatabase
 from server import protocol
@@ -216,6 +217,14 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     room.disconnect(conn)
                     manager.sweep()
 
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE",
+                                            "PATCH", "HEAD", "OPTIONS"])
+    async def http_catch_all() -> PlainTextResponse:
+        # 非 WebSocket 的 HTTP 流量（浏览器/扫描器探针，含对 /ws 的普通 GET）：
+        # 一律 403 空体——不用框架默认 404，避免暴露应用结构与框架指纹
+        # （uvicorn 的 server 响应头在启动处一并关闭）
+        return PlainTextResponse("", status_code=403)
+
     return app
 
 
@@ -290,6 +299,7 @@ def main() -> None:
     config = uvicorn.Config(app, host=args.host, port=args.port,
                             ws_ping_interval=10, ws_ping_timeout=5,
                             ws_max_size=1024 * 1024,  # 单条消息最大 1MB
+                            server_header=False,  # 不下发 server: uvicorn 响应头
                             ssl_certfile=args.ssl_certfile,
                             ssl_keyfile=args.ssl_keyfile)
     server = uvicorn.Server(config)

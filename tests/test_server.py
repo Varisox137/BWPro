@@ -566,7 +566,8 @@ def server():
     import uvicorn
     db = F.base_db()
     app = create_app(RoomManager(db))
-    config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="error")
+    config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="error",
+                            server_header=False)  # 与生产启动参数一致（不暴露指纹）
     srv = uvicorn.Server(config)
     t = threading.Thread(target=lambda: asyncio.run(srv.serve()), daemon=True)
     t.start()
@@ -655,6 +656,20 @@ def test_full_match_flow(server, db):
     assert st2["turn"] == st["turn"]
     a2.ws.close()
     b.ws.close()
+
+
+def test_http_probe_gets_403_no_server_header(server):
+    """非 WS 的 HTTP 探针（无 UA 可直达服务端的场景）：任意路径一律 403 空体，
+    不用框架默认 404；且不下发 server 响应头（不暴露 uvicorn 指纹）。"""
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=5)
+    for path in ("/", "/ws", "/admin"):
+        conn.request("GET", path)
+        r = conn.getresponse()
+        assert r.status == 403
+        assert r.read() == b""
+        assert r.getheader("server") is None
+    conn.close()
 
 
 def test_client_id_soft_gate(server, db):
