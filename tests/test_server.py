@@ -110,7 +110,8 @@ def mk_room(db, **kw) -> Room:
 
 
 async def _started_room(db, **kw):
-    """两名玩家就位、完成准备确认并已开局的 (room, ws0, ws1)。"""
+    """两名玩家就位、双方准备并经开始倒计时后开局的 (room, ws0, ws1)。"""
+    kw.setdefault("starting_timeout", 0.01)
     room = mk_room(db, **kw)
     ws0, ws1 = FakeWS(), FakeWS()
     await room.join(0, "甲", ws0, _deck_code(db))
@@ -118,6 +119,8 @@ async def _started_room(db, **kw):
     await room.on_seat_filled()
     await room.lobby_ready(0)
     await room.lobby_ready(1)
+    await asyncio.sleep(0.05)  # 开始倒计时（测试 0.01s）结束后开局
+    assert room.game is not None
     return room, ws0, ws1
 
 
@@ -165,43 +168,83 @@ def test_custom_room_id(db):
 
 
 def test_lobby_manual_ready_and_leave(db):
-    """准备阶段（双方都位后不直接开局）：一方准备不开始，双方准备立即开局；
+    """准备阶段状态机：双方都位后不计时（IDLE）；一方准备对另一方计 15s
+    （COUNTDOWN）；双方准备进入 3s 开始倒计时（STARTING）后开局；
     开局后不允许 lobby 离开（断线走重连通道）。"""
     async def go():
-        room = mk_room(db)
+        room = mk_room(db, starting_timeout=0.01)
         ws0, ws1 = FakeWS(), FakeWS()
         await room.join(0, "甲", ws0, _deck_code(db))
         await room.join(1, "乙", ws1, _deck_code(db))
         assert room.game is None
         await room.on_seat_filled()
         lobby = [m for m in ws0.messages if m["type"] == "lobby"][-1]
-        assert lobby["deadline"] > time.time()  # 附带自动开始截止时刻
+        assert lobby["ready"] == [] and lobby["deadline"] is None  # IDLE：不计时
+        assert room._lobby_timer is None
         await room.lobby_ready(0)
         assert room.game is None  # 仅一方准备不开局
+        lobby = [m for m in ws1.messages if m["type"] == "lobby"][-1]
+        assert lobby["ready"] == ["甲"]
+        assert lobby["deadline"] > time.time()  # 对未准备方（乙）计自动准备
         await room.lobby_ready(1)
+        assert room.game is None and "starting" in ws0.types()  # 开始倒计时，尚未开局
+        await asyncio.sleep(0.05)
         assert room.game is not None
         assert not await room.lobby_leave(0)  # 已开局：不可从 lobby 离开
     run(go())
 
 
-def test_lobby_auto_ready(db):
-    """准备计时（15s，测试 0.05s）到期未手动准备则自动开局。"""
+def test_lobby_unready_cancels_countdown(db):
+    """取消准备：COUNTDOWN 中已准备方取消 → 回 IDLE（计时取消、名单清空）；
+    STARTING 中不可取消。"""
     async def go():
-        room = mk_room(db, ready_timeout=0.05)
+        room = mk_room(db, starting_timeout=0.01)
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", ws1, _deck_code(db))
+        await room.on_seat_filled()
+        await room.lobby_ready(0)
+        assert room._lobby_phase == "countdown"
+        await room.lobby_ready(0)  # 取消准备
+        assert room._lobby_phase == "idle" and not room.ready_seats
+        assert room._lobby_timer is None
+        lobby = [m for m in ws1.messages if m["type"] == "lobby"][-1]
+        assert lobby["ready"] == [] and lobby["deadline"] is None
+        await room.lobby_ready(0)
+        await room.lobby_ready(1)  # 进入 STARTING
+        assert room._lobby_phase == "starting"
+        await room.lobby_ready(0)  # 开始倒计时中不可取消
+        assert room._lobby_phase == "starting" and room.ready_seats == {0, 1}
+        assert any(m["type"] == "error" for m in ws0.messages)
+        await asyncio.sleep(0.05)
+        assert room.game is not None
+    run(go())
+
+
+def test_lobby_auto_ready(db):
+    """无人准备不计时；一方准备后另一方超时（15s，测试 0.05s）自动准备，
+    进入开始倒计时后开局（不直接开局）。"""
+    async def go():
+        room = mk_room(db, ready_timeout=0.05, starting_timeout=0.01)
         ws0, _ = FakeWS(), FakeWS()
         await room.join(0, "甲", ws0, _deck_code(db))
         await room.join(1, "乙", FakeWS(), _deck_code(db))
         await room.on_seat_filled()
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(0.1)
+        assert room.game is None and not room.ready_seats  # 无人准备：不计时不开局
+        await room.lobby_ready(0)
+        await asyncio.sleep(0.15)  # 乙超时自动准备 → 开始倒计时 → 开局
+        assert room.ready_seats == {0, 1}
         assert room.game is not None
         assert "start" in ws0.types()
     run(go())
 
 
 def test_lobby_leave_frees_seat(db):
-    """准备阶段离开/断线：座位释放、对手收到 peer_left，新玩家可再入座。"""
+    """准备阶段离开/断线（含开始倒计时中）：座位释放、对手收到 peer_left、
+    不开局，新玩家可再入座。"""
     async def go():
-        room = mk_room(db)
+        room = mk_room(db, starting_timeout=0.01)
         ws0, ws1 = FakeWS(), FakeWS()
         await room.join(0, "甲", ws0, _deck_code(db))
         await room.join(1, "乙", ws1, _deck_code(db))
@@ -212,7 +255,14 @@ def test_lobby_leave_frees_seat(db):
                    for m in ws0.messages)
         await room.join(1, "丙", FakeWS(), _deck_code(db))  # 座位可再入座
         await room.on_seat_filled()
-        room._cancel_lobby_timer()  # 收尾：防 15s 计时任务悬置
+        # 开始倒计时中离开：终止倒计时、不开局
+        await room.lobby_ready(0)
+        await room.lobby_ready(1)
+        assert room._lobby_phase == "starting"
+        assert await room.lobby_leave(1)
+        assert room._lobby_phase == "idle" and room._lobby_timer is None
+        await asyncio.sleep(0.05)
+        assert room.game is None
     run(go())
 
 
@@ -565,7 +615,7 @@ class WsClient:
 def server():
     import uvicorn
     db = F.base_db()
-    app = create_app(RoomManager(db))
+    app = create_app(RoomManager(db, starting_timeout=0.05))
     config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="error",
                             server_header=False)  # 与生产启动参数一致（不暴露指纹）
     srv = uvicorn.Server(config)
@@ -594,9 +644,9 @@ def test_full_match_flow(server, db):
     jb = b.recv_until("joined")
     assert jb["type"] == "joined"
 
-    # 准备阶段：双方收到 lobby（含自动开始截止时刻）后手动确认准备
+    # 准备阶段：双方收到 lobby（无人准备、不计时）后手动确认准备
     la = a.recv_until("lobby")
-    assert la["deadline"] > time.time()
+    assert la["ready"] == [] and la["deadline"] is None
     b.recv_until("lobby")
     a.send({"type": "ready"})
     b.send({"type": "ready"})

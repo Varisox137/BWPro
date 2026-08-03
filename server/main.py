@@ -173,6 +173,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                             debug=room.debug))
                         if room.game is not None:
                             await room.resync(conn)  # 全量补发（不动广播游标）
+                        elif room.full:
+                            # 准备阶段重连：补发当前 lobby 状态（准备名单/倒计时）
+                            await conn.send(room.lobby_msg())
                         continue
                     try:
                         conn = await room.join(1, name, ws, deck_code)

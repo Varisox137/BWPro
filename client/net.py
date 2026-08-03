@@ -38,8 +38,10 @@ class NetClient:
         self.token: str | None = None
         self.me: int | None = None  # 自己在 state.players 中的下标
         self.room_debug = False
-        self.in_lobby = False            # 准备阶段（双方都位、等待准备确认/自动开始）
-        self.lobby_deadline: float | None = None  # 自动准备的 unix 截止时刻
+        self.in_lobby = False            # 准备阶段（双方都位、等待准备/开始倒计时）
+        self.lobby_ready: list[str] = []  # 已准备玩家名列表（lobby 消息维护）
+        self.lobby_deadline: float | None = None  # 自动准备 unix 截止（None = 无人准备不计时）
+        self.starting_deadline: float | None = None  # 对局开始 3s 倒计时的 unix 截止
         self.payload: dict | None = None  # 最近一次 state 的 payload
         self.timer: dict | None = None    # 最近一次 state 附带的计时器（kind/deadline）
         self._seq = 0  # 服务端回推计数（state/error 各 +1）：发指令后等待回推用
@@ -81,17 +83,36 @@ class NetClient:
             print(f"已加入房间 {self.room_id}（重连令牌：{self.token}）"
                   f"{'【debug 对局】' if self.room_debug else ''}，等待对手……")
         elif t == "lobby":
-            # 双方都位进入准备阶段：r 准备 / q 离开；deadline 到期自动开始
+            # 准备阶段状态更新：ready 为已准备名单（空 = 无人准备、不计时）；
+            # deadline 非空 = 一方已准备，未准备方超时将自动准备
             self.in_lobby = True
+            self.lobby_ready = list(msg.get("ready") or [])
             self.lobby_deadline = msg.get("deadline")
-            print("\n双方已就位，进入准备阶段：r 准备，q 离开房间"
-                  f"（{round(max(0.0, (self.lobby_deadline or 0) - time.time()))}s 后自动开始）")
+            self.starting_deadline = None
+            if self.name in self.lobby_ready:
+                hint = "你已准备，等待对手"
+            elif self.lobby_deadline:
+                left_s = round(max(0.0, self.lobby_deadline - time.time()))
+                hint = f"对手已准备：r 准备（{left_s}s 后自动准备），q 离开房间"
+            else:
+                hint = "r 准备，q 离开房间"
+            print(f"\n双方已就位，进入准备阶段：{hint}")
             tui.start_ticker(1.0)  # 状态栏准备倒计时
             tui.cancel_prompt()    # 输入上下文切换：作废陈旧提示符
             tui.invalidate()
+        elif t == "starting":
+            # 双方均已准备：3s 开始倒计时（期间仍可 q 离开）
+            self.starting_deadline = msg.get("deadline")
+            self.lobby_deadline = None
+            left_s = round(max(0.0, (self.starting_deadline or 0) - time.time()))
+            print(f"双方已准备，对局将在 {left_s}s 后开始")
+            tui.cancel_prompt()
+            tui.invalidate()
         elif t == "peer_left":
             self.in_lobby = False
+            self.lobby_ready = []
             self.lobby_deadline = None
+            self.starting_deadline = None
             print(f"** {msg.get('name')} 已离开房间，等待新对手加入")
             tui.cancel_prompt()
             tui.invalidate()
@@ -101,7 +122,9 @@ class NetClient:
             tui.cancel_prompt()
         elif t == "start":
             self.in_lobby = False
+            self.lobby_ready = []
             self.lobby_deadline = None
+            self.starting_deadline = None
             self._ctx_seen = None
             tui.cancel_prompt()  # 准备阶段提示符 → 调度阶段提示符
             self.me = msg["player_index"]
@@ -223,7 +246,8 @@ class NetClient:
                     continue
                 prompt = f"[{self.name}]"
                 if self.in_lobby:
-                    prompt = f"[{self.name} 准备阶段]"
+                    state = "已准备" if self.name in self.lobby_ready else "准备阶段"
+                    prompt = f"[{self.name} {state}]"
                 elif game is not None:
                     st = game.state
                     if st.phase == "mulligan":
@@ -251,13 +275,15 @@ class NetClient:
         cmd, args = parts[0].lower(), parts[1:]
         cmd = cli.COMMAND_ALIASES.get(cmd, cmd)
         if self.in_lobby:
-            # 准备阶段：r 准备 / q 离开（服务端确认 left 后断连，由 recv 循环收尾）
+            # 准备阶段：r 准备/取消准备（服务端切换语义）、q 离开（left 应答后断连）
             if cmd in ("ready", "r"):
                 self.send({"type": "ready"})
             elif cmd in ("leave", "q", "quit", "exit"):
                 self.send({"type": "leave"})
             else:
-                print("准备阶段：r 准备，q 离开房间")
+                hint = ("已准备（r 取消准备）" if self.name in self.lobby_ready
+                        else "r 准备")
+                print(f"准备阶段：{hint}，q 离开房间")
             return
         if cmd in ("quit", "exit"):
             self.ended_normally = True
@@ -370,9 +396,16 @@ def _net_status(client: NetClient) -> tuple[str, ...]:
     未开局时为两段（房间提示）；准备阶段中段显示自动开始倒计时。"""
     game = client.wrapper()
     if client.in_lobby:
-        left = f"房间 {client.room_id}，双方已就位"
-        mid = ("准备中 " + _fmt_timer({"deadline": client.lobby_deadline}, time.time())
-               if client.lobby_deadline else "准备中")
+        ready = "、".join(client.lobby_ready) or "无"
+        left = f"房间 {client.room_id}（已准备 {len(client.lobby_ready)}/2：{ready}）"
+        if client.starting_deadline:
+            mid = "即将开始 " + _fmt_timer(
+                {"deadline": client.starting_deadline}, time.time())
+        elif client.lobby_deadline:
+            mid = ("等待准备 " if client.name in client.lobby_ready else "请准备 ")
+            mid += _fmt_timer({"deadline": client.lobby_deadline}, time.time())
+        else:
+            mid = "等待准备"
         return left, mid
     if game is None or client.me is None:
         left = f"房间 {client.room_id}，等待对手……" if client.room_id else "联机"

@@ -99,19 +99,23 @@ class Connection:
 class Room:
     def __init__(self, room_id: str, db, *, debug: bool = False,
                  turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
-                 ready_timeout: float = 15.0,
+                 ready_timeout: float = 15.0, starting_timeout: float = 3.0,
                  rng: random.Random | None = None) -> None:
         self.id = room_id
         self.db = db
         self.debug = debug
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
-        self.ready_timeout = ready_timeout  # 准备阶段自动准备时长（双方都位起计）
+        self.ready_timeout = ready_timeout  # 一方准备后，另一方自动准备的时长
+        self.starting_timeout = starting_timeout  # 双方准备后到正式开局的倒计时
         self.rng = rng or random.Random()
         self.conns: list[Connection | None] = [None, None]
         self.ready_seats: set[int] = set()  # 准备阶段已确认准备的座位
         self._lobby_timer: asyncio.Task | None = None
         self._lobby_deadline: float | None = None
+        # lobby 阶段状态机：idle（无人准备、不计时）→ countdown（一方准备，
+        # 对未准备方计 ready_timeout 秒）→ starting（双方准备，starting_timeout 秒后开局）
+        self._lobby_phase = "idle"
         self.game: Game | None = None
         self.seat_to_player = [0, 1]
         self._timer: asyncio.Task | None = None
@@ -175,48 +179,90 @@ class Room:
     def _log(self, msg: str) -> None:
         print(f"[房间 {self.id}] {msg}", flush=True)
 
+    def lobby_msg(self) -> dict:
+        """当前 lobby 状态消息（广播与重连补发共用）：IDLE/STARTING 不带 deadline。"""
+        ready = [self.conns[s].name for s in sorted(self.ready_seats) if self.conns[s]]
+        deadline = self._lobby_deadline if self._lobby_phase == "countdown" else None
+        return protocol.lobby(ready, deadline)
+
     async def on_seat_filled(self) -> None:
-        """双方都位后进入准备阶段（不直接开局）：广播 lobby（含自动准备截止时刻）
-        并启动自动准备计时；双方 ready 或计时到期才真正开局。"""
+        """双方都位后进入准备阶段（不计时）：广播 lobby 状态，等待玩家准备。"""
         if self.game is not None or not self.full:
             return
-        self._lobby_deadline = time.time() + self.ready_timeout
-        self._lobby_timer = asyncio.ensure_future(self._run_lobby_timer())
-        await self._broadcast(protocol.lobby(self._lobby_deadline))
-        self._log(f"双方都位（{self.conns[0].name} / {self.conns[1].name}），"
-                  f"进入准备阶段（{self.ready_timeout:.0f}s 自动开始）")
+        await self._broadcast(self.lobby_msg())
+        self._log(f"双方都位（{self.conns[0].name} / {self.conns[1].name}），等待准备")
 
-    async def _run_lobby_timer(self) -> None:
+    async def _run_lobby_timer(self, phase: str, seconds: float) -> None:
         try:
-            await asyncio.sleep(self.ready_timeout)
+            await asyncio.sleep(seconds)
         except asyncio.CancelledError:
             return
-        if self.game is not None or not self.full:
+        if self.game is not None or not self.full or self._lobby_phase != phase:
             return
-        await self._broadcast(protocol.notice("准备计时结束，自动开始对局"))
-        self._log("准备计时结束，自动开始")
-        await self.start_game()
+        if phase == "countdown":
+            # 未准备方超时 → 自动准备 → 进入开始倒计时（不直接开局）
+            for seat in (0, 1):
+                if seat not in self.ready_seats:
+                    self.ready_seats.add(seat)
+                    name = self.conns[seat].name
+                    self._log(f"{name} 准备超时，自动准备")
+                    await self._broadcast(protocol.notice(f"{name} 准备超时，自动准备"))
+            await self._enter_starting()
+        else:  # starting 倒计时结束，正式开局
+            await self.start_game()
+
+    def _start_lobby_timer(self, phase: str, seconds: float) -> None:
+        self._cancel_lobby_timer()
+        self._lobby_phase = phase
+        self._lobby_deadline = time.time() + seconds
+        self._lobby_timer = asyncio.ensure_future(self._run_lobby_timer(phase, seconds))
 
     def _cancel_lobby_timer(self) -> None:
         if self._lobby_timer is not None:
             self._lobby_timer.cancel()
             self._lobby_timer = None
         self._lobby_deadline = None
+        self._lobby_phase = "idle"
+
+    async def _enter_starting(self) -> None:
+        """双方均已准备：进入开始倒计时（starting_timeout 秒后开局）。"""
+        self._start_lobby_timer("starting", self.starting_timeout)
+        self._log(f"双方已准备，{self.starting_timeout:.0f}s 后开局")
+        await self._broadcast(protocol.starting(self._lobby_deadline))
 
     async def lobby_ready(self, seat: int) -> None:
-        """准备阶段确认准备；双方均准备后立即开局。"""
-        if self.game is not None or not self.full or seat in self.ready_seats:
+        """准备/取消准备切换：
+        - 未准备 → 准备：另一方也未准备则对其启动自动准备计时；双方均准备则进入开始倒计时。
+        - 已准备 → 取消准备：回到双方未准备的无计时状态（开始倒计时中不可取消）。"""
+        if self.game is not None or not self.full:
+            return
+        name = self.conns[seat].name
+        if seat in self.ready_seats:
+            if self._lobby_phase == "starting":
+                await self.conns[seat].send(protocol.error("对局即将开始，不能取消准备"))
+                return
+            self.ready_seats.discard(seat)
+            self._cancel_lobby_timer()
+            self._log(f"{name} 取消准备")
+            await self._broadcast(protocol.notice(f"{name} 取消准备"))
+            await self._broadcast(self.lobby_msg())
             return
         self.ready_seats.add(seat)
-        name = self.conns[seat].name
         self._log(f"{name} 已准备（{len(self.ready_seats)}/2）")
         await self._broadcast(protocol.notice(
             f"{name} 已准备（{len(self.ready_seats)}/2）"))
         if len(self.ready_seats) == 2:
-            await self.start_game()
+            await self._enter_starting()
+        else:
+            other = self.conns[1 - seat].name
+            self._start_lobby_timer("countdown", self.ready_timeout)
+            await self._broadcast(protocol.notice(
+                f"{other} 请在 {self.ready_timeout:.0f}s 内准备，超时将自动准备"))
+            await self._broadcast(self.lobby_msg())
 
     async def lobby_leave(self, seat: int) -> bool:
-        """准备阶段主动离开或断线：清出座位并通知对手，房间回到等人状态。
+        """准备阶段主动离开或断线（任意 lobby 阶段均可，含开始倒计时）：
+        清出座位并通知对手，房间回到等人状态。
         对局已开始则不允许（断线走断线重连通道）。"""
         if self.game is not None:
             return False

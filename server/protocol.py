@@ -1,9 +1,11 @@
 """联机协议：WebSocket JSON 消息信封。
 
 客户端 → 服务端：create / join / ready / leave / cmd / pong（create/join 需带 client
-标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA；ready/leave
-为开局前准备阶段指令——双方都位后需准备确认（或 15s 自动准备）才开局，期间可离开）
-服务端 → 客户端：joined / lobby / left / state / log / error / game_over / notice / ping
+标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main.CLIENT_UA；ready 为准备/
+取消准备切换，leave 离开房间——开局前准备阶段：双方都位后不计时，任一方准备后对
+未准备方计 15s，双方准备后 3s 开始倒计时开局，期间可离开）
+服务端 → 客户端：joined / lobby / starting / left / state / log / error / game_over /
+notice / ping
 
 所有消息均为 JSON object，必带 "type" 字段。游戏指令复用 core.engine.Game.apply
 的 cmd dict 协议（{"op": ...}），原样嵌在 {"type": "cmd", "cmd": {...}} 中。
@@ -37,9 +39,19 @@ def joined(room_id: str, token: str, seat: int, **extra) -> dict:
     return {"type": "joined", "room_id": room_id, "token": token, "seat": seat, **extra}
 
 
-def lobby(deadline: float) -> dict:
-    """双方都位、进入准备阶段：deadline 为自动准备的 unix 时刻（15s）。"""
-    return {"type": "lobby", "deadline": deadline}
+def lobby(ready: list[str], deadline: float | None,
+          env_date: int | None = None) -> dict:
+    """双方都位、进入准备阶段：ready 为已准备玩家名列表（空 = 无人准备、不计时）；
+    deadline 为未准备方自动准备的 unix 时刻（15s，仅一方已准备时非空）。"""
+    msg = {"type": "lobby", "ready": ready, "deadline": deadline}
+    if env_date is not None:
+        msg["env_date"] = env_date
+    return msg
+
+
+def starting(deadline: float) -> dict:
+    """双方均已准备：deadline 为对局正式开始的 unix 时刻（3s 倒计时）。"""
+    return {"type": "starting", "deadline": deadline}
 
 
 def left() -> dict:
