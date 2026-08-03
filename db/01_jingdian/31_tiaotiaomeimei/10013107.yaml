@@ -1,0 +1,18 @@
+id: 10013107
+name: 不玩了啦！
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 3
+      playable_when_defeated: true  # 气绝时可用
+      effects:
+        # 先结算卡面效果（复活跳跳妹妹），结算完未气绝则引擎补齐战力/护甲并正常
+        # 发起战斗；仍未气绝则牌入墓地、不发起战斗（定案(14)，引擎已守卫）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          - {op: revive, target: {kind: self}}
+      text: "气绝时可用。复活跳跳妹妹。"

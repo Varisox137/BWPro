@@ -1,0 +1,12 @@
+id: 10013199
+name: 番茄
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      kind: summon
+      faction: 红莲
+      power: 3
+      health: 4
+      keep_buffs: true  # 同名再召继承上次离场时的永久增减益（rules.md 召唤物节）
+      text: ""

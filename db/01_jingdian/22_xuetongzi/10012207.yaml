@@ -1,0 +1,25 @@
+id: 10012207
+name: 雪融之时
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SSR
+      level: 3
+      form_power: 5
+      form_health: 7
+      effects:
+        # [增强]：{本局游戏每有一个敌方角色被[眩晕]此牌便获得+1力量}——引擎按眩晕
+        # 施加记账 PlayerState.ext["enemy_stunned_game"]（受害者对方，不分眩晕来源，
+        # 进场前的眩晕亦计入），形态光环读取时求值、随形态离场移除
+        steps:
+          - {op: stat_aura, kind: ext_power, ext: enemy_stunned_game, power: 1,
+             target: {kind: self}}
+      abilities:
+        # 每次至多只会受到3点伤害（单次伤害事件面板值封顶 3，护甲吸收照常在后结算）
+        - when: on_damage_start
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: cap_damage, to: 3}
+      text: "每次至多只会受到3点伤害。[增强]：{本局游戏每有一个敌方角色被[眩晕]此牌便获得+1力量。}"

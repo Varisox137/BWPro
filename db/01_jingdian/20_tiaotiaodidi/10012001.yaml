@@ -1,0 +1,23 @@
+id: 10012001
+name: 腐坏直拳
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        # 战斗牌身材 -2 护甲 = 2 破甲（提取为负数一次性护甲，结算经 _change_shield
+        # 转破甲并保留）
+        steps:
+          - {op: gain_shield, amount: -2, target: {kind: self}}
+      temp_grants:
+        # 确定攻击目标后（on_before_assault）将自己的破甲转移给被攻击的式神——
+        # 本牌给的 2 破甲此时已挂上，一并转移（定案(3)）；victim_kind 限定式神
+        # （攻击牌手不转移——"被攻击的式神"）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self, victim_kind: shikigami}
+          steps:
+            - {op: transfer_fragile, target: {kind: context, key: victim}}
+      text: "将自己的破甲转移到被攻击的式神上。"

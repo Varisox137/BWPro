@@ -52,6 +52,8 @@ KEYWORDS = frozenset({
     #                             抵消后失去；灵咒半侧随灵咒机制引入）
     "damage_to_fragile",        # 引擎级伪关键字：对无破甲角色造成的伤害转化为等量破甲
     #                             （清姬基础/觉醒共用通道，永久类别死亡不清；卡面不出现）
+    "extra_orb_cost",           # 引擎级伪关键字：该式神出击/使用其战斗牌需额外消耗 1 点鬼火
+    #                             （跳跳妹妹基础能力通道，[迅捷]/[瞬发]/不消耗鬼火时全免；卡面不出现）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
@@ -224,6 +226,8 @@ class ShikigamiDef(BaseModel):
     keywords: list[str] = Field(default_factory=list)  # 先天关键字（如贯通）：
     # 入场即具有，按永久类别入列（气绝不清除、复活自动重新获得；core/setup.py 初始化）
     keep_buffs: bool = False  # 仅召唤物：离场后同名再召是否保留永久增减益
+    no_attack: bool = False  # 仅召唤物/衍生物类：不能发动攻击（冰墙；出击校验与
+    # 效果发起的额外攻击 launch_attack 同拦截）
     wip: bool = False  # 半成品式神（仅基础数据/卡牌未齐）：不进构筑可选池与测试卡组
     ability: EffectBlock | None = None  # 被动；when 为事件名（不可用 on_play）
     abilities: list[EffectBlock] = Field(default_factory=list)  # 多能力块（含倒计时能力块）；

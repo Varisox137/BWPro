@@ -1,0 +1,15 @@
+id: 10012102
+name: 吹雪
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: enemy_character}
+      effects:
+        steps:
+          - {op: damage, amount: 3}
+          - {op: generate, card_id: 10012151}
+      text: "造成3点伤害，将一张‘雪球’置入手牌。"

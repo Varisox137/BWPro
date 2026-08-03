@@ -1,0 +1,17 @@
+id: 10013102
+name: 去咬他！
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        # 召唤"番茄"并使其攻击（姑获鸟协战 10010651 summon+launch_attack 先例：
+        # 按数据 id 定位刚召唤进战斗区的番茄发起一次普通攻击；重复召唤旧番茄
+        # 离场为引擎默认行为，数据层不处理）
+        steps:
+          - {op: summon, shikigami: 10013199}
+          - {op: launch_attack, shikigami: 10013199}
+      text: "召唤‘番茄’并使其攻击。"

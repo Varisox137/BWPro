@@ -1,0 +1,22 @@
+id: 10012108
+name: 流霰
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 3
+      target: {kind: choose, pool: enemy_character}
+      effects:
+        # 对目标凭空自动使用一张'雪球'，本局每从手牌使用过一张'雪球'额外重复一次
+        # （定案(8)：auto_use 凭空生成不耗手牌/鬼火、继承本牌选择目标；凭空使用不经
+        # 手牌记账；目标可为敌方牌手）
+        steps:
+          - op: repeat
+            count: {ext: snowball_used_game, base: 1}
+            target: {kind: self}
+            steps:
+              - {op: auto_use, card_id: 10012151, inherit_target: true,
+                 target: {kind: self}}
+      text: "对一个敌方角色使用一张‘雪球’，本局游戏你每从手牌使用过一张‘雪球’额外重复一次。"

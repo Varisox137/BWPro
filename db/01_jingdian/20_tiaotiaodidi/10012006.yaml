@@ -1,0 +1,19 @@
+id: 10012006
+name: 甜蜜的负担
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 2
+      keywords: [fast, trigger]
+      effects:
+        # 响应"当你被敌方攻击时"（守护 10011506 先例；此处 victim=牌手）。
+        # 响应插入使用把跳跳弟弟移入防守方战斗区 = "将攻击目标改为跳跳弟弟"
+        #（引擎对无目标战斗在（被）攻击时结算后重读被攻击者）
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: player, attacker_side: enemy}
+        steps:
+          - {op: buff_power, amount: 3, target: {kind: self}}
+      text: "[瞬发]。[响应]：{当你被敌方攻击时，自动使用并将攻击目标改为跳跳弟弟。}"

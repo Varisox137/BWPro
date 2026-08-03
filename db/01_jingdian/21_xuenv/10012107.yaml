@@ -1,0 +1,32 @@
+id: 10012107
+name: 觉醒·雪女
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # +2/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
+      rarity: SSR
+      level: 3
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        # 对一个敌方式神造成3点伤害
+        steps:
+          - {op: damage, amount: 3}
+      abilities:
+        # [眩晕]受到雪女伤害的式神——任意伤害类别（战斗/法术/能力，定案(7)），
+        # on_damage 以来源匹配、不分 kind（test_on_damage_source_condition_any_kind 同型）
+        - when: on_damage
+          condition: {source_shikigami: self}
+          steps:
+            - {op: stun, target: {kind: context, key: victim}}
+        # 原基础能力（替换非叠加，故全量重写）：每回合一次，你眩晕敌方式神时得'雪球'
+        - when: on_stun
+          condition: {victim_side: enemy, victim_kind: shikigami, source_side: friendly,
+                      turn_mark_not: snowball}
+          steps:
+            - {op: turn_mark, key: snowball}
+            - {op: generate, card_id: 10012151}
+      text: "对一个敌方式神造成3点伤害。[觉醒]：{[眩晕]受到雪女伤害的式神。每回合一次，当你[眩晕]敌方式神时，将一张‘雪球’置入手牌。}"

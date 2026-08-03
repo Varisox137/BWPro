@@ -94,6 +94,8 @@ class ShikigamiState(BaseModel):
     attack_buffs: list[dict[str, Any]] = Field(default_factory=list)  # 攻击后到期强化挂账：{"power": int, "keywords": [(kw, cls)]}；自身作为攻击者的战斗终止点核销（keep_attack_buffs 跳过）；气绝清空
     awakened: int | None = None  # 已觉醒：觉醒牌数据 id（能力替换为觉醒能力；气绝/复活保留）
     keep_shield: bool = False  # 护甲不在己方回合开始阶段移除（觉醒·兵俑）
+    keep_fragile: bool = False  # 破甲不在己方回合开始阶段移除（肿胀体质；形态离场经
+    # _destroy_form 一并解除——"形态在场时"语义）
     countdown: int | None = None  # 当前倒计时（至多 1 个倒计时能力；己方回合开始 -1，归零先结算后重置/移除；
     # 注册/替换时机：能力进场、觉醒替换、形态结附、set_countdown；形态离场仅清除形态授予的，气绝清除）
     countdown_initial: int | None = None  # 倒计时初始值（循环型归零后重置为该值）

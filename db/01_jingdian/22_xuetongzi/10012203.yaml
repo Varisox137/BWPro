@@ -1,0 +1,19 @@
+id: 10012203
+name: 雪走
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 2
+      keywords: [trigger]
+      effects:
+        # 响应"当雪童子被攻击时"（见切 10012302 先例）。"眩晕战斗区的敌方式神"
+        # 按池结算：主动攻击时 = 防守者、响应时 = 攻击者（均在敌方战斗区）
+        when: on_before_assault
+        condition: {victim_shikigami: 100122}
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: stun, target: {kind: all, pool: enemy_combat}}
+      text: "[眩晕]战斗区的敌方式神。[响应]：{当雪童子被攻击时，自动使用。}"

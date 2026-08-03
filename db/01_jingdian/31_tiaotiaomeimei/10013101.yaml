@@ -1,0 +1,14 @@
+id: 10013101
+name: 坏人走开
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      keywords: [piercing]
+      effects:
+        steps:
+          - {op: buff_power, amount: 3, target: {kind: self}}
+      text: "[贯通]"

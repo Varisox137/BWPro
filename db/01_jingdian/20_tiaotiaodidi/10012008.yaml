@@ -1,0 +1,16 @@
+id: 10012008
+name: 僵硬扑击
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 3
+      keywords: [fast, pierce]
+      effects:
+        # 获得等同于自己破甲的力量（{fragile_of: self} 读来源式神当前破甲量，
+        # 战斗牌战力提取与结算两读取点同源；无破甲为 0）
+        steps:
+          - {op: buff_power, amount: {fragile_of: self}, target: {kind: self}}
+      text: "[瞬发]，[贯通]。获得等同于自己破甲的力量。"

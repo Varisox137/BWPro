@@ -1,0 +1,16 @@
+id: 10012201
+name: 霜舞
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      conditional_keywords:
+        # 若场上有[眩晕]的敌方角色，此牌获得[瞬发]（活局面判定——眩晕全部解除即失去）
+        - {keyword: fast, enemy_stunned_nonempty: true}
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+      text: "若场上有[眩晕]的敌方角色，此牌获得[瞬发]。"

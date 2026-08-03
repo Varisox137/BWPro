@@ -1,0 +1,18 @@
+id: 10012003
+name: 毒气喷泉
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 2
+      # [增强]：{若己方回合开始你的战斗区有式神，此牌得[瞬发]}——条件关键字
+      # combat_nonempty（己方战斗区有人；闪烁 10012705 先例）
+      conditional_keywords:
+        - {keyword: fast, combat_nonempty: true}
+      effects:
+        # 自己的破甲转移给敌方所有式神（每名各获全量后来源清零；来源无破甲空操作）
+        steps:
+          - {op: transfer_fragile, target: {kind: all, pool: enemy_shikigami}}
+      text: "将自己的破甲转移到敌方所有式神上。[增强]：{若己方回合开始你的战斗区有式神，此牌得[瞬发]。}"

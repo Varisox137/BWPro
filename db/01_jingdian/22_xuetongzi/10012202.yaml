@@ -1,0 +1,17 @@
+id: 10012202
+name: 霜风
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          # 若敌方战斗区没有式神（step 级条件 combat_empty，偷袭响应同款），眩晕敌方牌手
+          - {op: stun, target: {kind: all, pool: enemy_player},
+             condition: {combat_empty: opponent}}
+      text: "若敌方战斗区没有式神，[眩晕]敌方牌手。"

@@ -1,0 +1,18 @@
+id: 100122
+name: 雪童子
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 青岚
+      power: 3
+      health: 4
+      ability:
+        # 与眩晕的敌方角色交战时不受战斗伤害（双向：combat_opponent_stunned 要求持有者
+        # 为 attacker/victim 之一且交战对方眩晕，对方可为牌手；on_before_assault 在战斗
+        # 上下文内发出，battle_immunity 登记到本场战斗，战斗终止点移除）
+        when: on_before_assault
+        condition: {combat_opponent_stunned: true}
+        steps:
+          - {op: battle_immunity, target: {kind: self}}
+      text: "雪童子与[眩晕]的敌方角色交战时不受战斗伤害。"

@@ -29,6 +29,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_form_attached",     # 形态牌结附 {player, shikigami, uid}
     "on_form_destroyed",    # 形态牌消灭 {player, shikigami, uid, reason}
     "on_shield_changed",    # 式神/牌手护甲或破甲数值变化后 {target: Ref, old, new, reason}
+    "on_stun",              # 角色被眩晕后 {victim: Ref, source}（雪女"当你眩晕敌方式神时"）
     "on_orb_changed",       # 鬼火变化 {player, old, new, reason}
     "on_assaults_changed",  # 出击次数变化 {player, old, new, reason}
     # ---- 伤害事件时点批次（docs/rules.md 第五章；payload 含 damage 可变对象，监听者可改伤害值）----
@@ -61,6 +62,7 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_assault": "insert",   # （被）攻击时：同时机能力全部触发后依次执行
     "on_after_assault": "insert",    # 攻击后：清除战力等，需即时完成
     "on_shield_changed": "insert",   # 护甲/破甲变化：即时时机，便于插入结算响应
+    "on_stun": "insert",             # 被眩晕时：即时时机（同 on_shield_changed 的变化点发）
     "on_before_damage": "insert",  # 造成伤害前：即时时机（穿刺生效点）
     "on_damage_start": "insert",     # 造成/受到伤害开始时：即时时机
     "on_before_shield": "insert",    # 护甲计算前：即时时机

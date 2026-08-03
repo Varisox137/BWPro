@@ -1,0 +1,16 @@
+id: 10012206
+name: 霜天之织
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 2
+      effects:
+        # [增强]：{场上每有一个[眩晕]的敌方角色此牌便获得+1力量}——活局面量并入
+        # 战力提取（_step_amount enemy_stunned_count：眩晕解除即减，非计数器）
+        steps:
+          - {op: buff_power, amount: {base: 2, enemy_stunned_count: true},
+             target: {kind: self}}
+      text: "[增强]：{场上每有一个[眩晕]的敌方角色此牌便获得+1力量。}"

@@ -823,7 +823,7 @@ def test_max_power_gap_restores_peak(real_game):
     assert s.ext["max_power"] == 8             # 峰值不突破
 
 
-def test_haoyan_aura_fixed_and_random(real_game):
+def test_on_kill_random_aura_fixed_once_key(real_game):
     """地狱豪焰：本次战斗击杀式神后登记固定项（haoyan_base，不可叠加）与
     一项随机豪焰监听；之后茨木使用战斗牌时固定项 +1 力量/+1 护甲。"""
     g = real_game(CM_TEAM2)
@@ -844,7 +844,7 @@ def test_haoyan_aura_fixed_and_random(real_game):
     assert s.shield >= 1                       # +1 护甲（战斗结算后保留）
 
 
-def test_haoyan_bond_jiutun(gdb):
+def test_bond_self_damage_triggers_ally_ability(gdb):
     """地狱豪焰[羁绊]：酒吞童子在场时对自己造成 1 伤（触发其受伤能力 +1 力量），
     茨木获得 2 护甲。"""
     from core.model import GameConfig
@@ -1056,3 +1056,227 @@ def test_all_pool_has_fragile_filter(db, make_game):
     assert pb.health == 26                       # 30 - (3+1)
     assert pb.shikigami[0].health == 4           # 无破甲者不受伤害
     assert pb.shikigami[1].shield == 0           # 破甲受伤即消耗
+
+
+# ---------- 第十六阶段：no_attack / 额外鬼火 / 气绝可用战斗牌 / 计数条件回退 / ids 光环 ----------
+
+SID = 100101
+
+
+def test_summon_no_attack(db, make_game):
+    """不能发动攻击（no_attack 召唤物）：出击指令拒绝；效果发起的攻击为空操作。"""
+    tom = 10012199
+    db.shikigami[tom] = F.shiki(tom, kind="summon", name="番茄", power=3, health=3,
+                                no_attack=True)
+    cid = 10010171
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="summon", shikigami=tom)])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    play(g, 0, cid)
+    idx = len(pa.shikigami) - 1
+    assert pa.shikigami[idx].id == tom and pa.combat_index == idx
+    with pytest.raises(IllegalAction, match="不能发动攻击"):
+        g.apply({"op": "assault", "index": idx})
+    launcher = 10010172
+    db.cards[launcher] = F.card(launcher, token=True, steps=[
+        F.Step(op="launch_attack", shikigami=tom)])
+    pb.shikigami[0].health = 20
+    play(g, 0, launcher)
+    assert pb.shikigami[0].health == 20 and pb.health == 30  # 效果发起同样不攻击
+
+
+def test_extra_orb_cost(db, make_game):
+    """跳跳妹妹型额外鬼火（extra_orb_cost 先天伪关键字）：出击 2 火、战斗牌 +1 火；
+    [迅捷]出击/[瞬发]战斗牌全免（含额外的 1 火）。"""
+    db.shikigami[SID] = F.shiki(SID, keywords=["extra_orb_cost"])
+    combat = 10010173
+    db.cards[combat] = F.card(combat, card_type="combat", token=True)
+    fast_combat = 10010174
+    db.cards[fast_combat] = F.card(fast_combat, card_type="combat",
+                                   keywords=["fast"], token=True)
+    # 出击需 2 火：先手首回合 1 火时拒绝
+    g = make_game()
+    pa = g.state.players[0]
+    assert pa.orb == 1
+    with pytest.raises(IllegalAction, match="2 点鬼火"):
+        g.apply({"op": "assault", "index": 0})
+    # 战斗牌 +1 火（1 费牌实收 2 火）
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 2
+    play(g, 0, combat)
+    assert pa.orb == 0
+    # 瞬发战斗牌全免
+    g = make_game()
+    pa = g.state.players[0]
+    play(g, 0, fast_combat)
+    assert pa.orb == 1
+    # 迅捷出击全免（消耗一次性迅捷）
+    g = make_game()
+    pa = g.state.players[0]
+    pa.shikigami[0].one_shot_keywords.append("haste")
+    g.apply({"op": "assault", "index": 0})
+    assert pa.orb == 1 and "haste" not in pa.shikigami[0].one_shot_keywords
+
+
+def test_defeated_playable_combat_revives_then_fights(db, make_game):
+    """不玩了啦型：气绝可用的战斗牌——先结算卡面效果；结算完已复活则补齐战力/护甲
+    并正常发起战斗，仍未复活则牌入墓地、不发起战斗（不崩守卫）。"""
+    cid = 10010175
+    db.cards[cid] = F.card(cid, card_type="combat", playable_when_defeated=True,
+                           token=True, steps=[
+        F.Step(op="buff_power", amount=2, target=T(kind="self")),
+        F.Step(op="revive", target=T(kind="self"))])
+    bare = 10010176
+    db.cards[bare] = F.card(bare, card_type="combat", playable_when_defeated=True,
+                            token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    b.health = 20
+    b.base_power = 0                               # 免反击干扰
+    move(g, 1, 0)
+    s = pa.shikigami[0]
+    s.defeated = True
+    s.health = 0
+    s.revive_countdown = 3
+    play(g, 0, cid)
+    assert not s.defeated and s.in_play            # 卡面复活效果先生效
+    assert b.health == 15                          # 补齐战力 3+2=5 后发起战斗
+    # 无复活效果：不发起战斗、不崩
+    s.defeated = True
+    s.health = 0
+    play(g, 0, bare)
+    assert s.defeated and b.health == 15
+    assert any(c.id == bare for c in pa.graveyard)
+
+
+def test_generic_count_ge_falls_back_to_ext(db, make_game):
+    """通用 {字段_ge} 回退：事件无该数值字段时回退读控制者 PlayerState.ext
+    （狂风刃卷 yaohu_damage_count_ge 型计数条件）。"""
+    cid = 10010177
+    db.cards[cid] = F.card(cid, token=True, target=CHOOSE_ENEMY, steps=[
+        F.Step(op="damage", amount=2, target=CHOOSE_ENEMY,
+               condition={"yaohu_damage_count_ge": 2})])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    tgt = Ref(player=1, shikigami=0)
+    play(g, 0, cid, target=tgt)
+    assert b.health == 4                           # ext 无计数：步骤跳过
+    pa.ext["yaohu_damage_count"] = 2
+    play(g, 0, cid, target=tgt)
+    assert b.health == 2                           # 计数达标：生效
+
+
+def test_stat_aura_ids_power(db, make_game):
+    """坐下/出击·番茄型 ids_power 光环：按数据 id 给在场实体 +力量（本局游戏、可叠加、
+    跨召唤保留，召唤物与变形体同享）。"""
+    tom, tom2 = 10013199, 10013198
+    db.shikigami[tom] = F.shiki(tom, kind="summon", name="番茄", power=3, health=3)
+    db.shikigami[tom2] = F.shiki(tom2, kind="transform", name="番茄·觉醒",
+                                 power=4, health=4)
+    summon_card = 10010178
+    db.cards[summon_card] = F.card(summon_card, token=True, steps=[
+        F.Step(op="summon", shikigami=tom)])
+    aura = 10010179
+    db.cards[aura] = F.card(aura, token=True, steps=[
+        F.Step(op="stat_aura", kind="ids_power", ids=[tom, tom2], power=1,
+               scope="game", target=T(kind="self"))])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, summon_card)
+    s = pa.shikigami[-1]
+    assert s.eff_power == 3
+    play(g, 0, aura)
+    assert s.eff_power == 4
+    play(g, 0, aura)
+    assert s.eff_power == 5                        # 可叠加
+    s.health = 0                                   # 离场后再召仍生效
+    g.check_defeated(Ref(player=0, shikigami=len(pa.shikigami) - 1))
+    assert s.despawned
+    play(g, 0, summon_card)
+    assert pa.shikigami[-1].eff_power == 5
+    # 变形体（id ∈ ids）同享
+    trans = 10010180
+    db.cards[trans] = F.card(trans, token=True, steps=[
+        F.Step(op="transform", into=tom2, permanent=True, target=T(kind="self"))])
+    play(g, 0, trans)
+    assert pa.shikigami[0].id == tom2
+    assert pa.shikigami[0].eff_power == 6          # 4 基础 + 2 光环
+
+
+def test_player_aura_random_other_enemy_character(db, make_game):
+    """出击·番茄型牌手光环：番茄造成战斗伤害时对另一个随机敌方角色造成伤害
+    （{source_shikigami: [ids]} 列表匹配 + random_damage exclude_victim；光环可叠加）。"""
+    tom = 10013199
+    db.shikigami[tom] = F.shiki(tom, kind="summon", name="番茄", power=3, health=3)
+    summon_card = 10010181
+    db.cards[summon_card] = F.card(summon_card, token=True, steps=[
+        F.Step(op="summon", shikigami=tom)])
+    aura = 10010182
+    db.cards[aura] = F.card(aura, token=True, steps=[
+        F.Step(op="player_aura", when="on_damage",
+               condition={"kind": "combat", "source_shikigami": [tom]},
+               steps=[{"op": "random_damage", "amount": 2, "pool": "enemy_character",
+                       "exclude_victim": True}],
+               target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0                                # 清掉后手补偿护甲，便于观察数值
+    pb.shikigami[0].base_power = 0                 # 免反击干扰
+    move(g, 1, 0)
+    play(g, 0, summon_card)
+    play(g, 0, aura)
+    b = pb.shikigami[0]
+    b.health = 20
+    idx = len(pa.shikigami) - 1
+    g.apply({"op": "assault", "index": idx})
+    assert b.health == 17                          # 番茄 3 战斗伤害
+    assert pb.health == 28                         # 另一个敌方角色（牌手）受 2
+    # 光环叠加：第二份后额外各打 2（共 4）
+    play(g, 0, aura)
+    pa.assaults_left = 1
+    g.apply({"op": "assault", "index": idx})
+    assert b.health == 14
+    assert pb.health == 24
+
+
+def test_launch_attack_at_chosen(db, make_game):
+    """冰封[羁绊]型：效果发起有目标的攻击（at="chosen"，战斗目标取卡牌选择目标，
+    反击照常）。"""
+    cid = 10010183
+    db.cards[cid] = F.card(cid, token=True, target=CHOOSE_ENEMY, steps=[
+        F.Step(op="launch_attack", shikigami="self", at="chosen",
+               target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[1]                            # 100102：1/6
+    b.level = 1
+    play(g, 0, cid, target=Ref(player=1, shikigami=1))
+    assert b.health == 3                           # 受 A0（3 力量）攻击
+    assert pa.shikigami[0].health == 3             # 反击 1 照受
+
+
+def test_target_spec_stunned_filter(db, make_game):
+    """目标池 stunned 过滤键：全体目标只保留眩晕角色（式神与牌手均可判定）。"""
+    cid = 10010184
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.dmg(2, T(kind="all", pool="enemy_shikigami", stunned=True))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    for s in pb.shikigami:
+        s.level = 1
+        s.health = 10
+    pb.shikigami[1].stuns.append({"kind": "normal", "turn": 0})
+    play(g, 0, cid)
+    assert pb.shikigami[1].health == 8
+    assert pb.shikigami[0].health == 10 and pb.shikigami[2].health == 10

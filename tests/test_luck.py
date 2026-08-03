@@ -315,3 +315,358 @@ def test_reuse_card_spell_twice(db, make_game):
     play(g, 0, 10010151)
     assert b.health == hp - 4       # 首次 + 再次，恰好两次
     assert a.orb == 8               # 再次使用不耗鬼火
+
+
+
+# ---------- 第十六阶段：眩晕条件 / on_stun 事件 / 永续变形 / 生成替换 / 自动使用 ----------
+
+SID = 100101
+
+
+def test_chosen_stunned_two_branch(db, make_game):
+    """崩雪型两段分支：{chosen_stunned} 按选择目标是否眩晕分流（已眩晕→伤害，否则→眩晕）。"""
+    cid = 10010161
+    db.cards[cid] = F.card(cid, token=True, target=CHOOSE_ENEMY, steps=[
+        Step(op="damage", amount=2, target=CHOOSE_ENEMY,
+             condition={"chosen_stunned": True}),
+        Step(op="stun", target=CHOOSE_ENEMY,
+             condition={"chosen_stunned": False}),
+    ])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    tgt = Ref(player=1, shikigami=0)
+    play(g, 0, cid, target=tgt)
+    assert b.is_stunned and b.health == 4          # 未眩晕 → 眩晕分支
+    play(g, 0, cid, target=tgt)
+    assert b.health == 2 and len(b.stuns) == 1     # 已眩晕 → 伤害分支（不重复眩晕）
+
+
+def test_combat_opponent_stunned_battle_grants(db, make_game):
+    """雪走型战斗条件授予：{defender_stunned} 满足时获得[连击]与战斗免疫（战斗终止点
+    移除）；{combat_opponent_stunned} 在 on_before_assault 载荷上双向判定。"""
+    cid = 10010162
+    db.cards[cid] = F.card(cid, card_type="combat", token=True, steps=[
+        Step(op="grant_keyword", keyword="combo", target=T(kind="self"),
+             condition={"defender_stunned": True}),
+        Step(op="battle_immunity", target=T(kind="self"),
+             condition={"defender_stunned": True}),
+    ])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    b.health = 20
+    b.stuns.append({"kind": "normal", "turn": 0})
+    move(g, 1, 0)
+    play(g, 0, cid)                                # 对眩晕者：连击两段 + 免疫反击
+    a = pa.shikigami[0]
+    assert b.health == 14                          # 3 × 2 段
+    assert a.health == 4                           # 免疫战斗/反击伤害
+    assert "combo" not in a.keywords and not a.immunities  # 终止点移除
+    # combat_opponent_stunned 双向：持有者作为被攻击方、攻击者眩晕时亦命中
+    vic = Ref(player=0, shikigami=0)
+    assert g._match({"combat_opponent_stunned": True},
+                    {"attacker": Ref(player=1, shikigami=0), "victim": vic},
+                    0, holder=vic)
+    assert not g._match({"combat_opponent_stunned": True},
+                        {"attacker": vic, "victim": Ref(player=1, shikigami=1)},
+                        0, holder=vic)             # 交战对方未眩晕：不命中
+    # 对非眩晕者：无授予
+    b2 = pb.shikigami[1]
+    b2.level = 1
+    b2.health = 20
+    pass_turns(g, 2)
+    move(g, 1, 1)
+    play(g, 0, cid)
+    assert b2.health == 17                         # 仅一段
+    assert a.health == 3                           # 反击（100102 力量 1）照受
+
+
+def test_on_stun_event_per_turn_gate(db, make_game):
+    """雪国之子型：on_stun 事件（眩晕实际施加后按即时时机发出）+ turn_mark 回合门——
+    每回合首次眩晕敌方式神时生成一张牌，跨回合重置。"""
+    token = 10010163
+    db.cards[token] = F.card(token, token=True)
+    db.shikigami[SID] = F.shiki(SID, ability=F.block(
+        Step(op="turn_mark", key="yukiguni", target=T(kind="self")),
+        Step(op="generate", card_id=token, target=T(kind="self")),
+        when="on_stun", condition={"turn_mark_not": "yukiguni"}))
+    stun_card = 10010164
+    db.cards[stun_card] = F.card(stun_card, token=True, target=CHOOSE_ENEMY,
+                                 steps=[Step(op="stun", target=CHOOSE_ENEMY)])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shikigami[1].level = 1
+    n0 = len(pa.hand)
+    play(g, 0, stun_card, target=Ref(player=1, shikigami=0))
+    assert len(pa.hand) == n0 + 1
+    assert any(c.id == token for c in pa.hand)
+    play(g, 0, stun_card, target=Ref(player=1, shikigami=1))
+    assert len(pa.hand) == n0 + 1                  # 同回合第二次：回合门拦截
+    pass_turns(g, 2)
+    n1 = len(pa.hand)                          # 己方回合开始抽牌后
+    play(g, 0, stun_card, target=Ref(player=1, shikigami=0))
+    assert len(pa.hand) == n1 + 1              # 跨回合重置后可再触发
+
+
+def test_permanent_transform_and_owner_combat(db, make_game):
+    """桃花灼灼型永续变形：不随离场/气绝还原；变形物可使用原式神的战斗牌（仅战斗牌，
+    其余牌仍按"被变形中"拒绝）。"""
+    tom = 10010198
+    db.shikigami[tom] = F.shiki(tom, kind="transform", name="番茄", power=3, health=3)
+    trans = 10010165
+    db.cards[trans] = F.card(trans, token=True, steps=[
+        Step(op="transform", into=tom, permanent=True, owner_combat=True,
+             target=T(kind="self"))])
+    combat = 10010166
+    db.cards[combat] = F.card(combat, card_type="combat", token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    play(g, 0, trans)
+    s = pa.shikigami[0]
+    assert s.id == tom and s.kind == "transform"
+    assert s.ext["transform_permanent"] and s.ext["owner_combat_ok"]
+    g._untransform(0, 0)
+    assert pa.shikigami[0].id == tom               # 永久变形不还原
+    # 原式神的法术牌不能用
+    spell = give(g, 0, SID * 100 + 2)
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": spell.uid})
+    # 原式神的战斗牌可以（以变形物座次为来源）
+    pb.shikigami[0].health = 20
+    pb.shikigami[0].base_power = 0                 # 免反击干扰
+    move(g, 1, 0)
+    play(g, 0, combat)
+    assert pb.shikigami[0].health == 17            # 变形物 3 战力
+    # 气绝不还原（气绝前2 跳过）：变形物气绝即气绝
+    s = pa.shikigami[0]
+    s.health = 0
+    g.check_defeated(Ref(player=0, shikigami=0))
+    assert pa.shikigami[0].defeated and pa.shikigami[0].id == tom
+    assert pa.shikigami[0].revive_countdown > 0
+
+
+def test_gen_replace_and_replace_cards(db, make_game):
+    """觉醒·番茄型生成替换与一次性换牌：generate 经钩子把该式神非战斗牌
+    改出战斗牌；手牌/牌库中的非战斗牌一次性随机替换为战斗牌。"""
+    for n in (9, 10, 11):
+        db.cards[SID * 100 + n] = F.card(SID * 100 + n, card_type="combat", level=1)
+    awaken = 10010167
+    db.cards[awaken] = F.card(awaken, token=True, steps=[
+        Step(op="gen_replace", target=T(kind="self")),
+        Step(op="replace_cards", target=T(kind="self"))])
+    gen_card = 10010168
+    db.cards[gen_card] = F.card(gen_card, token=True, steps=[
+        Step(op="generate", shikigami=SID, card_type="spell", target=T(kind="self"))])
+    g = make_game()
+    g.rng = StubRng()                              # choice 取首元素 = 10010109
+    pa = g.state.players[0]
+    pa.orb = 9
+    pa.hand.clear()
+    pa.deck.clear()
+    give(g, 0, SID * 100 + 1)                      # 手牌两张法术
+    give(g, 0, SID * 100 + 5)
+    d1 = give(g, 0, SID * 100 + 6)
+    g.move_card(pa, d1, "deck")                    # 牌库一张法术
+    play(g, 0, awaken)
+    assert [c.id for c in pa.hand] == [SID * 100 + 9, SID * 100 + 9]
+    assert [c.id for c in pa.deck] == [SID * 100 + 9]
+    # 生成替换钩子：之后 generate 该式神法术牌改出战斗牌
+    pa.hand.clear()
+    play(g, 0, gen_card)
+    assert pa.hand[-1].id == SID * 100 + 9
+
+
+def test_auto_use_inherit_target_and_snowball_count(db, make_game):
+    """流霰型：repeat {"ext": snowball_used_game, "base": 1} 重复自动使用——
+    继承本牌选择目标、不耗鬼火、凭空使用不经手牌记账。"""
+    snow = 10010169
+    db.cards[snow] = F.card(snow, tags=["snowball"], token=True,
+                            target=CHOOSE_ENEMY, steps=[F.dmg(1, CHOOSE_ENEMY)])
+    liuxian = 10010170
+    db.cards[liuxian] = F.card(liuxian, token=True, target=CHOOSE_ENEMY, steps=[
+        Step(op="repeat", count={"ext": "snowball_used_game", "base": 1}, steps=[
+            {"op": "auto_use", "card_id": snow, "inherit_target": True,
+             "target": {"kind": "self"}}], target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    b.health = 30
+    tgt = Ref(player=1, shikigami=0)
+    play(g, 0, liuxian, target=tgt)
+    assert b.health == 29                          # 基础 1 次（继承目标）
+    play(g, 0, snow, target=tgt)                   # 手牌使用雪球：记账
+    assert pa.ext["snowball_used_game"] == 1
+    assert b.health == 28
+    play(g, 0, liuxian, target=tgt)
+    assert b.health == 26                          # base 1 + 已用 1 = 2 次
+    assert pa.ext["snowball_used_game"] == 1       # 凭空自动使用不计账
+
+
+
+# ---------- 第十六阶段补：眩晕存在性/计数通道（雪童子批次） ----------
+
+def test_conditional_keyword_enemy_stunned_nonempty(db, make_game):
+    """霜舞型条件瞬发：场上有[眩晕]的敌方角色时此牌获得[瞬发]（活局面判定，
+    眩晕的敌方牌手也算"角色"）。"""
+    cid = 10010185
+    db.cards[cid] = F.card(cid, card_type="combat", token=True,
+                           conditional_keywords=[{"keyword": "fast",
+                                                  "enemy_stunned_nonempty": True}])
+    g = make_game()                              # 无眩晕：不获得瞬发，正常耗火
+    pa, pb = g.state.players
+    pa.orb = 2
+    pb.shikigami[0].base_power = 0
+    move(g, 1, 0)
+    play(g, 0, cid)
+    assert pa.orb == 1
+    g = make_game()                              # 敌方式神眩晕：瞬发免费
+    pa, pb = g.state.players
+    pa.orb = 1
+    pb.shikigami[0].base_power = 0
+    pb.shikigami[0].stuns.append({"kind": "normal", "turn": 0})
+    move(g, 1, 0)
+    play(g, 0, cid)
+    assert pa.orb == 1 and pa.fast_used
+    g = make_game()                              # 敌方牌手眩晕：同样满足
+    pa, pb = g.state.players
+    pa.orb = 1
+    pb.shikigami[0].base_power = 0
+    pb.ext["stuns"] = [{"kind": "normal", "turn": 0}]
+    move(g, 1, 0)
+    play(g, 0, cid)
+    assert pa.orb == 1
+
+
+def test_stat_aura_enemy_stunned_exists(db, make_game):
+    """雪国之子型条件身材光环：形态在场且场上有[眩晕]的敌方角色时 +2/+2
+    （活局面——全部解除即失去；形态离场光环移除）。"""
+    cid = 10010186
+    db.cards[cid] = F.card(cid, card_type="form", form_power=5, form_health=5,
+                           token=True, steps=[
+        Step(op="stat_aura", kind="enemy_stunned_exists", power=2, health=2,
+             target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    s = pa.shikigami[0]
+    play(g, 0, cid)
+    assert s.eff_power == 5 and s.max_health == 5  # 无眩晕：无加成
+    pb.shikigami[0].stuns.append({"kind": "normal", "turn": 0})
+    g._refresh_stat_auras()
+    assert s.eff_power == 7 and s.max_health == 7  # 有眩晕：+2/+2
+    pb.shikigami[0].stuns.clear()
+    g._refresh_stat_auras()
+    assert s.eff_power == 5 and s.max_health == 5  # 眩晕解除即失去
+    pb.shikigami[0].stuns.append({"kind": "normal", "turn": 0})
+    g._destroy_form(pa, 0, reason="test")
+    g._refresh_stat_auras()
+    assert s.eff_power == 3                        # 形态离场光环移除（基础 3）
+
+
+def test_step_amount_enemy_stunned_count(db, make_game):
+    """霜天之织型活局增强：战力 = base + 场上眩晕的敌方角色数
+    （{"enemy_stunned_count": true}，战力提取同源求值，解除即减）。"""
+    cid = 10010187
+    db.cards[cid] = F.card(cid, card_type="combat", token=True, steps=[
+        Step(op="buff_power", amount={"base": 2, "enemy_stunned_count": True},
+             target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    b.health = 30
+    b.base_power = 0                               # 免反击干扰
+    pb.shikigami[1].level = 1
+    move(g, 1, 0)
+    play(g, 0, cid)                                # 无眩晕：3+2=5
+    assert b.health == 25
+    b.stuns.append({"kind": "normal", "turn": pb.turn_count})
+    pb.shikigami[1].stuns.append({"kind": "normal", "turn": pb.turn_count})
+    play(g, 0, cid)                                # 2 名眩晕：3+2+2=7
+    assert b.health == 18
+    pb.shikigami[1].stuns.clear()
+    play(g, 0, cid)                                # 解除 1 名：3+2+1=6
+    assert b.health == 12
+
+
+def test_combat_temp_grant_splash_stunned_exclude_victim(db, make_game):
+    """胧月雪华斩型溅射：造成战斗伤害时对所有其他[眩晕]的敌方角色造成等量伤害
+    （全体眩晕池 exclude_victim 排除受伤者；溅射为效果伤害不自链；
+    [连击]第二段同样溅射——temp_grants uses 覆盖）。"""
+    cid = 10010188
+    tg = F.block(
+        Step(op="damage", amount={"event": "amount"},
+             target=T(kind="all", pool="enemy_character", stunned=True,
+                      exclude_victim=True)),
+        when="on_damage", condition={"source_shikigami": "self", "kind": "combat"},
+        uses=99)
+    db.cards[cid] = F.card(cid, card_type="combat", token=True, temp_grants=[tg],
+                           steps=[Step(op="buff_power", amount=3, target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b0, b1, b2 = pb.shikigami[0], pb.shikigami[1], pb.shikigami[2]
+    b0.base_power = 0                              # 免反击干扰
+    b0.health = 30
+    for s in (b1, b2):
+        s.level = 1
+        s.health = 20
+        s.stuns.append({"kind": "normal", "turn": pb.turn_count})
+    move(g, 1, 0)
+    play(g, 0, cid)                                # 战力 6 打 b0；溅射 b1/b2 各 6
+    assert b0.health == 24
+    assert b1.health == 14 and b2.health == 14
+    b0.stuns.append({"kind": "normal", "turn": pb.turn_count})
+    play(g, 0, cid)                                # 受伤者眩晕：exclude_victim 排除
+    assert b0.health == 18                         # 仅战斗伤害（不受二次溅射）
+    assert b1.health == 8 and b2.health == 8
+    pa.shikigami[0].keywords.append("combo")
+    b1.health = b2.health = 20
+    play(g, 0, cid)                                # [连击]两段：每段各溅射一次（uses 覆盖）
+    assert b0.health == 6
+    assert b1.health == 8 and b2.health == 8       # 两段各溅射 6
+
+
+def test_form_power_enemy_stun_game_counter(db, make_game):
+    """雪融之时型累计增强：敌方角色被[眩晕]引擎记账（ext enemy_stunned_game，
+    不分来源），形态光环 ext_power 读取时求值——进场前眩晕计入、己侧被眩晕
+    记到对方、形态离场光环移除。"""
+    stun_card = 10010189
+    db.cards[stun_card] = F.card(stun_card, token=True, target=CHOOSE_ENEMY,
+                                 steps=[Step(op="stun", target=CHOOSE_ENEMY)])
+    form = 10010190
+    db.cards[form] = F.card(form, card_type="form", form_power=5, form_health=7,
+                            token=True, steps=[
+        Step(op="stat_aura", kind="ext_power", ext="enemy_stunned_game", power=1,
+             target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shikigami[1].level = 1
+    play(g, 0, stun_card, target=Ref(player=1, shikigami=0))
+    play(g, 0, stun_card, target=Ref(player=1, shikigami=1))
+    assert pa.ext["enemy_stunned_game"] == 2       # 打出前已累计
+    play(g, 0, form)
+    s = pa.shikigami[0]
+    assert s.eff_power == 7                        # 5 + 2（进场前的眩晕计入）
+    play(g, 0, stun_card, target=Ref(player=1, shikigami=0))
+    g._refresh_stat_auras()
+    assert s.eff_power == 8                        # 进场后再眩晕：+1
+    own_stun = 10010191
+    db.cards[own_stun] = F.card(
+        own_stun, token=True, target=T(kind="choose", pool="friendly_shikigami"),
+        steps=[Step(op="stun", target=T(kind="choose", pool="friendly_shikigami"))])
+    pa.shikigami[1].level = 1
+    play(g, 0, own_stun, target=Ref(player=0, shikigami=1))
+    g._refresh_stat_auras()
+    assert s.eff_power == 8                        # 己侧被眩晕不计入
+    assert pb.ext["enemy_stunned_game"] == 1       # 记到对方
+    g._destroy_form(pa, 0, reason="test")
+    g._refresh_stat_auras()
+    assert s.eff_power == 3                        # 形态离场光环移除（基础 3）

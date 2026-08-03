@@ -1,0 +1,17 @@
+id: 10012104
+name: 崩雪
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        # 已眩晕则消灭、否则眩晕（{chosen_stunned} Step 级条件两段分流，定案(6)；
+        # 缺省 target = 卡牌选择目标）
+        steps:
+          - {op: destroy, condition: {chosen_stunned: true}}
+          - {op: stun, condition: {chosen_stunned: false}}
+      text: "消灭一个[眩晕]的式神或[眩晕]一个未[眩晕]的式神。"

@@ -1,0 +1,17 @@
+id: 10012004
+name: 肿胀体质
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 4
+      form_health: 16
+      effects:
+        # 进场 2 破甲 + 破甲保留（keep_fragile：己方回合开始不清除；形态离场自动复位）
+        steps:
+          - {op: gain_shield, amount: 2, kind: fragile, target: {kind: self}}
+          - {op: keep_fragile, target: {kind: self}}
+      text: "进场时跳跳弟弟获得2破甲。跳跳弟弟的破甲在己方回合开始时不会清除。"

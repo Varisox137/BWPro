@@ -165,7 +165,7 @@ def test_buxiang_no_kill_grant_expires(db, make_game):
 
 # ---------- 冲撞：手牌实例累积（to=hand） ----------
 
-def test_chongzhuang_accumulate_and_play(db, make_game):
+def test_hand_instance_enhance_accumulate(db, make_game):
     """冲撞：兵俑在战斗区的己方回合开始 +1/+1（按手牌实例）；打出战力/护甲各含 enhance。"""
     cid = _chongzhuang_card(db)
     g = make_game()

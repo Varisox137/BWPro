@@ -1,0 +1,16 @@
+id: 10012106
+name: 寒冬之心
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          - {op: generate, card_id: 10012151, count: 2}
+          # 本局游戏你所有'雪球'的伤害+1（card_aura tag 通道 + damage_boost +
+          # scope=game；命中 tags 含 snowball 的牌，可叠加）
+          - {op: card_aura, tag: snowball, damage_boost: 1, scope: game}
+      text: "将两张‘雪球’置入手牌。本局游戏你所有‘雪球’的伤害+1。"

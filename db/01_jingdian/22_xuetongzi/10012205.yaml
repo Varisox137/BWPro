@@ -1,0 +1,23 @@
+id: 10012205
+name: 胧月雪华斩
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: 3, target: {kind: self}}
+      temp_grants:
+        # 造成伤害时对所有其他[眩晕]的敌方角色造成等量的伤害：kind=combat 限定
+        # 防自链（溅射为效果伤害，不再触发自身）；uses 放开使[连击]第二段同样溅射
+        - when: on_damage
+          uses: 99
+          condition: {source_shikigami: self, kind: combat}
+          steps:
+            - {op: damage, amount: {event: amount},
+               target: {kind: all, pool: enemy_character, stunned: true,
+                        exclude_victim: true}}
+      text: "造成伤害时对所有其他[眩晕]的敌方角色造成等量的伤害。"

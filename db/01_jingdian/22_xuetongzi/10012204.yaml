@@ -1,0 +1,18 @@
+id: 10012204
+name: 雪国之子
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 5
+      form_health: 5
+      effects:
+        # 若场上有[眩晕]的敌方角色，此牌获得+2力量和+2生命（stat_aura 动态光环：
+        # 形态在场期间活局面判定，眩晕全部解除即失去；形态离场随 scope=form 移除）
+        steps:
+          - {op: stat_aura, kind: enemy_stunned_exists, power: 2, health: 2,
+             target: {kind: self}}
+      text: "若场上有[眩晕]的敌方角色，此牌获得+2力量和+2生命。"

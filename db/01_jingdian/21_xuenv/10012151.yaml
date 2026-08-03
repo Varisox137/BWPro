@@ -1,0 +1,17 @@
+id: 10012151
+name: 雪球
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      token: true
+      level: 1
+      tags: [snowball]  # 手牌使用记账 snowball_used_game（流霰重复次数）；寒冬之心 tag 光环命中
+      keywords: [fast]
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          - {op: damage, amount: 1}
+      text: "[瞬发]。对一个敌方式神造成1点伤害。"

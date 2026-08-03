@@ -1,0 +1,19 @@
+id: 10012152
+name: 冰封
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（冰霜永冻 10012121）
+      level: 1
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          - {op: stun}
+          - {op: generate, card_id: 10012151}
+          # [羁绊]：{雪童子对其发动一次攻击}——定向攻击本牌选择目标（at=chosen；
+          # 雪童子未出战/气绝时 launch_attack 自守卫为空操作）
+          - {op: launch_attack, shikigami: 100122, at: chosen}
+      text: "[眩晕]一个敌方式神，获得一张‘雪球’。[羁绊]：{雪童子对其发动一次攻击。}"

@@ -1,0 +1,14 @@
+id: 10012103
+name: 冰墙
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 1
+      effects:
+        # 在战斗区召唤一个'冰墙'（召唤物 10012199）
+        steps:
+          - {op: summon, shikigami: 10012199}
+      text: "在战斗区召唤一个‘冰墙’。"

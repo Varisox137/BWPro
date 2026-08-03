@@ -1,0 +1,22 @@
+id: 10013106
+name: 出击！
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 2
+      effects:
+        # 召唤'番茄'并使其永久得"攻击造成伤害时随机对另一个敌方角色造成3点伤害"
+        # ——结附牌手的本局监听（player_aura，可叠加；{source_shikigami: [ids]} 列表
+        # 匹配覆盖召唤/变形番茄；random_damage exclude_victim 排除本次受伤者，定案(12)）
+        steps:
+          - {op: summon, shikigami: 10013199}
+          - op: player_aura
+            when: on_damage
+            condition: {kind: combat, source_shikigami: [10013199, 10013198]}
+            steps:
+              - {op: random_damage, amount: 3, pool: enemy_character,
+                 exclude_victim: true}
+      text: "召唤‘番茄’并使其永久得‘攻击造成伤害时随机对另一个敌方角色造成3点伤害’。（效果可以叠加）"

@@ -826,3 +826,138 @@ def test_fragile_kept_by_enemy_awaken(db, make_game):
     g.apply({"op": "end_turn"})                      # → B 回合开始：破甲保留、护甲清除
     assert b0.shield == -3 and pb.shield == -2
     assert b1.shield == 0
+
+
+# ---------- 第十六阶段：破甲转移 / 破甲保留 / 破甲量战力 / 光环伤害加成 / 伤害来源条件 ----------
+
+def test_transfer_fragile(db, make_game):
+    """腐坏直拳型破甲转移：来源破甲等量转移给每个目标（多名各获全量、非分配）后
+    来源清零；来源无破甲为空操作。"""
+    single = 10010161
+    db.cards[single] = F.card(single, token=True, target=CHOOSE_ENEMY_DMG, steps=[
+        F.Step(op="transfer_fragile", target=CHOOSE_ENEMY_DMG)])
+    aoe = 10010162
+    db.cards[aoe] = F.card(aoe, token=True, steps=[
+        F.Step(op="transfer_fragile", target=T(kind="all", pool="enemy_shikigami"))])
+    g, pa, pb = _game(make_game)
+    me = Ref(player=0, shikigami=IDX)
+    # 单体：-5 转移给敌 1 号位，来源清零
+    pb.shikigami[1].level = 1
+    g._change_shield(me, 5, "test", kind="fragile")
+    play(g, 0, single, target=Ref(player=1, shikigami=1))
+    assert pa.shikigami[IDX].shield == 0
+    assert pb.shikigami[1].shield == -5
+    # 全体：每名敌方各获全量 -3（1 号位在已有 -5 上叠加）
+    g._change_shield(me, 3, "test", kind="fragile")
+    play(g, 0, aoe)
+    assert pa.shikigami[IDX].shield == 0
+    assert pb.shikigami[0].shield == -3
+    assert pb.shikigami[1].shield == -8
+    # 无破甲：空操作
+    play(g, 0, aoe)
+    assert pb.shikigami[0].shield == -3 and pb.shikigami[1].shield == -8
+
+
+def test_keep_fragile_form_scoped(db, make_game):
+    """肿胀体质型破甲保留（keep_fragile）：形态在场时破甲不随己方回合开始清除；
+    形态离场即解除，之后恢复清除。"""
+    cid = 10010163
+    db.cards[cid] = F.card(cid, card_type="form", form_power=1, form_health=5,
+                           token=True, steps=[
+        F.Step(op="keep_fragile", target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    play(g, 0, cid)
+    assert s.keep_fragile
+    g._change_shield(Ref(player=0, shikigami=IDX), 4, "test", kind="fragile")
+    assert s.shield == -4
+    pass_turns(g, 2)                         # 己方回合开始：破甲保留
+    assert s.shield == -4
+    g._destroy_form(pa, IDX, reason="test")
+    assert not s.keep_fragile                # 形态离场即解除（"形态在场时"语义）
+    pass_turns(g, 2)
+    assert s.shield == 0                     # 恢复回合开始清除
+
+
+def test_fragile_of_as_combat_power(db, make_game):
+    """僵硬扑击型：战斗牌获得等同于自身破甲量的战力（amount {"fragile_of": "self"}，
+    战斗牌战力提取读取点同源）。"""
+    cid = 10010164
+    db.cards[cid] = F.card(cid, card_type="combat", token=True, steps=[
+        F.Step(op="buff_power", amount={"fragile_of": "self"}, target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]
+    b.health = 20
+    b.base_power = 0                         # 免反击干扰
+    move(g, 1, 0)
+    g._change_shield(Ref(player=0, shikigami=IDX), 3, "test", kind="fragile")
+    play(g, 0, cid)                          # 战力 = 3 基础 + 3 破甲量
+    assert b.health == 14
+    assert pa.shikigami[IDX].shield == -3    # 破甲本身保留
+
+
+def test_card_aura_damage_boost(db, make_game):
+    """寒冬之心型卡牌光环伤害加成（tag 通道 + damage_boost + scope="game"）：
+    命中标记的牌效果伤害 +1，可叠加。"""
+    snow = 10010165
+    db.cards[snow] = F.card(snow, tags=["snowball"], token=True,
+                            target=CHOOSE_ENEMY_DMG, steps=[F.dmg(1, CHOOSE_ENEMY_DMG)])
+    aura = 10010166
+    db.cards[aura] = F.card(aura, token=True, steps=[
+        F.Step(op="card_aura", tag="snowball", damage_boost=1, scope="game",
+               target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]
+    b.health = 20
+    tgt = Ref(player=1, shikigami=0)
+    play(g, 0, snow, target=tgt)
+    assert b.health == 19                    # 无光环：1
+    play(g, 0, aura)
+    play(g, 0, snow, target=tgt)
+    assert b.health == 17                    # 一层光环：2
+    play(g, 0, aura)
+    play(g, 0, snow, target=tgt)
+    assert b.health == 14                    # 两层叠加：3
+
+
+def test_on_damage_source_condition_any_kind(db, make_game):
+    """原初能力型：on_damage 以来源匹配（{source_shikigami: self}），不分伤害种类——
+    效果伤害与战斗伤害都触发。"""
+    db.shikigami[SID] = F.shiki(SID, ability=F.block(
+        F.Step(op="stun", target=T(kind="context", key="victim")),
+        when="on_damage", condition={"source_shikigami": "self"}))
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]
+    b.health = 20
+    src = Ref(player=0, shikigami=IDX)
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 2, src)   # 效果伤害触发
+    g._drain_queue()
+    assert b.is_stunned
+    b.stuns.clear()
+    move(g, 1, 0)
+    g.apply({"op": "assault", "index": IDX})                  # 战斗伤害同样触发
+    assert b.is_stunned
+
+
+
+def test_cap_damage_fixed_value(db, make_game):
+    """雪融之时型受伤上限：cap_damage to=<int> 将本次伤害面板值封顶定值——
+    超过封顶才截断、低于封顶不变、封顶后再走护甲吸收。"""
+    cid = 10010167
+    db.cards[cid] = F.card(
+        cid, shikigami=SID, card_type="form", level=1,
+        form_power=5, form_health=7, token=True,
+        abilities=[F.block(F.Step(op="cap_damage", to=3), when="on_damage_start",
+                           condition={"victim_shikigami": "self"})])
+    g, pa, pb = _game(make_game)
+    play(g, 0, cid)
+    s = pa.shikigami[IDX]
+    assert s.health == 7
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, None)
+    assert s.health == 4             # 5 封顶为 3
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, None)
+    assert s.health == 2             # 2 低于封顶：不变
+    s.shield = 2
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, None)
+    assert s.shield == 0             # 封顶 3 后护甲吸收 2
+    assert s.health == 1

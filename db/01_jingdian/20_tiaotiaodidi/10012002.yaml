@@ -1,0 +1,22 @@
+id: 10012002
+name: 瘴疠体质
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 3
+      form_health: 9
+      effects:
+        steps: []
+      abilities:
+        # 对跳跳弟弟造成战斗伤害的式神获得3破甲（夺命 10011006 on_damage 管线；
+        # 反击伤害 kind=counter 不命中——与夺命同口径仅 kind=combat）
+        - when: on_damage
+          condition: {victim_shikigami: self, kind: combat}
+          steps:
+            - {op: gain_shield, amount: 3, kind: fragile,
+               target: {kind: context, key: source}}
+      text: "对跳跳弟弟造成战斗伤害的式神获得3破甲。"

@@ -164,7 +164,8 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
 
 
 def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
-    """TargetSpec 额外过滤键（model_extra）统一应用：power_le（勾诀）/ has_fragile（焚身之火）。"""
+    """TargetSpec 额外过滤键（model_extra）统一应用：power_le（勾诀）/ has_fragile（焚身之火）
+    / stunned（按是否眩晕过滤角色目标，式神与牌手均可）。"""
     pw = extra.get("power_le")
     if pw is not None:
         refs = [r for r in refs if r.shikigami is not None
@@ -176,7 +177,18 @@ def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
             holder = pl.shikigami[r.shikigami] if r.shikigami is not None else pl
             return holder.shield < 0
         refs = [r for r in refs if _fragile(r) == bool(hf)]
+    st = extra.get("stunned")
+    if st is not None:
+        refs = [r for r in refs if _ref_stunned(game, r) == bool(st)]
     return refs
+
+
+def _ref_stunned(game, ref: Ref) -> bool:
+    """Ref 所指角色（式神或牌手）当前是否眩晕。"""
+    pl = game.state.players[ref.player]
+    if ref.shikigami is None:
+        return pl.is_stunned
+    return pl.shikigami[ref.shikigami].is_stunned
 
 
 def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> list[Ref]:
@@ -224,6 +236,11 @@ def resolve(game, spec, ctx) -> list[Ref]:
             refs = [r for r in refs if r.shikigami is not None
                     and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
         refs = _spec_filtered(game, refs, spec.model_extra or {})
+        if (spec.model_extra or {}).get("exclude_victim"):
+            # 排除触发事件的 victim（胧月雪华斩"对所有其他[眩晕]的敌方角色"——
+            # 与 random_damage 的 exclude_victim 参数同语义）
+            vic = (ctx.event or {}).get("victim")
+            refs = [r for r in refs if r != vic]
         rnd = (spec.model_extra or {}).get("random")
         if rnd is not None and len(refs) > int(rnd):
             # 随机取 n 个（盛开"随机一个受伤己方式神"；repeat 每轮重新解析重新随机）
@@ -262,16 +279,23 @@ def _chosen(game, ctx) -> list[Ref]:
 
 
 def match_condition(game, condition: dict | None, event: dict, controller: int,
-                    holder: Ref | None = None) -> bool:
+                    holder: Ref | None = None, chosen: list[Ref] | None = None) -> bool:
     """条件迷你语言（扩展点，后续按需加操作符）：
     - {字段: self|opponent}    ：标量玩家下标与 controller 比较
     - {字段_side: friendly|enemy|any} ：事件中的 Ref 相对 controller 的归属
     - {字段_kind: shikigami|player}   ：Ref 指向式神还是牌手
     - {字段_shikigami: self}   ：事件中的 Ref 与能力持有者（holder）同式神
-    - {字段_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id（游离触发器用）
+    - {字段_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id（游离触发器用）；
+      值为列表时按" ∈ 列表"判定（坐下/出击光环的番茄 10013199/10013198 双 id 匹配）
     - {字段_not_shikigami: <式神id>} ：事件中的 Ref 所指式神的数据 id ≠ 给定值（"其他式神"）
     - {字段_has_fragile: true|false} ：事件中的 Ref 所指角色（式神或牌手）是否持有破甲
       （"若攻击有破甲的角色"——战斗条件授予以 {"defender": 被攻击者} 求值）
+    - {字段_stunned: true|false} ：事件中的 Ref 所指角色（式神或牌手）是否眩晕
+    - {chosen_stunned: true|false} ：卡牌选择目标（chosen）中是否有眩晕角色——
+      Step 级条件专用（崩雪"已眩晕则消灭、否则眩晕"两段 steps）；事件触发块无 chosen
+    - {combat_opponent_stunned: true|false} ：能力持有者（holder）参与事件中的战斗
+      （为 attacker 或 victim）且交战对方处于眩晕（双向判定；对方可为牌手）——
+      雪童子"与眩晕的敌方角色交战时"类，挂 on_before_assault
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
     - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
     - {orb_ge: n}              ：控制者当前鬼火 ≥ n（"若你有 2 点鬼火"类）
@@ -291,7 +315,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {luck_success_total_ge: n} ：双方判定成功次数（ext luck_success_game）合计 ≥ n
     - {dice_below_x: true}     ：运势判定时事件当前骰点 < 所需点数 X（"将失败"重投门控）
     - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
-      orb_ge 为控制者鬼火的专用键，语义不同）
+      orb_ge 为控制者鬼火的专用键，语义不同）；事件无该字段时回退读控制者
+      PlayerState.ext[key]（on_play 步 ctx.event 为空——狂风刃卷 yaohu_damage_count_ge
+      类计数比较）
     - {victim_lethal: true}    ：事件 victim 当前生命 ≤ 事件伤害值 amount（"将受到致命
       伤害"——舍生响应；on_damage_start 时机在护甲计算前，按面板伤害判定）
     - {victim_in_combat: true|false} ：事件 victim 是否其控制者战斗区式神（"战斗区式神
@@ -383,9 +409,34 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
             if game.state.players[holder.player].shikigami[holder.shikigami].defeated != bool(want):
                 return False
+        elif key == "chosen_stunned":
+            # 卡牌选择目标中有眩晕角色（Step 级条件专用；崩雪"已眩晕则消灭、否则眩晕"）
+            matched = any(_ref_stunned(game, r) for r in (chosen or []))
+            if matched != bool(want):
+                return False
+        elif key == "combat_opponent_stunned":
+            # 持有者参与事件中的战斗且交战对方眩晕（双向；对方可为牌手）——雪童子
+            if holder is None:
+                return False
+            atk, vic = event.get("attacker"), event.get("victim")
+            if not isinstance(atk, Ref) or not isinstance(vic, Ref):
+                return False
+            if holder == atk:
+                other = vic
+            elif holder == vic:
+                other = atk
+            else:
+                return False
+            if _ref_stunned(game, other) != bool(want):
+                return False
         elif key.endswith("_ge"):
-            # 通用数值下限：事件字段 ≥ n（如 overheal_ge: 1 = 存在过量治疗）
-            if int(event.get(key[:-3], 0)) < int(want):
+            # 通用数值下限：事件字段 ≥ n（如 overheal_ge: 1 = 存在过量治疗）；
+            # 事件无该字段时回退读控制者 PlayerState.ext（on_play 步 ctx.event 为空——
+            # 狂风刃卷 yaohu_damage_count_ge 类计数比较）
+            val = event.get(key[:-3])
+            if val is None:
+                val = game.state.players[controller].ext.get(key[:-3], 0)
+            if int(val) < int(want):
                 return False
         elif key.endswith("_side"):
             ref = event.get(key[:-5])
@@ -402,6 +453,13 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             hp = game.state.players[ref.player]
             holder = hp.shikigami[ref.shikigami] if ref.shikigami is not None else hp
             if (holder.shield < 0) != bool(want):
+                return False
+        elif key.endswith("_stunned"):
+            # 事件中的 Ref 所指角色（式神或牌手）是否眩晕（defender_stunned 类）
+            ref = event.get(key[:-8])
+            if not isinstance(ref, Ref):
+                return False
+            if _ref_stunned(game, ref) != bool(want):
                 return False
         elif key.endswith("_kind"):
             ref = event.get(key[:-5])
@@ -433,6 +491,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 if not isinstance(ref, Ref) or ref.shikigami is None:
                     return False
                 if game.state.players[ref.player].shikigami[ref.shikigami].id != want:
+                    return False
+            elif isinstance(want, (list, tuple)):
+                # 多 id 匹配（番茄 10013199/10013198 双形态共享的牌手光环条件）
+                if not isinstance(ref, Ref) or ref.shikigami is None:
+                    return False
+                if game.state.players[ref.player].shikigami[ref.shikigami].id not in want:
                     return False
             else:
                 return False

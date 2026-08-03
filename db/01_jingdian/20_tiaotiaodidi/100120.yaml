@@ -1,0 +1,17 @@
+id: 100120
+name: 跳跳弟弟
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 红莲
+      power: 2
+      health: 9
+      ability:
+        # 受伤获得等量破甲（{event: amount} 读 on_damage 事件伤害值，寂寥心象 10012803 先例）
+        when: on_damage
+        condition: {victim_shikigami: self}
+        steps:
+          - {op: gain_shield, amount: {event: amount}, kind: fragile,
+             target: {kind: self}}
+      text: "当跳跳弟弟受到伤害时，获得等量的破甲。"

@@ -1,0 +1,16 @@
+id: 10012121
+name: 冰霜永冻
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      shikigami2: 100122  # 副所属：雪童子
+      card_type: reinforce
+      rarity: SSR
+      level: 1
+      # 雪刃侧（幻境）机制未实现暂缓录入，options 仅主式神侧（维护者定）；
+      # 致命之羽 10012621 先例：实际费用/等级/目标按所选子选项
+      options: [10012152]
+      effects:
+        steps: []
+      text: 选择使用一项：雪女-冰封；雪童子-雪刃

@@ -186,13 +186,21 @@ class Game:
             s.ext["dyn_health"] = 0
         for pi, pl in enumerate(self.state.players):
             for aura in pl.ext.get("stat_auras", []):
+                kind = aura.get("kind")
+                if kind == "ids_power":
+                    # 坐下/出击：按数据 id 匹配控制者在场的召唤物/变形物（番茄
+                    # 10013199/10013198）+N 力量——本局永久光环、跨召唤保留、可叠加；
+                    # 结附牌手而非式神，无 holder
+                    for s in pl.shikigami:
+                        if s.in_play and s.id in aura.get("ids", ()):
+                            s.ext["dyn_power"] += int(aura.get("power", 0))
+                    continue
                 hp, hs = aura.get("holder", [None, None])
                 if hp is None:
                     continue
                 src = self.state.players[hp].shikigami[hs]
                 if not src.in_play:
                     continue  # 持有者未在场：光环不生效
-                kind = aura.get("kind")
                 if kind == "self_hand_count":
                     # 闻世：每有一张其他手牌此牌便 +1/+1（形态在场上，手牌皆为"其他"）
                     n = len(self.state.players[hp].hand)
@@ -203,6 +211,17 @@ class Game:
                     for s in self.state.players[1 - pi].shikigami:
                         if s.in_play and s.shield < 0:
                             s.ext["dyn_power"] += s.shield  # shield 为负值即减力
+                elif kind == "enemy_stunned_exists":
+                    # 雪国之子：场上有[眩晕]的敌方角色时持有者 +power/+health
+                    # （活局面判定——眩晕全部解除即失去加成）
+                    if self._enemy_stunned_count(pi):
+                        src.ext["dyn_power"] += int(aura.get("power", 0))
+                        src.ext["dyn_health"] += int(aura.get("health", 0))
+                elif kind == "ext_power":
+                    # 雪融之时[增强]：持有者 +力量 = 控制者 ext[ext] 计数 × power 倍率
+                    # （本局累计计数类增强；计数由引擎/效果记账，光环读取时求值）
+                    n = int(pl.ext.get(aura.get("ext", ""), 0))
+                    src.ext["dyn_power"] += n * int(aura.get("power", 1))
         for pi, pl in enumerate(self.state.players):
             # 青蛙瓷器光环（契约"引擎读"）：其控制者本回合（含敌方回合）运势判定成功过
             # （ext luck_success_turn == 当前回合号）则在场的青蛙瓷器 +2 力量——不叠加、
@@ -220,6 +239,16 @@ class Game:
     @property
     def current(self) -> PlayerState:
         return self.state.players[self.state.active]
+
+    def _enemy_stunned_count(self, pi: int) -> int:
+        """玩家 pi 的敌方当前眩晕角色数（在场眩晕式神 + 眩晕牌手）。
+
+        "场上有[眩晕]的敌方角色"系列（霜舞 conditional_keywords / 雪国之子 stat_aura /
+        霜天之织 _step_amount）的统一读取点：活局面量——眩晕解除/气绝即减，非计数器。
+        """
+        d = self.state.players[1 - pi]
+        n = sum(1 for s in d.shikigami if s.in_play and s.is_stunned)
+        return n + (1 if d.is_stunned else 0)
 
     @property
     def config(self):
@@ -263,6 +292,13 @@ class Game:
             # [不消耗鬼火]与回合内首张[瞬发]已在上方归零，不受修正影响
             cost += sum(int(e.get("amount", 0)) for e in p.ext.get("cost_mods", [])
                         if e.get("turn") == self.state.turn)
+            # 跳跳妹妹基础能力（先天伪关键字 extra_orb_cost）：其战斗牌额外消耗 1 点鬼火；
+            # 气绝（能力不在场）/瞬发/不消耗鬼火（已归零）时全免——含额外的这 1 火（定案(11)）
+            if cdef.card_type == "combat" and cdef.shikigami is not None:
+                xi = self._find_shikigami(p, cdef.shikigami)
+                if (xi is not None and p.shikigami[xi].in_play
+                        and self._has_keyword(p.shikigami[xi], "extra_orb_cost")):
+                    cost += 1
         return cost
 
     def _match_auras(self, p: PlayerState, cdef: CardDef) -> list[dict]:
@@ -280,6 +316,8 @@ class Game:
                 continue
             if a.get("card_id") is not None and a["card_id"] != cdef.id:
                 continue  # "此牌"限定：仅命中指定数据 id
+            if a.get("tag") is not None and a["tag"] not in cdef.tags:
+                continue  # 标记限定：仅命中 tags 含该标记的牌（寒冬之心的"雪球"）
             turn = a.get("turn")
             if turn is not None and (turn == "self") != (self.state.active == pi):
                 continue  # 回合方条件不满足：光环不生效
@@ -303,7 +341,8 @@ class Game:
 
         conditional_keywords（心身炼磨/桃华灼灼/闪烁）：按卡牌所属式神在座次中的状态
         判定（level_ge = 等级下限；if_alive = 在场；combat_nonempty = 己方战斗区有人；
-        shikigami_has_form = 控制者指定式神结附着形态）；式神未出战时条件不满足。"""
+        shikigami_has_form = 控制者指定式神结附着形态；enemy_stunned_nonempty =
+        场上有[眩晕]的敌方角色——霜舞型条件瞬发，活局面判定）；式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
@@ -320,6 +359,9 @@ class Game:
                 continue
             if ck.get("combat_nonempty") and p.combat_index is None:
                 continue  # 己方战斗区有人（闪烁型条件瞬发）
+            if ck.get("enemy_stunned_nonempty") and not self._enemy_stunned_count(
+                    self.state.players.index(p)):
+                continue  # 场上有[眩晕]的敌方角色（霜舞型条件瞬发）
             if ck.get("shikigami_has_form") is not None:
                 # 控制者的式神（按数据 id）结附着形态（福寿双全条件瞬发；
                 # 与 targets.match_condition 同名算子同语义）
@@ -369,6 +411,9 @@ class Game:
 
         - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
         - {"shield_of": "self"|"source"}：来源式神当前护甲（尘刀快照/古尘之壁）；
+        - {"fragile_of": "self"|"source"}：来源式神当前破甲量（负 shield 的绝对值，
+          无破甲为 0；僵硬扑击"获得等同于自己破甲的力量"——战斗牌战力提取与
+          结算两读取点同源）；
         - {"power_of": "self"|"source"}：来源式神 eff_power（援护）；
         - {"perm_power": "self"}：来源式神当前永久力量修正快照（崩山"使用时按永久力量
           值增伤"——按使用时快照而非计数器；怪力/怒吼的 perm buff 是既有 buff_power）；
@@ -385,6 +430,8 @@ class Game:
           读 damage 记录的 last_damage_total）。
         - {"dice_distinct": true}：效果归属玩家骰子历史（ext dice_history）的
           去重数字种数（九莲宝灯"每投出过一个不重复数字 +1/+1"）。
+        - {"enemy_stunned_count": true}：场上眩晕的敌方角色数（霜天之织[增强]
+          "每有一个[眩晕]的敌方角色便+1力量"；活局面量，engine._enemy_stunned_count）。
         - {"hand_count_half": "controller"}：效果归属玩家当前手牌数的一半（向下取整，
           墨染"等同于你手牌数量一半的伤害"）。
         前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
@@ -398,6 +445,8 @@ class Game:
                 base += int(card.mods.get("enhance", 0))
             if raw.get("shield_of") and s is not None:
                 base += s.shield
+            if raw.get("fragile_of") and s is not None:
+                base += max(0, -s.shield)  # 破甲量（无破甲为 0；僵硬扑击）
             if raw.get("half_shield_of") and s is not None:
                 base += max(0, s.shield) // 2  # "每有 2 护甲"：向下取整；破甲不计
             if raw.get("power_of") and s is not None:
@@ -413,6 +462,10 @@ class Game:
             if raw.get("dice_distinct") and game is not None and controller is not None:
                 # 骰子历史去重种数（九莲宝灯动态身材；ext dice_history 记最终有效骰点）
                 base += len(set(game.state.players[controller].ext.get("dice_history", [])))
+            if raw.get("enemy_stunned_count") and game is not None and controller is not None:
+                # 场上眩晕的敌方角色数（霜天之织[增强]"每有一个便+1力量"；活局面量，
+                # 眩晕解除即减——统一读取点 engine._enemy_stunned_count）
+                base += game._enemy_stunned_count(controller)
             if raw.get("half_health_of") and event is not None and game is not None:
                 ref = event.get(raw["half_health_of"])
                 if isinstance(ref, Ref):
@@ -782,10 +835,18 @@ class Game:
             si = self._find_shikigami(p, cdef.shikigami)
             sname = self.db.shikigami[cdef.shikigami].name
             if si is None:
-                if any(st.transform_owner == cdef.shikigami for st in p.shikigami):
-                    # 变形物保留"所属式神"= 原式神 id：原式神被变形中，其任何牌都不能使用
-                    raise IllegalAction(f"{sname} 被变形中，不能使用其卡牌")
-                raise IllegalAction(f"{sname} 未出战")
+                ti = next((j for j, st in enumerate(p.shikigami)
+                           if st.transform_owner == cdef.shikigami), None)
+                if ti is not None:
+                    # 变形物保留"所属式神"= 原式神 id：原式神被变形中，其牌不能使用——
+                    # 觉醒·番茄特例（transform owner_combat 标记）：永久变形物可使用
+                    # 原式神的战斗牌（仅战斗牌，定案(13)②），此时以其座次为来源
+                    if cdef.card_type == "combat" and p.shikigami[ti].ext.get("owner_combat_ok"):
+                        si = ti
+                    else:
+                        raise IllegalAction(f"{sname} 被变形中，不能使用其卡牌")
+                else:
+                    raise IllegalAction(f"{sname} 未出战")
             s = p.shikigami[si]
             if s.stuns:
                 raise IllegalAction(f"{sname} 眩晕中，不能使用其卡牌")
@@ -944,12 +1005,16 @@ class Game:
     def _account_card_played(self, p: PlayerState, cdef: CardDef) -> None:
         """出牌统一记账（按 tags 计数）：tags 含 golden_feather 时累计本局/本回合使用数
         （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）；tags 含 lianmo 时
-        累计本局使用数（心技一体"本局每使用过一张炼磨牌"光环数值通道）。"""
+        累计本局使用数（心技一体"本局每使用过一张炼磨牌"光环数值通道）；tags 含
+        snowball 时累计本局使用数（流霰"本局每从手牌使用过一张'雪球'额外重复一次"——
+        本记账点只覆盖手牌/响应使用，凭空自动使用不经此处，不计）。"""
         if "golden_feather" in cdef.tags:
             p.ext["feather_used_game"] = p.ext.get("feather_used_game", 0) + 1
             p.ext["feather_used_turn"] = p.ext.get("feather_used_turn", 0) + 1
         if "lianmo" in cdef.tags:
             p.ext["lianmo_used_game"] = p.ext.get("lianmo_used_game", 0) + 1
+        if "snowball" in cdef.tags:
+            p.ext["snowball_used_game"] = p.ext.get("snowball_used_game", 0) + 1
 
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
                           affected: list[Ref] | None = None, *,
@@ -1004,11 +1069,13 @@ class Game:
 
         amount 支持 {"enhance": true, "base": n} 形式（禁锢之刀/冲撞）：base + 实例已装配的
         enhance 修饰（打出装配快照，见 _materialize）；以及 {"shield_of": "self"}（尘刀：
-        按打出瞬间护甲快照战力，本次战斗中不变）。
+        按打出瞬间护甲快照战力，本次战斗中不变）；{"enemy_stunned_count": true}（霜天之织：
+        场上眩晕的敌方角色数，活局面量——p 给出时与光环数值同通道求值）。
         p 给出时叠加命中该牌的卡牌光环数值通道（card_aura 的 power/shield，可叠加）。
         """
         power = 0
         shield = 0
+        controller = (self.state.players.index(p) if p is not None else None)
         for step in block.steps:
             if step.target is not None and step.target.kind != "self":
                 continue
@@ -1016,7 +1083,7 @@ class Game:
                 continue  # 永久力量增益（怪力）是常规效果步，非本次战斗战力
             if (step.model_extra or {}).get("no_extract"):
                 continue  # 标记不提取的步骤按常规效果步顺序结算（醉酒当歌"先自伤再获盾"）
-            amount = self._step_amount(step, card, s)
+            amount = self._step_amount(step, card, s, game=self, controller=controller)
             if step.op == "buff_power":
                 power += amount
             elif step.op == "gain_shield":
@@ -1060,8 +1127,12 @@ class Game:
         必须选择一名合法敌方式神——无合法目标时该牌不能使用）。
         """
         s = p.shikigami[si]
-        if not s.in_play:
+        defeated_entry = not s.in_play
+        if defeated_entry and not (s.defeated and self._playable_when_defeated(cdef, card)):
             raise IllegalAction("该式神未在场，无法使用战斗牌")
+        # 气绝时可用的战斗牌（不玩了啦"气绝时可用，复活跳跳妹妹"，定案(14)）：
+        # 气绝中不获得战力/护甲——先结算卡面效果，结算完未气绝则补齐战力/护甲并
+        # 正常发起战斗；仍未气绝则牌入墓地、不发起战斗（不崩守卫）
         hunt_target: Ref | None = None
         if "hunt" in cdef.keywords:
             if not chosen:
@@ -1074,7 +1145,8 @@ class Game:
         block = self._played_block(p, cdef, card, method)
         power, shield = self.combat_card_stats(block, card, s, p=p)
         atk_ref = Ref(player=self.state.players.index(p), shikigami=si)
-        self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
+        if not defeated_entry:
+            self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
         # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）；
         # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
@@ -1103,6 +1175,14 @@ class Game:
             self._run_step(st, ctx)
         # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
         self.move_card(p, card, "graveyard")
+        if defeated_entry:
+            if not s.in_play:
+                # 不玩了啦守卫：卡面效果结算完仍未复活——不发起战斗，正常收场
+                self._log(f"【{cdef.name}】结算完毕，{self.db.shikigami[s.id].name}"
+                          f"仍未复活，不发起战斗")
+                return
+            # 复活后：战力/护甲按正常战斗牌补齐，随后正常发起战斗（定案(14)）
+            self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                              temp_grants=tuple(cdef.temp_grants), convert=convert,
                              counter_piercing=counter_piercing,
@@ -1136,7 +1216,8 @@ class Game:
             for blk in cdef.temp_grants:
                 self.state.temp_grants.append(TempGrant(
                     block=blk, controller=pi, holder=ref,
-                    battle=self._battle_stack[-1]))
+                    battle=self._battle_stack[-1],
+                    uses=int((blk.model_extra or {}).get("uses", 1))))  # 同 _resolve_combat
         # 其余 steps（battle_immunity 等）照常执行——登记到当前战斗上下文
         ctx = ExecContext(controller=pi, source=ref, card=card)
         for step in block.steps:
@@ -1318,7 +1399,9 @@ class Game:
             self._battle_counter_piercing.add(bid)  # 反击贯通（反击事件生成/贯通修正读取）
         for block in temp_grants:
             self.state.temp_grants.append(TempGrant(
-                block=block, controller=atk_ref.player, holder=atk_ref, battle=bid))
+                block=block, controller=atk_ref.player, holder=atk_ref, battle=bid,
+                # uses 扩展键（缺省 1）：战斗内可多次触发（胧月雪华斩"造成伤害时"）
+                uses=int((block.model_extra or {}).get("uses", 1))))
         try:
             self._battle_flow(atk_ref, attacker, move=move, target=target, origin=origin)
         finally:
@@ -1511,6 +1594,8 @@ class Game:
         s = self._own_shikigami(p, i)
         if not s.in_play:
             raise IllegalAction("该式神未在场（0 级），不能出击")
+        if getattr(self.db.shikigami[s.id], "no_attack", False):
+            raise IllegalAction(f"{self.db.shikigami[s.id].name} 不能发动攻击")
         if p.is_stunned:
             raise IllegalAction("牌手眩晕中，己方所有式神不能出击")
         if s.stuns:
@@ -1546,9 +1631,12 @@ class Game:
                 s.one_shot_keywords.remove("haste")
             self._log(f"{self.db.shikigami[s.id].name} 的【迅捷】生效，本次出击不消耗鬼火")
         else:
-            if p.orb < 1:
-                raise IllegalAction("出击需要 1 点鬼火")
-            self._pay_orb(p, self.state.active, 1, reason="出击")
+            # 跳跳妹妹基础能力（先天伪关键字 extra_orb_cost）：出击额外消耗 1 点鬼火；
+            # [迅捷]出击完全不耗（含额外的 1 火，定案(11)）
+            need = 2 if self._has_keyword(s, "extra_orb_cost") else 1
+            if p.orb < need:
+                raise IllegalAction(f"出击需要 {need} 点鬼火")
+            self._pay_orb(p, self.state.active, need, reason="出击")
         p.assaults_left -= 1
         atk_ref = Ref(player=self.state.active, shikigami=i)
         self._consume_assault_boosts(p, atk_ref, s)
@@ -1668,10 +1756,11 @@ class Game:
 
     def _untransform(self, pi: int, i: int) -> None:
         """解除座次 i 变形物的变形：按 transform_origin 快照还原原式神当时状态
-        （身材/增减益/能力；变形物在场期间的改动不保留）。无快照（非变形物）为空操作。"""
+        （身材/增减益/能力；变形物在场期间的改动不保留）。无快照（非变形物）为空操作。
+        永久变形（ext["transform_permanent"]，觉醒·番茄）跳过——不还原。"""
         p = self.state.players[pi]
         s = p.shikigami[i]
-        if s.transform_origin is None:
+        if s.transform_origin is None or s.ext.get("transform_permanent"):
             return
         restored = ShikigamiState.model_validate(s.transform_origin)
         p.shikigami[i] = restored
@@ -1760,6 +1849,7 @@ class Game:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._remove_keyword(s, kw)
         s.ext.pop("power_zero", None)  # 力量覆写随形态离场清除（power_override）
+        s.keep_fragile = False  # 破甲保留（肿胀体质）随形态离场解除——"形态在场时"语义
         if p.ext.get("dice_force_six_holder") == [pi, i]:
             # 萌即正义离场：其授予的判定者级必 6 修饰随形态离场通道解除
             p.ext.pop("dice_force_six", None)
@@ -1967,15 +2057,16 @@ class Game:
     def _turn_start_clear_shield(self, p: PlayerState) -> None:
         """回合开始阶段 step 2：移除己方所有角色护甲/破甲（双向清零；keep_shield 仅保留正值部分）。
         觉醒·清姬（对方在场已觉醒且觉醒牌 tags 含 keep_enemy_fragile）：己方角色的破甲
-        不被清除（护甲照常）。"""
+        不被清除（护甲照常）；式神级 keep_fragile（肿胀体质，形态在场时）同样保留破甲。"""
         keep_fragile = self._fragile_kept_by_enemy(self.state.players.index(p))
         p.shield = min(0, p.shield) if keep_fragile else 0
         for s in p.shikigami:
+            keep_neg = keep_fragile or s.keep_fragile  # 式神级破甲保留（肿胀体质）
             if s.keep_shield:
                 # 护甲保留（觉醒·兵俑）；破甲照常清除（对方有觉醒·清姬时连同保留）
-                s.shield = s.shield if keep_fragile else max(0, s.shield)
+                s.shield = s.shield if keep_neg else max(0, s.shield)
             else:
-                s.shield = min(0, s.shield) if keep_fragile else 0
+                s.shield = min(0, s.shield) if keep_neg else 0
 
     def _fragile_kept_by_enemy(self, pi: int) -> bool:
         """玩家 pi 的对方是否有已觉醒且带 keep_enemy_fragile 标记觉醒牌的式神在场
@@ -2552,9 +2643,10 @@ class Game:
                   battle=self._battle_stack[-1] if self._battle_stack else None)
         if s.defeated:
             return  # 气绝前 1 的插入结算中已被其它事件标记气绝
-        if s.transform_origin is not None:
+        if s.transform_origin is not None and not s.ext.get("transform_permanent"):
             # 变形物"气绝前2"（契约 §2）：解除变形、原式神以已气绝状态进场——快照还原
-            # 到原座次后继续正常气绝流程（形态消灭/非永久修正清除/复活倒计时/气绝事件）
+            # 到原座次后继续正常气绝流程（形态消灭/非永久修正清除/复活倒计时/气绝事件）；
+            # 永久变形（觉醒·番茄）跳过——变形物气绝即气绝，复活仍为变形物（定案(13)②）
             restored = ShikigamiState.model_validate(s.transform_origin)
             restored.health = 0
             restored.dying = False
@@ -2923,9 +3015,9 @@ class Game:
         return out
 
     def _match(self, condition: dict | None, event: dict, controller: int,
-               holder: Ref | None = None) -> bool:
+               holder: Ref | None = None, chosen: list[Ref] | None = None) -> bool:
         """条件迷你语言判定（实现见 targets.match_condition）。"""
-        return targets.match_condition(self, condition, event, controller, holder)
+        return targets.match_condition(self, condition, event, controller, holder, chosen)
 
     # ==================== 效果块结算 ====================
 
@@ -3187,7 +3279,7 @@ class Game:
                 # op 自身声明 condition 参数（delay_grant 的延迟块触发条件）：作为参数传递
                 params["condition"] = step.condition
             elif not self._match(step.condition, ctx.event or {}, ctx.controller,
-                                 holder=ctx.source):
+                                 holder=ctx.source, chosen=ctx.chosen):
                 return  # Step 级条件不满足：跳过该步（条件迷你语言，见 targets.match_condition）
         refs = targets.resolve(self, step.target, ctx)
         if isinstance(params.get("amount"), dict):

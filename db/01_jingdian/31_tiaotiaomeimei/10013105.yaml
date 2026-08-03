@@ -1,0 +1,18 @@
+id: 10013105
+name: 别过来啊！
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [fast, trigger]
+      effects:
+        # 响应"当跳跳妹妹被攻击时"（射怪鸟事 10012605 先例：响应收集显式式神 id，
+        # 主动使用与响应共用同一 steps）
+        when: on_before_assault
+        condition: {victim_shikigami: 100131}
+        steps:
+          - {op: summon, shikigami: 10013199}
+      text: "[瞬发]。召唤‘番茄’。[响应]：{当跳跳妹妹被攻击时，自动使用。}"

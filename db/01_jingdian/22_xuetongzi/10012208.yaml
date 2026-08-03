@@ -1,0 +1,27 @@
+id: 10012208
+name: 觉醒·雪童子
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # +1/+2：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 2
+      rarity: SR
+      level: 3
+      target: {kind: choose, pool: enemy_character}
+      effects:
+        # [眩晕]一个敌方角色
+        steps:
+          - {op: stun}
+      abilities:
+        # [觉醒]：{与眩晕的敌方角色交战时获得[连击]且免疫战斗伤害}（双向，
+        # combat_opponent_stunned；scope=battle 战斗作用域授予，战斗终止点按实例移除——
+        # grant 在 on_before_assault 结算、引擎其后重读 combo 快照，赶上本场连击判定）
+        - when: on_before_assault
+          condition: {combat_opponent_stunned: true}
+          steps:
+            - {op: grant_keyword, keyword: combo, scope: battle, target: {kind: self}}
+            - {op: battle_immunity, target: {kind: self}}
+      text: "[眩晕]一个敌方角色。[觉醒]：{雪童子与[眩晕]的敌方角色交战时获得[连击]且免疫战斗伤害。}"
