@@ -1,26 +1,26 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010606
-version: 20260730
 name: 偷袭
-shikigami: 100106  # 派系：苍叶（继承自式神数据）
-card_type: combat
-rarity: R
-level: 2
-cost: 1
-keywords: [trigger]
-effects:
-  # [响应]：{当敌方回合结束且（敌方）战斗区没有式神时，自动使用}（答复3：
-  # 当前回合方的回合结束效果先结算完，再检查手牌响应）；无当前战斗的响应
-  # 战斗牌按完整战斗流程发起新战斗
-  when: on_turn_end
-  condition: {player: opponent, combat_empty: opponent}
-  steps:
-    - {op: buff_power, amount: 2, target: {kind: self}}
-triggers:
-  # 在敌方回合获得[瞬发]：敌方回合开始登记本回合光环（伺机先例）
-  - when: on_turn_start
-    condition: {player: opponent}
-    steps:
-      - {op: card_aura, shikigami: 100106, card_id: 10010606, keywords: [fast],
-         turn: opponent, scope: turn}
-text: "在敌方回合获得[瞬发]。[响应]：{当敌方回合结束且战斗区没有式神时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 2
+      keywords: [trigger]
+      effects:
+        # [响应]：{当敌方回合结束且（敌方）战斗区没有式神时，自动使用}（答复3：
+        # 当前回合方的回合结束效果先结算完，再检查手牌响应）；无当前战斗的响应
+        # 战斗牌按完整战斗流程发起新战斗
+        when: on_turn_end
+        condition: {player: opponent, combat_empty: opponent}
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+      triggers:
+        # 在敌方回合获得[瞬发]：敌方回合开始登记本回合光环（伺机先例）
+        - when: on_turn_start
+          condition: {player: opponent}
+          steps:
+            - {op: card_aura, shikigami: 100106, card_id: 10010606, keywords: [fast],
+               turn: opponent, scope: turn}
+      text: "在敌方回合获得[瞬发]。[响应]：{当敌方回合结束且战斗区没有式神时，自动使用。}"

@@ -1,30 +1,31 @@
 id: 10010402
-version: 20260724
 name: 吾即正义
-shikigami: 100104
-card_type: spell
-rarity: SR
-level: 1
-cost: 1
-keywords: [fast]
-alt_remove_keywords: [fast]  # thoughts.txt 答复 (2)：增强后失去[瞬发]
-effects:
-  steps:
-    - op: generate
-      shikigami: self
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
       card_type: spell
-      max_level: source      # 小于等于大天狗自身等级
-      exclude_self: true     # "其他法术牌"：排除吾即正义本身
-alt_effects:
-  steps:
-    - {op: destroy, target: {kind: all, pool: enemy_shikigami}}
-triggers:
-  # 本局大天狗每使用过一张法术（含觉醒法术、含自动使用）计数；
-  # 满 10 次置位 transformed——本局所有同名吾即正义（含之后生成的）打出改用 alt_effects
-  - when: on_card_played
-    condition: {player: self, card_type: spell, shikigami: 100104}
-    steps:
-      - {op: add_mod, to: persistent, key: spell_count}
-      - {op: add_mod, to: persistent, key: transformed, cap: 1,
-         require: {key: spell_count, ge: 10}}
-text: "[瞬发]。随机获得一张大天狗的小于等于自身等级的其他法术牌。[增强]：{本局游戏大天狗若使用过10次法术，则此牌变为消灭所有敌方式神。}"
+      rarity: SR
+      level: 1
+      keywords: [fast]
+      alt_remove_keywords: [fast]  # thoughts.txt 答复 (2)：增强后失去[瞬发]
+      effects:
+        steps:
+          - op: generate
+            shikigami: self
+            card_type: spell
+            max_level: source      # 小于等于大天狗自身等级
+            exclude_self: true     # "其他法术牌"：排除吾即正义本身
+      alt_effects:
+        steps:
+          - {op: destroy, target: {kind: all, pool: enemy_shikigami}}
+      triggers:
+        # 本局大天狗每使用过一张法术（含觉醒法术、含自动使用）计数；
+        # 满 10 次置位 transformed——本局所有同名吾即正义（含之后生成的）打出改用 alt_effects
+        - when: on_card_played
+          condition: {player: self, card_type: spell, shikigami: 100104}
+          steps:
+            - {op: add_mod, to: persistent, key: spell_count}
+            - {op: add_mod, to: persistent, key: transformed, cap: 1,
+               require: {key: spell_count, ge: 10}}
+      text: "[瞬发]。随机获得一张大天狗的小于等于自身等级的其他法术牌。[增强]：{本局游戏大天狗若使用过10次法术，则此牌变为消灭所有敌方式神。}"

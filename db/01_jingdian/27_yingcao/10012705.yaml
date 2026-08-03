@@ -1,25 +1,25 @@
 id: 10012705
-version: 20260731
 name: 闪烁
-shikigami: 100127  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-keywords: [trigger]
-# [增强]：己方战斗区有式神时，此牌获得[瞬发]（conditional_keywords 读取时求值）
-conditional_keywords:
-  - {keyword: fast, combat_nonempty: true}
-effects:
-  # 敌方战斗区的式神本回合力量变为0（power_override scope=turn 半回合作用域）
-  steps:
-    - {op: power_override, "on": true, scope: turn,
-       target: {kind: all, pool: enemy_combat}}
-response:
-  # [响应]：当敌方式神进入战斗区时，自动使用
-  when: on_enter_combat
-  condition: {player: opponent}
-  steps:
-    - {op: power_override, "on": true, scope: turn,
-       target: {kind: all, pool: enemy_combat}}
-text: "敌方战斗区的式神本回合力量变为0。[增强]：{己方战斗区有式神时，此牌获得[瞬发]}。[响应]：{当敌方式神进入战斗区时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [trigger]
+      conditional_keywords:
+        - {keyword: fast, combat_nonempty: true}
+      effects:
+        # 敌方战斗区的式神本回合力量变为0（power_override scope=turn 半回合作用域）
+        steps:
+          - {op: power_override, "on": true, scope: turn,
+             target: {kind: all, pool: enemy_combat}}
+      response:
+        # [响应]：当敌方式神进入战斗区时，自动使用
+        when: on_enter_combat
+        condition: {player: opponent}
+        steps:
+          - {op: power_override, "on": true, scope: turn,
+             target: {kind: all, pool: enemy_combat}}
+      text: "敌方战斗区的式神本回合力量变为0。[增强]：{己方战斗区有式神时，此牌获得[瞬发]}。[响应]：{当敌方式神进入战斗区时，自动使用。}"

@@ -1,16 +1,17 @@
 id: 10010208
-version: 20260724
 name: 尘缚之阵
-shikigami: 100102
-card_type: form
-rarity: R
-level: 3
-cost: 1
-form_power: 5
-form_health: 9
-tags: [combat_lock, destroy_immune]
-target: {kind: choose, pool: enemy_shikigami}
-effects:
-  steps:
-    - {op: grant_keyword, keyword: enraged}
-text: 使一个敌方式神获得[激怒]。当兵俑在战斗区时免疫直接消灭效果，敌方战斗区式神无法被其他式神替换。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 5
+      form_health: 9
+      tags: [combat_lock, destroy_immune]
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          - {op: grant_keyword, keyword: enraged}
+      text: 使一个敌方式神获得[激怒]。当兵俑在战斗区时免疫直接消灭效果，敌方战斗区式神无法被其他式神替换。

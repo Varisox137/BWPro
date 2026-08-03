@@ -1,14 +1,15 @@
 id: 10010401
-version: 20260724
 name: 风神一扇
-shikigami: 100104
-card_type: spell
-rarity: SR
-level: 1
-cost: 1
-effects:
-  steps:
-    # last_damage_victims = 上一步伤害的受伤者（damage 动作写入块内暂存）
-    - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
-    - {op: retreat, target: {kind: context, key: last_damage_victims}}
-text: "[投射]：{造成2点伤害，然后将受到此伤害的式神移回准备区}。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 1
+      effects:
+        steps:
+          # last_damage_victims = 上一步伤害的受伤者（damage 动作写入块内暂存）
+          - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
+          - {op: retreat, target: {kind: context, key: last_damage_victims}}
+      text: "[投射]：{造成2点伤害，然后将受到此伤害的式神移回准备区}。"

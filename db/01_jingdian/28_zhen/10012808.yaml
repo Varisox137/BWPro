@@ -1,18 +1,19 @@
 id: 10012808
-version: 20260724
 name: 毒之华
-shikigami: 100128
-card_type: combat
-rarity: SR
-level: 3
-cost: 1
-effects: {steps: []}
-temp_grants:
-  # 绑定本次战斗的一次性触发：鸩对敌方角色造成战斗伤害后，目标获得等同于
-  # 其当前生命一半（向下取整）的破甲
-  - when: on_damage
-    condition: {source_shikigami: self, kind: combat, victim_side: enemy}
-    steps:
-      - {op: gain_shield, amount: {half_health_of: victim}, kind: fragile,
-         target: {kind: context, key: victim}}
-text: 对敌方角色造成战斗伤害时，使其获得等同于其一半生命的破甲。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 3
+      effects: {steps: []}
+      temp_grants:
+        # 绑定本次战斗的一次性触发：鸩对敌方角色造成战斗伤害后，目标获得等同于
+        # 其当前生命一半（向下取整）的破甲
+        - when: on_damage
+          condition: {source_shikigami: self, kind: combat, victim_side: enemy}
+          steps:
+            - {op: gain_shield, amount: {half_health_of: victim}, kind: fragile,
+               target: {kind: context, key: victim}}
+      text: 对敌方角色造成战斗伤害时，使其获得等同于其一半生命的破甲。

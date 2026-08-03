@@ -1,31 +1,32 @@
 id: 10012703
-version: 20260731
 name: 萤火点点
-shikigami: 100127  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-keywords: [fast]
-effects:
-  steps: []  # 双择效果见 methods；enhance 修饰对两个方式同样生效
-methods:
-  - id: heal
-    target: {kind: choose, pool: friendly_shikigami}
-    effects:
-      steps:
-        - {op: buff_health, amount: {enhance: true, base: 1}}
-    text: 使一个己方式神+1生命
-  - id: damage
-    target: {kind: choose, pool: enemy_shikigami}
-    effects:
-      steps:
-        - {op: damage, amount: {enhance: true, base: 1}}
-    text: 对一个敌方式神造成1点伤害
-triggers:
-  # [增强]：己方回合开始时，若萤草上有形态，此牌效果+1（persistent enhance）
-  - when: on_turn_start
-    condition: {player: self, shikigami_has_form: 100127}
-    steps:
-      - {op: add_mod, to: persistent, key: enhance}
-text: "[瞬发]。使一个己方式神+1生命或对一个敌方式神造成1点伤害。[增强]：{己方回合开始时，若萤草上有形态，此牌效果+1。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        steps: []  # 双择效果见 methods；enhance 修饰对两个方式同样生效
+      methods:
+        - id: heal
+          target: {kind: choose, pool: friendly_shikigami}
+          effects:
+            steps:
+              - {op: buff_health, amount: {enhance: true, base: 1}}
+          text: 使一个己方式神+1生命
+        - id: damage
+          target: {kind: choose, pool: enemy_shikigami}
+          effects:
+            steps:
+              - {op: damage, amount: {enhance: true, base: 1}}
+          text: 对一个敌方式神造成1点伤害
+      triggers:
+        # [增强]：己方回合开始时，若萤草上有形态，此牌效果+1（persistent enhance）
+        - when: on_turn_start
+          condition: {player: self, shikigami_has_form: 100127}
+          steps:
+            - {op: add_mod, to: persistent, key: enhance}
+      text: "[瞬发]。使一个己方式神+1生命或对一个敌方式神造成1点伤害。[增强]：{己方回合开始时，若萤草上有形态，此牌效果+1。}"

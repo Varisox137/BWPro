@@ -1,20 +1,21 @@
 id: 10011801
-version: 20260731
 name: 纪行
-shikigami: 100118  # 派系：青岚（继承自式神数据）
-card_type: form
-rarity: R
-level: 1
-cost: 1
-form_power: 2
-form_health: 5
-keywords: [haste]
-effects:
-  steps: []
-abilities:
-  # 当书翁对敌方牌手造成伤害时，抽一张牌
-  - when: on_player_damaged
-    condition: {player: opponent, source_shikigami: self}
-    steps:
-      - {op: draw, count: 1}
-text: "[迅捷]。当书翁对敌方牌手造成伤害时，抽一张牌。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 2
+      form_health: 5
+      keywords: [haste]
+      effects:
+        steps: []
+      abilities:
+        # 当书翁对敌方牌手造成伤害时，抽一张牌
+        - when: on_player_damaged
+          condition: {player: opponent, source_shikigami: self}
+          steps:
+            - {op: draw, count: 1}
+      text: "[迅捷]。当书翁对敌方牌手造成伤害时，抽一张牌。"

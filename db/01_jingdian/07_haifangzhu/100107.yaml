@@ -1,14 +1,17 @@
 id: 100107
-version: 20260730
 name: 海坊主
-faction: 青岚
-power: 2
-health: 6
-ability:
-  # 过量治疗转化：on_heal（治疗时）在实际恢复为 0 时也触发（第十阶段维护者答复），
-  # 满血治疗 overheal = 全额 → 全额转护甲；overheal = 治疗量 - 实际治疗量（payload 字段）
-  when: on_heal
-  condition: {source_shikigami: self, target_side: friendly, overheal_ge: 1}
-  steps:
-    - {op: gain_shield, amount: {event: overheal}, target: {kind: context, key: target}}
-text: 海坊主对己方造成的过量治疗会转化为护甲。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 青岚
+      power: 2
+      health: 6
+      ability:
+        # 过量治疗转化：on_heal（治疗时）在实际恢复为 0 时也触发（第十阶段维护者答复），
+        # 满血治疗 overheal = 全额 → 全额转护甲；overheal = 治疗量 - 实际治疗量（payload 字段）
+        when: on_heal
+        condition: {source_shikigami: self, target_side: friendly, overheal_ge: 1}
+        steps:
+          - {op: gain_shield, amount: {event: overheal}, target: {kind: context, key: target}}
+      text: 海坊主对己方造成的过量治疗会转化为护甲。

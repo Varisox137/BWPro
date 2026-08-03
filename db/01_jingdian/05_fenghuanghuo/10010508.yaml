@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010508
-version: 20260729
 name: 出云
-shikigami: 100105  # 派系：红莲（继承自式神数据）
-card_type: form
-rarity: SR
-level: 3
-cost: 1
-form_power: 5
-form_health: 5
-effects:
-  steps: []
-abilities:
-  # 凤凰火使用法术牌时，将一张'凤火'置入手牌
-  - when: on_card_played
-    condition: {player: self, card_type: spell, shikigami: 100105}
-    steps:
-      - {op: generate, card_id: 10010505, zone: hand}
-text: 当凤凰火使用法术牌时，将一张‘凤火’置入手牌。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 5
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # 凤凰火使用法术牌时，将一张'凤火'置入手牌
+        - when: on_card_played
+          condition: {player: self, card_type: spell, shikigami: 100105}
+          steps:
+            - {op: generate, card_id: 10010505, zone: hand}
+      text: 当凤凰火使用法术牌时，将一张‘凤火’置入手牌。

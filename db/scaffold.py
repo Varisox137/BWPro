@@ -20,8 +20,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-
 from db.loader import CardDatabase
 from db.packs import find_shiki_dir, pack_dir_name, shiki_dir_name
 from db.schema import CARD_TYPES, FACTION_COLORS, RARITIES
@@ -44,15 +42,6 @@ def _write(path: Path, content: str, force: bool) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
-
-
-def _shikigami_faction(root: Path, sid: int) -> str | None:
-    """从所属式神 yaml 读取派系（继承用）；文件不存在返回 None。"""
-    d = find_shiki_dir(root, sid)
-    if d is None:
-        return None
-    data = yaml.safe_load((d / f"{sid}.yaml").read_text(encoding="utf-8")) or {}
-    return data.get("faction")
 
 
 def scaffold_shikigami(
@@ -93,15 +82,18 @@ def scaffold_shikigami(
 
     lines = [HEADER]
     lines.append(f"id: {id}\n")
-    lines.append(f"version: {_version()}\n")
     lines.append(f"name: {name}\n")
+    lines.append("versions:\n")
+    lines.append(f"  best: {_version()}\n")
+    lines.append("  history:\n")
+    lines.append(f"    - date: {_version()}  # 发布日期\n")
     if kind == "summon":
-        lines.append("kind: summon\n")
-    lines.append(f"faction: {faction}\n")
-    lines.append(f"power: {power}\n")
-    lines.append(f"health: {health}\n")
-    lines.append("# ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）\n")
-    lines.append('text: ""\n')
+        lines.append("      kind: summon\n")
+    lines.append(f"      faction: {faction}\n")
+    lines.append(f"      power: {power}\n")
+    lines.append(f"      health: {health}\n")
+    lines.append("      # ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）\n")
+    lines.append('      text: ""\n')
     written = [_write(out_dir / f"{id}.yaml", "".join(lines), force)]
 
     if with_cards:
@@ -157,39 +149,39 @@ def scaffold_card(
         raise ValueError("可构筑卡牌序号须在 01-08 号段")
 
     card_id = shikigami * 100 + seq
-    faction = _shikigami_faction(root, shikigami)
 
     lines = [HEADER]
     lines.append(f"id: {card_id}\n")
-    lines.append(f"version: {_version()}\n")
     lines.append(f"name: {name}\n")
-    if faction:
-        lines.append(f"shikigami: {shikigami}  # 派系：{faction}（继承自式神数据）\n")
-    else:
-        lines.append(f"shikigami: {shikigami}\n")
+    lines.append("versions:\n")
+    lines.append(f"  best: {_version()}\n")
+    lines.append("  history:\n")
+    lines.append(f"    - date: {_version()}  # 发布日期\n")
+    # shikigami（= id 前六位）由 id 推导，不入数据；中立牌由 id 首位 9 识别
     if shikigami2 is not None:
-        lines.append(f"shikigami2: {shikigami2}  # 协战副归属\n")
-    lines.append(f"card_type: {card_type}\n")
+        lines.append(f"      shikigami2: {shikigami2}  # 协战副归属\n")
+    lines.append(f"      card_type: {card_type}\n")
     if awaken:
-        lines.append("subtype: awaken\n")
-    lines.append(f"rarity: {rarity}\n")
+        lines.append("      subtype: awaken\n")
+    lines.append(f"      rarity: {rarity}\n")
     if token:
-        lines.append("token: true\n")
-    lines.append(f"level: {level}\n")
-    lines.append(f"cost: {cost}\n")
+        lines.append("      token: true\n")
+    lines.append(f"      level: {level}\n")
+    if cost != 1:  # cost 默认 1（schema 默认值），非 1 才写入
+        lines.append(f"      cost: {cost}\n")
     if card_type == "form":
-        lines.append("form_power: 3  # TODO: 待填\n")
-        lines.append("form_health: 4  # TODO: 待填\n")
+        lines.append("      form_power: 3  # TODO: 待填\n")
+        lines.append("      form_health: 4  # TODO: 待填\n")
     if card_type == "reinforce":
-        lines.append("# options: [主侧子卡id, 副侧子卡id]  # TODO: 待补（缺省由打出流程报错）\n")
-    lines.append("effects:\n")
-    lines.append("  # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）\n")
-    lines.append("  steps: []\n")
+        lines.append("      # options: [主侧子卡id, 副侧子卡id]  # TODO: 待补（缺省由打出流程报错）\n")
+    lines.append("      effects:\n")
+    lines.append("        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）\n")
+    lines.append("        steps: []\n")
     if card_type == "form":
-        lines.append("# abilities: 待补形态能力块（结附期间生效）\n")
+        lines.append("      # abilities: 待补形态能力块（结附期间生效）\n")
     if awaken:
-        lines.append("# abilities: 待补觉醒能力块（打出时替换式神能力）\n")
-    lines.append('text: ""  # TODO: 待补卡面文本\n')
+        lines.append("      # abilities: 待补觉醒能力块（打出时替换式神能力）\n")
+    lines.append('      text: ""  # TODO: 待补卡面文本\n')
     return _write(owner_dir / f"{card_id}.yaml", "".join(lines), force)
 
 

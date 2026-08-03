@@ -1,15 +1,15 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011603
-version: 20260729
 name: 怒吼
-shikigami: 100116  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-effects:
-  steps:
-    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
-    # 其他己方式神+1力量（非永久：临时修正，气绝清除）
-    - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
-text: 山童永久获得1力量，其他己方式神获得1力量。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+          # 其他己方式神+1力量（非永久：临时修正，气绝清除）
+          - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
+      text: 山童永久获得1力量，其他己方式神获得1力量。

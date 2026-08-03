@@ -1,11 +1,10 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 100113
-version: 20260802
 name: 青蛙瓷器
-faction: 苍叶
-power: 2
-health: 6
-# 基础能力（光环）：判定者=己方的运势判定成功过的回合，青蛙瓷器 +2 力量——引擎内建
-# （core/engine.py：成功记账点维护牌手 ext luck_success_turn；动态光环按 id 读取，
-# 不叠加、气绝复活保留、不分敌我回合），数据侧无需挂块
-text: "青蛙瓷器在你[运势]判定成功过的回合获得2力量。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 苍叶
+      power: 2
+      health: 6
+      text: "青蛙瓷器在你[运势]判定成功过的回合获得2力量。"

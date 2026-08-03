@@ -1,24 +1,25 @@
 id: 10011107
-version: 20260730
 name: 觉醒·青坊主
-shikigami: 100111  # 派系：紫岩（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_power: 0
-awaken_health: 2
-tags: [awaken]
-rarity: SR
-level: 3
-cost: 1
-effects:
-  steps:
-    # "恢复8生命"目标 = 你的牌手（维护者答复 2）
-    - {op: heal, amount: 8, target: {kind: all, pool: self_player}}
-abilities:
-  # 觉醒替换（原文不含基础能力，整体替换）：不再每回合一次，恢复时对所有敌人
-  # （敌方式神 + 敌方牌手）造成 1 点伤害；挂治疗后 on_after_heal（仅实际恢复触发）
-  - when: on_after_heal
-    condition: {target_side: friendly}
-    steps:
-      - {op: damage, amount: 1, target: {kind: all, pool: enemy_character}}
-text: 恢复8生命。[觉醒]：{当你恢复生命时，对所有敌人造成1点伤害。}
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 0
+      awaken_health: 2
+      tags: [awaken]
+      rarity: SR
+      level: 3
+      effects:
+        steps:
+          # "恢复8生命"目标 = 你的牌手（维护者答复 2）
+          - {op: heal, amount: 8, target: {kind: all, pool: self_player}}
+      abilities:
+        # 觉醒替换（原文不含基础能力，整体替换）：不再每回合一次，恢复时对所有敌人
+        # （敌方式神 + 敌方牌手）造成 1 点伤害；挂治疗后 on_after_heal（仅实际恢复触发）
+        - when: on_after_heal
+          condition: {target_side: friendly}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: enemy_character}}
+      text: 恢复8生命。[觉醒]：{当你恢复生命时，对所有敌人造成1点伤害。}

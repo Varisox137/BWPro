@@ -27,6 +27,15 @@ from db.schema import (
 DB_ROOT = Path(__file__).parent
 
 
+def _inject_derived(resolved: dict) -> dict:
+    """卡牌定义注入由 id 推导的所属式神（不入 yaml 数据）：中立牌（id 首位 9）
+    为 None，其余为 id 前六位（协战牌主归属同为前六位 = 两位所属中较小者）。"""
+    if "card_type" in resolved:
+        cid = resolved["id"]
+        resolved["shikigami"] = None if cid // 10_000_000 == 9 else cid // 100
+    return resolved
+
+
 class CardDatabase:
     def __init__(
         self,
@@ -52,16 +61,22 @@ class CardDatabase:
         raw_cards: dict[int, dict] = {}
         raw_shikigami: dict[int, dict] = {}
         custom_events: set[str] = set()
-        # db/<pack>/<seq>_<slug>/*.yaml 递归收集；按有无 card_type 区分卡牌/式神定义
+        from db.versioning import resolve_latest
+        # db/<pack>/<seq>_<slug>/*.yaml 递归收集；顶层仅 id/name/versions，
+        # 先解析最新版本快照，再按有无 card_type 区分卡牌/式神定义
         for f in sorted(root.rglob("*.yaml")):
             if f.name == "events.yaml":
                 for entry in yaml.safe_load(f.read_text(encoding="utf-8")) or []:
                     custom_events.add(entry["name"])
                 continue
             data = yaml.safe_load(f.read_text(encoding="utf-8"))
-            out: dict = cards if "card_type" in data else shikigami
+            resolved = resolve_latest(data)
+            if resolved is None:
+                raise RuntimeError(f"{f.name}: versions.history 无可用快照")
+            _inject_derived(resolved)
+            out: dict = cards if "card_type" in resolved else shikigami
             raw_out: dict = raw_cards if out is cards else raw_shikigami
-            obj = (CardDef if out is cards else ShikigamiDef).model_validate(data)
+            obj = (CardDef if out is cards else ShikigamiDef).model_validate(resolved)
             if obj.id in cards or obj.id in shikigami:
                 raise RuntimeError(f"id 重复: {obj.id}（{f.name}）")
             out[obj.id] = obj
@@ -88,7 +103,7 @@ class CardDatabase:
                 continue
             r = resolve_at_date(raw, date)
             if r is not None:
-                cards[i] = CardDef.model_validate(r)
+                cards[i] = CardDef.model_validate(_inject_derived(r))
         for i, s in self.shikigami.items():
             raw = self.raw_shikigami.get(i)
             if raw is None:

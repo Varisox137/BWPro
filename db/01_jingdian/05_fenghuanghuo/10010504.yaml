@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010504
-version: 20260729
 name: 焚羽
-shikigami: 100105  # 派系：红莲（继承自式神数据）
-card_type: form
-rarity: R
-level: 2
-cost: 1
-form_power: 4
-form_health: 6
-effects:
-  steps: []
-abilities:
-  # 凤凰火造成的所有非战斗伤害+1（含觉醒后其他己方式神法术触发的投射——其来源是凤凰火）
-  - when: on_damage_start
-    condition: {source_shikigami: self, kind: effect}
-    steps:
-      - {op: boost_damage, amount: 1}
-text: 凤凰火造成的所有非战斗伤害+1。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 凤凰火造成的所有非战斗伤害+1（含觉醒后其他己方式神法术触发的投射——其来源是凤凰火）
+        - when: on_damage_start
+          condition: {source_shikigami: self, kind: effect}
+          steps:
+            - {op: boost_damage, amount: 1}
+      text: 凤凰火造成的所有非战斗伤害+1。

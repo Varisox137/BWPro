@@ -1,38 +1,38 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011951
-version: 20260731
 name: 桃红簇簇
-shikigami: 100119  # 派系：红莲（继承自式神数据）
-card_type: form
-rarity: SSR
-token: true
-level: 2
-cost: 1
-form_power: 3
-form_health: 6
-effects:
-  # [羁绊]：{进场时樱花妖为所有己方式神恢复2生命}——樱花妖（100403）未加入前
-  # 门控恒 False（shikigami_active 只查队伍数据 id，不读库，安全）
-  steps:
-    - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami},
-       condition: {shikigami_active: 100403}}
-abilities:
-  # 己方式神进入战斗区时恢复2生命（治疗来源=桃花妖→连锁桃花妖赋益）
-  - when: on_enter_combat
-    condition: {player: self}
-    steps:
-      - {op: heal, amount: 2, target: {kind: context, key: shikigami}}
-  # 己方式神离开战斗区时恢复2生命（同上；气绝移动不发 on_leave_combat）
-  - when: on_leave_combat
-    condition: {player: self}
-    steps:
-      - {op: heal, amount: 2, target: {kind: context, key: shikigami}}
-  # 己方准备区式神受到致命伤害时免疫此次伤害，然后移除此形态
-  # （消耗式免疫 scope=once 命中即移除；victim_in_combat: false = 准备区限定）
-  - when: on_damage_start
-    condition: {victim_side: friendly, victim_kind: shikigami, victim_lethal: true,
-                victim_in_combat: false}
-    steps:
-      - {op: grant_immunity, kind: all, scope: once, target: {kind: context, key: victim}}
-      - {op: destroy_form, target: {kind: self}}
-text: "己方式神进入或离开战斗区时恢复2生命。己方准备区式神受到致命伤害时免疫此次伤害，然后移除此形态。[羁绊]：{进场时樱花妖为所有己方式神恢复2生命。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SSR
+      token: true
+      level: 2
+      form_power: 3
+      form_health: 6
+      effects:
+        # [羁绊]：{进场时樱花妖为所有己方式神恢复2生命}——樱花妖（100403）未加入前
+        # 门控恒 False（shikigami_active 只查队伍数据 id，不读库，安全）
+        steps:
+          - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami},
+             condition: {shikigami_active: 100403}}
+      abilities:
+        # 己方式神进入战斗区时恢复2生命（治疗来源=桃花妖→连锁桃花妖赋益）
+        - when: on_enter_combat
+          condition: {player: self}
+          steps:
+            - {op: heal, amount: 2, target: {kind: context, key: shikigami}}
+        # 己方式神离开战斗区时恢复2生命（同上；气绝移动不发 on_leave_combat）
+        - when: on_leave_combat
+          condition: {player: self}
+          steps:
+            - {op: heal, amount: 2, target: {kind: context, key: shikigami}}
+        # 己方准备区式神受到致命伤害时免疫此次伤害，然后移除此形态
+        # （消耗式免疫 scope=once 命中即移除；victim_in_combat: false = 准备区限定）
+        - when: on_damage_start
+          condition: {victim_side: friendly, victim_kind: shikigami, victim_lethal: true,
+                      victim_in_combat: false}
+          steps:
+            - {op: grant_immunity, kind: all, scope: once, target: {kind: context, key: victim}}
+            - {op: destroy_form, target: {kind: self}}
+      text: "己方式神进入或离开战斗区时恢复2生命。己方准备区式神受到致命伤害时免疫此次伤害，然后移除此形态。[羁绊]：{进场时樱花妖为所有己方式神恢复2生命。}"

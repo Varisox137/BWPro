@@ -1,21 +1,22 @@
 id: 10012751
-version: 20260731
 name: 森佑灵引
-shikigami: 100127  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: SSR
-token: true
-level: 2
-cost: 1
-target: {kind: choose, pool: friendly_shikigami}
-effects:
-  # 从牌库中抽取1张不高于该式神等级的形态牌；若该式神力量>=4且存活，改为直接使用
-  # （不耗鬼火、play_from=deck）。检索成功则洗牌库（维护者答复(5)：检索类效果命中即洗）
-  steps:
-    - {op: search_deck, shikigami: target, card_type: form, max_level: target,
-       direct_play_power_ge: 4}
-    # [羁绊]：白狼获得[庇佑]（一次性关键字：抵消下一次敌方来源的效果伤害；
-    # 池过滤自带在场门控，白狼未出战/不在场为空操作）
-    - {op: grant_keyword, keyword: blessing,
-       target: {kind: all, pool: friendly_shikigami, shikigami: 100101}}
-text: "选择一个己方式神，从牌库中抽取1张不高于该式神等级的形态牌，若该式神力量>=4且存活，改为直接使用。[羁绊]：{白狼获得[庇佑]}。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      token: true
+      level: 2
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        # 从牌库中抽取1张不高于该式神等级的形态牌；若该式神力量>=4且存活，改为直接使用
+        # （不耗鬼火、play_from=deck）。检索成功则洗牌库（维护者答复(5)：检索类效果命中即洗）
+        steps:
+          - {op: search_deck, shikigami: target, card_type: form, max_level: target,
+             direct_play_power_ge: 4}
+          # [羁绊]：白狼获得[庇佑]（一次性关键字：抵消下一次敌方来源的效果伤害；
+          # 池过滤自带在场门控，白狼未出战/不在场为空操作）
+          - {op: grant_keyword, keyword: blessing,
+             target: {kind: all, pool: friendly_shikigami, shikigami: 100101}}
+      text: "选择一个己方式神，从牌库中抽取1张不高于该式神等级的形态牌，若该式神力量>=4且存活，改为直接使用。[羁绊]：{白狼获得[庇佑]}。"

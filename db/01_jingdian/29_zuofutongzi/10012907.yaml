@@ -1,22 +1,22 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10012907
-version: 20260802
 name: 和气满满
-shikigami: 100129  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: R
-level: 3
-cost: 1
-form_power: 0
-form_health: 7
-effects:
-  steps: []
-abilities:
-  # 每当一个式神攻击时（不分敌我）：运势4判定失败则攻击者本次战斗力量变为0
-  # （power_override scope=battle 为契约外扩展——战斗终止点清除，需引擎侧支持）
-  - when: on_before_assault
-    luck: {x: 4, "on": fail}
-    steps:
-      - {op: power_override, "on": true, scope: battle,
-         target: {kind: context, key: attacker}}
-text: "每当一个式神攻击时[运势4]：{失败则本次战斗力量变为0。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 0
+      form_health: 7
+      effects:
+        steps: []
+      abilities:
+        # 每当一个式神攻击时（不分敌我）：运势4判定失败则攻击者本次战斗力量变为0
+        # （power_override scope=battle 为契约外扩展——战斗终止点清除，需引擎侧支持）
+        - when: on_before_assault
+          luck: {x: 4, "on": fail}
+          steps:
+            - {op: power_override, "on": true, scope: battle,
+               target: {kind: context, key: attacker}}
+      text: "每当一个式神攻击时[运势4]：{失败则本次战斗力量变为0。}"

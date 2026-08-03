@@ -1,26 +1,26 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011751
-version: 20260802
 name: 幸运兔兔
-shikigami: 100117  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: SSR
-token: true  # 协战子选项（福星高照 10011721 主式神侧）
-level: 3
-cost: 1
-keywords: [fast]
-effects:
-  steps:
-    # 增强（投出三次6点）：敌方下回合从手牌使用的卡牌鬼火消耗+1
-    # （[不消耗鬼火]与回合内首张[瞬发]优先，契约 §3.5 cost_delta_player）
-    - {op: cost_delta_player, target: {kind: all, pool: enemy_player}, amount: 1,
-       scope: next_turn, condition: {dice_six_ge: 3}}
-    # 羁绊：座敷童子在场未气绝时——运势4：直到敌方回合结束所有敌方式神力量变为0
-    - op: luck_roll
-      x: 4
-      judge: self
-      condition: {shikigami_active: 100129}
-      then:
-        - {op: power_override, "on": true, scope: turn,
-           target: {kind: all, pool: enemy_shikigami}}
-text: "[瞬发]。[增强]：{本局游戏你骰子投出三次6点，敌方下回合所有卡牌鬼火消耗+1}。[羁绊]：{座敷童子[运势4]：{直到敌方回合结束，所有敌方式神力量变为0}。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（福星高照 10011721 主式神侧）
+      level: 3
+      keywords: [fast]
+      effects:
+        steps:
+          # 增强（投出三次6点）：敌方下回合从手牌使用的卡牌鬼火消耗+1
+          # （[不消耗鬼火]与回合内首张[瞬发]优先，契约 §3.5 cost_delta_player）
+          - {op: cost_delta_player, target: {kind: all, pool: enemy_player}, amount: 1,
+             scope: next_turn, condition: {dice_six_ge: 3}}
+          # 羁绊：座敷童子在场未气绝时——运势4：直到敌方回合结束所有敌方式神力量变为0
+          - op: luck_roll
+            x: 4
+            judge: self
+            condition: {shikigami_active: 100129}
+            then:
+              - {op: power_override, "on": true, scope: turn,
+                 target: {kind: all, pool: enemy_shikigami}}
+      text: "[瞬发]。[增强]：{本局游戏你骰子投出三次6点，敌方下回合所有卡牌鬼火消耗+1}。[羁绊]：{座敷童子[运势4]：{直到敌方回合结束，所有敌方式神力量变为0}。}"

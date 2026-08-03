@@ -1,15 +1,16 @@
 id: 10012801
-version: 20260724
 name: 鸩羽
-shikigami: 100128
-card_type: combat
-rarity: SR
-level: 1
-cost: 1
-effects:
-  # battle_immunity step 由战斗牌流程提取、绑定本次战斗；Step.condition 在战斗
-  # 开始时以 {"defender": 被攻击者} 求值（"若攻击有破甲的角色"）
-  steps:
-    - {op: buff_power, amount: 2, target: {kind: self}}
-    - {op: battle_immunity, target: {kind: self}, condition: {defender_has_fragile: true}}
-text: 若攻击有破甲的角色，免疫战斗伤害。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 1
+      effects:
+        # battle_immunity step 由战斗牌流程提取、绑定本次战斗；Step.condition 在战斗
+        # 开始时以 {"defender": 被攻击者} 求值（"若攻击有破甲的角色"）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: battle_immunity, target: {kind: self}, condition: {defender_has_fragile: true}}
+      text: 若攻击有破甲的角色，免疫战斗伤害。

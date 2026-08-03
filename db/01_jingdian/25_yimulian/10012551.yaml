@@ -1,18 +1,19 @@
 id: 10012551
-version: 20260724
 name: 风韵雅乐
-shikigami: 100125
-card_type: combat
-rarity: SSR
-token: true  # 协战子选项（风之乐章 10012421）
-level: 2
-cost: 1
-effects:
-  steps:
-    # 触发本局游戏生效过的一目连所有倒计时效果（每种最多一次）：
-    # countdown_history 首次出现顺序重放（形态来源经 countdown_effects 找回）
-    - {op: replay_countdown, shikigami: 100125}
-    # 羁绊：随机获得一张妖琴师觉醒牌（spell + subtype awaken；条件：妖琴师在场）
-    - {op: generate, shikigami: 100124, card_type: spell, subtype: awaken,
-       condition: {shikigami_active: 100124}}
-text: "触发本局游戏生效过的一目连所有[倒计时]效果（每种最多一次）。[羁绊]：{随机获得一张妖琴师觉醒牌}。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SSR
+      token: true  # 协战子选项（风之乐章 10012421）
+      level: 2
+      effects:
+        steps:
+          # 触发本局游戏生效过的一目连所有倒计时效果（每种最多一次）：
+          # countdown_history 首次出现顺序重放（形态来源经 countdown_effects 找回）
+          - {op: replay_countdown, shikigami: 100125}
+          # 羁绊：随机获得一张妖琴师觉醒牌（spell + subtype awaken；条件：妖琴师在场）
+          - {op: generate, shikigami: 100124, card_type: spell, subtype: awaken,
+             condition: {shikigami_active: 100124}}
+      text: "触发本局游戏生效过的一目连所有[倒计时]效果（每种最多一次）。[羁绊]：{随机获得一张妖琴师觉醒牌}。"

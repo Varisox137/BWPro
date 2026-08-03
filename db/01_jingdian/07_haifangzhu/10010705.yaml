@@ -1,13 +1,14 @@
 id: 10010705
-version: 20260730
 name: 祝福之水
-shikigami: 100107  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-keywords: [fast]
-effects:
-  steps:
-    - {op: heal, amount: 3, target: {kind: all, pool: friendly_character}}
-text: "[瞬发]。为己方所有角色恢复3生命。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: heal, amount: 3, target: {kind: all, pool: friendly_character}}
+      text: "[瞬发]。为己方所有角色恢复3生命。"

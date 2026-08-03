@@ -1,13 +1,14 @@
 id: 10012306
-version: 20260724
 name: 妖刀万华
-shikigami: 100123
-card_type: form
-rarity: R
-level: 3
-cost: 1
-form_power: 3
-form_health: 8
-keywords: [combo]
-effects: {steps: []}
-text: "[连击]"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 3
+      form_health: 8
+      keywords: [combo]
+      effects: {steps: []}
+      text: "[连击]"

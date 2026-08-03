@@ -1,13 +1,14 @@
 id: 10010108
-version: 20260724
 name: 无我
-shikigami: 100101
-card_type: spell
-rarity: SSR
-level: 3
-cost: 1
-keywords: [fast]
-effects:
-  steps:
-    - {op: attack_buff, power: 3, keywords: [unyielding, piercing, haste], target: {kind: self}}
-text: "[瞬发]。白狼获得3力量、[不屈]、[贯通]、[迅捷]直到下一次攻击后。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      level: 3
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: attack_buff, power: 3, keywords: [unyielding, piercing, haste], target: {kind: self}}
+      text: "[瞬发]。白狼获得3力量、[不屈]、[贯通]、[迅捷]直到下一次攻击后。"

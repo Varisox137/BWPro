@@ -1,21 +1,22 @@
 id: 10011102
-version: 20260730
 name: 禅心
-shikigami: 100111  # 派系：紫岩（继承自式神数据）
-card_type: form
-rarity: SR
-level: 1
-cost: 1
-form_power: 1
-form_health: 6
-effects:
-  steps: []
-abilities:
-  # 每回合一次（turn_mark 门控）；"你恢复生命时" = 己方任意角色实际恢复——
-  # 挂治疗后 on_after_heal（仅实际恢复 > 0 触发）
-  - when: on_after_heal
-    condition: {target_side: friendly, turn_mark_not: zenxin}
-    steps:
-      - {op: turn_mark, key: zenxin}
-      - {op: draw, count: 1}
-text: 每回合一次，当你恢复生命时，抽一张牌。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 1
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 每回合一次（turn_mark 门控）；"你恢复生命时" = 己方任意角色实际恢复——
+        # 挂治疗后 on_after_heal（仅实际恢复 > 0 触发）
+        - when: on_after_heal
+          condition: {target_side: friendly, turn_mark_not: zenxin}
+          steps:
+            - {op: turn_mark, key: zenxin}
+            - {op: draw, count: 1}
+      text: 每回合一次，当你恢复生命时，抽一张牌。

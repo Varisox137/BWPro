@@ -1,22 +1,21 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10012908
-version: 20260802
 name: 福满乾坤
-shikigami: 100129  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: SSR
-level: 3
-cost: 1
-# [条件]：双方运势判定成功合计 12 次，不满足则任何方式都不能使用（契约 §3.8）
-play_condition: {luck_success_total_ge: 12}
-effects:
-  # 三段效果依次对双方生效（己方先）：生命变30（set_health 非治疗、不触发治疗时机）
-  # → 抽手牌直至十张 → +3鬼火；draw {hand_to: n}/side 与 gain_orb side 为契约外扩展
-  steps:
-    - {op: set_health, amount: 30, target: {kind: all, pool: self_player}}
-    - {op: set_health, amount: 30, target: {kind: all, pool: enemy_player}}
-    - {op: draw, count: {hand_to: 10}, side: self}
-    - {op: draw, count: {hand_to: 10}, side: opponent}
-    - {op: gain_orb, amount: 3, side: self}
-    - {op: gain_orb, amount: 3, side: opponent}
-text: "[条件]：{本局游戏双方[运势]判定成功12次}。使双方生命变为30，抽手牌直至十张，获得3点鬼火。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      level: 3
+      play_condition: {luck_success_total_ge: 12}
+      effects:
+        # 三段效果依次对双方生效（己方先）：生命变30（set_health 非治疗、不触发治疗时机）
+        # → 抽手牌直至十张 → +3鬼火；draw {hand_to: n}/side 与 gain_orb side 为契约外扩展
+        steps:
+          - {op: set_health, amount: 30, target: {kind: all, pool: self_player}}
+          - {op: set_health, amount: 30, target: {kind: all, pool: enemy_player}}
+          - {op: draw, count: {hand_to: 10}, side: self}
+          - {op: draw, count: {hand_to: 10}, side: opponent}
+          - {op: gain_orb, amount: 3, side: self}
+          - {op: gain_orb, amount: 3, side: opponent}
+      text: "[条件]：{本局游戏双方[运势]判定成功12次}。使双方生命变为30，抽手牌直至十张，获得3点鬼火。"

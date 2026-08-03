@@ -1,13 +1,14 @@
 id: 10011103
-version: 20260730
 name: 慈悲
-shikigami: 100111  # 派系：紫岩（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-target: {kind: choose, pool: friendly_shikigami}
-effects:
-  steps:
-    - {op: grant_keyword, keyword: unyielding}
-text: 使一个己方式神获得[不屈]。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        steps:
+          - {op: grant_keyword, keyword: unyielding}
+      text: 使一个己方式神获得[不屈]。

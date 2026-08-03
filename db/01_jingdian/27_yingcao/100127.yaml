@@ -1,14 +1,17 @@
 id: 100127
-version: 20260728
 name: 萤草
-faction: 苍叶
-power: 2
-health: 5
-ability:
-  # 当萤草使用与当前形态不同的形态牌时抽一张牌（on_form_attached payload
-  # form_changed：无当前形态或新旧形态 id 不同为 true；8 卡未加入，暂无实弹触发）
-  when: on_form_attached
-  condition: {target_shikigami: self, form_changed: true}
-  steps:
-    - {op: draw, count: 1}
-text: 当萤草使用与当前形态不同的形态牌时，抽一张牌。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 苍叶
+      power: 2
+      health: 5
+      ability:
+        # 当萤草使用与当前形态不同的形态牌时抽一张牌（on_form_attached payload
+        # form_changed：无当前形态或新旧形态 id 不同为 true；8 卡未加入，暂无实弹触发）
+        when: on_form_attached
+        condition: {target_shikigami: self, form_changed: true}
+        steps:
+          - {op: draw, count: 1}
+      text: 当萤草使用与当前形态不同的形态牌时，抽一张牌。

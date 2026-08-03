@@ -1,15 +1,16 @@
 id: 10010704
-version: 20260730
 name: 水龙卷
-shikigami: 100107  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-target: {kind: choose, pool: any_shikigami}
-effects:
-  steps:
-    - {op: gain_shield, amount: 3, target: {kind: self}}
-    # "造成等同于海坊主护甲的伤害"：shield_of 快照在第二步求值，含本牌刚获得的 3 护甲
-    - {op: damage, amount: {shield_of: self}}
-text: 使海坊主获得3护甲，对一个式神造成等同于海坊主护甲的伤害。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        steps:
+          - {op: gain_shield, amount: 3, target: {kind: self}}
+          # "造成等同于海坊主护甲的伤害"：shield_of 快照在第二步求值，含本牌刚获得的 3 护甲
+          - {op: damage, amount: {shield_of: self}}
+      text: 使海坊主获得3护甲，对一个式神造成等同于海坊主护甲的伤害。

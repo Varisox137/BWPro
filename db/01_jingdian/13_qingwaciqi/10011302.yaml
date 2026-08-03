@@ -1,21 +1,21 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011302
-version: 20260802
 name: 岭上开花
-shikigami: 100113  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: R
-level: 1
-cost: 1
-form_power: 2
-form_health: 7
-effects:
-  steps: []
-abilities:
-  # 判定者=己方的运势判定成功后（延时时机）：青蛙瓷器获得1力量
-  # （临时持久增益，非 scope=turn；可被觉醒青蛙瓷器翻倍）
-  - when: on_luck_success
-    condition: {judge: self}
-    steps:
-      - {op: buff_power, amount: 1, target: {kind: self}}
-text: "当你[运势]判定成功时，青蛙瓷器获得1力量。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 2
+      form_health: 7
+      effects:
+        steps: []
+      abilities:
+        # 判定者=己方的运势判定成功后（延时时机）：青蛙瓷器获得1力量
+        # （临时持久增益，非 scope=turn；可被觉醒青蛙瓷器翻倍）
+        - when: on_luck_success
+          condition: {judge: self}
+          steps:
+            - {op: buff_power, amount: 1, target: {kind: self}}
+      text: "当你[运势]判定成功时，青蛙瓷器获得1力量。"

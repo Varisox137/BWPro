@@ -1,8 +1,10 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 100002
-version: 20260729
 name: 天邪鬼军团
-faction: 青岚
-power: 2
-health: 5
-text: 无基础能力
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 青岚
+      power: 2
+      health: 5
+      text: 无基础能力

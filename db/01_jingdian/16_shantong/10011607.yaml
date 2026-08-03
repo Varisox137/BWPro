@@ -1,26 +1,26 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011607
-version: 20260729
 name: 伺机
-shikigami: 100116  # 派系：红莲（继承自式神数据）
-card_type: combat
-rarity: SR
-level: 2
-cost: 1
-keywords: [trigger]
-effects:
-  # 响应"当山童被攻击时"（先例见切 10012302）；反击贯通登记到被插入的战斗
-  when: on_before_assault
-  condition: {victim_shikigami: 100116}
-  steps:
-    - {op: buff_power, amount: 2, target: {kind: self}}
-    - {op: gain_shield, amount: 1, target: {kind: self}}
-    - {op: counter_piercing}
-triggers:
-  # 手牌中敌方回合时此牌+2力量：敌方回合开始登记本回合光环（card_id 限定本牌）
-  - when: on_turn_start
-    condition: {player: opponent}
-    steps:
-      - {op: card_aura, shikigami: 100116, card_id: 10011607, power: 2,
-         turn: opponent, scope: turn}
-text: "被攻击时也会造成[贯通]伤害。敌方回合时此牌获得+2力量。[响应]：{当山童被攻击时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 2
+      keywords: [trigger]
+      effects:
+        # 响应"当山童被攻击时"（先例见切 10012302）；反击贯通登记到被插入的战斗
+        when: on_before_assault
+        condition: {victim_shikigami: 100116}
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+          - {op: counter_piercing}
+      triggers:
+        # 手牌中敌方回合时此牌+2力量：敌方回合开始登记本回合光环（card_id 限定本牌）
+        - when: on_turn_start
+          condition: {player: opponent}
+          steps:
+            - {op: card_aura, shikigami: 100116, card_id: 10011607, power: 2,
+               turn: opponent, scope: turn}
+      text: "被攻击时也会造成[贯通]伤害。敌方回合时此牌获得+2力量。[响应]：{当山童被攻击时，自动使用。}"

@@ -1,17 +1,18 @@
 id: 10012301
-version: 20260724
 name: 不祥之刃
-shikigami: 100123
-card_type: combat
-rarity: R
-level: 1
-cost: 1
-effects:
-  steps:
-    - {op: gain_shield, amount: 1, target: {kind: self}}
-temp_grants:
-  - when: on_shikigami_defeated
-    condition: {victim_side: enemy, victim_kind: shikigami, source_shikigami: self}
-    steps:
-      - {op: draw, count: 1, target: {kind: all, pool: self_player}}
-text: 消灭敌方式神时，抽一张牌。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        steps:
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      temp_grants:
+        - when: on_shikigami_defeated
+          condition: {victim_side: enemy, victim_kind: shikigami, source_shikigami: self}
+          steps:
+            - {op: draw, count: 1, target: {kind: all, pool: self_player}}
+      text: 消灭敌方式神时，抽一张牌。

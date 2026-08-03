@@ -1,23 +1,24 @@
 id: 10012451
-version: 20260724
 name: 幻音绝弦
-shikigami: 100124
-card_type: spell
-rarity: SSR
-token: true  # 协战子选项（风之乐章 10012421）
-level: 2
-cost: 1
-effects:
-  steps:
-    # 一次性延迟能力：下一个己方回合开始时结算（uses=1 触发即消耗；scope 缺省
-    # 不作回合开始清除——scope="turn" 会在该结算的同一批次被清掉）
-    - op: delay_grant
-      when: on_turn_start
-      condition: {player: self}
-      steps:
-        - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_shikigami}}
-        # 已气绝者改为气绝倒计时 -2（扫描全队气绝式神；减到 ≤0 立即复活）
-        - {op: countdown_delta, amount: -2, revive: true}
-    # 羁绊：随机获得一张一目连形态牌（触发条件：一目连在场——等级 ≥1 且未气绝）
-    - {op: generate, shikigami: 100125, card_type: form, condition: {shikigami_active: 100125}}
-text: "下一个己方回合开始时所有己方式神[倒计时]-1，若目标式神已气绝则改为气绝[倒计时]-2。[羁绊]：{随机获得一张一目连形态牌}。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（风之乐章 10012421）
+      level: 2
+      effects:
+        steps:
+          # 一次性延迟能力：下一个己方回合开始时结算（uses=1 触发即消耗；scope 缺省
+          # 不作回合开始清除——scope="turn" 会在该结算的同一批次被清掉）
+          - op: delay_grant
+            when: on_turn_start
+            condition: {player: self}
+            steps:
+              - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_shikigami}}
+              # 已气绝者改为气绝倒计时 -2（扫描全队气绝式神；减到 ≤0 立即复活）
+              - {op: countdown_delta, amount: -2, revive: true}
+          # 羁绊：随机获得一张一目连形态牌（触发条件：一目连在场——等级 ≥1 且未气绝）
+          - {op: generate, shikigami: 100125, card_type: form, condition: {shikigami_active: 100125}}
+      text: "下一个己方回合开始时所有己方式神[倒计时]-1，若目标式神已气绝则改为气绝[倒计时]-2。[羁绊]：{随机获得一张一目连形态牌}。"

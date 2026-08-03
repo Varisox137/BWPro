@@ -1,27 +1,28 @@
 id: 10011408
-version: 20260731
 name: 火吻之蛇
-shikigami: 100114  # 派系：紫岩（继承自式神数据）
-card_type: form
-rarity: SR
-level: 3
-cost: 1
-form_power: 4
-form_health: 9
-effects:
-  # 敌方有破甲的式神降低等于其破甲的力量（stat_aura 动态光环，读取时求值）
-  steps:
-    - {op: stat_aura, kind: enemy_fragile_power}
-abilities:
-  # 攻击时获得[先攻]（攻击时结算即时授予，本次战斗即生效；战斗终止点核销）
-  - when: on_before_assault
-    condition: {attacker_shikigami: self}
-    steps:
-      - {op: attack_buff, keywords: [initiative], target: {kind: self}}
-  # 敌方回合开始时使所有敌方角色获得1破甲
-  - when: on_turn_start
-    condition: {player: opponent}
-    steps:
-      - {op: gain_shield, amount: 1, kind: fragile,
-         target: {kind: all, pool: enemy_character}}
-text: "攻击时获得[先攻]。敌方回合开始时使所有敌方角色获得1破甲。敌方有破甲的式神降低等于其破甲的力量。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 4
+      form_health: 9
+      effects:
+        # 敌方有破甲的式神降低等于其破甲的力量（stat_aura 动态光环，读取时求值）
+        steps:
+          - {op: stat_aura, kind: enemy_fragile_power}
+      abilities:
+        # 攻击时获得[先攻]（攻击时结算即时授予，本次战斗即生效；战斗终止点核销）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: attack_buff, keywords: [initiative], target: {kind: self}}
+        # 敌方回合开始时使所有敌方角色获得1破甲
+        - when: on_turn_start
+          condition: {player: opponent}
+          steps:
+            - {op: gain_shield, amount: 1, kind: fragile,
+               target: {kind: all, pool: enemy_character}}
+      text: "攻击时获得[先攻]。敌方回合开始时使所有敌方角色获得1破甲。敌方有破甲的式神降低等于其破甲的力量。"

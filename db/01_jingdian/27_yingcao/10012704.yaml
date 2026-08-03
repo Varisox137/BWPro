@@ -1,22 +1,23 @@
 id: 10012704
-version: 20260731
 name: 勇气之光
-shikigami: 100127  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: SR
-level: 2
-cost: 1
-form_power: 3
-form_health: 5
-keywords: [fast]
-effects:
-  # 进场[鼓舞]：获得+1战力与+2护甲
-  steps:
-    - {op: basic_boost, power: 1, shield: 2}
-abilities:
-  # 己方回合开始时[鼓舞]：获得+1战力与+2护甲
-  - when: on_turn_start
-    condition: {player: self}
-    steps:
-      - {op: basic_boost, power: 1, shield: 2}
-text: "[瞬发]。进场和己方回合开始时，[鼓舞]：{获得+1战力与+2护甲。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 3
+      form_health: 5
+      keywords: [fast]
+      effects:
+        # 进场[鼓舞]：获得+1战力与+2护甲
+        steps:
+          - {op: basic_boost, power: 1, shield: 2}
+      abilities:
+        # 己方回合开始时[鼓舞]：获得+1战力与+2护甲
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: basic_boost, power: 1, shield: 2}
+      text: "[瞬发]。进场和己方回合开始时，[鼓舞]：{获得+1战力与+2护甲。}"

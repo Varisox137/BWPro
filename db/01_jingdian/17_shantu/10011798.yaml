@@ -1,15 +1,17 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011798
-version: 20260802
 name: 小纸人
-kind: transform  # 变形物（契约 §2；loader 视同 summon 不入构筑池/测试卡组）
-faction: 苍叶
-power: 0
-health: 1
-ability:
-  # 变形物控制者己方回合结束时解除变形（契约 §2）
-  when: on_turn_end
-  condition: {player: self}
-  steps:
-    - {op: untransform, target: {kind: self}}
-text: "己方回合结束时变回原式神。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      kind: transform  # 变形物（契约 §2；loader 视同 summon 不入构筑池/测试卡组）
+      faction: 苍叶
+      power: 0
+      health: 1
+      ability:
+        # 变形物控制者己方回合结束时解除变形（契约 §2）
+        when: on_turn_end
+        condition: {player: self}
+        steps:
+          - {op: untransform, target: {kind: self}}
+      text: "己方回合结束时变回原式神。"

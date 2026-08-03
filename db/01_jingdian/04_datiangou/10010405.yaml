@@ -1,18 +1,19 @@
 id: 10010405
-version: 20260724
 name: 暴风之主
-shikigami: 100104
-card_type: form
-rarity: SR
-level: 2
-cost: 1
-form_power: 4
-form_health: 6
-effects: {steps: []}
-abilities:
-  # affected_refs = 该次出牌效果实际伤害过的式神（on_card_played payload）
-  - when: on_card_played
-    condition: {player: self, card_type: spell, shikigami: 100104}
-    steps:
-      - {op: damage, amount: 1, target: {kind: context, key: affected_refs}}
-text: 大天狗使用法术后，对受影响的敌方式神各造成1点伤害。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects: {steps: []}
+      abilities:
+        # affected_refs = 该次出牌效果实际伤害过的式神（on_card_played payload）
+        - when: on_card_played
+          condition: {player: self, card_type: spell, shikigami: 100104}
+          steps:
+            - {op: damage, amount: 1, target: {kind: context, key: affected_refs}}
+      text: 大天狗使用法术后，对受影响的敌方式神各造成1点伤害。

@@ -1,15 +1,18 @@
 id: 100101
-version: 20260724
 name: 白狼
-faction: 苍叶
-power: 3
-health: 4
-ability:
-  when: on_damage
-  timing: insert
-  condition: {source_shikigami: self, victim_side: enemy, victim_kind: shikigami, kind: combat, active: self}
-  steps:
-    - op: damage
-      amount: 2
-      target: {kind: all, pool: enemy_player}
-text: 己方回合当白狼对敌方式神造成战斗伤害时，对敌方牌手造成2点伤害
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 苍叶
+      power: 3
+      health: 4
+      ability:
+        when: on_damage
+        timing: insert
+        condition: {source_shikigami: self, victim_side: enemy, victim_kind: shikigami, kind: combat, active: self}
+        steps:
+          - op: damage
+            amount: 2
+            target: {kind: all, pool: enemy_player}
+      text: 己方回合当白狼对敌方式神造成战斗伤害时，对敌方牌手造成2点伤害

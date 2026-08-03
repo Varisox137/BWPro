@@ -1,67 +1,67 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010351
-version: 20260729
 name: 地狱豪焰
-shikigami: 100103  # 派系：红莲（继承自式神数据）
-card_type: combat
-rarity: SSR
-token: true
-level: 1
-cost: 1
-effects:
-  # 羁绊（酒吞童子在场时）：酒吞自伤 1（正常触发其受伤能力），茨木获得 2 护甲
-  steps:
-    - {op: damage, amount: 1, condition: {shikigami_active: 100109},
-       target: {kind: all, pool: friendly_shikigami, shikigami: 100109}}
-    - {op: gain_shield, amount: 2, condition: {shikigami_active: 100109},
-       target: {kind: self}}
-temp_grants:
-  # 本次战斗中茨木童子击杀任意式神（方式/敌我不限，维护者答复(9)）→
-  # 登记豪焰固定项（不可叠加）并随机赋予一项不重复的豪焰监听
-  - when: on_shikigami_defeated
-    condition: {source_shikigami: self}
-    steps:
-      # 固定项：茨木童子使用战斗牌时获得 +1 力量与 +1 护甲
-      - op: player_aura
-        when: on_card_played
-        condition: {shikigami: 100103, card_type: combat, player: self}
-        once_key: haoyan_base
-        target: {kind: self}
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SSR
+      token: true
+      level: 1
+      effects:
+        # 羁绊（酒吞童子在场时）：酒吞自伤 1（正常触发其受伤能力），茨木获得 2 护甲
         steps:
-          - {op: buff_power, amount: 1,
-             target: {kind: all, pool: friendly_shikigami, shikigami: 100103}}
-          - {op: gain_shield, amount: 1,
-             target: {kind: all, pool: friendly_shikigami, shikigami: 100103}}
-      # 随机项（四项均有则不再赋予）
-      - op: random_aura
-        once_prefix: haoyan
-        target: {kind: self}
-        options:
-          # (1) 使该式神气绝倒计时+1
-          - key: cd
-            when: on_shikigami_defeated
-            condition: {source_shikigami: 100103}
-            steps:
-              - {op: countdown_delta, amount: 1, revive: true,
-                 target: {kind: context, key: victim}}
-          # (2) 茨木童子获得 2 力量
-          - key: pow
-            when: on_shikigami_defeated
-            condition: {source_shikigami: 100103}
-            steps:
-              - {op: buff_power, amount: 2, target: {kind: context, key: source}}
-          # (3) 恢复 3 点生命且气绝倒计时-1
-          - key: heal
-            when: on_shikigami_defeated
-            condition: {source_shikigami: 100103}
-            steps:
-              - {op: heal, amount: 3, target: {kind: context, key: source}}
-              - {op: countdown_delta, amount: -1, revive: true,
-                 target: {kind: context, key: source}}
-          # (4) 对敌方牌手造成 3 点伤害
-          - key: burn
-            when: on_shikigami_defeated
-            condition: {source_shikigami: 100103}
-            steps:
-              - {op: damage, amount: 3, target: {kind: all, pool: enemy_player}}
-text: "若本次战斗击杀敌方式神，则本局游戏茨木童子随机获得一个不重复的‘豪焰’效果。[羁绊]：{酒吞童子对自己造成1点伤害，使茨木童子获得2护甲。}"
+          - {op: damage, amount: 1, condition: {shikigami_active: 100109},
+             target: {kind: all, pool: friendly_shikigami, shikigami: 100109}}
+          - {op: gain_shield, amount: 2, condition: {shikigami_active: 100109},
+             target: {kind: self}}
+      temp_grants:
+        # 本次战斗中茨木童子击杀任意式神（方式/敌我不限，维护者答复(9)）→
+        # 登记豪焰固定项（不可叠加）并随机赋予一项不重复的豪焰监听
+        - when: on_shikigami_defeated
+          condition: {source_shikigami: self}
+          steps:
+            # 固定项：茨木童子使用战斗牌时获得 +1 力量与 +1 护甲
+            - op: player_aura
+              when: on_card_played
+              condition: {shikigami: 100103, card_type: combat, player: self}
+              once_key: haoyan_base
+              target: {kind: self}
+              steps:
+                - {op: buff_power, amount: 1,
+                   target: {kind: all, pool: friendly_shikigami, shikigami: 100103}}
+                - {op: gain_shield, amount: 1,
+                   target: {kind: all, pool: friendly_shikigami, shikigami: 100103}}
+            # 随机项（四项均有则不再赋予）
+            - op: random_aura
+              once_prefix: haoyan
+              target: {kind: self}
+              options:
+                # (1) 使该式神气绝倒计时+1
+                - key: cd
+                  when: on_shikigami_defeated
+                  condition: {source_shikigami: 100103}
+                  steps:
+                    - {op: countdown_delta, amount: 1, revive: true,
+                       target: {kind: context, key: victim}}
+                # (2) 茨木童子获得 2 力量
+                - key: pow
+                  when: on_shikigami_defeated
+                  condition: {source_shikigami: 100103}
+                  steps:
+                    - {op: buff_power, amount: 2, target: {kind: context, key: source}}
+                # (3) 恢复 3 点生命且气绝倒计时-1
+                - key: heal
+                  when: on_shikigami_defeated
+                  condition: {source_shikigami: 100103}
+                  steps:
+                    - {op: heal, amount: 3, target: {kind: context, key: source}}
+                    - {op: countdown_delta, amount: -1, revive: true,
+                       target: {kind: context, key: source}}
+                # (4) 对敌方牌手造成 3 点伤害
+                - key: burn
+                  when: on_shikigami_defeated
+                  condition: {source_shikigami: 100103}
+                  steps:
+                    - {op: damage, amount: 3, target: {kind: all, pool: enemy_player}}
+      text: "若本次战斗击杀敌方式神，则本局游戏茨木童子随机获得一个不重复的‘豪焰’效果。[羁绊]：{酒吞童子对自己造成1点伤害，使茨木童子获得2护甲。}"

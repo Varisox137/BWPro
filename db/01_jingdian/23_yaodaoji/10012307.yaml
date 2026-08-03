@@ -1,12 +1,13 @@
 id: 10012307
-version: 20260724
 name: 杀念
-shikigami: 100123
-card_type: spell
-rarity: SR
-level: 3
-cost: 1
-effects:
-  steps:
-    - {op: generate, shikigami: self, card_type: combat, count: 3}
-text: 随机将三张妖刀姬的战斗牌置入手牌。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 3
+      effects:
+        steps:
+          - {op: generate, shikigami: self, card_type: combat, count: 3}
+      text: 随机将三张妖刀姬的战斗牌置入手牌。

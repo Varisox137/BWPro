@@ -1,16 +1,17 @@
 id: 10012502
-version: 20260724
 name: 风符·护
-shikigami: 100125
-card_type: form
-rarity: R
-level: 1
-cost: 1
-form_power: 2
-form_health: 7
-effects: {steps: []}
-countdown: 2
-countdown_effects:
-  steps:
-    - {op: gain_shield, amount: 5, target: {kind: all, pool: self_player}}
-text: "[倒计时2]：{你获得5护甲。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 2
+      form_health: 7
+      effects: {steps: []}
+      countdown: 2
+      countdown_effects:
+        steps:
+          - {op: gain_shield, amount: 5, target: {kind: all, pool: self_player}}
+      text: "[倒计时2]：{你获得5护甲。}"

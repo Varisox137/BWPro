@@ -1,26 +1,27 @@
 id: 10012407
-version: 20260724
 name: 觉醒·镇魂歌
-shikigami: 100124
-card_type: spell
-subtype: awaken
-awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-awaken_health: 1
-rarity: R
-level: 3
-cost: 1
-effects:
-  steps: []
-abilities:
-  # 觉醒倒计时（initial 3，来源=觉醒牌 id）：抽一张牌，获得 1 点鬼火
-  - countdown: 3
-    steps:
-      - {op: draw, count: 1}
-      - {op: gain_orb, amount: 1}
-  # 使用妖琴师的觉醒法术牌时：倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
-  # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
-  - when: on_before_awaken
-    condition: {player: self, target_shikigami: self}
-    steps:
-      - {op: countdown_delta, amount: -3, target: {kind: self}}
-text: "[觉醒]：{[倒计时3]：{抽一张牌，获得1点鬼火}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: R
+      level: 3
+      effects:
+        steps: []
+      abilities:
+        # 觉醒倒计时（initial 3，来源=觉醒牌 id）：抽一张牌，获得 1 点鬼火
+        - countdown: 3
+          steps:
+            - {op: draw, count: 1}
+            - {op: gain_orb, amount: 1}
+        # 使用妖琴师的觉醒法术牌时：倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
+        # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
+        - when: on_before_awaken
+          condition: {player: self, target_shikigami: self}
+          steps:
+            - {op: countdown_delta, amount: -3, target: {kind: self}}
+      text: "[觉醒]：{[倒计时3]：{抽一张牌，获得1点鬼火}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"

@@ -1,19 +1,20 @@
 id: 10011203
-version: 20260730
 name: 幽光之火
-shikigami: 100112  # 派系：青岚（继承自式神数据）
-card_type: form
-rarity: R
-level: 1
-cost: 1
-form_power: 4
-form_health: 5
-effects:
-  steps: []
-abilities:
-  # "当青行灯攻击时"：发起攻击（on_before_assault，出击/战斗牌/效果发起的战斗均算）
-  - when: on_before_assault
-    condition: {attacker_shikigami: self}
-    steps:
-      - {op: generate, card_id: 10011201, zone: hand}
-text: 当青行灯攻击时，获得一张‘明灯’。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # "当青行灯攻击时"：发起攻击（on_before_assault，出击/战斗牌/效果发起的战斗均算）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: generate, card_id: 10011201, zone: hand}
+      text: 当青行灯攻击时，获得一张‘明灯’。

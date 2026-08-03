@@ -1,14 +1,14 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010621
-version: 20260730
 name: 刃影鹤唳
-shikigami: 100106  # 派系：苍叶（继承自式神数据）
-shikigami2: 100123  # 协战副归属
-card_type: reinforce
-rarity: SSR
-level: 2
-cost: 1
-options: [10010651, 10012351]  # [0] 主侧 鹤唳回风 / [1] 副侧 刃影叠岚
-effects:
-  steps: []
-text: "选择使用一项：姑获鸟-鹤唳回风；妖刀姬-刃影叠岚"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      shikigami2: 100123  # 协战副归属
+      card_type: reinforce
+      rarity: SSR
+      level: 2
+      options: [10010651, 10012351]  # [0] 主侧 鹤唳回风 / [1] 副侧 刃影叠岚
+      effects:
+        steps: []
+      text: "选择使用一项：姑获鸟-鹤唳回风；妖刀姬-刃影叠岚"

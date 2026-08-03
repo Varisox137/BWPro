@@ -1,13 +1,14 @@
 id: 10010104
-version: 20260724
 name: 离
-shikigami: 100101
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-keywords: [fast]
-effects:
-  steps:
-    - {op: attack_buff, power: 3, target: {kind: self}}
-text: "[瞬发]。白狼获得3力量直到下一次攻击后。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: attack_buff, power: 3, target: {kind: self}}
+      text: "[瞬发]。白狼获得3力量直到下一次攻击后。"

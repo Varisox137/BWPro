@@ -1,13 +1,16 @@
 id: 100112
-version: 20260730
 name: 青行灯
-faction: 青岚
-power: 2
-health: 5
-ability:
-  # 敌方回合开始时若你有剩余鬼火（≥1），获得一张'明灯'
-  when: on_turn_start
-  condition: {player: opponent, orb_ge: 1}
-  steps:
-    - {op: generate, card_id: 10011201, zone: hand}
-text: 敌方回合开始时若你有剩余鬼火，获得一张‘明灯’。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 青岚
+      power: 2
+      health: 5
+      ability:
+        # 敌方回合开始时若你有剩余鬼火（≥1），获得一张'明灯'
+        when: on_turn_start
+        condition: {player: opponent, orb_ge: 1}
+        steps:
+          - {op: generate, card_id: 10011201, zone: hand}
+      text: 敌方回合开始时若你有剩余鬼火，获得一张‘明灯’。

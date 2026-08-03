@@ -1,12 +1,13 @@
 id: 10011803
-version: 20260731
 name: 开卷
-shikigami: 100118  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-effects:
-  steps:
-    - {op: draw, count: 2}
-text: "抽两张牌。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          - {op: draw, count: 2}
+      text: "抽两张牌。"

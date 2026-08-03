@@ -903,8 +903,8 @@ def test_deckstore_env_roundtrip(db, tmp_path):
     assert [d["standard"] for d in loaded] == [False, True]
 
 
-def test_deckstore_v2_compat_and_bad_env(db, tmp_path):
-    """v2 文件（条目无 env）兼容读取（env 视为 None）；env 非法 = 文件异常删除。"""
+def test_deckstore_v2_rejected_and_bad_env(db, tmp_path):
+    """v2 旧版文件不向前兼容：视为格式异常删除；env 非法同样异常删除。"""
     import json
 
     from db import deckcode, deckstore
@@ -913,8 +913,8 @@ def test_deckstore_v2_compat_and_bad_env(db, tmp_path):
     store.write_text(json.dumps(
         {"version": 2, "decks": [[True, {"name": "旧", "groups": groups}]]},
         ensure_ascii=False), encoding="utf-8")
-    loaded = deckstore.load_decks(db, store)
-    assert loaded[0]["env"] is None and loaded[0]["standard"]
+    assert deckstore.load_decks(db, store) == []
+    assert not store.exists()  # 旧版本文件：提示并删除
     store.write_text(json.dumps(
         {"version": 3, "decks": [[True, {"name": "坏", "groups": groups,
                                          "env": 20261301}]]},

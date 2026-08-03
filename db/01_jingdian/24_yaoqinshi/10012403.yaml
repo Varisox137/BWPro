@@ -1,15 +1,16 @@
 id: 10012403
-version: 20260724
 name: 大合奏
-shikigami: 100124
-card_type: spell
-rarity: SSR
-level: 1
-cost: 1
-keywords: [fast]
-effects:
-  # 按 countdown_history 首次出现顺序重放妖琴师生效过的基础/觉醒倒计时能力块
-  # （每种至多一次；维护者答复(8)：只计入基础/觉醒能力，形态来源跳过）
-  steps:
-    - {op: replay_countdown, shikigami: self, skip_forms: true}
-text: "[瞬发]。[增强]：{本局游戏妖琴师的基础能力每生效过一种，此牌便具有对应效果。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      level: 1
+      keywords: [fast]
+      effects:
+        # 按 countdown_history 首次出现顺序重放妖琴师生效过的基础/觉醒倒计时能力块
+        # （每种至多一次；维护者答复(8)：只计入基础/觉醒能力，形态来源跳过）
+        steps:
+          - {op: replay_countdown, shikigami: self, skip_forms: true}
+      text: "[瞬发]。[增强]：{本局游戏妖琴师的基础能力每生效过一种，此牌便具有对应效果。}"

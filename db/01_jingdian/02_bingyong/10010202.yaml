@@ -1,16 +1,17 @@
 id: 10010202
-version: 20260724
 name: 古尘之盾
-shikigami: 100102
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-keywords: [trigger]
-target: {kind: choose, pool: friendly_shikigami}
-effects:
-  when: on_before_assault
-  condition: {victim_shikigami: 100102}
-  steps:
-    - {op: gain_shield, amount: 5}
-text: 使一个己方式神得5护甲。[响应]：{当兵俑被攻击时，自动对其使用}。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        when: on_before_assault
+        condition: {victim_shikigami: 100102}
+        steps:
+          - {op: gain_shield, amount: 5}
+      text: 使一个己方式神得5护甲。[响应]：{当兵俑被攻击时，自动对其使用}。

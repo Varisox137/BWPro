@@ -1,25 +1,25 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10012951
-version: 20260802
 name: 鸿运当头
-shikigami: 100129  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: SSR
-token: true  # 协战子选项（福星高照 10011721 副式神侧）
-level: 3
-cost: 1
-effects:
-  steps:
-    # 生效前运势4：复活己方全部式神（复活失败即仍气绝，后续随机用形态跳过）
-    - op: luck_roll
-      x: 4
-      judge: self
-      then:
-        - {op: revive, target: {kind: all, pool: friendly_defeated}}
-    # 循环己方在场式神：各随机使用1张等级<=当前等级的专属形态牌（无池/气绝跳过）
-    - {op: random_play_form, target: {kind: all, pool: friendly_shikigami}}
-    # 羁绊：山兔在场未气绝时——从牌库检索'这把算我赢'置手
-    # （search_deck 的 card_id 精确过滤为契约外扩展，需引擎侧支持）
-    - {op: search_deck, shikigami: 100117, card_id: 10011705,
-       condition: {shikigami_active: 100117}}
-text: "己方所有式神随机使用1张他的专属形态牌，生效前[运势4]：{复活己方所有式神}。[羁绊]：{从牌库抽取1张‘这把算我赢’。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（福星高照 10011721 副式神侧）
+      level: 3
+      effects:
+        steps:
+          # 生效前运势4：复活己方全部式神（复活失败即仍气绝，后续随机用形态跳过）
+          - op: luck_roll
+            x: 4
+            judge: self
+            then:
+              - {op: revive, target: {kind: all, pool: friendly_defeated}}
+          # 循环己方在场式神：各随机使用1张等级<=当前等级的专属形态牌（无池/气绝跳过）
+          - {op: random_play_form, target: {kind: all, pool: friendly_shikigami}}
+          # 羁绊：山兔在场未气绝时——从牌库检索'这把算我赢'置手
+          # （search_deck 的 card_id 精确过滤为契约外扩展，需引擎侧支持）
+          - {op: search_deck, shikigami: 100117, card_id: 10011705,
+             condition: {shikigami_active: 100117}}
+      text: "己方所有式神随机使用1张他的专属形态牌，生效前[运势4]：{复活己方所有式神}。[羁绊]：{从牌库抽取1张‘这把算我赢’。}"

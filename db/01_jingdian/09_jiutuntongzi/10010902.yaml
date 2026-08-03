@@ -1,14 +1,14 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010902
-version: 20260730
 name: 狂气
-shikigami: 100109  # 派系：红莲（继承自式神数据）
-card_type: combat
-rarity: R
-level: 1
-cost: 1
-keywords: [unyielding]  # 本次战斗获得[不屈]（战斗牌 keywords 授予通道）
-effects:
-  steps:
-    - {op: buff_power, amount: 1, target: {kind: self}}
-text: 本次战斗获得[不屈]。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      keywords: [unyielding]  # 本次战斗获得[不屈]（战斗牌 keywords 授予通道）
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+      text: 本次战斗获得[不屈]。

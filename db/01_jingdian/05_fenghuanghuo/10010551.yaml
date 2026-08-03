@@ -1,19 +1,19 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010551
-version: 20260729
 name: 涅槃业火
-shikigami: 100105  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: SSR
-token: true  # 协战子选项（涅槃明灯 10010521；主牌待青行灯侧子选项"烛火重燃"加入）
-level: 2
-cost: 1
-keywords: [fast]
-effects:
-  steps:
-    # 本回合其他式神从手牌使用法术时（相同法术每回合至多一次），按顺序凭空免费
-    # 使用'凤鸣'→'引燃'→'瑞翔'（每张至多一次，once_key 不可叠加）
-    - {op: spell_echo, sequence: [10010501, 10010503, 10010502], once_key: niepanyehuo}
-    # 羁绊：获得一张'明灯'（条件：青行灯在场——等级 ≥1 且未气绝）
-    - {op: generate, card_id: 10011201, zone: hand, condition: {shikigami_active: 100112}}
-text: "[瞬发]。本回合其他式神从手牌使用法术时（相同法术只会触发一次），凤凰火按顺序不重复使用‘凤鸣’/‘引燃’/‘瑞翔’。（不可叠加）[羁绊]：{获得一张‘明灯’。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（涅槃明灯 10010521；主牌待青行灯侧子选项"烛火重燃"加入）
+      level: 2
+      keywords: [fast]
+      effects:
+        steps:
+          # 本回合其他式神从手牌使用法术时（相同法术每回合至多一次），按顺序凭空免费
+          # 使用'凤鸣'→'引燃'→'瑞翔'（每张至多一次，once_key 不可叠加）
+          - {op: spell_echo, sequence: [10010501, 10010503, 10010502], once_key: niepanyehuo}
+          # 羁绊：获得一张'明灯'（条件：青行灯在场——等级 ≥1 且未气绝）
+          - {op: generate, card_id: 10011201, zone: hand, condition: {shikigami_active: 100112}}
+      text: "[瞬发]。本回合其他式神从手牌使用法术时（相同法术只会触发一次），凤凰火按顺序不重复使用‘凤鸣’/‘引燃’/‘瑞翔’。（不可叠加）[羁绊]：{获得一张‘明灯’。}"

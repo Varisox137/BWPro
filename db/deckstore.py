@@ -1,13 +1,13 @@
 """本地卡组存储：~/.bwp.decks.json。
 
-格式（v3）：
+格式（v3，不向前兼容——旧版本文件视为格式异常，提示并删除）：
     {"version": 3,
      "decks": [[is_standard, {"name": str, "groups": groups, "env": int|null}], ...]}
 其中 groups 为 db/deckcode.py 的分组结构 [[shiki_id, [card_id, ...]], ...]；
 env 为该卡组的构筑环境（平衡性版本日期 YYYYMMDD，null = 最新数据），构筑/校验
 均按 db.at_date(env) 解析（db/versioning.py）；is_standard 是"是否满足天梯组卡
 规则"的缓存标记——每次加载与保存时都按当前规则与卡牌数据库（含环境）重新校验
-（规则/数据变更后标记自动刷新）。v2 文件（条目无 env）读取时 env 视为 null。
+（规则/数据变更后标记自动刷新）。
 
 文件数据不符合应有格式：提示"本地卡组文件异常"并删除该文件（返回空列表）。
 保存为原子写入；文件/目录不存在时自动创建。
@@ -69,7 +69,10 @@ def load_decks(db, path: Path = PATH,
         _delete(path)
         return []
     try:
-        decks_raw = json.loads(raw)["decks"]
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or payload.get("version") != 3:
+            raise TypeError("文件版本不是 v3")
+        decks_raw = payload["decks"]
         if not isinstance(decks_raw, list):
             raise TypeError("decks 不是列表")
         entries = []
@@ -78,7 +81,7 @@ def load_decks(db, path: Path = PATH,
             if not isinstance(standard_flag, bool) or not isinstance(d, dict):
                 raise TypeError("条目结构非法")
             name, groups = d["name"], d["groups"]
-            env = d.get("env")  # v2 条目无 env：视为 None（最新）
+            env = d.get("env")
             if env is not None:
                 check_version_date(env)  # 非法环境日期 = 文件异常
             if not isinstance(name, str) or not _valid_groups(groups):

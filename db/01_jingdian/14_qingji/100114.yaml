@@ -1,10 +1,11 @@
 id: 100114
-version: 20260731
 name: 清姬
-faction: 紫岩
-power: 4
-health: 4
-# 先天伪关键字（卡面不出现）：对无破甲角色造成的伤害转化为等量破甲
-# （引擎 _damage_event_flow 清姬转化块；觉醒·清姬不必重授，永久类别入场即有）
-keywords: [damage_to_fragile]
-text: 清姬对无破甲角色造成的伤害会转化为等量的破甲。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 紫岩
+      power: 4
+      health: 4
+      keywords: [damage_to_fragile]
+      text: 清姬对无破甲角色造成的伤害会转化为等量的破甲。

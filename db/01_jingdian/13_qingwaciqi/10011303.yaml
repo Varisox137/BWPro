@@ -1,19 +1,19 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011303
-version: 20260802
 name: 九莲宝灯
-shikigami: 100113  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: SR
-level: 1
-cost: 1
-form_power: 3
-form_health: 3
-effects:
-  # 增强：进场时按控制者牌手 ext dice_history 去重数 +N/+N（一次性 buff）；
-  # amount 的 {dice_distinct: true} 由 engine._step_amount 解析
-  # （手牌显示同读数，见 client/cli._stats_label 形态分支）
-  steps:
-    - {op: buff_power, amount: {dice_distinct: true}, target: {kind: self}}
-    - {op: buff_health, amount: {dice_distinct: true}, target: {kind: self}}
-text: "[增强]：{本局游戏你投骰子每投出过一个1-6中不重复数字时，此牌便获得+1力量与+1生命。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 3
+      form_health: 3
+      effects:
+        # 增强：进场时按控制者牌手 ext dice_history 去重数 +N/+N（一次性 buff）；
+        # amount 的 {dice_distinct: true} 由 engine._step_amount 解析
+        # （手牌显示同读数，见 client/cli._stats_label 形态分支）
+        steps:
+          - {op: buff_power, amount: {dice_distinct: true}, target: {kind: self}}
+          - {op: buff_health, amount: {dice_distinct: true}, target: {kind: self}}
+      text: "[增强]：{本局游戏你投骰子每投出过一个1-6中不重复数字时，此牌便获得+1力量与+1生命。}"

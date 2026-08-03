@@ -1,17 +1,17 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011905
-version: 20260731
 name: 桃语春风
-shikigami: 100119  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-target: {kind: choose, pool: friendly_defeated}
-effects:
-  # 复活一个己方式神并使其获得[迅捷]（复活来源=桃花妖→连锁基础赋益；
-  # 迅捷按天然一次性类别入列）
-  steps:
-    - {op: revive}
-    - {op: grant_keyword, keyword: haste}
-text: "复活一个己方式神并使其获得[迅捷]。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: friendly_defeated}
+      effects:
+        # 复活一个己方式神并使其获得[迅捷]（复活来源=桃花妖→连锁基础赋益；
+        # 迅捷按天然一次性类别入列）
+        steps:
+          - {op: revive}
+          - {op: grant_keyword, keyword: haste}
+      text: "复活一个己方式神并使其获得[迅捷]。"

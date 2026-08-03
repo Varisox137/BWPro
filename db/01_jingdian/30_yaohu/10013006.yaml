@@ -1,16 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10013006
-version: 20260802
 name: 叠风斩
-shikigami: 100130  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-target: {kind: choose, pool: any_shikigami}
-effects:
-  steps:
-    - {op: damage, amount: 2}
-    # 对其再次使用此牌（法术凭空 auto 管线、同目标；两次使用各触发一次妖狐基础能力）
-    - {op: reuse_card}
-text: "对一个式神造成2点伤害，然后对其再次使用此牌。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        steps:
+          - {op: damage, amount: 2}
+          # 对其再次使用此牌（法术凭空 auto 管线、同目标；两次使用各触发一次妖狐基础能力）
+          - {op: reuse_card}
+      text: "对一个式神造成2点伤害，然后对其再次使用此牌。"

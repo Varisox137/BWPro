@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10013004
-version: 20260802
 name: 命运之人
-shikigami: 100130  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: SR
-level: 2
-cost: 1
-form_power: 4
-form_health: 6
-effects:
-  steps: []
-abilities:
-  # 己方回合开始时将一张'风刃'置手（generate card_id 先例：黄金羽）
-  - when: on_turn_start
-    condition: {player: self}
-    steps:
-      - {op: generate, card_id: 10013001}
-text: "己方回合开始时，将一张‘风刃’置入手牌。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 己方回合开始时将一张'风刃'置手（generate card_id 先例：黄金羽）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: generate, card_id: 10013001}
+      text: "己方回合开始时，将一张‘风刃’置入手牌。"

@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011702
-version: 20260802
 name: 送祝福
-shikigami: 100117  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: SR
-level: 1
-cost: 1
-target: {kind: choose, pool: friendly_shikigami}
-effects:
-  steps:
-    - {op: buff_power, amount: 1}
-    - {op: buff_health, amount: 1}
-    # 增强（投出三次6点）：合并为一次性额外 +2/+2+[迅捷]（合计 +3/+3+[迅捷]，规则要点）
-    - {op: buff_power, amount: 2, condition: {dice_six_ge: 3}}
-    - {op: buff_health, amount: 2, condition: {dice_six_ge: 3}}
-    - {op: grant_keyword, keyword: haste, condition: {dice_six_ge: 3}}
-    - {op: draw, count: 1}
-text: "使一个己方式神获得1力量与1生命，抽一张牌。[增强]：{本局游戏若你骰子投出三次6点，该式神额外获得2力量、2生命和[迅捷]。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 1
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        steps:
+          - {op: buff_power, amount: 1}
+          - {op: buff_health, amount: 1}
+          # 增强（投出三次6点）：合并为一次性额外 +2/+2+[迅捷]（合计 +3/+3+[迅捷]，规则要点）
+          - {op: buff_power, amount: 2, condition: {dice_six_ge: 3}}
+          - {op: buff_health, amount: 2, condition: {dice_six_ge: 3}}
+          - {op: grant_keyword, keyword: haste, condition: {dice_six_ge: 3}}
+          - {op: draw, count: 1}
+      text: "使一个己方式神获得1力量与1生命，抽一张牌。[增强]：{本局游戏若你骰子投出三次6点，该式神额外获得2力量、2生命和[迅捷]。}"

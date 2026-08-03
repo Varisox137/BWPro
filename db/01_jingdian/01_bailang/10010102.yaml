@@ -1,14 +1,15 @@
 id: 10010102
-version: 20260724
 name: 文射
-shikigami: 100101
-card_type: combat
-rarity: R
-level: 1
-cost: 1
-keywords: [combo]
-effects:
-  steps:
-    - {op: buff_power, amount: -2, target: {kind: self}}
-    - {op: gain_shield, amount: 2, target: {kind: self}}
-text: "[连击]"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 1
+      keywords: [combo]
+      effects:
+        steps:
+          - {op: buff_power, amount: -2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: "[连击]"

@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011707
-version: 20260802
 name: 来打我呀
-shikigami: 100117  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-target: {kind: choose, pool: enemy_shikigami}
-effects:
-  steps:
-    # 增强：本回合该式神降低等于 dice_six_count 的力量（amount_ext 读牌手 ext；
-    # amount_sign=-1 为契约外扩展键——debuff 负号，需引擎侧支持）
-    - {op: buff_power, amount: 0, amount_ext: dice_six_count, amount_sign: -1,
-       scope: turn}
-    # 使该敌方式神立刻发动攻击：launch_attack 需引擎扩展 target 驱动模式
-    # （现有仅 shikigami=self/数据 id，定位控制者式神）
-    - {op: launch_attack, shikigami: target}
-text: "使一个敌方式神立刻发动攻击。[增强]：{本局游戏你骰子每投出一次6点，本回合该式神便降低1力量。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          # 增强：本回合该式神降低等于 dice_six_count 的力量（amount_ext 读牌手 ext；
+          # amount_sign=-1 为契约外扩展键——debuff 负号，需引擎侧支持）
+          - {op: buff_power, amount: 0, amount_ext: dice_six_count, amount_sign: -1,
+             scope: turn}
+          # 使该敌方式神立刻发动攻击：launch_attack 需引擎扩展 target 驱动模式
+          # （现有仅 shikigami=self/数据 id，定位控制者式神）
+          - {op: launch_attack, shikigami: target}
+      text: "使一个敌方式神立刻发动攻击。[增强]：{本局游戏你骰子每投出一次6点，本回合该式神便降低1力量。}"

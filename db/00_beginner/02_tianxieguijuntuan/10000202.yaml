@@ -1,22 +1,22 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10000202
-version: 20260729
 name: 天邪鬼黄·鼓舞
-shikigami: 100002  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-keywords: [fast]
-effects:
-  # 牌手级监听（本回合，scope=turn 己方回合开始清除；无 once_key 可叠加）：
-  # 天邪鬼军团造成的非战斗伤害+1（维护者答复(2)——"法术伤害"按 effect 类伤害）
-  steps:
-    - op: player_aura
-      when: on_damage_start
-      condition: {source_shikigami: 100002, kind: effect}
-      steps:
-        - {op: boost_damage, amount: 1}
-      scope: turn
-      target: {kind: self}
-text: "[瞬发]。使天邪鬼团伙本回合造成的法术伤害+1。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        # 牌手级监听（本回合，scope=turn 己方回合开始清除；无 once_key 可叠加）：
+        # 天邪鬼军团造成的非战斗伤害+1（维护者答复(2)——"法术伤害"按 effect 类伤害）
+        steps:
+          - op: player_aura
+            when: on_damage_start
+            condition: {source_shikigami: 100002, kind: effect}
+            steps:
+              - {op: boost_damage, amount: 1}
+            scope: turn
+            target: {kind: self}
+      text: "[瞬发]。使天邪鬼团伙本回合造成的法术伤害+1。"

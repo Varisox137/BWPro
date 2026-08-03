@@ -1,18 +1,18 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011505
-version: 20260731
 name: 心技一体
-shikigami: 100115  # 派系：红莲（继承自式神数据）
-card_type: form
-rarity: R
-level: 2
-cost: 1
-form_power: 3
-form_health: 5
-effects:
-  # 进场：登记绑定本形态的卡牌光环——本局每使用过一张'心身炼磨'（tags lianmo 出牌记账
-  # lianmo_used_game），犬神的战斗牌额外 +1力量/+1护甲（读取时求值；形态离场移除）
-  steps:
-    - {op: card_aura, shikigami: self, card_type: combat,
-       power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
-text: "本局游戏你每使用过一张'心身炼磨'，犬神的战斗牌便额外获得+1力量与+1护甲。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 3
+      form_health: 5
+      effects:
+        # 进场：登记绑定本形态的卡牌光环——本局每使用过一张'心身炼磨'（tags lianmo 出牌记账
+        # lianmo_used_game），犬神的战斗牌额外 +1力量/+1护甲（读取时求值；形态离场移除）
+        steps:
+          - {op: card_aura, shikigami: self, card_type: combat,
+             power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
+      text: "本局游戏你每使用过一张'心身炼磨'，犬神的战斗牌便额外获得+1力量与+1护甲。"

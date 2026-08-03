@@ -1,24 +1,25 @@
 id: 10012803
-version: 20260724
 name: 寂寥心象
-shikigami: 100128
-card_type: form
-rarity: R
-level: 2
-cost: 1
-form_power: 4
-form_health: 6
-effects: {steps: []}
-abilities:
-  # 每回合合计一次（turn_mark/turn_mark_not 门控，任一回合开始清除；标记先于分支
-  # 步骤——触发即消耗名额，分支引发的连锁破甲事件（如倒计时归零给牌手破甲）被门控挡）：
-  # 目标种类决定二选一分支——式神→鸩倒计时-2；牌手→敌方战斗区式神获得等量破甲
-  - when: on_shield_changed
-    condition: {target_side: enemy, kind: fragile, gained: true, turn_mark_not: jmxx}
-    steps:
-      - {op: turn_mark, key: jmxx}
-      - {op: countdown_delta, amount: -2, target: {kind: self},
-         condition: {target_kind: shikigami}}
-      - {op: gain_shield, amount: {event: amount}, kind: fragile,
-         target: {kind: all, pool: enemy_combat}, condition: {target_kind: player}}
-text: 每回合触发以下效果合计一次，当敌方式神获得破甲时，鸩的[倒计时]-2；或当敌方牌手获得破甲时，敌方战斗区式神获得等量破甲。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects: {steps: []}
+      abilities:
+        # 每回合合计一次（turn_mark/turn_mark_not 门控，任一回合开始清除；标记先于分支
+        # 步骤——触发即消耗名额，分支引发的连锁破甲事件（如倒计时归零给牌手破甲）被门控挡）：
+        # 目标种类决定二选一分支——式神→鸩倒计时-2；牌手→敌方战斗区式神获得等量破甲
+        - when: on_shield_changed
+          condition: {target_side: enemy, kind: fragile, gained: true, turn_mark_not: jmxx}
+          steps:
+            - {op: turn_mark, key: jmxx}
+            - {op: countdown_delta, amount: -2, target: {kind: self},
+               condition: {target_kind: shikigami}}
+            - {op: gain_shield, amount: {event: amount}, kind: fragile,
+               target: {kind: all, pool: enemy_combat}, condition: {target_kind: player}}
+      text: 每回合触发以下效果合计一次，当敌方式神获得破甲时，鸩的[倒计时]-2；或当敌方牌手获得破甲时，敌方战斗区式神获得等量破甲。

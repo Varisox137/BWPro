@@ -1,17 +1,18 @@
 id: 10011406
-version: 20260731
 name: 焚身之火
-shikigami: 100114  # 派系：紫岩（继承自式神数据）
-card_type: spell
-rarity: SR
-level: 3
-cost: 1
-target: {kind: choose, pool: any_character}
-effects:
-  # 使一个角色获得2破甲，然后对所有有破甲的敌方角色造成3点伤害
-  # （含刚被赋予破甲的选择目标；all 池 has_fragile 过滤，式神/牌手均按 shield<0 判定）
-  steps:
-    - {op: gain_shield, amount: 2, kind: fragile}
-    - {op: damage, amount: 3,
-       target: {kind: all, pool: enemy_character, has_fragile: true}}
-text: "使一个角色获得2破甲，然后对所有有破甲的敌方角色造成3点伤害。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 3
+      target: {kind: choose, pool: any_character}
+      effects:
+        # 使一个角色获得2破甲，然后对所有有破甲的敌方角色造成3点伤害
+        # （含刚被赋予破甲的选择目标；all 池 has_fragile 过滤，式神/牌手均按 shield<0 判定）
+        steps:
+          - {op: gain_shield, amount: 2, kind: fragile}
+          - {op: damage, amount: 3,
+             target: {kind: all, pool: enemy_character, has_fragile: true}}
+      text: "使一个角色获得2破甲，然后对所有有破甲的敌方角色造成3点伤害。"

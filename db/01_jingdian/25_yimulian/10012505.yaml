@@ -1,23 +1,24 @@
 id: 10012505
-version: 20260724
 name: 觉醒·一目连
-shikigami: 100125
-card_type: spell
-subtype: awaken
-awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-rarity: SR
-level: 2
-cost: 1
-effects:
-  steps:
-    - {op: generate, shikigami: self, card_type: form, count: 1}
-abilities:
-  - when: on_form_attached
-    condition: {target_shikigami: self}
-    steps:
-      - {op: trigger_form_countdown}
-  - when: on_form_destroyed
-    condition: {target_shikigami: self}
-    steps:
-      - {op: trigger_form_countdown}
-text: "随机获得一张一目连的形态牌。[觉醒]：{一目连的形态牌进场、离场或被消灭时触发[倒计时]效果。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      rarity: SR
+      level: 2
+      effects:
+        steps:
+          - {op: generate, shikigami: self, card_type: form, count: 1}
+      abilities:
+        - when: on_form_attached
+          condition: {target_shikigami: self}
+          steps:
+            - {op: trigger_form_countdown}
+        - when: on_form_destroyed
+          condition: {target_shikigami: self}
+          steps:
+            - {op: trigger_form_countdown}
+      text: "随机获得一张一目连的形态牌。[觉醒]：{一目连的形态牌进场、离场或被消灭时触发[倒计时]效果。}"

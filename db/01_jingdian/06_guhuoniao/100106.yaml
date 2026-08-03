@@ -1,15 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 100106
-version: 20260729
 name: 姑获鸟
-faction: 苍叶
-power: 3
-health: 4
-# ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）
-ability:
-  # 姑获鸟攻击后，移回准备区
-  when: on_after_assault
-  condition: {attacker_shikigami: self}
-  steps:
-    - {op: retreat, target: {kind: self}}
-text: 姑获鸟攻击后，移回准备区。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 苍叶
+      power: 3
+      health: 4
+      ability:
+        # 姑获鸟攻击后，移回准备区
+        when: on_after_assault
+        condition: {attacker_shikigami: self}
+        steps:
+          - {op: retreat, target: {kind: self}}
+      text: 姑获鸟攻击后，移回准备区。

@@ -1,23 +1,24 @@
 id: 10011206
-version: 20260730
 name: 不灭之火
-shikigami: 100112  # 派系：青岚（继承自式神数据）
-card_type: form
-rarity: R
-level: 3
-cost: 1
-form_power: 4
-form_health: 5
-effects:
-  steps: []
-abilities:
-  # "当此牌被消灭时"：on_form_destroyed 在形态离场前发出（含被替换/被消灭/气绝
-  # 连带离场，同鸩 10012807 口径）；条件限定离场形态结附于自身且有鬼火可耗。
-  # 返回场上 = 气绝则先复活，再把墓地中的同一实例重新结附（维护者答复 6：不生成新实例）
-  - when: on_form_destroyed
-    condition: {target_shikigami: self, orb_ge: 1}
-    steps:
-      - {op: consume_orb, amount: 1}
-      - {op: revive, target: {kind: self}}
-      - {op: reattach_form}
-text: 当此牌被消灭时，消耗1点鬼火，返回场上。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # "当此牌被消灭时"：on_form_destroyed 在形态离场前发出（含被替换/被消灭/气绝
+        # 连带离场，同鸩 10012807 口径）；条件限定离场形态结附于自身且有鬼火可耗。
+        # 返回场上 = 气绝则先复活，再把墓地中的同一实例重新结附（维护者答复 6：不生成新实例）
+        - when: on_form_destroyed
+          condition: {target_shikigami: self, orb_ge: 1}
+          steps:
+            - {op: consume_orb, amount: 1}
+            - {op: revive, target: {kind: self}}
+            - {op: reattach_form}
+      text: 当此牌被消灭时，消耗1点鬼火，返回场上。

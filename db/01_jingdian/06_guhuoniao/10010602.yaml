@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010602
-version: 20260730
 name: 影翼
-shikigami: 100106  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: SR
-level: 1
-cost: 1
-form_power: 4
-form_health: 4
-effects:
-  steps: []
-abilities:
-  # 姑获鸟每次攻击前获得 1 力量（临时持续性）
-  - when: on_before_assault
-    condition: {attacker_shikigami: self}
-    steps:
-      - {op: buff_power, amount: 1, target: {kind: self}}
-text: 姑获鸟每次攻击前获得1力量。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 4
+      form_health: 4
+      effects:
+        steps: []
+      abilities:
+        # 姑获鸟每次攻击前获得 1 力量（临时持续性）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: buff_power, amount: 1, target: {kind: self}}
+      text: 姑获鸟每次攻击前获得1力量。

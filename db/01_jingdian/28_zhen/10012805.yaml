@@ -1,22 +1,23 @@
 id: 10012805
-version: 20260724
 name: 觉醒·鸩
-shikigami: 100128
-card_type: spell
-subtype: awaken
-awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-rarity: SSR
-level: 2
-cost: 1
-effects:
-  steps:
-    - {op: gain_shield, amount: 2, kind: fragile, target: {kind: all, pool: enemy_player}}
-abilities:
-  # 觉醒倒计时（initial 2，来源=觉醒牌 id，替换基础倒计时）：2 + x 破甲，
-  # x = 基础+觉醒倒计时生效合计（ext["zhen_proc"]，觉醒后继续累加——先给破甲再计数）
-  - countdown: 2
-    steps:
-      - {op: gain_shield, amount: {base: 2, ext: zhen_proc}, kind: fragile,
-         target: {kind: all, pool: enemy_player}}
-      - {op: bump_ext, key: zhen_proc, target: {kind: self}}
-text: 使敌方牌手获得2破甲。[觉醒]：{[倒计时2]：{使敌方牌手获得2破甲。本局游戏你每触发过一次鸩的基础能力，此效果额外+1。（在场上也有效）}}
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      rarity: SSR
+      level: 2
+      effects:
+        steps:
+          - {op: gain_shield, amount: 2, kind: fragile, target: {kind: all, pool: enemy_player}}
+      abilities:
+        # 觉醒倒计时（initial 2，来源=觉醒牌 id，替换基础倒计时）：2 + x 破甲，
+        # x = 基础+觉醒倒计时生效合计（ext["zhen_proc"]，觉醒后继续累加——先给破甲再计数）
+        - countdown: 2
+          steps:
+            - {op: gain_shield, amount: {base: 2, ext: zhen_proc}, kind: fragile,
+               target: {kind: all, pool: enemy_player}}
+            - {op: bump_ext, key: zhen_proc, target: {kind: self}}
+      text: 使敌方牌手获得2破甲。[觉醒]：{[倒计时2]：{使敌方牌手获得2破甲。本局游戏你每触发过一次鸩的基础能力，此效果额外+1。（在场上也有效）}}

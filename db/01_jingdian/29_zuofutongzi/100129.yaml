@@ -1,15 +1,17 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 100129
-version: 20260802
 name: 座敷童子
-faction: 苍叶
-power: 2
-health: 5
-ability:
-  # 判定时（即时时机）：判定者=己方且当前骰点=1 重投一次（同一判定中每个来源能力
-  # 至多一次）；payload 骰点键名按 dice 假设（契约 §3.3，需引擎侧确认）
-  when: on_luck_judge
-  condition: {judge: self, dice: 1}
-  steps:
-    - {op: luck_reroll}
-text: "每次[运势]判定中，当你投骰子点数为1时，重投一次。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 苍叶
+      power: 2
+      health: 5
+      ability:
+        # 判定时（即时时机）：判定者=己方且当前骰点=1 重投一次（同一判定中每个来源能力
+        # 至多一次）；payload 骰点键名按 dice 假设（契约 §3.3，需引擎侧确认）
+        when: on_luck_judge
+        condition: {judge: self, dice: 1}
+        steps:
+          - {op: luck_reroll}
+      text: "每次[运势]判定中，当你投骰子点数为1时，重投一次。"

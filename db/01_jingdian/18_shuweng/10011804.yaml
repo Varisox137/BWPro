@@ -1,16 +1,17 @@
 id: 10011804
-version: 20260731
 name: 墨染
-shikigami: 100118  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: SR
-level: 2
-cost: 1
-target: {kind: choose, pool: any_shikigami}
-effects:
-  # 抽一张牌，对一个式神造成等同于你手牌数量一半的伤害
-  # （hand_count_half：控制者当前手牌数向下取整一半，先抽后算）
-  steps:
-    - {op: draw, count: 1}
-    - {op: damage, amount: {hand_count_half: controller}}
-text: "抽一张牌，对一个式神造成等同于你手牌数量一半的伤害。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 2
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        # 抽一张牌，对一个式神造成等同于你手牌数量一半的伤害
+        # （hand_count_half：控制者当前手牌数向下取整一半，先抽后算）
+        steps:
+          - {op: draw, count: 1}
+          - {op: damage, amount: {hand_count_half: controller}}
+      text: "抽一张牌，对一个式神造成等同于你手牌数量一半的伤害。"

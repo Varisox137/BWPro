@@ -1,16 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10013002
-version: 20260802
 name: 聚气
-shikigami: 100130  # 派系：苍叶（继承自式神数据）
-card_type: spell
-rarity: SR
-level: 1
-cost: 1
-keywords: [fast]
-effects:
-  steps:
-    # 永久+1（含基础与觉醒能力；式神 ext 通道跨气绝保留、觉醒后继续累计，规则要点）
-    - {op: bump_ext, key: yaohu_dmg_bonus, target: {kind: self}}
-    - {op: draw, count: 1}
-text: "[瞬发]。使妖狐的基础能力造成的伤害永久+1，抽一张牌。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 1
+      keywords: [fast]
+      effects:
+        steps:
+          # 永久+1（含基础与觉醒能力；式神 ext 通道跨气绝保留、觉醒后继续累计，规则要点）
+          - {op: bump_ext, key: yaohu_dmg_bonus, target: {kind: self}}
+          - {op: draw, count: 1}
+      text: "[瞬发]。使妖狐的基础能力造成的伤害永久+1，抽一张牌。"

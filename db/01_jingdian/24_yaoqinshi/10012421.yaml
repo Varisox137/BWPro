@@ -1,13 +1,15 @@
 id: 10012421
-version: 20260724
 name: 风之乐章
-shikigami: 100124   # 主所属：妖琴师（两位所属中较小者）
-shikigami2: 100125  # 副所属：一目连
-card_type: reinforce
-rarity: SSR
-level: 2
-cost: 1  # 展示用；实际费用/等级/目标按所选子选项（维护者答复 10）
-options: [10012451, 10012551]  # [0] 主式神侧：幻音绝弦 / [1] 副式神侧：风韵雅乐
-effects:
-  steps: []
-text: 选择使用一项：妖琴师-幻音绝弦；一目连-风韵雅乐
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      shikigami2: 100125  # 副所属：一目连
+      card_type: reinforce
+      rarity: SSR
+      level: 2
+      cost: 1  # 展示用；实际费用/等级/目标按所选子选项（维护者答复 10）
+      options: [10012451, 10012551]  # [0] 主式神侧：幻音绝弦 / [1] 副式神侧：风韵雅乐
+      effects:
+        steps: []
+      text: 选择使用一项：妖琴师-幻音绝弦；一目连-风韵雅乐

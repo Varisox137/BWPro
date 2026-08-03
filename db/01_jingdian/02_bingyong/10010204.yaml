@@ -1,18 +1,19 @@
 id: 10010204
-version: 20260724
 name: 冲撞
-shikigami: 100102
-card_type: combat
-rarity: SR
-level: 2
-cost: 1
-effects:
-  steps:
-    - {op: buff_power, amount: {enhance: true, base: 2}, target: {kind: self}}
-    - {op: gain_shield, amount: {enhance: true, base: 2}, target: {kind: self}}
-triggers:
-  - when: on_turn_start
-    condition: {player: self, shikigami_in_combat: 100102}
-    steps:
-      - {op: add_mod, to: hand, key: enhance, amount: 1}
-text: "[增强]：{己方回合开始时若兵俑在战斗区，此牌获得+1力量与+1护甲。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: {enhance: true, base: 2}, target: {kind: self}}
+          - {op: gain_shield, amount: {enhance: true, base: 2}, target: {kind: self}}
+      triggers:
+        - when: on_turn_start
+          condition: {player: self, shikigami_in_combat: 100102}
+          steps:
+            - {op: add_mod, to: hand, key: enhance, amount: 1}
+      text: "[增强]：{己方回合开始时若兵俑在战斗区，此牌获得+1力量与+1护甲。}"

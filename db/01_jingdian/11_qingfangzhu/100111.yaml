@@ -1,16 +1,19 @@
 id: 100111
-version: 20260730
 name: 青坊主
-faction: 紫岩
-power: 1
-health: 6
-ability:
-  # "你恢复生命时" = 己方任意角色实际恢复（target_side friendly）——挂治疗后
-  # on_after_heal（仅实际恢复 > 0 触发；治疗时 on_heal 在 0 量也触发，不挂）；
-  # turn_mark 门控每回合合计一次（任一回合开始清除）
-  when: on_after_heal
-  condition: {target_side: friendly, turn_mark_not: qfz_heal}
-  steps:
-    - {op: turn_mark, key: qfz_heal}
-    - {op: random_damage, amount: 1, pool: enemy_character, count: 2}
-text: 每回合一次，每当你恢复生命时，随机对两个敌方角色造成1点伤害。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 紫岩
+      power: 1
+      health: 6
+      ability:
+        # "你恢复生命时" = 己方任意角色实际恢复（target_side friendly）——挂治疗后
+        # on_after_heal（仅实际恢复 > 0 触发；治疗时 on_heal 在 0 量也触发，不挂）；
+        # turn_mark 门控每回合合计一次（任一回合开始清除）
+        when: on_after_heal
+        condition: {target_side: friendly, turn_mark_not: qfz_heal}
+        steps:
+          - {op: turn_mark, key: qfz_heal}
+          - {op: random_damage, amount: 1, pool: enemy_character, count: 2}
+      text: 每回合一次，每当你恢复生命时，随机对两个敌方角色造成1点伤害。

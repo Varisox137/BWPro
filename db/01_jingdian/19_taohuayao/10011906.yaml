@@ -1,29 +1,29 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011906
-version: 20260731
 name: 盛开
-shikigami: 100119  # 派系：红莲（继承自式神数据）
-card_type: form
-rarity: R
-level: 3
-cost: 1
-form_power: 4
-form_health: 9
-effects:
-  # 进场：随机为一个己方受伤式神恢复2生命，将此过程再重复2次（合计 3 次；
-  # repeat 每轮重新解析 friendly_injured 池重新随机）
-  steps:
-    - op: repeat
-      count: 3
-      steps:
-        - {op: heal, amount: 2, target: {kind: all, pool: friendly_injured, random: 1}}
-abilities:
-  # 己方回合开始时：同进场效果
-  - when: on_turn_start
-    condition: {player: self}
-    steps:
-      - op: repeat
-        count: 3
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 9
+      effects:
+        # 进场：随机为一个己方受伤式神恢复2生命，将此过程再重复2次（合计 3 次；
+        # repeat 每轮重新解析 friendly_injured 池重新随机）
         steps:
-          - {op: heal, amount: 2, target: {kind: all, pool: friendly_injured, random: 1}}
-text: "进场和己方回合开始时，随机为一个己方受伤式神恢复2生命，将此过程再重复2次。"
+          - op: repeat
+            count: 3
+            steps:
+              - {op: heal, amount: 2, target: {kind: all, pool: friendly_injured, random: 1}}
+      abilities:
+        # 己方回合开始时：同进场效果
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - op: repeat
+              count: 3
+              steps:
+                - {op: heal, amount: 2, target: {kind: all, pool: friendly_injured, random: 1}}
+      text: "进场和己方回合开始时，随机为一个己方受伤式神恢复2生命，将此过程再重复2次。"

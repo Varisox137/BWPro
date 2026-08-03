@@ -1,20 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011308
-version: 20260802
 name: 觉醒·青蛙瓷器
-shikigami: 100113  # 派系：苍叶（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-awaken_health: 2
-rarity: SSR
-level: 3
-cost: 1
-effects:
-  steps: []
-# 觉醒能力两段均由引擎内建，数据侧无需挂块：
-# 1) 基础能力同款光环（成功回合 +2 力量，按 id 读取，觉醒后同效）；
-# 2) "运势判定成功后效果触发两次"——翻倍标记引擎读（判定者方有未气绝觉醒青蛙瓷器，
-#    契约 §4/规则要点）
-abilities: []
-text: "[觉醒]：{青蛙瓷器在你[运势]判定成功过的回合获得2力量。你[运势]判定成功后效果触发两次。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 2
+      rarity: SSR
+      level: 3
+      effects:
+        steps: []
+      abilities: []
+      text: "[觉醒]：{青蛙瓷器在你[运势]判定成功过的回合获得2力量。你[运势]判定成功后效果触发两次。}"

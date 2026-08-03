@@ -1,15 +1,16 @@
 id: 10010701
-version: 20260730
 name: 治愈之水
-shikigami: 100107  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-keywords: [fast]
-target: {kind: choose, pool: any_character}
-effects:
-  steps:
-    # "海坊主每有 2 护甲则效果+1"：half_shield_of 动态数值（护甲 //2，向下取整）
-    - {op: heal, amount: {base: 3, half_shield_of: self}}
-text: "[瞬发]。为一个角色恢复3生命，海坊主每有2护甲则效果+1。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      target: {kind: choose, pool: any_character}
+      effects:
+        steps:
+          # "海坊主每有 2 护甲则效果+1"：half_shield_of 动态数值（护甲 //2，向下取整）
+          - {op: heal, amount: {base: 3, half_shield_of: self}}
+      text: "[瞬发]。为一个角色恢复3生命，海坊主每有2护甲则效果+1。"

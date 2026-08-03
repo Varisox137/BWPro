@@ -1,20 +1,21 @@
 id: 10011004
-version: 20260731
 name: 无情
-shikigami: 100110  # 派系：青岚（继承自式神数据）
-card_type: form
-rarity: SR
-level: 2
-cost: 1
-form_power: 4
-form_health: 5
-effects:
-  steps: []
-abilities:
-  # 敌方式神进入气绝的[倒计时]+1
-  - when: on_shikigami_defeated
-    condition: {victim_side: enemy, victim_kind: shikigami}
-    steps:
-      - {op: countdown_delta, amount: 1, revive: true,
-         target: {kind: context, key: victim}}
-text: "敌方式神进入气绝的[倒计时]+1。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # 敌方式神进入气绝的[倒计时]+1
+        - when: on_shikigami_defeated
+          condition: {victim_side: enemy, victim_kind: shikigami}
+          steps:
+            - {op: countdown_delta, amount: 1, revive: true,
+               target: {kind: context, key: victim}}
+      text: "敌方式神进入气绝的[倒计时]+1。"

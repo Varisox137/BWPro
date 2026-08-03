@@ -1,14 +1,14 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011501
-version: 20260731
 name: 羁绊的价值
-shikigami: 100115  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-effects:
-  # 恢复犬神所有生命（治疗量为已损失生命——姑获鸟觉醒先例）
-  steps:
-    - {op: heal, amount: {missing_health: self}, target: {kind: self}}
-text: "恢复犬神所有生命。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        # 恢复犬神所有生命（治疗量为已损失生命——姑获鸟觉醒先例）
+        steps:
+          - {op: heal, amount: {missing_health: self}, target: {kind: self}}
+      text: "恢复犬神所有生命。"

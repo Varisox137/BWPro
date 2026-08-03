@@ -1,23 +1,24 @@
 id: 10011105
-version: 20260730
 name: 舍生
-shikigami: 100111  # 派系：紫岩（继承自式神数据）
-card_type: spell
-rarity: SSR
-level: 2
-cost: 1
-keywords: [fast, trigger]
-effects:
-  steps:
-    - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
-    # "你免疫所有伤害"：牌手级免疫条目（PlayerState.immunities，按回合号过期）
-    - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}
-response:
-  # 响应：当你将受到致命伤害时自动使用（面板伤害 ≥ 当前生命；on_damage_start
-  # 时机在护甲计算前，与狂啸同先例）
-  when: on_damage_start
-  condition: {victim_side: friendly, victim_kind: player, victim_lethal: true}
-  steps:
-    - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
-    - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}
-text: "[瞬发]。消灭青坊主，本回合你免疫所有伤害。[响应]：{当你将受到致命伤害时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      level: 2
+      keywords: [fast, trigger]
+      effects:
+        steps:
+          - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
+          # "你免疫所有伤害"：牌手级免疫条目（PlayerState.immunities，按回合号过期）
+          - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}
+      response:
+        # 响应：当你将受到致命伤害时自动使用（面板伤害 ≥ 当前生命；on_damage_start
+        # 时机在护甲计算前，与狂啸同先例）
+        when: on_damage_start
+        condition: {victim_side: friendly, victim_kind: player, victim_lethal: true}
+        steps:
+          - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
+          - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}
+      text: "[瞬发]。消灭青坊主，本回合你免疫所有伤害。[响应]：{当你将受到致命伤害时，自动使用。}"

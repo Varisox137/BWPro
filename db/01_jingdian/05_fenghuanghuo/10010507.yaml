@@ -1,22 +1,22 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010507
-version: 20260729
 name: 炎舞
-shikigami: 100105  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: SSR
-level: 3
-cost: 1
-effects:
-  steps:
-    # 牌面[贯通]：显式 piercing 的投射 5（打到式神时贯通溢出给牌手）
-    - {op: damage, amount: {enhance: true, base: 5}, piercing: true,
-       target: {kind: all, pool: projectile}}
-triggers:
-  # 增强：本局凤凰火每对敌方牌手造成1次伤害（不区分伤害 kind，按次数）此牌伤害+1
-  # （先例禁锢之刀 10012305 的 persistent 计数 + 打出装配快照）
-  - when: on_player_damaged
-    condition: {player: opponent, source_shikigami: 100105}
-    steps:
-      - {op: add_mod, to: persistent, key: enhance, amount: 1}
-text: "[贯通]。[投射]：{造成5点伤害}。[增强]：{本局游戏凤凰火每对敌方牌手造成1次伤害，此牌伤害+1。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SSR
+      level: 3
+      effects:
+        steps:
+          # 牌面[贯通]：显式 piercing 的投射 5（打到式神时贯通溢出给牌手）
+          - {op: damage, amount: {enhance: true, base: 5}, piercing: true,
+             target: {kind: all, pool: projectile}}
+      triggers:
+        # 增强：本局凤凰火每对敌方牌手造成1次伤害（不区分伤害 kind，按次数）此牌伤害+1
+        # （先例禁锢之刀 10012305 的 persistent 计数 + 打出装配快照）
+        - when: on_player_damaged
+          condition: {player: opponent, source_shikigami: 100105}
+          steps:
+            - {op: add_mod, to: persistent, key: enhance, amount: 1}
+      text: "[贯通]。[投射]：{造成5点伤害}。[增强]：{本局游戏凤凰火每对敌方牌手造成1次伤害，此牌伤害+1。}"

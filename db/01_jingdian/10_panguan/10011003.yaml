@@ -1,22 +1,23 @@
 id: 10011003
-version: 20260731
 name: 生死无常
-shikigami: 100110  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-keywords: [trigger]
-effects:
-  # 消灭己方战斗区的式神，然后消灭敌方战斗区的式神
-  steps:
-    - {op: destroy, target: {kind: all, pool: friendly_combat}}
-    - {op: destroy, target: {kind: all, pool: enemy_combat}}
-response:
-  # [响应]：当己方战斗区式神被攻击时，自动使用
-  when: on_before_assault
-  condition: {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true}
-  steps:
-    - {op: destroy, target: {kind: all, pool: friendly_combat}}
-    - {op: destroy, target: {kind: all, pool: enemy_combat}}
-text: "消灭己方战斗区的式神，然后消灭敌方战斗区的式神。[响应]：{当己方战斗区式神被攻击时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [trigger]
+      effects:
+        # 消灭己方战斗区的式神，然后消灭敌方战斗区的式神
+        steps:
+          - {op: destroy, target: {kind: all, pool: friendly_combat}}
+          - {op: destroy, target: {kind: all, pool: enemy_combat}}
+      response:
+        # [响应]：当己方战斗区式神被攻击时，自动使用
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true}
+        steps:
+          - {op: destroy, target: {kind: all, pool: friendly_combat}}
+          - {op: destroy, target: {kind: all, pool: enemy_combat}}
+      text: "消灭己方战斗区的式神，然后消灭敌方战斗区的式神。[响应]：{当己方战斗区式神被攻击时，自动使用。}"

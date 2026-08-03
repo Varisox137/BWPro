@@ -1,15 +1,15 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011901
-version: 20260731
 name: 桃之馨息
-shikigami: 100119  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-target: {kind: choose, pool: any_character}
-effects:
-  # 为一个角色恢复5生命
-  steps:
-    - {op: heal, amount: 5}
-text: "为一个角色恢复5生命。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: any_character}
+      effects:
+        # 为一个角色恢复5生命
+        steps:
+          - {op: heal, amount: 5}
+      text: "为一个角色恢复5生命。"

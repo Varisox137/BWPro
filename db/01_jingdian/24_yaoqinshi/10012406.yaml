@@ -1,26 +1,27 @@
 id: 10012406
-version: 20260724
 name: 魔音扰心
-shikigami: 100124
-card_type: spell
-rarity: SR
-level: 2
-cost: 1
-keywords: [trigger]
-effects:
-  # 主动使用：登记一次性延迟能力"下一次敌方用牌的使用手牌前无效化"（本回合，
-  # 己方回合开始未消耗则清除）；无效化 = 跳过效果块、牌照常离手进墓地（费用已付不退）
-  steps:
-    - op: delay_grant
-      when: on_before_card_play
-      condition: {player: opponent}
-      scope: turn
-      steps:
-        - {op: nullify_card_play}
-response:
-  # 响应（覆盖块，主动/响应结构不同）：敌方用牌的使用手牌前直接无效化该次使用
-  when: on_before_card_play
-  condition: {player: opponent}
-  steps:
-    - {op: nullify_card_play}
-text: "敌方牌手本回合使用的下一张牌不会生效。[响应]：{当敌方牌手将使用牌时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 2
+      keywords: [trigger]
+      effects:
+        # 主动使用：登记一次性延迟能力"下一次敌方用牌的使用手牌前无效化"（本回合，
+        # 己方回合开始未消耗则清除）；无效化 = 跳过效果块、牌照常离手进墓地（费用已付不退）
+        steps:
+          - op: delay_grant
+            when: on_before_card_play
+            condition: {player: opponent}
+            scope: turn
+            steps:
+              - {op: nullify_card_play}
+      response:
+        # 响应（覆盖块，主动/响应结构不同）：敌方用牌的使用手牌前直接无效化该次使用
+        when: on_before_card_play
+        condition: {player: opponent}
+        steps:
+          - {op: nullify_card_play}
+      text: "敌方牌手本回合使用的下一张牌不会生效。[响应]：{当敌方牌手将使用牌时，自动使用。}"

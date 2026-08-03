@@ -1,16 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010301
-version: 20260729
 name: 鬼之手
-shikigami: 100103  # 派系：红莲（继承自式神数据）
-card_type: combat
-rarity: SR
-level: 1
-cost: 1
-effects:
-  # 效果步在战斗结算前执行：敌方战斗区为空时随机将一名敌方式神移入战斗区
-  # （随机不取对象、不吃帷幕），新进场者随即成为本场无目标战斗的被攻击者
-  steps:
-    - {op: force_enter_combat, random_pick: true, if_combat_empty: true,
-       target: {kind: all, pool: enemy_bench}}
-text: 若敌方战斗区没有式神，将一个敌方式神移入战斗区。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 1
+      effects:
+        # 效果步在战斗结算前执行：敌方战斗区为空时随机将一名敌方式神移入战斗区
+        # （随机不取对象、不吃帷幕），新进场者随即成为本场无目标战斗的被攻击者
+        steps:
+          - {op: force_enter_combat, random_pick: true, if_combat_empty: true,
+             target: {kind: all, pool: enemy_bench}}
+      text: 若敌方战斗区没有式神，将一个敌方式神移入战斗区。

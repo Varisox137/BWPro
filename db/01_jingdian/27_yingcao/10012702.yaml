@@ -1,22 +1,23 @@
 id: 10012702
-version: 20260731
 name: 治愈之光
-shikigami: 100127  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: R
-level: 1
-cost: 1
-form_power: 2
-form_health: 5
-keywords: [fast]
-effects:
-  # 进场为己方所有式神恢复2点生命
-  steps:
-    - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
-abilities:
-  # 己方回合开始时为己方所有式神恢复2点生命
-  - when: on_turn_start
-    condition: {player: self}
-    steps:
-      - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
-text: "[瞬发]。进场和己方回合开始时，为己方所有式神恢复2点生命。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 2
+      form_health: 5
+      keywords: [fast]
+      effects:
+        # 进场为己方所有式神恢复2点生命
+        steps:
+          - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
+      abilities:
+        # 己方回合开始时为己方所有式神恢复2点生命
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
+      text: "[瞬发]。进场和己方回合开始时，为己方所有式神恢复2点生命。"

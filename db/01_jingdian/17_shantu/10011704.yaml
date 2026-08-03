@@ -1,35 +1,35 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011704
-version: 20260802
 name: 觉醒·山兔
-shikigami: 100117  # 派系：苍叶（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-awaken_health: 1
-rarity: SR
-level: 2
-cost: 1
-effects:
-  steps: []
-abilities:
-  # 两个独立 block = 两次独立 [运势6] 判定（规则要点）
-  - when: on_turn_start
-    condition: {player: self}
-    luck: 6
-    steps:
-      - {op: countdown_power_boost, countdown: -1, power: 2,
-         target: {kind: all, pool: friendly_others}}
-      # 气绝者只减复活倒计时、不追加力量（同基础能力，拆 friendly_defeated 步）
-      - {op: countdown_power_boost, countdown: -1, power: 0,
-         target: {kind: all, pool: friendly_defeated}}
-  - when: on_turn_start
-    condition: {player: self}
-    luck: 6
-    steps:
-      - {op: countdown_power_boost, countdown: -1, power: 2,
-         target: {kind: all, pool: friendly_others}}
-      # 气绝者只减复活倒计时、不追加力量（同基础能力，拆 friendly_defeated 步）
-      - {op: countdown_power_boost, countdown: -1, power: 0,
-         target: {kind: all, pool: friendly_defeated}}
-text: "[觉醒]：{己方回合开始时，[运势6]：{其他己方式神的[倒计时]-1并获得2力量}，然后重复一次。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        steps: []
+      abilities:
+        # 两个独立 block = 两次独立 [运势6] 判定（规则要点）
+        - when: on_turn_start
+          condition: {player: self}
+          luck: 6
+          steps:
+            - {op: countdown_power_boost, countdown: -1, power: 2,
+               target: {kind: all, pool: friendly_others}}
+            # 气绝者只减复活倒计时、不追加力量（同基础能力，拆 friendly_defeated 步）
+            - {op: countdown_power_boost, countdown: -1, power: 0,
+               target: {kind: all, pool: friendly_defeated}}
+        - when: on_turn_start
+          condition: {player: self}
+          luck: 6
+          steps:
+            - {op: countdown_power_boost, countdown: -1, power: 2,
+               target: {kind: all, pool: friendly_others}}
+            # 气绝者只减复活倒计时、不追加力量（同基础能力，拆 friendly_defeated 步）
+            - {op: countdown_power_boost, countdown: -1, power: 0,
+               target: {kind: all, pool: friendly_defeated}}
+      text: "[觉醒]：{己方回合开始时，[运势6]：{其他己方式神的[倒计时]-1并获得2力量}，然后重复一次。}"

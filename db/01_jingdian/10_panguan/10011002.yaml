@@ -1,13 +1,14 @@
 id: 10011002
-version: 20260731
 name: 勾诀
-shikigami: 100110  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-target: {kind: choose, pool: enemy_shikigami, power_le: 2}  # 力量超标者不可被指定
-effects:
-  steps:
-    - {op: destroy}
-text: "消灭一个力量<=2的敌方式神。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: enemy_shikigami, power_le: 2}  # 力量超标者不可被指定
+      effects:
+        steps:
+          - {op: destroy}
+      text: "消灭一个力量<=2的敌方式神。"

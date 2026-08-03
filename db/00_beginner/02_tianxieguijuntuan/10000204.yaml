@@ -1,13 +1,13 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10000204
-version: 20260729
 name: 天邪鬼绿·拍打
-shikigami: 100002  # 派系：青岚（继承自式神数据）
-card_type: spell
-rarity: R
-level: 3
-cost: 1
-effects:
-  steps:
-    - {op: damage, amount: 4, target: {kind: all, pool: enemy_player}}
-text: 对敌方牌手造成4点伤害。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 3
+      effects:
+        steps:
+          - {op: damage, amount: 4, target: {kind: all, pool: enemy_player}}
+      text: 对敌方牌手造成4点伤害。

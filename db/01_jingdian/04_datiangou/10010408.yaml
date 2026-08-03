@@ -1,29 +1,30 @@
 id: 10010408
-version: 20260724
 name: 觉醒·大天狗
-shikigami: 100104
-card_type: spell
-subtype: awaken
-awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-awaken_health: 2
-rarity: SSR
-level: 3
-cost: 1
-effects:
-  # [倒计时]-1 在觉醒能力替换之后结算（维护者答复(10)）：替换继承原能力的动态
-  # 倒计时（含记录的法术）并变为倒计时 1，-1 归零即自动使用记录的法术
-  steps:
-    - {op: countdown_delta, amount: -1, target: {kind: self}}
-abilities:
-  # 与基础能力同构，[倒计时] 初值 1
-  - when: on_card_played
-    condition: {player: self, card_type: spell, subtype: null, shikigami: 100104}
-    steps:
-      - op: set_countdown
-        target: {kind: self}
-        initial: 1
-        once: true
-        record: true
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 2
+      rarity: SSR
+      level: 3
+      effects:
+        # [倒计时]-1 在觉醒能力替换之后结算（维护者答复(10)）：替换继承原能力的动态
+        # 倒计时（含记录的法术）并变为倒计时 1，-1 归零即自动使用记录的法术
         steps:
-          - {op: recast_recorded}
-text: 使大天狗的[倒计时]-1。[觉醒]：{大天狗使用非觉醒法术后，[倒计时1]：{再次使用该法术}。}
+          - {op: countdown_delta, amount: -1, target: {kind: self}}
+      abilities:
+        # 与基础能力同构，[倒计时] 初值 1
+        - when: on_card_played
+          condition: {player: self, card_type: spell, subtype: null, shikigami: 100104}
+          steps:
+            - op: set_countdown
+              target: {kind: self}
+              initial: 1
+              once: true
+              record: true
+              steps:
+                - {op: recast_recorded}
+      text: 使大天狗的[倒计时]-1。[觉醒]：{大天狗使用非觉醒法术后，[倒计时1]：{再次使用该法术}。}

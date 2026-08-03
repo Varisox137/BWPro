@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10012904
-version: 20260802
 name: 家内安全
-shikigami: 100129  # 派系：苍叶（继承自式神数据）
-card_type: form
-rarity: SR
-level: 2
-cost: 1
-form_power: 3
-form_health: 7
-effects:
-  steps: []
-abilities:
-  # 每当一个式神攻击后（不分敌我）：运势4判定失败则眩晕攻击者（契约 §3.1 luck on:fail）
-  - when: on_after_assault
-    luck: {x: 4, "on": fail}
-    steps:
-      - {op: stun, target: {kind: context, key: attacker}}
-text: "每当一个式神攻击后[运势4]：{失败则被[眩晕]。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 3
+      form_health: 7
+      effects:
+        steps: []
+      abilities:
+        # 每当一个式神攻击后（不分敌我）：运势4判定失败则眩晕攻击者（契约 §3.1 luck on:fail）
+        - when: on_after_assault
+          luck: {x: 4, "on": fail}
+          steps:
+            - {op: stun, target: {kind: context, key: attacker}}
+      text: "每当一个式神攻击后[运势4]：{失败则被[眩晕]。}"

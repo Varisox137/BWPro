@@ -1,18 +1,19 @@
 id: 10012605
-version: 20260724
 name: 射怪鸟事
-shikigami: 100126
-card_type: spell
-rarity: R
-level: 2
-cost: 1
-keywords: [fast, trigger]
-effects:
-  # 响应收集不带 holder：显式式神 id（古尘之盾/见切同例）；discard 把实际弃牌数
-  # 写入块内暂存 memo["discarded_count"]，draw 以 {"memo": key} 读取"弃多少抽多少"
-  when: on_before_defeat
-  condition: {victim_shikigami: 100126}
-  steps:
-    - {op: discard, shikigami: self}
-    - {op: draw, count: {memo: discarded_count}}
-text: "[瞬发]。弃掉所有以津真天的专属牌，抽等量的牌。[响应]：{当以津真天将气绝时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [fast, trigger]
+      effects:
+        # 响应收集不带 holder：显式式神 id（古尘之盾/见切同例）；discard 把实际弃牌数
+        # 写入块内暂存 memo["discarded_count"]，draw 以 {"memo": key} 读取"弃多少抽多少"
+        when: on_before_defeat
+        condition: {victim_shikigami: 100126}
+        steps:
+          - {op: discard, shikigami: self}
+          - {op: draw, count: {memo: discarded_count}}
+      text: "[瞬发]。弃掉所有以津真天的专属牌，抽等量的牌。[响应]：{当以津真天将气绝时，自动使用。}"

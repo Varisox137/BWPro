@@ -1,21 +1,23 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 100119
-version: 20260731
 name: 桃花妖
-faction: 红莲
-power: 1
-health: 6
-abilities:
-  # 桃花妖治疗己方式神时，使该式神获得1力量（临时持续性——未写"永久/本局"，
-  # 与觉醒版"永久获得2力量及2生命"区分；治疗时=on_heal，实际恢复为 0 也触发）
-  - when: on_heal
-    condition: {source_shikigami: self, target_side: friendly, target_kind: shikigami}
-    steps:
-      - {op: buff_power, amount: 1, target: {kind: context, key: target}}
-  # 桃花妖复活己方式神时，使该式神获得1力量（revive op 复活来源=桃花妖的效果；
-  # 倒计时复活 source=None 不触发）
-  - when: on_shikigami_revived
-    condition: {source_shikigami: self, shikigami_side: friendly}
-    steps:
-      - {op: buff_power, amount: 1, target: {kind: context, key: shikigami}}
-text: "桃花妖治疗或复活己方式神时，使该式神获得1力量。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 红莲
+      power: 1
+      health: 6
+      abilities:
+        # 桃花妖治疗己方式神时，使该式神获得1力量（临时持续性——未写"永久/本局"，
+        # 与觉醒版"永久获得2力量及2生命"区分；治疗时=on_heal，实际恢复为 0 也触发）
+        - when: on_heal
+          condition: {source_shikigami: self, target_side: friendly, target_kind: shikigami}
+          steps:
+            - {op: buff_power, amount: 1, target: {kind: context, key: target}}
+        # 桃花妖复活己方式神时，使该式神获得1力量（revive op 复活来源=桃花妖的效果；
+        # 倒计时复活 source=None 不触发）
+        - when: on_shikigami_revived
+          condition: {source_shikigami: self, shikigami_side: friendly}
+          steps:
+            - {op: buff_power, amount: 1, target: {kind: context, key: shikigami}}
+      text: "桃花妖治疗或复活己方式神时，使该式神获得1力量。"

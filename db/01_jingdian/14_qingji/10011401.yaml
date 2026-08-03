@@ -1,14 +1,15 @@
 id: 10011401
-version: 20260731
 name: 蛇行击
-shikigami: 100114  # 派系：紫岩（继承自式神数据）
-card_type: spell
-rarity: R
-level: 1
-cost: 1
-keywords: [fast, rebound]  # 弹回：使用后移回手牌而非置入墓地
-target: {kind: choose, pool: any_shikigami}
-effects:
-  steps:
-    - {op: damage, amount: 2}
-text: "[瞬发]，[弹回]。对一个式神造成2点伤害。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast, rebound]  # 弹回：使用后移回手牌而非置入墓地
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        steps:
+          - {op: damage, amount: 2}
+      text: "[瞬发]，[弹回]。对一个式神造成2点伤害。"

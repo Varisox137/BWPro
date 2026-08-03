@@ -1,24 +1,25 @@
 id: 10010708
-version: 20260730
 name: 觉醒·海坊主
-shikigami: 100107  # 派系：青岚（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_power: 1
-awaken_health: 3
-tags: [awaken]
-rarity: SSR
-level: 3
-cost: 1
-target: {kind: choose, pool: any_character}
-effects:
-  steps:
-    - {op: heal, amount: 3}
-abilities:
-  # 觉醒替换 = 基础能力保留 + 过量治疗额外转化为力量（维护者答复：觉醒替换含基础全文）
-  - when: on_heal
-    condition: {source_shikigami: self, target_side: friendly, overheal_ge: 1}
-    steps:
-      - {op: gain_shield, amount: {event: overheal}, target: {kind: context, key: target}}
-      - {op: buff_power, amount: {event: overheal}, target: {kind: context, key: target}}
-text: 为一个角色恢复3生命。[觉醒]：{海坊主对己方造成的过量治疗会转化为力量和护甲。}
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1
+      awaken_health: 3
+      tags: [awaken]
+      rarity: SSR
+      level: 3
+      target: {kind: choose, pool: any_character}
+      effects:
+        steps:
+          - {op: heal, amount: 3}
+      abilities:
+        # 觉醒替换 = 基础能力保留 + 过量治疗额外转化为力量（维护者答复：觉醒替换含基础全文）
+        - when: on_heal
+          condition: {source_shikigami: self, target_side: friendly, overheal_ge: 1}
+          steps:
+            - {op: gain_shield, amount: {event: overheal}, target: {kind: context, key: target}}
+            - {op: buff_power, amount: {event: overheal}, target: {kind: context, key: target}}
+      text: 为一个角色恢复3生命。[觉醒]：{海坊主对己方造成的过量治疗会转化为力量和护甲。}

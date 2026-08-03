@@ -1,20 +1,21 @@
 id: 10012506
-version: 20260724
 name: 风符·瞬
-shikigami: 100125
-card_type: form
-rarity: SR
-level: 2
-cost: 1
-form_power: 6
-form_health: 9
-keywords: [fast, trigger]
-effects:
-  when: on_before_assault
-  condition: {victim_shikigami: 100125}
-  steps: []
-abilities:
-  - when: on_turn_end
-    steps:
-      - {op: destroy_form, target: {kind: self}}
-text: "[瞬发]。回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 6
+      form_health: 9
+      keywords: [fast, trigger]
+      effects:
+        when: on_before_assault
+        condition: {victim_shikigami: 100125}
+        steps: []
+      abilities:
+        - when: on_turn_end
+          steps:
+            - {op: destroy_form, target: {kind: self}}
+      text: "[瞬发]。回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用。}"

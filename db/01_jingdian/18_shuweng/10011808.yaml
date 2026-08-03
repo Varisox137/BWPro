@@ -1,15 +1,16 @@
 id: 10011808
-version: 20260731
 name: 觉醒·书翁
-shikigami: 100118  # 派系：青岚（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予
-awaken_health: 2
-rarity: SSR
-level: 3
-cost: 1
-tags: [deck_out_burn]  # 在场已觉醒：牌库为空时抽牌改为对敌方牌手造成10点伤害
-effects:
-  steps: []
-text: "[觉醒]：{在本局游戏剩余时间内，每当你抽牌时若牌库里没有牌，则改为对敌方牌手造成10点伤害，你不会因此输掉游戏。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予
+      awaken_health: 2
+      rarity: SSR
+      level: 3
+      tags: [deck_out_burn]  # 在场已觉醒：牌库为空时抽牌改为对敌方牌手造成10点伤害
+      effects:
+        steps: []
+      text: "[觉醒]：{在本局游戏剩余时间内，每当你抽牌时若牌库里没有牌，则改为对敌方牌手造成10点伤害，你不会因此输掉游戏。}"

@@ -1,10 +1,12 @@
 id: 10012304
-version: 20260724
 name: 一闪
-shikigami: 100123
-card_type: combat
-rarity: R
-level: 2
-cost: 0  # 【不消耗鬼火】
-effects: {steps: []}
-text: 不消耗鬼火。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: R
+      level: 2
+      cost: 0  # 【不消耗鬼火】
+      effects: {steps: []}
+      text: 不消耗鬼火。

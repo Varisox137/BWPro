@@ -1,20 +1,20 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011551
-version: 20260731
 name: 心身炼磨
-shikigami: 100115  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: R
-token: true
-level: 1
-cost: 1
-tags: [lianmo]  # 出牌记账 lianmo_used_game（心技一体"本局每使用过一张'心身炼磨'"光环数值）
-conditional_keywords:
-  - {keyword: fast, level_ge: 2}  # '心身炼磨'在犬神等级达到2时获得[瞬发]
-cost_zero_if: {level_ge: 3}  # 在犬神等级达到3时不消耗鬼火
-effects:
-  # 永久获得1力量与1生命
-  steps:
-    - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
-    - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
-text: "永久获得1力量与1生命。'心身炼磨'在犬神等级达到2时获得[瞬发]，在犬神等级达到3时不消耗鬼火。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      token: true
+      level: 1
+      tags: [lianmo]  # 出牌记账 lianmo_used_game（心技一体"本局每使用过一张'心身炼磨'"光环数值）
+      conditional_keywords:
+        - {keyword: fast, level_ge: 2}  # '心身炼磨'在犬神等级达到2时获得[瞬发]
+      cost_zero_if: {level_ge: 3}  # 在犬神等级达到3时不消耗鬼火
+      effects:
+        # 永久获得1力量与1生命
+        steps:
+          - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+          - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+      text: "永久获得1力量与1生命。'心身炼磨'在犬神等级达到2时获得[瞬发]，在犬神等级达到3时不消耗鬼火。"

@@ -1,31 +1,31 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011908
-version: 20260731
 name: 觉醒·桃花妖
-shikigami: 100119  # 派系：红莲（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_power: 2   # +2/+1：永久身材增益，"觉醒后"延时时机之后授予
-awaken_health: 1
-rarity: SR
-level: 3
-cost: 1
-target: {kind: choose, pool: any_character}
-effects:
-  # 为一个角色恢复5生命
-  steps:
-    - {op: heal, amount: 5}
-abilities:
-  # [觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命}
-  # （基础能力的永久强化版，替换非叠加）
-  - when: on_heal
-    condition: {source_shikigami: self, target_side: friendly, target_kind: shikigami}
-    steps:
-      - {op: buff_power, amount: 2, perm: true, target: {kind: context, key: target}}
-      - {op: buff_health, amount: 2, perm: true, target: {kind: context, key: target}}
-  - when: on_shikigami_revived
-    condition: {source_shikigami: self, shikigami_side: friendly}
-    steps:
-      - {op: buff_power, amount: 2, perm: true, target: {kind: context, key: shikigami}}
-      - {op: buff_health, amount: 2, perm: true, target: {kind: context, key: shikigami}}
-text: "为一个角色恢复5生命。[觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # +2/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
+      rarity: SR
+      level: 3
+      target: {kind: choose, pool: any_character}
+      effects:
+        # 为一个角色恢复5生命
+        steps:
+          - {op: heal, amount: 5}
+      abilities:
+        # [觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命}
+        # （基础能力的永久强化版，替换非叠加）
+        - when: on_heal
+          condition: {source_shikigami: self, target_side: friendly, target_kind: shikigami}
+          steps:
+            - {op: buff_power, amount: 2, perm: true, target: {kind: context, key: target}}
+            - {op: buff_health, amount: 2, perm: true, target: {kind: context, key: target}}
+        - when: on_shikigami_revived
+          condition: {source_shikigami: self, shikigami_side: friendly}
+          steps:
+            - {op: buff_power, amount: 2, perm: true, target: {kind: context, key: shikigami}}
+            - {op: buff_health, amount: 2, perm: true, target: {kind: context, key: shikigami}}
+      text: "为一个角色恢复5生命。[觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命。}"

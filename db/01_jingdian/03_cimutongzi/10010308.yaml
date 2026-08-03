@@ -1,22 +1,22 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010308
-version: 20260729
 name: 觉醒·茨木童子
-shikigami: 100103  # 派系：红莲（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_health: 1   # +0/+1：永久身材增益，"觉醒后"延时时机之后授予
-rarity: SR
-level: 3
-cost: 1
-effects:
-  steps:
-    - {op: buff_power, amount: 2, target: {kind: self}}
-    - {op: gain_shield, amount: 2, target: {kind: self}}
-abilities:
-  # 力量翻倍 = 获得等量当前力量的临时增益（维护者答复(3)）
-  - when: on_turn_start
-    condition: {player: self}
-    steps:
-      - {op: buff_power, amount: {power_of: self}, target: {kind: self}}
-text: "获得2力量和2护甲。[觉醒]：{己方回合开始时茨木童子的力量翻倍。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_health: 1   # +0/+1：永久身材增益，"觉醒后"延时时机之后授予
+      rarity: SR
+      level: 3
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      abilities:
+        # 力量翻倍 = 获得等量当前力量的临时增益（维护者答复(3)）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: buff_power, amount: {power_of: self}, target: {kind: self}}
+      text: "获得2力量和2护甲。[觉醒]：{己方回合开始时茨木童子的力量翻倍。}"

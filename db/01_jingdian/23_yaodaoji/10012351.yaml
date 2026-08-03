@@ -1,25 +1,25 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10012351
-version: 20260729
 name: 刃影叠岚
-shikigami: 100123  # 派系：苍叶（继承自式神数据）
-card_type: spell
-subtype: awaken
-awaken_health: 1   # +0/+1（awaken_power 缺省 0）
-rarity: SSR
-token: true  # 协战子选项（刃影鹤唳 10010621；主牌暂不入库）
-level: 2
-cost: 1
-effects:
-  steps:
-    # 羁绊：姑获鸟发起一次攻击（未出战/气绝空操作）
-    - {op: launch_attack, shikigami: 100106}
-abilities:
-  # [觉醒]：{当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[瞬发]及+1力量
-  # 和+1护甲}——数值通道可叠加（多次触发累加）
-  - when: on_player_damaged
-    condition: {source_shikigami: self}
-    steps:
-      - {op: card_aura, shikigami: self, card_type: combat, keywords: [fast],
-         power: 1, shield: 1}
-text: "[觉醒]：{当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[瞬发]及+1力量和+1护甲}。[羁绊]：{姑获鸟发起一次攻击。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_health: 1   # +0/+1（awaken_power 缺省 0）
+      rarity: SSR
+      token: true  # 协战子选项（刃影鹤唳 10010621；主牌暂不入库）
+      level: 2
+      effects:
+        steps:
+          # 羁绊：姑获鸟发起一次攻击（未出战/气绝空操作）
+          - {op: launch_attack, shikigami: 100106}
+      abilities:
+        # [觉醒]：{当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[瞬发]及+1力量
+        # 和+1护甲}——数值通道可叠加（多次触发累加）
+        - when: on_player_damaged
+          condition: {source_shikigami: self}
+          steps:
+            - {op: card_aura, shikigami: self, card_type: combat, keywords: [fast],
+               power: 1, shield: 1}
+      text: "[觉醒]：{当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[瞬发]及+1力量和+1护甲}。[羁绊]：{姑获鸟发起一次攻击。}"

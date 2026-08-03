@@ -1,15 +1,15 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011605
-version: 20260729
 name: 碎岩
-shikigami: 100116  # 派系：红莲（继承自式神数据）
-card_type: combat
-rarity: SR
-level: 2
-cost: 1
-keywords: [pierce]
-effects:
-  steps:
-    - {op: buff_power, amount: 2, target: {kind: self}}
-    - {op: gain_shield, amount: 2, target: {kind: self}}
-text: "[穿刺]"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SR
+      level: 2
+      keywords: [pierce]
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: "[穿刺]"

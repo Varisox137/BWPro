@@ -170,8 +170,10 @@ def test_scaffold_shikigami_validates(root):
     path = _make_shikigami(root)
     assert path == root / "01_jingdian" / "27_ceshi" / "100127.yaml"
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert data["id"] == 100127 and data["faction"] == "苍叶"
-    assert data["power"] == 2 and data["health"] == 5
+    snap = data["versions"]["history"][0]  # 顶层仅 id/name/versions，数据在快照中
+    assert data["id"] == 100127 and snap["faction"] == "苍叶"
+    assert snap["power"] == 2 and snap["health"] == 5
+    assert data["versions"]["best"] == snap["date"]
     db = _load(root)
     assert 100127 in db.shikigami
 
@@ -185,17 +187,19 @@ def test_scaffold_shikigami_with_cards(root):
     assert levels == [1, 1, 1, 2, 2, 2, 3, 3]
 
 
-def test_scaffold_card_validates_and_faction_inherited(root):
+def test_scaffold_card_validates(root):
     _make_shikigami(root)
     path = scaffold_card(root, shikigami=100127, seq=1, name="测试卡",
                          card_type="spell", level=2, cost=1, rarity="SR")
     assert path == root / "01_jingdian" / "27_ceshi" / "10012701.yaml"
-    text = path.read_text(encoding="utf-8")
-    assert "派系：苍叶" in text  # faction 从所属式神 yaml 继承（注释展示）
-    data = yaml.safe_load(text)
-    assert data["id"] == 10012701 and data["effects"]["steps"] == []
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    snap = data["versions"]["history"][0]
+    assert data["id"] == 10012701 and snap["effects"]["steps"] == []
+    assert "shikigami" not in snap  # 所属由 id 前六位推导，不入数据
+    assert "cost" not in snap       # cost 默认 1，不写入
     db = _load(root)
     assert db.cards[10012701].rarity == "SR"
+    assert db.cards[10012701].shikigami == 100127  # 加载时推导注入
 
 
 def test_scaffold_card_requires_existing_shikigami(root):
@@ -224,10 +228,11 @@ def test_scaffold_reinforce_dual_owner(root):
                          card_type="reinforce", shikigami2=100101)
     assert path == root / "01_jingdian" / "01_yi" / "10010121.yaml"
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert data["shikigami"] == 100101 and data["shikigami2"] == 100127
+    snap = data["versions"]["history"][0]
+    assert "shikigami" not in snap and snap["shikigami2"] == 100127
     db = _load(root)
     c = db.cards[10010121]
-    assert {c.shikigami, c.shikigami2} == {100101, 100127}
+    assert {c.shikigami, c.shikigami2} == {100101, 100127}  # 主归属由 id 推导注入
     with pytest.raises(ValueError, match="--shikigami2"):
         scaffold_card(root, shikigami=100127, seq=21, name="x", card_type="reinforce")
     with pytest.raises(ValueError, match="仅协战牌"):
@@ -252,7 +257,7 @@ def test_refuse_overwrite_and_force(root):
     scaffold_shikigami(root, id=100127, name="改名", faction="苍叶",
                        power=3, health=6, slug="ceshi", force=True)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert data["name"] == "改名" and data["power"] == 3
+    assert data["name"] == "改名" and data["versions"]["history"][0]["power"] == 3
 
 
 # ==========================================================================
@@ -260,40 +265,54 @@ def test_refuse_overwrite_and_force(root):
 # ==========================================================================
 
 def _versioned_db():
-    """含版本时间线的最小库：式神 100101 与其卡 10010101（发布 20260101、
-    20260301 调整、最新 20260501，式神 best=20260301）；无平衡史卡 10010102
-    （version=20260201）。"""
+    """含版本时间线的最小库（顶层仅 id/name/versions，history 每条为完整快照）：
+    式神 100101 与其卡 10010101（发布 20260101、20260301 调整、最新 20260501，
+    式神 best=20260301）；单快照卡 10010102（发布 20260201）。"""
     shiki_raw = {
-        "id": 100101, "version": 20260501, "name": "测试", "kind": "shikigami",
-        "faction": "红莲", "power": 3, "health": 4,
+        "id": 100101, "name": "测试",
         "versions": {"best": 20260301, "history": [
             {"date": 20260101, "faction": "红莲", "power": 2, "health": 3},
-            {"date": 20260301, "power": 4},
+            {"date": 20260301, "faction": "红莲", "power": 4, "health": 3},
+            {"date": 20260501, "faction": "红莲", "power": 3, "health": 4},
         ]},
     }
-    card_raw = _card(id=10010101, text="新", version=20260501, versions={"history": [
-        {"date": 20260101, "level": 1, "cost": 1,
-         "effects": {"when": "on_play", "steps": []}, "text": "旧"},
-        {"date": 20260301, "cost": 2},
-    ]})
-    plain_raw = _card(id=10010102, name="无史卡", version=20260201)
+
+    def _snap(date, **kw):
+        return {"date": date, "card_type": "spell", "level": 1,
+                "effects": {"when": "on_play", "steps": []}, **kw}
+
+    card_raw = {
+        "id": 10010101, "name": "测试卡",
+        "versions": {"history": [
+            _snap(20260101, cost=1, text="旧"),
+            _snap(20260301, cost=2, text="旧"),
+            _snap(20260501, cost=2, text="新"),
+        ]},
+    }
+    plain_raw = {"id": 10010102, "name": "无史卡",
+                 "versions": {"history": [_snap(20260201)]}}
     raw_cards = {c["id"]: c for c in (card_raw, plain_raw)}
     raw_shiki = {shiki_raw["id"]: shiki_raw}
-    cards = {i: CardDef.model_validate(r) for i, r in raw_cards.items()}
-    shiki = {i: ShikigamiDef.model_validate(r) for i, r in raw_shiki.items()}
+    from db.loader import _inject_derived
+    from db.versioning import resolve_latest
+    cards = {i: CardDef.model_validate(_inject_derived(resolve_latest(r)))
+             for i, r in raw_cards.items()}
+    shiki = {i: ShikigamiDef.model_validate(resolve_latest(r))
+             for i, r in raw_shiki.items()}
     return CardDatabase(cards, shiki, set(), raw_cards, raw_shiki)
 
 
 def test_balance_version_resolve():
-    """环境解析：取不晚于环境日期的最晚版本逐条合并；生效日期写入 version。"""
+    """环境解析：取不晚于环境日期的最晚完整快照；生效日期写入 version。"""
     db = _versioned_db()
     d1 = db.at_date(20260201)  # 发布版本
     assert d1.shikigami[100101].power == 2
     assert d1.shikigami[100101].version == 20260101
     assert d1.cards[10010101].cost == 1 and d1.cards[10010101].text == "旧"
+    assert d1.cards[10010101].shikigami == 100101  # 所属由 id 前六位推导注入
     d2 = db.at_date(20260301)  # 调整当日边界：含当条
     assert d2.shikigami[100101].power == 4
-    assert d2.shikigami[100101].health == 3  # 未触及字段沿用前版本快照
+    assert d2.shikigami[100101].health == 3
     assert d2.cards[10010101].cost == 2 and d2.cards[10010101].text == "旧"
     d3 = db.at_date(20260501)  # 最新
     assert d3.shikigami[100101].power == 3 and d3.shikigami[100101].health == 4
@@ -302,33 +321,41 @@ def test_balance_version_resolve():
 
 
 def test_balance_version_availability():
-    """环境日期早于发布日期 → 该 id 在环境库中不存在；无平衡史的按 version 判定。"""
+    """环境日期早于发布日期 → 该 id 在环境库中不存在；单快照卡按发布日期判定。"""
     db = _versioned_db()
     early = db.at_date(20251231)
     assert 100101 not in early.shikigami and 10010101 not in early.cards
     mid = db.at_date(20260115)
     assert 100101 in mid.shikigami and 10010101 in mid.cards
-    assert 10010102 not in mid.cards  # 无史卡 version=20260201 尚未到
+    assert 10010102 not in mid.cards  # 发布 20260201 尚未到
     assert 10010102 in db.at_date(20260201).cards
 
 
 def test_balance_version_malformed():
-    """versions 结构校验：日期非法/乱序/身份字段/best 不在版本记录中均报错。"""
+    """versions 结构校验：顶层多余字段/缺 versions/空 history/日期非法/乱序/
+    身份字段/推导字段 shikigami/best 不在快照日期中均报错。"""
     from db.versioning import validate_versions
-    assert validate_versions(_card()) == []  # 无 versions 恒通过
-    bad_date = _card(versions={"history": [{"date": 20261301, "cost": 1}]})
+    assert validate_versions({}) != []  # 缺 versions 块
+    extra = {"id": 1, "name": "x", "power": 3,
+             "versions": {"history": [{"date": 20260101, "power": 3}]}}
+    assert any("顶层" in e for e in validate_versions(extra))
+    empty = {"id": 1, "name": "x", "versions": {"history": []}}
+    assert any("不能为空" in e for e in validate_versions(empty))
+    bad_date = {"id": 1, "name": "x",
+                "versions": {"history": [{"date": 20261301, "cost": 0}]}}
     assert any("8 位" in e for e in validate_versions(bad_date))
-    unordered = _card(versions={"history": [
-        {"date": 20260301, "cost": 1}, {"date": 20260101, "cost": 2}]})
+    unordered = {"id": 1, "name": "x", "versions": {"history": [
+        {"date": 20260301, "cost": 0}, {"date": 20260101, "cost": 0}]}}
     assert any("递增" in e for e in validate_versions(unordered))
-    identity = _card(versions={"history": [{"date": 20260101, "name": "改"}]})
+    identity = {"id": 1, "name": "x",
+                "versions": {"history": [{"date": 20260101, "name": "改"}]}}
     assert any("身份字段" in e for e in validate_versions(identity))
-    bad_best = _card(versions={"best": 20260202,
-                               "history": [{"date": 20260101, "cost": 1}]})
+    derived = {"id": 1, "name": "x",
+               "versions": {"history": [{"date": 20260101, "shikigami": 100101}]}}
+    assert any("推导" in e for e in validate_versions(derived))
+    bad_best = {"id": 1, "name": "x", "versions": {
+        "best": 20260202, "history": [{"date": 20260101, "cost": 0}]}}
     assert any("best" in e for e in validate_versions(bad_best))
-    future = _card(version=20260101,
-                   versions={"history": [{"date": 20260101, "cost": 1}]})
-    assert any("早于最新" in e for e in validate_versions(future))
 
 
 def test_balance_version_factory_db_at_date(db):

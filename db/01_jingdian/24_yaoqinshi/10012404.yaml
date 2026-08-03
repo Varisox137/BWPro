@@ -1,27 +1,28 @@
 id: 10012404
-version: 20260724
 name: 觉醒·神乐歌
-shikigami: 100124
-card_type: spell
-subtype: awaken
-awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-rarity: R
-level: 2
-cost: 1
-effects:
-  steps: []
-abilities:
-  # 觉醒倒计时（initial 3，来源=觉醒牌 id）：己方其他式神倒计时-1 并获得 1 力量与 1 生命
-  # （无倒计时能力者修正 -0；增益为临时修正，气绝清除）
-  - countdown: 3
-    steps:
-      - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
-      - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
-      - {op: buff_health, amount: 1, target: {kind: all, pool: friendly_others}}
-  # 使用妖琴师的觉醒法术牌时：倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
-  # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
-  - when: on_before_awaken
-    condition: {player: self, target_shikigami: self}
-    steps:
-      - {op: countdown_delta, amount: -3, target: {kind: self}}
-text: "[觉醒]：{[倒计时3]：{己方其他式神倒计时-1并获得1力量与1生命}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      rarity: R
+      level: 2
+      effects:
+        steps: []
+      abilities:
+        # 觉醒倒计时（initial 3，来源=觉醒牌 id）：己方其他式神倒计时-1 并获得 1 力量与 1 生命
+        # （无倒计时能力者修正 -0；增益为临时修正，气绝清除）
+        - countdown: 3
+          steps:
+            - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
+            - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
+            - {op: buff_health, amount: 1, target: {kind: all, pool: friendly_others}}
+        # 使用妖琴师的觉醒法术牌时：倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
+        # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
+        - when: on_before_awaken
+          condition: {player: self, target_shikigami: self}
+          steps:
+            - {op: countdown_delta, amount: -3, target: {kind: self}}
+      text: "[觉醒]：{[倒计时3]：{己方其他式神倒计时-1并获得1力量与1生命}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"

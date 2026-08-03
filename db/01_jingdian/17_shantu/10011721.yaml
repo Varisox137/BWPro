@@ -1,14 +1,14 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011721
-version: 20260802
 name: 福星高照
-shikigami: 100117  # 派系：苍叶（继承自式神数据）
-shikigami2: 100129  # 协战副归属
-card_type: reinforce
-rarity: SSR
-level: 3
-cost: 1
-options: [10011751, 10012951]  # [0] 主式神侧：幸运兔兔 / [1] 副式神侧：鸿运当头
-effects:
-  steps: []
-text: "选择使用一项：山兔-幸运兔兔；座敷童子-鸿运当头"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      shikigami2: 100129  # 协战副归属
+      card_type: reinforce
+      rarity: SSR
+      level: 3
+      options: [10011751, 10012951]  # [0] 主式神侧：幸运兔兔 / [1] 副式神侧：鸿运当头
+      effects:
+        steps: []
+      text: "选择使用一项：山兔-幸运兔兔；座敷童子-鸿运当头"

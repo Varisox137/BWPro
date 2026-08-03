@@ -1,22 +1,23 @@
 id: 10010151
-version: 20260724
 name: 灵矢贯虹
-shikigami: 100101
-card_type: combat
-rarity: SSR
-token: true  # 协战子选项（森佑灵矢 10010121 主式神侧）
-level: 2
-cost: 1
-effects:
-  steps:
-    - {op: buff_power, amount: 2, target: {kind: self}}
-    - {op: gain_shield, amount: 2, target: {kind: self}}
-    # 本次攻击白狼获得当前自身法术牌强化（起弓/离/无我 attack_buff 挂账）的力量
-    # 加成——仅力量部分合计后作为攻击后到期强化再次授予（关键字部分不重复）
-    - {op: reapply_attack_buff_power, target: {kind: self}}
-    # 羁绊1：攻击前触发萤草当前形态进场效果（未结附形态空操作）
-    - {op: trigger_form_enter, shikigami: 100127}
-    # 羁绊2（维护者答复 10）：己方全部鼓舞（战力/护甲）作为此战斗牌赋予的加成
-    # 生效并消耗（战力持续到本次战斗后、护甲保留；鼓舞关键字当前卡池不存在）
-    - {op: consume_assault_boosts}
-text: "本次攻击白狼获得当前自身法术牌强化效果的力量加成。[羁绊]：{攻击前触发萤草当前形态进场效果。你的出击加成效果在使用此牌时也会生效。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: combat
+      rarity: SSR
+      token: true  # 协战子选项（森佑灵矢 10010121 主式神侧）
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          # 本次攻击白狼获得当前自身法术牌强化（起弓/离/无我 attack_buff 挂账）的力量
+          # 加成——仅力量部分合计后作为攻击后到期强化再次授予（关键字部分不重复）
+          - {op: reapply_attack_buff_power, target: {kind: self}}
+          # 羁绊1：攻击前触发萤草当前形态进场效果（未结附形态空操作）
+          - {op: trigger_form_enter, shikigami: 100127}
+          # 羁绊2（维护者答复 10）：己方全部鼓舞（战力/护甲）作为此战斗牌赋予的加成
+          # 生效并消耗（战力持续到本次战斗后、护甲保留；鼓舞关键字当前卡池不存在）
+          - {op: consume_assault_boosts}
+      text: "本次攻击白狼获得当前自身法术牌强化效果的力量加成。[羁绊]：{攻击前触发萤草当前形态进场效果。你的出击加成效果在使用此牌时也会生效。}"

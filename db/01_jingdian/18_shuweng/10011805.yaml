@@ -1,14 +1,15 @@
 id: 10011805
-version: 20260731
 name: 明心
-shikigami: 100118  # 派系：青岚（继承自式神数据）
-card_type: form
-rarity: R
-level: 2
-cost: 1
-form_power: 4
-form_health: 5
-tags: [draw_to_pick]  # 在场形态：回合开始的抽牌改为检视牌库顶三张选一张置入手牌
-effects:
-  steps: []
-text: "回合开始的抽牌改为检视牌库顶三张牌然后选择一张置入手牌，然后洗牌库。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 4
+      form_health: 5
+      tags: [draw_to_pick]  # 在场形态：回合开始的抽牌改为检视牌库顶三张选一张置入手牌
+      effects:
+        steps: []
+      text: "回合开始的抽牌改为检视牌库顶三张牌然后选择一张置入手牌，然后洗牌库。"

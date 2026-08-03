@@ -1,12 +1,15 @@
 id: 100126
-version: 20260724
 name: 以津真天
-faction: 苍叶
-power: 2
-health: 5
-ability:
-  # 静态倒计时能力块（对局开始/升至1级/复活时注册）：[倒计时2] 将一张黄金羽置入手牌
-  countdown: 2
-  steps:
-    - {op: generate, card_id: 10012651}
-text: "[倒计时2]：{将一张‘黄金羽’置入手牌。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 苍叶
+      power: 2
+      health: 5
+      ability:
+        # 静态倒计时能力块（对局开始/升至1级/复活时注册）：[倒计时2] 将一张黄金羽置入手牌
+        countdown: 2
+        steps:
+          - {op: generate, card_id: 10012651}
+      text: "[倒计时2]：{将一张‘黄金羽’置入手牌。}"

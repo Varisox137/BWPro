@@ -1,16 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011507
-version: 20260731
 name: 心剑乱舞
-shikigami: 100115  # 派系：红莲（继承自式神数据）
-card_type: form
-rarity: SR
-level: 3
-cost: 1
-form_power: 4
-form_health: 9
-effects:
-  # 进场：登记绑定本形态的卡牌光环——犬神的牌获得[瞬发]（读取时求值；形态离场移除）
-  steps:
-    - {op: card_aura, shikigami: self, keywords: [fast], scope: form}
-text: "犬神的牌获得[瞬发]。"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 4
+      form_health: 9
+      effects:
+        # 进场：登记绑定本形态的卡牌光环——犬神的牌获得[瞬发]（读取时求值；形态离场移除）
+        steps:
+          - {op: card_aura, shikigami: self, keywords: [fast], scope: form}
+      text: "犬神的牌获得[瞬发]。"

@@ -1,22 +1,22 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10010503
-version: 20260729
 name: 引燃
-shikigami: 100105  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: SR
-level: 1
-cost: 1
-target: {kind: choose, pool: any_shikigami}  # 含己方式神（维护者确认：可对己方残血式神使用）
-effects:
-  steps:
-    # scope="play"："本次使用期间"窗口——未消灭不留存（先例黑羽之刃 10010404）
-    - op: delay_grant
-      when: on_shikigami_defeated
-      condition: {victim_kind: shikigami, source_shikigami: self}
-      scope: play
-      steps:
-        # 对它的牌手造成2点伤害（消灭己方式神则打己方牌手）
-        - {op: damage, amount: 2, target: {kind: context, key: victim_player}}
-    - {op: damage, amount: 2}
-text: 对一个式神造成2点伤害，若消灭则再对它的牌手造成2点伤害。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 1
+      target: {kind: choose, pool: any_shikigami}  # 含己方式神（维护者确认：可对己方残血式神使用）
+      effects:
+        steps:
+          # scope="play"："本次使用期间"窗口——未消灭不留存（先例黑羽之刃 10010404）
+          - op: delay_grant
+            when: on_shikigami_defeated
+            condition: {victim_kind: shikigami, source_shikigami: self}
+            scope: play
+            steps:
+              # 对它的牌手造成2点伤害（消灭己方式神则打己方牌手）
+              - {op: damage, amount: 2, target: {kind: context, key: victim_player}}
+          - {op: damage, amount: 2}
+      text: 对一个式神造成2点伤害，若消灭则再对它的牌手造成2点伤害。

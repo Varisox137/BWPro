@@ -1,14 +1,17 @@
 id: 100102
-version: 20260724
 name: 兵俑
-faction: 紫岩
-power: 1
-health: 6
-ability:
-  when: on_turn_start
-  condition: {player: self}
-  steps:
-    - op: gain_shield
-      amount: 2
-      target: {kind: self}
-text: 己方回合开始时，兵俑获得2护甲。
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      faction: 紫岩
+      power: 1
+      health: 6
+      ability:
+        when: on_turn_start
+        condition: {player: self}
+        steps:
+          - op: gain_shield
+            amount: 2
+            target: {kind: self}
+      text: 己方回合开始时，兵俑获得2护甲。

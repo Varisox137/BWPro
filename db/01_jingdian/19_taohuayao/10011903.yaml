@@ -1,15 +1,16 @@
-# 脚手架生成（db.scaffold），待补效果块与卡面文本
 id: 10011903
-version: 20260731
 name: 桃之夭夭
-shikigami: 100119  # 派系：红莲（继承自式神数据）
-card_type: spell
-rarity: SR
-level: 2
-cost: 0
-keywords: [inspire]
-effects:
-  # 不消耗鬼火（cost: 0）。[鼓舞]：{获得+2战力与+2护甲}——basic_boost 出击加成通道
-  steps:
-    - {op: basic_boost, power: 2, shield: 2}
-text: "不消耗鬼火。[鼓舞]：{获得+2战力与+2护甲。}"
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 2
+      cost: 0
+      keywords: [inspire]
+      effects:
+        # 不消耗鬼火（cost: 0）。[鼓舞]：{获得+2战力与+2护甲}——basic_boost 出击加成通道
+        steps:
+          - {op: basic_boost, power: 2, shield: 2}
+      text: "不消耗鬼火。[鼓舞]：{获得+2战力与+2护甲。}"
