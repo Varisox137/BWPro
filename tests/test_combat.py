@@ -1084,15 +1084,15 @@ def test_force_enter_combat_noop_when_enemy_combat_occupied(real_game):
         assert pb.shikigami[i].health == pb.shikigami[i].max_health
 
 
-def test_hunt_followup_attack(real_game):
-    """地狱之手：追猎选择目标；本次战斗消灭敌方式神后，战斗结束追加攻击
-    生命最低的敌方式神（不吃原战斗牌加成）。"""
+def test_followup_attack_on_kill(real_game):
+    """地狱之手：本次战斗中击杀式神后，战斗结束追加攻击生命最低的敌方式神
+    （不吃原战斗牌加成）。"""
     g = real_game(CM_TEAM, )
     pa, pb = F.battle_setup(g, {0: 3})
     play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
-    c = give(g, 0, 10010307)                   # 地狱之手（追猎）
-    g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})
-    assert pb.shikigami[1].defeated            # 追猎目标（纸人 4 命）被击杀
+    move(g, 1, 1)                              # B 纸人（4 命）驻守战斗区
+    play(g, 0, 10010307)                       # 地狱之手：战斗击杀驻守者
+    assert pb.shikigami[1].defeated            # 驻守目标被击杀
     assert sum(s.defeated for s in pb.shikigami) == 2  # 追加攻击再杀一名生命最低者
 
 
@@ -1100,7 +1100,7 @@ def test_bench_damage_on_combat_kill(real_game):
     """迁怒：茨木消灭敌方战斗区式神时，对其准备区式神各造成 2 点伤害。"""
     g = real_game(CM_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})
-    play(g, 0, 10010304)                       # 迁怒（形态 3/7）
+    play(g, 0, 10010305)                       # 迁怒（形态 3/7）
     play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
     move(g, 1, 1)                              # B 纸人（4 命）驻守战斗区
     g.apply({"op": "assault", "index": 0})

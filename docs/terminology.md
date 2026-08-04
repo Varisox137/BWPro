@@ -68,7 +68,7 @@
 | 稀有度 | `rarity` | R/SR/SSR（良/优/极；抽卡/账号系统预留） | 🔧 |
 | 卡包 | `cardpack` | 式神所属版本资料包，即 id 的 vv 段（式神 1avvss / 卡牌 1avvvvcc） | ✅ |
 | 异画 | alt art（id 的 a 位） | 式神/卡牌/中立牌 id 的第 2 位（'0' = 默认卡面）；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留 | 🔧 |
-| 平衡性版本 | `versions` | yaml 顶层仅 id/name/versions 三项，规则数据全部在 versions.history 的版本快照中（每条 = date + 完整数据，不按差量；首条 date = 发布日期）；`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用）；加载/解析结果的 `version` = 所取快照 date；卡牌的 shikigami 由 id 推导注入、cost 默认 1，均不入数据；解析规则见 db/versioning.py | ✅ |
+| 平衡性版本 | `versions` | yaml 顶层仅 id/name/versions 三项，规则数据全部在 versions.history 的版本快照中（每条 = date + 完整数据，不按差量；首条 date = 发布日期）；`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用）；加载/解析结果的 `version` = 所取快照 date；卡牌的 shikigami 由 id 推导注入、cost 默认 1，均不入数据；解析规则见 db/versioning.py。真实数据起点 = 20191212 公测开服（历史平衡性数据源见 card_data_raw.md「平衡性调整」节） | ✅ |
 | 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间可指定（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新 | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
 | 同源 | `origin` | 原形/SP 共享 origin，不能同时出战 | ✅ |
@@ -114,7 +114,7 @@
 | 远程 | `remote` | 不进入战斗区、不受先攻及交战阶段的反击伤害 | ✅ |
 | 连击 | `combo` | 先攻阶段与交战阶段各造成一次战斗伤害 | ✅ |
 | 暴击 | `critical` | | 🔧 |
-| 激怒 | `enraged` | 状态关键字：己方被激怒式神中存在满足出击合法性者时，其他无激怒式神不能出击；在发起战斗的流程（战斗准备前）移除攻击者的激怒（尘缚之阵授予） | ✅ |
+| 激怒 | `enraged` | 状态关键字：己方被激怒式神中存在满足出击合法性者时，其他无激怒式神不能出击；在发起战斗的流程（战斗准备前）移除攻击者的激怒。（现无实卡授予——原授予者尘缚之阵 2026-08 起按开服 raw 移除该效果；引擎机制与合成数据测试保留） | ✅ |
 | 弹回 | `rebound` | **卡牌级**关键字：使用后（效果/战斗结算完毕、牌在墓地时）移回手牌而非留墓（`_rebound_check`，主动与响应两路径同检；蛇行击）；回手后可再次打出，持久修饰快照按实例去重不重复合并 | ✅ |
 | 庇佑 | `blessing` | 一次性：抵消一次敌方来源的法术伤害（法术牌效果伤害，伤害事件 `spell` 标记；≠ 非战斗伤害——式神能力伤害不抵消，答复(7)），抵消后失去；判定在伤害流程护甲计算后、扣减生命前、不屈之前——被护甲完全吸收/屏障归零的伤害不消耗（森佑灵矢羁绊；灵咒抵消半侧随灵咒机制引入） | ✅ |
 | 伤害转化（伪关键字） | `damage_to_fragile` | 卡面不出现的关键字通道（清姬先天，永久类别入列死亡不清）：来源式神持标记且受伤者当前无破甲时，其伤害在事件生成点全额转化为等量破甲（不再视为伤害；受伤者已有破甲正常造伤；与毒蚀转化同位置，converted 防循环） | ✅ |
@@ -158,7 +158,7 @@
 | 延迟能力 | `delayed` / `delay_grant`（动作） | 绑定式神的一次性延迟能力（会）：条目 {block, chosen, uses, secret, scope}，事件匹配时先触发后执行、收集即消耗；气绝清除（变形离场保留——变形未实现）；scope="turn" 时己方回合开始清除（魔音扰心类）、scope="play" 时该次出牌结算结束清除（黑羽之刃类"本次使用期间"）；secret=True 时选择目标对敌方保密（联机脱敏抹除对手视角的 chosen） | ✅ |
 | 伤害上限 | `cap_damage`（动作） | 改写伤害事件中可变伤害对象的数值：to="shield" 时至多为受伤式神当前护甲（森罗之阵）；**to=<整数> 时面板值封顶该定值（雪融之时"每次至多只会受到3点伤害"，护甲吸收照常在后结算）**；须挂 on_damage_start 等含 damage payload 的时点批次 | ✅ |
 | 战斗区锁定 | `combat_lock`（tags） | 尘缚之阵：携带者（兵俑）在战斗区且敌方战斗区有式神时，会使敌方战斗区式神被替换的效果无效且不能进行（不看发起者）——召唤召唤物无效、准备区式神不能发起无远程的战斗（出击/战斗牌）、响应战斗牌插入移入不可用、enter_combat / force_enter_combat 效果无效；退回准备区不受限；效果发起的战斗暂无来源 | ✅ |
-| 免疫直接消灭 | `destroy_immune`（tags） | 尘缚之阵：结附带此标记形态的式神在战斗区时，`destroy` 动作对其无效（日志记"免疫了本次消灭"）；伤害消灭/形态消灭不受影响 | ✅ |
+| 免疫直接消灭 | `destroy_immune`（tags） | 结附带此标记形态的式神在战斗区时，`destroy` 动作对其无效（日志记"免疫了本次消灭"）；伤害消灭/形态消灭不受影响。（现无实卡携带——原携带者尘缚之阵 2026-08 起按开服 raw 移除；引擎机制与合成数据测试保留） | ✅ |
 | 退回准备区 | `retreat`（动作） | 目标式神移回准备区（与 `enter_combat` 对称；仅战斗区式神有效，召唤物退回即离场） | ✅ |
 | 强制进场 | `force_enter_combat`（动作） | 强制目标进入其战斗区（鬼之手类"将敌方准备区式神移入战斗区"，targets 经 enemy_bench 池选择）；移动语义同 enter_combat，尘缚锁定下（移入会替换被锁战斗区式神）静默无效；`random_pick`=候选中随机取 1 名（随机不取对象、不吃帷幕）；`if_combat_empty`=目标所属玩家战斗区非空则整体跳过（鬼之手空发） | ✅ |
 | 牌手级持久监听 | `player_aura`（动作）/ `PlayerState.auras` | "本局游戏"类能力附着于牌手（豪焰）：事件触发即结算块，不限次数、跨气绝保留；`scope="game"`（默认）本局有效 / `scope="turn"` 仅本回合（己方回合开始清除，鼓舞类）；`once_key` 防重复登记、缺省可叠加；emit 时按注册顺序收集（`_collect_player_auras`，卡牌触发器之后） | ✅ |
@@ -271,7 +271,6 @@
 | `spell_echo` | `ShikigamiState.ext` | 法术回响序列登记（{sequence, cursor, triggered, once_key}；spell_echo 动作写入，己方回合开始清除；涅槃业火用） |
 | `max_power` | `ShikigamiState.ext` | 本局历史最高力量（基础+永久+临时，不含战力；只增不减，跨气绝保留不重置——断臂"本局最高力量-当前力量"用；`Game._record_max_power` 在力量变化点更新，初始 = 基础力量） |
 | `turn_power` | `ShikigamiState.ext` | 本回合临时力量增益记账（buff_power scope="turn" 累加写入；己方回合开始从 temp_power 扣减并清零——武士之笛/鼓舞类） |
-| `rashomon_kills` | `PlayerState.ext` | 本局累计消灭敌方战斗区基础式神计数（罗生门之鬼 triggers 内 bump_ext 写入；random_enhance 的 1/3/5 档位判定用） |
 | `min_health_turn` | `ShikigamiState.ext` | 生命下限钳制标记（狂啸 bump_ext 置位；伤害"扣减生命"批次把生命保持在 ≥1；任一回合开始双方清除——半回合作用域） |
 | `damage_taken_turn` | `ShikigamiState.ext` | 本回合所受伤害之和（伤害"扣减生命"处按实际伤害值累加；任一回合开始双方清除——百鬼夜行 X 用） |
 | `lianmo_used_game` | `PlayerState.ext` | 本局'心身炼磨'（tags lianmo）使用计数（出牌统一记账 `_account_card_played`；心技一体 card_aura power_ext/shield_ext 数值通道读取） |
@@ -308,7 +307,7 @@
 | 写入目标 | `to`（hand/persistent/instance/turn） | 写入原语（add_mod）的修饰存储目标：手牌实例 / 持久 store / 来源实例自身（实例计数器，如风符·龙的目标数）/ 回合 store（turn 未实现，"本回合"类由 card_auras 覆盖） | ✅ |
 | 数值叠加 | `{"enhance": true, "base": n}` | 步骤 amount 参数形式：base + 实例已装配 enhance（战斗牌战力/护甲提取处解析） | ✅ |
 | 动态数值 | `{"shield_of"/"power_of"/"perm_power"/"ext"/"event"/"half_health_of"/"max_power_gap"/"fragile_of": ...}` | 步骤 amount 参数形式：以来源式神当前护甲 / eff_power / **使用时永久力量快照（{"perm_power": "self", "base": n}——崩山增强，山童的贯通不传导法术伤害）** / ext 计数（鸩 x）、事件 payload 数值（寂寥心象"等量"）、事件角色当前生命一半（毒之华，向下取整）、**历史峰值力量差值（{"max_power_gap": "self"} = max(0, ext["max_power"] - eff_power)——断臂"力量变为本局最大值"）**、**当前破甲量（{"fragile_of": "self"\|"source"} = 负 shield 绝对值——僵硬扑击"获得等同于自己破甲的力量"）**求值——尘刀按打出瞬间护甲快照战力（本次战斗中不变）、古尘之壁按护甲强化、援护按白狼力量造伤 | ✅ |
-| 随机强化 | `random_enhance`（动作） | 按计数次档给同名卡各实例随机赋予一项强化（罗生门之鬼）：控制者 `ext[count_key]` 次数须 ∈ `at`（1/3/5 类档位）；候选 = `tiers` 中 `min` ≤ 次数的项；控制者所有区域及在场形态的同 `card_id` 实例各自经 `mods["enhance_got"]`（key 列表）去重后 rng.choice 一项；写入 mods：keywords_add 集合并入 / form_power_delta/form_health_delta 累加 / 其余键直写（playable_when_defeated、revive_on_play 等开关） | ✅ |
+| 随机强化 | `random_enhance`（动作） | 手牌同名卡各实例随机强化一次（罗生门之鬼"仅在手牌时可触发增强"）：只作用于控制者手牌中同 `card_id` 实例；每实例独立计数——强化序号 = len(`mods["enhance_got"]`)+1，达 `max_count`（缺省 3）次跳过；候选 = `tiers` 中 `min`（缺省 1）≤ 序号 ≤ `max`（缺省 max_count）且 key 未获得的项，rng.choice 一项；写入 mods：keywords_add 集合并入 / form_power_delta/form_health_delta 累加 / 其余键直写（playable_when_defeated、revive_on_play 等开关） | ✅ |
 | 随机牌手监听 | `random_aura`（动作） | 从 options 随机赋予一项牌手级监听（豪焰四选一）：各项以 `{once_prefix}_{key}` 为 once_key 去重（全项都有空操作），rng.choice 后转调 player_aura | ✅ |
 | 本回合增益通道 | `scope="turn"`（buff_power 参数）/ `turn_power`（ext 键） | 临时力量增益记账到 `ShikigamiState.ext["turn_power"]`，己方回合开始统一从 temp_power 扣减并清零（武士之笛/鼓舞类"本回合"；与 perm 互斥） | ✅ |
 | 气绝事件扩展 | `in_combat` / `summon`（on_shikigami_defeated payload） | in_combat：气绝时是否在战斗区（清除 combat_index 前捕获；迁怒/罗生门"消灭敌方战斗区式神"条件）；summon：气绝者是否召唤物（罗生门"基础式神"= summon false 条件），均走条件迷你语言等值兜底 | ✅ |

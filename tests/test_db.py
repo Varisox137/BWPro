@@ -366,9 +366,11 @@ def test_balance_version_factory_db_at_date(db):
 
 
 def test_balance_version_real_db(gdb):
-    """真实库（无 versions 字段）：at_date 按 version 判可用。"""
+    """真实库：at_date 按 versions 日期判可用（白狼/兵俑/茨木童子发布于 20191212）。"""
     assert gdb.at_date(None) is gdb
-    assert not gdb.at_date(20200101).cards
+    assert not gdb.at_date(20190101).cards
+    early = gdb.at_date(20200101)
+    assert {100101, 100102, 100103} <= set(early.shikigami)
     latest = gdb.at_date(20991231)
     assert set(latest.cards) == set(gdb.cards)
     assert set(latest.shikigami) == set(gdb.shikigami)

@@ -1,9 +1,9 @@
 id: 10010206
 name: 觉醒·兵俑
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
       rarity: SSR
@@ -16,5 +16,5 @@ versions:
         - when: on_turn_start
           condition: {player: self}
           steps:
-            - {op: gain_shield, amount: 3, target: {kind: self}}
-      text: "兵俑获得3护甲。[觉醒]：{己方回合开始时，兵俑得3护甲。他的护甲不会在回合开始移除。}"
+            - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: "兵俑获得3护甲。[觉醒]：{己方回合开始时，兵俑得2护甲。他的护甲不会在回合开始移除。}"

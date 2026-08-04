@@ -1,14 +1,15 @@
 id: 10010104
-name: 离
+name: 残心
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      rarity: R
+    - date: 20191212
+      card_type: form
+      rarity: SR
       level: 2
-      keywords: [fast]
+      form_power: 4
+      form_health: 5
+      keywords: [keep_attack_buffs]
       effects:
-        steps:
-          - {op: attack_buff, power: 3, target: {kind: self}}
-      text: "[瞬发]。白狼获得3力量直到下一次攻击后。"
+        steps: []
+      text: 白狼的法术强化效果不再因攻击而消失。

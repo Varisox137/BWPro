@@ -1,21 +1,19 @@
 id: 10010307
 name: 地狱之手
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SR
       level: 3
-      keywords: [hunt]
-      target: {kind: choose, pool: enemy_shikigami}
       effects:
         steps: []
       temp_grants:
-        # 本次战斗中茨木童子消灭敌方式神（维护者答复(7)：敌方限定）→ 战斗结束后
+        # 本次战斗中茨木童子击杀式神（按卡面字面不限定敌方）→ 战斗结束后
         # 追加攻击生命最低的敌方式神（平手随机、帷幕不可选）
         - when: on_shikigami_defeated
-          condition: {source_shikigami: self, victim_side: enemy}
+          condition: {source_shikigami: self}
           steps:
             - {op: followup_attack, target: {kind: self}}
-      text: "[追猎]。本次战斗中若消灭式神，再次随机攻击一个敌方生命最低的式神。"
+      text: 本次战斗中若击杀式神，再次随机攻击一个敌方生命最低的式神。

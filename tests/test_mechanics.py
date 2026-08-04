@@ -817,7 +817,7 @@ def test_max_power_gap_restores_peak(real_game):
     pass_turns(g, 2)                           # perm+1（=2），turn 通道清除 → temp 3
     assert s.eff_power == 8                    # 3 + 2 + 3，与峰值持平
     s.temp_power = 0                           # 模拟临时增益流失（气绝清除等价路径）
-    play(g, 0, 10010305)                       # 断臂：补差值 8 - 5 = 3
+    play(g, 0, 10010306)                       # 断臂：补差值 8 - 5 = 3
     assert s.temp_power == 3
     assert s.eff_power == 8
     assert s.ext["max_power"] == 8             # 峰值不突破
@@ -827,7 +827,7 @@ def test_on_kill_random_aura_fixed_once_key(real_game):
     """地狱豪焰：本次战斗击杀式神后登记固定项（haoyan_base，不可叠加）与
     一项随机豪焰监听；之后茨木使用战斗牌时固定项 +1 力量/+1 护甲。"""
     g = real_game(CM_TEAM2)
-    pa, pb = F.battle_setup(g)
+    pa, pb = F.battle_setup(g, {0: 2})         # 茨木 2 级（豪拳使用条件）
     play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
     move(g, 1, 3)                              # B 凤凰火（4 命）驻守战斗区
     play(g, 0, 10010351)                       # 地狱豪焰：战斗击杀 → 触发
@@ -957,15 +957,15 @@ def test_ext_damage_taken_turn_aoe(real_game):
 
 def test_bond_generate_exact_level(real_game):
     """醉酒当歌（10010951，协战主牌）：自伤 3 + 等量护甲 3；[羁绊]获得一张茨木
-    当前等级的战斗牌（茨木 2 级 → 唯二的 2 级战斗牌黑焰之手，确定性）。"""
+    当前等级的战斗牌（茨木 1 级 → 1 级战斗牌鬼之手/黑焰之手之一）。"""
     g = real_game(JT_TEAM)
-    pa, pb = F.battle_setup(g, {0: 1, 1: 2})
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
     jt = pa.shikigami[0]
     play(g, 0, 10010951)                       # 醉酒当歌（战斗牌，自伤 3 → 能力 +1）
     assert jt.health == 3
     assert jt.shield == 3
     assert jt.temp_power == 1                  # 基础能力：受伤 +1
-    assert any(c.id == 10010303 for c in pa.hand)   # 黑焰之手（茨木 2 级唯一战斗牌）
+    assert any(c.id in (10010301, 10010304) for c in pa.hand)   # 鬼之手/黑焰之手
 
 
 # ---------- 弹回 / 本回合力量覆写 / 目标池过滤（第十四阶段） ----------

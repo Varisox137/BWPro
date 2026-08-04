@@ -1176,32 +1176,31 @@ def player_aura(game, ctx, *, targets: list[Ref], when: str,
 
 @action("random_enhance")
 def random_enhance(game, ctx, *, targets: list[Ref], card_id: int,
-                   count_key: str, at: list[int], tiers: list[dict]) -> None:
-    """按计数次档给同名卡各实例随机赋予一项强化（targets 忽略；罗生门之鬼）。
+                   tiers: list[dict], max_count: int = 3) -> None:
+    """手牌同名卡各实例随机强化一次（targets 忽略；罗生门之鬼）。
 
-    控制者 ext[count_key] 的当前次数须 ∈ at（第 1/3/5 次类档位），否则空操作。
-    候选 = tiers 中 min（缺省 1）≤ 次数的项；对控制者所有区域及在场形态中同
-    card_id 的每个实例，各自经 `c.mods["enhance_got"]`（key 列表）去重后 rng.choice
-    一项并记录 key。强化写入实例 mods：keywords_add 并入集合排序、
-    form_power_delta/form_health_delta 累加、其余键直写（playable_when_defeated /
+    "仅在手牌时可触发增强"：只作用于控制者手牌中的同 card_id 实例。每实例
+    独立计数——本次强化序号 = len(mods["enhance_got"]) + 1，已达 max_count
+    次的实例跳过；候选 = tiers 中 min（缺省 1）≤ 序号 ≤ max（缺省 max_count）
+    且 key 未获得的项，rng.choice 一项并记录 key（"不会出现已有的强化"）。
+    强化写入实例 mods：keywords_add 并入集合排序、form_power_delta /
+    form_health_delta 累加、其余键直写（playable_when_defeated /
     revive_on_play 等开关）。
     """
     p = game.state.players[ctx.controller]
-    count = int(p.ext.get(count_key, 0))
-    if count not in [int(a) for a in at]:
-        return
-    pool = [t for t in tiers if int(t.get("min", 1)) <= count]
-    if not pool:
-        return
-    instances = [c for z in p.zones.values() for c in z if c.id == card_id]
-    instances += [s.form for s in p.shikigami
-                  if s.form is not None and s.form.id == card_id]
-    for c in instances:
-        got = c.mods.setdefault("enhance_got", [])
-        candidates = [t for t in pool if t["key"] not in got]
-        if not candidates:
+    for c in p.hand:
+        if c.id != card_id:
             continue
-        t = game.rng.choice(candidates)
+        got = c.mods.setdefault("enhance_got", [])
+        n = len(got) + 1
+        if n > max_count:
+            continue
+        pool = [t for t in tiers
+                if int(t.get("min", 1)) <= n <= int(t.get("max", max_count))
+                and t["key"] not in got]
+        if not pool:
+            continue
+        t = game.rng.choice(pool)
         got.append(t["key"])
         if t.get("keywords_add"):
             merged = set(c.mods.get("keywords_add", [])) | set(t["keywords_add"])
@@ -1210,7 +1209,7 @@ def random_enhance(game, ctx, *, targets: list[Ref], card_id: int,
             if t.get(k):
                 c.mods[k] = c.mods.get(k, 0) + int(t[k])
         for k, v in t.items():
-            if k not in ("key", "min", "keywords_add", "form_power_delta",
+            if k not in ("key", "min", "max", "keywords_add", "form_power_delta",
                          "form_health_delta"):
                 c.mods[k] = v
         game._log(f"【{game.db.cards[c.id].name}】获得了强化（{t['key']}）")

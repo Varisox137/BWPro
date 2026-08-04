@@ -1,43 +1,14 @@
 id: 10010306
-name: 罗生门之鬼
+name: 断臂
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
-      rarity: SSR
+    - date: 20191212
+      card_type: spell
+      rarity: R
       level: 2
-      form_power: 4
-      form_health: 6
       effects:
-        steps: []
-      triggers:
-        # 本局游戏己方累计消灭敌方战斗区 1/3/5 个基础式神（非召唤物）时随机强化一次
-        - when: on_shikigami_defeated
-          condition: {victim_side: enemy, in_combat: true, summon: false}
-          steps:
-            - {op: bump_ext, key: rashomon_kills, target: {kind: all, pool: self_player}}
-            - op: random_enhance
-              card_id: 10010306
-              count_key: rashomon_kills
-              at: [1, 3, 5]
-              target: {kind: all, pool: self_player}
-              tiers:
-                # 第 1/2/3 次强化均可能出现
-                - {key: fast, keywords_add: [fast], form_health_delta: 1}
-                - {key: haste, keywords_add: [haste], form_health_delta: 1}
-                - {key: veil, keywords_add: [veil], form_health_delta: 1}
-                - {key: piercing, keywords_add: [piercing], form_power_delta: 1}
-                - {key: revive, playable_when_defeated: true, revive_on_play: true}
-                # 第 2/3 次强化才可能出现
-                - {key: lethal, min: 2, keywords_add: [lethal], form_health_delta: 1}
-                - {key: lifesteal, min: 2, keywords_add: [lifesteal], form_power_delta: 1}
-                - {key: unyielding, min: 2, keywords_add: [unyielding], form_power_delta: 1}
-                - {key: direct, min: 2, keywords_add: [direct], form_power_delta: 1}
-                # 仅第 3 次强化可能出现
-                - {key: body, min: 3, form_power_delta: 4, form_health_delta: 4}
-                - {key: remote, min: 3, keywords_add: [remote], form_power_delta: 1,
-                   form_health_delta: 1}
-                - {key: combo, min: 3, keywords_add: [combo], form_power_delta: 1,
-                   form_health_delta: 1}
-      text: "[增强]：{本局游戏中，当己方累计消灭敌方战斗区1/3/5个基础式神时此牌随机强化一次。}"
+        # 力量变为本局游戏曾有最大值 = 补差值（历史峰值 max_power - 当前 eff_power，≥0）
+        steps:
+          - {op: buff_power, amount: {max_power_gap: self}, target: {kind: self}}
+      text: 茨木童子的力量变为本局游戏的最大值。

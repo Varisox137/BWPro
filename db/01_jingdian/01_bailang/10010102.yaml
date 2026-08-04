@@ -1,15 +1,14 @@
 id: 10010102
-name: 文射
+name: 离
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: combat
+    - date: 20191212
+      card_type: spell
       rarity: R
-      level: 1
-      keywords: [combo]
+      level: 2
+      keywords: [fast]
       effects:
         steps:
-          - {op: buff_power, amount: -2, target: {kind: self}}
-          - {op: gain_shield, amount: 2, target: {kind: self}}
-      text: "[连击]"
+          - {op: attack_buff, power: 3, target: {kind: self}}
+      text: "[瞬发]。白狼获得3力量直到下一次攻击后。"

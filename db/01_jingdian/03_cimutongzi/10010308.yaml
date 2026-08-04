@@ -1,22 +1,20 @@
 id: 10010308
 name: 觉醒·茨木童子
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
       awaken_health: 1   # +0/+1：永久身材增益，"觉醒后"延时时机之后授予
       rarity: SR
       level: 3
       effects:
-        steps:
-          - {op: buff_power, amount: 2, target: {kind: self}}
-          - {op: gain_shield, amount: 2, target: {kind: self}}
+        steps: []
       abilities:
         # 力量翻倍 = 获得等量当前力量的临时增益（维护者答复(3)）
         - when: on_turn_start
           condition: {player: self}
           steps:
             - {op: buff_power, amount: {power_of: self}, target: {kind: self}}
-      text: "获得2力量和2护甲。[觉醒]：{己方回合开始时茨木童子的力量翻倍。}"
+      text: "[觉醒]：{己方回合开始时茨木童子的力量翻倍。}"

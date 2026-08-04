@@ -642,7 +642,7 @@
   - **卡牌触发器（triggers）**：游离触发块（when/condition/steps），游戏开始按数据库全量注册；【已实现：emit 时全库扫描匹配，为第三收集来源（式神能力之后、响应牌之前）】
   - **实时监测（monitors）**：状态谓词 + 修饰（关键词/数值倍率/追加块/临时触发），读取与打出装配时实时求值，不存储。【未实现】
 - **写入三目标**：`hand`（手牌各复制实例）/ `persistent`（(玩家, card_id) 持久）/ `turn`（回合开始清空），由写入原语的 `to` 参数分派。【已实现 hand/persistent（add_mod 原语）；turn store 未实现——"本回合"类需求目前由 card_auras（scope="turn"）、buff_power/player_aura 的 scope="turn" 通道（武士之笛/鼓舞）覆盖】
-- **随机强化**：`random_enhance`（罗生门之鬼）：按 ext 计数次档（at=[1,3,5]）对控制者所有区域及在场形态的同卡 id 实例各自随机赋予一项强化（tiers 按 min 门控、实例 `mods["enhance_got"]` 去重）；强化写入 mods——keywords_add 并入、form_power_delta/form_health_delta 于 `_attach_form` 结附时叠加形态身材、playable_when_defeated+revive_on_play 使气绝中可用该形态并先复活（`_play_form_card` 读取）。【已实现】
+- **随机强化**：`random_enhance`（罗生门之鬼"仅在手牌时可触发增强"）：只对控制者手牌中同卡 id 实例各自随机赋予一项强化（每实例独立计数——强化序号 = len(`mods["enhance_got"]`)+1，达 max_count（缺省 3）次跳过；tiers 按 min/max 档位门控、实例 enhance_got 去重）；强化写入 mods——keywords_add 并入、form_power_delta/form_health_delta 于 `_attach_form` 结附时叠加形态身材、playable_when_defeated+revive_on_play 使气绝中可用该形态并先复活（`_play_form_card` 读取）。【已实现】
 - **即时装配模型**：结算效果 = 定义块 ⊕ 活跃修饰（打出/读取时装配，用完即弃）；效果块永远共享不可变，块间唯一耦合是事件总线。【已实现：打出装配 _materialize（persistent→实例快照）、enhance 数值参数（{"enhance": true, "base": n}）、卡牌光环 card_auras（关键词/cost_zero 读取时求值）、战斗绑定一次性触发 temp_grants】
 - **架构不变式**：CardInstance 是对局卡牌唯一身份（区域/形态转换传递同一实例及 mods）；战斗上下文对象化；额外攻击 `launch_attack` 走正常战斗流程（不耗鬼火/出击次数、无战斗牌加成）；`on_card_played` 携带使用位置/方式（play_from/play_method/triggered）。【已实现：play_from ∈ hand/deck/void、triggered ∈ active/response/auto】
 

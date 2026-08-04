@@ -341,8 +341,9 @@ def test_consume_assault_boosts_as_combat_bonus(make_game):
 YC = 100127       # 萤草（双方 0 号位）
 YC_IDX, WOLF_IDX = 0, 1
 YC_TEAM = [100127, 100101, 100102, 100123]
-QIGONG = 10010101  # 起弓（+1 力量 & 穿刺）
-LI = 10010104      # 离（+3 力量）
+QIGONG = 10010101  # 起弓（[远程] 强化）
+LI = 10010102      # 离（+3 力量）
+WUWO = 10010108    # 无我（+3 力量）
 YC_FORM_A, YC_FORM_B = 10012752, 10012753  # 测试库注册的萤草形态牌（衍生号段）
 
 
@@ -380,15 +381,15 @@ def gdb():
 
 
 def test_reapply_attack_buff_power_only_power(make_game):
-    """起弓（+1）与离（+3）挂账中：灵矢贯虹使白狼再次临时获得合计 4 力量
-    （仅力量部分；三条 attack_buffs 挂账 [1, 3, 4]），本次攻击一并生效。"""
+    """离（+3）与无我（+3）挂账中：灵矢贯虹使白狼再次临时获得合计 6 力量
+    （仅力量部分；attack_buffs 挂账 [3, 3] + 镜像 6），本次攻击一并生效。"""
     g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 3}, team=YC_TEAM)
-    play(g, 0, QIGONG)                        # 起弓：+1 力量 & 穿刺（瞬发免费）
-    play(g, 0, LI)                            # 离：+3 力量（瞬发名额已用，1 火）
+    play(g, 0, LI)                            # 离：+3 力量（瞬发免费）
+    play(g, 0, WUWO)                          # 无我：+3 力量（瞬发名额已用，1 火）
     wolf = pa.shikigami[WOLF_IDX]
-    assert [e["power"] for e in wolf.attack_buffs] == [1, 3]
-    play(g, 0, LSGH)                          # 灵矢贯虹：+2/+2 + 镜像 +4 → 攻 3+4+2+4=13
-    assert pb.health == 17                    # 敌方空战斗区：13 攻打牌手
+    assert [e["power"] for e in wolf.attack_buffs] == [3, 3]
+    play(g, 0, LSGH)                          # 灵矢贯虹：+2/+2 + 镜像 +6 → 攻 3+6+2+6=17
+    assert pb.health == 13                    # 敌方空战斗区：17 攻打牌手
     assert wolf.attack_buffs == []            # 攻击后到期强化（含镜像）战斗后核销
 
 

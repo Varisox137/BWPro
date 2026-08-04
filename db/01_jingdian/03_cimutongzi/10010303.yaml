@@ -1,13 +1,42 @@
 id: 10010303
-name: 黑焰之手
+name: 罗生门之鬼
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: combat
-      rarity: R
-      level: 2
-      keywords: [remote]
+    - date: 20191212
+      card_type: form
+      rarity: SSR
+      level: 1
+      form_power: 3
+      form_health: 4
       effects:
         steps: []
-      text: "[远程]"
+      triggers:
+        # 仅在手牌时可触发增强（random_enhance 只强化手牌实例）：茨木童子击杀式神时
+        # 手牌中每张同名牌各随机强化一次（每张最多 3 次、不出现已有强化、各张可不同）
+        - when: on_shikigami_defeated
+          condition: {source_shikigami: 100103, victim_kind: shikigami}
+          steps:
+            - op: random_enhance
+              card_id: 10010303
+              target: {kind: all, pool: self_player}
+              tiers:
+                # 可能出现于第 1/2 次强化
+                - {key: fast, max: 2, keywords_add: [fast], form_health_delta: 1}
+                - {key: haste, max: 2, keywords_add: [haste], form_health_delta: 1}
+                - {key: veil, max: 2, keywords_add: [veil], form_health_delta: 1}
+                - {key: piercing, max: 2, keywords_add: [piercing], form_power_delta: 1}
+                # 可能出现于第 1/2/3 次强化
+                - {key: revive, playable_when_defeated: true, revive_on_play: true}
+                # 可能出现于第 2/3 次强化
+                - {key: lethal, min: 2, keywords_add: [lethal], form_health_delta: 1}
+                - {key: lifesteal, min: 2, keywords_add: [lifesteal], form_power_delta: 1}
+                - {key: unyielding, min: 2, keywords_add: [unyielding], form_power_delta: 1}
+                - {key: direct, min: 2, keywords_add: [direct], form_power_delta: 1}
+                # 仅可能出现于第 3 次强化
+                - {key: body, min: 3, form_power_delta: 4, form_health_delta: 4}
+                - {key: remote, min: 3, keywords_add: [remote], form_power_delta: 1,
+                   form_health_delta: 1}
+                - {key: combo, min: 3, keywords_add: [combo], form_power_delta: 1,
+                   form_health_delta: 1}
+      text: "[增强]：{当茨木童子击杀式神时，此牌随机强化一次。（最多3次）}"

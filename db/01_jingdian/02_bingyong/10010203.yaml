@@ -1,20 +1,19 @@
 id: 10010203
 name: 不动如山
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 2
       form_power: 1
-      form_health: 9
+      form_health: 10
       effects:
-        steps:
-          - {op: enter_combat, target: {kind: self}}
+        steps: []
       abilities:
         - when: on_turn_start
           condition: {player: self, shikigami_in_combat: 100102}
           steps:
             - {op: buff_power, amount: 3, perm: true, target: {kind: self}}
-      text: 进场时将兵俑移入战斗区。己方回合开始时若兵俑在战斗区，则获得3力量。
+      text: 己方回合开始时若兵俑在战斗区，则获得3力量。

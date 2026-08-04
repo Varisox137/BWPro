@@ -1,20 +1,13 @@
 id: 10010304
-name: 迁怒
+name: 黑焰之手
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
+    - date: 20191212
+      card_type: combat
       rarity: R
-      level: 2
-      form_power: 3
-      form_health: 7
+      level: 1
+      keywords: [remote]
       effects:
         steps: []
-      abilities:
-        # 茨木童子消灭敌方战斗区式神时（无论消灭原因；in_combat 为气绝事件 payload）
-        - when: on_shikigami_defeated
-          condition: {source_shikigami: self, victim_side: enemy, in_combat: true}
-          steps:
-            - {op: damage, amount: 2, target: {kind: all, pool: enemy_bench}}
-      text: 当茨木童子消灭敌方战斗区式神时，对其准备区式神各造成2点伤害。
+      text: "[远程]"

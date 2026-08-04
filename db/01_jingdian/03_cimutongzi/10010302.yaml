@@ -1,12 +1,12 @@
 id: 10010302
 name: 豪拳
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
-      level: 1
+      level: 2
       effects:
         steps:
           - {op: buff_power, amount: 3, target: {kind: self}}

@@ -1,20 +1,19 @@
 id: 10010205
 name: 森罗之阵
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: SR
       level: 2
       form_power: 4
       form_health: 7
       effects:
-        steps:
-          - {op: gain_shield, amount: 2, target: {kind: self}}
+        steps: []
       abilities:
         - when: on_damage_start
           condition: {victim_shikigami: self}
           steps:
             - {op: cap_damage, to: shield}
-      text: 进场时使兵俑获得2护甲。兵俑有护甲时，至多只会受到等于其护甲的伤害。
+      text: 兵俑拥有护甲时，至多只会受到等于其护甲的伤害。

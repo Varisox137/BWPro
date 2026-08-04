@@ -1,14 +1,20 @@
 id: 10010305
-name: 断臂
+name: 迁怒
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
+    - date: 20191212
+      card_type: form
       rarity: R
       level: 2
+      form_power: 3
+      form_health: 7
       effects:
-        # 力量变为本局游戏曾有最大值 = 补差值（历史峰值 max_power - 当前 eff_power，≥0）
-        steps:
-          - {op: buff_power, amount: {max_power_gap: self}, target: {kind: self}}
-      text: 茨木童子的力量变为本局游戏的最大值。
+        steps: []
+      abilities:
+        # 茨木童子消灭敌方战斗区式神时（无论消灭原因；in_combat 为气绝事件 payload）
+        - when: on_shikigami_defeated
+          condition: {source_shikigami: self, victim_side: enemy, in_combat: true}
+          steps:
+            - {op: damage, amount: 2, target: {kind: all, pool: enemy_bench}}
+      text: 当茨木童子击杀敌方战斗区式神时，对其准备区式神各造成2点伤害。

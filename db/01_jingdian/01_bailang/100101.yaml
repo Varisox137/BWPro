@@ -1,9 +1,9 @@
 id: 100101
 name: 白狼
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 3
       health: 4
