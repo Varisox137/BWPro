@@ -1,9 +1,9 @@
 id: 100104
 name: 大天狗
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 3
       health: 4
@@ -20,4 +20,4 @@ versions:
             record: true
             steps:
               - {op: recast_recorded}
-      text: 大天狗使用非觉醒法术后，[倒计时2]：{再次使用该法术}。
+      text: 大天狗使用法术后，[倒计时2]：{再次使用该法术。}

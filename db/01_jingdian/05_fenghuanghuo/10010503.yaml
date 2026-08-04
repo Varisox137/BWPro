@@ -1,9 +1,9 @@
 id: 10010503
 name: 引燃
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SR
       level: 1
@@ -19,4 +19,4 @@ versions:
               # 对它的牌手造成2点伤害（消灭己方式神则打己方牌手）
               - {op: damage, amount: 2, target: {kind: context, key: victim_player}}
           - {op: damage, amount: 2}
-      text: 对一个式神造成2点伤害，若消灭则再对它的牌手造成2点伤害。
+      text: 对一个式神造成2点伤害，若击杀则再对它的牌手造成2点伤害。

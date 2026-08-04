@@ -3183,13 +3183,15 @@ class Game:
         self._log(f"{p.name} 的响应牌【{cdef.name}】触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
         if cdef.card_type == "combat" and si is not None:
-            if not self._battle_stack:
-                # 无当前战斗的响应战斗牌（偷袭"敌方回合结束自动使用"）：
-                # 不能插入战斗，按完整战斗事件流程发起一次新战斗（正常反击）
-                self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen)
-            else:
+            # 仅"（被）攻击时"时机触发的响应战斗牌插入当前战斗（rules.md:52）；
+            # 其余时机（偷袭"敌方战斗区式神气绝时"等）即使战斗中触发，也不插入——
+            # 按完整战斗事件流程发起一次新战斗（嵌套战斗，正常反击）
+            if self._battle_stack and (ctx.event or {}).get("name") == "on_before_assault":
                 # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
                 self._apply_response_combat(p, si, ctx.card, cdef)
+            else:
+                # 无当前战斗/非攻击时机的响应战斗牌：不能插入，发起一次新战斗
+                self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen)
             self._account_card_played(p, cdef)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
                                    triggered="response")

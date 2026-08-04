@@ -1,9 +1,9 @@
 id: 100105
 name: 凤凰火
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 红莲
       power: 2
       health: 4

@@ -1,9 +1,9 @@
 id: 100106
 name: 姑获鸟
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 3
       health: 4
@@ -13,4 +13,4 @@ versions:
         condition: {attacker_shikigami: self}
         steps:
           - {op: retreat, target: {kind: self}}
-      text: 姑获鸟攻击后，移回准备区。
+      text: 姑获鸟攻击后，退回准备区。

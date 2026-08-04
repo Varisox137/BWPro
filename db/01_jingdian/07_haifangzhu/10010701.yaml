@@ -1,9 +1,9 @@
 id: 10010701
 name: 治愈之水
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1
@@ -13,4 +13,4 @@ versions:
         steps:
           # "海坊主每有 2 护甲则效果+1"：half_shield_of 动态数值（护甲 //2，向下取整）
           - {op: heal, amount: {base: 3, half_shield_of: self}}
-      text: "[瞬发]。为一个角色恢复3生命，海坊主每有2护甲则效果+1。"
+      text: "[瞬发]。为一个角色恢复3点生命，海坊主每有2点护甲则效果+1。"

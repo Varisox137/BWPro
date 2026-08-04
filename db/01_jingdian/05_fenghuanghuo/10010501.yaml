@@ -1,14 +1,14 @@
 id: 10010501
 name: 凤鸣
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1
       keywords: [fast]
       effects:
         steps:
-          - {op: damage, amount: 2, target: {kind: all, pool: enemy_player}}
-      text: "[瞬发]。对敌方牌手造成2点伤害。"
+          - {op: damage, amount: 3, target: {kind: all, pool: enemy_player}}
+      text: "[瞬发]。对敌方牌手造成3点伤害。"

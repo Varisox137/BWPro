@@ -1,21 +1,21 @@
 id: 10010601
 name: 伞剑
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: R
       level: 1
       effects:
         steps:
-          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: buff_power, amount: 1, target: {kind: self}}
       triggers:
-        # [增强]：{当其他己方式神攻击后，本回合此牌获得[瞬发]}——手牌触发式光环
+        # 当其他己方式神攻击后，本回合此牌获得[瞬发]——手牌触发式光环
         # （keywords 集合语义，多次攻击不叠加；scope=turn 己方回合开始清除）
         - when: on_after_assault
           condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
           steps:
             - {op: card_aura, shikigami: 100106, card_id: 10010601, keywords: [fast],
                scope: turn}
-      text: "[增强]：{当其他己方式神攻击后，本回合此牌获得[瞬发]。}"
+      text: 当其他己方式神攻击后，本回合此牌获得[瞬发]。

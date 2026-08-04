@@ -1,20 +1,21 @@
 id: 10010508
 name: 出云
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: SR
       level: 3
       form_power: 5
-      form_health: 5
+      form_health: 6
       effects:
         steps: []
       abilities:
-        # 凤凰火使用法术牌时，将一张'凤火'置入手牌
+        # 凤凰火使用法术牌时，[运势4]：将一张'凤火'置入手牌
         - when: on_card_played
           condition: {player: self, card_type: spell, shikigami: 100105}
+          luck: 4
           steps:
             - {op: generate, card_id: 10010505, zone: hand}
-      text: 当凤凰火使用法术牌时，将一张‘凤火’置入手牌。
+      text: 当凤凰火使用法术牌时，[运势4]：{将一张‘凤火’置入手牌。}

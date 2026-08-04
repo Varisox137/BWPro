@@ -1,20 +1,19 @@
 id: 10010404
-name: 黑羽之刃
+name: 暴风之主
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      rarity: R
+    - date: 20191212
+      card_type: form
+      rarity: SR
       level: 2
-      effects:
-        steps:
-          # scope="play"："本次使用期间"窗口——该次出牌结算结束时清除，未消灭不留存
-          - op: delay_grant
-            when: on_shikigami_defeated
-            condition: {victim_side: enemy, victim_kind: shikigami, source_side: friendly}
-            scope: play
-            steps:
-              - {op: draw, count: 1}
-          - {op: damage, amount: 4, target: {kind: all, pool: projectile}}
-      text: "[投射]：{造成4点伤害，若消灭敌方式神则抽一张牌}。"
+      form_power: 4
+      form_health: 6
+      effects: {steps: []}
+      abilities:
+        # affected_refs = 该次出牌效果实际伤害过的式神（on_card_played payload）
+        - when: on_card_played
+          condition: {player: self, card_type: spell, shikigami: 100104}
+          steps:
+            - {op: damage, amount: 1, target: {kind: context, key: affected_refs}}
+      text: 大天狗使用法术后，对受影响的敌方式神各造成1点伤害。

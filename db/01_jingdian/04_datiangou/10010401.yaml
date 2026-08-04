@@ -1,15 +1,14 @@
 id: 10010401
-name: 风神一扇
+name: 黑羽之刃
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
-      rarity: SR
+      rarity: R
       level: 1
+      keywords: [fast]
       effects:
         steps:
-          # last_damage_victims = 上一步伤害的受伤者（damage 动作写入块内暂存）
           - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
-          - {op: retreat, target: {kind: context, key: last_damage_victims}}
-      text: "[投射]：{造成2点伤害，然后将受到此伤害的式神移回准备区}。"
+      text: "[瞬发]。[投射]：{造成2点伤害。}"

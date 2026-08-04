@@ -1,14 +1,14 @@
 id: 10010607
 name: 慈乌稚子
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 3
       form_power: 8
-      form_health: 6
+      form_health: 4
       effects:
         steps: []
       abilities:

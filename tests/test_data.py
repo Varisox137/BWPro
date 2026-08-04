@@ -78,14 +78,14 @@ def gdb():
 # ==========================================================================
 
 DT = 100104      # 大天狗（双方 0 号位）
-KAZAMI = 10010401     # 风神一扇
-SEIGI = 10010402      # 吾即正义
+KAZAMI = 10010402     # 风神一扇
+SEIGI = 10010408      # 吾即正义
 SHIELD = 10010403     # 暴风之盾
-KUROBA = 10010404     # 黑羽之刃
-LORD = 10010405       # 暴风之主
-FUURAN = 10010406     # 天狗风乱
-HA = 10010407         # 羽刃暴风
-DT_AWAKEN = 10010408  # 觉醒·大天狗
+KUROBA = 10010401     # 黑羽之刃
+LORD = 10010404       # 暴风之主
+FUURAN = 10010405     # 天狗风乱
+HA = 10010406         # 羽刃暴风
+DT_AWAKEN = 10010407  # 觉醒·大天狗
 
 DT_TEAM = [100104, 100101, 100102, 100123]
 
@@ -138,7 +138,7 @@ def test_record_lost_on_defeat(real_game):
     assert s.ext["recorded_card"] == KAZAMI
 
 
-# ---------- 01 风神一扇 ----------
+# ---------- 02 风神一扇 ----------
 
 def test_projectile_retreats_damaged_to_bench(real_game):
     """投射命中战斗区式神：受伤者移回准备区（last_damage_victims 引用上一步受伤者）。"""
@@ -152,46 +152,32 @@ def test_projectile_retreats_damaged_to_bench(real_game):
     assert wolf.in_play                       # 非气绝/离场
 
 
-# ---------- 02 吾即正义 ----------
-
-def test_generate_pool_by_level_excludes_self(real_game):
-    """随机获得：大天狗等级 1 时池 = 等级≤1 的其他法术（风神一扇/暴风之盾），不含自身。"""
-    g, pa, pb = _game(real_game, DT_TEAM)
-    before = Counter(c.id for c in pa.hand)
-    play(g, 0, SEIGI)
-    new = Counter(c.id for c in pa.hand) - before
-    assert sum(new.values()) == 1
-    cid = next(iter(new))
-    assert cid in {KAZAMI, SHIELD}            # 等级≤1 的法术，且排除吾即正义/形态牌
-
+# ---------- 08 吾即正义 ----------
 
 def test_transform_after_ten_spells(real_game):
-    """本局使用 10 张法术后变为：消灭所有敌方式神（计数含吾即正义之外的法术）。"""
-    g, pa, pb = _game(real_game, DT_TEAM)
+    """本局使用 10 张法术后增强生效：打出消灭所有敌方式神（计数含吾即正义之外的法术）。"""
+    g, pa, pb = _game(real_game, DT_TEAM, {IDX: 3})
     for _ in range(10):
         play(g, 0, KAZAMI)
         pa.orb = 9
     store = pa.card_mods[SEIGI]
     assert store["spell_count"] == 10
     assert store["transformed"] == 1
-    assert "fast" not in g._card_keywords(pa, g.db.cards[SEIGI])  # 变为后失去[瞬发]
     play(g, 0, SEIGI)                         # 第 11 张法术：打出装配读取已置位的 transformed
     assert all(s.defeated for s in pb.shikigami)
     assert store["spell_count"] == 11         # 吾即正义自身也计数
 
 
-def test_generate_before_transform_threshold(real_game):
-    """9 张法术时未变为：仍是随机获得效果。"""
-    g, pa, pb = _game(real_game, DT_TEAM)
+def test_no_effect_before_transform_threshold(real_game):
+    """9 张法术时增强未生效：打出无效果（开服版吾即正义无基础效果、无[瞬发]）。"""
+    g, pa, pb = _game(real_game, DT_TEAM, {IDX: 3})
     for _ in range(9):
         play(g, 0, KAZAMI)
         pa.orb = 9
     assert pa.card_mods[SEIGI]["spell_count"] == 9
     assert "transformed" not in pa.card_mods[SEIGI]
-    before = Counter(c.id for c in pa.hand)
     play(g, 0, SEIGI)
     assert all(not s.defeated for s in pb.shikigami)
-    assert sum((Counter(c.id for c in pa.hand) - before).values()) == 1
 
 
 # ---------- 03 暴风之盾 ----------
@@ -225,30 +211,22 @@ def test_shield_response_on_assault(real_game):
     assert s.shield == 2
 
 
-# ---------- 04 黑羽之刃 ----------
+# ---------- 01 黑羽之刃 ----------
 
-def test_kill_window_draws(real_game):
-    """投射 4 伤消灭战斗区敌方式神 → 抽 1；一次性窗口消耗。"""
-    g, pa, pb = _game(real_game, DT_TEAM, {IDX: 2})
+def test_kuroba_fast_projectile(real_game):
+    """黑羽之刃：[瞬发]（回合内首张免费）投射 2 伤；战斗区无人则落空至牌手。"""
+    g, pa, pb = _game(real_game, DT_TEAM)
     move(g, 1, 0)                             # B 大天狗（3/4）入战斗区
-    hand_before = len(pa.hand)
+    orb_before = pa.orb
     play(g, 0, KUROBA)
-    assert pb.shikigami[0].defeated
-    assert len(pa.hand) == hand_before + 1    # give+打出抵消，消灭抽 1
-    assert pa.shikigami[IDX].delayed == []
+    assert pb.shikigami[0].health == 2        # 4 - 2
+    assert pa.orb == orb_before               # 首张瞬发 0 费
+    g2, pa2, pb2 = _game(real_game, DT_TEAM)
+    play(g2, 0, KUROBA)
+    assert pb2.health == 28                   # 投射落空 → 牌手 2 伤
 
 
-def test_kill_window_expires_no_draw(real_game):
-    """未消灭（投射落空战斗区 → 牌手）：不抽；scope=play 窗口随出牌结束清除，不留存。"""
-    g, pa, pb = _game(real_game, DT_TEAM, {IDX: 2})
-    hand_before = len(pa.hand)
-    play(g, 0, KUROBA)
-    assert pb.health == 26
-    assert len(pa.hand) == hand_before        # give+打出抵消，未抽
-    assert pa.shikigami[IDX].delayed == []    # 未消灭的延迟能力不遗留到后续
-
-
-# ---------- 05 暴风之主 ----------
+# ---------- 04 暴风之主 ----------
 
 def test_storm_lord_pings_affected(real_game):
     """形态能力：使用法术后，对该次效果伤害过的敌方式神各造成 1 伤（affected_refs）。"""
@@ -273,7 +251,7 @@ def test_storm_lord_no_damage_no_ping(real_game):
     assert pb.health == 30
 
 
-# ---------- 06 天狗风乱 / 07 羽刃暴风 ----------
+# ---------- 05 天狗风乱 / 06 羽刃暴风 ----------
 
 def test_distribute_damage_all_enemies(real_game):
     """天狗风乱：合计 6 点伤害随机分配给所有敌方角色（含牌手；生命≤0 退出分配）。"""
@@ -284,21 +262,21 @@ def test_distribute_damage_all_enemies(real_game):
     assert total_before - total_after == 6
 
 
-def test_damage_each_enemy_character(real_game):
-    """羽刃暴风：所有敌方角色各 3 伤（4 名式神 + 牌手）。"""
+def test_damage_each_enemy_shikigami(real_game):
+    """羽刃暴风：所有敌方式神各 3 伤（牌手不受）。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 3})
     play(g, 0, HA)
-    assert pb.health == 27
+    assert pb.health == 30
     assert [s.health for s in pb.shikigami] == [1, 1, 3, 1]  # 4/4/6/4 - 3
 
 
 def test_storm_lord_enemy_shikigami_only(real_game):
-    """维护者答复(7)：受影响列表只计敌方式神（去重）——羽刃暴风伤及的敌方牌手无
-    暴风之主追加；构造性验证出牌伤害帧内波及的己方式神不进列表。"""
+    """维护者答复(7)：受影响列表只计敌方式神（去重）——构造性验证出牌伤害帧内
+    波及的己方式神不进列表（羽刃暴风开服版已不再伤牌手）。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 3})
     play(g, 0, LORD)
-    play(g, 0, HA)                            # 羽刃暴风：敌方全体各 3
-    assert pb.health == 27                    # 牌手只吃 3（不进列表，无追加 1）
+    play(g, 0, HA)                            # 羽刃暴风：敌方式神各 3
+    assert pb.health == 30                    # 牌手不受
     assert [s.health for s in pb.shikigami] == [0, 0, 2, 0]  # 4/4/6/4 - 3 - 1
     # 构造：己方式神被波及不进 affected_refs
     g._affected_stack.append({"controller": 0, "refs": []})
@@ -308,12 +286,12 @@ def test_storm_lord_enemy_shikigami_only(real_game):
     assert rec["refs"] == [Ref(player=1, shikigami=2)]
 
 
-# ---------- 08 觉醒·大天狗 ----------
+# ---------- 07 觉醒·大天狗 ----------
 
 def test_awaken_replace_and_initial_one(real_game):
     """觉醒（维护者答复(10)+法术觉醒流程）：替换在法术效果之前——继承原能力记录的
     动态倒计时并变为倒计时 1，[倒计时]-1 随之归零 → 自动使用记录的法术；
-    记录不随替换丢失（气绝才清）；+2/+2 随"觉醒后"延时时机授予。"""
+    记录不随替换丢失（气绝才清）；+1/+1 随"觉醒后"延时时机授予。"""
     g, pa, pb = _game(real_game, DT_TEAM, {IDX: 3})
     s = pa.shikigami[IDX]
     play(g, 0, KAZAMI)
@@ -322,8 +300,8 @@ def test_awaken_replace_and_initial_one(real_game):
     play(g, 0, DT_AWAKEN)
     assert s.awakened == DT_AWAKEN
     assert g.history.index("on_before_awaken") < g.history.index("on_awakened")
-    assert s.perm_power == 2 and s.perm_health == 2
-    assert s.max_health == 6 and s.health == 6
+    assert s.perm_power == 1 and s.perm_health == 1
+    assert s.max_health == 5 and s.health == 5
     assert pb.health == 26                    # 继承的倒计时 1 → -1 归零：自动复用风神一扇
     assert s.ext["recorded_card"] == KAZAMI   # 觉醒继承原能力记录的法术
     assert s.countdown == 1                   # 自动使用再次触发觉醒能力[倒计时1]
@@ -1044,8 +1022,8 @@ FHH_TEAM = [100105, 100116, 100101, 100123]
 def test_projectile_on_own_spell(real_game):
     """基础能力：凤凰火使用专属法术（凤鸣）→ [投射]1（B 战斗区空 → 打脸）。"""
     g, pa, pb = _game(real_game, FHH_TEAM)
-    play(g, 0, FM)                            # 凤鸣 2 + 投射 1
-    assert pb.health == 27
+    play(g, 0, FM)                            # 凤鸣 3 + 投射 1
+    assert pb.health == 26
 
 
 def test_kill_pings_enemy_player(real_game):
@@ -1071,8 +1049,8 @@ def test_boost_effect_damage(real_game):
     """焚羽：凤凰火造成的非战斗伤害 +1——凤鸣直击与基础投射均吃增幅。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 2})
     play(g, 0, FY)
-    play(g, 0, FM)                            # (2+1) + 投射 (1+1)
-    assert pb.health == 25
+    play(g, 0, FM)                            # (3+1) + 投射 (1+1)
+    assert pb.health == 24
 
 
 def test_awaken_projectile_any_spell(real_game):
@@ -1084,18 +1062,18 @@ def test_awaken_projectile_any_spell(real_game):
     assert pb.health == 29                    # 觉醒牌自身的使用事件已触发觉醒能力
     play(g, 0, 10011603)                      # 山童怒吼（其他式神的专属法术）→ 投射 1
     assert pb.health == 28
-    play(g, 0, FM)                            # 凤鸣 2 + 投射 1（只触发一次）
-    assert pb.health == 25
+    play(g, 0, FM)                            # 凤鸣 3 + 投射 1（只触发一次）
+    assert pb.health == 24
     assert pa.shikigami[IDX].perm_power == 1  # 觉醒 +1/+1
 
 
 def test_enhance_per_player_damage(real_game):
     """炎舞增强：凤凰火每对敌方牌手造成 1 次伤害 +1——凤鸣直击与投射各计 1 次。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
-    play(g, 0, FM)                            # 直击 2 + 投射 1 = 2 次
+    play(g, 0, FM)                            # 直击 3 + 投射 1 = 2 次
     assert pa.card_mods[YW]["enhance"] == 2
     play(g, 0, YW)                            # (5+2) 贯通投射打脸；炎舞本身再触发基础投射 1
-    assert pb.health == 30 - 3 - 7 - 1
+    assert pb.health == 30 - 4 - 7 - 1
 
 
 def test_piercing_projectile_overflow(real_game):
@@ -1109,11 +1087,33 @@ def test_piercing_projectile_overflow(real_game):
 
 
 def test_generate_on_spell_play(real_game):
-    """出云：凤凰火使用法术牌时，将一张'凤火'置入手牌。"""
+    """出云：凤凰火使用法术牌时，[运势4]成功才将一张'凤火'置入手牌。"""
+    class _Rng:  # 确定性骰桩：randint 固定返回指定点
+        def __init__(self, roll):
+            self.roll = roll
+
+        def randint(self, a, b):
+            return self.roll
+
+        def choice(self, seq):
+            return seq[0]
+
+        def sample(self, seq, n):
+            return list(seq)[:n]
+
+        def shuffle(self, seq):
+            pass
+
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
+    g.rng = _Rng(6)                           # 运势4 成功
     play(g, 0, CY)
     play(g, 0, FM)
     assert any(c.id == FH for c in pa.hand)
+    g2, pa2, pb2 = _game(real_game, FHH_TEAM, {IDX: 3})
+    g2.rng = _Rng(1)                          # 运势4 失败：不生成
+    play(g2, 0, CY)
+    play(g2, 0, FM)
+    assert not any(c.id == FH for c in pa2.hand)
 
 
 # ==========================================================================

@@ -1,26 +1,15 @@
 id: 10010606
-name: 偷袭
+name: 天翔鹤斩
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
-      rarity: R
+      rarity: SSR
       level: 2
-      keywords: [trigger]
+      keywords: [piercing]
+      target: {kind: choose, pool: enemy_bench, optional: true, battle: true}
       effects:
-        # [响应]：{当敌方回合结束且（敌方）战斗区没有式神时，自动使用}（答复3：
-        # 当前回合方的回合结束效果先结算完，再检查手牌响应）；无当前战斗的响应
-        # 战斗牌按完整战斗流程发起新战斗
-        when: on_turn_end
-        condition: {player: opponent, combat_empty: opponent}
         steps:
-          - {op: buff_power, amount: 2, target: {kind: self}}
-      triggers:
-        # 在敌方回合获得[瞬发]：敌方回合开始登记本回合光环（伺机先例）
-        - when: on_turn_start
-          condition: {player: opponent}
-          steps:
-            - {op: card_aura, shikigami: 100106, card_id: 10010606, keywords: [fast],
-               turn: opponent, scope: turn}
-      text: "在敌方回合获得[瞬发]。[响应]：{当敌方回合结束且战斗区没有式神时，自动使用。}"
+          - {op: buff_power, amount: 3, target: {kind: self}}
+      text: "[贯通]。本次战斗改为攻击一个敌方准备区式神。"

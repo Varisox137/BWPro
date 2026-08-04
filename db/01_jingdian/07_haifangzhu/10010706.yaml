@@ -1,9 +1,9 @@
 id: 10010706
 name: 巨浪
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SR
       level: 2
@@ -13,4 +13,4 @@ versions:
           - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami}}
           # "每造成1点伤害，海坊主便恢复1生命"：按实际造成总点数恢复
           - {op: heal, amount: {memo: last_damage_total}, target: {kind: self}}
-      text: 对所有敌方式神造成2点伤害，每造成1点伤害，海坊主恢复1生命。
+      text: 对所有敌方式神造成2点伤害，每造成1点伤害，海坊主恢复1点生命。

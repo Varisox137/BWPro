@@ -1,9 +1,9 @@
 id: 10010608
 name: 觉醒·姑获鸟
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
       awaken_power: 2   # +2/+0：永久身材增益，"觉醒后"延时时机之后授予
@@ -28,10 +28,4 @@ versions:
           condition: {shikigami_shikigami: self}
           steps:
             - {op: grant_keyword, keyword: remote, target: {kind: self}}
-        # 姑获鸟消灭敌方式神时，再次发起攻击（答复2：气绝后延时时机——战斗中受战斗
-        # 伤害气绝的事件晚于战斗事件，追加攻击不享受战斗牌加成；不分敌我回合、无次数限制）
-        - when: on_shikigami_defeated
-          condition: {source_shikigami: self, victim_side: enemy}
-          steps:
-            - {op: launch_attack, shikigami: self}
-      text: "当其他己方式神攻击后，本回合此牌获得[瞬发]。[觉醒]：{[远程]。姑获鸟消灭敌方式神时，再次发起攻击。}"
+      text: "当其他己方式神攻击后，本回合此牌获得[瞬发]。[觉醒]：{[远程]。}"

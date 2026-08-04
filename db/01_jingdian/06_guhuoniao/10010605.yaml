@@ -1,17 +1,18 @@
 id: 10010605
-name: 天翔鹤斩
+name: 偷袭
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
-      rarity: SSR
+      rarity: R
       level: 2
-      keywords: [piercing]
-      target: {kind: choose, pool: enemy_bench, optional: true, battle: true}
+      keywords: [trigger]
       effects:
+        # [响应]：{当敌方战斗区式神气绝时，自动使用此牌}；无当前战斗的响应
+        # 战斗牌按完整战斗流程发起新战斗（响应收集仅非活动方，与其他响应牌一致）
+        when: on_shikigami_defeated
+        condition: {victim_side: enemy, in_combat: true, summon: false}
         steps:
           - {op: buff_power, amount: 3, target: {kind: self}}
-          # 免疫战斗伤害：由战斗牌流程提取绑定本次战斗（鸩羽先例）
-          - {op: battle_immunity, target: {kind: self}}
-      text: "[贯通]。免疫战斗伤害。敌方有未气绝的准备区式神时，本次战斗改为攻击一个敌方准备区式神。"
+      text: "[响应]：{当敌方战斗区式神气绝时，自动使用此牌。}"

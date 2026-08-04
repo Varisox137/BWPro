@@ -1,19 +1,13 @@
 id: 10010405
-name: 暴风之主
+name: 天狗风乱
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
-      rarity: SR
+    - date: 20191212
+      card_type: spell
+      rarity: R
       level: 2
-      form_power: 4
-      form_health: 6
-      effects: {steps: []}
-      abilities:
-        # affected_refs = 该次出牌效果实际伤害过的式神（on_card_played payload）
-        - when: on_card_played
-          condition: {player: self, card_type: spell, shikigami: 100104}
-          steps:
-            - {op: damage, amount: 1, target: {kind: context, key: affected_refs}}
-      text: 大天狗使用法术后，对受影响的敌方式神各造成1点伤害。
+      effects:
+        steps:
+          - {op: distribute_damage, amount: 6, pool: enemy_character}
+      text: 造成6点伤害，随机分配给所有敌方角色。

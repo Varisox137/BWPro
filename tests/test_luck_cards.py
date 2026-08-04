@@ -315,11 +315,12 @@ def test_cost_delta_player_next_turn(gdb):
     pb.orb = 9
     play(g, 1, 10010101)                       # B 起弓[瞬发]：回合内首张瞬发仍 0 费
     assert pb.orb == 9
-    play(g, 1, 10010401)                       # B 风神一扇（1 火 → 修正后 2 火；无鬼火增减效果）
+    play(g, 1, 10010402)                       # B 风神一扇（1 火 → 修正后 2 火；无鬼火增减效果）
     assert pb.orb == 7
     pass_turns(g, 2)                           # 再回到 B 回合：修正已随回合号过期
     pb.orb = 9
-    play(g, 1, 10010401)
+    pb.shikigami[0].level = 2                  # 暴风之主 2 级要求
+    play(g, 1, 10010404)                       # B 暴风之主（无瞬发的 1 火牌）
     assert pb.orb == 8
 
 

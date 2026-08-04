@@ -1,9 +1,9 @@
 id: 10010507
 name: 炎舞
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SSR
       level: 3
@@ -19,4 +19,4 @@ versions:
           condition: {player: opponent, source_shikigami: 100105}
           steps:
             - {op: add_mod, to: persistent, key: enhance, amount: 1}
-      text: "[贯通]。[投射]：{造成5点伤害}。[增强]：{本局游戏凤凰火每对敌方牌手造成1次伤害，此牌伤害+1。}"
+      text: "[贯通]。[投射]：{造成5点伤害}。[增强]：{本局游戏凤凰火每对敌方牌手造成一次伤害，此牌伤害+1。}"

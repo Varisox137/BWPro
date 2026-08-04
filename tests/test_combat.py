@@ -1141,36 +1141,36 @@ def test_haste_grant_on_ally_attack(real_game):
     """慈乌稚子：其他己方式神攻击后，姑获鸟获得[迅捷]（一次性关键字）。"""
     g = real_game(GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 3, 1: 1})
-    play(g, 0, 10010607)                       # 慈乌稚子（形态 8/6）
+    play(g, 0, 10010607)                       # 慈乌稚子（形态 8/4）
     g.apply({"op": "assault", "index": 1})     # 妖刀姬攻击（其他己方式神）
     s = pa.shikigami[0]
     assert "haste" in s.one_shot_keywords or "haste" in s.keywords
 
 
-def test_awaken_followup_attack_no_card_bonus(real_game):
-    """觉醒·姑获鸟：消灭敌方式神时延时追加攻击（气绝后批次晚于战斗事件，
-    不享受原战斗牌加成）；觉醒替换基础能力后攻击不再退回准备区。"""
+def test_awaken_remote_no_followup(real_game):
+    """觉醒·姑获鸟：觉醒授予[远程]（不进驻战斗区、无反击）；觉醒替换基础能力，
+    开服版无"消灭再攻击"效果。"""
     g = real_game(GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 3})
     play(g, 0, 10010608)                       # 觉醒（+2/+0 → eff 5）
     move(g, 1, 0)                              # B 姑获鸟（3/4）驻守战斗区
-    play(g, 0, 10010601)                       # 伞剑 +2 → 7 击杀
+    play(g, 0, 10010601)                       # 伞剑 +1 → 6 击杀
     assert pb.shikigami[0].defeated
-    assert pb.health == 25                     # 追加攻击直击牌手 5（无伞剑 +2 加成）
+    assert pb.health == 30                     # 无追加攻击
     assert pa.combat_index is None             # 觉醒授予[远程]：不进驻战斗区
-    assert pa.shikigami[0].health == 4         # 远程：两次攻击均无反击
+    assert pa.shikigami[0].health == 4         # 远程：无反击
 
 
 def test_bench_targeted_battle(real_game):
-    """天翔鹤斩：敌方有未气绝准备区式神时必须指定 1 名（有目标战斗），免疫
-    战斗伤害不吃反击；[贯通]溢出传导牌手。"""
+    """天翔鹤斩：指定 1 名敌方准备区式神（有目标战斗）；[贯通]溢出传导牌手，
+    正常受反击。"""
     g = real_game(GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})
-    c = give(g, 0, 10010605)
+    c = give(g, 0, 10010606)
     g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})
     assert pb.shikigami[1].defeated            # B 妖刀姬（3/4）受 6 伤气绝
     assert pb.health == 28                     # 贯通溢出 2
-    assert pa.shikigami[0].health == 4         # 免疫战斗伤害：无反击
+    assert pa.shikigami[0].health == 1         # 无免疫：受反击 3
 
 
 def test_bench_targeted_battle_fallback_no_target(real_game):
@@ -1183,35 +1183,32 @@ def test_bench_targeted_battle_fallback_no_target(real_game):
                  "args": {"target": {"player": 1, "shikigami": i},
                           "key": "defeated", "value": True}})
     move(g, 1, 0)
-    play(g, 0, 10010605)                       # 不带目标：普通战斗打驻守者
+    play(g, 0, 10010606)                       # 不带目标：普通战斗打驻守者
     assert pb.shikigami[0].health == 0 or pb.shikigami[0].defeated
 
 
-def test_turn_end_response_full_battle(real_game):
-    """偷袭[响应]：敌方回合结束且（敌方）战斗区没有式神时自动使用——无当前
-    战斗的响应战斗牌按完整战斗流程发起新战斗；敌方战斗区非空则不触发。"""
+def test_defeated_response_full_battle(real_game):
+    """偷袭[响应]：敌方战斗区式神气绝时自动使用——无当前战斗的响应战斗牌
+    按完整战斗流程发起新战斗。"""
     g = real_game(GH_TEAM)
     pa, pb = F.battle_setup(g)
     pb.shikigami[0].level = 2                  # 响应等级要求（偷袭 2 级）
-    give(g, 1, 10010606)
-    pass_turns(g, 1)                           # A 回合结束 → B 的偷袭自动使用
-    assert pa.health == 25                     # 直击 A 牌手 3+2=5
-    assert any(c.id == 10010606 for c in pb.graveyard)
+    pb.orb = 1                                 # 响应鬼火照常支付
+    give(g, 1, 10010605)
+    move(g, 1, 2)                              # B 白狼（3/4）驻守战斗区
+    pa.shikigami[2].level = 1
+    pa.shikigami[2].health = 3                 # A 白狼 3 命：出击互殴后被反击致死
+    g.apply({"op": "assault", "index": 2})     # A 白狼出击 → 反击气绝（战斗区）
+    assert pa.shikigami[2].defeated            # A 战斗区式神气绝 → 触发偷袭
+    assert pa.health == 24                     # 姑获鸟 3+3=6 直击 A 牌手（A 战斗区已空）
+    assert any(c.id == 10010605 for c in pb.graveyard)
     assert pb.combat_index is None             # 基础能力：攻击后退回
-    # 对照：敌方战斗区非空 → 不触发
-    g2 = real_game(GH_TEAM)
-    pa2, pb2 = F.battle_setup(g2)
-    pb2.shikigami[0].level = 2
-    give(g2, 1, 10010606)
-    move(g2, 0, 0)                             # A 战斗区有式神
-    pass_turns(g2, 1)
-    assert any(c.id == 10010606 for c in pb2.hand)   # 未触发，留在手牌
-    assert pa2.health == 30
 
 
 def test_turn_end_response_after_queue_effects(db, make_game):
-    """回合结束响应排序（偷袭答复3）：当前回合方的回合结束延时效果先执行，
-    再检查对方手牌响应——延时效果使（敌方）战斗区非空则响应不再满足条件。"""
+    """回合结束响应排序（旧版偷袭答复3；现为合成场景，无实卡使用回合结束响应）：
+    当前回合方的回合结束延时效果先执行，再检查对方手牌响应——延时效果使
+    （敌方）战斗区非空则响应不再满足条件。"""
     # A 1 号位式神合成能力：回合结束时（延时队列）把 0 号位移入战斗区
     db.shikigami[100102].ability = F.EffectBlock(
         when="on_turn_end", timing="queue",

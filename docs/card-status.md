@@ -95,15 +95,15 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 触发块：使用非觉醒法术→记录该法术并注册一次型[倒计时2]，归零凭空免费复用同名牌（非从手牌、不耗火）；记录随气绝丢失；倒计时来源按 A2 决策 = 式神 id |
-| 01 风神一扇 | ✅ | 投射 2 伤 + retreat；受伤者经块内暂存 last_damage_victims 引用 |
-| 02 吾即正义 | ✅ | generate 谓词扩展（max_level=source / exclude_self）；计数 10 张法术后经 add_mod require 置位 transformed，改用 alt_effects（消灭所有敌方式神）；变为后失去[瞬发]（维护者答复 2，alt_remove_keywords） |
+| 基础能力 | ✅ | 使用法术→记录该法术并注册一次型[倒计时2]，归零凭空免费复用同名牌（非从手牌、不耗火）；记录随气绝丢失；倒计时来源按 A2 决策 = 式神 id；raw 无"非觉醒"限定，实现仍排除觉醒法术（见出入 18） |
+| 01 黑羽之刃 | ✅ | [瞬发] 投射 2 伤 |
+| 02 风神一扇 | ✅ | 投射 2 伤 + retreat；受伤者经块内暂存 last_damage_victims 引用 |
 | 03 暴风之盾 | ✅ | gain_shield + delay_grant（下己方回合开始再 +2；选择目标随延迟条目存储）；响应挂 on_before_assault（受击方即战斗区式神） |
-| 04 黑羽之刃 | ✅ | 投射 4 伤 + delay_grant scope="play"（"本次使用期间"消灭敌方式神→抽 1，出牌结束窗口清除） |
-| 05 暴风之主 | ✅ | 形态能力读 on_card_played payload affected_refs（该次出牌效果伤害过的敌方式神；维护者答复(7)：只计敌方式神、去重，牌手与己方式神不计） |
-| 06 天狗风乱 | ✅ | distribute_damage 6 点随机分配（敌方角色，生命≤0 退出分配） |
-| 07 羽刃暴风 | ✅ | 全体敌方角色 3 伤 |
-| 08 觉醒·大天狗 | ✅ | 已按维护者答复(10)：法术觉醒新流程——替换继承原能力的动态倒计时（含记录的法术）并变为倒计时 1，countdown_delta -1 在替换后结算（归零即自动复用记录法术）；+2/+2 经 awaken_power/awaken_health 于"觉醒后"授予 |
+| 04 暴风之主 | ✅ | 形态 4/6：形态能力读 on_card_played payload affected_refs（该次出牌效果伤害过的敌方式神；只计敌方式神、去重，牌手与己方式神不计） |
+| 05 天狗风乱 | ✅ | distribute_damage 6 点随机分配（敌方角色，生命≤0 退出分配） |
+| 06 羽刃暴风 | ✅ | 全体敌方式神 3 伤（enemy_shikigami，不含牌手） |
+| 07 觉醒·大天狗 | ✅ | +1/+1（awaken_power/awaken_health）；法术觉醒流程——替换继承原能力的动态倒计时（含记录的法术）并变为倒计时 1，countdown_delta -1 在替换后结算（归零即自动复用记录法术） |
+| 08 吾即正义 | ✅ | 3 级；增强计数：本局大天狗使用法术 add_mod spell_count，满 10 置 transformed → destroy 全体敌方式神（开服版：无[瞬发]、无生成牌库效果） |
 
 ## 妖琴师（100124）
 
@@ -188,14 +188,14 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | on_card_played {player: self, card_type: spell, shikigami: 100105} → 投射 1（含觉醒/响应/凭空自动使用） |
-| 01 凤鸣 | ✅ | [瞬发] 打敌方牌手 2 |
-| 02 瑞翔 | ✅ | 所有敌方角色 1 |
+| 01 凤鸣 | ✅ | [瞬发] 打敌方牌手 3 |
+| 02 瑞翔 | ✅ | 所有敌方式神 1（enemy_shikigami，不含牌手） |
 | 03 引燃 | ✅ | 可对己方式神（维护者答复）；消灭追加走 delay_grant scope="play" + victim_player 语境目标（敌己两向） |
 | 04 焚羽 | ✅ | 非战斗伤害 +1：on_damage_start {source_shikigami: self, kind: effect} boost_damage（含觉醒后其他式神法术触发的投射） |
 | 05 凤火 | ✅ | |
 | 06 觉醒·凤凰火 | ✅ | 己方式神任意专属法术 → 投射 1（{shikigami_not: null} 排除中立牌；来源=凤凰火，吃焚羽、计炎舞） |
 | 07 炎舞 | ✅ | [贯通] 投射 5（步骤显式 piercing:true）；增强按次数不限伤害类型（on_player_damaged persistent 计数，打出装配快照） |
-| 08 出云 | ✅ | 使用法术牌时 generate 凤火入手 |
+| 08 出云 | ✅ | 形态 5/6：使用法术牌时 [运势4]（luck: 4 判定）→ generate 凤火入手 |
 | 21 涅槃明灯 | ❌ | 协战主牌（凤凰火&青行灯，id 10010521；副侧子选项烛火重燃 10011251 未实现） |
 | 51 涅槃业火 | ✅ | 协战子选项（凤凰火侧）：spell_echo 法术回响序列（凤鸣→引燃→瑞翔，once_key 不可叠加；敌方式神触发亦可；自动使用凭空/免费/随机合法目标/触发凤凰火能力）+ 羁绊明灯 |
 
@@ -218,14 +218,14 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | on_after_assault {attacker_shikigami: self} → retreat（攻击后移回准备区；刃影叠岚羁绊联动已验证） |
-| 01 伞剑 | ✅ | 战力 +2；手牌触发式光环：on_after_assault {attacker_side: friendly, attacker_not_shikigami: 100106} → card_aura keywords [fast] scope=turn（其他己方式神攻击后本回合此牌瞬发） |
+| 01 伞剑 | ✅ | 战力 +1；手牌触发式光环：on_after_assault {attacker_side: friendly, attacker_not_shikigami: 100106} → card_aura keywords [fast] scope=turn（其他己方式神攻击后本回合此牌瞬发） |
 | 02 影翼 | ✅ | 形态 4/4：on_before_assault {attacker_shikigami: self} → buff_power +1（每次攻击前获得 1 力量，临时持续性） |
 | 03 丛云鹤舞 | ✅ | [直击]（keywords 授予通道） |
-| 04 金鸾 | ✅ | 形态 3/6；手牌触发式瞬发光环同伞剑 |
-| 05 天翔鹤斩 | ✅ | 战力 +3；target 扩展键 battle=true + optional=true：有未气绝敌方准备区式神时必须指定（有目标战斗，同追猎管线），否则可不带目标退化为普通战斗；battle_immunity 免疫战斗伤害；[贯通] |
-| 06 偷袭 | ✅ | 敌方回合瞬发光环（on_turn_start 登记，伺机先例）；[响应]挂 on_turn_end {player: opponent, combat_empty: opponent}：无当前战斗的响应战斗牌按完整战斗流程发起新战斗；回合结束响应排序 = 当前回合方回合结束延时效果先结算（答复3） |
-| 07 慈乌稚子 | ✅ | 形态 8/6：其他己方式神攻击后姑获鸟获得[迅捷]（on_after_assault → grant_keyword haste，一次性消耗） |
-| 08 觉醒·姑获鸟 | ✅ | +2/+0；手牌瞬发光环同伞剑；[觉醒][远程]（on_awakened + on_shikigami_revived 双块 grant_keyword，山童先例）；消灭敌方式神时延时 followup_attack 追加攻击（不享受原战斗牌加成） |
+| 04 金鸾 | ✅ | 形态 6/4；手牌触发式瞬发光环同伞剑 |
+| 05 偷袭 | ✅ | [响应]挂 on_shikigami_defeated {victim_side: enemy, in_combat: true, summon: false}（in_combat 为气绝事件 payload）；战力 +3；非"（被）攻击时"时机的响应战斗牌不插入当前战斗——按完整战斗流程发起新战斗（嵌套战斗，正常反击；rules.md 第二章备注） |
+| 06 天翔鹤斩 | ✅ | 战力 +3；target 扩展键 battle=true + optional=true：有未气绝敌方准备区式神时必须指定（有目标战斗，同追猎管线），否则可不带目标退化为普通战斗；[贯通]（开服版无战斗伤害免疫） |
+| 07 慈乌稚子 | ✅ | 形态 8/4：其他己方式神攻击后姑获鸟获得[迅捷]（on_after_assault → grant_keyword haste，一次性消耗） |
+| 08 觉醒·姑获鸟 | ✅ | +2/+0；手牌瞬发光环同伞剑；[觉醒][远程]（on_awakened + on_shikigami_revived 双块 grant_keyword，山童先例；开服版无击杀追加攻击） |
 | 21 刃影鹤唳 | ✅ | 协战主牌（姑获鸟&妖刀姬）：options [10010651 鹤唳回风, 10012351 刃影叠岚]；构筑池双归属 |
 | 51 鹤唳回风 | ✅ | 协战子选项（姑获鸟侧法术觉醒，+1/+1）：[觉醒]强化基础能力——攻击后移回准备区 +1 力量并恢复所有生命（heal {missing_health: self}）；羁绊 launch_attack 妖刀姬（未出战/气绝空操作——刃影叠岚先例） |
 
@@ -237,11 +237,11 @@
 | 01 治愈之水 | ✅ | [瞬发]；{base: 3, half_shield_of: self} 动态数值（海坊主护甲 //2，向下取整）；choose any_character 新池 |
 | 02 灵能 | ✅ | 形态 3/6：on_heal {source_shikigami: self, target_kind: player} → 自身恢复等量（按实际治疗量） |
 | 03 沧海之盾 | ✅ | +2 甲 + delay_grant **bind=chosen**（延迟能力绑定被选式神；scope=turn）：其造成战斗伤害（kind≠effect，含反击）时为牌手恢复 2；[响应]挂 on_before_assault {victim_in_combat: true} 新条件键，choose 自动取事件 victim（古尘之盾先例） |
-| 04 水龙卷 | ✅ | 先自身 +3 甲，再按 {shield_of: self} 快照造伤（含本牌刚获得的 3 甲） |
+| 04 水龙卷 | ✅ | {base: 3, shield_of: self} 动态造伤（海坊主当前每 1 点护甲伤害 +1；开服版不再先自 +3 甲） |
 | 05 祝福之水 | ✅ | [瞬发]；friendly_character 新池（己方在场式神 + 己方牌手） |
-| 06 巨浪 | ✅ | damage 记录块内暂存 last_damage_total（实际造成伤害合计，扣减生命口径，护甲吸收不计）→ heal {memo: last_damage_total} 恢复自身 |
+| 06 巨浪 | ✅ | 所有敌方式神 2 伤（enemy_shikigami）；damage 记录块内暂存 last_damage_total（实际造成伤害合计，扣减生命口径，护甲吸收不计）→ heal {memo: last_damage_total} 恢复自身 |
 | 07 蹈海 | ✅ | 形态 4/9：on_damage {source_shikigami: self, kind_not: effect} → friendly_others_character 新池（己方其他角色，排除来源含牌手）恢复等量 |
-| 08 觉醒·海坊主 | ✅ | +1/+3；恢复 3；觉醒替换 = 基础保留 + 过量治疗额外转等量力量（buff_power 临时修正） |
+| 08 觉醒·海坊主 | ✅ | +1/+3；觉醒替换 = 过量治疗额外转等量力量+护甲（buff_power 临时修正；开服版无"恢复 3"） |
 
 ## 青坊主（100111）
 
@@ -550,6 +550,9 @@
     扣减生命前（维护者答复(7)）；伤害事件新增 `spell` 分类标记。
 17. **火吻之蛇**：回合开始破甲清除早于"敌方回合开始时"触发，结算后敌方全体 1 破甲
     （维护者答复(8)确认，与实现一致）。
+18. **大天狗基础/觉醒能力**：20191212 raw 为"使用法术后"（无"非觉醒"限定），实现仍排除
+    觉醒法术（condition `subtype: null`）——避免觉醒牌被倒计时重放刷身材的退化循环
+    （维护者确认）；text 按 raw 逐字，机制出入记于此。
 
 ## 协战牌 id 设计（已决议）
 
