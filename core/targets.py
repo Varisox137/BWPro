@@ -201,6 +201,13 @@ def _ref_stunned(game, ref: Ref) -> bool:
     return pl.shikigami[ref.shikigami].is_stunned
 
 
+def _ref_fragile(game, ref: Ref) -> bool:
+    """Ref 所指角色（式神或牌手）当前是否持有破甲（shield < 0）。"""
+    pl = game.state.players[ref.player]
+    holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+    return holder.shield < 0
+
+
 def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> list[Ref]:
     """choose 目标合法性校验用：pool_refs + TargetSpec 额外过滤键（勾诀 power_le；
     legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。"""
@@ -303,6 +310,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {字段_stunned: true|false} ：事件中的 Ref 所指角色（式神或牌手）是否眩晕
     - {chosen_stunned: true|false} ：卡牌选择目标（chosen）中是否有眩晕角色——
       Step 级条件专用（崩雪"已眩晕则消灭、否则眩晕"两段 steps）；事件触发块无 chosen
+    - {chosen_has_fragile: true|false} ：卡牌选择目标（chosen）中是否有破甲角色——
+      Step 级条件专用（蛇行击 2019"若其有破甲则……"）；事件触发块无 chosen
+    - {chosen_side: friendly|enemy|any} ：事件 payload 的选择目标（on_card_played 的
+      chosen）恰好一个且为式神、归属匹配——记仇"对单个己方式神使用的法术"类
+      事件条件（响应/延迟监听用；与 Step 级 chosen_* 键不同，本键读事件）
     - {combat_opponent_stunned: true|false} ：能力持有者（holder）参与事件中的战斗
       （为 attacker 或 victim）且交战对方处于眩晕（双向判定；对方可为牌手）——
       雪童子"与眩晕的敌方角色交战时"类，挂 on_before_assault
@@ -423,6 +435,24 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             # 卡牌选择目标中有眩晕角色（Step 级条件专用；崩雪"已眩晕则消灭、否则眩晕"）
             matched = any(_ref_stunned(game, r) for r in (chosen or []))
             if matched != bool(want):
+                return False
+        elif key == "chosen_has_fragile":
+            # 卡牌选择目标中有破甲角色（Step 级条件专用；蛇行击 2019"若其有破甲"——
+            # 破甲受伤即消耗，读破甲的条件步须排在伤害步之前）
+            matched = any(_ref_fragile(game, r) for r in (chosen or []))
+            if matched != bool(want):
+                return False
+        elif key == "chosen_side":
+            # 事件 payload 的选择目标（on_card_played 携带 chosen）：恰好一个且指向
+            # 式神，归属与 want（friendly|enemy|any）匹配——记仇"对单个己方式神使用
+            # 的法术"（响应/延迟监听的事件条件；与 Step 级 chosen_* 键读法不同，
+            # 本键读事件中的选择目标）
+            refs = event.get("chosen")
+            if (not isinstance(refs, (list, tuple)) or len(refs) != 1
+                    or not isinstance(refs[0], Ref) or refs[0].shikigami is None):
+                return False
+            side = "friendly" if refs[0].player == controller else "enemy"
+            if want != "any" and side != want:
                 return False
         elif key == "combat_opponent_stunned":
             # 持有者参与事件中的战斗且交战对方眩晕（双向；对方可为牌手）——雪童子

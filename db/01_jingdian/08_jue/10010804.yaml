@@ -10,9 +10,9 @@ versions:
       keywords: [fast]
       effects:
         steps:
-          # 调度对手已展示的手牌（云游 10011802 mulligan_hand 先例；
-          # target_side/only_revealed/auto 扩展参数待引擎对齐）
+          # 调度对手已展示的手牌（云游 10011802 mulligan_hand 先例；auto 强索通道，
+          # 调度隐含检索洗牌——shuffle: true）
           - {op: mulligan_hand, target_side: opponent, only_revealed: true, auto: true,
-             times: 3, shuffle: false}
+             times: 3, shuffle: true}
           - {op: draw, count: 1}
       text: "[瞬发]。调度对手已展示的手牌，抽一张牌。（3次调度次数）"

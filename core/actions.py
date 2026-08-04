@@ -1464,7 +1464,7 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
             game.state.players[ctx.source.player].shikigami[ctx.source.shikigami])
     game.move_card(p, inst, "graveyard")
     game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
-                           play_from="void", triggered="auto")
+                           play_from="void", triggered="auto", chosen=chosen)
 
 
 @action("spell_echo")
@@ -1537,7 +1537,7 @@ def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
     game.move_card(p, inst, "graveyard")  # 凭空生成的回响牌用后进入墓地
     game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束
     game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
-                           play_from="void", triggered="auto")
+                           play_from="void", triggered="auto", chosen=chosen)
 
 
 @action("fragile_echo")
@@ -2202,7 +2202,66 @@ def reuse_card(game, ctx, *, targets: list[Ref]) -> None:
     finally:
         affected = game._affected_stack.pop()["refs"]
     game._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
-                           play_from="void", triggered="auto")
+                           play_from="void", triggered="auto", chosen=ctx.chosen)
+
+
+@action("echo_event_card")
+def echo_event_card(game, ctx, *, targets: list[Ref]) -> None:
+    """复制使用事件中的法术牌（记仇；targets 忽略）：以监听控制者身份凭空再使用一次。
+
+    读事件 payload 的 uid 定位被使用的卡牌（须为法术牌）；不耗鬼火、不做等级/目标
+    合法性检查（[条件] 使用前提同免——"复仇"复制不看合法性）。目标强制为该法术
+    施法者自己的式神（事件 player 方数据 id 所指在场式神；中立牌/施法者不在场/
+    卡牌无 choose 目标则无目标使用——自动使用而没有效果）。凭空生成、用后进墓地、
+    play_from=void、triggered=auto，照常 emit on_card_played（会触发"使用法术牌时"
+    类能力，控制者为监听方）。一次性监听由 delay_grant(uses=1) 表达，本 op 只负责
+    复制使用本身。
+    """
+    event = ctx.event or {}
+    uid = event.get("uid")
+    src_inst = game._card_by_uid(uid) if uid is not None else None
+    if src_inst is None:
+        return
+    cdef = game.db.cards[src_inst.id]
+    if cdef.card_type != "spell":
+        return
+    caster: Ref | None = None
+    ep, esid = event.get("player"), event.get("shikigami")
+    if ep is not None and esid is not None:
+        cp = game.state.players[ep]
+        ci = next((i for i, s in enumerate(cp.shikigami) if s.id == esid), None)
+        if ci is not None and cp.shikigami[ci].in_play:
+            caster = Ref(player=ep, shikigami=ci)
+    from core.model import CardInstance
+    p = game.state.players[ctx.controller]
+    inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空生成，不进任何区域
+    game.state.next_uid += 1
+    game._materialize(p, inst, cdef)  # 生成点统一快照
+    chosen = [caster] if (caster is not None and cdef.target.kind == "choose") else []
+    game._log(f"凭空复制使用了【{cdef.name}】（目标为其施法者）")
+    game._affected_stack.append({"controller": ctx.controller, "refs": []})
+    try:
+        game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
+            controller=ctx.controller, source=ctx.source, card=inst, chosen=chosen))
+    finally:
+        affected = game._affected_stack.pop()["refs"]
+    game.move_card(p, inst, "graveyard")  # 凭空生成的复制牌用后进入墓地
+    game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
+                           play_from="void", triggered="auto", chosen=chosen)
+
+
+@action("bounce_self")
+def bounce_self(game, ctx, *, targets: list[Ref]) -> None:
+    """本牌移回手牌（蛇行击 2019 条件回手；targets 忽略）：牌在墓地时移回控制者
+    手牌——与 rebound 关键字同路径（move_card 入手统一处理：超手牌上限按爆牌
+    通用规则转墓地）。条件化回手以 Step 级 condition 表达（如 chosen_has_fragile；
+    破甲受伤即消耗，读破甲的条件步须排在伤害步之前）。"""
+    if ctx.card is None:
+        raise ValueError("bounce_self 需要来源卡牌实例")
+    p = game.state.players[ctx.controller]
+    if ctx.card in p.graveyard:
+        game.move_card(p, ctx.card, "hand")
+        game._log(f"【{game.db.cards[ctx.card.id].name}】移回手牌")
 
 
 @action("cost_delta_player")

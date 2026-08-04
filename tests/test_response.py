@@ -1039,3 +1039,128 @@ def test_response_seat_order_bubble_swap(real_game):
     assert g.history.count("on_trigger") == 1
     s = pa.shikigami[1]
     assert s.shield == 0 and s.health == 3               # +2 甲挡 3 伤余 1（4-1）
+
+
+# ==========================================================================
+# 复仇复制（记仇 2019 型：echo_event_card + on_card_played chosen 载荷
+# + chosen_side 事件条件）——一次性延迟监听"下一次对单个己方式神使用的
+# 法术，再对施法者自己使用一次"；响应形态挂 on_card_played。
+# ==========================================================================
+
+JI_CHOU = 10010163   # 记仇型：trigger + delay_grant 注册监听（主动/响应同 steps）
+REV_SPELL = 10010363  # 单体任意式神 2 伤法术（复制观察用，妖刀姬位所属）
+
+
+def _jichou(db):
+    listener = F.Step(op="delay_grant", when="on_card_played",
+                      condition={"card_type": "spell", "chosen_side": "friendly"},
+                      steps=[{"op": "echo_event_card"}], uses=1)
+    db.cards[JI_CHOU] = F.card(
+        JI_CHOU, shikigami=BAI, cost=1, level=1, token=True, keywords=["trigger"],
+        steps=[listener],
+        response=F.block(listener, when="on_card_played",
+                         condition={"player": "opponent", "card_type": "spell",
+                                    "chosen_side": "friendly"}))
+    db.cards[REV_SPELL] = F.card(
+        REV_SPELL, shikigami=YAO, cost=1, level=1, token=True,
+        target=T(kind="choose", pool="any_shikigami"), steps=[F.dmg(2)])
+
+
+def test_revenge_echo_proactive_copy_once(db, make_game):
+    """主动使用记仇注册一次性监听：己方下一个以单个己方式神为目标的法术被凭空
+    复制（不耗火/不做目标合法性检查），再对施法者自己的式神使用一次（控制者=
+    记仇方）；一次性——第二张同类法术不再复制。"""
+    _jichou(db)
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1, 2: 1})
+    play(g, 0, JI_CHOU)
+    assert len(pa.shikigami[BAI_IDX].delayed) == 1          # 监听已注册
+    play(g, 0, REV_SPELL, target=Ref(player=0, shikigami=BING_IDX))  # 妖刀姬→兵俑
+    assert pa.shikigami[BING_IDX].health == 4               # 原效果 6-2
+    assert pa.shikigami[YAO_IDX].health == 4                # 复制：目标=施法者妖刀姬 6-2
+    assert pa.shikigami[BAI_IDX].delayed == []              # 一次性：监听已消耗
+    play(g, 0, REV_SPELL, target=Ref(player=0, shikigami=BING_IDX))
+    assert pa.shikigami[BING_IDX].health == 2               # 4-2
+    assert pa.shikigami[YAO_IDX].health == 4                # 不再复制
+
+
+def test_revenge_echo_response_registers(db, make_game):
+    """记仇响应：敌方对单个己方式神使用法术时自动使用此牌（该法术本身不被复制——
+    监听在其结算之后注册）；之后敌方的下一张单体己方式神法术被复制、反弹给其
+    施法者（复制控制者为己方）；敌方以其自己式神为目标的法术不满足
+    chosen_side=friendly，响应与监听均不触发。"""
+    _jichou(db)
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    pb.shikigami[YAO_IDX].level = 1
+    give(g, 0, JI_CHOU)
+    pass_turns(g)                                           # → B 回合
+    pb.orb = 9
+    play(g, 1, REV_SPELL, target=Ref(player=1, shikigami=BING_IDX))  # B 打己方式神
+    assert any(c.id == JI_CHOU for c in pa.hand)            # 响应不触发（目标非己方）
+    assert pb.shikigami[YAO_IDX].health == 6
+    play(g, 1, REV_SPELL, target=Ref(player=0, shikigami=BING_IDX))  # B 打 A 兵俑 → 响应
+    assert not any(c.id == JI_CHOU for c in pa.hand)
+    assert any(c.id == JI_CHOU for c in pa.graveyard)       # 响应牌已结算
+    assert pa.shikigami[BING_IDX].health == 4               # 本次不复制：仅原 2 伤
+    assert pb.shikigami[YAO_IDX].health == 6
+    assert len(pa.shikigami[BAI_IDX].delayed) == 1          # 响应使用同样注册监听
+    play(g, 1, REV_SPELL, target=Ref(player=0, shikigami=BING_IDX))  # 下一张 → 复制
+    assert pa.shikigami[BING_IDX].health == 2               # 4-2
+    assert pb.shikigami[YAO_IDX].health == 4                # 复制目标=敌方施法者妖刀姬
+    assert pa.shikigami[BAI_IDX].delayed == []              # 一次性
+
+
+def test_revenge_echo_persists_across_turns(db, make_game):
+    """记仇监听跨回合留存（无 scope，未触发前一直存在）：主动使用后空过两个
+    半回合，己方回合的单体己方式神法术仍触发复制。"""
+    _jichou(db)
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1, 2: 1})
+    play(g, 0, JI_CHOU)
+    pass_turns(g, 2)                                        # 空过 → A 第 2 回合
+    assert len(pa.shikigami[BAI_IDX].delayed) == 1          # 跨回合未清除
+    play(g, 0, REV_SPELL, target=Ref(player=0, shikigami=BING_IDX))
+    assert pa.shikigami[BING_IDX].health == 4               # 原效果 6-2
+    assert pa.shikigami[YAO_IDX].health == 4                # 复制仍触发 6-2
+    assert pa.shikigami[BAI_IDX].delayed == []
+
+
+# ==========================================================================
+# 复仇复制·真实数据（记仇 10010806 / 百闻一得 / 蛇行击，at_date(20191212)
+# 环境——20191212=best 快照；默认环境为最新 20251212 版）
+# ==========================================================================
+
+def test_revenge_echo_friendly_spell_data(gdb):
+    """记仇 2019（数据端对端）：主动使用注册监听——己方百闻一得（单体己方式神
+    法术）被复制、再对施法者青行灯使用一次（强制目标=施法者，不做合法性检查：
+    青行灯非最低等级也被升级）；一次性，第二张不再复制。"""
+    g = F.mk_game(gdb.at_date(20191212), team=[100108, 100112, 100116, 100115])  # 青岚+红莲
+    pa, pb = F.battle_setup(g, {0: 2, 1: 2, 2: 1, 3: 1})
+    play(g, 0, 10010806)                      # 记仇（觉 2 级）
+    play(g, 0, 10011204, target=Ref(player=0, shikigami=2))   # 百闻一得→山童
+    assert pa.shikigami[2].level == 2         # 原效果：最低等级之一 1→2
+    assert pa.shikigami[1].level == 3         # 复制：施法者青行灯 2→3（非最低也生效）
+    play(g, 0, 10011204, target=Ref(player=0, shikigami=3))   # 一次性：不再复制
+    assert pa.shikigami[3].level == 2
+    assert pa.shikigami[1].level == 3
+
+
+def test_revenge_echo_enemy_spell_data(gdb):
+    """记仇 2019 响应（数据端对端）：敌方蛇行击（单体己方式神法术）触发响应自动
+    使用记仇（该次本身不复制）；下一张蛇行击被复制、反弹给施法者清姬（复制来源
+    为觉、不吃清姬伤害转化）。清姬伤害转化使目标获得破甲：第一张转破甲不扣血，
+    第二张目标已有破甲→正常伤害且 B 侧触发蛇行击自身条件回手。"""
+    g = F.mk_game(gdb.at_date(20191212), team=[100108, 100112, 100114, 100102])  # 青岚+紫岩
+    pa, pb = F.battle_setup(g, {0: 2, 2: 1})
+    give(g, 0, 10010806)
+    pass_turns(g)                             # → B 回合
+    play(g, 1, 10011401, target=Ref(player=0, shikigami=2))   # B 蛇行击→A 清姬 → 响应
+    assert any(c.id == 10010806 for c in pa.graveyard)        # 记仇响应已结算
+    assert pa.shikigami[2].health == 4 and pa.shikigami[2].shield == -1  # 伤害转破甲
+    assert pb.shikigami[2].health == 4                        # 本次未复制
+    play(g, 1, 10011401, target=Ref(player=0, shikigami=2))   # 第二张 → 复制反弹
+    # 首段 1 伤 +破甲 1 = 2（破甲消耗）；第二段 1 伤时目标已无破甲 → 清姬伤害转化为 1 破甲
+    assert pa.shikigami[2].health == 2 and pa.shikigami[2].shield == -1
+    assert pb.shikigami[2].health == 3                        # 复制：施法者清姬受 1 伤
+    assert any(c.id == 10011401 for c in pb.hand)             # B 侧条件回手（目标有破甲）

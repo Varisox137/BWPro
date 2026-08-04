@@ -50,22 +50,13 @@ def _yc_form(cid: int, name: str, steps=()) -> CardDef:
 @pytest.fixture
 def gdb():
     """真实 db + 测试库临时注册：萤草测试形态牌 A（空白进场）/B（进场 +2 护甲，
-    衍生号段 52/53——萤草 01-08 已于第十四阶段补齐真卡）；
-    姑获鸟（卡牌未设计，10010601-04 全空白）与青行灯（仅明灯 01 为真卡，
-    10011202-04 空白）同样补足 01-04。
+    衍生号段 52/53——萤草 01-08 已于第十四阶段补齐真卡）。
     本覆盖原属 test_yingcao.py，合并后萤草基础能力测试（本文件）与灵矢贯虹测试
     （test_reinforce.py）各持一份。"""
     db = CardDatabase.load()
     db.cards[YC_FORM_A] = _yc_form(YC_FORM_A, "测试形态·花")
     db.cards[YC_FORM_B] = _yc_form(YC_FORM_B, "测试形态·叶", steps=[
         Step(op="gain_shield", amount=2, target=TargetSpec(kind="self"))])
-    for sid, nums in ((100106, (1, 2, 3, 4)), (100112, (2, 3, 4))):
-        for n in nums:
-            cid = sid * 100 + n
-            db.cards[cid] = CardDef(id=cid, version=20260729,
-                                    name=f"{db.shikigami[sid].name}空白卡{n}",
-                                    shikigami=sid, card_type="spell", level=1, cost=1,
-                                    effects=EffectBlock(), text="")
     return db
 
 

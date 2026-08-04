@@ -1,8 +1,31 @@
 id: 10010806
 name: 记仇
 versions:
-  best: 20251212
+  best: 20191212
   history:
+    - date: 20191212
+      card_type: spell
+      rarity: SR
+      level: 2
+      keywords: [trigger]
+      effects:
+        steps:
+          # 复仇复制：注册一次性延迟监听（跨回合留存，气绝清除）——下一次任意玩家
+          # 对单个己方式神使用法术牌时，以己方身份凭空复制该法术，对施法者自己的
+          # 式神再使用一次（不耗火/不做等级与目标合法性检查）
+          - {op: delay_grant, when: on_card_played,
+             condition: {card_type: spell, chosen_side: friendly},
+             steps: [{op: echo_event_card}], uses: 1}
+      response:
+        # 响应：敌方对单个己方式神使用法术牌时自动使用此牌（使用后同样注册上述监听；
+        # 本次触发法术本身不被复制——监听注册在其结算之后，"下一次"才复制）
+        when: on_card_played
+        condition: {player: opponent, card_type: spell, chosen_side: friendly}
+        steps:
+          - {op: delay_grant, when: on_card_played,
+             condition: {card_type: spell, chosen_side: friendly},
+             steps: [{op: echo_event_card}], uses: 1}
+      text: "下一次对单个己方式神使用的法术，再对施法者自己使用一次。[响应]：{当敌方对一个己方式神使用法术时，自动使用此牌。}"
     - date: 20251212
       card_type: spell
       rarity: SR

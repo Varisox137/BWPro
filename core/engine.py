@@ -1012,7 +1012,7 @@ class Game:
         self._apply_revive_haste(p, card)  # 实例修饰"使用后…气绝倒计时-1"（鎏金幻羽）
         self._emit_card_played(self.state.active, uid, cdef, affected,
                                play_from=play_from, play_method=method_id,
-                               triggered="active")
+                               triggered="active", chosen=chosen)
         self._rebound_check(p, card, cdef)  # 弹回：使用后回手而非入墓
 
     def _rebound_check(self, p: PlayerState, card: CardInstance, cdef: CardDef) -> None:
@@ -1074,7 +1074,8 @@ class Game:
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
                           affected: list[Ref] | None = None, *,
                           play_from: str = "hand", play_method: str | None = None,
-                          triggered: str = "active") -> None:
+                          triggered: str = "active",
+                          chosen: list[Ref] | None = None) -> None:
         """使用后1（延时时机 on_card_played）统一发点。
 
         payload 携带卡牌静态信息（card_type/subtype/shikigami——触发块条件匹配用，
@@ -1087,6 +1088,8 @@ class Game:
         response（响应）/ auto（凭空自动使用，如 recast_recorded/法术回响）。
         card_revealed：被使用的牌在使用点是否具有"已展示"（读实例 mods，本局保持、
         随实例）——条件 {card_revealed: true} 匹配"使用已展示的牌时"类触发。
+        chosen：该次使用的选择目标（无目标/无选择信息为空列表）——条件
+        {chosen_side: friendly} 匹配"对单个己方式神使用的法术"类触发（记仇）。
         """
         played = self._card_by_uid(uid)
         self.emit("on_card_played", player=player, uid=uid, card_type=cdef.card_type,
@@ -1094,7 +1097,7 @@ class Game:
                   golden_feather=("golden_feather" in cdef.tags),
                   play_from=play_from, play_method=play_method, triggered=triggered,
                   card_revealed=bool(played is not None and played.mods.get("revealed")),
-                  affected_refs=list(affected or ()))
+                  affected_refs=list(affected or ()), chosen=list(chosen or ()))
 
     def _queue_awaken_stats(self, si: int, cdef: CardDef, card: CardInstance) -> None:
         """觉醒牌的永久身材增益（awaken_power/awaken_health）：法术觉醒使用事件流程
@@ -3200,7 +3203,7 @@ class Game:
                 self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen)
             self._account_card_played(p, cdef)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
-                                   triggered="response")
+                                   triggered="response", chosen=ctx.chosen)
             return True
         if cdef.card_type == "form" and si is not None:
             # 响应形态牌插入使用：立即结附（风符·瞬）；牌不进墓地，形态离场才进
@@ -3208,7 +3211,7 @@ class Game:
             self._play_form_card(p, si, ctx.card, cdef, ctx.controller, ctx.chosen)
             self._account_card_played(p, cdef)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
-                                   triggered="response")
+                                   triggered="response", chosen=ctx.chosen)
             return True
         self.move_card(p, ctx.card, "graveyard")
         return False
@@ -3245,7 +3248,7 @@ class Game:
             # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
             self._account_card_played(p, cdef)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
-                                   triggered="response")
+                                   triggered="response", chosen=ctx.chosen)
             self._rebound_check(p, ctx.card, cdef)  # 弹回：响应使用同样回手
 
     def _run_block_steps(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> None:

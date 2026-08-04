@@ -999,6 +999,35 @@ def test_rebound_returns_to_hand(db, make_game):
     assert c.mods["enhance"] == 2                # 再次打出不重复合并
 
 
+def test_conditional_bounce_and_fragile_bonus(db, make_game):
+    """条件回手 + 条件加伤（蛇行击 2019 型：bounce_self + chosen_has_fragile Step 级
+    条件）——目标有破甲：伤害+1 且此牌移回手牌（不入墓）；无破甲：1 伤进墓地。
+    破甲受伤即消耗，读破甲的条件步须排在伤害步之前；瞬发免费照常。"""
+    cid = 10010166
+    db.cards[cid] = F.card(
+        cid, keywords=["fast"], token=True,
+        target=T(kind="choose", pool="any_shikigami"),
+        steps=[F.Step(op="bounce_self", condition={"chosen_has_fragile": True}),
+               F.Step(op="damage", amount=1, condition={"chosen_has_fragile": True}),
+               F.dmg(1)])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    # 无破甲：1 伤、进墓地
+    play(g, 0, cid, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].health == 3           # 4-1
+    assert pa.orb == 9                           # 瞬发免费
+    assert not any(c.id == cid for c in pa.hand)
+    assert sum(c.id == cid for c in pa.graveyard) == 1
+    # 有破甲 2：回手 + 伤害 (1+2 破甲加成)+1 = 4，破甲消耗
+    pb.shikigami[1].shield = -2
+    play(g, 0, cid, target=Ref(player=1, shikigami=1))
+    assert pb.shikigami[1].health == 2           # 6 - (1+2) - 1
+    assert pb.shikigami[1].shield == 0           # 破甲受伤即消耗
+    assert pa.orb == 8                           # 第二张非瞬发免费：照付 1 火
+    assert sum(c.id == cid for c in pa.hand) == 1        # 条件回手：回手而非入墓
+    assert sum(c.id == cid for c in pa.graveyard) == 1   # 墓地仍只有第一张
+
+
 def test_power_override_turn_scope(db, make_game):
     """闪烁型"本回合力量变为 0"：scope=turn 的力量覆写在任一回合开始时解除
     （半回合作用域，min_health_turn 先例）。"""

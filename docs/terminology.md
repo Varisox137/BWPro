@@ -319,6 +319,9 @@
 | 直接获胜 | `win_game`（动作） | 目标牌手获得本局游戏胜利（target=self=控制者胜）：`_set_pending_end(loser=对方)` 走待结束流程，非气绝判负（这把算我赢增强变后） | ✅ |
 | 逐次随机伤害 | `repeat_random_damage`（动作） | 逐次在 pool 随机 1 名造成 amount 点伤害、插入结算、每次重新求值目标池（无羁风弹；pool="all_other_shikigami"=双方除来源外未气绝式神）：stop_on_defeat=True 任一式神气绝即停，否则满 max 次即停 | ✅ |
 | 再次使用本牌 | `reuse_card`（动作） | 法术→凭空自动使用管线同目标重结算（实例标记 `_reused` 防自循环，恰好两次——叠风斩）；战斗牌→战斗流程重走（关键字/临时触发重新绑定，自动使用不耗火——转运）；照常 emit on_card_played（triggered=auto，可再触发"使用牌时"能力） | ✅ |
+| 复仇复制 | `echo_event_card`（动作） | 读事件中被用的卡牌，以**监听控制者**身份凭空复制使用（不耗火、不做等级/目标合法性/[条件]检查；目标强制=施法者自身在场式神，中立牌/施法者离场/无 choose 目标则无目标使用）；用后进墓地，照常 emit on_card_played（play_from=void、triggered=auto、带 chosen 载荷）；帷幕再校验与一切卡牌使用一致（记仇；on_card_played payload 新增 `chosen` 字段配套） | ✅ |
+| 条件回手 | `bounce_self`（动作） | 此牌结算完毕在墓地时移回手牌（与 rebound 同走 move_card 统一路径，超上限按爆牌转墓地）；配 step 级条件即"条件回手"（蛇行击 20191212"目标有破甲则移回手上"） | ✅ |
+| 选择目标归属/破甲条件 | `chosen_side` / `chosen_has_fragile`（条件键） | {chosen_side: friendly\|enemy\|any}=**事件** payload chosen 恰好一个且为式神、归属匹配（记仇"对单个己方式神使用的法术"）；{chosen_has_fragile: bool}=Step 级条件：卡牌选择目标（chosen）中角色有/无破甲（chosen_stunned 先例） | ✅ |
 | 牌手费用修正 | `cost_delta_player`（动作）/ `cost_mods`（ext 键） | 目标牌手的手牌费用 +amount（scope="next_turn"=下个回合，按回合号记账过期，仿 immunities；`_effective_cost` 读取——[不消耗鬼火]与回合内首张[瞬发]已归零不受影响，非手牌使用不走费用求值不受影响；幸运兔兔）；**`side="opponent"` 改作用于敌方牌手、`card_flag`（如 "revealed"）仅命中带对应实例标志的手牌、`scope="form"` 绑定来源形态、形态离场移除（心灵迷宫"敌方使用已展示的手牌额外耗 1 火"，仍在 cost>0 门内——瞬发/不耗火全免）** | ✅ |
 | 倒计时力量复合 | `countdown_power_boost`（动作） | 山兔能力原子语义"倒计时-1 并 +1 力量"同段效果：气绝者只减复活倒计时（被本次归零复活者不追加力量）；存活者（含无倒计时能力的）倒计时 -1（归零走 `_countdown_zero`）并 +1 力量（perm=False 默认临时） | ✅ |
 | 随机使用形态 | `random_play_form`（动作） | 目标各随机使用 1 张等级 ≤ 其当前等级的专属形态牌（凭空自动使用：`_play_form_card` + on_card_played(triggered=auto)，play_condition 同检）；无可用形态/气绝者跳过（鸿运当头） | ✅ |

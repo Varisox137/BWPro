@@ -263,7 +263,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | on_turn_start {player: opponent, orb_ge: 1} → generate 明灯（敌方回合开始时有剩余鬼火） |
 | 01 明灯 | ✅ | [瞬发] gain_orb 1；凤凰火/青行灯协战与青行灯基础能力的产物 |
-| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（1+剩余鬼火，0 火仍执行基础 1 次），末次后清空鬼火续块；联机 sanitize 对非选择方抹除 options；text 按 raw 无"洗牌库"，引擎 deck_top_pick 仍每次选择后固定洗牌——洗牌行为差异待确认见 questions.md 待确认8 |
+| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（1+剩余鬼火，0 火仍执行基础 1 次），末次后清空鬼火续块；联机 sanitize 对非选择方抹除 options；text 按 raw 无"洗牌库"——调度/牌库拿牌隐含检索洗牌（维护者答复(8)），引擎 deck_top_pick 固定洗牌为正确行为 |
 | 03 幽光之火 | ✅ | 形态 4/5：20191212 触发改"对敌方牌手造成战斗伤害时"——on_player_damaged {player: opponent, source_shikigami: self, kind: combat} → generate 明灯 |
 | 04 百闻一得 | ✅ | discard card_id 精确弃明灯（无明灯不弃、升级仍执行）；friendly_lowest_level 新池（并列全入池由使用者选择，答复 7）；level_up 新 op 不走升级次数，满 3 级 overflow_draw 改抽 1 |
 | 05 百物语之火 | ✅ | 形态 4/5：on_turn_end {player: self} → gain_orb 1 |
@@ -336,7 +336,7 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 伪关键字 damage_to_fragile 永久通道（ShikigamiDef.keywords → perm_keywords，死亡不清）：伤害事件生成点对无破甲受伤者全额转化为等量破甲（不再视为伤害；与毒蚀同位置，converted 防循环） |
-| 01 蛇行击 | ✅ | [瞬发][弹回]——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并）；暂保持 20251212 未回退——20191212 增强"破甲则回手+1伤"缺 chosen_has_fragile 与条件回手机制，见 questions.md 待确认6 |
+| 01 蛇行击 | ✅ | 双版本：20191212（best）= [瞬发] 1 伤 + 条件式增强（chosen_has_fragile 新 Step 条件键：目标有破甲 → bounce_self 条件回手 + 伤害再 +1）；20251212 = [瞬发][弹回] 2 伤——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并） |
 | 02 淬毒 | ✅ | 所有敌方角色 2（经伤害转化：无破甲者转为 2 破甲） |
 | 03 剧毒之盾 | ✅ | 2 护甲 + delay_grant scope=turn bind=chosen（"本回合获得'使受到它战斗伤害的式神获得3破甲'"）；[响应] 挂"己方战斗区式神被攻击时"自动对其使用 |
 | 04 氤氲蛇姬 | ✅ | 20191212 重写：形态 4/6，敌方回合结束时敌方战斗区式神 +2 破甲（on_turn_end {player: opponent} → gain_shield kind=fragile enemy_combat） |
@@ -495,9 +495,9 @@
 | 01 读心 | ✅ | [瞬发] 展示被选敌方式神在敌方手牌中的所有专属牌（reveal mode=shikigami + shikigami=chosen；协战牌归属按 _card_belongs_to 统一口径） |
 | 02 棒球炸弹 | ✅ | 20191212 基础伤害 3→2（{base:2, per:2}）：2 伤 + 2×被选式神已展示专属牌数（动态数值 enemy_revealed_count: shikigami_of_chosen，per 倍率） |
 | 03 模仿 | ✅ | 战斗牌[增强]：敌方每有一张已展示法术牌 +1 护甲、每有一张已展示其他牌 +1 力量（enemy_revealed_count: spell/other） |
-| 04 强索 | ✅ | [瞬发] 调度敌方已展示的手牌 + 抽 1（mulligan_hand target_side=opponent + only_revealed + auto：按 hand_seq 前 3 张自动调度）；20191212 text 无"并洗牌库"——shuffle:false 不洗牌（调度是否隐含洗牌待确认，见 questions.md 待确认7） |
+| 04 强索 | ✅ | [瞬发] 调度敌方已展示的手牌 + 抽 1（mulligan_hand target_side=opponent + only_revealed + auto：按 hand_seq 前 3 张自动调度）；text 按 raw 无"并洗牌库"——调度隐含检索洗牌（维护者答复(7)），shuffle:true 照常 |
 | 05 灵视 | ✅ | 形态 5/5；敌方牌手使用已展示的手牌时对他造成 2 伤（on_card_played 载荷 card_revealed 条件）；20191212 去[吸血]、改"你恢复 2 点生命"（heal 2 self_player） |
-| 06 记仇 | ✅ | 消灭一个本回合造成过伤害的敌方式神（TargetSpec 过滤键 dealt_damage_turn——伤害结算点记账、回合开始清除）；[响应] 受到敌方式神伤害时自动对伤害来源使用（response 覆盖块 + context source）；暂保持 20251212 未回退——20191212"反弹敌方法术"机制未实现，见 questions.md 待确认5 |
+| 06 记仇 | ✅ | 双版本：20191212（best）= "复仇复制"——delay_grant 一次性监听（跨回合留存）：下一次任意玩家对单个己方式神使用法术（chosen_side 新条件键，on_card_played 新增 chosen 载荷）→ echo_event_card 以觉方身份凭空复制、目标强制=施法者自身式神、不做合法性检查（维护者答复(5)）；20251212 = 消灭一个本回合造成过伤害的敌方式神（TargetSpec 过滤键 dealt_damage_turn——伤害结算点记账、回合开始清除）；[响应] 受到敌方式神伤害时自动对伤害来源使用（response 覆盖块 + context source） |
 | 07 心灵迷宫 | ✅ | 形态 5/5；敌方使用已展示的手牌额外耗 1 鬼火（cost_delta_player side=opponent + card_flag=revealed + scope=form——形态结附期间持续、离场移除；仍在 cost>0 门内，[瞬发]/[不消耗鬼火]全免）；增强：敌方手牌全部已展示时得[瞬发]（conditional_keywords 算子 enemy_hand_all_revealed） |
 | 08 觉醒·觉 | ✅ | +1/+1；展示敌方所有手牌（reveal mode=all 补存量）；觉醒被动①：每当一张牌进入敌方手牌时将其展示（入手统一钩子 on_card_enter_hand + reveal mode=event）；被动②：敌方牌手使用已展示的手牌时觉 +1/+1 |
 
@@ -560,6 +560,9 @@
     机制保持——响应挂 {attacker_side: enemy}，响应插入移入战斗区、无目标战斗重读目标；
     追猎/直击类有目标战斗中可响应（付火/+0/+4/移入照常）但不转移攻击目标
     （第十三阶段定案）；text 按 raw 逐字。
+21. **调度/牌库拿牌隐含检索洗牌**：强索、青灯夜谈的 20191212 文本无"洗牌库"字样，
+    但调度与非抽牌的牌库拿牌都隐含检索（维护者答复(7)(8)，早期文本未显式写明）——
+    text 按 raw 逐字，行为照常洗牌（与森佑灵引出入 14 同一定案）。
 
 ## 协战牌 id 设计（已决议）
 

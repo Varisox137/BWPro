@@ -285,3 +285,18 @@ def test_cost_delta_form_scope(db, make_game):
     assert g._effective_cost(pb, db.cards[rev.id], rev) == 2
     g._destroy_form(pa, 0, "effect")             # 形态离场：修正移除
     assert g._effective_cost(pb, db.cards[rev.id], rev) == 1
+
+
+def test_forced_mulligan_shuffles_deck(gdb):
+    """强索（10010804 数据端对端）：调度对手已展示的手牌（前 3 张）后洗牌库——
+    调度与非抽牌的牌库拿牌隐含检索（shuffle 为 true）。"""
+    g = F.mk_game(gdb, team=[100108, 100112, 100114, 100102])  # 青岚+紫岩
+    pa, pb = F.battle_setup(g, {0: 2})          # 觉 2 级（强索 level 2）
+    pb.hand.clear()
+    cs = [give(g, 1, 10010100 + n) for n in (1, 2, 3)]
+    for c in cs:
+        c.mods["revealed"] = True
+    log_mark = len(g.state.log)
+    play(g, 0, 10010804)
+    assert all(c in pb.deck for c in cs)        # 3 张已展示手牌被强制调度回库
+    assert any("洗了牌库" in l for l in g.state.log[log_mark:])
