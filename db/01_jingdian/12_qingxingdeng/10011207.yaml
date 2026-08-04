@@ -1,9 +1,9 @@
 id: 10011207
 name: 吸魂灯
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SSR
       level: 3
@@ -13,5 +13,5 @@ versions:
           # 重复 1 次，0 火仍执行基础 1 次）；投射目标每次重复独立求值（敌方战斗区式神，
           # 空则敌方牌手）；末次后一次性清空鬼火（2→0 不经过 1）
           - {op: repeat, count: {orb: true}, clear_orb: true,
-             steps: [{op: damage, amount: 5, target: {kind: all, pool: projectile}}]}
-      text: "[投射]：{造成5点伤害}。你每有1点鬼火便重复一次。清空你的鬼火。"
+             steps: [{op: damage, amount: 4, target: {kind: all, pool: projectile}}]}
+      text: "[投射]：{造成4点伤害}。你每有1点鬼火便重复一次。清空你的鬼火。"

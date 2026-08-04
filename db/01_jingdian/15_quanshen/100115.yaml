@@ -1,9 +1,20 @@
 id: 100115
 name: 犬神
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
+      faction: 红莲
+      power: 2
+      health: 5
+      ability:
+        # 犬神升级时，将一张'羁绊的价值'置入手牌（指令升级与 level_up op 两来源均触发）
+        when: on_upgrade
+        condition: {target_shikigami: self}
+        steps:
+          - {op: generate, card_id: 10011501}
+      text: "犬神升级时，将一张‘羁绊的价值’置入手牌。"
+    - date: 20200120
       faction: 红莲
       power: 2
       health: 5
@@ -13,4 +24,4 @@ versions:
         condition: {target_shikigami: self}
         steps:
           - {op: generate, card_id: 10011551}
-      text: "当犬神升级时，将一张'心身炼磨'置入手牌。"
+      text: "当犬神升级时，将一张‘心身炼磨’置入手牌。"

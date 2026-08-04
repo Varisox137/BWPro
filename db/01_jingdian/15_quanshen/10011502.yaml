@@ -1,14 +1,13 @@
 id: 10011502
 name: 心斩
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: R
       level: 1
       effects:
-        # +0/+2（战斗牌数值通道：仅 gain_shield；无卡面文本）
+        # +0/+2（战斗牌数值通道：仅 gain_shield；raw 无卡面文本）
         steps:
           - {op: gain_shield, amount: 2, target: {kind: self}}
-      text: ""

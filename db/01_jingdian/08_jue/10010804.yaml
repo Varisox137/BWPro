@@ -1,18 +1,18 @@
 id: 10010804
 name: 强索
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 2
       keywords: [fast]
       effects:
         steps:
-          # 调度敌方已展示的手牌并洗牌库（云游 10011802 mulligan_hand 先例；
+          # 调度对手已展示的手牌（云游 10011802 mulligan_hand 先例；
           # target_side/only_revealed/auto 扩展参数待引擎对齐）
           - {op: mulligan_hand, target_side: opponent, only_revealed: true, auto: true,
-             times: 3, shuffle: true}
+             times: 3, shuffle: false}
           - {op: draw, count: 1}
-      text: "[瞬发]。调度敌方已展示的手牌并洗牌库，抽一张牌。（3次调度次数）"
+      text: "[瞬发]。调度对手已展示的手牌，抽一张牌。（3次调度次数）"

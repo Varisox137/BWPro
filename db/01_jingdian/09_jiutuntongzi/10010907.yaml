@@ -1,30 +1,20 @@
 id: 10010907
-name: 觉醒·酒吞童子
+name: 百鬼夜行
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
-      subtype: awaken
-      awaken_power: 1   # +1/+3：永久身材增益，"觉醒后"延时时机之后授予
-      awaken_health: 3
-      rarity: SR
+      rarity: SSR
       level: 3
+      keywords: [fast]
       effects:
-        steps: []
-      abilities:
-        # [觉醒]：{[贯通]（觉醒时授予，复活重新授予——觉醒·山童先例）}
-        - when: on_awakened
-          condition: {target_shikigami: self}
-          steps:
-            - {op: grant_keyword, keyword: piercing, target: {kind: self}}
-        - when: on_shikigami_revived
-          condition: {shikigami_shikigami: self}
-          steps:
-            - {op: grant_keyword, keyword: piercing, target: {kind: self}}
-        # 每当酒吞童子受到伤害时，获得等量的力量（按次、量=该次伤害量，临时持续性）
-        - when: on_damage
-          condition: {victim_shikigami: self}
-          steps:
-            - {op: buff_power, amount: {event: amount}, target: {kind: self}}
-      text: "[觉醒]：{[贯通]。每当酒吞童子受到伤害时，获得等量的力量。}"
+        # X = 酒吞童子本回合所受伤害之和（ext["damage_taken_turn"]，伤害扣减生命处记账、
+        # 半回合作用域回合开始清除）；目标 = 双方所有其他式神（friendly_others 排除
+        # 来源酒吞 + enemy_shikigami 两段，答复4）
+        steps:
+          - {op: damage, amount: {ext: damage_taken_turn},
+             target: {kind: all, pool: friendly_others}}
+          - {op: damage, amount: {ext: damage_taken_turn},
+             target: {kind: all, pool: enemy_shikigami}}
+      text: "[瞬发]。对其他所有式神各造成X点伤害，X为酒吞童子本回合所受伤害之和。"

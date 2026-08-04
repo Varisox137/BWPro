@@ -1,23 +1,15 @@
 id: 10010905
-name: 无尽愤怒
+name: 神子
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: combat
+    - date: 20191212
+      card_type: form
       rarity: SR
-      level: 2
+      level: 3
+      form_power: 6
+      form_health: 8
+      keywords: [fast, unyielding]  # fast 卡牌级（瞬发）；unyielding 结附期间授予式神
       effects:
-        steps:
-          - {op: buff_power, amount: 2, target: {kind: self}}
-      triggers:
-        # 若本回合酒吞童子受到过己方伤害，此牌获得+2力量和+2护甲：
-        # 卡牌光环数值通道（scope=turn 清除）；turn_mark 门控本回合只登记一次
-        - when: on_damage
-          condition: {victim_shikigami: 100109, victim_side: friendly,
-                      source_side: friendly, turn_mark_not: wujin_fury}
-          steps:
-            - {op: turn_mark, key: wujin_fury}
-            - {op: card_aura, shikigami: 100109, card_id: 10010905, power: 2, shield: 2,
-               scope: turn}
-      text: 若本回合酒吞童子受到过己方伤害，此牌获得+2力量和+2护甲。
+        steps: []
+      text: "[瞬发]，[不屈]。"

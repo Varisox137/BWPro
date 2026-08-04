@@ -1,9 +1,9 @@
 id: 10010902
 name: 狂气
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: R
       level: 1
@@ -11,4 +11,4 @@ versions:
       effects:
         steps:
           - {op: buff_power, amount: 1, target: {kind: self}}
-      text: 本次战斗获得[不屈]。
+      text: "[不屈]"

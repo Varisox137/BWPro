@@ -1,9 +1,9 @@
 id: 100108
 name: 觉
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212  # 发布日期
+    - date: 20191212  # 发布日期
       faction: 青岚
       power: 2
       health: 5

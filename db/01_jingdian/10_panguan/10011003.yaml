@@ -1,9 +1,9 @@
 id: 10011003
 name: 生死无常
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 2
@@ -20,4 +20,4 @@ versions:
         steps:
           - {op: destroy, target: {kind: all, pool: friendly_combat}}
           - {op: destroy, target: {kind: all, pool: enemy_combat}}
-      text: "消灭己方战斗区的式神，然后消灭敌方战斗区的式神。[响应]：{当己方战斗区式神被攻击时，自动使用。}"
+      text: "消灭己方战斗区的式神，然后消灭敌方战斗区的式神。[响应]：{当己方战斗区式神被攻击时，自动使用此牌。}"

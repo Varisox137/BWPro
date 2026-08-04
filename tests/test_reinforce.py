@@ -556,7 +556,7 @@ def test_play_sub_side_bond_generate(make_game):
     assert not any(c.id == KGHQ for c in pa.hand)
     assert any(c.id == KGHQ for c in pa.zones["exiled"])
     jt = pa.shikigami[1]
-    assert jt.health == 3                     # 6 - 3 自伤
+    assert jt.health == 2                     # 5 - 3 自伤
     assert jt.shield == 3                     # 等量护甲（自伤后获得，不被消耗）
     assert jt.temp_power == 1                 # 基础能力：受伤 +1 力量
     assert any(c.id == 10010301 for c in pa.hand)   # 鬼之手（茨木 1 级唯一战斗牌）

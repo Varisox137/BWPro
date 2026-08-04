@@ -1,9 +1,9 @@
 id: 10011203
 name: 幽光之火
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 1
@@ -12,9 +12,10 @@ versions:
       effects:
         steps: []
       abilities:
-        # "当青行灯攻击时"：发起攻击（on_before_assault，出击/战斗牌/效果发起的战斗均算）
-        - when: on_before_assault
-          condition: {attacker_shikigami: self}
+        # "当青行灯对敌方牌手造成战斗伤害时"：on_player_damaged（牌手受伤后）+
+        # kind=combat 限战斗伤害（判官 10011006 同口径先例）
+        - when: on_player_damaged
+          condition: {player: opponent, source_shikigami: self, kind: combat}
           steps:
             - {op: generate, card_id: 10011201, zone: hand}
-      text: 当青行灯攻击时，获得一张‘明灯’。
+      text: 当青行灯对敌方牌手造成战斗伤害时，获得一张‘明灯’。

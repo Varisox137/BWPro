@@ -65,8 +65,8 @@ CHUQIAN = 10011301      # 出千
 LINGSHANG = 10011302    # 岭上开花
 JIULIAN = 10011303      # 九莲宝灯
 LIZHI = 10011304        # 立直
-MENQIAN = 10011305      # 门前清
-TOUZI_ZHADAN = 10011306  # 骰子炸弹
+MENQIAN = 10011306      # 门前清
+TOUZI_ZHADAN = 10011305  # 骰子炸弹
 ZHUANYUN = 10011307     # 转运
 QWQC_AWAKEN = 10011308  # 觉醒·青蛙瓷器
 
@@ -146,21 +146,23 @@ def test_force_x1_if_form_guarantees_success(gdb, monkeypatch):
 
 
 def test_luck_block_gates_form_ability(gdb, monkeypatch):
-    """门前清（EffectBlock.luck 触发式门控）：出击时运势4 成功获得 2 护甲，失败不得。"""
+    """门前清（EffectBlock.luck 触发式门控）：被攻击时运势4 成功获得 2 护甲，失败不得。"""
     g, pa, pb = _game(gdb, QWQC_TEAM, levels={IDX: 2})
     play(g, 0, MENQIAN)                        # 形态 2/9
     s = pa.shikigami[IDX]
-    move(g, 1, 1)                              # B 白狼（3/4）入战斗区
+    move(g, 0, IDX)                            # 青蛙瓷器驻战斗区
+    pass_turns(g, 1)                           # B 回合
     _force_dice(monkeypatch, g, [4])
-    g.apply({"op": "assault", "index": IDX})
-    assert s.shield == 0 and s.health == 8     # 2 护甲被反击 3 消耗，扣 1
+    g.apply({"op": "assault", "index": 1})     # B 白狼（3 攻）出击
+    assert s.shield == 0 and s.health == 8     # 2 护甲挡下部分攻击，扣 1
     g2, pa2, pb2 = _game(gdb, QWQC_TEAM, levels={IDX: 2})
     play(g2, 0, MENQIAN)
     s2 = pa2.shikigami[IDX]
-    move(g2, 1, 1)
+    move(g2, 0, IDX)
+    pass_turns(g2, 1)
     _force_dice(monkeypatch, g2, [1])
-    g2.apply({"op": "assault", "index": IDX})
-    assert s2.shield == 0 and s2.health == 6   # 失败：无护甲，吃满反击 3
+    g2.apply({"op": "assault", "index": 1})
+    assert s2.shield == 0 and s2.health == 6   # 失败：无护甲，吃满攻击 3
 
 
 def test_luck_dice_ctx_amount(gdb, monkeypatch):

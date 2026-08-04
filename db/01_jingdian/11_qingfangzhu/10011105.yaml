@@ -1,9 +1,9 @@
 id: 10011105
 name: 舍生
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SSR
       level: 2
@@ -21,4 +21,4 @@ versions:
         steps:
           - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
           - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}
-      text: "[瞬发]。消灭青坊主，本回合你免疫所有伤害。[响应]：{当你将受到致命伤害时，自动使用。}"
+      text: "[瞬发]。牺牲青坊主，本回合你免疫所有伤害。[响应]：{当你将受到致命伤害时，自动使用此牌。}"

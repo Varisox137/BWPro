@@ -253,7 +253,7 @@ KEYWORD_CN = {  # 名称以 docs/terminology.md 为准；未收录的显示原�
     "piercing": "贯通", "pierce": "穿刺", "remote": "远程", "unyielding": "不屈",
     "haste": "迅捷", "barrier": "屏障", "enraged": "激怒",
 }
-_KEYWORD_HIDDEN = {"keep_attack_buffs"}  # 引擎级关键字，卡面不出现
+_KEYWORD_HIDDEN = {"keep_attack_buffs", "pierce_armor"}  # 引擎级关键字，卡面不出现
 
 
 def _kw_labels(kws) -> list[str]:

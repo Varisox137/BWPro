@@ -858,7 +858,7 @@ def test_bond_self_damage_triggers_ally_ability(gdb):
     pa.shikigami[1].level = 1                  # 酒吞在场（未气绝）
     play(g, 0, 10010351)                       # 地狱豪焰（token 直接发牌打出）
     jt = pa.shikigami[1]
-    assert jt.health == 5                      # 6 - 1 自伤
+    assert jt.health == 4                      # 5 - 1 自伤
     assert jt.temp_power == 1                  # 酒吞能力：受伤 +1 力量
     assert pa.shikigami[0].shield == 2         # 茨木 +2 护甲
 
@@ -875,12 +875,12 @@ def _set_health(g, player, index, value):
 
 
 def test_min_health_clamp_turn_scope(real_game):
-    """狂啸（10010904）主动使用：本回合酒吞童子生命不会降到 1 以下——超额伤害
+    """狂啸（10010908）主动使用：本回合酒吞童子生命不会降到 1 以下——超额伤害
     钳制为 0（不触发受伤能力）；半回合作用域，回合开始清除。"""
     g = real_game(JT_TEAM)
-    pa, pb = F.battle_setup(g, {0: 2})
+    pa, pb = F.battle_setup(g, {0: 3})
     jt = pa.shikigami[0]
-    play(g, 0, 10010904)                       # 狂啸：min_health_turn 置位
+    play(g, 0, 10010908)                       # 狂啸：min_health_turn 置位
     _set_health(g, 0, 0, 2)
     play(g, 0, 10010901)                       # 醉里乾坤：-1 → 1（触发能力 +1）
     assert jt.health == 1 and jt.temp_power == 1
@@ -895,64 +895,63 @@ def test_min_health_clamp_response(real_game):
     本回合后续伤害继续被钳制为 0。"""
     g = real_game(JT_TEAM)
     pa, pb = F.battle_setup(g)
-    pb.shikigami[0].level = 2                  # 响应等级要求（狂啸 2 级）
-    give(g, 1, 10010904)
+    pb.shikigami[0].level = 3                  # 响应等级要求（狂啸 3 级）
+    give(g, 1, 10010908)
     pb.orb = 1                                 # 响应需支付 1 鬼火
     _set_health(g, 1, 0, 3)
     jb = pb.shikigami[0]
     pa.shikigami[3].level = 2                  # 鸢击 2 级
     play(g, 0, 10000203, target=Ref(player=1, shikigami=0))  # 鸢击 4 → 钳制 2
     assert jb.health == 1
-    assert any(c.id == 10010904 for c in pb.graveyard)
+    assert any(c.id == 10010908 for c in pb.graveyard)
     play(g, 0, 10000203, target=Ref(player=1, shikigami=0))  # 第二次：钳制 0
     assert jb.health == 1
 
 
 def test_fury_first_self_damage_aura(real_game):
-    """无尽愤怒（10010905）：本回合酒吞受过己方伤害后此牌 +2 力量/+2 护甲
+    """无尽愤怒（10010904）：本回合酒吞受过己方伤害后此牌 +2 力量
     （卡牌光环数值通道）；对照组无自伤则只有牌面 +2 战力。"""
     g = real_game(JT_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})
     jt = pa.shikigami[0]
     play(g, 0, 10010901)                       # 醉里乾坤：自伤 1（能力 +1）
-    play(g, 0, 10010905)                       # 无尽愤怒：2+1 攻 + 战力 2+2=4 → 7
+    play(g, 0, 10010904)                       # 无尽愤怒：2+1 攻 + 战力 2+2=4 → 7
     assert pb.health == 30 - 7
-    assert jt.shield == 2                      # 光环 +2 护甲（战斗后保留）
+    assert jt.shield == 0                      # 光环只加力量，无护甲
     # 对照：无自伤 → 无光环
     g2 = real_game(JT_TEAM)
     pa2, pb2 = F.battle_setup(g2, {0: 2})
-    play(g2, 0, 10010905)                      # 2 攻 + 战力 2 → 4
+    play(g2, 0, 10010904)                      # 2 攻 + 战力 2 → 4
     assert pb2.health == 30 - 4
     assert pa2.shikigami[0].shield == 0
 
 
-def test_awaken_equal_power_and_piercing(real_game):
-    """觉醒·酒吞童子（10010907）：+1/+3；受伤改为获得等量力量（鬼王进场自伤 4
-    → +4）；[贯通]由觉醒授予。"""
+def test_awaken_equal_power_per_point(real_game):
+    """觉醒·酒吞童子（10010906）：+1/+3；受伤改为每受 1 点伤害获得 1 力量
+    （鬼王进场自伤 4 → +4）。"""
     g = real_game(JT_TEAM)
     pa, pb = F.battle_setup(g, {0: 3})
     jt = pa.shikigami[0]
-    play(g, 0, 10010907)                       # 觉醒：+1/+3 → 3/9
-    assert (jt.eff_power, jt.max_health) == (3, 9)
-    assert "piercing" in jt.keywords
-    play(g, 0, 10010903)                       # 鬼王（形态 6/10）：进场回满新上限后自伤 4
+    play(g, 0, 10010906)                       # 觉醒：+1/+3 → 3/8
+    assert (jt.eff_power, jt.max_health) == (3, 8)
+    play(g, 0, 10010903)                       # 鬼王（形态 5/10）：进场回满新上限后自伤 4
     assert jt.max_health == 13                 # 形态 10 + 觉醒永久 +3
     assert jt.health == 9                      # 13 - 4
     assert jt.temp_power == 4                  # 觉醒能力：获得等量力量（非 +1）
 
 
 def test_ext_damage_taken_turn_aoe(real_game):
-    """百鬼夜行（10010908）：X = 本回合酒吞所受伤害之和，对双方所有其他式神
+    """百鬼夜行（10010907）：X = 本回合酒吞所受伤害之和，对双方所有其他式神
     各造成 X（friendly_others + enemy_shikigami 两段，酒吞自身除外）。"""
     g = real_game(JT_TEAM)
     pa, pb = F.battle_setup(g, {0: 3, 1: 1, 2: 1, 3: 1})  # A 全员在场才进 friendly_others 池
     jt = pa.shikigami[0]
     play(g, 0, 10010901)                       # 醉里乾坤：自伤 1 → X=1
     play(g, 0, 10010901)                       # 再自伤 1 → X=2
-    play(g, 0, 10010908)                       # 百鬼夜行：全体其他 -2
-    assert jt.health == 4                      # 6 - 1 - 1，百鬼不打自己
+    play(g, 0, 10010907)                       # 百鬼夜行：全体其他 -2
+    assert jt.health == 3                      # 5 - 1 - 1，百鬼不打自己
     assert [s.health for s in pa.shikigami[1:]] == [2, 2, 3]   # 茨木4/纸人4/天邪鬼5
-    assert [s.health for s in pb.shikigami] == [4, 2, 2, 3]    # 全员 -2
+    assert [s.health for s in pb.shikigami] == [3, 2, 2, 3]    # 全员 -2
 
 
 def test_bond_generate_exact_level(real_game):
@@ -962,7 +961,7 @@ def test_bond_generate_exact_level(real_game):
     pa, pb = F.battle_setup(g, {0: 1, 1: 1})
     jt = pa.shikigami[0]
     play(g, 0, 10010951)                       # 醉酒当歌（战斗牌，自伤 3 → 能力 +1）
-    assert jt.health == 3
+    assert jt.health == 2
     assert jt.shield == 3
     assert jt.temp_power == 1                  # 基础能力：受伤 +1
     assert any(c.id in (10010301, 10010304) for c in pa.hand)   # 鬼之手/黑焰之手

@@ -1,9 +1,9 @@
 id: 10010803
 name: 模仿
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: R
       level: 1
@@ -13,4 +13,4 @@ versions:
         steps:
           - {op: gain_shield, amount: {enemy_revealed_count: spell}, target: {kind: self}}
           - {op: buff_power, amount: {enemy_revealed_count: other}, target: {kind: self}}
-      text: "[增强]：{敌方每有一张已展示的法术牌，此牌便获得+1护甲。每有一张已展示的其他牌，便获得+1力量。}"
+      text: "[增强]：{对手每有一张已展示的法术牌，此牌便获得+1护甲。每有一张已展示的其他牌，便获得+1力量。}"

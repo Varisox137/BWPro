@@ -1,9 +1,9 @@
 id: 10011304
 name: 立直
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SR
       level: 1
@@ -21,4 +21,4 @@ versions:
             force_x1_if: {shikigami_has_form: 100113}
             then:
               - {op: grant_immunity, target: {kind: self}, scope: turn}
-      text: "[运势4]：{免疫战斗伤害}。若青蛙瓷器有形态，本次运势判定必定成功。[响应]：{当青蛙瓷器被攻击时，自动使用。}"
+      text: "[运势4]：{免疫战斗伤害}。若青蛙瓷器结附形态，本次运势判定必定成功。[响应]：{当青蛙瓷器被攻击时，自动使用此牌。}"

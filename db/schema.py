@@ -36,6 +36,8 @@ KEYWORDS = frozenset({
     "fast", "trigger",          # 瞬发 / 响应（卡牌级）
     "combo", "initiative",      # 连击 / 先攻
     "piercing", "pierce",       # 贯通 / 穿刺
+    "pierce_armor",             # 穿刺变体（伪关键字）：造成伤害前仅移除受伤者护甲、不动屏障
+    #                             （碎岩 20191212；卡面为描述文本，不出现括号关键字）
     "remote",                   # 远程
     "unyielding", "haste",      # 不屈 / 迅捷
     "barrier",                  # 屏障

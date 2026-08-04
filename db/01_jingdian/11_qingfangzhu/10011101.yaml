@@ -1,9 +1,9 @@
 id: 10011101
 name: 佛印
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1
@@ -12,4 +12,4 @@ versions:
         steps:
           - {op: heal, amount: 4, target: {kind: all, pool: self_player}}
           - {op: heal, amount: 4, target: {kind: all, pool: enemy_player}}
-      text: "[瞬发]。为双方牌手恢复4生命。"
+      text: "[瞬发]。为双方牌手恢复4点生命。"

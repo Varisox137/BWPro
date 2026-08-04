@@ -1,9 +1,9 @@
 id: 100113
 name: 青蛙瓷器
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 2
       health: 6

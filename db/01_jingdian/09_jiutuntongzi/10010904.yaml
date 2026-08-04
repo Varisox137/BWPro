@@ -1,25 +1,23 @@
 id: 10010904
-name: 狂啸
+name: 无尽愤怒
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      rarity: R
+    - date: 20191212
+      card_type: combat
+      rarity: SR
       level: 2
-      keywords: [trigger]
       effects:
-        # 本回合酒吞童子生命不会降到 1 以下：ext["min_health_turn"] 置位
-        # （半回合作用域，回合开始清除；扣减生命处钳制）
         steps:
-          - {op: bump_ext, key: min_health_turn,
-             target: {kind: all, pool: friendly_shikigami, shikigami: 100109}}
-      response:
-        # [响应]：{当酒吞童子将受到伤害时，自动使用}——挂伤害开始时批次（参照
-        # 穿刺"造成伤害前"）；主动/响应效果同构，响应走覆盖块挂响应时机
-        when: on_damage_start
-        condition: {victim_shikigami: 100109, victim_side: friendly}
-        steps:
-          - {op: bump_ext, key: min_health_turn,
-             target: {kind: all, pool: friendly_shikigami, shikigami: 100109}}
-      text: "本回合酒吞童子生命不会降到1以下。[响应]：{当酒吞童子将受到伤害时，自动使用。}"
+          - {op: buff_power, amount: 2, target: {kind: self}}
+      triggers:
+        # 若本回合酒吞童子受到过己方伤害，此牌获得+2力量：
+        # 卡牌光环数值通道（scope=turn 清除）；turn_mark 门控本回合只登记一次
+        - when: on_damage
+          condition: {victim_shikigami: 100109, victim_side: friendly,
+                      source_side: friendly, turn_mark_not: wujin_fury}
+          steps:
+            - {op: turn_mark, key: wujin_fury}
+            - {op: card_aura, shikigami: 100109, card_id: 10010904, power: 2,
+               scope: turn}
+      text: 若本回合酒吞童子受到过己方伤害，此牌获得+2力量。

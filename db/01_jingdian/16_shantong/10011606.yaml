@@ -1,13 +1,12 @@
 id: 10011606
 name: 觉醒·山童
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
       awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-      awaken_health: 1
       rarity: SSR
       level: 2
       effects:

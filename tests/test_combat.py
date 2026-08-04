@@ -244,6 +244,23 @@ def test_pierce_strips_despite_immunity(db, make_game):
     assert b.health == 4  # 免疫：未受伤
 
 
+def test_pierce_armor_strips_shield_keeps_barrier(db, make_game):
+    """仅护甲穿刺（碎岩底层）：造成伤害前只移除受伤者护甲、不动屏障——
+    屏障仍在批次 3 正常抵消本次伤害（抵消后一次性消耗）。"""
+    g = make_game()
+    move(g, 1, 0)
+    b = g.state.players[1].shikigami[0]
+    b.shield = 3
+    b.one_shot_keywords.append("barrier")
+    a = g.state.players[0].shikigami[0]
+    a.keywords.append("pierce_armor")
+    g.apply({"op": "assault", "index": 0})
+    assert b.shield == 0
+    assert b.health == 4  # 屏障未被移除：本次攻击伤害被抵消
+    assert "barrier" not in b.one_shot_keywords  # 屏障一次性：抵消后消耗
+    assert a.health == 1  # 反击照常
+
+
 def test_remote_no_counter_no_move(db, make_game):
     """远程：不受反击伤害，且不进入战斗区。"""
     g = make_game()

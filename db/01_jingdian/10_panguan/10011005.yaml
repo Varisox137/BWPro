@@ -1,27 +1,23 @@
 id: 10011005
 name: 觉醒·判官
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
       awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予
       awaken_health: 1
       rarity: SR
       level: 2
-      target: {kind: choose, pool: enemy_shikigami}
       effects:
-        # 使一个敌方式神降低2力量与1生命（同墨笔夺魂）
-        steps:
-          - {op: buff_power, amount: -2}
-          - {op: buff_health, amount: -1}
+        steps: []
       abilities:
         # [觉醒]：当你消灭一个式神时（来源为己方任意式神，比基础能力宽），
-        # 对敌方牌手造成1点伤害且你恢复1生命
+        # 对敌方牌手造成1点伤害且你恢复1点生命
         - when: on_shikigami_defeated
           condition: {victim_kind: shikigami, source_side: friendly}
           steps:
             - {op: damage, amount: 1, target: {kind: all, pool: enemy_player}}
             - {op: heal, amount: 1, target: {kind: all, pool: self_player}}
-      text: "使一个敌方式神降低2力量与1生命。[觉醒]：{当你消灭一个式神时，对敌方牌手造成1点伤害且你恢复1生命。}"
+      text: "[觉醒]：{当你消灭一个式神时，对敌方牌手造成1点伤害且你恢复1点生命。}"

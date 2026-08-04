@@ -206,10 +206,10 @@
 | 基础能力 | ✅ | 先天[贯通]：ShikigamiDef.keywords → perm_keywords（永久类别，气绝不清除） |
 | 01 鲁莽 | ✅ | 己方回合开始 launch_attack 自动攻击（不耗火/次数；气绝/未在场空操作） |
 | 02 怪力 | ✅ | 永久 +1 力量按常规效果步执行（战斗牌流程不再误提取为本次战斗战力） |
-| 03 怒吼 | ✅ | 自身永久 +1、其他己方式神临时 +1（分层） |
-| 04 笨拙 | ✅ | power_override：敌方回合力量覆写为 0（覆写全部加成层），己方回合开始解除 |
-| 05 碎岩 | ✅ | +2/+2 [穿刺]（批次 0 移除目标全部护甲/屏障再结算） |
-| 06 觉醒·山童 | ✅ | [贯通]（牌面语义显式落地）+ grant_immunity scope=perm kind=effect from_side=enemy；复活重新授予 |
+| 03 怒吼 | ✅ | 全体己方式神临时 +1 力量（20191212：自身不再永久——raw 未标"永久"按默认临时，questions.md 待确认2） |
+| 04 笨拙 | ✅ | 双快照（20191212 形态 6/9 best / 20200120 形态 5/9）；power_override：敌方回合力量覆写为 0（覆写全部加成层），己方回合开始解除 |
+| 05 碎岩 | ✅ | +2/+2；20191212 去[穿刺]改伪关键字 pierce_armor——伤害事件批次 0 同穿刺时点处理，仅清零被攻击者正值护甲、不触屏障（terminology「穿刺」条登记） |
+| 06 觉醒·山童 | ✅ | +1/+0（20191212 去 +1 生命）；[贯通]（牌面语义显式落地）+ grant_immunity scope=perm kind=effect from_side=enemy；复活重新授予 |
 | 07 伺机 | ✅ | 响应挂 on_before_assault {victim_shikigami: 100116}；敌方回合光环 card_aura card_id 自指（"此牌"+2力量，turn=opponent）；counter_piercing 反击贯通 |
 | 08 崩山 | ✅ | {perm_power: self} 使用时快照各自加（先战斗区后准备区）；山童的贯通不传导本牌法术伤害（步骤不标 piercing） |
 
@@ -218,12 +218,12 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | on_after_assault {attacker_shikigami: self} → retreat（攻击后移回准备区；刃影叠岚羁绊联动已验证） |
-| 01 伞剑 | ✅ | 战力 +1；手牌触发式光环：on_after_assault {attacker_side: friendly, attacker_not_shikigami: 100106} → card_aura keywords [fast] scope=turn（其他己方式神攻击后本回合此牌瞬发） |
+| 01 伞剑 | ✅ | 力量 +1；手牌触发式光环：on_after_assault {attacker_side: friendly, attacker_not_shikigami: 100106} → card_aura keywords [fast] scope=turn（其他己方式神攻击后本回合此牌瞬发） |
 | 02 影翼 | ✅ | 形态 4/4：on_before_assault {attacker_shikigami: self} → buff_power +1（每次攻击前获得 1 力量，临时持续性） |
 | 03 丛云鹤舞 | ✅ | [直击]（keywords 授予通道） |
 | 04 金鸾 | ✅ | 形态 6/4；手牌触发式瞬发光环同伞剑 |
-| 05 偷袭 | ✅ | [响应]挂 on_shikigami_defeated {victim_side: enemy, in_combat: true, summon: false}（in_combat 为气绝事件 payload）；战力 +3；非"（被）攻击时"时机的响应战斗牌不插入当前战斗——按完整战斗流程发起新战斗（嵌套战斗，正常反击；rules.md 第二章备注） |
-| 06 天翔鹤斩 | ✅ | 战力 +3；target 扩展键 battle=true + optional=true：有未气绝敌方准备区式神时必须指定（有目标战斗，同追猎管线），否则可不带目标退化为普通战斗；[贯通]（开服版无战斗伤害免疫） |
+| 05 偷袭 | ✅ | [响应]挂 on_shikigami_defeated {victim_side: enemy, in_combat: true, summon: false}（in_combat 为气绝事件 payload）；力量 +3；非"（被）攻击时"时机的响应战斗牌不插入当前战斗——按完整战斗流程发起新战斗（嵌套战斗，正常反击；rules.md 第二章备注） |
+| 06 天翔鹤斩 | ✅ | 力量 +3；target 扩展键 battle=true + optional=true：有未气绝敌方准备区式神时必须指定（有目标战斗，同追猎管线），否则可不带目标退化为普通战斗；[贯通]（开服版无战斗伤害免疫） |
 | 07 慈乌稚子 | ✅ | 形态 8/4：其他己方式神攻击后姑获鸟获得[迅捷]（on_after_assault → grant_keyword haste，一次性消耗） |
 | 08 觉醒·姑获鸟 | ✅ | +2/+0；手牌瞬发光环同伞剑；[觉醒][远程]（on_awakened + on_shikigami_revived 双块 grant_keyword，山童先例；开服版无击杀追加攻击） |
 | 21 刃影鹤唳 | ✅ | 协战主牌（姑获鸟&妖刀姬）：options [10010651 鹤唳回风, 10012351 刃影叠岚]；构筑池双归属 |
@@ -247,13 +247,13 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | "你恢复生命时"口径 = 己方任意角色实际恢复（target_side friendly）；turn_mark 门控每回合合计一次 → random_damage 敌方角色 2×1 |
+| 基础能力 | ✅ | "你恢复生命时"口径 = 己方任意角色实际恢复（target_side friendly，挂治疗后 on_after_heal——仅实际恢复 > 0 触发）；20191212 去"每回合一次"门控 → random_damage 敌方角色 2×1 |
 | 01 佛印 | ✅ | [瞬发]；两条 heal step（self_player / enemy_player） |
 | 02 禅心 | ✅ | 形态 1/6：同口径 + turn_mark 门控 → draw 1 |
-| 03 慈悲 | ✅ | grant_keyword unyielding |
-| 04 佛光 | ✅ | heal 记录块内暂存 last_heal_targets → side_of_last_heal 新池（上一步治疗目标所属方的所有角色）恢复 3 |
+| 03 佛光 | ✅ | 已按 raw 与 04 互换：R 2 首段 choose any_character 奶 3 → side_of_last_heal 池（上一步治疗目标所属方的所有角色）恢复 3（heal 记录块内暂存 last_heal_targets） |
+| 04 慈悲 | ✅ | 已按 raw 与 03 互换（level 2）；grant_keyword unyielding |
 | 05 舍生 | ✅ | [瞬发][响应]；destroy 青坊主 + grant_immunity kind=all scope=turn（**牌手级免疫**新通道：PlayerState.immunities，按回合号过期）；响应挂 on_damage_start {victim_lethal: true} 新条件键（面板伤害 ≥ 当前生命，护甲计算前判定） |
-| 06 法界唯心 | ✅ | 形态 5/6，tags [heal_reversal]：引擎 heal() 前置检查——控制者对敌方的恢复改为等额伤害（不发出任何治疗事件，伤害事件照常）；进场恢复 4 选择敌方角色时同样被反转 |
+| 06 法界唯心 | ✅ | 形态 5/6，tags [heal_reversal]：引擎 heal() 前置检查——控制者对敌方的恢复改为等额伤害（不发出任何治疗事件，伤害事件照常）；20191212 去进场奶 4（只留恢复反转） |
 | 07 觉醒·青坊主 | ✅ | +0/+2；恢复 8 目标 = 你的牌手（答复 2）；觉醒替换（原文不含基础）：无门控，恢复时对所有敌人（enemy_character）1 伤 |
 | 08 轮回 | ✅ | set_health 新 op（非治疗非伤害，钳制 [1, max_health]）{enhance: true, base: 10}；增强计数 = on_before_assault 最终目标为你的牌手（含反击、无论是否受伤；以式神为目标不计；答复 8）；X=0 按原文仍可使用（变为 10） |
 
@@ -263,12 +263,12 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | on_turn_start {player: opponent, orb_ge: 1} → generate 明灯（敌方回合开始时有剩余鬼火） |
 | 01 明灯 | ✅ | [瞬发] gain_orb 1；凤凰火/青行灯协战与青行灯基础能力的产物 |
-| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**新机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（0 鬼火无效果、清空仍执行，答复 4），每次选择入手后洗牌库，末次后清空鬼火续块；联机 sanitize 对非选择方抹除 options |
-| 03 幽光之火 | ✅ | 形态 4/5：on_before_assault {attacker_shikigami: self} → generate 明灯（发起攻击即计，含出击/战斗牌/效果发起） |
+| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（1+剩余鬼火，0 火仍执行基础 1 次），末次后清空鬼火续块；联机 sanitize 对非选择方抹除 options；text 按 raw 无"洗牌库"，引擎 deck_top_pick 仍每次选择后固定洗牌——洗牌行为差异待确认见 questions.md 待确认8 |
+| 03 幽光之火 | ✅ | 形态 4/5：20191212 触发改"对敌方牌手造成战斗伤害时"——on_player_damaged {player: opponent, source_shikigami: self, kind: combat} → generate 明灯 |
 | 04 百闻一得 | ✅ | discard card_id 精确弃明灯（无明灯不弃、升级仍执行）；friendly_lowest_level 新池（并列全入池由使用者选择，答复 7）；level_up 新 op 不走升级次数，满 3 级 overflow_draw 改抽 1 |
 | 05 百物语之火 | ✅ | 形态 4/5：on_turn_end {player: self} → gain_orb 1 |
 | 06 不灭之火 | ✅ | 形态 4/5：on_form_destroyed {target_shikigami: self, orb_ge: 1}（离场前 emit 收集，含被替换/气绝连带，鸩先例）→ consume_orb 1 → revive（气绝先复活）→ reattach_form 新 op（墓地同一实例重新结附，不生成新牌，答复 6） |
-| 07 吸魂灯 | ✅ | repeat 新 op（次数={orb: true}，0 鬼火无效果、清空仍执行）：投射 5 ×鬼火，独立求值，clear_orb 清空 |
+| 07 吸魂灯 | ✅ | repeat op（次数={orb: true}，1+剩余鬼火，0 火仍执行基础 1 次）：20191212 投射 5→4 ×鬼火，独立求值，clear_orb 清空 |
 | 08 觉醒·青行灯 | ✅ | +1/+1；tags [awaken, orb_store]：觉醒替换 = 基础保留 + 鬼火储存（引擎回合开始不清零、储存累加封顶 4，答复 3） |
 | 51 烛火重燃 | ❌ | 协战子选项（青行灯侧幻境）：幻境机制未实现，暂缓 |
 
@@ -276,31 +276,31 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | on_damage {victim_shikigami: self} → 临时 +1 力量（任意伤害按次，维护者答复(10)） |
+| 基础能力 | ✅ | on_damage {victim_shikigami: self} → 临时 +1 力量（任意伤害按次，维护者答复(10)）；本体 20191212 身材 2/5（health 6→5） |
 | 01 醉里乾坤 | ✅ | [瞬发]；自伤 1（正常触发基础能力）+ draw 1 |
-| 02 狂气 | ✅ | 战力 +1；本次战斗获得[不屈]（战斗牌 keywords 授予通道） |
-| 03 鬼王 | ✅ | 形态 6/10：进场时对自身 damage 4（触发基础能力） |
-| 04 狂啸 | ✅ | bump_ext min_health_turn：本回合生命不会降到 1 以下（扣减生命处钳制，半回合作用域回合开始清除）；[响应]挂 on_damage_start {victim_shikigami: 100109, victim_side: friendly} 覆盖块 |
-| 05 无尽愤怒 | ✅ | 战力 +2；triggers on_damage（己方来源自伤，turn_mark 门控本回合一次）→ card_aura power 2/shield 2 scope=turn（本回合受过己方伤害后此牌 +2/+2） |
-| 06 神子 | ✅ | 形态 6/8：[瞬发]（卡牌级）+[不屈]（结附期间授予） |
-| 07 觉醒·酒吞童子 | ✅ | +1/+3；[觉醒][贯通]（on_awakened + on_shikigami_revived 双块，山童先例）；受伤改为获得等量力量（buff_power {event: amount}） |
-| 08 百鬼夜行 | ✅ | [瞬发]；X = ext["damage_taken_turn"]（本回合所受伤害之和，伤害扣减生命处记账、半回合作用域）；两段 damage：friendly_others（排除自身）+ enemy_shikigami（答复4） |
-| 51 醉酒当歌 | ✅ | 协战子选项（酒吞侧战斗牌）：[不屈]；自伤 3 → gain_shield 3 标 no_extract（不提取为战斗牌护甲前置结算——否则被自己的自伤消耗；按步骤顺序自伤后获得）；羁绊 generate 茨木当前等级战斗牌（level="shikigami" 精确匹配，未出战/未在场空操作） |
+| 02 狂气 | ✅ | 力量 +1；本次战斗获得[不屈]（战斗牌 keywords 授予通道） |
+| 03 鬼王 | ✅ | 形态 5/10：进场时对自身 damage 3（触发基础能力）；双快照（20191212 自伤 3 best / 20200120 自伤 4，按环境解析生效） |
+| 04 无尽愤怒 | ✅ | id 按 raw 重排（原 05）；力量 +2；triggers on_damage（己方来源自伤，turn_mark 门控本回合一次）→ card_aura power 2 scope=turn（20191212 增强去 +2 护甲，只 +2 力量） |
+| 05 神子 | ✅ | id 按 raw 重排（原 06）；形态 6/8：[瞬发]（卡牌级）+[不屈]（结附期间授予） |
+| 06 觉醒·酒吞童子 | ✅ | id 按 raw 重排（原 07）；+1/+3；受伤改为获得等量力量（buff_power {event: amount}）；20191212 去[贯通]授予 |
+| 07 百鬼夜行 | ✅ | id 按 raw 重排（原 08）；[瞬发]；X = ext["damage_taken_turn"]（本回合所受伤害之和，伤害扣减生命处记账、半回合作用域）；两段 damage：friendly_others（排除自身）+ enemy_shikigami（答复4） |
+| 08 狂啸 | ✅ | id 按 raw 重排（原 04）；level 2→3；bump_ext min_health_turn：本回合生命不会降到 1 以下（扣减生命处钳制，半回合作用域回合开始清除）；[响应]挂 on_damage_start {victim_shikigami: 100109, victim_side: friendly} 覆盖块 |
+| 51 醉酒当歌 | ✅ | 协战子选项（酒吞侧战斗牌，保持 20251212 未回退）：[不屈]；自伤 3 → gain_shield 3 标 no_extract（不提取为战斗牌护甲前置结算——否则被自己的自伤消耗；按步骤顺序自伤后获得）；羁绊 generate 茨木当前等级战斗牌（level="shikigami" 精确匹配，未出战/未在场空操作） |
 
 ## 犬神（100115）
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | on_upgrade {target_shikigami: self} → generate 心身炼磨（指令升级与 level_up op 两来源均触发——on_upgrade payload 新增 target Ref，level_up 补 emit） |
-| 01 羁绊的价值 | ✅ | heal {missing_health: self}（姑获鸟觉醒先例，恢复全部已损失生命） |
+| 基础能力 | ✅ | on_upgrade {target_shikigami: self} → generate（指令升级与 level_up op 两来源均触发——on_upgrade payload 新增 target Ref，level_up 补 emit）；双快照：20191212 生成'羁绊的价值' best / 20200120 生成'心身炼磨' |
+| 01 羁绊的价值 | ✅ | 双快照：20191212 永久 +1/+1（tags [lianmo] 出牌记账 lianmo_used_game）best / 20200120 heal {missing_health: self} 恢复所有生命（姑获鸟觉醒先例，无 tag） |
 | 02 心斩 | ✅ | 战斗 +0/+2 |
-| 03 心即归处 | ✅ | [瞬发] revive self；playable_when_defeated + only_when_defeated 新字段（第十三阶段）："仅在犬神气绝时可用"硬门控——存活时主动使用报错、响应收集直接跳过 |
+| 03 心即归处 | ✅ | revive self（20191212 去[瞬发]）；playable_when_defeated + only_when_defeated 字段（第十三阶段）："仅在犬神气绝时可用"硬门控——存活时主动使用报错、响应收集直接跳过 |
 | 04 恶·即·斩 | ✅ | 战斗 +4/+0 |
-| 05 心技一体 | ✅ | 形态 3/5：card_aura scope=form 新作用域（绑定持有者、随形态离场移除，气绝经 _destroy_form 同路径）+ power_ext/shield_ext 新参数（ext 数值通道，读 lianmo_used_game——心身炼磨 tags [lianmo] 出牌记账）；手牌数值显示已含光环 ext 通道（第十三阶段，刃影叠岚同解） |
-| 06 守护 | ✅ | 战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；追猎类定向战斗可响应——守护者照常移入并获得 +0/+4，但目标不转移仍打原定目标（第十三阶段定案） |
-| 07 心剑乱舞 | ✅ | 形态 4/9：card_aura scope=form keywords [fast]（犬神的牌获得[瞬发]，读取时求值） |
-| 08 觉醒·犬神 | ✅ | +1/+1；on_turn_end {player: self, holder_defeated: true} + trigger_when_defeated 新字段（能力收集对气绝者放行——仅气绝时触发）：revive + perm +1/+1 |
-| 51 心身炼磨 | ✅ | 衍生（升级产物）：perm +1/+1；tags [lianmo]；conditional_keywords 新字段（{keyword: fast, level_ge: 2}）+ cost_zero_if 扩 {level_ge: 3} |
+| 05 守护 | ✅ | id 按 raw 重排（原 06）；战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；追猎类定向战斗可响应——守护者照常移入并获得 +0/+4，但目标不转移仍打原定目标（第十三阶段定案）；text 按 raw 无"转移攻击目标"字样（见出入 20） |
+| 06 心剑乱舞 | ✅ | id 按 raw 重排（原 07）；形态 4/9：card_aura scope=form keywords [fast]（犬神的牌获得[瞬发]，读取时求值） |
+| 07 心技一体 | ✅ | id 按 raw 重排（原 05）；level 2 形态 3/5 → level 3 形态 4/9；card_aura scope=form + power_ext/shield_ext（ext 数值通道，读 lianmo_used_game）；双快照：20191212 记账卡='羁绊的价值' best / 20200120 记账卡='心身炼磨'（均 tags [lianmo] 出牌记账）；手牌数值显示已含光环 ext 通道（第十三阶段，刃影叠岚同解） |
+| 08 觉醒·犬神 | ✅ | +0/+0（20191212 去 +1/+1）；on_turn_end {player: self, holder_defeated: true} + trigger_when_defeated 字段（能力收集对气绝者放行——仅气绝时触发）：revive + perm +1/+1；raw 无气绝限定，机制保持仅气绝时触发（见出入 19） |
+| 51 心身炼磨 | ✅ | 衍生（20200120 起升级产物）：perm +1/+1；tags [lianmo] 保留；重写为 20200120 唯一版本——去 20251212 的动态瞬发（conditional_keywords {level_ge: 2}）与免费（cost_zero_if {level_ge: 3}） |
 
 ## 桃花妖（100119）
 
@@ -321,13 +321,13 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | on_shikigami_defeated {victim_kind: shikigami, source_shikigami: self}（判官消灭式神）→ 打敌方牌手 1 + 己方牌手回 1 |
+| 基础能力 | ✅ | on_shikigami_defeated {victim_kind: shikigami, source_shikigami: self}（判官消灭式神）→ 打敌方牌手 1 + 己方牌手回 1；本体双快照（20191212 3/4 best / 20200120 2/4） |
 | 01 墨笔夺魂 | ✅ | buff_health 负值通道：上限下调同步钳当前生命，上限 ≤0 走气绝（第十四阶段定案） |
 | 02 勾诀 | ✅ | TargetSpec 过滤键 power_le（spec_pool_refs 统一校验/展示） |
-| 03 生死无常 | ✅ | [响应] 挂"己方战斗区式神被攻击时"；两连 destroy（任一侧战斗区为空该步空操作） |
+| 03 生死无常 | ✅ | [响应] 挂"己方战斗区式神被攻击时"；两连 destroy（任一侧战斗区为空该步空操作）；text 按 raw 对齐 |
 | 04 无情 | ✅ | 形态：countdown_delta revive=True——敌方式神气绝倒计时 +1 |
-| 05 觉醒·判官 | ✅ | 法术觉醒 = 墨笔夺魂效果 + 觉醒替换；觉醒能力"当你消灭一个式神时"= {source_side: friendly}（己方任一式神消灭即触发，不限判官本人） |
-| 06 夺命 | ✅ | [必杀][穿刺]；增强：triggers 消灭计数 kill_count ≥13 → persistent transformed；变后 = temp_grants（绑本次战斗）on_damage/on_player_damaged {source_shikigami: self, kind: combat, card_transformed: 10011006} → destroy victim / damaged_player（destroy 支持牌手目标：消灭牌手 = 直接获胜，第十四阶段定案） |
+| 05 觉醒·判官 | ✅ | +1/+1；20191212 为纯觉醒替换（去 -2力量/-1生命效果步与 target）；觉醒能力"当你消灭一个式神时"= {source_side: friendly}（己方任一式神消灭即触发，不限判官本人） |
+| 06 夺命 | ✅ | [必杀]（20191212 去[穿刺]）；增强：triggers 消灭计数 kill_count ≥13 → persistent transformed；变后 = temp_grants（绑本次战斗）on_damage/on_player_damaged {source_shikigami: self, kind: combat, card_transformed: 10011006} → destroy victim / damaged_player（destroy 支持牌手目标：消灭牌手 = 直接获胜，第十四阶段定案） |
 | 07 死之宣告 | ✅ | destroy 任选式神（含己方） |
 | 08 断罪 | ✅ | 形态增强：triggers 消灭计数 → form_power_delta（_materialize 生成点统一快照，_mat 记账防重复合并） |
 
@@ -336,14 +336,14 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 伪关键字 damage_to_fragile 永久通道（ShikigamiDef.keywords → perm_keywords，死亡不清）：伤害事件生成点对无破甲受伤者全额转化为等量破甲（不再视为伤害；与毒蚀同位置，converted 防循环） |
-| 01 蛇行击 | ✅ | [瞬发][弹回]——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并） |
+| 01 蛇行击 | ✅ | [瞬发][弹回]——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并）；暂保持 20251212 未回退——20191212 增强"破甲则回手+1伤"缺 chosen_has_fragile 与条件回手机制，见 questions.md 待确认6 |
 | 02 淬毒 | ✅ | 所有敌方角色 2（经伤害转化：无破甲者转为 2 破甲） |
 | 03 剧毒之盾 | ✅ | 2 护甲 + delay_grant scope=turn bind=chosen（"本回合获得'使受到它战斗伤害的式神获得3破甲'"）；[响应] 挂"己方战斗区式神被攻击时"自动对其使用 |
-| 04 氤氲蛇姬 | ✅ | 进场与己方回合开始打敌方战斗区式神 2 |
+| 04 氤氲蛇姬 | ✅ | 20191212 重写：形态 4/6，敌方回合结束时敌方战斗区式神 +2 破甲（on_turn_end {player: opponent} → gain_shield kind=fragile enemy_combat） |
 | 05 无名之毒 | ✅ | [瞬发][投射] 4 |
 | 06 焚身之火 | ✅ | 先给目标 2 破甲，再对所有有破甲的敌方角色打 3（TargetSpec 过滤键 has_fragile；含牌手） |
-| 07 觉醒·清姬 | ✅ | 全体敌方角色 1 破甲 + 觉醒替换；觉醒能力 = 伤害转化沿用 + keep_enemy_fragile tags（敌方角色的破甲不在回合开始清除，护甲照常） |
-| 08 火吻之蛇 | ✅ | stat_aura enemy_fragile_power 动态光环（敌方有破甲式神降等量力量）+ "攻击时获得[先攻]"（on_before_assault 授予，先攻快照重读赶上本场判定）+ 敌方回合开始全体敌方角色 1 破甲（回合开始破甲清除先于 on_turn_start，敌方破甲每半回合重置为 -1——维护者答复(8)确认） |
+| 07 觉醒·清姬 | ✅ | 20191212：+3/+3→+2/+2、去进场全体 1 破甲（只留觉醒替换）；觉醒能力 = 伤害转化沿用 + keep_enemy_fragile tags（敌方角色的破甲不在回合开始清除，护甲照常） |
+| 08 火吻之蛇 | ✅ | stat_aura enemy_fragile_power 动态光环（敌方有破甲式神降等量力量）+ 敌方回合开始全体敌方角色 1 破甲（回合开始破甲清除先于 on_turn_start，敌方破甲每半回合重置为 -1——维护者答复(8)确认）；20191212 去"攻击时获得[先攻]"块 |
 
 ## 书翁（100118）
 
@@ -368,8 +368,8 @@
 | 02 岭上开花 | ✅ | 形态 2/7；on_luck_success → buff_power 1（一次性临时持久增益） |
 | 03 九莲宝灯 | ✅ | 形态 3/3；增强 = 进场按 dice_history 去重数 +N/+N |
 | 04 立直 | ✅ | 战斗 +0/+0；luck_roll force_x1_if（有形态阈值视为 1，骰子照投照计）→ grant_immunity；[响应] 青蛙瓷器被攻击时自动使用 |
-| 05 门前清 | ✅ | 形态 2/9；出击或被攻击时 EffectBlock.luck:4 → gain_shield 2 |
-| 06 骰子炸弹 | ✅ | [瞬发]；luck_roll{x:1} → damage amount_ctx:luck_dice（造成等同骰点的伤害） |
+| 05 骰子炸弹 | ✅ | 已按 raw 与 06 互换（level 2）；20191212 去[瞬发]；luck_roll{x:1} → damage amount_ctx:luck_dice（造成等同骰点的伤害） |
+| 06 门前清 | ✅ | 已按 raw 与 05 互换；形态 2/9；被攻击时（on_before_assault {victim_shikigami: self}）EffectBlock.luck:4 → gain_shield 2（20191212 只留被攻击挂点，去出击触发） |
 | 07 转运 | ✅ | 攻击后 luck_roll{x:4} → discard_random 2 + reuse_card（战斗流程重走，不耗火） |
 | 08 觉醒·青蛙瓷器 | ✅ | +2/+2；觉醒能力 = 基础同款 + 翻倍标记（判定者方未气绝觉醒青蛙：成功效果执行两次，不重新掷骰；on_luck_success 延时触发同样翻倍、自身光环不翻倍、失败效果不翻倍） |
 
@@ -493,11 +493,11 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 己方回合开始随机展示一张敌方手牌（reveal mode=random；已全部展示则无效果） |
 | 01 读心 | ✅ | [瞬发] 展示被选敌方式神在敌方手牌中的所有专属牌（reveal mode=shikigami + shikigami=chosen；协战牌归属按 _card_belongs_to 统一口径） |
-| 02 棒球炸弹 | ✅ | 3 伤 + 2×被选式神已展示专属牌数（动态数值 enemy_revealed_count: shikigami_of_chosen，per 倍率） |
+| 02 棒球炸弹 | ✅ | 20191212 基础伤害 3→2（{base:2, per:2}）：2 伤 + 2×被选式神已展示专属牌数（动态数值 enemy_revealed_count: shikigami_of_chosen，per 倍率） |
 | 03 模仿 | ✅ | 战斗牌[增强]：敌方每有一张已展示法术牌 +1 护甲、每有一张已展示其他牌 +1 力量（enemy_revealed_count: spell/other） |
-| 04 强索 | ✅ | [瞬发] 调度敌方已展示的手牌并洗牌库（mulligan_hand target_side=opponent + only_revealed + auto：按 hand_seq 前 3 张自动调度、有调度才洗牌）+ 抽 1 |
-| 05 灵视 | ✅ | 形态 5/5 [吸血]；敌方牌手使用已展示的手牌时对他造成 2 伤（on_card_played 载荷 card_revealed 条件；能力伤害吸血经统一伤害队列传导） |
-| 06 记仇 | ✅ | 消灭一个本回合造成过伤害的敌方式神（TargetSpec 过滤键 dealt_damage_turn——伤害结算点记账、回合开始清除）；[响应] 受到敌方式神伤害时自动对伤害来源使用（response 覆盖块 + context source） |
+| 04 强索 | ✅ | [瞬发] 调度敌方已展示的手牌 + 抽 1（mulligan_hand target_side=opponent + only_revealed + auto：按 hand_seq 前 3 张自动调度）；20191212 text 无"并洗牌库"——shuffle:false 不洗牌（调度是否隐含洗牌待确认，见 questions.md 待确认7） |
+| 05 灵视 | ✅ | 形态 5/5；敌方牌手使用已展示的手牌时对他造成 2 伤（on_card_played 载荷 card_revealed 条件）；20191212 去[吸血]、改"你恢复 2 点生命"（heal 2 self_player） |
+| 06 记仇 | ✅ | 消灭一个本回合造成过伤害的敌方式神（TargetSpec 过滤键 dealt_damage_turn——伤害结算点记账、回合开始清除）；[响应] 受到敌方式神伤害时自动对伤害来源使用（response 覆盖块 + context source）；暂保持 20251212 未回退——20191212"反弹敌方法术"机制未实现，见 questions.md 待确认5 |
 | 07 心灵迷宫 | ✅ | 形态 5/5；敌方使用已展示的手牌额外耗 1 鬼火（cost_delta_player side=opponent + card_flag=revealed + scope=form——形态结附期间持续、离场移除；仍在 cost>0 门内，[瞬发]/[不消耗鬼火]全免）；增强：敌方手牌全部已展示时得[瞬发]（conditional_keywords 算子 enemy_hand_all_revealed） |
 | 08 觉醒·觉 | ✅ | +1/+1；展示敌方所有手牌（reveal mode=all 补存量）；觉醒被动①：每当一张牌进入敌方手牌时将其展示（入手统一钩子 on_card_enter_hand + reveal mode=event）；被动②：敌方牌手使用已展示的手牌时觉 +1/+1 |
 
@@ -553,6 +553,13 @@
 18. **大天狗基础/觉醒能力**：20191212 raw 为"使用法术后"（无"非觉醒"限定），实现仍排除
     觉醒法术（condition `subtype: null`）——避免觉醒牌被倒计时重放刷身材的退化循环
     （维护者确认）；text 按 raw 逐字，机制出入记于此。
+19. **觉醒·犬神**：raw"己方回合结束时，复活犬神并永久获得1力量和1生命"无气绝限定，
+    机制保持仅气绝时触发（on_turn_end {holder_defeated: true} + trigger_when_defeated
+    门控，前期定案）；text 按 raw 逐字，机制出入记于此。
+20. **守护**：raw 无"敌方/转移攻击目标"字样（仅"当你其他式神被攻击时，自动使用此牌"），
+    机制保持——响应挂 {attacker_side: enemy}，响应插入移入战斗区、无目标战斗重读目标；
+    追猎/直击类有目标战斗中可响应（付火/+0/+4/移入照常）但不转移攻击目标
+    （第十三阶段定案）；text 按 raw 逐字。
 
 ## 协战牌 id 设计（已决议）
 

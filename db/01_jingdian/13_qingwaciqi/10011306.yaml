@@ -1,20 +1,22 @@
 id: 10011306
-name: 骰子炸弹
+name: 门前清
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
+    - date: 20191212
+      card_type: form
       rarity: R
       level: 2
-      keywords: [fast]
-      target: {kind: choose, pool: enemy_character}
+      form_power: 2
+      form_health: 9
       effects:
-        steps:
-          # 骰点存入效果上下文 luck_dice（契约 §3.2）；then 步继承出牌选择目标
-          - op: luck_roll
-            x: 1
-            judge: self
-            then:
-              - {op: damage, amount: 0, amount_ctx: luck_dice}
-      text: "[瞬发]。[运势1]：{对一个敌方角色造成等同于骰子点数的伤害。}"
+        steps: []
+      abilities:
+        # 被攻击时（on_before_assault 受害方为自身）[运势4]：获得 2 护甲
+        # （EffectBlock.luck 触发式门控）
+        - when: on_before_assault
+          condition: {victim_shikigami: self}
+          luck: 4
+          steps:
+            - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: "当青蛙瓷器被攻击时，[运势4]：{获得2护甲。}"

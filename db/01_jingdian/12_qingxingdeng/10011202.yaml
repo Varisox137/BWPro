@@ -1,9 +1,9 @@
 id: 10011202
 name: 青灯夜谈
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1
@@ -13,4 +13,4 @@ versions:
           # 重复 1 次，0 火仍执行基础 1 次）；每次重复经 pending_choice 挂起等 choose 作答，
           # 选择后洗牌库；末次后一次性清空鬼火（2→0 不经过 1）
           - {op: deck_top_pick, count: 3, times: {orb: true}, clear_orb: true}
-      text: 检视牌库顶三张牌然后选择一张置入手牌，然后洗牌库。你每有1点鬼火便重复一次。清空你的鬼火。
+      text: 检视牌库顶三张牌然后选择一张置入手牌。你每有1点鬼火便重复一次。清空你的鬼火。

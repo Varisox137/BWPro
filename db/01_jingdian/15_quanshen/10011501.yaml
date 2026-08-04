@@ -1,14 +1,26 @@
 id: 10011501
 name: 羁绊的价值
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
+      card_type: spell
+      rarity: R
+      level: 1
+      tags: [lianmo]  # 出牌记账 lianmo_used_game（心技一体 20191212"本局每使用过一张'羁绊的价值'"光环数值）
+      effects:
+        # 永久获得1力量与1生命
+        steps:
+          - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+          - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+      text: "永久获得1力量与1生命。"
+    - date: 20200120
       card_type: spell
       rarity: R
       level: 1
       effects:
-        # 恢复犬神所有生命（治疗量为已损失生命——姑获鸟觉醒先例）
+        # 恢复犬神所有生命（治疗量为已损失生命——姑获鸟觉醒先例）；
+        # 此版本不带 lianmo 标签——心技一体 20200120 只计'心身炼磨'
         steps:
           - {op: heal, amount: {missing_health: self}, target: {kind: self}}
       text: "恢复犬神所有生命。"

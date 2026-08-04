@@ -1,22 +1,22 @@
 id: 10010805
 name: 灵视
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 2
       form_power: 5
       form_health: 5
-      keywords: [lifesteal]
       effects:
         steps: []
       abilities:
-        # 敌方牌手使用已展示的手牌时，对他造成 2 点伤害
+        # 敌方牌手使用已展示的手牌时，他受到 2 点伤害且你恢复 2 点生命
         #（on_card_played 载荷 card_revealed 条件键待引擎对齐）
         - when: on_card_played
           condition: {player: opponent, card_revealed: true}
           steps:
             - {op: damage, amount: 2, target: {kind: all, pool: enemy_player}}
-      text: "[吸血]。当敌方牌手使用已展示的手牌时，对他造成2点伤害。"
+            - {op: heal, amount: 2, target: {kind: all, pool: self_player}}
+      text: "当敌方牌手使用已展示的手牌时，他受到2点伤害且你恢复2点生命。"

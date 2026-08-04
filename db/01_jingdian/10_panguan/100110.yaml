@@ -1,9 +1,9 @@
 id: 100110
 name: 判官
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212  # 发布日期
       faction: 青岚
       power: 3
       health: 4
@@ -14,4 +14,15 @@ versions:
         steps:
           - {op: damage, amount: 1, target: {kind: all, pool: enemy_player}}
           - {op: heal, amount: 1, target: {kind: all, pool: self_player}}
-      text: 当判官消灭一个式神时，对敌方牌手造成1点伤害且你恢复1生命。
+      text: 当判官消灭一个式神时，对敌方牌手造成1点伤害且你恢复1点生命。
+    - date: 20200120  # 身材削弱 3/4 → 2/4
+      faction: 青岚
+      power: 2
+      health: 4
+      ability:
+        when: on_shikigami_defeated
+        condition: {victim_kind: shikigami, source_shikigami: self}
+        steps:
+          - {op: damage, amount: 1, target: {kind: all, pool: enemy_player}}
+          - {op: heal, amount: 1, target: {kind: all, pool: self_player}}
+      text: 当判官消灭一个式神时，对敌方牌手造成1点伤害且你恢复1点生命。

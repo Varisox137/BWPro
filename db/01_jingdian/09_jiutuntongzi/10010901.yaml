@@ -1,9 +1,9 @@
 id: 10010901
 name: 醉里乾坤
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1
@@ -13,4 +13,4 @@ versions:
         steps:
           - {op: damage, amount: 1, target: {kind: self}}
           - {op: draw, count: 1, target: {kind: all, pool: self_player}}
-      text: "[瞬发]。对酒吞童子造成1点伤害，抽一张牌。"
+      text: "[瞬发]。酒吞童子对自己造成1点伤害，抽一张牌。"

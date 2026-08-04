@@ -1,18 +1,21 @@
 id: 10011505
-name: 心技一体
+name: 守护
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
-      rarity: R
+    - date: 20191212
+      card_type: combat
+      rarity: SR
       level: 2
-      form_power: 3
-      form_health: 5
+      keywords: [trigger]
       effects:
-        # 进场：登记绑定本形态的卡牌光环——本局每使用过一张'心身炼磨'（tags lianmo 出牌记账
-        # lianmo_used_game），犬神的战斗牌额外 +1力量/+1护甲（读取时求值；形态离场移除）
+        # 响应"当你其他式神被攻击时"（先例 伺机 10011607）：+0/+4 经战斗牌数值通道；
+        # 响应插入使用把犬神移入防守方战斗区。引擎仅对无目标战斗在（被）攻击时结算后
+        # 重读被攻击者——追猎类有选定目标的战斗可响应（付火/+0/+4/移入战斗区照常）但
+        # 目标不转移（维护者定案第十三阶段）；直击打牌手前提不成立
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: shikigami,
+                    victim_not_shikigami: 100115, attacker_side: enemy}
         steps:
-          - {op: card_aura, shikigami: self, card_type: combat,
-             power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
-      text: "本局游戏你每使用过一张'心身炼磨'，犬神的战斗牌便额外获得+1力量与+1护甲。"
+          - {op: gain_shield, amount: 4, target: {kind: self}}
+      text: "[响应]：{当你其他式神被攻击时，自动使用此牌。}"

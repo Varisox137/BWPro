@@ -1,16 +1,31 @@
 id: 10011507
-name: 心剑乱舞
+name: 心技一体
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
-      rarity: SR
+      rarity: R
       level: 3
       form_power: 4
       form_health: 9
       effects:
-        # 进场：登记绑定本形态的卡牌光环——犬神的牌获得[瞬发]（读取时求值；形态离场移除）
+        # 进场：登记绑定本形态的卡牌光环——本局每使用过一张'羁绊的价值'（tags lianmo
+        # 出牌记账 lianmo_used_game，记于羁绊的价值 20191212 版），犬神的战斗牌额外
+        # +1力量/+1护甲（读取时求值；形态离场移除）
         steps:
-          - {op: card_aura, shikigami: self, keywords: [fast], scope: form}
-      text: "犬神的牌获得[瞬发]。"
+          - {op: card_aura, shikigami: self, card_type: combat,
+             power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
+      text: "[增强]：{本局游戏你每使用过一张‘羁绊的价值’，犬神的战斗牌便额外获得+1力量与+1护甲。}"
+    - date: 20200120
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 9
+      effects:
+        # 同上，记账卡为'心身炼磨'（tags lianmo 记于心身炼磨）
+        steps:
+          - {op: card_aura, shikigami: self, card_type: combat,
+             power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
+      text: "[增强]：{本局游戏你每使用过一张‘心身炼磨’，犬神的战斗牌便额外获得+1力量与+1护甲。}"

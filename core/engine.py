@@ -2495,6 +2495,12 @@ class Game:
                     if s is not None:
                         while self._has_keyword(s, "barrier"):
                             self._remove_keyword(s, "barrier")
+                # 仅护甲穿刺（碎岩 20191212 伪关键字）：同批次、同"与伤害是否生效无关"语义，
+                # 只清正值护甲（破甲为负值本就不动），不移除屏障
+                if self._has_keyword(src, "pierce_armor"):
+                    holder = s if s is not None else p
+                    if holder.shield > 0:
+                        self._change_shield(ev.victim, -holder.shield, "穿刺（仅护甲）")
             self._emit_damage_batch("on_damage_start", ev)
             if ev.amount <= 0 or (s is not None and s.defeated):
                 return

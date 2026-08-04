@@ -9,7 +9,7 @@ versions:
       level: 2
       keywords: [fast, trigger]
       effects:
-        # 响应"当你被敌方攻击时"（守护 10011506 先例；此处 victim=牌手）。
+        # 响应"当你被敌方攻击时"（守护 10011505 先例；此处 victim=牌手）。
         # 响应插入使用把跳跳弟弟移入防守方战斗区 = "将攻击目标改为跳跳弟弟"
         #（引擎对无目标战斗在（被）攻击时结算后重读被攻击者）
         when: on_before_assault

@@ -1120,8 +1120,9 @@ def test_generate_on_spell_play(real_game):
 # 山童（100116）
 #
 # 覆盖：先天[贯通]（ShikigamiDef.keywords）、鲁莽回合开始自动攻击、怪力永久力量
-# （非战力提取）、怒吼永久/临时分层、笨拙敌方回合力量覆写、碎岩穿刺、
-# 觉醒免疫敌方非战斗伤害、伺机响应（敌方回合光环 + 反击贯通）、崩山增强。
+# （非战力提取）、怒吼全体临时力量、笨拙敌方回合力量覆写、碎岩仅护甲穿刺
+# （pierce_armor）、觉醒免疫敌方非战斗伤害、伺机响应（敌方回合光环 + 反击贯通）、
+# 崩山增强。
 # 队伍 [山童, 凤凰火, 白狼, 妖刀姬]。
 # ==========================================================================
 
@@ -1162,29 +1163,29 @@ def test_perm_power_not_battle_power(real_game):
     assert pa.combat_index == IDX
 
 
-def test_perm_self_temp_allies(real_game):
-    """怒吼：山童永久 +1 力量；其他己方式神临时 +1（气绝清除层）。"""
+def test_temp_power_all_allies(real_game):
+    """怒吼：所有己方式神临时 +1 力量（含山童自身；气绝清除层）。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 1, 1: 1})
     play(g, 0, NH)
-    assert pa.shikigami[IDX].perm_power == 1
+    assert pa.shikigami[IDX].temp_power == 1
+    assert pa.shikigami[IDX].perm_power == 0
     assert pa.shikigami[1].temp_power == 1
-    assert pa.shikigami[1].perm_power == 0
 
 
 def test_power_zero_enemy_turn(real_game):
     """笨拙：敌方回合力量覆写为 0，己方回合开始解除。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2})
-    play(g, 0, BN)                            # 形态 6/9
+    play(g, 0, BN)                            # 形态 5/9（默认解析最新快照 20200120）
     s = pa.shikigami[IDX]
-    assert s.eff_power == 6
+    assert s.eff_power == 5
     pass_turns(g, 1)                          # B 回合开始：覆写
     assert s.eff_power == 0
     pass_turns(g, 1)                          # A 回合开始：解除
-    assert s.eff_power == 6
+    assert s.eff_power == 5
 
 
 def test_pierce_strips_shield_before_damage(real_game):
-    """碎岩：[穿刺] 先移除目标全部护甲再结算伤害；+2 战力/+2 一次性护甲。"""
+    """碎岩（仅护甲穿刺 pierce_armor）：先移除目标全部护甲再结算伤害；+2 战力/+2 一次性护甲。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2})
     move(g, 1, 0)
     b0 = pb.shikigami[0]
@@ -1202,12 +1203,12 @@ def test_awaken_enemy_effect_immunity(real_game):
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 2, 1: 1})
     play(g, 0, ST_AWAKEN)
     s = pa.shikigami[IDX]
-    assert s.health == 5                      # 觉醒 +1/+1
+    assert s.health == 4                      # 觉醒 +1/+0
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0))
-    assert s.health == 5                      # 敌方非战斗伤害：免疫
+    assert s.health == 4                      # 敌方非战斗伤害：免疫
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=0, shikigami=1))
-    assert s.health == 3                      # 己方来源：不免疫
-    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0),
+    assert s.health == 2                      # 己方来源：不免疫
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 1, Ref(player=1, shikigami=0),
                         kind="combat")
     assert s.health == 1                      # 战斗伤害：不免疫
 
@@ -1231,10 +1232,10 @@ def test_counter_piercing_response(real_game):
 
 
 def test_perm_power_enhance_snapshot(real_game):
-    """崩山增强：山童每永久 1 力量，战斗区/准备区伤害各自 +1（先怒吼：5/2）。"""
+    """崩山增强：山童每永久 1 力量，战斗区/准备区伤害各自 +1（先怪力：5/2）。"""
     g, pa, pb = _game(real_game, ST_TEAM, {IDX: 3, 1: 1})
+    play(g, 0, GL)                            # 怪力：山童永久 +1（战斗牌直击 4，敌方战斗区为空）
     move(g, 1, 0)
-    play(g, 0, NH)                            # 山童永久 +1
     play(g, 0, BS)
     assert pb.shikigami[0].defeated           # 战斗区 4+1=5 > 4
     assert [s.health for s in pb.shikigami[1:]] == [2, 2, 2]   # 准备区 1+1=2
@@ -1288,19 +1289,19 @@ def test_token_fast_gains_orb(real_game):
 # ==========================================================================
 # 犬神（100115）
 #
-# 覆盖：升级生成'心身炼磨'（指令升级与 level_up op 两来源）、心身炼磨动态
-# 瞬发/费用、心技一体计数光环（scope=form 随形态离场）、心剑乱舞瞬发光环、
-# 守护响应换人改目标（追猎类定向战斗可响应但不转移目标）、心即归处气绝
-# 可用+气绝限定门控、觉醒·犬神仅气绝触发。
+# 覆盖：升级生成'心身炼磨'（指令升级与 level_up op 两来源均触发）、心技一体
+# 计数光环（scope=form 随形态离场）、心剑乱舞瞬发光环、守护响应换人改目标
+# （追猎类定向战斗可响应但不转移目标）、心即归处气绝可用+气绝限定门控、
+# 觉醒·犬神仅气绝触发。
 # 队伍固定 [犬神, 白狼, 妖刀姬, 山童]，犬神 0 号位。
 # ==========================================================================
 
 QS = 100115      # 犬神（双方 0 号位）
 XINZHAN = 10011502        # 心斩
 XINGUI = 10011503         # 心即归处
-XINJI = 10011505          # 心技一体
-SHOUHU = 10011506         # 守护
-XINJIAN = 10011507        # 心剑乱舞
+SHOUHU = 10011505         # 守护
+XINJIAN = 10011506        # 心剑乱舞
+XINJI = 10011507          # 心技一体
 QS_AWAKEN = 10011508      # 觉醒·犬神
 LIANMO = 10011551         # 心身炼磨（衍生）
 
@@ -1321,32 +1322,16 @@ def test_upgrade_generates_token(real_game):
     assert sum(1 for c in pa.hand if c.id == LIANMO) == 2
 
 
-def test_conditional_keyword_and_cost_by_level(real_game):
-    """动态关键字/费用（心身炼磨）：犬神 2 级获得[瞬发]、3 级不消耗鬼火；1 级均无。"""
-    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 1})
-    cdef = g.db.cards[LIANMO]
-    card = give(g, 0, LIANMO)
-    assert "fast" not in g._card_keywords(pa, cdef, card)
-    assert g._effective_cost(pa, cdef, card) == 1
-    pa.shikigami[IDX].level = 2
-    assert "fast" in g._card_keywords(pa, cdef, card)
-    assert g._effective_cost(pa, cdef, card) == 0   # 2 级：[瞬发]首张免费
-    pa.fast_used = True
-    assert g._effective_cost(pa, cdef, card) == 1   # 瞬发名额已用：照常付 1 火
-    pa.shikigami[IDX].level = 3
-    assert g._effective_cost(pa, cdef, card) == 0   # 3 级：不消耗鬼火
-
-
 def test_tag_count_aura(real_game):
     """计数光环（心技一体）：本局每使用过一张'心身炼磨'（tags lianmo 记账），犬神
     战斗牌额外 +1/+1（读取时求值）；形态离场光环移除（scope=form）。"""
-    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
+    g, pa, pb = _game(real_game, QS_TEAM, {IDX: 3})
     play(g, 0, XINJI)
     cdef = g.db.cards[XINZHAN]
     card = give(g, 0, XINZHAN)
     stats = lambda: g.combat_card_stats(cdef.effects, card, pa.shikigami[IDX], pa)
     assert stats() == (0, 2)                        # 心斩 +0/+2
-    play(g, 0, LIANMO)                              # 第 1 张（2 级瞬发免费）
+    play(g, 0, LIANMO)                              # 第 1 张（付 1 火）
     play(g, 0, LIANMO)                              # 第 2 张（付 1 火）
     assert stats() == (2, 4)
     g._destroy_form(pa, IDX, "effect")
@@ -1401,7 +1386,7 @@ def test_response_vs_hunt_no_retarget(real_game):
 
 
 def test_revive_self_playable_when_defeated(real_game):
-    """气绝时可用（心即归处）：[瞬发]复活犬神。"""
+    """气绝时可用（心即归处）：复活犬神。"""
     g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     play(g, 0, XINGUI)
@@ -1430,17 +1415,17 @@ def test_only_when_defeated_gate(real_game):
 
 
 def test_awaken_trigger_only_when_defeated(real_game):
-    """觉醒·犬神：己方回合结束时仅气绝才触发——复活并永久 +1/+1；存活不触发。"""
+    """觉醒·犬神：+0/+0；己方回合结束时仅气绝才触发——复活并永久 +1/+1；存活不触发。"""
     g, pa, pb = _game(real_game, QS_TEAM, {IDX: 3})
     play(g, 0, QS_AWAKEN)
     s = pa.shikigami[IDX]
-    assert (s.perm_power, s.perm_health) == (1, 1)    # 觉醒 +1/+1
+    assert (s.perm_power, s.perm_health) == (0, 0)    # 觉醒 +0/+0
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     pass_turns(g, 1)                          # A 回合结束：复活 +1/+1
     assert not s.defeated
-    assert (s.perm_power, s.perm_health) == (2, 2)
+    assert (s.perm_power, s.perm_health) == (1, 1)
     pass_turns(g, 2)                          # 再过一轮 A 回合结束：存活不触发
-    assert (s.perm_power, s.perm_health) == (2, 2)
+    assert (s.perm_power, s.perm_health) == (1, 1)
 
 
 # ==========================================================================
@@ -1656,14 +1641,13 @@ def test_enemy_revive_countdown_plus(real_game):
 
 
 def test_awaken_kill_trigger_any_friendly_source(real_game):
-    """觉醒·判官：+1/+1 永久；进场使一个敌方式神 -2力量/-1生命；[觉醒]能力——
-    己方任意式神消灭式神即触发（来源不限判官，比基础能力宽）。"""
+    """觉醒·判官：+1/+1 永久；[觉醒]能力——己方任意式神消灭式神即触发
+    （来源不限判官，比基础能力宽）。"""
     g, pa, pb = _game(real_game, PG_TEAM, {0: 2})
     a = pa.shikigami[IDX]
     pa.health = 25
-    play(g, 0, 10011005, target=Ref(player=1, shikigami=0))
+    play(g, 0, 10011005)
     assert (a.perm_power, a.perm_health) == (1, 1) and a.awakened == 10011005
-    assert pb.shikigami[0].eff_power == 1 and pb.shikigami[0].max_health == 3
     g.deal_to_shikigami(Ref(player=1, shikigami=1), 99,
                         Ref(player=0, shikigami=1), kind="combat")   # 白狼消灭
     g._drain_queue()
@@ -1735,13 +1719,15 @@ def test_fast_projectile_converts_to_fragile(real_game):
 
 
 def test_keep_enemy_fragile_skips_turn_start_clear(real_game):
-    """觉醒·清姬：+3/+3 永久；所有敌方角色获得 1 破甲；在场已觉醒期间
-    敌方角色的破甲在回合开始不清除（keep_enemy_fragile）。"""
+    """觉醒·清姬：+2/+2 永久，无进场效果；在场已觉醒期间敌方角色的破甲在回合
+    开始不清除（keep_enemy_fragile）。"""
     g, pa, pb = _game(real_game, QJ_TEAM, {0: 3})
     a = pa.shikigami[IDX]
+    pb.shikigami[0].shield = -1
+    pb.shield = -1
     play(g, 0, 10011407)
-    assert (a.perm_power, a.perm_health) == (3, 3) and a.awakened == 10011407
-    assert pb.shikigami[0].shield == -1 and pb.shield == -1
+    assert (a.perm_power, a.perm_health) == (2, 2) and a.awakened == 10011407
+    assert pb.shikigami[0].shield == -1 and pb.shield == -1   # 无进场破甲
     pass_turns(g, 1)                          # B 回合开始：破甲保留
     assert pb.shikigami[0].shield == -1 and pb.shield == -1
 

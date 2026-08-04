@@ -1,13 +1,13 @@
 id: 10011006
 name: 夺命
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SSR
       level: 2
-      keywords: [lethal, pierce]
+      keywords: [lethal]
       effects:
         steps: []
       triggers:
@@ -30,4 +30,4 @@ versions:
           condition: {source_shikigami: self, kind: combat, card_transformed: 10011006}
           steps:
             - {op: destroy, target: {kind: context, key: damaged_player}}
-      text: "[必杀]，[穿刺]。[增强]：{本局游戏若你消灭过13个式神，改为‘消灭受到判官战斗伤害的角色’。}"
+      text: "[必杀]。[增强]：{本局游戏若你消灭过13个式神，改为‘消灭受到判官战斗伤害的角色’。}"

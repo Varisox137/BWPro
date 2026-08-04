@@ -1,16 +1,26 @@
 id: 10010903
 name: 鬼王
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212  # 发布日期
       card_type: form
       rarity: R
       level: 2
-      form_power: 6
+      form_power: 5
       form_health: 10
       effects:
-        # 进场时对酒吞童子造成 4 点伤害（正常触发基础能力）
+        # 进场时对酒吞童子造成 3 点伤害（正常触发基础能力）
+        steps:
+          - {op: damage, amount: 3, target: {kind: self}}
+      text: 进场时对酒吞童子造成3点伤害。
+    - date: 20200120  # 进场自伤 3 → 4
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 5
+      form_health: 10
+      effects:
         steps:
           - {op: damage, amount: 4, target: {kind: self}}
       text: 进场时对酒吞童子造成4点伤害。

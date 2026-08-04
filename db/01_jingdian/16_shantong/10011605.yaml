@@ -1,15 +1,15 @@
 id: 10011605
 name: 碎岩
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SR
       level: 2
-      keywords: [pierce]
+      keywords: [pierce_armor]  # 伪关键字：仅移除被攻击者护甲、不动屏障（卡面为描述文本）
       effects:
         steps:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
-      text: "[穿刺]"
+      text: 移除被山童攻击的角色的护甲。

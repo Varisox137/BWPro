@@ -1,15 +1,21 @@
 id: 10010906
-name: 神子
+name: 觉醒·酒吞童子
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
+    - date: 20191212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # +1/+3：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 3
       rarity: SR
       level: 3
-      form_power: 6
-      form_health: 8
-      keywords: [fast, unyielding]  # fast 卡牌级（瞬发）；unyielding 结附期间授予式神
       effects:
         steps: []
-      text: "[瞬发]，[不屈]"
+      abilities:
+        # 每当酒吞童子受到伤害时，每受1点伤害获得1力量（按次、量=该次伤害量，临时持续性）
+        - when: on_damage
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: buff_power, amount: {event: amount}, target: {kind: self}}
+      text: "[觉醒]：{每当酒吞童子受到伤害时，每受1点伤害获得1力量。}"

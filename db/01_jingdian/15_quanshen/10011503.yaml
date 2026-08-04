@@ -1,17 +1,16 @@
 id: 10011503
 name: 心即归处
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SR
       level: 2
-      keywords: [fast]
       playable_when_defeated: true  # 气绝时可用
       only_when_defeated: true      # （仅在犬神气绝时可用）：存活时主动使用与响应均非法
       effects:
-        # [瞬发]。复活犬神
+        # 复活犬神
         steps:
           - {op: revive, target: {kind: self}}
-      text: "[瞬发]。复活犬神。（仅在犬神气绝时可用）"
+      text: "复活犬神。（仅在犬神气绝时可用）"
