@@ -793,3 +793,22 @@ def test_room_set_env(db):
         assert lobby["env_date"] == 20991231
         room._cancel_lobby_timer()  # 收尾：防计时任务悬置
     run(go())
+
+
+def test_sanitize_keeps_revealed_hand_cards():
+    """已展示脱敏例外（第十七阶段）：对手手牌中 mods.revealed 的卡保留真实内容，
+    未展示手牌与牌库仍占位隐藏；原始 payload 不被修改。"""
+    from server.room import _HIDDEN_CARD, sanitize_state
+    payload = {"players": [
+        {"zones": {"hand": [
+            {"uid": 1, "id": 10010101, "mods": {"revealed": True}, "hand_seq": 1},
+            {"uid": 2, "id": 10010102, "mods": {}, "hand_seq": 2},
+        ], "deck": [{"uid": 3, "id": 10010103, "mods": {}, "hand_seq": 0}]}},
+        {"zones": {"hand": [], "deck": []}},
+    ]}
+    view = sanitize_state(payload, 1)  # viewer=1 → 对手为 players[0]
+    hand = view["players"][0]["zones"]["hand"]
+    assert hand[0]["id"] == 10010101 and hand[0]["uid"] == 1   # 已展示：保留真实内容
+    assert hand[1] == _HIDDEN_CARD                             # 未展示：占位隐藏
+    assert view["players"][0]["zones"]["deck"] == [dict(_HIDDEN_CARD)]
+    assert payload["players"][0]["zones"]["hand"][1]["id"] == 10010102  # 原状态不变

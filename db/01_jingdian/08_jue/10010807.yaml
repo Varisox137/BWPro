@@ -1,0 +1,20 @@
+id: 10010807
+name: 心灵迷宫
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: form
+      rarity: SSR
+      level: 3
+      form_power: 5
+      form_health: 5
+      conditional_keywords:
+        # 若敌方手牌全部已展示，此牌获得[瞬发]（霜舞 10012201 先例；算子待引擎对齐）
+        - {keyword: fast, enemy_hand_all_revealed: true}
+      effects:
+        steps:
+          # 敌方使用已展示的手牌时需额外消耗 1 点鬼火（形态进场挂载光环，爱意绵绵
+          # 10013003 card_aura scope=form 先例；side/card_flag/scope 形状待引擎对齐）
+          - {op: cost_delta_player, side: opponent, card_flag: revealed, amount: 1, scope: form}
+      text: "敌方使用已展示的手牌时需额外消耗一点鬼火。[增强]：{若敌方手牌全部已展示，此牌获得[瞬发]。}"

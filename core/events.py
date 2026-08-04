@@ -45,6 +45,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
     "on_before_defeat",     # 气绝前/消灭前 1 {victim: Ref, source, reason, battle}
     "on_before_card_play",  # 使用手牌前 {player, uid, card, nullified（可变标记 dict）}
+    "on_card_enter_hand",   # 一张牌进入手牌 {player, uid, card}（"已展示"机制入手统一钩子）
     "on_enter_combat",      # 式神进入战斗区 {player, shikigami: Ref}（延时时机）
     "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
     # ---- 运势事件时点（第十五阶段；thoughts.txt 运势事件流程，core/engine.py 运势管线）----

@@ -165,7 +165,9 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
 
 def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
     """TargetSpec 额外过滤键（model_extra）统一应用：power_le（勾诀）/ has_fragile（焚身之火）
-    / stunned（按是否眩晕过滤角色目标，式神与牌手均可）。"""
+    / stunned（按是否眩晕过滤角色目标，式神与牌手均可）/ dealt_damage_turn（本回合
+    造成过伤害的式神——记仇"伤害来源式神"过滤，伤害结算点记账、回合开始清除；
+    牌手目标不匹配 true 方向）。"""
     pw = extra.get("power_le")
     if pw is not None:
         refs = [r for r in refs if r.shikigami is not None
@@ -180,6 +182,14 @@ def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
     st = extra.get("stunned")
     if st is not None:
         refs = [r for r in refs if _ref_stunned(game, r) == bool(st)]
+    ddt = extra.get("dealt_damage_turn")
+    if ddt is not None:
+        def _dealt(r: Ref) -> bool:
+            if r.shikigami is None:
+                return False
+            return bool(game.state.players[r.player].shikigami[r.shikigami]
+                        .ext.get("dealt_damage_turn"))
+        refs = [r for r in refs if _dealt(r) == bool(ddt)]
     return refs
 
 

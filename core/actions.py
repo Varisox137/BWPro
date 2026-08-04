@@ -503,11 +503,36 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
 
 @action("mulligan_hand")
 def mulligan_hand(game, ctx, *, targets: list[Ref], times: int = 3,
-                  shuffle: bool = True) -> None:
+                  shuffle: bool = True, target_side: str = "self",
+                  only_revealed: bool = False, auto: bool = False) -> None:
     """战中调度（云游；targets 忽略）：调度控制者手牌至多 times 次——每次把一张手牌
     返回牌库随机位置再随机抽一张（_swap_hand_card 核心，与游戏开始阶段调度共用），
     choose 指令作答（uid=手牌；uid 缺省 = 提前结束），结束后洗牌库。
-    通过 pending_choice（kind="mulligan_pick"）挂起，由 choose 指令续跑（deck_top_pick 先例）。"""
+    通过 pending_choice（kind="mulligan_pick"）挂起，由 choose 指令续跑（deck_top_pick 先例）。
+
+    强索通道（auto=True）：无 pending_choice 交互——对 target_side 所指方（opponent=
+    敌方）手牌按入手顺序（hand_seq 升序）取前 times 张候选自动调度（only_revealed=
+    True 时仅"已展示"牌为候选）；逐张 _swap_hand_card（展示状态传递见其内），
+    有实际调度才洗牌库（rules.md:531；候选为空/牌库为空不洗）。
+    """
+    if auto:
+        pi = ctx.controller if target_side == "self" else 1 - ctx.controller
+        p = game.state.players[pi]
+        cands = sorted(p.hand, key=lambda c: c.hand_seq)
+        if only_revealed:
+            cands = [c for c in cands if c.mods.get("revealed")]
+        swapped = 0
+        for c in cands[:max(0, int(times))]:
+            if not p.deck:
+                break  # 待调度牌库为空：终止调度流程（rules.md:524）
+            game._swap_hand_card(p, c)
+            swapped += 1
+        if swapped:
+            game._log(f"{p.name} 的 {swapped} 张手牌被强制调度")
+            if shuffle:
+                game.rng.shuffle(p.deck)
+                game._log(f"{p.name} 洗了牌库")
+        return
     p = game.state.players[ctx.controller]
     if int(times) <= 0 or not p.hand:
         if shuffle:
@@ -519,6 +544,58 @@ def mulligan_hand(game, ctx, *, targets: list[Ref], times: int = 3,
         "remaining": int(times), "shuffle": bool(shuffle),
     }
     game._log(f"{p.name} 调度手牌（至多 {times} 次）")
+
+
+@action("reveal")
+def reveal(game, ctx, *, targets: list[Ref], mode: str = "event",
+           shikigami: int | str | None = None) -> None:
+    """展示手牌（"已展示"机制；targets 忽略）：置 CardInstance.mods["revealed"]
+    ——本局保持、随实例（回库/墓地不自动清除；调度传递见 _swap_hand_card）。
+
+    mode（作用于敌方手牌）：
+    - random：随机一张未展示的手牌（已全部展示则无效果）；
+    - shikigami：指定式神（shikigami=<数据 id> 或 "chosen"=卡牌选择目标所指式神）的
+      专属牌全部——协战牌未使用时视为同时属于两位所属式神（_card_belongs_to 口径）；
+    - all：敌方全部手牌；
+    - event（缺省）：触发事件 payload 的 card 实例——入手钩子（on_card_enter_hand）
+      挂载"每当一张牌进入敌方手牌时将其展示"类被动用（事件牌已离开手牌时仍置标志，
+      随实例）。
+    """
+    from core.model import CardInstance
+
+    def _show(card) -> None:
+        if card.mods.get("revealed"):
+            return  # 已展示：幂等
+        card.mods["revealed"] = True
+        game._log(f"【{game.db.cards[card.id].name}】被展示")
+
+    if mode == "event":
+        card = (ctx.event or {}).get("card")
+        if isinstance(card, CardInstance):
+            _show(card)
+        return
+    enemy = game.state.players[1 - ctx.controller]
+    if mode == "random":
+        pool = [c for c in enemy.hand if not c.mods.get("revealed")]
+        picks = [game.rng.choice(pool)] if pool else []
+    elif mode == "all":
+        picks = list(enemy.hand)
+    elif mode == "shikigami":
+        if shikigami == "chosen":
+            chosen = ctx.chosen or []
+            if not chosen or chosen[0].shikigami is None:
+                return  # 无有效选择目标：空操作
+            sid = game.state.players[chosen[0].player].shikigami[chosen[0].shikigami].id
+        elif shikigami is None:
+            raise ValueError("reveal(mode=shikigami) 需要 shikigami 参数（数据 id 或 chosen）")
+        else:
+            sid = int(shikigami)
+        picks = [c for c in enemy.hand
+                 if game._card_belongs_to(game.db.cards[c.id], sid)]
+    else:
+        raise ValueError(f"未知 reveal 模式: {mode}")
+    for c in picks:
+        _show(c)
 
 
 @action("grant_keyword")
@@ -2131,22 +2208,41 @@ def reuse_card(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("cost_delta_player")
 def cost_delta_player(game, ctx, *, targets: list[Ref], amount: int,
-                      scope: str = "next_turn") -> None:
+                      scope: str = "next_turn", side: str | None = None,
+                      card_flag: str | None = None) -> None:
     """目标牌手的手牌费用修正（幸运兔兔"敌方下回合从手牌使用的卡牌鬼火+1"；targets 解析
     目标牌手）。登记于 PlayerState.ext["cost_mods"]（回合号过期，仿 immunities）；
     _effective_cost 读取——[不消耗鬼火]与回合内首张[瞬发]已在费用求值中归零，不受影响；
     非手牌使用（自动使用等）不走 _effective_cost，不受影响。
+
+    side="opponent"：targets 忽略，直接登记到敌对方牌手（"已展示"机制）。
+    card_flag（如 "revealed"）：仅命中带对应实例标志（mods）的手牌——
+    "敌方使用已展示的手牌额外耗火"（与瞬发/不消耗鬼火交互 = 全免，沿跳跳妹妹定案通道）。
+    scope="form"：绑定来源形态、不按回合号过期、形态离场移除（需来源式神——
+    心灵迷宫"敌方使用已展示的手牌时需额外消耗一点鬼火"形态结附期间持续）。
     """
-    if scope != "next_turn":
+    if scope not in ("next_turn", "form"):
         raise ValueError(f"未知 cost_delta_player 作用域: {scope}")
-    for ref in targets:
+    refs = ([Ref(player=1 - ctx.controller)] if side == "opponent"
+            else list(targets))
+    for ref in refs:
         if ref.shikigami is not None:
             continue
         pl = game.state.players[ref.player]
-        turn = game.state.turn + (2 if ref.player == game.state.active else 1)
-        pl.ext.setdefault("cost_mods", []).append(
-            {"amount": int(amount), "turn": turn, "scope": scope})
-        game._log(f"{pl.name} 的下个回合手牌鬼火消耗 {int(amount):+d}")
+        entry: dict = {"amount": int(amount), "scope": scope}
+        if scope == "next_turn":
+            entry["turn"] = game.state.turn + (2 if ref.player == game.state.active else 1)
+        else:
+            if ctx.source is None or ctx.source.shikigami is None:
+                raise ValueError("cost_delta_player(scope=form) 需要来源式神")
+            entry["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态离场按持有者移除
+        if card_flag is not None:
+            entry["card_flag"] = card_flag
+        pl.ext.setdefault("cost_mods", []).append(entry)
+        if scope == "next_turn":
+            game._log(f"{pl.name} 的下个回合手牌鬼火消耗 {int(amount):+d}")
+        else:
+            game._log(f"{pl.name} 的手牌鬼火消耗 {int(amount):+d}（形态结附期间）")
 
 
 @action("countdown_power_boost")

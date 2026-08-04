@@ -82,7 +82,7 @@
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
 | 仅气绝时可用 | `only_when_defeated` | 卡牌字段（第十三阶段）：硬门控——式神存活时主动使用报错、响应收集直接跳过（心即归处）；需搭配 `playable_when_defeated` | ✅ |
 | 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（青行灯）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
-| 实例修饰 | `mods` | CardInstance 级差异（同名卡可不同），目前认识 `cost_delta` | ✅ |
+| 实例修饰 | `mods` | CardInstance 级差异（同名卡可不同），目前认识 `cost_delta`/`revealed`（已展示，见「结算与事件」） | ✅ |
 
 ## 关键词
 
@@ -234,12 +234,12 @@
 | 检索牌库 | `search_deck`（动作） | 从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；shikigami="target" 缺省按卡牌选择目标所指式神，"self"=来源式神，或数据 id；仅实际检索到才洗牌，未命中不洗——第十三阶段定案）；`card_id` 按数据 id 精确检索（鸿运当头羁绊检索指定卡） | ✅ |
 | 进出战斗区事件 | `on_enter_combat` / `on_leave_combat` | 式神进入/离开战斗区（延时时机，payload {player, shikigami: Ref}）：`_enter_combat`/`_retreat` 发出（被换下的驻留者经 _retreat 发 leave）；**气绝移动不经 _retreat 不发 leave**；桃红簇簇"进入或离开战斗区时恢复2生命"挂点 | ✅ |
 | 气绝触发能力 | `trigger_when_defeated`（EffectBlock）/ `{holder_defeated: bool}`（条件运算符） | 能力收集门控：离场（despawned）恒跳过；气绝者仅带此标记的能力块放行收集（觉醒·犬神"气绝时也能触发"）；0 级未在场仍走 trigger_when_not_in_play。holder_defeated 判能力持有者当前是否气绝（配合前者做"仅气绝时触发"——存活不触发） | ✅ |
-| 动态关键字 | `conditional_keywords`（CardDef） | 满足条件的条目把 keyword 加入实际关键字（读取点 `_card_keywords`，对手中/生成的一切副本生效）：`level_ge`=所属式神当前等级 ≥ n（心身炼磨"犬神 2 级获得[瞬发]"）；`if_alive`=所属式神在场未气绝（桃华灼灼"若桃花妖未气绝，此牌得[瞬发]"）；**`enemy_stunned_nonempty`=场上有[眩晕]的敌方角色（霜舞型条件瞬发，活局面判定——统一读取 `_enemy_stunned_count`）**；式神未出战条件不满足 | ✅ |
+| 动态关键字 | `conditional_keywords`（CardDef） | 满足条件的条目把 keyword 加入实际关键字（读取点 `_card_keywords`，对手中/生成的一切副本生效）：`level_ge`=所属式神当前等级 ≥ n（心身炼磨"犬神 2 级获得[瞬发]"）；`if_alive`=所属式神在场未气绝（桃华灼灼"若桃花妖未气绝，此牌得[瞬发]"）；**`enemy_stunned_nonempty`=场上有[眩晕]的敌方角色（霜舞型条件瞬发，活局面判定——统一读取 `_enemy_stunned_count`）**；**`enemy_hand_all_revealed`=敌方有手牌且全部已展示（"若敌方手牌全部已展示，此牌得[瞬发]"——心灵迷宫）**；式神未出战条件不满足 | ✅ |
 | 状态目标池 | `friendly_injured` / `friendly_defeated`（目标池） | 己方在场且已受伤（生命 < 上限）的式神（丰实/盛开"己方受伤式神"）/ 己方已气绝式神（未离场、等级 ≥1；桃华灼灼/桃语春风复活池）；`TargetSpec` 扩展键 `{"random": n}`：kind=all 解析结果中随机取 n 个（rng.sample，不足取全部；配合 repeat 每轮重解析重随机——盛开"再重复2次"） | ✅ |
 | 炼磨计数 | `lianmo`（tags）/ `lianmo_used_game` | 出牌统一记账：tags 含 lianmo 的牌（心身炼磨）使用时 `PlayerState.ext["lianmo_used_game"]` +1（本局累计不清）；心技一体 card_aura power_ext/shield_ext 数值通道读取 | ✅ |
 | 动态身材光环 | `stat_aura`（动作）/ `stat_auras`（`PlayerState.ext` 注册表） | 连续型"读取时求值"修饰：不写死数值，`Game._refresh_stat_auras` 在手牌数变化（move_card）/事件发出（emit）/战斗快照前等读取点全量重算缓存（`ext["dyn_power"]/["dyn_health"]`，eff_power/max_health 读取时叠加）；kind="self_hand_count"（持有者每有一张其他手牌 +1/+1——闻世）/"enemy_fragile_power"（敌方有破甲式神降等量力量——火吻之蛇）/**"enemy_stunned_exists"（场上有[眩晕]的敌方角色时持有者 +power/+health——雪国之子；活局面判定）/"ext_power"（持有者 +力量 = 控制者 ext[ext] 计数 × power 倍率——雪融之时[增强]，计数引擎记账读取时求值）**/"ids_power"（控制者在场实体中数据 id ∈ ids 者 +power 永久力量光环；scope="game" 结附牌手、本局有效不清除、跨召唤保留——坐下"番茄永久+1力量"，对番茄召唤物与变形番茄同生效，可叠加；ids_power 条目无 holder 不被重算跳过——第十六阶段存量 bug 修复）**；scope="form" 绑定来源式神当前形态、形态离场移除（`_destroy_form` 同路径）；登记时持有者当前生命按新上限回满；动态上限降低时钳当前生命（不触发事件） | ✅ |
 | 抽牌替换 | `draw_to_pick`（tags） | 明心：在场形态含此标记时，回合开始抽牌改为检视牌库顶 3 张选 1 置入手牌（choose 作答后洗牌库；牌库不足 3 张全部检视，为空走空库分支——`_turn_start_draw`） | ✅ |
-| 战中调度 | `mulligan_hand`（动作）/ `mulligan_pick`（pending kind） | 调度控制者手牌至多 times 次：经 pending_choice 挂起，choose 作答（uid=手牌换该张——`_swap_hand_card` 核心与开局调度共用；uid 缺省/次数用尽提前结束并洗牌库、续跑挂起块）；`shuffle: false` 结束不洗牌（云游） | ✅ |
+| 战中调度 | `mulligan_hand`（动作）/ `mulligan_pick`（pending kind） | 调度控制者手牌至多 times 次：经 pending_choice 挂起，choose 作答（uid=手牌换该张——`_swap_hand_card` 核心与开局调度共用；uid 缺省/次数用尽提前结束并洗牌库、续跑挂起块）；`shuffle: false` 结束不洗牌（云游）；**强索通道 `auto=True`**：无交互——对 `target_side`（self/opponent）手牌按入手顺序（hand_seq 升序）取前 times 张候选自动逐张调度（`only_revealed=True` 仅"已展示"牌为候选），有实际调度才洗牌库 | ✅ |
 | 空库燃烧 | `deck_out_burn`（tags） | 觉醒·书翁：己方在场已觉醒且觉醒牌含此标记时，空库抽牌改为对敌方牌手造成 10 点伤害（每张空抽各触发一次），自己不判负（`_deck_out_burner`，draw_cards 空库分支） | ✅ |
 | 破甲保留 | `keep_enemy_fragile`（tags） | 觉醒·清姬：对方在场已觉醒且觉醒牌含此标记时，己方角色的破甲不在回合开始清除（护甲照常；`_fragile_kept_by_enemy`，扫描模式同 orb_store） | ✅ |
 | 爆牌 | `hand_cap`（move_card 统一路径） | 移入手牌后超出手牌上限时该牌转而置入墓地——抽牌/生成/调度等所有进手路径共用（第十四阶段维护者定案） | ✅ |
@@ -292,6 +292,7 @@
 | `gen_replace` | `PlayerState.ext` | 生成替换钩子（{shikigami, to_type}；gen_replace 动作登记、generate 单点读取、重复登记覆盖——觉醒·番茄"她的非战斗牌改为随机战斗牌"） |
 | `snowball_used_game` | `PlayerState.ext` | 本局从手牌使用'雪球'（tags snowball）计数（出牌统一记账 `_account_card_played`；流霰 repeat {"ext": ...} 读数） |
 | `enemy_stunned_game` | `PlayerState.ext` | 本局敌方角色被[眩晕]累计次数（stun 动作每次实际施加时按受害者对方记账，不分眩晕来源、先于 on_stun 事件；雪融之时[增强] stat_aura kind=ext_power 读数） |
+| `dealt_damage_turn` | `ShikigamiState.ext` | 本回合造成过伤害标记（伤害结算点 `_mark_dealt_damage_turn` 按来源式神记账；任一回合开始清除——半回合作用域；记仇 TargetSpec 过滤键同名读取） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 
@@ -318,7 +319,7 @@
 | 直接获胜 | `win_game`（动作） | 目标牌手获得本局游戏胜利（target=self=控制者胜）：`_set_pending_end(loser=对方)` 走待结束流程，非气绝判负（这把算我赢增强变后） | ✅ |
 | 逐次随机伤害 | `repeat_random_damage`（动作） | 逐次在 pool 随机 1 名造成 amount 点伤害、插入结算、每次重新求值目标池（无羁风弹；pool="all_other_shikigami"=双方除来源外未气绝式神）：stop_on_defeat=True 任一式神气绝即停，否则满 max 次即停 | ✅ |
 | 再次使用本牌 | `reuse_card`（动作） | 法术→凭空自动使用管线同目标重结算（实例标记 `_reused` 防自循环，恰好两次——叠风斩）；战斗牌→战斗流程重走（关键字/临时触发重新绑定，自动使用不耗火——转运）；照常 emit on_card_played（triggered=auto，可再触发"使用牌时"能力） | ✅ |
-| 牌手费用修正 | `cost_delta_player`（动作）/ `cost_mods`（ext 键） | 目标牌手的手牌费用 +amount（scope="next_turn"=下个回合，按回合号记账过期，仿 immunities；`_effective_cost` 读取——[不消耗鬼火]与回合内首张[瞬发]已归零不受影响，非手牌使用不走费用求值不受影响；幸运兔兔） | ✅ |
+| 牌手费用修正 | `cost_delta_player`（动作）/ `cost_mods`（ext 键） | 目标牌手的手牌费用 +amount（scope="next_turn"=下个回合，按回合号记账过期，仿 immunities；`_effective_cost` 读取——[不消耗鬼火]与回合内首张[瞬发]已归零不受影响，非手牌使用不走费用求值不受影响；幸运兔兔）；**`side="opponent"` 改作用于敌方牌手、`card_flag`（如 "revealed"）仅命中带对应实例标志的手牌、`scope="form"` 绑定来源形态、形态离场移除（心灵迷宫"敌方使用已展示的手牌额外耗 1 火"，仍在 cost>0 门内——瞬发/不耗火全免）** | ✅ |
 | 倒计时力量复合 | `countdown_power_boost`（动作） | 山兔能力原子语义"倒计时-1 并 +1 力量"同段效果：气绝者只减复活倒计时（被本次归零复活者不追加力量）；存活者（含无倒计时能力的）倒计时 -1（归零走 `_countdown_zero`）并 +1 力量（perm=False 默认临时） | ✅ |
 | 随机使用形态 | `random_play_form`（动作） | 目标各随机使用 1 张等级 ≤ 其当前等级的专属形态牌（凭空自动使用：`_play_form_card` + on_card_played(triggered=auto)，play_condition 同检）；无可用形态/气绝者跳过（鸿运当头） | ✅ |
 | 骰子修饰 | `set_dice_modifier`（动作） | mode="six"：判定者级光环必 6，写控制者牌手 ext `dice_force_six`（记持有者座次 `dice_force_six_holder`，形态进场 on/离场 off——萌即正义）；mode="six_once"：来源级，写来源式神 ext `dice_force_six_once`，下次以其为来源的判定首投必 6 并消耗（这把算我赢） | ✅ |
@@ -342,3 +343,7 @@
 | 逐次随机分配 | `sequential`（random_damage 参数） | sequential=True：每次独立随机（有放回）、插入结算——逐次单独伤害队列（狂风刃卷）；默认保持并行无放回语义 | ✅ |
 | 抽牌扩展 | `hand_to` / `side`（draw 参数） | count={"hand_to": n}：抽至手牌 n 张（福满乾坤"抽手牌直至十张"）；side="self"/"opponent"：改由指定方抽牌（依次对双方生效类） | ✅ |
 | 鬼火获得扩展 | `side`（gain_orb 参数） | side="self"/"opponent"：改由指定方获得（福满乾坤依次对双方 +3 鬼火）；缺省控制者 | ✅ |
+| 已展示 | `revealed`（mods 键）/ `reveal`（动作）/ `on_card_enter_hand`（事件） | 卡牌实例级状态（`CardInstance.mods["revealed"]`，本局保持、随实例——回库/墓地不清除；调度传递：换入牌失去、换出牌获得，`_swap_hand_card`）。reveal 四档（targets 忽略，作用于敌方手牌）：random=随机一张未展示 / shikigami=指定式神专属牌全部（协战归属 `_card_belongs_to` 口径；`shikigami="chosen"`=选择目标所指式神）/ all=全部 / event=触发事件 payload 的那张牌（入手被动挂点）。入手统一钩子 `_enter_hand`（抽牌/生成/检索/检视/调度换入一切路径）发 `on_card_enter_hand`（延时时机 queue，payload {player, uid, card}；起始手牌静默、爆牌转墓地不发）。可见性：CLI 按 hand_seq 列出敌方已展示手牌；联机 sanitize 对已展示卡放行真实内容。机制细则见 rules.md 第二十九章 | ✅ |
+| 使用已展示牌载荷 | `card_revealed`（on_card_played payload 键） | 被使用的牌在使用点是否具有"已展示"（读实例 mods）——{card_revealed: true} 匹配"使用已展示的手牌时"类触发（灵视/觉醒·觉） | ✅ |
+| 本回合伤害过滤 | `dealt_damage_turn`（TargetSpec 过滤键 / ext 键） | 本回合造成过伤害的角色过滤（记仇"本回合造成过伤害的敌方式神"）：伤害结算点 `_mark_dealt_damage_turn` 按来源式神记账 `ShikigamiState.ext["dealt_damage_turn"]`，任一回合开始清除（半回合作用域）；spec_pool_refs 统一校验 | ✅ |
+| 已展示计数 | `enemy_revealed_count`（动态数值键） | 敌方手牌中已展示牌计数（`_enemy_revealed_count`，引擎读取、活局面量）：三口径——`spell`=法术牌数（模仿+护甲）/ `other`=其他牌数（模仿+力量）/ `shikigami_of_chosen`=选择目标所指式神专属牌数（棒球炸弹增伤，协战归属同 _card_belongs_to）；`_step_amount` 签名加 chosen | ✅ |

@@ -381,6 +381,15 @@ def render(game: Game, viewer: int | None = None) -> str:
             )
             lines.append(line)
         lines.append("")
+    enemy = st.players[1 - view]
+    revealed = sorted((c for c in enemy.hand if c.mods.get("revealed")),
+                      key=lambda c: c.hand_seq)
+    if revealed:
+        # 敌方已展示手牌（"已展示"机制）：按入手顺序（hand_seq）公开牌面，
+        # 沿用己方手牌同一格式化（关键字/增强/数值段；热坐与联机共用本函数）
+        lines.append(f"{enemy.name} 已展示手牌{len(revealed)}（按入手顺序）：")
+        lines.extend(format_hand_lines(game, enemy, revealed))
+        lines.append("")
     p = st.players[view]
     lines.append(f"{p.name}（你）手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）："
                  if viewer is not None else

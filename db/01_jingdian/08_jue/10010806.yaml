@@ -1,0 +1,24 @@
+id: 10010806
+name: 记仇
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: SR
+      level: 2
+      keywords: [trigger]
+      # 本回合造成过伤害的敌方式神（TargetSpec dealt_damage_turn 过滤键待引擎对齐）
+      target: {kind: choose, pool: enemy_shikigami, dealt_damage_turn: true}
+      effects:
+        steps:
+          - {op: destroy}
+      response:
+        # 响应：当你受到敌方式神伤害时，自动对伤害来源使用（event source；on_player_damaged
+        # 无 victim 字段，choose 自动取目标不适用，response 块显式 context source——
+        # 沧海之盾 10010703 response 覆盖先例）
+        when: on_player_damaged
+        condition: {player: self, source_side: enemy, source_kind: shikigami}
+        steps:
+          - {op: destroy, target: {kind: context, key: source}}
+      text: "消灭一个本回合造成过伤害的敌方式神。[响应]：{当你受到敌方式神伤害时，自动对其使用。}"

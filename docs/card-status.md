@@ -487,6 +487,22 @@
 | 99 番茄 | ✅ | 召唤物 3/4（kind=summon；keep_buffs 同名再召保留永久增益——坐下/出击光环跨召唤生效） |
 | 98 番茄 | ✅ | 变形物 3/4（kind=transform；觉醒·番茄的永久变形产物） |
 
+## 觉（100108）
+
+| 卡牌 | 状态 | 备注 |
+| --- | --- | --- |
+| 基础能力 | ✅ | 己方回合开始随机展示一张敌方手牌（reveal mode=random；已全部展示则无效果） |
+| 01 读心 | ✅ | [瞬发] 展示被选敌方式神在敌方手牌中的所有专属牌（reveal mode=shikigami + shikigami=chosen；协战牌归属按 _card_belongs_to 统一口径） |
+| 02 棒球炸弹 | ✅ | 3 伤 + 2×被选式神已展示专属牌数（动态数值 enemy_revealed_count: shikigami_of_chosen，per 倍率） |
+| 03 模仿 | ✅ | 战斗牌[增强]：敌方每有一张已展示法术牌 +1 护甲、每有一张已展示其他牌 +1 力量（enemy_revealed_count: spell/other） |
+| 04 强索 | ✅ | [瞬发] 调度敌方已展示的手牌并洗牌库（mulligan_hand target_side=opponent + only_revealed + auto：按 hand_seq 前 3 张自动调度、有调度才洗牌）+ 抽 1 |
+| 05 灵视 | ✅ | 形态 5/5 [吸血]；敌方牌手使用已展示的手牌时对他造成 2 伤（on_card_played 载荷 card_revealed 条件；能力伤害吸血经统一伤害队列传导） |
+| 06 记仇 | ✅ | 消灭一个本回合造成过伤害的敌方式神（TargetSpec 过滤键 dealt_damage_turn——伤害结算点记账、回合开始清除）；[响应] 受到敌方式神伤害时自动对伤害来源使用（response 覆盖块 + context source） |
+| 07 心灵迷宫 | ✅ | 形态 5/5；敌方使用已展示的手牌额外耗 1 鬼火（cost_delta_player side=opponent + card_flag=revealed + scope=form——形态结附期间持续、离场移除；仍在 cost>0 门内，[瞬发]/[不消耗鬼火]全免）；增强：敌方手牌全部已展示时得[瞬发]（conditional_keywords 算子 enemy_hand_all_revealed） |
+| 08 觉醒·觉 | ✅ | +1/+1；展示敌方所有手牌（reveal mode=all 补存量）；觉醒被动①：每当一张牌进入敌方手牌时将其展示（入手统一钩子 on_card_enter_hand + reveal mode=event）；被动②：敌方牌手使用已展示的手牌时觉 +1/+1 |
+
+（**经典包 01_jingdian 31 位式神至此完结**——不含未加入的协战对象：跳跳哥哥/樱花妖等；其协战牌主牌/子选项随之暂缓，见文末协战牌 id 设计。）
+
 ## 与原版描述的出入（已决议，2026-07）
 
 1. **妖刀姬基础/觉醒能力**：按原版"对敌方牌手造成**伤害**时"（任意伤害）实现。

@@ -36,14 +36,21 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
     """按视角脱敏完整状态：对手的手牌与牌库以占位卡替换（张数公开、内容保密），
     对手式神标记 secret 的延迟能力（会）抹除选择目标，防止修改客户端窥探。
     对手的剩余调度次数一并抹除（调度阶段信息隐藏；mulligan_done 状态保留）。
-    墓地/计数器等在本游戏中为公开信息，保留。"""
+    墓地/计数器等在本游戏中为公开信息，保留。
+    例外（"已展示"机制）：对手手牌中 mods.revealed 的卡保留真实内容——
+    牌面本就对该玩家公开，不再替换为占位卡。"""
     import copy
 
     payload = copy.deepcopy(payload)
     opponent = payload["players"][1 - viewer]
     zones = opponent.get("zones", {})
     for zone in ("hand", "deck"):
-        if zone in zones:
+        if zone not in zones:
+            continue
+        if zone == "hand":
+            zones[zone] = [c if (c.get("mods") or {}).get("revealed")
+                           else dict(_HIDDEN_CARD) for c in zones[zone]]
+        else:
             zones[zone] = [dict(_HIDDEN_CARD) for _ in zones[zone]]
     opponent["mulligans_left"] = 0  # 调度次数对对手隐藏
     for s in opponent.get("shikigami", []):

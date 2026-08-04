@@ -1,0 +1,16 @@
+id: 100108
+name: 觉
+versions:
+  best: 20251212
+  history:
+    - date: 20251212  # 发布日期
+      faction: 青岚
+      power: 2
+      health: 5
+      ability:
+        when: on_turn_start
+        condition: {player: self}
+        steps:
+          # 随机展示一张敌方手牌（引擎 reveal op，待引擎对齐）
+          - {op: reveal, mode: random}
+      text: 己方回合开始时，随机展示一张敌方手牌。

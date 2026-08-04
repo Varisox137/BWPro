@@ -250,6 +250,34 @@ class Game:
         n = sum(1 for s in d.shikigami if s.in_play and s.is_stunned)
         return n + (1 if d.is_stunned else 0)
 
+    @staticmethod
+    def _card_belongs_to(cdef: CardDef, sid: int) -> bool:
+        """卡牌归属判定（"已展示"机制统一口径）：专属牌按 shikigami 命中；协战牌
+        未使用时视为同时属于两位所属式神（shikigami2 同判）。"""
+        return cdef.shikigami == sid or (cdef.shikigami2 is not None
+                                         and cdef.shikigami2 == sid)
+
+    def _enemy_revealed_count(self, pi: int, mode: str,
+                              chosen: list[Ref] | None = None) -> int:
+        """敌方手牌中已展示牌的计数（_step_amount {"enemy_revealed_count": mode}
+        统一读取点；活局面量）：spell=法术牌；other=非法术牌；
+        shikigami_of_chosen=属于被选择式神（含其参与的协战牌，无选择目标为 0）。"""
+        revealed = [c for c in self.state.players[1 - pi].hand
+                    if c.mods.get("revealed")]
+        if mode == "spell":
+            return sum(1 for c in revealed
+                       if self.db.cards[c.id].card_type == "spell")
+        if mode == "other":
+            return sum(1 for c in revealed
+                       if self.db.cards[c.id].card_type != "spell")
+        if mode == "shikigami_of_chosen":
+            if not chosen or chosen[0].shikigami is None:
+                return 0
+            sid = self.state.players[chosen[0].player].shikigami[chosen[0].shikigami].id
+            return sum(1 for c in revealed
+                       if self._card_belongs_to(self.db.cards[c.id], sid))
+        raise ValueError(f"未知 enemy_revealed_count 口径: {mode}")
+
     @property
     def config(self):
         return self.state.config
@@ -289,9 +317,13 @@ class Game:
             cost = 0
         if cost > 0:
             # 幸运兔兔类手牌费用修正（cost_delta_player 登记于 ext["cost_mods"]，回合号过期）；
-            # [不消耗鬼火]与回合内首张[瞬发]已在上方归零，不受修正影响
+            # [不消耗鬼火]与回合内首张[瞬发]已在上方归零，不受修正影响（全免沿跳跳妹妹定案）；
+            # card_flag 条目（card_flag="revealed"：使用已展示的手牌额外耗火）仅命中
+            # 带对应实例标志的牌
             cost += sum(int(e.get("amount", 0)) for e in p.ext.get("cost_mods", [])
-                        if e.get("turn") == self.state.turn)
+                        if (e.get("turn") is None or e["turn"] == self.state.turn)
+                        and (e.get("card_flag") is None
+                             or (card is not None and card.mods.get(e["card_flag"]))))
             # 跳跳妹妹基础能力（先天伪关键字 extra_orb_cost）：其战斗牌额外消耗 1 点鬼火；
             # 气绝（能力不在场）/瞬发/不消耗鬼火（已归零）时全免——含额外的这 1 火（定案(11)）
             if cdef.card_type == "combat" and cdef.shikigami is not None:
@@ -342,7 +374,8 @@ class Game:
         conditional_keywords（心身炼磨/桃华灼灼/闪烁）：按卡牌所属式神在座次中的状态
         判定（level_ge = 等级下限；if_alive = 在场；combat_nonempty = 己方战斗区有人；
         shikigami_has_form = 控制者指定式神结附着形态；enemy_stunned_nonempty =
-        场上有[眩晕]的敌方角色——霜舞型条件瞬发，活局面判定）；式神未出战时条件不满足。"""
+        场上有[眩晕]的敌方角色——霜舞型条件瞬发，活局面判定；enemy_hand_all_revealed =
+        敌方有手牌且全部已展示——读心型条件）；式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
@@ -362,6 +395,11 @@ class Game:
             if ck.get("enemy_stunned_nonempty") and not self._enemy_stunned_count(
                     self.state.players.index(p)):
                 continue  # 场上有[眩晕]的敌方角色（霜舞型条件瞬发）
+            if ck.get("enemy_hand_all_revealed"):
+                # 敌方有手牌且全部已展示（空手牌不成立；读心型条件）
+                eh = self.state.players[1 - self.state.players.index(p)].hand
+                if not eh or not all(c.mods.get("revealed") for c in eh):
+                    continue
             if ck.get("shikigami_has_form") is not None:
                 # 控制者的式神（按数据 id）结附着形态（福寿双全条件瞬发；
                 # 与 targets.match_condition 同名算子同语义）
@@ -406,7 +444,8 @@ class Game:
                      s: ShikigamiState | None = None,
                      event: dict | None = None, game=None,
                      memo: dict | None = None,
-                     controller: int | None = None) -> int:
+                     controller: int | None = None,
+                     chosen: list[Ref] | None = None) -> int:
         """解析步骤的 amount 参数（docs/enhance-design.md 数值解析流水线）：
 
         - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
@@ -434,6 +473,9 @@ class Game:
           "每有一个[眩晕]的敌方角色便+1力量"；活局面量，engine._enemy_stunned_count）。
         - {"hand_count_half": "controller"}：效果归属玩家当前手牌数的一半（向下取整，
           墨染"等同于你手牌数量一半的伤害"）。
+        - {"enemy_revealed_count": "spell"|"other"|"shikigami_of_chosen"}：敌方手牌中
+          已展示牌的计数——按法术牌/非法术牌/属于被选择式神（含其参与的协战牌，
+          _card_belongs_to 口径）三口径（"已展示"机制，engine._enemy_revealed_count）。
         前三者在动作执行处另有 _run_step 的 ctx 解析路径（法术/能力步骤用）。
         """
         raw = (step.model_extra or {}).get("amount", 0)
@@ -466,6 +508,10 @@ class Game:
                 # 场上眩晕的敌方角色数（霜天之织[增强]"每有一个便+1力量"；活局面量，
                 # 眩晕解除即减——统一读取点 engine._enemy_stunned_count）
                 base += game._enemy_stunned_count(controller)
+            if raw.get("enemy_revealed_count") and game is not None and controller is not None:
+                # 敌方手牌中已展示牌计数（三口径，engine._enemy_revealed_count）
+                base += game._enemy_revealed_count(controller,
+                                                   raw["enemy_revealed_count"], chosen)
             if raw.get("half_health_of") and event is not None and game is not None:
                 ref = event.get(raw["half_health_of"])
                 if isinstance(ref, Ref):
@@ -669,8 +715,8 @@ class Game:
     def _cmd_mulligan(self, cmd: dict) -> None:
         """调度（Phase 1 简化版）：把一张起始手牌返回牌库（随机位置），再随机抽一张。
 
-        完整规则（docs/rules.md 调度事件流程）包含加护/蚀印移除、展示状态传递、
-        灵咒移除、调度后洗牌等；Phase 1 最小实现暂不处理这些机制。
+        完整规则（docs/rules.md 调度事件流程）包含加护/蚀印移除、灵咒移除、洗牌后
+        时机等，暂不处理；"已展示"状态传递已在 _swap_hand_card 落实（rules 528-533）。
         双方各自限次。
         """
         if self.state.phase != "mulligan":
@@ -694,14 +740,23 @@ class Game:
 
     def _swap_hand_card(self, p: PlayerState, card: CardInstance) -> None:
         """调度换牌核心：把一张手牌返回牌库（随机位置），再随机抽一张放到原位置
-        （换入牌继承换出牌的顺序编号）。游戏开始阶段调度与战中调度（云游）共用。"""
+        （抽上牌继承换回牌的顺序编号）。游戏开始阶段调度与战中调度（云游/强索）共用。
+
+        展示状态细则（docs/rules.md:528-533，第十七阶段落实；以下按 rules 术语——
+        "换入牌"=返回牌库的手牌，"换出牌"=牌库抽上的新牌）：
+        换入牌具有"已展示"则失去（rules 528）；换入牌原本具有"已展示"则换出牌
+        获得"已展示"（rules 530）。换出牌入手经统一钩子 _enter_hand 发点。"""
         idx = p.hand.index(card)
         old_seq = card.hand_seq
+        had_revealed = bool(card.mods.pop("revealed", None))  # 换入牌失去已展示
         p.hand.pop(idx)
         p.deck.insert(self.rng.randint(0, len(p.deck)), card)      # 返回牌库
         new_card = p.deck.pop(self.rng.randint(0, len(p.deck) - 1))  # 再随机抽一张
-        new_card.hand_seq = old_seq                                 # 换入牌继承换出牌的顺序编号
+        new_card.hand_seq = old_seq                                 # 换出牌继承换回牌的顺序编号
         p.hand.insert(idx, new_card)
+        if had_revealed:
+            new_card.mods["revealed"] = True  # 换入牌原本已展示 → 换出牌获得已展示
+        self._enter_hand(p, new_card)
 
     def _cmd_ready(self, cmd: dict) -> None:
         """确认完成调度（可以不用满次数）。双方均确认后进入对战阶段。"""
@@ -1030,11 +1085,15 @@ class Game:
         使用位置/方式（rules.md:611）：play_from ∈ hand/deck/void（凭空生成）；
         play_method = 使用方式 id（无方式则为 None）；triggered ∈ active（主动）/
         response（响应）/ auto（凭空自动使用，如 recast_recorded/法术回响）。
+        card_revealed：被使用的牌在使用点是否具有"已展示"（读实例 mods，本局保持、
+        随实例）——条件 {card_revealed: true} 匹配"使用已展示的牌时"类触发。
         """
+        played = self._card_by_uid(uid)
         self.emit("on_card_played", player=player, uid=uid, card_type=cdef.card_type,
                   subtype=cdef.subtype, shikigami=cdef.shikigami,
                   golden_feather=("golden_feather" in cdef.tags),
                   play_from=play_from, play_method=play_method, triggered=triggered,
+                  card_revealed=bool(played is not None and played.mods.get("revealed")),
                   affected_refs=list(affected or ()))
 
     def _queue_awaken_stats(self, si: int, cdef: CardDef, card: CardInstance) -> None:
@@ -1284,7 +1343,28 @@ class Game:
                           f"【{self.db.cards[card.id].name}】置入墓地（爆牌）")
                 self.move_card(p, card, "graveyard")
                 return
+            self._enter_hand(p, card)  # 入手统一钩子（爆牌转墓地不视为进入手牌）
         self._refresh_stat_auras()  # 手牌数变化影响动态身材光环（闻世）
+
+    def _enter_hand(self, p: PlayerState, card: CardInstance) -> None:
+        """牌进入手牌的统一钩子（第十七阶段"已展示"机制）：抽牌（draw_cards）/生成
+        （generate）/检索（search_deck）/检视入手（deck_top_pick）/调度换入
+        （_swap_hand_card）等一切入手路径经此单点发点（延时时机，不分回合），
+        供觉醒·觉"每当一张牌进入敌方手牌时将其展示"类被动挂载（含生成牌）。"""
+        self.emit("on_card_enter_hand", player=self.state.players.index(p),
+                  uid=card.uid, card=card)
+
+    def _card_by_uid(self, uid: int) -> CardInstance | None:
+        """按 uid 找局内卡牌实例（双方全区域 + 结附中的形态牌；找不到返回 None）。"""
+        for pl in self.state.players:
+            for z in pl.zones.values():
+                for c in z:
+                    if c.uid == uid:
+                        return c
+            for s in pl.shikigami:
+                if s.form is not None and s.form.uid == uid:
+                    return s.form
+        return None
 
     def _change_shield(self, ref: Ref, delta: int, reason: str, kind: str = "shield") -> None:
         """目标（式神或牌手）护甲/破甲变化（docs/rules.md 第六章），并发出 on_shield_changed。
@@ -1861,6 +1941,13 @@ class Game:
         # 同路径移除绑定该形态持有者的动态身材光环（stat_aura scope="form"，闻世/火吻之蛇）
         p.ext["stat_auras"] = [a for a in p.ext.get("stat_auras", [])
                                if not (a.get("scope") == "form" and a.get("holder") == [pi, i])]
+        # 同路径移除绑定该形态的手牌费用修正（cost_delta_player scope="form"，心灵迷宫；
+        # side="opponent" 时条目登记在敌方牌手 ext，故双方扫描）
+        for pl in self.state.players:
+            if pl.ext.get("cost_mods") is not None:
+                pl.ext["cost_mods"] = [
+                    e for e in pl.ext["cost_mods"]
+                    if not (e.get("scope") == "form" and e.get("holder") == [pi, i])]
         self.move_card(p, old, "graveyard")
         d = self.db.shikigami[s.id]
         s.base_power = d.power
@@ -2028,12 +2115,15 @@ class Game:
             pl.immunities[:] = [e for e in pl.immunities
                                 if "turn" not in e or e["turn"] == self.state.turn]
             if pl.ext.get("cost_mods") is not None:
-                # 手牌费用修正（cost_delta_player scope=next_turn）按回合号过期清理
+                # 手牌费用修正（cost_delta_player scope=next_turn）按回合号过期清理；
+                # scope="form" 条目不按回合号过期（形态离场通道移除）
                 pl.ext["cost_mods"] = [e for e in pl.ext["cost_mods"]
-                                       if e.get("turn", 0) >= self.state.turn]
+                                       if e.get("scope") == "form"
+                                       or e.get("turn", 0) >= self.state.turn]
             for s in pl.shikigami:
                 s.ext.pop("min_health_turn", None)
                 s.ext.pop("damage_taken_turn", None)
+                s.ext.pop("dealt_damage_turn", None)  # 记仇过滤键（半回合作用域）
                 # 闪烁"本回合力量变为 0"（power_override scope="turn"，半回合作用域，
                 # min_health_turn 先例）到期：连同力量覆写一并解除
                 if s.ext.pop("power_zero_turn", None):
@@ -2510,6 +2600,7 @@ class Game:
             s.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
+            self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
@@ -2539,6 +2630,7 @@ class Game:
             p.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
+            self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -2559,6 +2651,15 @@ class Game:
             return
         pl = self.state.players[ev.source.player]
         pl.ext["yaohu_damage_count"] = pl.ext.get("yaohu_damage_count", 0) + 1
+
+    def _mark_dealt_damage_turn(self, ev: _DamageEvent) -> None:
+        """记仇记账（TargetSpec 过滤键 dealt_damage_turn）：伤害实际造成（扣减生命批次
+        锁定）时给来源式神打半回合标记——本回合造成过伤害（任意伤害类型/受伤者）；
+        回合开始双方清除（damage_taken_turn 同通道）。"""
+        if ev.source is None or ev.source.shikigami is None:
+            return
+        src = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+        src.ext["dealt_damage_turn"] = True
 
     def _queue_lifesteal(self, ev: _DamageEvent) -> None:
         """关键字"吸血"（rules.md ch5 批次 10①；thoughts.txt 答复 (5)）：
@@ -3290,7 +3391,8 @@ class Game:
             params["amount"] = self._step_amount(step, ctx.card, src,
                                                  event=ctx.event, game=self,
                                                  memo=ctx.memo,
-                                                 controller=ctx.controller)
+                                                 controller=ctx.controller,
+                                                 chosen=ctx.chosen)
         fn(self, ctx, targets=refs, **params)
 
     def _op_params(self, op: str, fn) -> frozenset:

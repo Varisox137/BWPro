@@ -1,0 +1,31 @@
+id: 10010808
+name: 觉醒·觉
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1  # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: SR
+      level: 3
+      effects:
+        steps:
+          # 觉醒时补展示敌方存量手牌（入手被动只覆盖新入手——维护者定案；
+          # 引擎 reveal op，待引擎对齐）
+          - {op: reveal, mode: all}
+      abilities:
+        # 入手即展示被动：每当牌进入敌方手牌时展示（不分回合，含抽牌/生成牌；
+        # 引擎 _enter_hand 钩子发 on_card_enter_hand，reveal mode=event 展示事件中的那张牌）
+        - when: on_card_enter_hand
+          condition: {player: opponent}
+          steps:
+            - {op: reveal, mode: event}
+        # 当敌方牌手使用已展示的手牌时，觉获得 1 力量与 1 生命
+        - when: on_card_played
+          condition: {player: opponent, card_revealed: true}
+          steps:
+            - {op: buff_power, amount: 1, target: {kind: self}}
+            - {op: buff_health, amount: 1, target: {kind: self}}
+      text: "[觉醒]：{展示敌方所有手牌。当敌方牌手使用已展示的手牌时，觉获得1力量与1生命。}"

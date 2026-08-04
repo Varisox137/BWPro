@@ -530,7 +530,7 @@
    - 将换出牌对象置于换入牌原本所在区域的队列最后。若换入牌原本具有“已展示”状态，则使换出牌获得“已展示”状态。若换出牌结附有“抽到时生效”的灵咒，直接移除而不生效。
 3. 若本次调度至少执行了一次效果，插入结算“洗牌库”事件。
 
-【Phase 1 简化】当前实现为：选择一张手牌返回牌库随机位置，再从牌库随机抽一张（`_swap_hand_card` 核心）。加护/蚀印/展示状态/灵咒/洗牌后时机均暂不处理。
+【部分落实】当前实现为：选择一张手牌返回牌库随机位置，再从牌库随机抽一张（`_swap_hand_card` 核心）。**展示状态传递已落实**（第十七阶段）：换入牌失去"已展示"；换入牌原本已展示则换出牌获得"已展示"（`_swap_hand_card`，见第二十九章）。加护/蚀印/灵咒仍未实现，对应步骤暂不处理。
 
 **战中调度已实现**（第十四阶段，云游"调度你的手牌（3次）"）：`mulligan_hand` 动作经 `pending_choice`（kind=`mulligan_pick`）挂起，choose 指令作答——uid 给出一张手牌则换该张（返回牌库随机位置再随机抽 1，与游戏开始阶段调度共用核心），uid 缺省或次数用尽则提前结束并洗牌库、续跑挂起块（deck_top_pick 先例；`shuffle: false` 时结束不洗牌）。
 
@@ -544,7 +544,7 @@
 - **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、heal_reversal 治疗反转等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
 - **稀有度 rarity**：R/SR/SSR（良/优/极）预留，供抽卡/账号系统。
 - **关键词**：数据侧接受的关键字见 db/schema.py `KEYWORDS`（含 fast/trigger/combo/initiative/piercing/pierce/remote/unyielding/haste/barrier/enraged/lifesteal/hunt/direct/veil/lethal/inspire 等；定义见术语表）。机制未实现的关键词不放进数据，避免静默失效。
-- **区域 zones**：deck/hand/graveyard/exiled 为标准区域，可扩展；墓地仅 UI 层隐藏（引擎可查看并保留对象引用，区域移动需要）；同名卡靠 uid 区分，实例差异放 mods（目前认识 cost_delta；对局中动态赋予卡牌效果为预留能力）。
+- **区域 zones**：deck/hand/graveyard/exiled 为标准区域，可扩展；墓地仅 UI 层隐藏（引擎可查看并保留对象引用，区域移动需要）；同名卡靠 uid 区分，实例差异放 mods（目前认识 cost_delta/revealed；对局中动态赋予卡牌效果为预留能力）。
 - **使用位置 play_from / 使用方式 play_method**：均可扩展；多择牌仅保留核心方式、参数可变（PlayMethod.param，如爆能 burst + 参数，参数可被效果增减）。
 - **数据兼容**：字段只增不改、未知字段保留、加载即校验；version 为 8 位日期（YYYYMMDD）。同名卡的平衡性多版本（versions 块：best/history 时间线）与环境（at_date 按日期解析）见 `db/versioning.py` 与术语表「平衡性版本 / 环境」。
 - **本批数据侧登记**（2026-07 第二阶段）：`ShikigamiDef.keywords` 式神基础关键字（进场入 perm_keywords 永久类别——山童先天[贯通]）；条件迷你语言新增 `{字段_not: 值}`（≠ 判等；{shikigami_not: null} = 专属牌/非中立）与 `{orb_ge: n}`（控制者当前鬼火 ≥ n）；语境目标 `victim_player`（气绝事件被消灭者所属牌手，敌己两向——引燃）；目标池 `enemy_bench`（敌方全部准备区式神——崩山）；步骤数值形式 `{"perm_power": "self", "base": n}`（使用时以来源永久力量快照求值——崩山增强）。法术回响序列 `spell_echo` 见术语表（涅槃业火）。
@@ -554,6 +554,7 @@
 - **本批数据侧登记**（2026-07 第十三阶段，犬神/桃花妖批次修正）：`CardDef.only_when_defeated`（"仅在气绝时可用"硬门控——主动使用报错、响应收集跳过，心即归处）；守护响应条件去掉 `victim_in_combat`——追猎类有目标战斗可响应，守护者照常移入战斗区并获得加成，但攻击目标不转移仍打原定目标；`search_deck` 改为仅实际检索到才洗牌库（未命中不洗）；手牌数值/关键字显示改为读取时求值（`combat_card_stats`/`_card_keywords` 带玩家视角），卡牌光环数值（含 power_ext/shield_ext 通道）与授予关键字在手牌即时显示。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-08 第十五阶段，运势批次）：`EffectBlock.luck` 运势门控（int=成功才结算 / {"x":X,"on":"fail"}=失败才结算）；`CardDef.play_condition`（[条件] 使用前提，主动/响应/自动统一校验）；`ShikigamiDef.kind="transform"` 变形物；新 op `stun`/`transform`/`untransform`/`luck_roll`/`luck_reroll`/`win_game`/`repeat_random_damage`/`reuse_card`/`cost_delta_player`/`countdown_power_boost`/`random_play_form`/`set_dice_modifier`/`discard_random`；既有 op 扩展（伤害类 amount_ctx/amount_ext/amount_ext_source、buff 类 amount_sign、random_damage sequential、draw hand_to/side、gain_orb side、search_deck card_id、launch_attack shikigami="target"）；条件算子 dice_six_ge/dice_distinct_ge/luck_success_total_ge/dice_below_x；新事件 on_luck_judge（即时）/on_luck_success（延时）/on_luck_effect_after（延时，预留）；运势 ext 记账键（dice_history 等，见术语表 ext 登记表）。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-08 第十六阶段，破甲/眩晕/永久变形批次）：新 op `transfer_fragile`（破甲等量转移，源清零、可敌方全量）/`keep_fragile`（式神级破甲保留，形态结附期间）/`replace_cards`（手牌+牌库该式神非战斗牌一次性随机换战斗牌，原牌入墓地、牌库有替换则洗一次）/`gen_replace`（牌手永久生成替换钩子，ext["gen_replace"]，generate 单点读取）/`auto_use`（凭空生成自动使用，inherit_target 目标继承）；既有 op 扩展（card_aura `damage_boost`/`tag`/`scope="game"`——爱意绵绵 spell_damage 存量通道落地并统一参数名 damage_boost；stat_aura kind="ids_power" 按 id 列表永久力量光环、scope="game" 结附牌手跨召唤保留；grant_keyword `scope="battle"` 战斗作用域授予；transform `permanent`/`owner_combat`；launch_attack `at="chosen"` 定向攻击；repeat/deck_top_pick/generate 次数形式 {"ext": key, "base": n}；步骤数值 {"fragile_of": "self"|"source"}）；`ShikigamiDef.no_attack`（召唤物不能发动攻击）与伪关键字 `extra_orb_cost`（出击/战斗牌额外 +1 火）；新事件 `on_stun`（即时，stun 施加点发出）；条件算子 TargetSpec `stunned` 过滤键、`chosen_stunned`/`combat_opponent_stunned`/`{字段_stunned}`/`{字段_shikigami: [ids]}` 列表匹配、`{字段_ge}` 事件无字段时回退读控制者 ext（修复狂风刃卷 yaohu_damage_count_ge 恒不触发存量 bug）；tags 标记 `snowball`（雪球，出牌记账 ext["snowball_used_game"]）；气绝时可用战斗牌（不玩了啦）；stat_aura ids_power 无 holder 被跳过、_cmd_assault no_attack 拦截漏写两存量 bug 修复。细节见术语表「结算与事件」。
+- **本批数据侧登记**（2026-08 第十七阶段，「已展示」批次）：实例标志 `CardInstance.mods["revealed"]`（本局保持、随实例）；新 op `reveal`（mode=random/shikigami/all/event 四档，shikigami 档协战归属按 `_card_belongs_to` 统一口径）；新事件 `on_card_enter_hand`（入手统一钩子 `_enter_hand` 发出，延时时机）；`mulligan_hand` 扩展 `target_side`/`only_revealed`/`auto`（敌方已展示手牌自动调度）；`cost_delta_player` 扩展 `side`/`card_flag`（已展示手牌额外耗火）；conditional_keywords 算子 `enemy_hand_all_revealed`；on_card_played 载荷 `card_revealed`；TargetSpec 过滤键 `dealt_damage_turn`（ext 键同名记账）；`_step_amount` 动态键 `enemy_revealed_count`（三口径）。机制细节见第二十九章，术语登记见术语表「结算与事件」。
 - 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位。
 
 ## 二十三、组卡规则
@@ -602,6 +603,7 @@
 - `on_damage`, `on_shikigami_defeated`, `on_shikigami_revived`
 - `on_upgrade`, `on_form_attached`, `on_form_destroyed`
 - `on_draw`, `on_shuffle`, `on_mulligan`
+- `on_card_enter_hand`（一张牌进入手牌，延时时机——「已展示」机制入手钩子）
 - `on_shikigami_moved`, `on_card_moved`（Phase 5+）
 
 ### 必须记录的非事件信息
@@ -671,3 +673,16 @@
 - **解除**：己方回合结束批次（按角色进场顺序）移除「非本回合施加」的普通眩晕（turn ≠ 当前回合号，`Game._remove_expired_stuns`）；持续眩晕按 until 移除；气绝时清除（复活后需重新施加）。
 - **施加**：`stun` 动作（target 可为式神或牌手，kind 默认 normal）。
 - **眩晕事件**：`stun` 施加后发出 `on_stun`（即时时机 insert，payload {victim, source}；同 on_shield_changed 的变化点发出）——雪女"每回合一次，当你[眩晕]敌方式神时"类挂点（每回合一次配 turn_mark 门控）。
+
+## 二十九、「已展示」（已实现）
+
+- **「展示XX」** = 令 XX 卡牌获得「已展示」状态；**「已展示」** = 卡牌实例级状态标志（`CardInstance.mods["revealed"]`），**本局保持、随实例**——回库/入墓地不自动清除，同一实例再次入手仍保持；不同实例（同名卡的另一张）互不影响。
+- **展示四档**（`reveal` 动作，targets 忽略，作用于敌方手牌）：
+  - `random`：随机一张未展示的手牌（已全部展示则无效果）；
+  - `shikigami`：指定式神的专属牌全部展示——协战牌未使用时视为同时属于两位所属式神（`_card_belongs_to` 统一口径，与"按式神检索/计数"等读取处一致）；
+  - `all`：敌方全部手牌；
+  - `event`：展示触发事件 payload 中的那张牌——专供"每当一张牌进入敌方手牌时将其展示"类被动（挂 `on_card_enter_hand`）。
+- **入手统一钩子**：一切"进入手牌"路径（抽牌、生成置入手牌、牌库检索、检视挑选、调度换入）经 `_enter_hand` 发出 `on_card_enter_hand`（延时时机 queue，payload {player, uid, card}）；**起始手牌静默不算入手**，爆牌转墓地不视为进入手牌（超出上限的牌直接转墓地，不发该事件）。
+- **调度细则**（rules 528-530 落实，`_swap_hand_card`）：换入牌失去"已展示"；换入牌原本已展示，则换出牌获得"已展示"。
+- **信息可见性**：已展示的敌方手牌对对方公开——CLI 按入手顺序（hand_seq）单独列出显示（format_hand_lines 复用）；联机按视角脱敏时对已展示卡放行真实内容（sanitize_state 例外），其余手牌照常脱敏。
+- **配套读取点**：on_card_played 载荷 `card_revealed`（使用点该牌是否已展示——"使用已展示的手牌时"类触发）；TargetSpec 过滤键 `dealt_damage_turn`（本回合造成过伤害的角色，伤害结算点记账、回合开始清除）；动态数值 `enemy_revealed_count`（敌方已展示手牌计数，法术牌/其他牌/指定式神三口径）；手牌费用修正 `card_flag`（仅命中已展示手牌额外耗火，仍在 cost>0 门内——[瞬发]/[不消耗鬼火]全免）；conditional_keywords 算子 `enemy_hand_all_revealed`（敌方有手牌且全部已展示）。各键登记见术语表。

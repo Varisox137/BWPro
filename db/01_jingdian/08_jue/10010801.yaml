@@ -1,0 +1,17 @@
+id: 10010801
+name: 读心
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          # 展示被选式神在敌方手牌中的所有专属牌（mode=shikigami 含协战牌归属；
+          # 引擎 reveal op，待引擎对齐）
+          - {op: reveal, mode: shikigami, shikigami: chosen}
+      text: "[瞬发]。选择一个敌方式神，从敌方手牌展示所有该式神的专属牌。"
