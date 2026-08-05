@@ -107,10 +107,11 @@ class Room:
     def __init__(self, room_id: str, db, *, debug: bool = False,
                  turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
                  ready_timeout: float = 15.0, starting_timeout: float = 3.0,
-                 env_date: int | None = None,
+                 env_date: int | None = None, mode: str = "standard",
                  rng: random.Random | None = None) -> None:
         self.id = room_id
         self.db = db
+        self.mode = mode  # standard=固定标准环境（最新，不可更改）/ free=自由环境
         self.env_date = env_date  # 对局环境（平衡性版本日期；None = 最新数据）
         self.env_db = db.at_date(env_date)  # 环境下解析后的数据库（构筑校验/开局/渲染用）
         self.debug = debug
@@ -199,12 +200,16 @@ class Room:
         """当前 lobby 状态消息（广播与重连补发共用）：IDLE/STARTING 不带 deadline。"""
         ready = [self.conns[s].name for s in sorted(self.ready_seats) if self.conns[s]]
         deadline = self._lobby_deadline if self._lobby_phase == "countdown" else None
-        return protocol.lobby(ready, deadline, env_date=self.env_date)
+        return protocol.lobby(ready, deadline, env_date=self.env_date, mode=self.mode)
 
     async def set_env(self, seat: int, date: int | None) -> None:
         """更改对局环境（平衡性版本日期，None = 最新）：仅房主（seat 0）在双方
         均未准备时可用；更改后重新校验双方已入座卡组，任一不可用则拒绝。"""
         if self.game is not None or not self.full:
+            return
+        if self.mode == "standard":
+            await self.conns[seat].send(
+                protocol.error("标准模式使用最新平衡性环境，不可更改"))
             return
         if seat != 0:
             await self.conns[seat].send(protocol.error("只有房主可以更改对局环境"))
@@ -347,7 +352,7 @@ class Room:
                 self.seat_to_player[c.seat],
                 self.conns[1 - c.seat].name,
                 self.seat_to_player[c.seat] == 0,
-                env_date=self.env_date))
+                env_date=self.env_date, mode=self.mode))
         self.reschedule_timer()
         await self.broadcast_state()
 

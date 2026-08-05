@@ -81,8 +81,10 @@ server/
   后开局；已准备方可再次 `ready` 取消准备回到无计时状态（开始倒计时中不可取消）；
   期间可 `leave` 主动离开（断线视同离开，含开始倒计时中），座位释放、对手退回
   等人状态。准备阶段断线重连补发当前 lobby 状态。
-- **对局环境**：创建房间可带 `env_date`（平衡性版本日期，见 `db/versioning.py`），
-  该房间全部数据按不晚于该日期的最晚版本解析、该日期未发布的卡牌/式神不可用；
+- **对局模式**：创建房间可带 `mode`（`standard`/`free`，缺省 `standard`）。
+  标准模式固定使用最新平衡性数据（env_date 强制为 null、不可更改）；自由模式
+  创建时可带 `env_date`（平衡性版本日期，见 `db/versioning.py`），该房间全部
+  数据按不晚于该日期的最晚版本解析、该日期未发布的卡牌/式神不可用；自由模式
   双方均未准备时房主可发 `env` 消息更改（更改后重新校验双方已入座卡组，
   任一不可用则拒绝）；入座卡组校验按房间环境进行，不满足时报错并注明环境日期。
 - 服务端日志：连接来源、建房/加入/准备/离开/开局/终局/房间回收均打印到控制台。
@@ -95,7 +97,7 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd", "env_date": null }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd", "mode": "standard", "env_date": null }
 { "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null }
 { "type": "ready" }
 { "type": "leave" }
@@ -105,18 +107,19 @@ server/
 
 `deck_code` 为必填（入座时按房间环境校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
-`create.env_date` 可缺省（最新数据）；`env` 仅房主在双方均未准备时可用（date 缺省 = 最新）。
+`create.mode` 可缺省（`standard`）；标准模式忽略 `env_date`（固定最新数据），自由模式
+`create.env_date` 可缺省（最新数据）；`env` 仅自由模式房主在双方均未准备时可用（date 缺省 = 最新）。
 `ready`/`leave` 仅准备阶段（双方都位后、开局前）有效；`ready` 为准备/取消准备切换。
 
 服务端 → 客户端：
 
 ```json
 { "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
-{ "type": "lobby", "ready": ["甲"], "deadline": 1735689600.0, "env_date": null }
+{ "type": "lobby", "ready": ["甲"], "deadline": 1735689600.0, "mode": "standard", "env_date": null }
 { "type": "starting", "deadline": 1735689600.0 }
 { "type": "peer_left", "name": "乙" }
 { "type": "left" }
-{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "env_date": null }
+{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "mode": "standard", "env_date": null }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
   "timer": { "kind": "turn", "deadline": 1735689600.0 },
   "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }] }
@@ -126,7 +129,7 @@ server/
 ```
 
 `lobby.deadline` 仅一方已准备时非空（未准备方的自动准备截止）；`ready` 为空 =
-双方未准备、不计时。`env_date` 为 null 时字段省略（最新数据）。
+双方未准备、不计时。`lobby`/`start` 始终携带 `mode`；`env_date` 为 null 时字段省略（最新数据）。
 
 心跳使用 WS 协议层 ping/pong（uvicorn `ws_ping_interval=10`，`ws_ping_timeout=5`）。
 

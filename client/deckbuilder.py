@@ -6,7 +6,8 @@
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
   自动创建；文件格式异常时提示并删除该文件）。每个卡组记录构筑环境 env
   （平衡性版本日期，null=最新；v2 文件读取时视为 null）：新建时先询问环境，
-  编辑中可用 e <日期> 切换（环境下不存在的式神强制更换、卡牌自动移除）；
+  编辑中可用 e <环境> 切换（环境输入支持别名 S1/S2 或 8 位日期，见 db/envs.py；
+  环境下不存在的式神强制更换、卡牌自动移除）；
   构筑与 is_standard 校验均按 db.at_date(env) 解析。
 - 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
   反复询问直到合法；新建时经二级目录（版本包 → 式神，翻页显示，支持式神全名
@@ -32,28 +33,22 @@ from client import cardfmt, tui
 from client.textutil import colored
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, DeckRules, rules_summary, validate_deck
+from db.envs import env_label as _env_label, parse_env_input
 from db.loader import CardDatabase
 from db.packs import PACK_NAMES, PACKS
-from db.schema import check_version_date
 
 # 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
 STANDARD_COLOR = 94
 
 
-def _env_label(env: int | None) -> str:
-    return "最新" if env is None else str(env)
-
-
 def _ask_env() -> int | None:
-    """构筑环境询问：Enter = 最新数据；输入 8 位日期（YYYYMMDD）反复校验直到合法。"""
+    """构筑环境询问：Enter = 最新数据；别名（S1/S2）或 8 位日期，反复校验直到合法。"""
     while True:
-        line = _input("构筑环境日期（8 位 YYYYMMDD，Enter = 最新）> ")
-        if not line:
-            return None
+        line = _input("构筑环境（S1/S2 或 8 位日期，Enter = 最新）> ")
         try:
-            return check_version_date(int(line))
-        except ValueError:
-            print("环境日期须为合法的 8 位日期（YYYYMMDD）")
+            return parse_env_input(line)
+        except ValueError as e:
+            print(str(e))
 
 
 def available_shikigami(db: CardDatabase) -> list:
@@ -88,16 +83,20 @@ def _input(prompt: str) -> str:
 # ---------- 显示 ----------
 
 def _shiki_rows(defs: list) -> list[tuple[str, ...]]:
-    """式神列表行（已对齐）：[序号] 名称｜派系｜力量/生命 {能力文本}。"""
+    """式神列表行（已对齐）：[序号] 名称｜派系｜力量/生命 ｜能力文本（末列由调用方
+    决定同行拼接或挪次行）。"""
     rows = [(f"[{i + 1}]", d.name, d.faction, f"{d.power}/{d.health}",
-             f"{{{d.text}}}" if d.text else "") for i, d in enumerate(defs)]
+             d.text or "") for i, d in enumerate(defs)]
     return cardfmt.align_rows(rows)
 
 
 def _print_shikigami(defs: list, marked: set[int] | None = None) -> None:
+    """式神列表：首行 [序号] 名称｜派系｜力量/生命；能力文本挪次行缩进 4 格。"""
     for d, r in zip(defs, _shiki_rows(defs)):
         mark = " ✓" if marked and d.id in marked else ""
-        print(f"  {r[0]} {r[1]}{mark}｜{r[2]}｜{r[3]} {r[4]}".rstrip())
+        print(f"  {r[0]} {r[1]}{mark}｜{r[2]}｜{r[3]}")
+        if r[4].strip():
+            print(f"    {r[4]}")
 
 
 # ---------- 式神选择（版本包二级目录 + 翻页 + 全名直选）----------
@@ -206,19 +205,23 @@ def _select_shikigami(db: CardDatabase, *, need: int = 1,
 
 
 def _print_cards(cards: list, copies: Counter | None = None) -> None:
-    """对齐打印卡牌列表（与对局手牌共用 cardfmt 流程）：
-    [序号] 名称｜类型[子类型]｜等级｜数值段 {效果文本} ×n。不显示费用。"""
+    """两行式打印卡牌列表（首行对齐）：
+    [序号] 名称｜类型[子类型]｜等级｜稀有度｜数值段 ×n；次行缩进 4 格为完整效果文本
+    （无文本只打首行）。协战牌名前加 [协]。不显示费用。"""
     rows = []
     for i, c in enumerate(cards):
-        text = f"{{{c.text}}}" if c.text else ""
+        name = f"[协]{c.name}" if c.card_type == "reinforce" else c.name
         mark = f"×{copies[c.id]}" if copies and copies.get(c.id) else ""
-        rows.append((f"[{i + 1}]", c.name, cardfmt.ctype_label(c),
-                     f"等级{c.level}", cardfmt.static_stats(c), text, mark))
-    for r in cardfmt.align_rows(rows):
-        line = f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]}"
-        if r[4].strip() or r[5].strip() or r[6].strip():
-            line += f"｜{r[4]} {r[5]} {r[6]}".rstrip()
+        rows.append((f"[{i + 1}]", name, cardfmt.ctype_label(c),
+                     f"等级{c.level}", c.rarity or "",
+                     cardfmt.static_stats(c), mark))
+    for r, c in zip(cardfmt.align_rows(rows), cards):
+        line = f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]}｜{r[4]}"
+        if r[5].strip() or r[6].strip():
+            line += f"｜{r[5]} {r[6]}".rstrip()
         print(line)
+        if c.text:
+            print(f"    {c.text}")
 
 
 def _deck_list_lines(decks: list[dict]) -> None:
@@ -248,14 +251,15 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
                picks: dict[int, list[int]]) -> tuple[list[int], list[int], int | None]:
     """在当前基础上编辑（db 为完整库，内部按 env 解析出环境库 edb 使用）：
     序号 = 编辑该式神卡牌；h <序号> = 更换式神（清空其卡牌）；
-    e <日期> = 更改构筑环境（环境下不存在的式神强制更换、卡牌自动移除）；Enter = 完成。
+    e <环境> = 更改构筑环境（别名 S1/S2 或 8 位日期；环境下不存在的式神强制更换、
+    卡牌自动移除）；Enter = 完成。
     完成时做 is_standard 检查：不满足标准规则时打印错误但仍返回
     （保存为非标准卡组），不强制要求合法。返回 (式神 ids, 卡牌 ids, env)。"""
     edb = db.at_date(env)
     while True:
         _print_deck(edb, team, picks)
         line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；"
-                      "e <日期> = 更改环境；Enter = 完成 > ")
+                      "e <环境> = 更改环境（S1/S2 或日期）；Enter = 完成 > ")
         if not line:
             ids = list(team)
             card_ids = [cid for sid in team for cid in picks.get(sid, [])]
@@ -268,9 +272,9 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
         parts = line.lower().split()
         if parts[0] in ("e", "env") and len(parts) == 2:
             try:
-                new_env = check_version_date(int(parts[1]))
-            except ValueError:
-                print("环境日期须为合法的 8 位日期（YYYYMMDD）")
+                new_env = parse_env_input(parts[1])
+            except ValueError as e:
+                print(str(e))
                 continue
             new_edb = db.at_date(new_env)
             # 新环境下不存在的式神需强制更换：先收集全部更换项，取消则整体放弃

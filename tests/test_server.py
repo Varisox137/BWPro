@@ -765,10 +765,10 @@ def test_room_env_date_restricts_decks(db):
 
 
 def test_room_set_env(db):
-    """房主在双方均未准备时可更改环境（广播 lobby 携带 env_date）；
+    """自由模式房间：房主在双方均未准备时可更改环境（广播 lobby 携带 env_date）；
     非房主/已准备/使已入座卡组失效均拒绝。"""
     async def go():
-        room = mk_room(db)
+        room = mk_room(db, mode="free")
         ws0, ws1 = FakeWS(), FakeWS()
         await room.join(0, "甲", ws0, _deck_code(db))
         await room.join(1, "乙", ws1, _deck_code(db))
@@ -792,6 +792,32 @@ def test_room_set_env(db):
         lobby = [m for m in ws1.messages if m["type"] == "lobby"][-1]
         assert lobby["env_date"] == 20991231
         room._cancel_lobby_timer()  # 收尾：防计时任务悬置
+    run(go())
+
+
+def test_room_mode_standard_gates_env(db):
+    """标准模式（默认）：create 忽略所带 env_date、set_env 一律拒绝；
+    lobby/start 消息携带 mode；非法 mode 报错。"""
+    from server.manager import RoomManager
+    mgr = RoomManager(db)
+    room = mgr.create(env_date=20200101)  # standard 默认：env_date 被强制为 None
+    assert room.mode == "standard" and room.env_date is None
+    free = mgr.create(mode="free", env_date=20991231)
+    assert free.mode == "free" and free.env_date == 20991231
+    with pytest.raises(ValueError, match="模式"):
+        mgr.create(mode="ranked")
+
+    async def go():
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", ws1, _deck_code(db))
+        await room.on_seat_filled()
+        lobby = [m for m in ws1.messages if m["type"] == "lobby"][-1]
+        assert lobby["mode"] == "standard"
+        await room.set_env(0, 20991231)
+        assert room.env_date is None
+        assert any(m["type"] == "error" and "标准模式" in m["reason"]
+                   for m in ws0.messages)
     run(go())
 
 

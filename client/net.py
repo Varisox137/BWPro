@@ -23,6 +23,7 @@ from client import cli, deckbuilder, tui
 from client.settle import SettlePrinter
 from core.engine import Game
 from core.model import GameState
+from db.envs import env_label, parse_env_input
 from db.loader import CardDatabase
 
 CLIENT_ID = "BWPro-CLI/1.0"  # 客户端标识：服务端软门槛（server.main.CLIENT_UA 前缀）
@@ -40,6 +41,7 @@ class NetClient:
         self.seat: int | None = None  # 房间座位（0=房主，可改环境）
         self.me: int | None = None  # 自己在 state.players 中的下标
         self.env_date: int | None = None  # 对局环境（lobby/start 消息下发）
+        self.mode = "standard"  # 对局模式（lobby/start 消息下发；标准=最新环境不可改）
         self.join_hello: dict | None = None  # 加入房间的 hello（环境拒绝后换卡组重发用）
         self.env_rejected = False  # 入座卡组被房间环境拒绝：输入循环重选卡组重发 join
         self.room_debug = False
@@ -80,6 +82,12 @@ class NetClient:
         self.env_date = env_date
         self.db = self._base_db.at_date(env_date)
 
+    def _mode_label(self) -> str:
+        """对局模式+环境显示文本：标准模式固定最新环境；自由模式附环境标签。"""
+        if self.mode == "standard":
+            return "标准"
+        return f"自由·{env_label(self.env_date)}"
+
     def wrapper(self) -> Game | None:
         """由最新 state payload 构造只读渲染包装（不调用 start）。"""
         if self.payload is None:
@@ -99,6 +107,7 @@ class NetClient:
             # 准备阶段状态更新：ready 为已准备名单（空 = 无人准备、不计时）；
             # deadline 非空 = 一方已准备，未准备方超时将自动准备
             self.in_lobby = True
+            self.mode = msg.get("mode", "standard")
             self._apply_env(msg.get("env_date"))
             self.lobby_ready = list(msg.get("ready") or [])
             self.lobby_deadline = msg.get("deadline")
@@ -110,9 +119,9 @@ class NetClient:
                 hint = f"对手已准备：r 准备（{left_s}s 后自动准备），q 离开房间"
             else:
                 hint = "r 准备，q 离开房间"
-                if self.seat == 0:
-                    hint += "；e <日期> 更改对局环境"
-            env_note = f"（环境：{self.env_date or '最新'}）"
+                if self.seat == 0 and self.mode == "free":
+                    hint += "；e <环境> 更改对局环境"
+            env_note = f"（{self._mode_label()}）"
             print(f"\n双方已就位，进入准备阶段{env_note}：{hint}")
             tui.start_ticker(1.0)  # 状态栏准备倒计时
             tui.cancel_prompt()    # 输入上下文切换：作废陈旧提示符
@@ -142,6 +151,7 @@ class NetClient:
             self.lobby_ready = []
             self.lobby_deadline = None
             self.starting_deadline = None
+            self.mode = msg.get("mode", "standard")
             self._apply_env(msg.get("env_date"))
             self._ctx_seen = None
             tui.cancel_prompt()  # 准备阶段提示符 → 调度阶段提示符
@@ -309,10 +319,11 @@ class NetClient:
         game = self.wrapper()
         parts = line.split()
         cmd, args = parts[0].lower(), parts[1:]
-        cmd = cli.COMMAND_ALIASES.get(cmd, cmd)
         if self.in_lobby:
             # 准备阶段：r 准备/取消准备（服务端切换语义）、q 离开（left 应答后断连）；
-            # 房主（seat 0）在双方均未准备时可 e <日期> 更改对局环境（e 无参 = 最新）
+            # 自由模式房主（seat 0）在双方均未准备时可 e <环境> 更改对局环境
+            # （别名 S1/S2 或 8 位日期；e 无参 = 最新）。
+            # lobby 指令在 COMMAND_ALIASES 解析之前处理（否则 e 会被映射为 end）
             if cmd in ("ready", "r"):
                 self.send({"type": "ready"})
             elif cmd in ("leave", "q", "quit", "exit"):
@@ -320,16 +331,23 @@ class NetClient:
             elif cmd in ("env", "e"):
                 if self.seat != 0:
                     print("只有房主可以更改对局环境")
+                elif self.mode == "standard":
+                    print("标准模式使用最新平衡性环境，不可更改")
                 elif self.lobby_ready:
                     print("双方均未准备时才能更改环境（请先取消准备）")
                 else:
-                    date = int(args[0]) if args else None
+                    try:
+                        date = parse_env_input(args[0]) if args else None
+                    except ValueError as e:
+                        print(str(e))
+                        return
                     self.send({"type": "env", "date": date})
             else:
                 hint = ("已准备（r 取消准备）" if self.name in self.lobby_ready
                         else "r 准备")
                 print(f"准备阶段：{hint}，q 离开房间")
             return
+        cmd = cli.COMMAND_ALIASES.get(cmd, cmd)
         if cmd in ("quit", "exit"):
             self.ended_normally = True
             self.over.set()
@@ -442,8 +460,7 @@ def _net_status(client: NetClient) -> tuple[str, ...]:
     game = client.wrapper()
     if client.in_lobby:
         ready = "、".join(client.lobby_ready) or "无"
-        env = f"环境 {client.env_date or '最新'} · " if client.in_lobby else ""
-        left = f"房间 {client.room_id}（{env}已准备 {len(client.lobby_ready)}/2：{ready}）"
+        left = f"房间 {client.room_id}（{client._mode_label()} · 已准备 {len(client.lobby_ready)}/2：{ready}）"
         if client.starting_deadline:
             mid = "即将开始 " + _fmt_timer(
                 {"deadline": client.starting_deadline}, time.time())
@@ -536,14 +553,16 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
         if room_id is not None and not re.fullmatch(r"[A-Za-z0-9]{6}", room_id):
             print("房间代码须为 6 位大小写字母或数字")
             return
+        mode_pick = _input("[1] 标准模式（最新环境） [2] 自由模式（可选环境，Enter=1）> ")
         env_date = None
-        env_line = _input("对局环境日期（8 位 YYYYMMDD，Enter = 最新）> ")
-        if env_line:
+        mode = "standard"
+        if mode_pick == "2":
+            mode = "free"
             try:
-                from db.schema import check_version_date
-                env_date = check_version_date(int(env_line))
-            except ValueError:
-                print("环境日期须为合法的 8 位日期（YYYYMMDD）")
+                env_date = parse_env_input(
+                    _input("对局环境（S1/S2 或 8 位日期，Enter = 标准）> "))
+            except ValueError as e:
+                print(str(e))
                 return
         picked = deckbuilder.choose_deck(db, name)
         if picked is None:
@@ -551,7 +570,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
             return
         _, _, deck_code = picked
         hello = {"type": "create", "name": name, "deck_code": deck_code,
-                 "debug": debug, "client": CLIENT_ID}
+                 "debug": debug, "client": CLIENT_ID, "mode": mode}
         if room_id:
             hello["room_id"] = room_id
         if env_date:

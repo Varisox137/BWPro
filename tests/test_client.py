@@ -940,7 +940,7 @@ def test_deckbuilder_new_deck_env_flow(db, monkeypatch, capsys, tmp_path):
     feed(monkeypatch, lines)
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
-    assert "环境日期须为合法的 8 位日期" in out
+    assert "环境须为别名（S1/S2）或合法的 8 位日期" in out
     loaded = deckstore.load_decks(db, store)
     assert len(loaded) == 1 and loaded[0]["env"] == 20991231
 
@@ -955,3 +955,34 @@ def test_net_client_env_date_switches_db(db):
     assert set(c.db.cards) == set(db.cards)
     c._apply_env(None)       # 回到最新
     assert c.db is c._base_db
+
+
+def test_net_lobby_env_command_alias_and_mode_gate(db, capsys):
+    """准备阶段 e <环境>（房主、双方未准备）：别名 S1/S2 解析为日期下发；
+    标准模式拒绝更改；非法输入本地拦截不发消息。"""
+    import json
+
+    from client.net import NetClient
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    c = NetClient(db, FakeWS(), "甲")
+    c.in_lobby = True
+    c.seat = 0
+    c.mode = "free"
+    c.handle_line("e s1")
+    assert c.ws.sent == [{"type": "env", "date": 20191212}]
+    c.handle_line("e 20991231")
+    assert c.ws.sent[-1] == {"type": "env", "date": 20991231}
+    c.handle_line("e 20261301")  # 非法日期：本地拦截
+    assert len(c.ws.sent) == 2
+    assert "环境须为别名" in capsys.readouterr().out
+    c.mode = "standard"          # 标准模式：固定最新环境，不可更改
+    c.handle_line("e s2")
+    assert len(c.ws.sent) == 2
+    assert "标准模式使用最新平衡性环境，不可更改" in capsys.readouterr().out

@@ -69,7 +69,7 @@
 | 卡包 | `cardpack` | 式神所属版本资料包，即 id 的 vv 段（式神 1avvss / 卡牌 1avvvvcc） | ✅ |
 | 异画 | alt art（id 的 a 位） | 式神/卡牌/中立牌 id 的第 2 位（'0' = 默认卡面）；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留 | 🔧 |
 | 平衡性版本 | `versions` | yaml 顶层仅 id/name/versions 三项，规则数据全部在 versions.history 的版本快照中（每条 = date + 完整数据，不按差量；首条 date = 发布日期）；`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用）；加载/解析结果的 `version` = 所取快照 date；卡牌的 shikigami 由 id 推导注入、cost 默认 1，均不入数据；解析规则见 db/versioning.py。真实数据起点 = 20191212 公测开服（历史平衡性数据源见 card_data_raw.md「平衡性调整」节） | ✅ |
-| 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间可指定（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新 | ✅ |
+| 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间分标准模式（固定最新，不可更改）与自由模式（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新；环境输入/显示的别名（S1=20191212 等）与解析见 db/envs.py | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
 | 同源 | `origin` | 原形/SP 共享 origin，不能同时出战 | ✅ |
 | 衍生卡 | `token` | 对局中生成，不可入卡组（序号从 51 开始递增） | ✅ |

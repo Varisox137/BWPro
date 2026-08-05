@@ -150,8 +150,10 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                         want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
                         env_date = _env_date(msg, "env_date")
+                        mode = _text(msg, "mode", 10) or "standard"
                         room = manager.create(debug=bool(msg.get("debug")),
-                                              room_id=want_id, env_date=env_date)
+                                              room_id=want_id, env_date=env_date,
+                                              mode=mode)
                         conn = await room.join(0, name, ws, deck_code)
                     except ValueError as e:
                         if room is not None:
@@ -162,7 +164,8 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     print(f"[房间 {room.id}] {name}（{client_ip}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
                           f"{'（debug 对局）' if room.debug else ''}"
-                          f"{f'（环境 {env_date}）' if env_date else ''}", flush=True)
+                          f"（{room.mode} 模式"
+                          f"{f'，环境 {env_date}' if env_date else ''}）", flush=True)
                     await conn.send(protocol.joined(room.id, conn.token, 0,
                                                     debug=room.debug))
                     await room.on_seat_filled()

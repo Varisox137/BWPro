@@ -374,3 +374,24 @@ def test_balance_version_real_db(gdb):
     latest = gdb.at_date(20991231)
     assert set(latest.cards) == set(gdb.cards)
     assert set(latest.shikigami) == set(gdb.shikigami)
+
+
+def test_env_alias_parse_and_label():
+    """环境别名注册表（db/envs.py）：别名大小写不敏感、8 位日期校验、显示名。"""
+    from db.envs import env_label, parse_env_input
+
+    assert parse_env_input("") is None
+    assert parse_env_input("  ") is None
+    assert parse_env_input("S1") == 20191212
+    assert parse_env_input("s2") == 20200120
+    assert parse_env_input("20191212") == 20191212
+    with pytest.raises(ValueError):
+        parse_env_input("S9")
+    with pytest.raises(ValueError):
+        parse_env_input("20191301")
+    with pytest.raises(ValueError):
+        parse_env_input("abc")
+    assert env_label(None) == "标准(最新)"
+    assert env_label(20191212) == "S1(20191212)"
+    assert env_label(20200120) == "S2(20200120)"
+    assert env_label(20251212) == "20251212"

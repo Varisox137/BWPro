@@ -24,9 +24,14 @@ class RoomManager:
         self._rng = random.Random()
 
     def create(self, *, debug: bool = False, room_id: str | None = None,
-               env_date: int | None = None) -> Room:
+               env_date: int | None = None, mode: str = "standard") -> Room:
         """创建房间：room_id 为空随机分配；指定时须满足 6 位字母数字且不冲突。
-        env_date 为对局环境（平衡性版本日期，None = 最新数据）。"""
+        mode ∈ {standard, free}：standard=固定标准环境（最新数据，env_date 强制
+        None 且不可更改）；free=自由模式，env_date 指定初始环境（None = 最新）。"""
+        if mode not in ("standard", "free"):
+            raise ValueError(f"未知对局模式 {mode!r}（须为 standard/free）")
+        if mode == "standard":
+            env_date = None
         if len(self.rooms) >= self.max_rooms:
             raise ValueError("服务器房间数已达上限，请稍后再试")
         if room_id:
@@ -42,7 +47,7 @@ class RoomManager:
                     turn_timeout=self.turn_timeout,
                     mulligan_timeout=self.mulligan_timeout,
                     starting_timeout=self.starting_timeout,
-                    env_date=env_date)
+                    env_date=env_date, mode=mode)
         self.rooms[room_id] = room
         return room
 
