@@ -1,0 +1,19 @@
+id: 100204
+name: 烟烟罗
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      faction: 青岚
+      power: 2
+      health: 4
+      keywords: [charge]
+      abilities:
+        # 当烟烟罗获得能量时若（获得前）能量为 0，额外多获得 1 点：监听 on_energy_gained
+        # 的 old:0（首次获得），追加获得 emit_event: false 不再发事件防递归
+        # （tests/test_orb.py test_on_energy_gained_trigger_no_recursion 同型）
+        - when: on_energy_gained
+          condition: {player: self, target_shikigami: self, old: 0}
+          steps:
+            - {op: gain_energy, amount: 1, emit_event: false, target: {kind: self}}
+      text: "[充能]。当烟烟罗获得能量时若能量为0，额外多获得1点。"

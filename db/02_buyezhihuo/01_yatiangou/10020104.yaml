@@ -1,0 +1,16 @@
+id: 10020104
+name: 羽迹
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: SR
+      level: 2
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          - {op: move, force: true}
+          - {op: stun}
+          - {op: move, target: {kind: self}}
+      text: 将一个敌方式神移入战斗区并使其[眩晕]，然后[移动]鸦天狗。

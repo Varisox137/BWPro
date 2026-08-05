@@ -1,0 +1,22 @@
+id: 10020401
+name: 顽皮鬼
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        steps:
+          - {op: damage, amount: 2}
+      methods:
+        # [爆能X]：消耗全部能量（0 能量不可选），X=支付时快照（{"burst_x": true} 动态键）；
+        # 带 energy_cost 的方式 effects 语义=追加到基础 effects 后（同一选择目标再吃 X 点）
+        - id: burst
+          energy_cost: "all"
+          effects:
+            steps:
+              - {op: damage, amount: {burst_x: true}}
+      text: "对一个敌方式神造成2点伤害。[爆能X]：{额外造成X点伤害，X为全部能量。}"

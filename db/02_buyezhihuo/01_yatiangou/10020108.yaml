@@ -1,0 +1,28 @@
+id: 10020108
+name: 觉醒·鸦天狗
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2
+      awaken_health: 2
+      rarity: SR
+      level: 3
+      effects:
+        steps: []
+      abilities:
+        # [觉醒]：移动时发动一次具[远程]的攻击——attack_buff 授予 remote（直到其
+        # 下一次攻击后核销）后立刻 launch_attack（起弓 10010101 关键字挂账先例）
+        - when: on_enter_combat
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: attack_buff, keywords: [remote], target: {kind: self}}
+            - {op: launch_attack, shikigami: self}
+        - when: on_leave_combat
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: attack_buff, keywords: [remote], target: {kind: self}}
+            - {op: launch_attack, shikigami: self}
+      text: "[觉醒]：当鸦天狗[移动]时，发动一次攻击，本次攻击具[远程]。"

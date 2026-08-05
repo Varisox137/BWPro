@@ -1,0 +1,23 @@
+id: 10020499
+name: 烟烟罗的分身
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      kind: summon
+      faction: 青岚
+      power: 2
+      health: 4
+      keywords: [charge]
+      # "召唤时具有与烟烟罗相同的力量和生命以及一半的能量"在召唤侧表达（summon
+      # inherit_stats/energy_ratio 参数，见扑朔迷离/烟雾缭绕/无孔不入的 summon 步）
+      abilities:
+        # 复制烟烟罗主动使用的非法觉醒法术牌（mirror_spell：每个在场分身免费使用
+        # 其复制，choose 目标沿用原选（仍合法）否则随机重选；triggered=active 限定
+        # 主动使用——复制自身发出的 on_card_played(triggered=auto) 天然不连锁）
+        - when: on_card_played
+          condition: {card_type: spell, shikigami: 100204, player: self,
+                      triggered: active, subtype_not: awaken}
+          steps:
+            - {op: mirror_spell}
+      text: "[充能]。召唤时具有与烟烟罗相同的力量和生命以及一半的能量。"

@@ -1,0 +1,16 @@
+id: 10020201
+name: 不夜之舞
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 4
+      form_health: 5
+      effects:
+        # 玩家级旗标：出击加成在使用战斗牌时也生效（scope=form 绑定本形态，离场清除）
+        steps:
+          - {op: boost_on_combat_card, scope: form}
+      text: 你的出击加成效果在使用战斗牌时也会生效。

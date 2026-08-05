@@ -82,6 +82,8 @@ class ShikigamiState(BaseModel):
     shield: int = 0  # 护甲（>0）/ 破甲（<0）：有符号单一字段。破甲 = 负值，
                     # 变化事件以 kind 参数区分方向（docs/rules.md 第六章）；
                     # 被伤害时正护甲优先吸收、负破甲加成伤害；己方回合开始阶段双向清除。
+    energy: int = 0  # 能量（[充能]/[爆能]体系，不夜之火包）：己方回合开始具有[充能]者 +1
+                    # （上限 10）；气绝时保留不清零；消耗走 engine._spend_energy 统一入口
     defeated: bool = False  # 气绝
     dying: bool = False  # 濒死：生命 ≤ 0 但气绝事件尚未结算（通用状态标记，语义见 docs/rules.md）
     stuns: list[dict[str, Any]] = Field(default_factory=list)  # 眩晕条目（第十五阶段）：

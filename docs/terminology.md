@@ -19,6 +19,7 @@
 | 升级 | `upgrade` | 指令；`PlayerState.upgrades` 为本回合剩余升级机会 | ✅ |
 | 等级（勾玉） | `level` | 1 至 `config.max_level`；0 级 = 未在场 | ✅ |
 | 鬼火 | `orb` | 出牌/出击费用；己方回合开始重置，回合间不清零 | ✅ |
+| 能量 | `energy` | `ShikigamiState.energy`（不夜之火批次）：式神级资源，上限 10，气绝保留、气绝中仍可充能（暂定）；[充能] 式神己方回合开始 +1（批次顺序：先倒计时后能量）；爆能/能量出击等支付走 `engine._gain_energy/_spend_energy/_can_pay_energy` 统一入口 | ✅ |
 | 出击 | `assault` | 指令；耗 1 鬼火 + 每回合唯一出击次数（`assaults_left`），驻留战斗区 | ✅ |
 | 移动 | `move` | 指令；入战斗区不攻击；战斗区召唤物被移动 = 直接离场 | ✅ |
 | 战斗区 | combat zone / `combat_index` | 每方至多 1 式神驻留；己方回合开始退回准备区 | ✅ |
@@ -78,7 +79,7 @@
 | 对象 id | `uid` | 局内对象引用标识（CardInstance.uid；生成物亦发 uid） | ✅ |
 | 中立牌 | neutral（`shikigami=None`） | id 9avvvvvv（9 + 异画位 + 6 位数字，自 999999 递减）、无等级、系统/效果生成 | ✅ |
 | 使用位置 | `play_from` | play_card 参数，默认 hand，任意区域可扩展 | ✅ |
-| 使用方式 | `play_method` / `PlayMethod` | 多择子选项；仅保留核心方式、参数可变（`param`，如爆能{2}） | ✅ |
+| 使用方式 | `play_method` / `PlayMethod` | 多择子选项；仅保留核心方式、参数可变（`param`，如爆能{2}）。扩展字段（不夜之火批次）：`energy_cost`（int=爆能N 额外支付 N 能量 / "all"=爆能X 消耗全部能量、0 能量不可选；方式 `effects` 追加到基础 effects 后，多档独立支付累计）、`keywords`（以该方式使用时临时授予卡牌关键字——森之力爆能档得[瞬发]） | ✅ |
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
 | 仅气绝时可用 | `only_when_defeated` | 卡牌字段（第十三阶段）：硬门控——式神存活时主动使用报错、响应收集直接跳过（心即归处）；需搭配 `playable_when_defeated` | ✅ |
 | 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（青行灯）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
@@ -98,10 +99,11 @@
 | 迅捷 | `haste` | 一次性：出击的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷；仍消耗出击次数 | ✅ |
 | 屏障 | `barrier` | 一次性：伤害事件"护甲计算前3"将伤害值改为 0 并移除一个实例 | ✅ |
 | 不屈 | `unyielding` | 生命>1 且伤害≥当前生命时保留 1 点生命；一次性不屈触发后全部消耗，持续/永久不屈保留可再触发；生命=1 不触发 | ✅ |
-| 眩晕 | `stuns` / `is_stunned` | 眩晕条目列表（式神 `ShikigamiState.stuns` / 牌手 `PlayerState.ext["stuns"]`）：普通 `{"kind":"normal","turn":n}`（己方回合结束批次移除非本回合施加者）、持续 `{"kind":"lasting","until":n}`（预留）；眩晕=列表非空。门控：式神禁出击/主动/响应用牌、牌手全体禁出击；气绝清除。`stun` 动作施加 | ✅ |
+| 眩晕 | `stuns` / `is_stunned` | 眩晕条目列表（式神 `ShikigamiState.stuns` / 牌手 `PlayerState.ext["stuns"]`）：普通 `{"kind":"normal","turn":n}`（己方回合结束批次移除非本回合施加者）、持续 `{"kind":"lasting",...}`（不夜之火批次落地——按来源结束时机解除：`until_event` 事件名列表 + `watch` 看护式神座次/watch_id，事件涉及看护者即解除，`engine._release_lasting_stuns`；`apply_seq`/`apply_uid` 记施加时点的事件序号/卡牌 uid 防自解除——英雄无畏"直到鸦天狗使用牌、攻击或气绝"，气绝走现有清理）；眩晕=列表非空。门控：式神禁出击/主动/响应用牌、牌手全体禁出击；气绝清除。`stun` 动作施加 | ✅ |
 | 运势 | `luck` | 运势判定 = luck check：块级门控 `EffectBlock.luck`（int=成功才结算 / `{"x":X,"on":"fail"}`=失败才结算）+ 步骤级 `luck_roll` 动作（x/judge/then/force_x1_if）；六时机管线与并行同步推进见 rules.md 第二十七章 | ✅ |
 | 增强 | `enhance` | | 🔧 |
 | 鼓舞/压制 | `basic_boost` / `assault_boosts` | 出击加成：`basic_boost` 动作登记于牌手（`PlayerState.assault_boosts`），下一次出击全部消耗——力量挂攻击后到期强化（战后核销）、护甲获得后保留；战斗牌不消耗。卡牌关键字 `inspire` 为卡面[鼓舞]标记（效果以 basic_boost 结算——桃之夭夭）。压制（负值）🔧 | ✅（鼓舞） |
+| 充能 | `charge` | 实体关键字（不夜之火批次）：己方回合开始时该式神能量 +1（上限 10，批次顺序先倒计时后能量；先天经 `ShikigamiDef.keywords` 入永久类别——小鹿男/烟烟罗/日和坊/镰鼬）；能量见「核心概念」能量行 | ✅ |
 | 追猎 | `hunt` | 有目标的战斗：战斗牌持追猎主动使用时须选择 1 名合法敌方式神为战斗目标（不能选牌手；无合法目标则不能使用）；式神/形态持追猎主动出击可任选合法敌方式神为目标（不选 = 默认无目标战斗）；发起者无远程照常移入战斗区；`launch_attack` 类"使己方式神发起攻击"是无目标战斗，不吃追猎 | ✅ |
 | 贯通 | `piercing` | 对式神的非反击伤害超过其当前生命时，溢出部分改对所属牌手造成。是"伤害原因"的属性：式神持有的贯通仅传导至其战斗伤害与基础/觉醒/形态能力（含形态倒计时、延迟"会"）伤害；卡牌效果伤害不继承，除非步骤显式声明 `piercing: true`（实现：`ExecContext.is_ability` + damage/random_damage 动作缺省继承） | ✅ |
 | 穿刺 | `pierce` | 造成伤害前（伤害事件批次0，即时时机）移除受伤者所有护甲/屏障——与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于任意来源伤害（含非战斗伤害） | ✅ |
@@ -135,7 +137,7 @@
 
 ## 预留机制（译名确认，规则 Phase 5+）
 
-融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、充能 `charging`、爆能 `burst`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charge`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。
+融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；"蓄力"原预留译名 `charge` 与充能冲突，落地时另行命名。）
 
 ## 结算与事件
 
@@ -294,6 +296,13 @@
 | `snowball_used_game` | `PlayerState.ext` | 本局从手牌使用'雪球'（tags snowball）计数（出牌统一记账 `_account_card_played`；流霰 repeat {"ext": ...} 读数） |
 | `enemy_stunned_game` | `PlayerState.ext` | 本局敌方角色被[眩晕]累计次数（stun 动作每次实际施加时按受害者对方记账，不分眩晕来源、先于 on_stun 事件；雪融之时[增强] stat_aura kind=ext_power 读数） |
 | `dealt_damage_turn` | `ShikigamiState.ext` | 本回合造成过伤害标记（伤害结算点 `_mark_dealt_damage_turn` 按来源式神记账；任一回合开始清除——半回合作用域；记仇 TargetSpec 过滤键同名读取） |
+| `boost_flags` | `PlayerState.ext` | 鼓舞扩展旗标列表（条目 {kind: combat_card/no_consume/inspire_bonus, holder?, power?, shield?}；三 op 经 `_add_boost_flag` 登记；scope="form" 条目记 holder、形态离场经 `_destroy_form` 移除；不夜之舞/离殇之舞/觉醒·不知火） |
+| `energy_assault` | `PlayerState.ext` | 能量出击旗标（{holder, cost}；energy_assault 动作登记，觉醒·镰鼬）：鬼火与出击次数都为 0 时持有者可耗能量出击（`_cmd_assault` 分支读取） |
+| `energy_free_turn` | `PlayerState.ext` | 觉醒·日和坊免单名额：True 时下一次己方式神耗能量效果免单（`_spend_energy` 入口判定并消耗；每半回合重置——不分敌我回合） |
+| `energy_life_substitute` | `ShikigamiState.ext` | 能量生命代偿提供者标记（引擎另硬编码日和坊 id 100205 基础能力）：己方支付能量不足时以其生命 1:1 代偿差额（直扣非伤害、不能降到 0） |
+| `move_count_turn` | `ShikigamiState.ext` | 本回合 [移动] 次数（`_enter_combat`/`_retreat` 进出各计一次；召唤物进场算、气绝离场不算；任一回合开始清除——半回合作用域；正义必胜 {ext: move_count_turn} 读取） |
+| `form_death_play` | `PlayerState.ext` | 形态牌气绝使用旗标（{holder, energy}；form_death_play 动作登记，觉醒·小鹿男）：持有者气绝时其形态牌可用——耗 energy 能量、先复活再结附（觉醒常驻、跨气绝保留） |
+| `burst_x` | `CardInstance.mods` | 爆能X 能量快照（energy_cost="all" 出牌时写入当前能量；步骤数值 {"burst_x": true} 读取，memo 同名键优先；本次结算后清除，弹回回手不残留） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 
@@ -356,3 +365,23 @@
 | 倒计时复原 | `reset`（countdown_delta 参数） | 复原倒计时初值（countdown_initial）、不触发归零结算、无能力者空操作——疯魔琴心"使敌方式神的倒计时复原" | ✅ |
 | 卡牌变换 | `transform_card`（动作） | 手牌按 card_id 原位变换为 into 指定新卡（count=1；无匹配空操作；新 uid + `_materialize` 快照，继承 mods 中实例标志） | ✅ |
 | 召唤内嵌费用 | `orb_cost`（summon 参数） | 效果内嵌鬼火费用（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常）；足够则先支付（发 on_orb_changed，reason=summon_orb_cost）再召唤 | ✅ |
+| 能量充能/支付 | `gain_energy` / `spend_energy`（动作） | gain_energy：目标式神能量 +amount（封顶 10；`emit_event=False` 抑制事件防自连锁——烟烟罗基础/觉醒"获得能量时再获得"）；spend_energy：目标式神支付 amount 能量，`gate: true` 时支付不足中止当前效果块（AbortBlock——祈晴/滋养/晴雨/同生共死"消耗X能量，……"门控）；均走 `engine._gain_energy`/`_spend_energy` 统一入口（日和坊生命代偿、觉醒·日和坊免单同通道） | ✅ |
+| 能量获得事件 | `on_energy_gained` | 延时时机（queue），payload {player, target, old, new, amount}；实际获得量 > 0 才发出——已达上限获得 0 时不发事件（暂定，questions.md 待确认）；`engine._gain_energy` 统一发出（回合开始充能/卡牌效果同路径） | ✅ |
+| 爆能X 快照 | `burst_x`（card.mods 键 / 动态数值键） | 爆能X（`energy_cost: "all"`，消耗全部能量、0 能量不可选）出牌时把当前能量快照写入 `card.mods["burst_x"]`，步骤数值 `{"burst_x": true}` 读取（`memo["burst_x"]` 优先，供触发块转写）；本次结算后清除（弹回回手不残留） | ✅ |
+| 移动（动作） | `move`（动作） | [移动]：目标式神战斗区↔准备区 toggle（复用 `_enter_combat`/`_retreat`；气绝/离场不行、眩晕不拦、召唤物退回即离场、尘缚锁定下移入静默无效）；`force=True` 可强制敌方式神入战斗区（羽迹），非强制敌方目标静默跳过；进出各计一次（`ext["move_count_turn"]`，半回合清除；召唤物进场算、气绝离场不算）；机制见 rules.md 第三十章 | ✅ |
+| 鼓舞旗标 | `boost_on_combat_card` / `boost_no_consume` / `inspire_bonus`（动作）/ `boost_flags`（ext 键） | 玩家级出击加成旗标（`PlayerState.ext["boost_flags"]` 条目 {kind, holder?}，三 op 共用 `_add_boost_flag`）：combat_card=战斗牌攻击也获得并消耗出击加成（不夜之舞）；no_consume=出击加成不因攻击消耗（离殇之舞）；inspire_bonus{power,shield}=basic_boost 数值额外加算、可叠加（觉醒·不知火）；`scope="form"` 绑定来源形态、离场清除（`_destroy_form` 同路径），缺省永久 | ✅ |
+| 出击/加成/身材重置 | `reset_assaults` / `clear_boosts` / `reset_stats`（动作） | reset_assaults：控制者出击次数恢复为 1（变化时 emit on_assaults_changed——真意之歌）；clear_boosts：清除目标牌手全部出击加成（targets 无牌手时默认控制者——日出有曜 B）；reset_stats：目标式神力量/生命变为基础值（清临时修正/攻击挂账/turn_power/战力，清护甲破甲，生命直设为变更后上限——非伤害/治疗事件；动态光环不动——日出有曜 A） | ✅ |
+| 能量出击 | `energy_assault`（动作）/ `energy_assault`（ext 键） | 登记玩家级旗标（{holder, cost}——觉醒·镰鼬 on_awakened）：该玩家鬼火与出击次数都为 0 时旗标持有者可消耗 cost 能量出击（`_cmd_assault` 支付管线分支，消耗经 `_spend_energy`——免单/代偿同通道） | ✅ |
+| 形态气绝使用 | `form_death_play`（动作）/ `form_death_play`（ext 键） | 登记玩家级旗标（{holder, energy}——觉醒·小鹿男）：旗标持有者的形态牌在其气绝时可用，使用时消耗 energy 能量并**先复活**持有者再正常结附（`_cmd_play_card` 合法性/支付/复活管线；觉醒常驻玩家级旗标、跨气绝保留） | ✅ |
+| 取消攻击 | `cancel_attack`（动作） | on_before_assault 响应时置事件 `cancel` 旗标，战斗流程在响应结算后检查并终止整场战斗（鸦羽疾走）；已支付鬼火/出击次数不退还（暂定，questions.md 待确认）；非该时机静默跳过 | ✅ |
+| 攻击替换 | `attack_replace`（动作） | on_before_assault 响应时置事件 `attack_replace` 旗标，战斗流程以"对两个随机不重复敌方角色的效果伤害（X=力量+战力含乏力）"替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出（烬染不夜）；目标池含牌手（暂定，questions.md 待确认） | ✅ |
+| 交战改向 | `battle_retarget`（动作） | 登记到当前战斗上下文（`_battle_retarget`）：目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（可含牌手——暂定；排除原交战目标，无另一个敌方角色时落空），仅本次战斗有效（声东击西） | ✅ |
+| 复制使用 | `use_card_copy`（动作） | 凭空生成指定牌复制并自动使用（爆能"{额外使用'三太郎之斧'}"类）：不耗鬼火/瞬发名额/出击次数（暂定，questions.md 待确认）；法术按基础方式效果结算（`_auto_cast_copy` 共用助手）、战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地、照常 emit on_card_played（void/auto）；链式"再额外使用"=并列多个 step | ✅ |
+| 分身复制法术 | `mirror_spell`（动作） | 挂 on_card_played：复制持有者**主动使用**（triggered=active）的法术牌并自动使用一次（基础方式；觉醒牌由数据侧条件 subtype_not: awaken 排除）；choose 目标沿用原选（仍合法）否则随机重选；triggered=auto 天然不连锁（烟烟罗的分身） | ✅ |
+| 召唤继承 | `inherit_stats` / `energy_ratio`（summon 参数） | inherit_stats：召唤物复制来源式神基础+永久身材（不含临时/形态加成——暂定，questions.md 待确认）；energy_ratio：召唤物能量 = floor（来源能量 × 比例）（烟烟罗的分身 0.5） | ✅ |
+| 恢复至满 | `full`（heal 参数） | full=True：恢复至生命上限（沐浴阳光"恢复所有生命"；走 Game.heal 管线，实际治疗量按损失计） | ✅ |
+| 持续眩晕施加 | `lasting` / `until_event`（stun 参数） | lasting=True：持续眩晕条目（不随回合结束移除）；until_event=事件名列表：事件涉及看护式神（施加时来源，条目记 watch/watch_id）即经 `_release_lasting_stuns` 解除；`apply_seq`/`apply_uid` 记施加时点（emit_seq/卡牌 uid）防施加牌自身事件自解除（英雄无畏"直到鸦天狗使用牌、攻击或气绝"；气绝走现有清理）；条目结构见「关键词」眩晕行 | ✅ |
+| 能量光环 | `energy_power` / `ids_energy_power`（stat_aura kind） | energy_power{divisor}：持有者每有 divisor 点能量 +1 力量（人多势众"镰鼬每有2能量便获得1力量"，scope=form）；ids_energy_power{ids,divisor}：ids 匹配实体每有 divisor 点能量 +1 力量（烟雾缭绕对分身，scope=form）；连续型读取时求值，同 stat_aura 既有通道 | ✅ |
+| 形态要求光环 | `require_holder_form`（card_aura 参数） | 额外要求来源式神当前结附形态光环才生效（`_match_auras` 读取时动态判定——萤草 20200327"若萤草上有形态"）；scope=form/ability 清理同路径 | ✅ |
+| 关键字目标过滤 | `keyword`（TargetSpec 过滤键） | 按是否持有指定关键字过滤式神目标（三类关键字列表多重集任一含即算——沐浴阳光/冬日暖阳"己方的[充能]式神"）；spec_pool_refs 统一校验 | ✅ |
+| 能量/形态条件键 | `holder_has_form` / `energy_ge` / `pre_play_form`（条件运算符） | {holder_has_form: bool}=能力持有者当前是否结附形态（萤草 20200327）；{energy_ge: n}=能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）；{pre_play_form: bool}=on_card_played 新 payload——该牌使用前所属式神是否已结附形态（打出前快照：形态牌先结附后发事件，收集时求值的 holder_has_form 对该牌恒真） | ✅ |

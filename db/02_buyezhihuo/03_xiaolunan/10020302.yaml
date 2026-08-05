@@ -1,0 +1,22 @@
+id: 10020302
+name: 森之佑
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: SR
+      level: 1
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        # 永久 +1力量/+1生命（犬神心身炼磨 perm 先例）+1护甲
+        steps:
+          - {op: buff_power, amount: 1, perm: true}
+          - {op: buff_health, amount: 1, perm: true}
+          - {op: gain_shield, amount: 1}
+      methods:
+        # [爆能2]：目标改为所有己方式神（方式 target 覆盖，effects 沿用基础块）
+        - id: burst
+          energy_cost: 2
+          target: {kind: all, pool: friendly_shikigami}
+      text: 使一个己方式神获得1力量、1生命和1护甲。[爆能2]：{目标改为所有己方式神。}

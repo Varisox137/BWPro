@@ -1,0 +1,27 @@
+id: 10020306
+name: 觉醒·小鹿男
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      subtype: awaken
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        # 使用先复活小鹿男（不玩了啦"气绝时可用，复活"同通道）
+        steps:
+          - {op: revive, target: {kind: self}}
+      abilities:
+        # [觉醒]：[充能]为先天关键字（式神定义常驻，不被觉醒替换）；
+        # 保留复活获得2能量；能力进场登记形态牌气绝使用旗标（玩家级，觉醒常驻）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: form_death_play, energy: 3}
+        - when: on_shikigami_revived
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: gain_energy, amount: 2, target: {kind: self}}
+      text: 复活小鹿男。[觉醒]：{[充能]。小鹿男复活时获得2能量，且他的形态牌都获得‘气绝时可消耗3能量使用，复活小鹿男’。}

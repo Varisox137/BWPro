@@ -1375,3 +1375,36 @@ def test_destroy_on_combat_damage_transformed(db, make_game):
     pa.orb = 9
     play(g, 0, cid)
     assert pb.defeated and g.state.winner == 0
+
+
+# ---------- 交战目标改换（battle_retarget，声东击西） ----------
+
+def test_battle_retarget_redirects_strike_to_other_enemy(db, make_game):
+    """battle_retarget（声东击西"本次的交战目标改为另一个敌方角色并免疫战斗伤害"）：
+    响应插入后，改换者的交战伤害打向另一个随机敌方角色（排除原交战目标，可为牌手），
+    原交战目标不受其伤害；battle_immunity 免疫其受到的战斗伤害。"""
+    cid = 10010160
+    db.cards[cid] = F.card(
+        cid, shikigami=100101, level=1, token=True, card_type="combat",
+        keywords=["trigger"], when="on_before_assault",
+        block_kw={"condition": {"victim_shikigami": 100101}},
+        steps=[F.Step(op="battle_immunity", target=SELF),
+               F.Step(op="battle_retarget", target=SELF)])
+    g = make_game()
+    pa, pb = g.state.players
+    F.pass_turns(g, 1)                      # → B 第 1 回合
+    move(g, 1, 0)                           # B0（3/4）驻留战斗区到 A 回合
+    pb.orb = 2
+    give(g, 1, cid)
+    F.pass_turns(g, 1)                      # → A 第 2 回合
+    pa.orb = 9
+    g.apply({"op": "assault", "index": 0})
+    b = pb.shikigami[0]
+    a = pa.shikigami[0]
+    assert pb.graveyard[-1].id == cid       # 响应牌已使用
+    assert b.health == 4                    # 免疫战斗伤害
+    assert a.health == 4                    # 原交战目标不受其反击
+    # 反击改打另一个随机敌方角色（A 其他在场式神或牌手）：合计 3 点
+    total = (sum(s.max_health - s.health for s in pa.shikigami[1:])
+             + (30 - pa.health))
+    assert total == 3

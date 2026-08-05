@@ -1,0 +1,14 @@
+id: 10020202
+name: 真意之歌
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: reset_assaults}
+      text: "[瞬发]。重置你的出击次数。"

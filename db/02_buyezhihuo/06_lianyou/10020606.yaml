@@ -1,0 +1,25 @@
+id: 10020606
+name: 同生共死
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []  # 无进场效果
+      abilities:
+        # 将受到致死伤害时消耗 3 点能量，免疫本次伤害并移回准备区——on_damage_start
+        # 面板伤害 ≥ 当前生命判定（舍生 10011105/狂啸 10010908 同先例，时机在护甲
+        # 计算前）；energy_ge 门控 + gate 双保险，支付失败则后续不结算；
+        # 免疫 scope=once（命中即移除）；retreat 仅战斗区→准备区（准备区空操作）
+        - when: on_damage_start
+          condition: {victim_shikigami: self, victim_lethal: true, energy_ge: 3}
+          steps:
+            - {op: spend_energy, amount: 3, gate: true}
+            - {op: grant_immunity, kind: all, scope: once, target: {kind: self}}
+            - {op: retreat, target: {kind: self}}
+      text: "当镰鼬将受到致死伤害时，消耗3点能量，免疫本次伤害并移回准备区。"

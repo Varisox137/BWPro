@@ -1,0 +1,20 @@
+id: 10020504
+name: 冬日暖阳
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        # 所有己方有[充能]的式神各 +1 力量、+1 生命并获得 2 点能量
+        # （TargetSpec keyword 过滤键，同 10020501 沐浴阳光）
+        steps:
+          - {op: buff_power, amount: 1,
+             target: {kind: all, pool: friendly_shikigami, keyword: charge}}
+          - {op: buff_health, amount: 1,
+             target: {kind: all, pool: friendly_shikigami, keyword: charge}}
+          - {op: gain_energy, amount: 2,
+             target: {kind: all, pool: friendly_shikigami, keyword: charge}}
+      text: "使所有己方有[充能]的式神各获得1点力量、1点生命与2点能量。"

@@ -302,3 +302,316 @@ def test_orb_payment_emits_change_event(make_game, db):
     pa.shikigami[IDX].level = 1
     g.apply({"op": "assault", "index": IDX})
     assert "on_orb_changed" in g.history[n:]
+
+
+# ==========================================================================
+# 能量 / [爆能] / 日和坊（不夜之火批次）
+# ==========================================================================
+
+RIHEFANG = 100205          # 日和坊（引擎直读 id：觉醒免单 / 基础能力生命代偿）
+RF_AWAKEN = 10020551       # 假觉醒·日和坊（token 空白，仅提供觉醒标记）
+BURST_SPELL = 10010171     # 假爆能牌：定值爆能 2（追加投射 3）
+BURST_X_SPELL = 10010172   # 假爆能 X 牌（energy_cost="all"）
+
+
+def _charge_game(make_game, db):
+    """0 号位带[充能]的对局。"""
+    db.shikigami[SID].keywords = ["charge"]
+    g, pa, pb = _game(make_game)
+    return g, pa, pb
+
+
+# ---------- 充能（charge 关键字） ----------
+
+def test_charge_gain_cap_and_defeated_retain(make_game, db):
+    """[充能]：己方回合开始获得 1 点能量（上限 10，对局开始的回合开始阶段已充 1 点）；
+    气绝时能量保留且继续充能。"""
+    g, pa, pb = _charge_game(make_game, db)
+    s = pa.shikigami[IDX]
+    assert s.energy == 1                   # 对局开始（A 第 1 回合开始）已充能
+    pass_turns(g, 2)                       # A 第 2 回合开始：+1
+    assert s.energy == 2
+    s.energy = 10
+    pass_turns(g, 2)
+    assert s.energy == 10                  # 上限 10
+    s.energy = 5
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g._drain_queue()
+    assert s.defeated and s.energy == 5    # 气绝保留
+    pass_turns(g, 2)                       # 气绝中继续充能（复活倒计时 3→2，仍气绝）
+    assert s.energy == 6
+
+
+def test_on_energy_gained_trigger_no_recursion(make_game, db):
+    """on_energy_gained 触发器（烟烟罗觉醒"获得能量时改为两倍"模式）：监听 old:0
+    （首次获得）追加获得，追加用 emit_event=False 不再发事件（防递归）。"""
+    db.shikigami[SID].ability = F.block(
+        F.Step(op="gain_energy", amount=1, emit_event=False,
+               target=T(kind="self")),
+        when="on_energy_gained", condition={"player": "self", "old": 0})
+    g, pa, pb = _charge_game(make_game, db)
+    s = pa.shikigami[IDX]
+    # 对局开始的回合开始充能 0→1（old=0 命中）→ 追加 +1
+    assert s.energy == 2
+    pass_turns(g, 2)                       # old=2 不命中条件：只 +1（无连锁）
+    assert s.energy == 3
+    pass_turns(g, 2)
+    assert s.energy == 4
+
+
+# ---------- [爆能]（PlayMethod.energy_cost） ----------
+
+def _burst_card(db):
+    db.cards[BURST_SPELL] = F.card(
+        BURST_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="projectile"))],
+        methods=[F.method("burst", energy_cost=2, effects=F.block(
+            F.Step(op="damage", amount=3, target=T(kind="all", pool="projectile"))))])
+    return BURST_SPELL
+
+
+def test_burst_fixed_cost_pay_and_append_effects(make_game, db):
+    """[爆能]定值：方式 effects 追加在基础 effects 之后（非覆盖）；能量足够则支付，
+    不足则该方式不可用；不带方式使用不耗能量。"""
+    cid = _burst_card(db)
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    s.energy = 1
+    with pytest.raises(IllegalAction):     # 能量不足：爆能方式不可选
+        g.apply({"op": "play_card", "uid": give(g, 0, cid).uid, "play_method": "burst"})
+    s.energy = 2
+    g.apply({"op": "play_card", "uid": give(g, 0, cid).uid, "play_method": "burst"})
+    assert s.energy == 0                   # 支付 2 能量
+    assert pb.health == 30 - (2 + 3)       # 基础 2 + 爆能追加 3（投射→敌方牌手）
+    s.energy = 3
+    g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
+    assert s.energy == 3                   # 不带方式：不耗能量
+    assert pb.health == 30 - (2 + 3) - 2
+
+
+def test_burst_all_snapshot_and_zero_gate(make_game, db):
+    """[爆能]X（energy_cost="all"）：支付全部能量（至少 1 点），X = 支付时快照
+    （{"burst_x": true} 读 card.mods["burst_x"]，结算后清除不残留）。"""
+    db.cards[BURST_X_SPELL] = F.card(
+        BURST_X_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=1, target=T(kind="all", pool="projectile"))],
+        methods=[F.method("burst_x", energy_cost="all", effects=F.block(
+            F.Step(op="damage", amount={"burst_x": True},
+                   target=T(kind="all", pool="projectile"))))])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    with pytest.raises(IllegalAction):     # 0 能量：爆能 X 不可选
+        g.apply({"op": "play_card", "uid": give(g, 0, BURST_X_SPELL).uid,
+                 "play_method": "burst_x"})
+    s.energy = 3
+    inst = give(g, 0, BURST_X_SPELL)
+    g.apply({"op": "play_card", "uid": inst.uid, "play_method": "burst_x"})
+    assert s.energy == 0                   # 全部支付
+    assert pb.health == 30 - (1 + 3)       # 基础 1 + X=3
+    assert "burst_x" not in inst.mods      # 快照结算后清除
+
+
+# ---------- 日和坊（觉醒免单 / 基础能力生命代偿） ----------
+
+def _rihefang_game(make_game, db, awakened=False):
+    """1 号位日和坊（在场）+ 0 号位持定值爆能牌的对局。"""
+    db.shikigami[RIHEFANG] = F.shiki(RIHEFANG, name="日和坊")
+    for n in range(1, 9):                  # 凑卡组空白卡
+        db.cards[RIHEFANG * 100 + n] = F.card(RIHEFANG * 100 + n, shikigami=RIHEFANG,
+                                              level=(n - 1) % 3 + 1)
+    db.cards[RF_AWAKEN] = F.card(RF_AWAKEN, shikigami=RIHEFANG, subtype="awaken",
+                                 tags=["awaken"], token=True)
+    _burst_card(db)
+    g = make_game(team=[SID, RIHEFANG, 100103, 100104])
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    rf = pa.shikigami[1]
+    rf.level = 1
+    if awakened:
+        rf.awakened = RF_AWAKEN
+    return g, pa, pb
+
+
+def test_energy_free_once_and_turn_reset(make_game, db):
+    """觉醒·日和坊免单：每回合一次，消耗能量时改为不消耗（名额每半回合重置）。"""
+    g, pa, pb = _rihefang_game(make_game, db, awakened=True)
+    s = pa.shikigami[IDX]
+    s.energy = 6
+    g.apply({"op": "play_card", "uid": give(g, 0, BURST_SPELL).uid,
+             "play_method": "burst"})
+    assert s.energy == 6                   # 免单：不消耗
+    assert pa.ext["energy_free_turn"] is False
+    g.apply({"op": "play_card", "uid": give(g, 0, BURST_SPELL).uid,
+             "play_method": "burst"})
+    assert s.energy == 4                   # 名额已耗：正常支付 2
+    pass_turns(g, 2)                       # 半回合重置名额
+    assert pa.ext["energy_free_turn"] is True
+    g.apply({"op": "play_card", "uid": give(g, 0, BURST_SPELL).uid,
+             "play_method": "burst"})
+    assert s.energy == 4                   # 再次免单
+
+
+def test_energy_life_substitute(make_game, db):
+    """日和坊生命代偿：能量不足的差额由在场日和坊以生命代偿（直扣生命、非伤害、
+    代偿后生命不能降到 0——会降到 0 则支付失败、方式不可用）。"""
+    g, pa, pb = _rihefang_game(make_game, db)
+    s = pa.shikigami[IDX]
+    rf = pa.shikigami[1]
+    s.energy = 1
+    g.apply({"op": "play_card", "uid": give(g, 0, BURST_SPELL).uid,
+             "play_method": "burst"})
+    assert s.energy == 0                   # 能量清零
+    assert rf.health == rf.max_health - 1  # 差额 1 由生命代偿
+    s.energy = 0
+    rf.health = 2                          # 爆能 2 需全额代偿 2 → 生命会降到 0
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": give(g, 0, BURST_SPELL).uid,
+                 "play_method": "burst"})
+    assert rf.health == 2                  # 未支付、未扣血
+
+
+# ---------- 动态能量光环（stat_aura：人多势众 / 烟雾缭绕） ----------
+
+ENERGY_AURA_FORM = 10010173    # 假人多势众：进场登记 energy_power 光环（divisor=2）
+SUMMON_SPELL = 10010174        # 假召唤分身牌
+IDS_AURA_FORM = 10010175       # 假烟雾缭绕：进场登记 ids_energy_power 光环
+FENSHEN = 10020499             # 假"烟烟罗的分身"召唤物 id
+
+
+def test_energy_power_aura_scales_with_energy(make_game, db):
+    """人多势众（stat_aura kind="energy_power"）：持有者每有 divisor(2) 点能量 +1 力量
+    ——读取时求值（_gain_energy/_spend_energy 变化点触发刷新）；形态离场光环移除。"""
+    db.cards[ENERGY_AURA_FORM] = F.card(
+        ENERGY_AURA_FORM, shikigami=SID, card_type="form", level=1,
+        form_power=3, form_health=5, token=True,
+        steps=[F.Step(op="stat_aura", kind="energy_power", divisor=2)])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    g.apply({"op": "play_card", "uid": give(g, 0, ENERGY_AURA_FORM).uid})
+    base = s.eff_power                     # 形态 3 力量
+    g._gain_energy(pa, IDX, 5)             # 5//2=2
+    assert s.eff_power == base + 2
+    g._spend_energy(pa, IDX, 4)            # 1//2=0：消耗点同步刷新
+    assert s.eff_power == base
+    g._destroy_form(pa, IDX, "test")       # 形态离场：光环移除
+    g._gain_energy(pa, IDX, 4)
+    assert s.eff_power == 3                # 回基础身材
+
+
+def test_ids_energy_power_scales_with_summon_energy(make_game, db):
+    """烟雾缭绕（stat_aura kind="ids_energy_power" ids=[分身] scope="form"）：匹配实体
+    每有 divisor(1) 点能量 +1 力量（读实体自身能量）；形态离场光环移除。"""
+    db.shikigami[FENSHEN] = F.shiki(FENSHEN, name="烟烟罗的分身", kind="summon",
+                                    power=2, health=3)
+    db.cards[SUMMON_SPELL] = F.card(
+        SUMMON_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="summon", shikigami=FENSHEN)])
+    db.cards[IDS_AURA_FORM] = F.card(
+        IDS_AURA_FORM, shikigami=SID, card_type="form", level=1,
+        form_power=2, form_health=5, token=True,
+        steps=[F.Step(op="stat_aura", kind="ids_energy_power", ids=[FENSHEN],
+                      scope="form")])
+    g, pa, pb = _game(make_game)
+    g.apply({"op": "play_card", "uid": give(g, 0, SUMMON_SPELL).uid})
+    fen = pa.shikigami[-1]                 # 召唤物（最末座次，召唤即进战斗区）
+    assert fen.id == FENSHEN and fen.eff_power == 2
+    g.apply({"op": "play_card", "uid": give(g, 0, IDS_AURA_FORM).uid})
+    g._gain_energy(pa, len(pa.shikigami) - 1, 3)
+    assert fen.eff_power == 2 + 3          # 每有 1 能量 +1 力量
+    g._destroy_form(pa, IDX, "test")       # 形态离场：光环移除
+    g._refresh_stat_auras()
+    assert fen.eff_power == 2
+
+
+# ---------- 召唤复制身材/能量 + 分身复制法术 + 额外使用复制（不夜之火末轮） ----------
+
+MIRROR_DMG = 10010176        # 假投射 2 法术（被分身复制）
+MIRROR_AWAKEN = 10010177     # 假觉醒法术（不触发复制）
+COPY_PROJ = 10010178         # 假投射 2（use_card_copy 目标）
+COPY_COMBAT = 10010179       # 假战斗牌（use_card_copy 目标）
+COPY_SRC = 10010180          # 假"额外使用"源牌（链式两 step）
+COPY_SRC_COMBAT = 10010181   # 假"额外使用战斗牌"源牌
+
+
+def test_summon_inherit_stats_and_energy_ratio(make_game, db):
+    """summon inherit_stats/energy_ratio（烟烟罗的分身"召唤时具有与烟烟罗相同的力量和
+    生命以及一半的能量"）：复制来源基础+永久身材（不含临时/形态），能量按比例向下取整；
+    召唤进场也算移动（ext move_count_turn，前置修正）。"""
+    db.shikigami[FENSHEN] = F.shiki(FENSHEN, name="烟烟罗的分身", kind="summon",
+                                    power=2, health=4)
+    db.cards[SUMMON_SPELL] = F.card(
+        SUMMON_SPELL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="summon", shikigami=FENSHEN, inherit_stats=True,
+                      energy_ratio=0.5)])
+    g, pa, pb = _game(make_game)
+    src = pa.shikigami[IDX]                  # 3/4
+    src.perm_power = 2
+    src.perm_health = 1
+    src.health += 1                          # 现 5/5（基础+永久）
+    src.temp_power = 5                       # 临时不复制
+    src.energy = 5
+    g.apply({"op": "play_card", "uid": give(g, 0, SUMMON_SPELL).uid})
+    fen = pa.shikigami[-1]
+    assert fen.base_power == 5 and fen.eff_power == 5   # 基础+永久，不含临时
+    assert fen.base_health == 5 and fen.health == 5
+    assert fen.energy == 2                              # floor(5 × 0.5)
+    assert fen.ext["move_count_turn"] == 1              # 召唤进场也算移动
+
+
+def test_mirror_spell_copies_active_spell_play(make_game, db):
+    """mirror_spell（烟烟罗的分身"会复制她使用的法术牌"）：在场分身监听 on_card_played
+    （card_type=spell、shikigami=烟烟罗、player=self、triggered=active、subtype_not=awaken）
+    ——主动使用的法术被凭空复制再结算一次；觉醒牌与复制自身（triggered=auto）不触发。"""
+    db.shikigami[FENSHEN] = F.shiki(
+        FENSHEN, name="烟烟罗的分身", kind="summon", power=2, health=4,
+        ability=F.block(
+            F.Step(op="mirror_spell"),
+            when="on_card_played",
+            condition={"card_type": "spell", "shikigami": SID, "player": "self",
+                       "triggered": "active", "subtype_not": "awaken"}))
+    db.cards[SUMMON_SPELL] = F.card(
+        SUMMON_SPELL, shikigami=100103, level=1, token=True,
+        steps=[F.Step(op="summon", shikigami=FENSHEN)])
+    db.cards[MIRROR_DMG] = F.card(
+        MIRROR_DMG, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="projectile"))])
+    db.cards[MIRROR_AWAKEN] = F.card(
+        MIRROR_AWAKEN, shikigami=SID, subtype="awaken", tags=["awaken"], level=1,
+        token=True)
+    g, pa, pb = _game(make_game)
+    pa.shikigami[2].level = 1                # 召唤牌属 100103（2 号位默认 0 级）
+    g.apply({"op": "play_card", "uid": give(g, 0, SUMMON_SPELL).uid})
+    assert pa.shikigami[-1].id == FENSHEN    # 召唤牌属 100103：不被分身复制
+    g.apply({"op": "play_card", "uid": give(g, 0, MIRROR_DMG).uid})
+    assert pb.health == 30 - 4               # 原牌 2 + 分身复制 2
+    g.apply({"op": "play_card", "uid": give(g, 0, MIRROR_AWAKEN).uid})
+    assert pb.health == 30 - 4               # 觉醒牌不触发复制
+
+
+def test_use_card_copy_spell_chain_and_combat(make_game, db):
+    """use_card_copy（爆能"{额外使用'X'}"类）：凭空复制指定牌自动使用——法术牌基础方式
+    结算，链式"再额外使用"= 并列 step（两次投射复制共 4）；战斗牌走基础方式战斗流程
+    （来源式神进战斗区发起战斗，不耗鬼火/出击次数）。"""
+    db.cards[COPY_PROJ] = F.card(
+        COPY_PROJ, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="projectile"))])
+    db.cards[COPY_COMBAT] = F.card(
+        COPY_COMBAT, shikigami=SID, level=1, token=True, card_type="combat")
+    db.cards[COPY_SRC] = F.card(
+        COPY_SRC, shikigami=SID, level=1, token=True, steps=[
+            F.Step(op="use_card_copy", card_id=COPY_PROJ),
+            F.Step(op="use_card_copy", card_id=COPY_PROJ)])
+    db.cards[COPY_SRC_COMBAT] = F.card(
+        COPY_SRC_COMBAT, shikigami=SID, level=1, token=True, steps=[
+            F.Step(op="use_card_copy", card_id=COPY_COMBAT)])
+    g, pa, pb = _game(make_game)
+    g.apply({"op": "play_card", "uid": give(g, 0, COPY_SRC).uid})
+    assert pb.health == 30 - 4               # 两次投射复制
+    pa.orb = 9
+    assaults_before = pa.assaults_left
+    g.apply({"op": "play_card", "uid": give(g, 0, COPY_SRC_COMBAT).uid})
+    assert pb.health == 30 - 4 - 3           # 战斗牌复制：来源 3 力量打空战斗区牌手
+    assert pa.combat_index == IDX            # 来源式神已进战斗区
+    assert pa.orb == 8                       # 复制不耗鬼火（仅源牌费 1）
+    assert pa.assaults_left == assaults_before   # 不耗出击次数

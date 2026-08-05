@@ -1,0 +1,17 @@
+id: 100203
+name: 小鹿男
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      faction: 青岚
+      power: 2
+      health: 6
+      keywords: [charge]  # [充能]（先天关键字，永久类别：气绝不清除、复活重获）
+      ability:
+        # 小鹿男复活时获得2能量
+        when: on_shikigami_revived
+        condition: {shikigami_shikigami: self}
+        steps:
+          - {op: gain_energy, amount: 2, target: {kind: self}}
+      text: "[充能]。小鹿男复活时获得2能量。"

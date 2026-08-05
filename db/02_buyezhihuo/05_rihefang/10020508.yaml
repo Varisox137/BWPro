@@ -1,0 +1,33 @@
+id: 10020508
+name: 晴雨
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 3
+      form_health: 8
+      effects:
+        steps: []  # 无进场效果
+      abilities:
+        # 当己方其他角色受到伤害时，日和坊恢复 3 点生命——式神受害者（排除日和坊自身）
+        - when: on_damage
+          condition: {victim_side: friendly, victim_not_shikigami: 100205}
+          steps:
+            - {op: heal, amount: 3, target: {kind: self}}
+        # 己方牌手受到伤害同样恢复（"其他角色"含牌手；victim_not_shikigami 对牌手
+        # Ref 恒假，牌手分支独立成块；on_player_damaged 与 on_damage 不重复触发）
+        - when: on_player_damaged
+          condition: {player: self}
+          steps:
+            - {op: heal, amount: 3, target: {kind: self}}
+        # 每个回合结束时（双方回合结束都触发）：消耗 3 能量，恢复所有其他己方角色
+        # 3 点生命（gate：付不起则不恢复）
+        - when: on_turn_end
+          steps:
+            - {op: spend_energy, amount: 3, gate: true}
+            - {op: heal, amount: 3,
+               target: {kind: all, pool: friendly_others_character}}
+      text: "当己方其他角色受到伤害时，日和坊恢复3点生命。每个回合结束时，消耗3能量，恢复所有其他己方角色3点生命。"

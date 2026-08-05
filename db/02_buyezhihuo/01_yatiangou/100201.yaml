@@ -1,0 +1,20 @@
+id: 100201
+name: 鸦天狗
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      faction: 苍叶
+      power: 1
+      health: 6
+      abilities:
+        # 当鸦天狗[移动]时（进/出战斗区各计一次，引擎记账同通道）：[投射]1
+        - when: on_enter_combat
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: projectile}}
+        - when: on_leave_combat
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: projectile}}
+      text: 当鸦天狗[移动]时，[投射]：{造成1点伤害。}

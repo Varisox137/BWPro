@@ -1,0 +1,14 @@
+id: 10020403
+name: 烟雾升腾
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: gain_energy, amount: 3, target: {kind: self}}
+      text: "[瞬发]。获得3能量。"

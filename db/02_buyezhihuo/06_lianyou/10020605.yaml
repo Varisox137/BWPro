@@ -1,0 +1,37 @@
+id: 10020605
+name: 二太郎之戟
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 2
+      effects:
+        # +0/+2（战斗牌数值通道）
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      temp_grants:
+        # 对敌方角色造成伤害后使其获得 2 点破甲（gain_shield kind=fragile；
+        # 绑定本次战斗的一次性临时触发，式神受害者）
+        - when: on_damage
+          condition: {source_shikigami: self, victim_side: enemy}
+          steps:
+            - {op: gain_shield, amount: 2, kind: fragile,
+               target: {kind: context, key: victim}}
+        # 敌方牌手受伤同样赋予（角色含牌手；on_damage 不覆盖牌手受害，
+        # damaged_player 取事件受伤牌手）
+        - when: on_player_damaged
+          condition: {source_shikigami: self, player: opponent}
+          steps:
+            - {op: gain_shield, amount: 2, kind: fragile,
+               target: {kind: context, key: damaged_player}}
+      methods:
+        # [爆能3]：额外使用'三太郎之斧'（use_card_copy：免费使用其复制，战斗牌基础
+        # 方式结算；方式 effects 为追加语义）
+        - id: burst
+          energy_cost: 3
+          effects:
+            steps:
+              - {op: use_card_copy, card_id: 10020601}
+      text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能3]：{额外使用‘三太郎之斧’。}"

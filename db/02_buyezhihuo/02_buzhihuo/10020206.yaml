@@ -1,0 +1,13 @@
+id: 10020206
+name: 星火之歌
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: R
+      level: 3
+      effects:
+        steps:
+          - {op: summon, shikigami: 10020299}
+      text: 召唤一个‘烬染不夜’。

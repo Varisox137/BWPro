@@ -1,0 +1,26 @@
+id: 10020406
+name: 觉醒·烟烟罗
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        # 使用时获得 2 能量
+        steps:
+          - {op: gain_energy, amount: 2, target: {kind: self}}
+      abilities:
+        # [觉醒]：{[充能]（先天关键字，觉醒不替换关键字——山童觉醒贯通同例）。
+        #  当烟烟罗获得能量时获得两倍：每次获得 n 点追加 n 点，{"event": "amount"}
+        #  读事件实际获得量，emit_event: false 防递归（替换基础能力的 old:0 追加）}
+        - when: on_energy_gained
+          condition: {player: self, target_shikigami: self}
+          steps:
+            - {op: gain_energy, amount: {event: amount}, emit_event: false,
+               target: {kind: self}}
+      text: "获得2能量。[觉醒]：{[充能]。当烟烟罗获得能量时，获得两倍的能量。}"

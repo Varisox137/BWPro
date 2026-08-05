@@ -1,0 +1,27 @@
+id: 10020301
+name: 祝福之愿
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 3
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 攻击或被攻击时（双挂）：随机一个其他具有[充能]的己方式神获得1能量
+        #（friendly_others 排除来源；keyword 过滤三列表多重集，random 随机取 1）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: gain_energy, amount: 1,
+               target: {kind: all, pool: friendly_others, keyword: charge, random: 1}}
+        - when: on_before_assault
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: gain_energy, amount: 1,
+               target: {kind: all, pool: friendly_others, keyword: charge, random: 1}}
+      text: 小鹿男攻击或被攻击时，随机使你的一个其他具有[充能]的式神获得1能量。

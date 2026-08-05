@@ -22,3 +22,23 @@ versions:
           steps:
             - {op: draw, count: 1}
       text: 萤草的形态牌获得[瞬发]且使用时抽一张牌。
+    - date: 20200327
+      faction: 苍叶
+      power: 2
+      health: 5
+      abilities:
+        # 同 20191212 登记能力光环，但要求萤草当前结附形态才生效
+        # （require_holder_form：读取时由 _match_auras 动态判定）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: card_aura, shikigami: self, card_type: form, keywords: [fast],
+               scope: ability, require_holder_form: true}
+        # 萤草使用形态牌时抽一张牌，但要求打出前萤草已结附形态（pre_play_form 快照——
+        # 形态牌先结附后发 on_card_played，收集时求值的 holder_has_form 对该牌恒真）
+        - when: on_card_played
+          condition: {player: self, card_type: form, shikigami: 100127,
+                      pre_play_form: true}
+          steps:
+            - {op: draw, count: 1}
+      text: 若萤草上有形态，她的形态牌获得[瞬发]且使用时抽一张牌。

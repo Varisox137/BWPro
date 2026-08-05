@@ -1329,3 +1329,367 @@ def test_target_spec_stunned_filter(db, make_game):
     play(g, 0, cid)
     assert pb.shikigami[1].health == 8
     assert pb.shikigami[0].health == 10 and pb.shikigami[2].health == 10
+
+
+# ==========================================================================
+# 不夜之火批次：[移动] / 持续眩晕 until_event / 杂项 op（reset_assaults /
+# clear_boosts / reset_stats / energy_assault）
+# ==========================================================================
+
+MOVE_SPELL = 10010181        # 假追风：移动来源式神
+SOFT_MOVE = 10010182         # 非强制移动（敌方目标静默跳过）
+FORCE_MOVE = 10010183        # 假羽迹：将敌方目标移入战斗区
+LOCK_FORM = 10010284         # 假尘缚形态（tags=combat_lock）
+STUN_SPELL = 10010185        # 假英雄无畏：持续眩晕直到来源用牌/攻击/气绝
+RESET_ASSAULTS_SPELL = 10010186   # 假真意之歌
+CLEAR_BOOSTS_SPELL = 10010187     # 假日出有曜 B 选项
+RESET_STATS_SPELL = 10010188      # 假日出有曜 A 选项
+ENERGY_ASSAULT_SPELL = 10010189   # 假觉醒·镰鼬能量出击
+
+
+def _mech_game(make_game):
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    return g, pa, pb
+
+
+# ---------- [移动]（move op） ----------
+
+def test_move_toggle_between_zones(db, make_game):
+    """[移动]：准备区↔战斗区切换；进/出各计一次移动（ext move_count_turn）并发
+    on_enter_combat/on_leave_combat；计数半回合作用域（回合开始清零）。"""
+    db.cards[MOVE_SPELL] = F.card(
+        MOVE_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="move", target=T(kind="self"))])
+    g, pa, pb = _mech_game(make_game)
+    s = pa.shikigami[0]
+    n = len(g.history)
+    play(g, 0, MOVE_SPELL)                   # 准备区 → 战斗区
+    assert pa.combat_index == 0
+    assert s.ext["move_count_turn"] == 1
+    assert "on_enter_combat" in g.history[n:]
+    n = len(g.history)
+    play(g, 0, MOVE_SPELL)                   # 战斗区 → 准备区
+    assert pa.combat_index is None
+    assert s.ext["move_count_turn"] == 2
+    assert "on_leave_combat" in g.history[n:]
+    pass_turns(g, 2)                         # 半回合作用域：计数清零
+    assert "move_count_turn" not in s.ext
+
+
+def test_move_force_enemy_and_combat_lock(db, make_game):
+    """羽迹（move force=True）：将敌方式神拉入其战斗区（非强制对敌方目标静默跳过）；
+    己方战斗区有式神时，移入会替换被尘缚之阵锁定的战斗区式神的移动无效。"""
+    db.cards[SOFT_MOVE] = F.card(
+        SOFT_MOVE, shikigami=100101, level=1, token=True, target=CHOOSE_ENEMY,
+        steps=[F.Step(op="move")])
+    db.cards[FORCE_MOVE] = F.card(
+        FORCE_MOVE, shikigami=100101, level=1, token=True, target=CHOOSE_ENEMY,
+        steps=[F.Step(op="move", force=True)])
+    db.cards[LOCK_FORM] = F.card(
+        LOCK_FORM, shikigami=100102, card_type="form", level=1,
+        form_power=3, form_health=5, tags=["combat_lock"], token=True)
+    db.cards[MOVE_SPELL] = F.card(
+        MOVE_SPELL, shikigami=100103, level=1, token=True,
+        steps=[F.Step(op="move", target=T(kind="self"))])
+    g, pa, pb = _mech_game(make_game)
+    pb.shikigami[0].level = 1
+    play(g, 0, SOFT_MOVE, target=Ref(player=1, shikigami=0))
+    assert pb.combat_index is None           # 非强制：敌方目标跳过
+    play(g, 0, FORCE_MOVE, target=Ref(player=1, shikigami=0))
+    assert pb.combat_index == 0              # 强制：拉入敌方战斗区
+    assert pb.shikigami[0].ext["move_count_turn"] == 1
+    # 尘缚锁定：敌方战斗区式神结附 combat_lock 形态、己方战斗区有式神时移动无效
+    inst = F.CardInstance(uid=g.state.next_uid, id=LOCK_FORM)
+    g.state.next_uid += 1
+    pb.shikigami[0].form = inst
+    pa.combat_index = 0
+    pa.shikigami[2].level = 1
+    play(g, 0, MOVE_SPELL)                   # 100103 位试图进战斗区 → 无效
+    assert pa.combat_index == 0
+    assert "move_count_turn" not in pa.shikigami[2].ext
+
+
+# ---------- 持续眩晕 until_event（英雄无畏） ----------
+
+def _stun_game(db, make_game):
+    """0 号位对敌方 0 号位施加持续眩晕（直到来源用牌/攻击/气绝）的对局。"""
+    db.cards[STUN_SPELL] = F.card(
+        STUN_SPELL, shikigami=100101, level=1, token=True, target=CHOOSE_ENEMY,
+        steps=[F.Step(op="stun", lasting=True,
+                      until_event=["on_card_played", "on_before_assault",
+                                   "on_shikigami_defeated"])])
+    g, pa, pb = _mech_game(make_game)
+    pb.shikigami[0].level = 1
+    play(g, 0, STUN_SPELL, target=Ref(player=1, shikigami=0))
+    b0 = pb.shikigami[0]
+    assert b0.stuns and b0.stuns[0]["kind"] == "lasting"
+    return g, pa, pb
+
+
+def test_lasting_stun_blocks_and_releases_on_card_played(db, make_game):
+    """英雄无畏：持续眩晕不随回合解除（被眩晕者不能出击）；来源式神用牌时解除。"""
+    g, pa, pb = _stun_game(db, make_game)
+    b0 = pb.shikigami[0]
+    pass_turns(g, 1)                         # B 回合：持续眩晕不随回合解除
+    assert b0.stuns
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "assault", "index": 0})
+    pass_turns(g, 1)                         # 回 A 回合
+    assert b0.stuns
+    play(g, 0, 10010101)                     # 来源式神用牌 → 解除
+    assert b0.stuns == []
+
+
+def test_lasting_stun_releases_on_assault_and_defeat(db, make_game):
+    """英雄无畏：来源式神攻击（on_before_assault）或气绝（on_shikigami_defeated）
+    同样解除；被眩晕者自身气绝走现有气绝清理。"""
+    g, pa, pb = _stun_game(db, make_game)
+    g.apply({"op": "assault", "index": 0})   # 来源攻击 → 解除
+    assert pb.shikigami[0].stuns == []
+    g2, pa2, pb2 = _stun_game(db, make_game)
+    g2.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
+    g2._drain_queue()
+    assert pa2.shikigami[0].defeated
+    assert pb2.shikigami[0].stuns == []      # 来源气绝 → 解除
+    g3, pa3, pb3 = _stun_game(db, make_game)
+    g3.deal_to_shikigami(Ref(player=1, shikigami=0), 99, None)
+    g3._drain_queue()
+    assert pb3.shikigami[0].defeated
+    assert pb3.shikigami[0].stuns == []      # 被眩晕者气绝：现有清理
+
+
+# ---------- 杂项 op（reset_assaults / clear_boosts / reset_stats / energy_assault） ----------
+
+def test_reset_assaults_grants_extra_assault(db, make_game):
+    """真意之歌（reset_assaults）：出击次数恢复为 1，本回合可再次出击。"""
+    db.cards[RESET_ASSAULTS_SPELL] = F.card(
+        RESET_ASSAULTS_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="reset_assaults")])
+    g, pa, pb = _mech_game(make_game)
+    g.apply({"op": "assault", "index": 0})   # 3 攻打牌手
+    assert pa.assaults_left == 0
+    play(g, 0, RESET_ASSAULTS_SPELL)
+    assert pa.assaults_left == 1
+    g.apply({"op": "assault", "index": 0})   # 再次出击
+    assert pb.health == 30 - 3 - 3
+
+
+def test_clear_boosts_empties_assault_boosts(db, make_game):
+    """日出有曜 B 选项（clear_boosts）：清除目标牌手全部出击加成；无牌手目标默认控制者。"""
+    db.cards[CLEAR_BOOSTS_SPELL] = F.card(
+        CLEAR_BOOSTS_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="clear_boosts")])
+    db.cards[CLEAR_BOOSTS_SPELL + 1] = F.card(
+        CLEAR_BOOSTS_SPELL + 1, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="clear_boosts", target=T(kind="all", pool="enemy_player"))])
+    g, pa, pb = _mech_game(make_game)
+    pa.assault_boosts = [{"power": 2, "shield": 2}]
+    play(g, 0, CLEAR_BOOSTS_SPELL)
+    assert pa.assault_boosts == []
+    pb.assault_boosts = [{"power": 1, "shield": 0}]
+    play(g, 0, CLEAR_BOOSTS_SPELL + 1)
+    assert pb.assault_boosts == []
+
+
+def test_reset_stats_restores_base_and_clears_shield(db, make_game):
+    """日出有曜 A 选项（reset_stats）：力量/生命变回基础值、护甲与破甲清除——
+    直改非事件（不触发伤害/治疗时机）。"""
+    db.cards[RESET_STATS_SPELL] = F.card(
+        RESET_STATS_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="reset_stats", target=T(kind="self"))])
+    g, pa, pb = _mech_game(make_game)
+    s = pa.shikigami[0]
+    s.temp_power = 3
+    s.shield = 2
+    s.health = 1
+    play(g, 0, RESET_STATS_SPELL)
+    assert s.temp_power == 0 and s.eff_power == 3
+    assert s.shield == 0
+    assert s.health == s.max_health == 4
+
+
+def test_energy_assault_pays_energy_when_no_orb(db, make_game):
+    """觉醒·镰鼬（energy_assault）：鬼火与出击次数都为 0 时，旗标持有者可耗 3 能量
+    出击（不耗出击次数）；非持有者或有鬼火时不可用。"""
+    db.cards[ENERGY_ASSAULT_SPELL] = F.card(
+        ENERGY_ASSAULT_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="energy_assault")])
+    g, pa, pb = _mech_game(make_game)
+    pa.shikigami[1].level = 1
+    play(g, 0, ENERGY_ASSAULT_SPELL)         # 登记旗标（holder=0 号位）
+    s = pa.shikigami[0]
+    s.energy = 3
+    pa.orb = 0
+    pa.assaults_left = 0
+    g.apply({"op": "assault", "index": 0})   # 耗 3 能量出击
+    assert s.energy == 0
+    assert pa.assaults_left == 0             # 不耗出击次数
+    assert pb.health == 30 - 3
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "assault", "index": 1})   # 非持有者：不可用
+    s.energy = 3
+    pa.orb = 1
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "assault", "index": 0})   # 有鬼火：能量出击分支不生效
+
+
+# ---------- 气绝形态使用（form_death_play，觉醒·小鹿男）与方式授予关键字（森之力） ----------
+
+FAWN_FLAG = 10010190         # 假觉醒·小鹿男旗标牌
+FAWN_FORM = 10010191         # 假小鹿男形态牌
+BURST_KW_SPELL = 10010192    # 假森之力：爆能方式授予[瞬发]
+
+
+def _fawn_cards(db):
+    db.cards[FAWN_FLAG] = F.card(
+        FAWN_FLAG, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="form_death_play")])
+    db.cards[FAWN_FORM] = F.card(
+        FAWN_FORM, shikigami=100101, card_type="form", level=1,
+        form_power=4, form_health=6, token=True)
+
+
+def test_form_death_play_revives_then_attaches(db, make_game):
+    """觉醒·小鹿男（form_death_play 旗标）：持有者气绝时其形态牌可用——消耗 3 能量
+    （_spend_energy 统一入口，免单/代偿同通道），使用效果前先复活持有者再正常结附；
+    能量不足不可用；无旗标不可用（既有行为）。"""
+    _fawn_cards(db)
+    g, pa, pb = _mech_game(make_game)
+    s = pa.shikigami[0]
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
+    g._drain_queue()
+    assert s.defeated
+    s.energy = 3
+    with pytest.raises(IllegalAction):     # 无旗标：气绝中不可用
+        g.apply({"op": "play_card", "uid": give(g, 0, FAWN_FORM).uid})
+    # 第二盘：先登记旗标再气绝
+    g2, pa2, pb2 = _mech_game(make_game)
+    s2 = pa2.shikigami[0]
+    play(g2, 0, FAWN_FLAG)                 # 登记旗标（holder=0 号位）
+    g2.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
+    g2._drain_queue()
+    assert s2.defeated
+    with pytest.raises(IllegalAction):     # 能量不足（0<3）：不可用
+        g2.apply({"op": "play_card", "uid": give(g2, 0, FAWN_FORM).uid})
+    assert s2.defeated
+    s2.energy = 3
+    g2.apply({"op": "play_card", "uid": give(g2, 0, FAWN_FORM).uid})
+    assert s2.energy == 0                  # 消耗 3 能量
+    assert not s2.defeated                 # 先复活
+    assert s2.form is not None and s2.form.id == FAWN_FORM  # 再正常结附
+    assert s2.health == s2.max_health      # 复活生命回满（形态上限 6）
+
+
+def test_method_keywords_grant_fast_for_this_play(db, make_game):
+    """森之力（PlayMethod.keywords）：爆能方式本次使用临时授予[瞬发]——装配在
+    瞬发/费用判定之前（首张瞬发免费），结算后移除；不带方式使用不具瞬发。"""
+    db.cards[BURST_KW_SPELL] = F.card(
+        BURST_KW_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="damage", amount=1, target=T(kind="all", pool="projectile"))],
+        methods=[F.method("burst", energy_cost=1, keywords=["fast"],
+                          effects=F.block(F.Step(
+                              op="damage", amount=1,
+                              target=T(kind="all", pool="projectile"))))])
+    g, pa, pb = _mech_game(make_game)
+    pa.orb = 1
+    s = pa.shikigami[0]
+    s.energy = 1
+    inst = give(g, 0, BURST_KW_SPELL)
+    g.apply({"op": "play_card", "uid": inst.uid, "play_method": "burst"})
+    assert pa.orb == 1                     # 方式授予[瞬发]：首张免费
+    assert pa.fast_used                    # 占用瞬发名额
+    assert s.energy == 0                   # 爆能 1 已付
+    assert pb.health == 30 - (1 + 1)       # 基础 1 + 爆能追加 1
+    assert "keywords_add" not in inst.mods  # 结算后移除（不残留实例）
+    s.energy = 1
+    pa.orb = 1
+    g.apply({"op": "play_card", "uid": give(g, 0, BURST_KW_SPELL).uid})
+    assert pa.orb == 0                     # 不带方式：不具瞬发，正常收 1 火
+    assert s.energy == 1                   # 无爆能消耗
+
+
+# ---------- TargetSpec keyword 过滤 / heal full / cancel_attack / attack_replace ----------
+
+KW_BUFF = 10010193           # 假"使有[充能]的式神获得力量"
+HEAL_FULL_SPELL = 10010194   # 假沐浴阳光（恢复所有生命）
+CANCEL_SPELL = 10010195      # 假鸦羽疾走（响应取消本次攻击）
+
+
+def test_target_spec_keyword_filter(db, make_game):
+    """TargetSpec 额外过滤键 keyword（日和坊"有[充能]的式神"类）：三列表
+    （keywords/one_shot/perm）任一含即保留，不具备者被滤除。"""
+    db.cards[KW_BUFF] = F.card(KW_BUFF, token=True, steps=[
+        F.Step(op="buff_power", amount=1, perm=True,
+               target=T(kind="all", pool="friendly_shikigami", keyword="charge"))])
+    db.shikigami[100102].keywords = ["charge"]             # 先天关键字入 perm 列表
+    g, pa, pb = _mech_game(make_game)
+    pa.shikigami[1].level = 1
+    pa.shikigami[2].level = 1
+    pa.shikigami[2].one_shot_keywords.append("charge")     # one_shot 列表
+    play(g, 0, KW_BUFF)
+    assert pa.shikigami[0].perm_power == 0
+    assert pa.shikigami[1].perm_power == 1                 # perm 关键字命中
+    assert pa.shikigami[2].perm_power == 1                 # one_shot 关键字命中
+    assert pa.shikigami[3].perm_power == 0
+
+
+def test_heal_full_restores_missing_health(db, make_game):
+    """heal full（沐浴阳光"恢复所有生命"）：逐目标按其缺失生命恢复（式神与牌手同理），
+    不带 amount（缺省 0）。"""
+    db.cards[HEAL_FULL_SPELL] = F.card(HEAL_FULL_SPELL, token=True, steps=[
+        F.Step(op="heal", full=True, target=T(kind="all", pool="friendly_shikigami")),
+        F.Step(op="heal", full=True, target=T(kind="all", pool="self_player"))])
+    g, pa, pb = _mech_game(make_game)
+    pa.shikigami[1].level = 1
+    pa.shikigami[0].health = 1
+    pa.shikigami[1].health = 3
+    pa.health = 20
+    play(g, 0, HEAL_FULL_SPELL)
+    assert pa.shikigami[0].health == pa.shikigami[0].max_health
+    assert pa.shikigami[1].health == 6
+    assert pa.health == 30
+
+
+def test_cancel_attack_response_cancels_battle(db, make_game):
+    """cancel_attack（鸦羽疾走"自动使用并取消本次攻击"）：响应 on_before_assault 置
+    取消旗标，战斗终止——双方无伤害；已付的出击鬼火不退，响应牌正常进墓地。"""
+    db.cards[CANCEL_SPELL] = F.card(
+        CANCEL_SPELL, shikigami=SID, level=1, token=True, keywords=["trigger"],
+        when="on_before_assault", block_kw={"condition": {"victim_shikigami": SID}},
+        steps=[F.Step(op="cancel_attack")])
+    g, pa, pb = _mech_game(make_game)
+    pass_turns(g, 1)                           # → B 第 1 回合
+    move(g, 1, 0)                              # B0 驻留战斗区到 A 回合
+    pb.orb = 2
+    give(g, 1, CANCEL_SPELL)
+    pass_turns(g, 1)                           # → A 第 2 回合
+    pa.orb = 9
+    g.apply({"op": "assault", "index": 0})
+    a, b = pa.shikigami[0], pb.shikigami[0]
+    assert a.health == 4 and b.health == 4     # 双方无伤害：攻击被取消
+    assert pa.orb == 8                         # 出击鬼火已扣不退
+    assert pb.orb == 1                         # 响应付费
+    assert pb.graveyard[-1].id == CANCEL_SPELL
+
+
+def test_attack_replace_two_random_enemy_characters(db, make_game):
+    """attack_replace（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力
+    之和的伤害"）：先攻/交战阶段被替换为对两个随机敌方角色的效果伤害——无交战、
+    不受反击；on_after_assault 照常发出。"""
+    db.shikigami[100102].ability = F.block(
+        F.Step(op="attack_replace"),
+        when="on_before_assault", condition={"attacker_shikigami": "self"})
+    g, pa, pb = _mech_game(make_game)
+    move(g, 1, 0)                              # B0（3 力量）驻战斗区：检验不受反击
+    a = pa.shikigami[1]                        # 100102（1/6）
+    a.level = 1
+    n = len(g.history)
+    g.apply({"op": "assault", "index": 1})
+    assert a.health == 6                       # 不受反击
+    total = (sum(s.max_health - s.health for s in pb.shikigami)
+             + (30 - pb.health))
+    assert total == 2                          # X=1，两个随机敌方角色各 1
+    assert "on_after_assault" in g.history[n:]

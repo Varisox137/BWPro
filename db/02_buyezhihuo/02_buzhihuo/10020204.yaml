@@ -1,0 +1,22 @@
+id: 10020204
+name: 初会之舞
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 2
+      form_health: 6
+      keywords: [remote]
+      effects:
+        steps: []
+      abilities:
+        # 己方式神出击/战斗对敌方牌手造成伤害时抽1（伤害事件 kind=combat 通道，
+        # 白狼/青行灯同类触发先例；"出击"含战斗牌攻击）
+        - when: on_player_damaged
+          condition: {player: opponent, source_side: friendly, kind: combat}
+          steps:
+            - {op: draw, count: 1}
+      text: "[远程]。当己方式神出击并对敌方牌手造成伤害时，抽一张牌。"

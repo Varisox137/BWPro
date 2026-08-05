@@ -1,0 +1,21 @@
+id: 10020505
+name: 滋养
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 2
+      form_health: 7
+      effects:
+        steps: []  # 无进场效果
+      abilities:
+        # 己方回合开始时消耗 4 能量获得 1 点鬼火（gate：付不起则不获得）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: spend_energy, amount: 4, gate: true}
+            - {op: gain_orb, amount: 1}
+      text: "己方回合开始时，消耗4能量，获得1点鬼火。"

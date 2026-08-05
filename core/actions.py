@@ -86,13 +86,19 @@ def damage(game, ctx, *, targets: list[Ref], amount: int = 0,
 
 
 @action("heal")
-def heal(game, ctx, *, targets: list[Ref], amount: int) -> None:
+def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False) -> None:
     """恢复生命（走 Game.heal 治疗事件流程）：治疗量 = min(amount, 已损失生命)，
     0 终止；濒死/气绝（未在场）式神与气绝牌手不受治疗。
     结算后把本步治疗目标写入块内暂存 ctx.memo["last_heal_targets"]（供佛光
     "为其操控者的所有角色"以 side_of_last_heal 池引用）。"""
     for ref in targets:
-        game.heal(ref, amount, ctx.source, reason="heal")
+        amt = amount
+        if full:
+            # 恢复至满：逐目标按其缺失生命（沐浴阳光"恢复所有生命"）
+            pl = game.state.players[ref.player]
+            holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+            amt = holder.max_health - holder.health
+        game.heal(ref, amt, ctx.source, reason="heal")
     if ctx.memo is not None:
         ctx.memo["last_heal_targets"] = list(targets)
 
@@ -213,7 +219,8 @@ def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shie
 
 
 @action("summon")
-def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0) -> None:
+def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
+           inherit_stats: bool = False, energy_ratio: float | None = None) -> None:
     """为效果归属玩家召唤一个召唤物（定义须 kind=summon）。
 
     召唤物的生成视作其移动进入战斗区（但不视为从准备区离开）；
@@ -239,17 +246,27 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0) 
     s = ShikigamiState(
         id=shikigami, kind="summon", faction=d.faction, level=1,
         home_slot=None,
-        base_power=d.power, base_health=d.health, health=d.health)
+        base_power=d.power, base_health=d.health, health=d.health,
+        perm_keywords=list(d.keywords))  # 先天关键字（充能/迅捷等）按永久类别入列（同 build_player）
     legacy = p.summon_legacy.get(shikigami)
     if legacy:
         s.perm_power = legacy.get("perm_power", 0)
         s.perm_health = legacy.get("perm_health", 0)
         s.health += s.perm_health
+    if ctx.source is not None and ctx.source.shikigami is not None:
+        src = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+        if inherit_stats:
+            # 复制来源式神身材：基础+永久（不含临时/形态/战力），烟烟罗的分身
+            s.base_power = src.base_power + src.perm_power
+            s.base_health = src.base_health + src.perm_health
+            s.health = s.base_health
+        if energy_ratio is not None:
+            s.energy = int(src.energy * energy_ratio)  # 能量按比例复制（向下取整）
     s.ext["max_power"] = s.base_power + s.perm_power  # 力量历史峰值初值（断臂记账）
     p.shikigami.append(s)
     idx = len(p.shikigami) - 1
     game._log(f"{p.name} 召唤了 {d.name}")
-    game._enter_combat(p, idx)  # 召唤即进入战斗区
+    game._enter_combat(p, idx)  # 召唤即进入战斗区（召唤进场也算移动）
     game.emit("on_summon", shikigami=Ref(player=ctx.controller, shikigami=idx))
 
 
@@ -401,7 +418,8 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
               cost_zero: bool = False, power: int = 0, shield: int = 0,
               power_ext: str | None = None, shield_ext: str | None = None,
               damage_boost: int = 0,
-              turn: str | None = None, scope: str = "turn") -> None:
+              turn: str | None = None, scope: str = "turn",
+              require_holder_form: bool = False) -> None:
     """登记卡牌光环（targets 忽略）：谓词匹配的卡牌获得 keywords / 不耗鬼火 / 数值加成。
 
     覆盖谓词命中的全部卡牌（任何区域，含之后新生成的）——读取时求值而非写入实例。
@@ -419,6 +437,8 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     "ability" = 绑定来源座次的当前能力，能力离场（气绝/变形/离场/觉醒替换）时移除，
     能力进场（on_ability_enter）重新注册（萤草形态牌光环类）；
     "game" = 本局游戏有效，不清除（寒冬之心类）。
+    require_holder_form：额外要求来源式神当前结附形态才生效（20200327 版萤草
+    "若萤草上有形态"）；读取时由 _match_auras 判定，且按持有者随形态离场移除。
     shikigami="any"：通配——命中控制者任意式神（含中立）的牌（觉醒·萤草
     "己方式神的形态牌"、爱意绵绵"你手牌所有法术牌"）。
     """
@@ -446,7 +466,9 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         aura["shield_ext"] = shield_ext
     if damage_boost:
         aura["damage_boost"] = int(damage_boost)  # 卡牌效果伤害加成（寒冬之心的雪球）
-    if scope in ("form", "ability"):
+    if require_holder_form:
+        aura["require_holder_form"] = True
+    if scope in ("form", "ability") or require_holder_form:
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError(f"card_aura(scope={scope}) 需要来源式神")
         aura["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态/能力离场按持有者移除
@@ -458,7 +480,7 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
 @action("stat_aura")
 def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
               ids: list[int] | None = None, power: int = 0, health: int = 0,
-              ext: str | None = None) -> None:
+              ext: str | None = None, divisor: int = 1) -> None:
     """登记连续型动态身材光环（targets 忽略；闻世/火吻之蛇）——读取时求值的通用修饰：
     不写死数值，由 Game._refresh_stat_auras 在手牌数/破甲变化等读取点重算
     ext["dyn_power"]/["dyn_health"] 缓存通道（eff_power/max_health 读取时叠加）。
@@ -473,24 +495,37 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
     kind="ids_power"：控制者在场实体中数据 id ∈ ids 者 +power 力量（坐下"番茄永久
     +1 力量"——视作结附牌手的本局永久光环，跨召唤保留，对番茄召唤物 10013199 与
     变形番茄 10013198 都生效；可叠加）。
+    kind="energy_power"：持有者每有 divisor 点能量 +power 力量（人多势众"镰鼬每有
+    2能量便获得1力量"——能量读持有者 ShikigamiState.energy，读取时求值；divisor
+    缺省 1，power 为每组倍率缺省 1）。
+    kind="ids_energy_power"：ids 匹配实体每有 divisor 点能量 +power 力量（烟雾缭绕
+    "'烟烟罗的分身'每有1能量便获得1力量"——能量读匹配实体自身）。
     scope="form"（缺省）：绑定来源式神当前形态，形态离场时移除（气绝经
     _destroy_form 同路径）。登记时持有者当前生命按新上限回满（形态结附生命回满
     在光环登记之前，此处补齐动态上限部分）。
-    scope="game"（仅 ids_power）：本局游戏有效，不绑定形态、不清除。
+    scope="game"（ids_power/ids_energy_power 可选）：本局游戏有效，不绑定形态、不清除。
+    scope="form"（ids_power/ids_energy_power 可选）：绑定来源形态、记 holder，形态离场
+    经 _destroy_form 同路径移除（烟雾缭绕）。
     """
     if kind not in ("self_hand_count", "enemy_fragile_power", "enemy_stunned_exists",
-                    "ext_power", "ids_power"):
+                    "ext_power", "ids_power", "energy_power", "ids_energy_power"):
         raise ValueError(f"未知 stat_aura 类型: {kind}")
-    if kind == "ids_power":
-        if scope != "game":
-            raise ValueError("stat_aura(kind=ids_power) 作用域须为 game")
+    if kind in ("ids_power", "ids_energy_power"):
+        if scope not in ("game", "form"):
+            raise ValueError(f"stat_aura(kind={kind}) 作用域须为 game 或 form")
         if not ids:
-            raise ValueError("stat_aura(kind=ids_power) 需要 ids（匹配的数据 id 列表）")
+            raise ValueError(f"stat_aura(kind={kind}) 需要 ids（匹配的数据 id 列表）")
+        entry: dict = {"kind": kind, "scope": scope,
+                       "ids": [int(i) for i in ids], "power": int(power)}
+        if kind == "ids_energy_power":
+            entry["power"] = int(power) or 1  # 每组能量的力量倍率（缺省 1）
+            entry["divisor"] = int(divisor)   # 每有 divisor 点能量 +power（读实体自身能量）
+        if scope == "form":
+            if ctx.source is None or ctx.source.shikigami is None:
+                raise ValueError(f"stat_aura(kind={kind}, scope=form) 需要来源式神")
+            entry["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态离场按持有者移除
         p = game.state.players[ctx.controller]
-        p.ext.setdefault("stat_auras", []).append({
-            "kind": kind, "scope": scope,
-            "ids": [int(i) for i in ids], "power": int(power),
-        })
+        p.ext.setdefault("stat_auras", []).append(entry)
         game._refresh_stat_auras()
         game._log(f"{p.name} 的召唤物光环生效（{sorted(int(i) for i in ids)} 力量 {int(power):+d}）")
         return
@@ -511,6 +546,9 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
         entry["health"] = int(health)
     if ext is not None:
         entry["ext"] = ext
+    if kind == "energy_power":
+        entry["power"] = int(power) or 1  # 每组能量的力量倍率（缺省 1）
+        entry["divisor"] = int(divisor)   # 每有 divisor 点能量一组（人多势众=2）
     p.ext.setdefault("stat_auras", []).append(entry)
     game._refresh_stat_auras()
     s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
@@ -696,10 +734,16 @@ def destroy(game, ctx, *, targets: list[Ref]) -> None:
 @action("basic_boost")
 def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 0) -> None:
     """鼓舞：登记一笔出击加成（targets 忽略）。下一次出击时全部消耗——
-    力量直到该次出击的战斗后，护甲保留；战斗牌不消耗出击加成。"""
-    game.state.players[ctx.controller].assault_boosts.append(
-        {"power": power, "shield": shield})
-    game._log(f"{game.state.players[ctx.controller].name} 获得出击加成（+{power}力量/+{shield}护甲）")
+    力量直到该次出击的战斗后，护甲保留；战斗牌不消耗出击加成。
+    觉醒·不知火类旗标（inspire_bonus 登记的 PlayerState.ext["boost_flags"]）：
+    该玩家的鼓舞数值额外 +power/+shield（可叠加）。"""
+    p = game.state.players[ctx.controller]
+    power += sum(int(e.get("power", 0)) for e in p.ext.get("boost_flags", [])
+                 if e.get("kind") == "inspire_bonus")
+    shield += sum(int(e.get("shield", 0)) for e in p.ext.get("boost_flags", [])
+                  if e.get("kind") == "inspire_bonus")
+    p.assault_boosts.append({"power": power, "shield": shield})
+    game._log(f"{p.name} 获得出击加成（+{power}力量/+{shield}护甲）")
 
 
 @action("consume_assault_boosts")
@@ -1577,6 +1621,99 @@ def spell_echo(game, ctx, *, targets: list[Ref], sequence: list[int],
     game._log(f"{game.db.shikigami[s.id].name} 获得了法术回响（本回合）")
 
 
+def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
+                    inherit_chosen: list[Ref] | None = None) -> bool:
+    """凭空生成 cdef 的复制并以基础方式自动结算（不耗鬼火/瞬发/替代方式），用后入墓地、
+    发 on_card_played（play_from="void"，triggered="auto"）。
+
+    choose 目标：inherit_chosen 仍在合法目标集内则沿用，否则合法目标中随机重选
+    （无合法目标则不选）。play_condition 不满足时拒绝结算并返回 False。
+    spell_echo_recast / mirror_spell / use_card_copy（法术）共用此管线。
+    """
+    from core import targets as targets_mod
+    from core.model import CardInstance
+    p = game.state.players[controller]
+    if cdef.play_condition and not game._play_condition_met(p, cdef):  # 投影校验，拒绝不结算
+        return False
+    inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空生成，不进入任何区
+    game.state.next_uid += 1
+    chosen: list[Ref] = []
+    if cdef.target.kind == "choose":
+        pool = targets_mod.spec_pool_refs(game, cdef.target, controller, targeted=True)
+        inherited = [r for r in (inherit_chosen or []) if r in pool]
+        if inherited:
+            chosen = inherited[:1]
+        elif pool:
+            chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选
+    game._affected_stack.append({"controller": controller, "refs": []})
+    try:
+        game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
+            controller=controller, source=source, card=inst,
+            chosen=chosen, is_ability=True))
+    finally:
+        affected = game._affected_stack.pop()["refs"]
+    game.move_card(p, inst, "graveyard")  # 凭空生成的幻象牌用后入墓地
+    game._emit_card_played(controller, inst.uid, cdef, affected,
+                           play_from="void", triggered="auto", chosen=chosen)
+    return True
+
+
+@action("mirror_spell")
+def mirror_spell(game, ctx, *, targets: list[Ref]) -> None:
+    """复制施法（烟烟罗的分身"会复制她使用的法术牌"）：on_card_played 时机，
+    凭空复制事件中的牌并自动使用一次（基础方式）。
+
+    仅主动使用（triggered=active）触发——复制自身发出的 on_card_played
+    （triggered=auto）天然不连锁；觉醒牌排除由数据侧条件（subtype_not: awaken）表达。
+    choose 目标沿用原选（仍合法）否则随机重选。
+    """
+    event = ctx.event or {}
+    if event.get("name") != "on_card_played" or event.get("triggered") != "active":
+        return
+    if ctx.source is None or ctx.source.shikigami is None:
+        return
+    played = game._card_by_uid(event.get("uid"))
+    if played is None:
+        return
+    cdef = game.db.cards[played.id]
+    s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    game._log(f"{game.db.shikigami[s.id].name} 复制并自动使用了「{cdef.name}」")
+    _auto_cast_copy(game, ctx.controller, cdef, ctx.source,
+                    inherit_chosen=event.get("chosen"))
+
+
+@action("use_card_copy")
+def use_card_copy(game, ctx, *, targets: list[Ref], card_id: int) -> None:
+    """额外使用指定牌的复制（爆能"{额外使用'三太郎之斧'}"类）：凭空生成并自动使用，
+    不耗鬼火/瞬发/出击次数；用后入墓地并发 on_card_played（play_from="void"，
+    triggered="auto"）。链式"再额外使用"= 数据侧并列多个 step。
+
+    法术牌 = 基础方式效果结算（_auto_cast_copy）；战斗牌 = 基础方式战斗结算
+    （来源式神须在场，合法性以 _resolve_combat_card 自带检查为准）。
+    """
+    cdef = game.db.cards[card_id]
+    if cdef.card_type != "combat":
+        _auto_cast_copy(game, ctx.controller, cdef, ctx.source)
+        return
+    if ctx.source is None or ctx.source.shikigami is None:
+        return
+    p = game.state.players[ctx.controller]
+    si = ctx.source.shikigami
+    if not p.shikigami[si].in_play:
+        return  # 来源式神不在场无法使用战斗牌复制
+    from core.model import CardInstance
+    inst = CardInstance(uid=game.state.next_uid, id=card_id)  # 凭空生成，不进入任何区
+    game.state.next_uid += 1
+    game._affected_stack.append({"controller": ctx.controller, "refs": []})
+    try:
+        game._resolve_combat_card(p, si, inst, cdef, None, [])
+    finally:
+        affected = game._affected_stack.pop()["refs"]
+    game.move_card(p, inst, "graveyard")
+    game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
+                           play_from="void", triggered="auto", chosen=[])
+
+
 @action("spell_echo_recast")
 def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
     """法术回响的自动使用（内部步，由引擎收集门触发；targets 忽略）。
@@ -1598,31 +1735,55 @@ def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
     echo["triggered"].append(sid)
     cid = echo["sequence"][echo["cursor"]]
     echo["cursor"] += 1
-    from core import targets as targets_mod
-    from core.model import CardInstance
     p = game.state.players[ctx.controller]
     cdef = game.db.cards[cid]
     if cdef.play_condition and not game._play_condition_met(p, cdef):  # 投影校验过不了就跳过
         return
-    inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进任何区域
-    game.state.next_uid += 1
-    chosen: list[Ref] = []
-    if cdef.target.kind == "choose":
-        pool = targets_mod.pool_refs(game, cdef.target.pool, ctx.controller, targeted=True)
-        if pool:
-            chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选择
-    game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了【{cdef.name}】")
-    game._affected_stack.append({"controller": ctx.controller, "refs": []})
-    try:
-        game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
-            controller=ctx.controller, source=ctx.source, card=inst,
-            chosen=chosen, is_ability=True))
-    finally:
-        affected = game._affected_stack.pop()["refs"]
-    game.move_card(p, inst, "graveyard")  # 凭空生成的回响牌用后进入墓地
-    game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束
-    game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
-                           play_from="void", triggered="auto", chosen=chosen)
+    game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了「{cdef.name}」")
+    if _auto_cast_copy(game, ctx.controller, cdef, ctx.source):
+        game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束
+
+
+@action("cancel_attack")
+def cancel_attack(game, ctx, *, targets: list[Ref]) -> None:
+    """取消本次攻击（鸦羽疾走"自动使用并取消本次攻击"）。
+
+    响应 on_before_assault 时置事件取消旗标；战斗流程在响应结算后检查并终止战斗。
+    已支付的出击次数/鬼火不退还。非该时机的使用静默跳过。
+    """
+    marker = (ctx.event or {}).get("cancel")
+    if isinstance(marker, dict):
+        marker["cancelled"] = True
+        game._log("本次攻击被取消")
+
+
+@action("attack_replace")
+def attack_replace(game, ctx, *, targets: list[Ref]) -> None:
+    """攻击替换（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力
+    之和的伤害"）。
+
+    响应 on_before_assault（condition: {attacker_shikigami: self}）时置事件替换旗标；
+    战斗流程以效果伤害替换先攻/交战阶段（无交战、不受反击，on_after_assault 照常发出）。
+    """
+    marker = (ctx.event or {}).get("attack_replace")
+    if isinstance(marker, dict):
+        marker["active"] = True
+
+
+@action("battle_retarget")
+def battle_retarget(game, ctx, *, targets: list[Ref]) -> None:
+    """交战目标改换（声东击西"本次的交战目标改为另一个敌方角色"）。
+
+    目标角色本次战斗中的交战伤害（攻击/反击）改为打向另一个随机敌方角色
+    （排除原交战目标；无另一个敌方角色时该次攻击落空）。仅当前战斗中登记有效。
+    """
+    if not game._battle_stack:
+        return
+    bid = game._battle_stack[-1]
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        game._battle_retarget.setdefault(bid, []).append(ref)
 
 
 @action("fragile_echo")
@@ -2078,11 +2239,27 @@ def reattach_form(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("stun")
 def stun(game, ctx, *, targets: list[Ref], kind: str = "normal",
-         until: int | None = None) -> None:
+         until: int | None = None, lasting: bool = False,
+         until_event: str | list[str] | None = None) -> None:
     """眩晕目标角色（契约 §1）：普通眩晕记施加时的控制者回合号（己方回合结束批次
-    移除非本回合施加者）；持续眩晕（kind="lasting"，本批预留）按 until 回合号移除。
+    移除非本回合施加者）；持续眩晕（kind="lasting" 或 lasting=True）按 until 回合号
+    或 until_event 事件监听移除。
+    until_event（英雄无畏"保持眩晕直到鸦天狗使用牌、攻击或气绝"）：事件名列表，
+    任一事件涉及施加时来源式神（watch）即解除——匹配见 engine._release_lasting_stuns
+    （在 emit 点检查；被眩晕者自身气绝走现有气绝清理）。
     牌手眩晕条目挂 PlayerState.ext["stuns"]（同构）；眩晕牌手不能使己方式神出击。
     每次实际施加后按即时时机 emit on_stun（雪女"当你眩晕敌方式神时"类监听）。"""
+    if lasting:
+        kind = "lasting"
+    watch: list[int] | None = None
+    watch_id: int | None = None
+    if until_event is not None:
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError("stun(until_event=...) 需要来源式神（解除监听以其为基准）")
+        src = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+        watch = [ctx.source.player, ctx.source.shikigami]
+        watch_id = src.id
+    events = ([until_event] if isinstance(until_event, str) else list(until_event or [])) or None
     for ref in targets:
         p = game.state.players[ref.player]
         if ref.shikigami is None:
@@ -2095,7 +2272,17 @@ def stun(game, ctx, *, targets: list[Ref], kind: str = "normal",
             stuns = s.stuns
             name = game.db.shikigami[s.id].name
         if kind == "lasting":
-            stuns.append({"kind": "lasting", "until": until})
+            entry: dict = {"kind": "lasting", "until": until}
+            if events is not None:
+                entry["until_event"] = events
+                entry["watch"] = watch
+                entry["watch_id"] = watch_id
+                # 施加当时的事件序号与施加牌 uid：施加牌自身的 on_card_played（使用后1
+                # 在效果结算后发出）不把刚施加的眩晕解除——"直到来源用牌"指其后的使用
+                entry["apply_seq"] = game.state.emit_seq
+                if ctx.card is not None:
+                    entry["apply_uid"] = ctx.card.uid
+            stuns.append(entry)
         else:
             stuns.append({"kind": "normal", "turn": p.turn_count})
         game._log(f"{name} 被眩晕")
@@ -2498,3 +2685,196 @@ def discard_random(game, ctx, *, targets: list[Ref], count: int = 1) -> None:
         for c in game.rng.sample(p.hand, n):
             game._log(f"{p.name} 随机弃掉了【{game.db.cards[c.id].name}】")
             game.move_card(p, c, "graveyard")
+
+
+# ==================== 不夜之火批次（能量/[爆能]/[移动]/鼓舞扩展） ====================
+
+
+class AbortBlock(Exception):
+    """中止当前效果块剩余步骤（spend_energy gate=True 支付失败时抛出；
+    engine._run_block_steps 捕获后正常收尾，不向外传播）。"""
+
+
+@action("gain_energy")
+def gain_energy(game, ctx, *, targets: list[Ref], amount: int = 1,
+                emit_event: bool = True) -> None:
+    """目标式神获得能量（经 engine._gain_energy 统一入口，上限 10；烟雾升腾/
+    冬日暖阳/沐浴阳光/小鹿男复活等）。emit_event=False：追加的额外获得不再发出
+    on_energy_gained（烟烟罗类"获得能量时"触发器自身的追加获得，防递归循环）。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        game._gain_energy(game.state.players[ref.player], ref.shikigami,
+                          int(amount), emit_event=emit_event)
+
+
+@action("spend_energy")
+def spend_energy(game, ctx, *, targets: list[Ref], amount: int = 1,
+                 gate: bool = False) -> None:
+    """来源式神消耗能量（经 engine._spend_energy 统一入口：觉醒·日和坊免单与
+    日和坊生命代偿同通道；祈晴/滋养/晴雨/自强之愿/同生共死"消耗X能量，…"）。
+
+    支付为全有或全无（不足则一点不扣）。gate=True：支付失败时中止本效果块
+    剩余步骤（"消耗4能量，抽一张牌"类——付不起则后续效果不发生）。"""
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("spend_energy 需要来源式神")
+    p = game.state.players[ctx.source.player]
+    if game._spend_energy(p, ctx.source.shikigami, int(amount)):
+        return
+    name = game.db.shikigami[p.shikigami[ctx.source.shikigami].id].name
+    game._log(f"{name} 能量不足，无法支付 {int(amount)} 点能量")
+    if gate:
+        raise AbortBlock()
+
+
+@action("move")
+def move(game, ctx, *, targets: list[Ref], force: bool = False) -> None:
+    """[移动]：目标式神战斗区↔准备区移动（追风/鸦羽疾走；targets 默认来源式神）。
+
+    在准备区 → 进战斗区（复用 engine._enter_combat；移入会替换被尘缚之阵锁定的
+    战斗区式神时该效果无效，与 enter_combat 同校验）；在战斗区 → 回准备区
+    （复用 engine._retreat，召唤物退回即离场）。气绝/已离场者不能移动；
+    眩晕不影响被移动。进/出战斗区各计一次 [移动]（engine 记账 ext["move_count_turn"]，
+    气绝离场与召唤物进场不计）。
+    force=True（羽迹"将敌方式神移入战斗区"）：允许移动敌方式神（仅拉入战斗区方向
+    有意义）；非强制时敌方式神目标静默跳过。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        if ref.player != ctx.controller and not force:
+            continue  # 非强制只能移动己方式神
+        p = game.state.players[ref.player]
+        s = p.shikigami[ref.shikigami]
+        if s.defeated or s.despawned:
+            continue  # 气绝/离场不能移动
+        if p.combat_index == ref.shikigami:
+            game._retreat(p, ref.shikigami)  # 在战斗区 → 回准备区
+            continue
+        if not s.in_play:
+            continue
+        if p.combat_index is not None and game._combat_zone_locked(ref.player):
+            game._log(f"{p.name} 的移动效果被尘缚之阵无效化")
+            continue
+        game._enter_combat(p, ref.shikigami)
+
+
+def _add_boost_flag(game, ctx, kind: str, scope: str | None,
+                    extra: dict | None = None) -> None:
+    """登记玩家级出击加成旗标（PlayerState.ext["boost_flags"]，鼓舞扩展三 op 共用）。
+
+    scope="form"：绑定来源式神当前形态，形态离场时经 engine._destroy_form 移除
+    （不夜之舞/离殇之舞）；缺省永久（觉醒·不知火，觉醒后常驻、跨气绝保留）。"""
+    entry: dict = {"kind": kind, **(extra or {})}
+    if scope == "form":
+        if ctx.source is None or ctx.source.shikigami is None:
+            raise ValueError(f"{kind}(scope=form) 需要来源式神")
+        entry["holder"] = [ctx.source.player, ctx.source.shikigami]
+    p = game.state.players[ctx.controller]
+    p.ext.setdefault("boost_flags", []).append(entry)
+
+
+@action("boost_on_combat_card")
+def boost_on_combat_card(game, ctx, *, targets: list[Ref],
+                         scope: str | None = None) -> None:
+    """玩家级旗标（不夜之舞；targets 忽略）：该玩家的出击加成在使用战斗牌发起的
+    攻击结算点也调用 engine._consume_assault_boosts（同样获得并消耗出击加成）。
+    scope="form"：绑定来源形态，离场清除。"""
+    _add_boost_flag(game, ctx, "combat_card", scope)
+    game._log(f"{game.state.players[ctx.controller].name} 的出击加成在使用战斗牌时也会生效")
+
+
+@action("boost_no_consume")
+def boost_no_consume(game, ctx, *, targets: list[Ref],
+                     scope: str | None = None) -> None:
+    """玩家级旗标（离殇之舞；targets 忽略）：该玩家的出击加成不因出击/战斗牌攻击
+    而消耗（每次攻击照常获得，加成不清空）。scope="form"：绑定来源形态，离场清除。"""
+    _add_boost_flag(game, ctx, "no_consume", scope)
+    game._log(f"{game.state.players[ctx.controller].name} 的出击加成不会因出击而消耗")
+
+
+@action("inspire_bonus")
+def inspire_bonus(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 0,
+                  scope: str | None = None) -> None:
+    """玩家级旗标（觉醒·不知火；targets 忽略）：该玩家的[鼓舞]（basic_boost）数值
+    额外 +power/+shield（可叠加；basic_boost 读取时求值）。scope="form"：绑定来源
+    形态，离场清除；缺省永久（觉醒常驻）。"""
+    _add_boost_flag(game, ctx, "inspire_bonus", scope,
+                    {"power": int(power), "shield": int(shield)})
+    game._log(f"{game.state.players[ctx.controller].name} 的鼓舞额外 "
+              f"+{int(power)}力量/+{int(shield)}护甲")
+
+
+@action("reset_assaults")
+def reset_assaults(game, ctx, *, targets: list[Ref]) -> None:
+    """重置控制者出击次数（真意之歌；targets 忽略）：assaults_left 恢复为每回合
+    默认值 1；变化时 emit on_assaults_changed（与回合开始重置同事件）。"""
+    p = game.state.players[ctx.controller]
+    old = p.assaults_left
+    p.assaults_left = 1
+    if p.assaults_left != old:
+        game.emit("on_assaults_changed", player=ctx.controller, old=old,
+                  new=p.assaults_left, reason="reset_assaults")
+
+
+@action("clear_boosts")
+def clear_boosts(game, ctx, *, targets: list[Ref]) -> None:
+    """清除目标牌手的全部出击加成（日出有曜 B 选项）；无牌手目标时默认控制者。"""
+    refs = [r for r in targets if r.shikigami is None] or [Ref(player=ctx.controller)]
+    for ref in refs:
+        p = game.state.players[ref.player]
+        if p.assault_boosts:
+            p.assault_boosts.clear()
+            game._log(f"{p.name} 的出击加成被清除")
+
+
+@action("reset_stats")
+def reset_stats(game, ctx, *, targets: list[Ref]) -> None:
+    """目标式神力量、生命变为基础值（日出有曜 A 选项）：清除非永久力量/生命上限
+    增减益（临时修正与攻击后到期挂账、本回合力量通道），清除护甲与破甲，
+    然后生命设为变更后上限——直改，不是伤害/治疗事件（不触发任何伤害/治疗时机）。
+    动态身材光环（ext dyn 缓存通道）不动：下个重算点自然重新生效。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        s.temp_power = 0
+        s.temp_health = 0
+        s.combat_power = 0
+        s.attack_buffs.clear()
+        s.ext.pop("turn_power", None)
+        s.shield = 0
+        s.health = s.max_health
+        game._settle(f"【重置】{game.db.shikigami[s.id].name} 力量/生命变为基础值"
+                     f"（{s.eff_power}/{s.health}），护甲与破甲清除")
+
+
+@action("energy_assault")
+def energy_assault(game, ctx, *, targets: list[Ref], cost: int = 3) -> None:
+    """登记觉醒·镰鼬的出击替代支付（玩家级旗标，targets 忽略）：该玩家鬼火与
+    出击次数都为 0 时，旗标持有者可以消耗 cost 点能量出击（engine._cmd_assault
+    支付管线分支读取；消耗经 _spend_energy——觉醒·日和坊免单同通道）。"""
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("energy_assault 需要来源式神")
+    p = game.state.players[ctx.controller]
+    p.ext["energy_assault"] = {
+        "holder": [ctx.source.player, ctx.source.shikigami], "cost": int(cost)}
+    game._log(f"{p.name} 获得能量出击能力（鬼火与出击次数都为 0 时，"
+              f"{game.db.shikigami[p.shikigami[ctx.source.shikigami].id].name}"
+              f"可消耗 {int(cost)} 点能量出击）")
+
+
+
+@action("form_death_play")
+def form_death_play(game, ctx, *, targets: list[Ref], energy: int = 3) -> None:
+    """登记觉醒·小鹿男的形态牌气绝使用旗标（玩家级 PlayerState.ext["form_death_play"]，
+    targets 忽略）：旗标持有者的形态牌在持有者气绝时可用——使用时消耗 energy 点能量
+    （engine._spend_energy 统一入口，觉醒·日和坊免单/日和坊生命代偿同通道），使用效果前
+    先复活持有者，再正常结附形态（合法性/支付/复活见 engine._cmd_play_card）。
+    觉醒常驻：玩家级旗标，跨气绝保留、不清除。"""
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("form_death_play 需要来源式神")
+    p = game.state.players[ctx.controller]
+    p.ext["form_death_play"] = {
+        "holder": [ctx.source.player, ctx.source.shikigami], "energy": int(energy)}
+    game._log(f"{game.db.shikigami[p.shikigami[ctx.source.shikigami].id].name} 的形态牌"
+              f"在其气绝时可用（消耗 {int(energy)} 点能量并复活）")

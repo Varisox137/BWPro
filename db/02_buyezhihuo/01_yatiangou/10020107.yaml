@@ -1,0 +1,17 @@
+id: 10020107
+name: 英雄无畏
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: SSR
+      level: 3
+      target: {kind: choose, pool: enemy_shikigami}
+      effects:
+        # 持续眩晕直到鸦天狗用牌/攻击（气绝走现有清理；施加牌自身的使用事件经
+        # apply_seq/apply_uid 防自解除——"直到鸦天狗用牌"指其后的使用）
+        steps:
+          - {op: stun, lasting: true,
+             until_event: [on_card_played, on_before_assault]}
+      text: 使一个敌方式神保持[眩晕]，直到鸦天狗使用牌、攻击或气绝。

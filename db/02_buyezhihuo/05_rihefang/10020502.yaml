@@ -1,0 +1,22 @@
+id: 10020502
+name: 祈晴
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 1
+      form_health: 7
+      effects:
+        steps: []  # 无进场效果
+      abilities:
+        # 己方回合开始时消耗 4 能量抽一张牌（gate：能量不足付不起则不抽；
+        # 支付经 engine._spend_energy——觉醒·日和坊免单/日和坊生命代偿同通道）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: spend_energy, amount: 4, gate: true}
+            - {op: draw, count: 1}
+      text: "己方回合开始时，消耗4能量，抽一张牌。"

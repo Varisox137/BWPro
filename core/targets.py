@@ -164,10 +164,12 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
 
 
 def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
-    """TargetSpec 额外过滤键（model_extra）统一应用：power_le（勾诀）/ has_fragile（焚身之火）
-    / stunned（按是否眩晕过滤角色目标，式神与牌手均可）/ dealt_damage_turn（本回合
-    造成过伤害的式神——记仇"伤害来源式神"过滤，伤害结算点记账、回合开始清除；
-    牌手目标不匹配 true 方向）。"""
+    """TargetSpec 额外过滤键（model_extra）统一应用：power_le（力量上限）/ has_fragile（有无破甲）
+    / stunned（是否眩晕，仅式神目标，式神过滤完即空）/ dealt_damage_turn（本回合
+    造成过伤害的式神——萤草"伤害来源式神"过滤，伤害结算栈 + 回合开始清）；
+    keyword（具有指定关键字的式神——三列表多重集 keywords/one_shot/perm 任一含即算，
+    日和坊"有[充能]的式神"过滤，牌手目标不匹配被滤除）。
+    不匹配 true 语义的目标被滤除。"""
     pw = extra.get("power_le")
     if pw is not None:
         refs = [r for r in refs if r.shikigami is not None
@@ -190,6 +192,14 @@ def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
             return bool(game.state.players[r.player].shikigami[r.shikigami]
                         .ext.get("dealt_damage_turn"))
         refs = [r for r in refs if _dealt(r) == bool(ddt)]
+    kw = extra.get("keyword")
+    if kw is not None:
+        def _has_kw(r: Ref) -> bool:
+            if r.shikigami is None:
+                return False
+            s = game.state.players[r.player].shikigami[r.shikigami]
+            return any(kw in lst for lst in (s.keywords, s.one_shot_keywords, s.perm_keywords))
+        refs = [r for r in refs if _has_kw(r)]
     return refs
 
 
@@ -346,6 +356,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       被攻击"——沧海之盾响应；false = 准备区式神，桃红簇簇"准备区式神受到致命伤害"）
     - {holder_defeated: true|false} ：能力持有者当前是否气绝（觉醒·犬神"气绝时也能触发"
       类能力限定，配合 trigger_when_defeated 使用）
+    - {holder_has_form: true|false} ：能力持有者当前是否结附着形态（萤草 20200327
+      能力两项动态要求"萤草结附有形态"才生效）
+    - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）
     - 其余按键值相等比较
     """
     if not condition:
@@ -430,6 +443,19 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if holder is None or holder.shikigami is None:
                 return False
             if game.state.players[holder.player].shikigami[holder.shikigami].defeated != bool(want):
+                return False
+        elif key == "holder_has_form":
+            # 能力持有者当前是否结附着形态（萤草 20200327 能力动态要求）
+            if holder is None or holder.shikigami is None:
+                return False
+            has_form = game.state.players[holder.player].shikigami[holder.shikigami].form is not None
+            if has_form != bool(want):
+                return False
+        elif key == "energy_ge":
+            # 能力持有者当前能量 ≥ n（"额外消耗3能量"类响应/触发门控）
+            if holder is None or holder.shikigami is None:
+                return False
+            if game.state.players[holder.player].shikigami[holder.shikigami].energy < int(want):
                 return False
         elif key == "chosen_stunned":
             # 卡牌选择目标中有眩晕角色（Step 级条件专用；崩雪"已眩晕则消灭、否则眩晕"）

@@ -1,0 +1,22 @@
+id: 10020105
+name: 群鸦乱舞
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 2
+      form_health: 8
+      effects:
+        steps: []
+      abilities:
+        # 己方回合结束时若鸦天狗在战斗区：敌方全体 1 伤，鸦天狗恢复等量生命
+        #（恢复量 = 本步实际伤害合计，巨浪 {memo: last_damage_total} 先例）
+        - when: on_turn_end
+          condition: {active: self, shikigami_in_combat: 100201}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: enemy_shikigami}}
+            - {op: heal, amount: {memo: last_damage_total}, target: {kind: self}}
+      text: 己方回合结束时若鸦天狗在战斗区，对敌方所有式神造成1点伤害，鸦天狗恢复等量生命。

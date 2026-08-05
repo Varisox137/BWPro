@@ -1,0 +1,19 @@
+id: 10020404
+name: 烟雾缭绕
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 2
+      form_health: 4
+      effects:
+        # 进场时在战斗区召唤分身，并登记"分身每有 1 能量便获得 1 力量"动态光环
+        # （stat_aura kind=ids_energy_power scope=form：读分身自身能量，形态离场移除——
+        #  tests/test_orb.py test_ids_energy_power_scales_with_summon_energy 同型）
+        steps:
+          - {op: summon, shikigami: 10020499, inherit_stats: true, energy_ratio: 0.5}
+          - {op: stat_aura, kind: ids_energy_power, ids: [10020499], scope: form}
+      text: "进场时，在战斗区召唤一个‘烟烟罗的分身’。‘烟烟罗的分身’每有1能量便获得1力量。"

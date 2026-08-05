@@ -1,0 +1,18 @@
+id: 100206
+name: 镰鼬
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      faction: 红莲
+      power: 3
+      health: 4
+      keywords: [charge]
+      abilities:
+        # 当镰鼬对牌手造成伤害时获得 1 点能量（on_player_damaged：player=受伤牌手、
+        # source=伤害来源 Ref；source_shikigami: self 限定镰鼬为来源）
+        - when: on_player_damaged
+          condition: {player: opponent, source_shikigami: self}
+          steps:
+            - {op: gain_energy, amount: 1, target: {kind: self}}
+      text: "[充能]。当镰鼬对牌手造成伤害时，获得1点能量。"

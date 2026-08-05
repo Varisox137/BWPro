@@ -1,0 +1,26 @@
+id: 10020503
+name: 阳炎
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: any_shikigami}  # 一个式神（含己方）
+      effects:
+        steps:
+          - {op: damage, amount: 1}
+          - {op: stun}
+      response:
+        # [响应]：当一个敌方式神升级时，额外消耗 3 能量自动对该式神使用——
+        # energy_ge 门控（持有者能量 ≥3 才触发，复查失败不占响应名额）；
+        # on_upgrade payload target=升级式神 Ref，响应步显式取事件目标
+        when: on_upgrade
+        condition: {player: opponent, energy_ge: 3}
+        steps:
+          - {op: spend_energy, amount: 3, gate: true}
+          - {op: damage, amount: 1, target: {kind: context, key: target}}
+          - {op: stun, target: {kind: context, key: target}}
+      text: "对一个式神造成1点伤害并[眩晕]它。[响应]：{当一个敌方式神升级时，额外消耗3能量，自动对该式神使用。}"

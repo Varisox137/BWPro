@@ -1,0 +1,24 @@
+id: 10020106
+name: 鸦羽疾走
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [trigger]
+      effects:
+        steps:
+          - {op: move, target: {kind: self}}
+          - {op: move, target: {kind: self}}
+      response:
+        # [响应]：当鸦天狗被攻击时自动使用并取消本次攻击（cancel_attack 置事件
+        # 取消旗标，战斗流程在响应结算后终止；已支付的出击次数/鬼火不退还）
+        when: on_before_assault
+        condition: {victim_shikigami: 100201}
+        steps:
+          - {op: move, target: {kind: self}}
+          - {op: move, target: {kind: self}}
+          - {op: cancel_attack}
+      text: "[移动]，然后再次[移动]。[响应]：{当鸦天狗被攻击时，自动使用并取消本次攻击。}"

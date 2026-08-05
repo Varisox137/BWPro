@@ -1,0 +1,26 @@
+id: 10020304
+name: 自强之愿
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 攻击或被攻击时（双挂）：消耗1能量（gate=付不起则中止后续步骤）获得2护甲
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: spend_energy, amount: 1, gate: true}
+            - {op: gain_shield, amount: 2, target: {kind: self}}
+        - when: on_before_assault
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: spend_energy, amount: 1, gate: true}
+            - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: 小鹿男攻击或被攻击时，消耗1能量，获得2护甲。

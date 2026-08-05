@@ -1,0 +1,18 @@
+id: 10020602
+name: 人多势众
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 4
+      form_health: 5
+      effects:
+        # 进场登记"镰鼬每有 2 能量便获得 1 力量"动态光环（stat_aura kind=energy_power，
+        # 读取时求值，形态离场移除——tests/test_orb.py
+        # test_energy_power_aura_scales_with_energy 同型）
+        steps:
+          - {op: stat_aura, kind: energy_power, divisor: 2}
+      text: "镰鼬每有2能量便获得1力量。"

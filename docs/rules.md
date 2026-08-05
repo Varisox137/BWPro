@@ -389,7 +389,7 @@
 - **玩家回合内的主动操作**：在自己回合的空闲点，当前回合玩家可进行的主动操作只有两种——**主动使用卡牌**和**使一名式神出击**。多个合法操作可在任意空闲点按任意顺序穿插执行（受鬼火、出击次数等消耗限制）。
 - **出击 assault**：耗 1 鬼火 + 每回合玩家唯一出击次数（常规为 1，在自己回合开始时重置；进入敌方回合不重置也不消耗剩余次数；另计出击增减益，鼓舞已实现、压制 Phase 5）；出击后驻留战斗区；回合开始阶段战斗区非召唤物式神移回准备区。**额外鬼火已实现**（第十六阶段，先天伪关键字 `extra_orb_cost`——跳跳妹妹基础能力）：其出击需额外消耗 1 点鬼火（共 2 点；[迅捷]出击完全不耗，含额外的 1 火）；使用其战斗牌同样额外 +1 火（[瞬发]/[不消耗鬼火]时全免）。**不能攻击已实现**：定义 `no_attack` 的召唤物（冰墙"不能发动攻击"）不能出击（出击校验拦截）。
 - **效果发起的攻击 launch_attack**：卡牌/能力效果令式神发起的额外攻击——不是玩家主动操作，不耗鬼火、不耗出击次数；在准备区则自动移入战斗区；走正常战斗事件流程（战斗前/后时机、反击照常，无战斗牌加成）；气绝/未在场为空操作（鲁莽"己方回合开始自动攻击"、刃影叠岚羁绊）。**定向攻击已实现**（第十六阶段）：`at="chosen"` 时战斗目标取本效果的卡牌选择目标（冰封[羁绊]"雪童子对其发动一次攻击"）；`no_attack` 召唤物为空操作。
-- **移动 move**：移动**不是**玩家的主动操作，而是卡牌或能力产生的效果。式神从准备区移至战斗区，或从战斗区移至准备区，均视为进行了「移动」（生成移动事件）；移动入战斗区不消耗鬼火/出击次数。Phase 1 为调试方便提供 `debug_move` 指令（见「调试指令」），不作为正常对战中的玩家操作。
+- **移动 move**：移动**不是**玩家的主动操作，而是卡牌或能力产生的效果。式神从准备区移至战斗区，或从战斗区移至准备区，均视为进行了「移动」（生成移动事件）；移动入战斗区不消耗鬼火/出击次数。【已实现为 `move` 动作（不夜之火批次）：战斗区↔准备区 toggle——气绝/离场不行、眩晕不拦；`force=True` 可强制敌方式神入战斗区（过尘缚锁定校验）；进出各计一次（`ext["move_count_turn"]`，半回合清除；召唤物进场算、气绝离场不算）——见「三十、能量与爆能·移动·鼓舞扩展」】Phase 1 为调试方便提供 `debug_move` 指令（见「调试指令」），不作为正常对战中的玩家操作。
 - **升级 upgrade**：标准规则 lowest——只能升未满级且等级同为己方最低的式神；部分卡牌可打破限制；召唤物不可升级。升级在回合开始阶段的「式神升级阶段」进行；具有额外升级次数的回合，该阶段连续进行多次（每次的触发能力结算完成后再进行下一次）。
 - **瞬发 fast**：每个半回合双方各自第一张瞬发卡免费（仅免鬼火，其余条件照常；可改"前 x 张"）；双方回合都可瞬发（0 火可响应瞬发）。
 - **响应 trigger**：见「响应牌规则」节。
@@ -557,6 +557,7 @@
 - **本批数据侧登记**（2026-08 第十七阶段，「已展示」批次）：实例标志 `CardInstance.mods["revealed"]`（本局保持、随实例）；新 op `reveal`（mode=random/shikigami/all/event 四档，shikigami 档协战归属按 `_card_belongs_to` 统一口径）；新事件 `on_card_enter_hand`（入手统一钩子 `_enter_hand` 发出，延时时机）；`mulligan_hand` 扩展 `target_side`/`only_revealed`/`auto`（敌方已展示手牌自动调度）；`cost_delta_player` 扩展 `side`/`card_flag`（已展示手牌额外耗火）；conditional_keywords 算子 `enemy_hand_all_revealed`；on_card_played 载荷 `card_revealed`；TargetSpec 过滤键 `dealt_damage_turn`（ext 键同名记账）；`_step_amount` 动态键 `enemy_revealed_count`（三口径）。机制细节见第二十九章，术语登记见术语表「结算与事件」。
 - **本批数据侧登记**（2026-08 第十八阶段，经典包早期数据回退批次）：新事件 `on_ability_enter`（能力进场统一钩子：对局开始/升 1 级/复活/觉醒替换/变形与还原均经 `_register_ability_countdown` 发出，payload {player, shikigami, target: Ref}——萤草基础/觉醒）；能力型卡牌光环——card_aura 新作用域 `scope="ability"`（挂能力持有者，机制同 form）与新值 `shikigami="any"`（光环匹配任意所属式神的牌，存 None 通配）；`_clear_ability_card_auras` 统一清理（气绝/变形/还原/消失/觉醒替换前五调用点）；countdown_delta 新参数 `reset`（复原倒计时初值、不触发归零、无能力者空操作——疯魔琴心）；新 op `transform_card`（手牌按 id 原位变换为新卡，count=1，无匹配空操作）；破甲转化锚点 `ext["fragile_to_damage_if"]`（仅当受害者本有破甲时，新获得破甲才转化为等量伤害——20191212 碧羽散华，与无条件 `fragile_to_damage` 并存）；妖琴师觉醒牌牌面"倒计时-X"语义定为挂 `on_before_awaken`（基础能力+各觉醒牌 abilities 各带一块，替换前对旧倒计时生效；二次使用同名觉醒牌由觉醒能力块接续）；鸩觉醒牌牌面"倒计时-2"为效果步（先替换觉醒能力、后对刚注册的新倒计时 -2，归零即触发觉醒能力——维护者定案）。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-08 第十九阶段，S3=20200227 批次）：环境别名新增 `S3=20200227`（db/envs.py；第二次平衡性调整，跳跳妹妹正式加入——其全部数据 date=20200227，早于该日期的环境下不可构筑/使用）；summon 新参数 `orb_cost`（效果内嵌鬼火费用：不足则召唤失败、其余步骤照常——坐下"额外消耗1点鬼火，召唤'番茄'"，维护者定案）；countdown_delta 正向增量确认可用（直接累加无上限、无能力者空操作——疯魔琴心 20200227"使一个敌方式神[倒计时]+2"，choose 目标 + 自身 -2 可归零触发基础能力）；跳跳弟弟整式神回退 20191212（肿胀体质去"进场 2 破甲"、尸毒体质门槛 6/15、觉醒 +1/+1），瘴疠体质/毒气喷泉/肿胀体质加 20200227 快照（毒气喷泉 20191212=获得等同非转移、20200227=转移语义）；凤鸣/疯魔琴心/命运之人加 20200227 快照；跳跳妹妹 20200227 正式服上线版（坐下改"永久 +1 力量+额外耗火召唤"、生气了啦 text"额外先攻击一次"=[连击] 同机制、觉醒·番茄去"随机 2 战斗牌置手"保留 +3/+3、番茄维持 3/4）。细节见术语表「结算与事件」。
+- **本批数据侧登记**（2026-08 第二十阶段，02 不夜之火批次——鸦天狗/不知火/小鹿男/烟烟罗/日和坊/镰鼬，包目录 `db/02_buyezhihuo/`，date/best=20200327）：能量系统（`ShikigamiState.energy` 上限 10、气绝保留）+ 关键字 `charge`（己方回合开始充能，批次顺序先倒计时后能量）；爆能——`PlayMethod.energy_cost`（int / "all"=爆能X 消耗全部能量、0 能量不可选）与 `PlayMethod.keywords`（方式临时授予关键字），方式 effects 追加到基础 effects 后（多档累计），动态数值 `{"burst_x": true}`（出牌快照 `card.mods["burst_x"]`，结算后清除）；新 op `move`（含 force）/ `gain_energy` / `spend_energy`（gate）/ `boost_on_combat_card` / `boost_no_consume` / `inspire_bonus` / `reset_assaults` / `clear_boosts` / `reset_stats` / `energy_assault` / `form_death_play` / `cancel_attack` / `attack_replace` / `battle_retarget` / `mirror_spell` / `use_card_copy`；新事件 `on_energy_gained`（延时，实际获得 >0 才发）；既有 op 扩展（summon `inherit_stats`/`energy_ratio`、heal `full`、stun `lasting`/`until_event` 持续眩晕条目 apply_seq/apply_uid/watch、stat_aura 新 kind `energy_power`/`ids_energy_power`、card_aura `require_holder_form`）；TargetSpec 过滤键 `keyword`；条件键 `holder_has_form`/`energy_ge`/`pre_play_form`（on_card_played 新 payload，萤草 20200327"结附形态才生效"用——best 保持 20191212）；响应 condition 不支持 self 须用具体式神 id；同心协力复制落库底、日出有曜方式B目标池 any_character 选中式神回退控制者（两处偏差见 card-status.md）；惊鸿之舞 10020208/日霭相织 10020221/烟影 10020451/煦日 10020551 未录入（raw 无完整效果文本），铃鹿御前未加入。机制细节见第三十章，术语登记见术语表「结算与事件」。
 - 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位。
 
 ## 二十三、组卡规则
@@ -688,3 +689,54 @@
 - **调度细则**（rules 528-530 落实，`_swap_hand_card`）：换入牌失去"已展示"；换入牌原本已展示，则换出牌获得"已展示"。
 - **信息可见性**：已展示的敌方手牌对对方公开——CLI 按入手顺序（hand_seq）单独列出显示（format_hand_lines 复用）；联机按视角脱敏时对已展示卡放行真实内容（sanitize_state 例外），其余手牌照常脱敏。
 - **配套读取点**：on_card_played 载荷 `card_revealed`（使用点该牌是否已展示——"使用已展示的手牌时"类触发）；TargetSpec 过滤键 `dealt_damage_turn`（本回合造成过伤害的角色，伤害结算点记账、回合开始清除）；动态数值 `enemy_revealed_count`（敌方已展示手牌计数，法术牌/其他牌/指定式神三口径）；手牌费用修正 `card_flag`（仅命中已展示手牌额外耗火，仍在 cost>0 门内——[瞬发]/[不消耗鬼火]全免）；conditional_keywords 算子 `enemy_hand_all_revealed`（敌方有手牌且全部已展示）。各键登记见术语表。
+
+## 三十、能量与爆能·移动·鼓舞扩展（不夜之火批次，已实现）
+
+### 一、能量与充能
+
+- **能量 energy**：式神级资源（`ShikigamiState.energy`，上限 10；气绝保留、气绝中仍可充能——暂定，待确认见 questions.md）。
+- **[充能] charge**：实体关键字（先天经 `ShikigamiDef.keywords` 入永久类别，授予/形态同既有通道）：己方回合开始时该式神能量 +1（己方回合开始批次顺序：先倒计时批次、后能量充能）。
+- 统一入口 `Game._gain_energy` / `_spend_energy` / `_can_pay_energy`；效果 op 为 `gain_energy` / `spend_energy`（`gate: true` 时支付不足则中止当前效果块——祈晴/滋养/晴雨"消耗X能量，……"门控）。
+- **能量获得事件** `on_energy_gained`（延时时机，payload {player, target, old, new, amount}）：实际获得量 > 0 才发出——已达上限获得 0 时不发事件（暂定，待确认见 questions.md）；能力导致的连锁充能以 `emit_event: false` 防自连锁（烟烟罗基础/觉醒"获得能量时再获得"）。
+
+### 二、爆能
+
+- **爆能**：使用方式（PlayMethod）携带 `energy_cost`（int）——选择该方式须额外支付等量能量（使用合法性处校验，不足不可选）；方式的 `effects` **追加**到基础 effects 之后结算；多档并存时各档独立支付、效果累计（爆能3/爆能6——一太郎之棒）。
+- 方式可携带 `keywords`：以该方式使用时临时授予卡牌关键字（森之力爆能档得[瞬发]）。
+- **爆能X**：`energy_cost: "all"`——消耗全部能量（0 能量不可选该方式）；X = 支付时当前能量快照（出牌时写入 `card.mods["burst_x"]`，步骤数值 `{"burst_x": true}` 读取，本次结算后清除）。
+- 爆能支付走 `_spend_energy` 统一入口：吃日和坊生命代偿与觉醒·日和坊免单（爆能X免单时 X 按当前能量读取、实际消耗 0）。
+
+### 三、日和坊（能量代偿与免单）
+
+- **生命代偿**：日和坊在场时，己方式神支付能量不足可以其生命 1:1 代偿差额（直扣生命、非伤害、不能降到 0；引擎硬编码 id 100205，通用通道 `ext["energy_life_substitute"]`）。
+- **觉醒·日和坊免单**：每回合一次（不分敌我回合，`PlayerState.ext["energy_free_turn"]` 半回合重置），己方式神消耗能量的效果不再消耗能量；判定在 `_spend_energy` 入口，爆能/能量出击/形态气绝使用同通道。
+
+### 四、移动（[移动]）
+
+- `move` 动作：目标式神战斗区↔准备区 toggle——准备区→进战斗区（复用 `_enter_combat`，尘缚锁定下静默无效）、战斗区→回准备区（复用 `_retreat`，召唤物退回即离场）；气绝/已离场不能移动，眩晕不拦。
+- `force: true`：可强制敌方式神入战斗区（羽迹；仅拉入方向有意义），非强制时敌方目标静默跳过。
+- **移动计数**：进/出战斗区各计一次 [移动]（`ShikigamiState.ext["move_count_turn"]`，半回合清除）；召唤物进场算一次、气绝离场不算。
+- 鸦天狗类"进入/离开战斗区时"能力双挂 `on_enter_combat` / `on_leave_combat`。
+
+### 五、鼓舞扩展三旗标
+
+玩家级旗标（`PlayerState.ext["boost_flags"]`；`scope="form"` 绑定来源形态、随形态离场清除，缺省永久）：
+
+- `boost_on_combat_card`（不夜之舞）：使用战斗牌发起的攻击也获得并消耗出击加成（战斗牌攻击结算点调用 `_consume_assault_boosts`）。
+- `boost_no_consume`（离殇之舞）：出击加成不因出击/战斗牌攻击而消耗（每次攻击照常获得、不清空）。
+- `inspire_bonus{power, shield}`（觉醒·不知火）：[鼓舞]（basic_boost）数值额外 +power/+shield（可叠加，basic_boost 读取时求值）。
+
+### 六、攻击替换 / 交战改向 / 取消攻击
+
+- **取消攻击** `cancel_attack`（鸦羽疾走"自动使用并取消本次攻击"）：响应挂 on_before_assault，置事件取消旗标，战斗流程在响应结算后检查并终止整场战斗；已支付的鬼火/出击次数不退还（暂定，待确认见 questions.md）。
+- **攻击替换** `attack_replace`（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力之和的伤害"）：响应 on_before_assault 置替换旗标，战斗流程以该效果伤害替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出；目标池为随机不重复的两个敌方**角色**（可含牌手——暂定，待确认见 questions.md）；X = 力量 + 战力（含乏力）。
+- **交战改向** `battle_retarget`（声东击西"本次的交战目标改为另一个敌方角色"）：登记到当前战斗上下文，目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（随机且可含牌手——暂定，待确认见 questions.md；排除原交战目标，无另一个敌方角色时该次攻击落空），仅本次战斗有效。
+
+### 七、复制使用与分身复制法术
+
+- **复制使用** `use_card_copy{card_id}`（爆能"{额外使用'三太郎之斧'}"类）：凭空生成指定牌复制并自动使用——不耗鬼火/瞬发名额/出击次数（暂定，待确认见 questions.md）；法术牌按基础方式效果结算（`_auto_cast_copy` 共用助手），战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地，照常 emit on_card_played（play_from=void、triggered=auto）。链式"再额外使用"= 数据侧并列多个 step。
+- **分身复制法术** `mirror_spell`（烟烟罗的分身"会复制她使用的法术牌"）：挂 on_card_played，复制持有者**主动使用**（triggered=active）的法术牌并自动使用一次（基础方式）——觉醒牌由数据侧条件（subtype_not: awaken）排除；choose 目标沿用原选（仍合法）否则随机重选；复制产生的 triggered=auto 事件天然不连锁。
+
+### 八、萤草 20200327（能力要求结附形态）
+
+- 萤草基础/觉醒能力加 20200327 快照（best 保持 20191212）："萤草的形态牌获得[瞬发]"光环要求萤草当前结附形态才生效——card_aura `require_holder_form`（读取时动态判定）；"使用形态牌时抽 1"以 on_card_played 新 payload `pre_play_form`（该牌使用前是否已结附形态的快照）门控——形态牌先结附后发 on_card_played，收集时求值的 holder_has_form 对该牌恒真，故须用打出前快照。

@@ -1,0 +1,18 @@
+id: 10020103
+name: 正义之刺
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: combat
+      rarity: SR
+      level: 2
+      effects:
+        # 战斗区有其他式神时其先攻击一次：战斗牌效果在攻击者入战斗区之前结算，
+        # friendly_combat 即当时的驻留者；战斗区为空则目标为空、launch_attack 空操作
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          - {op: launch_attack, shikigami: target,
+             target: {kind: all, pool: friendly_combat}}
+      text: 若己方战斗区有其他式神，使其先攻击一次。

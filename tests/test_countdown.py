@@ -462,6 +462,68 @@ def test_assault_boost_assault_only(db, make_game):
     assert s.eff_power == 3      # 力量加成战后核销（保留形态身材）
 
 
+# ---------- 鼓舞扩展旗标（不夜之火批次：不知火三 op） ----------
+
+def test_boost_on_combat_card_consumes_boost(db, make_game):
+    """不夜之舞（boost_on_combat_card 旗标）：战斗牌发起的攻击也获得并消耗出击加成；
+    无旗标时战斗牌不消耗（既有行为）。"""
+    flag_cid = 10010455
+    db.cards[flag_cid] = F.card(flag_cid, shikigami=LSID, token=True,
+                                steps=[F.Step(op="boost_on_combat_card")])
+    combat_cid = 10010454
+    db.cards[combat_cid] = F.card(combat_cid, shikigami=LSID, card_type="combat",
+                                  steps=[], token=True)
+    g, pa, s = _lk_setup(db, make_game, level=1)
+    pl = g.state.players[1]
+    pl.shield = 0
+    pa.assault_boosts = [{"power": 2, "shield": 0}]
+    play(g, 0, combat_cid)                   # 无旗标：不消耗（2 力量直击）
+    assert pl.health == 28
+    assert pa.assault_boosts == [{"power": 2, "shield": 0}]
+    play(g, 0, flag_cid)                     # 登记旗标
+    play(g, 0, combat_cid)                   # 战斗牌消耗鼓舞：2+2 力量直击
+    assert pl.health == 28 - 4
+    assert pa.assault_boosts == []
+
+
+def test_boost_no_consume_keeps_boosts(db, make_game):
+    """离殇之舞（boost_no_consume 旗标）：出击照常获得出击加成，但加成不清空——
+    下次出击仍生效。"""
+    flag_cid = 10010456
+    db.cards[flag_cid] = F.card(flag_cid, shikigami=LSID, token=True,
+                                steps=[F.Step(op="boost_no_consume")])
+    g, pa, s = _lk_setup(db, make_game, level=1)
+    pl = g.state.players[1]
+    pl.shield = 0
+    pa.assault_boosts = [{"power": 2, "shield": 0}]
+    play(g, 0, flag_cid)
+    g.apply({"op": "assault", "index": LIDX})   # 2+2 力量直击
+    assert pl.health == 26
+    assert pa.assault_boosts == [{"power": 2, "shield": 0}]  # 未消耗
+    pass_turns(g, 2)
+    g.apply({"op": "assault", "index": LIDX})   # 下回合出击仍生效
+    assert pl.health == 22
+    assert pa.assault_boosts == [{"power": 2, "shield": 0}]
+
+
+def test_inspire_bonus_adds_to_basic_boost(db, make_game):
+    """觉醒·不知火（inspire_bonus 旗标）：[鼓舞]（basic_boost）数值额外 +1/+1；
+    旗标可叠加。"""
+    flag_cid = 10010458
+    db.cards[flag_cid] = F.card(flag_cid, shikigami=LSID, token=True,
+                                steps=[F.Step(op="inspire_bonus", power=1, shield=1)])
+    boost_cid = 10010459
+    db.cards[boost_cid] = F.card(boost_cid, shikigami=LSID, token=True,
+                                 steps=[F.Step(op="basic_boost", power=2, shield=0)])
+    g, pa, s = _lk_setup(db, make_game, level=1)
+    play(g, 0, flag_cid)
+    play(g, 0, boost_cid)
+    assert pa.assault_boosts == [{"power": 3, "shield": 1}]  # 2+1 / 0+1
+    play(g, 0, flag_cid)                     # 旗标叠加：再 +1/+1
+    play(g, 0, boost_cid)
+    assert pa.assault_boosts[-1] == {"power": 4, "shield": 2}
+
+
 # ---------- 离场/消灭触发（一目连基础能力） ----------
 
 def test_destroy_form_triggers_countdown_and_draw(db, make_game):

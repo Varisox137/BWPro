@@ -1,0 +1,19 @@
+id: 10020507
+name: 觉醒·日和坊
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_health: 3  # +0/+3（awaken_power 缺省 0）
+      rarity: SSR
+      level: 3
+      keywords: [fast]
+      effects:
+        steps: []  # 使用时仅[瞬发]与觉醒身材增益，无额外效果
+      # 觉醒能力无需能力块：[充能]为先天关键字（觉醒不替换关键字）；"能量不足时可
+      # 消耗生命代替"（_energy_life_substitute）与"每回合一次消耗能量的效果不再消耗
+      # 能量"（_energy_free_available，名额 ext energy_free_turn 每半回合重置）均由
+      # 引擎直读在场已觉醒日和坊（id 100205）硬编码
+      text: "[瞬发]。[觉醒]：{[充能]。日和坊能量不足时，可以消耗其生命代替。每回合一次己方式神消耗能量的效果不再消耗能量。}"

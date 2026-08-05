@@ -1,0 +1,14 @@
+id: 10020305
+name: 森之守
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: SR
+      level: 2
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        steps:
+          - {op: grant_keyword, keyword: veil}
+      text: 使你的一个式神获得[帷幕]。

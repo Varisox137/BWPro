@@ -1,0 +1,21 @@
+id: 10020603
+name: 声东击西
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      keywords: [trigger]
+      effects:
+        # 响应"当镰鼬被攻击时自动使用"（守护 10011505 先例：效果块直接挂响应时机，
+        # 响应插入使用把镰鼬移入防守方战斗区并绑定本次战斗）；本次交战镰鼬的伤害
+        # 对象改向另一个随机敌方角色（battle_retarget：可含牌手、排除原交战目标，
+        # 响应自动使用同样随机）；本次战斗免疫战斗伤害（battle_immunity 绑定当前战斗）
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_shikigami: 100206}
+        steps:
+          - {op: battle_retarget, target: {kind: self}}
+          - {op: battle_immunity, target: {kind: self}}
+      text: "镰鼬本次的交战目标改为另一个敌方角色并免疫战斗伤害。[响应]：{当镰鼬被攻击时，自动使用此牌。}"

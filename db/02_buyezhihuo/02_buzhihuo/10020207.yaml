@@ -1,0 +1,16 @@
+id: 10020207
+name: 离殇之舞
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 5
+      form_health: 5
+      effects:
+        # 玩家级旗标：出击加成不因出击/战斗牌攻击而消耗（scope=form 绑定本形态）
+        steps:
+          - {op: boost_no_consume, scope: form}
+      text: 你的出击加成效果不会因出击而消耗。

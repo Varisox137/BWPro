@@ -1,0 +1,18 @@
+id: 10020604
+name: 同心协力
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: gain_energy, amount: 1, target: {kind: self}}
+          # 将一张此牌的复制置入你的牌库（generate zone=deck 经 move_card 置于库底——
+          # 原版为随机位置置入，落位偏差备注）并抓一张牌
+          - {op: generate, card_id: 10020604, zone: deck}
+          - {op: draw, count: 1}
+      text: "[瞬发]。获得1能量。将一张此牌的复制置入你的牌库并抓一张牌。"

@@ -606,9 +606,15 @@ def test_search_deck_form_filtered_by_target_level(make_game):
 
 
 def test_search_deck_direct_play_form(make_game):
-    """森佑灵引（目标力量>=4且存活）：形态牌改为直接使用——从牌库直接结附给
-    目标式神，不入手牌。"""
-    g, pa, pb = _game(make_game, levels={YC_IDX: 2, WOLF_IDX: 1}, team=YC_TEAM)
+    """森佑灵引（20191212 环境；目标力量>=4且存活）：形态牌改为直接使用——从牌库
+    直接结附给目标式神，不入手牌（萤草旧版基础能力使用形态牌抽 1）。"""
+    from db.loader import CardDatabase
+    db = CardDatabase.load()
+    # 萤草钉 20191212 版基础能力（20200327 起打出前无形态不抽牌）；
+    # 协战主牌发布晚于 20191212，整库 at_date 会丢卡，只替换式神定义
+    db.shikigami[YC] = CardDatabase.load().at_date(20191212).shikigami[YC]
+    g = F.mk_game(db, team=YC_TEAM)
+    pa, pb = F.battle_setup(g, {YC_IDX: 2, WOLF_IDX: 1})
     yc = pa.shikigami[YC_IDX]
     yc.perm_power = 2                         # 萤草 2+2=4 力量（≥4 且存活）
     for c in [c for c in pa.hand if c.id in (10012702, 10012704)]:

@@ -1,0 +1,23 @@
+id: 10020402
+name: 扑朔迷离
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 1
+      keywords: [trigger]
+      effects:
+        # 在战斗区召唤分身（inherit_stats/energy_ratio：复制烟烟罗基础+永久身材与
+        # 一半能量（向下取整）——"召唤时具有与烟烟罗相同的力量和生命以及一半的能量"）
+        steps:
+          - {op: summon, shikigami: 10020499, inherit_stats: true, energy_ratio: 0.5}
+      response:
+        # [响应]：当你（牌手）被攻击时自动使用——无战斗区防守者时 victim 为牌手
+        # （主动/响应效果同构，响应走覆盖块挂响应时机，生死无常 10011003 先例）
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: player}
+        steps:
+          - {op: summon, shikigami: 10020499, inherit_stats: true, energy_ratio: 0.5}
+      text: "在战斗区召唤一个‘烟烟罗的分身’。[响应]：{当你被攻击时，自动使用。}"

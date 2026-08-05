@@ -49,6 +49,8 @@ KEYWORDS = frozenset({
     "veil",                     # 帷幕（不能成为敌方出击/用牌的合法目标）
     "lethal",                   # 必杀（造成伤害后令受伤者延时结算气绝）
     "inspire",                  # 鼓舞（下一次出击获得战力/护甲——效果以 basic_boost 出击加成通道结算）
+    "charge",                   # 充能（己方回合开始时能量 +1，上限 10；能量见
+    #                             ShikigamiState.energy 与 engine._gain_energy/_spend_energy）
     "rebound",                  # 弹回（卡牌级：使用后回手而非入墓）
     "blessing",                 # 庇佑（一次性：抵消一次敌方结附的灵咒或敌方造成的非战斗伤害，
     #                             抵消后失去；灵咒半侧随灵咒机制引入）
@@ -143,6 +145,13 @@ class PlayMethod(BaseModel):
     card_type: str | None = None  # 卡牌类型覆盖（多择各选项可不同类型；Phase 5 战斗牌/形态牌落地前引擎不读取）
     target: TargetSpec | None = None  # 目标覆盖
     effects: EffectBlock | None = None  # 缺省 = 使用卡牌基础 effects
+    # 爆能（不夜之火包）：energy_cost = 该方式的能量消耗——int 为定值爆能（爆能2/3/4…），
+    # "all" 为爆能X（消耗全部能量；0 能量时不可选）；带 energy_cost 的方式的 effects
+    # 语义 = 追加到基础 effects 之后（非覆盖），消耗在结算开始点支付（engine._cmd_play_card）
+    energy_cost: int | str | None = None
+    # 方式授予关键字（不夜之火包 森之力"[爆能2]：获得[瞬发]"）：选定该方式后本次使用
+    # 临时授予该牌（装配在瞬发/费用判定之前，结算后移除——engine._cmd_play_card）
+    keywords: list[str] = []
     text: str = ""
 
 

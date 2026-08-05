@@ -1,0 +1,16 @@
+id: 100202
+name: 不知火
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      faction: 红莲
+      power: 2
+      health: 4
+      ability:
+        # 己方回合开始时[鼓舞]+1战力（basic_boost 出击加成通道）
+        when: on_turn_start
+        condition: {player: self}
+        steps:
+          - {op: basic_boost, power: 1}
+      text: 己方回合开始时，[鼓舞]：{获得+1战力。}

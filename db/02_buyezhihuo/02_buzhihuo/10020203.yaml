@@ -1,0 +1,13 @@
+id: 10020203
+name: 自由之歌
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          - {op: basic_boost, power: 3, shield: 3}
+      text: "[鼓舞]：{获得+3战力与+3护甲。}"

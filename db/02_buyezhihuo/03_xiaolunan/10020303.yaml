@@ -1,0 +1,20 @@
+id: 10020303
+name: 森之力
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        steps:
+          - {op: stun}
+          - {op: damage, amount: 3}
+      methods:
+        # [爆能2]：获得[瞬发]（方式临时授予关键字，瞬发/费用判定前装配）
+        - id: burst
+          energy_cost: 2
+          keywords: [fast]
+      text: "[眩晕]一个式神并造成3点伤害。[爆能2]：{获得[瞬发]。}"

@@ -1,0 +1,22 @@
+id: 10020601
+name: 三太郎之斧
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        # +1/+1（战斗牌数值通道：力量 + 护甲）
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      methods:
+        # [爆能3]：此牌+3力量（带 energy_cost 的方式 effects 追加到基础效果后）
+        - id: burst
+          energy_cost: 3
+          effects:
+            steps:
+              - {op: buff_power, amount: 3, target: {kind: self}}
+      text: "[爆能3]：{此牌+3力量。}"

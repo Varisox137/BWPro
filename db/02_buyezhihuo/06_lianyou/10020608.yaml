@@ -1,0 +1,44 @@
+id: 10020608
+name: 一太郎之棒
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: combat
+      rarity: SR
+      level: 3
+      effects:
+        # +2/+2（战斗牌数值通道）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      temp_grants:
+        # 对敌方角色造成伤害后：眩晕且本回合力量变为 0（stun + power_override
+        # scope=turn 半回合作用域；power_override 仅对式神生效）
+        - when: on_damage
+          condition: {source_shikigami: self, victim_side: enemy}
+          steps:
+            - {op: stun, target: {kind: context, key: victim}}
+            - {op: power_override, "on": true, scope: turn,
+               target: {kind: context, key: victim}}
+        # 敌方牌手受伤：眩晕（角色含牌手；牌手无力量覆写）
+        - when: on_player_damaged
+          condition: {source_shikigami: self, player: opponent}
+          steps:
+            - {op: stun, target: {kind: context, key: damaged_player}}
+      methods:
+        # 两档爆能写累计全量（方式 effects 为追加语义；多档 id 区分，鹿角冲撞
+        # 10020307 先例）：[爆能3] 额外使用'二太郎之戟'；[爆能6] 再额外加'三太郎之斧'
+        # （use_card_copy：免费使用指定牌复制，战斗牌基础方式结算）
+        - id: burst3
+          energy_cost: 3
+          effects:
+            steps:
+              - {op: use_card_copy, card_id: 10020605}
+        - id: burst6
+          energy_cost: 6
+          effects:
+            steps:
+              - {op: use_card_copy, card_id: 10020605}
+              - {op: use_card_copy, card_id: 10020601}
+      text: "对敌方角色造成伤害后，使其[眩晕]且本回合力量变为0。[爆能3]：{额外使用‘二太郎之戟’}。[爆能6]：{再额外使用‘三太郎之斧’。}"

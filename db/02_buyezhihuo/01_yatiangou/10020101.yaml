@@ -1,0 +1,15 @@
+id: 10020101
+name: 追风
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: move, target: {kind: self}}
+          - {op: draw, count: 1}
+      text: "[瞬发]。[移动]鸦天狗，抽一张牌。"

@@ -1,0 +1,30 @@
+id: 10020408
+name: 暴躁鬼
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 3
+      effects:
+        steps:
+          # 若击杀式神获得 3 能量："本次使用期间"窗口（scope=play，引燃 10010503 先例；
+          # 爆能追加伤害击杀同在窗口内）
+          - op: delay_grant
+            when: on_shikigami_defeated
+            condition: {victim_kind: shikigami, source_shikigami: self}
+            scope: play
+            steps:
+              - {op: gain_energy, amount: 3, target: {kind: self}}
+          # [投射]：敌方战斗区式神，空则敌方牌手
+          - {op: damage, amount: 3, target: {kind: all, pool: projectile}}
+      methods:
+        # [爆能X]：消耗全部能量，额外造成 X 点投射伤害（方式 effects 追加到基础效果后）
+        - id: burst
+          energy_cost: "all"
+          effects:
+            steps:
+              - {op: damage, amount: {burst_x: true},
+                 target: {kind: all, pool: projectile}}
+      text: "[投射]：{造成3点伤害}。[爆能X]：{额外造成X点伤害，X为全部能量}。若击杀式神，获得3点能量。"

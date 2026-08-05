@@ -1,0 +1,26 @@
+id: 10020308
+name: 生生不息
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 9
+      effects:
+        steps: []
+      abilities:
+        # 攻击或被攻击时（双挂）：消耗1能量（gate），[投射]3
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: spend_energy, amount: 1, gate: true}
+            - {op: damage, amount: 3, target: {kind: all, pool: projectile}}
+        - when: on_before_assault
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: spend_energy, amount: 1, gate: true}
+            - {op: damage, amount: 3, target: {kind: all, pool: projectile}}
+      text: 小鹿男攻击或被攻击时，消耗1能量，[投射]：{造成3点伤害。}

@@ -1,0 +1,17 @@
+id: 10020102
+name: 正义必胜
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        # [增强]：{本回合鸦天狗每[移动]过一次+2力量}——{ext: move_count_turn} 读来源
+        # 式神本回合移动计数（引擎记账），两步各 +计数 合计 ×2（霜天之织动态战力先例）
+        steps:
+          - {op: buff_power, amount: {ext: move_count_turn}, target: {kind: self}}
+          - {op: buff_power, amount: {ext: move_count_turn}, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "[增强]：{本回合鸦天狗每[移动]过一次，此牌获得+2力量。}"

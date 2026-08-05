@@ -1,0 +1,40 @@
+id: 10020307
+name: 鹿角冲撞
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      card_type: combat
+      rarity: SSR
+      level: 3
+      keywords: [piercing]
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      methods:
+        # 三档爆能：方式 effects 追加到基础 effects 后，各档写累计全量；
+        # grant_keyword/battle_immunity 步由战斗牌流程提取为战斗作用域授予/免疫
+        #（致命诱惑/鸩羽先例），加战力步经战力提取同通道
+        - id: burst2
+          energy_cost: 2
+          effects:
+            steps:
+              - {op: buff_power, amount: 1, target: {kind: self}}
+              - {op: grant_keyword, keyword: lifesteal, target: {kind: self}}
+        - id: burst4
+          energy_cost: 4
+          effects:
+            steps:
+              - {op: buff_power, amount: 2, target: {kind: self}}
+              - {op: grant_keyword, keyword: lifesteal, target: {kind: self}}
+              - {op: battle_immunity}
+        - id: burst8
+          energy_cost: 8
+          effects:
+            steps:
+              - {op: buff_power, amount: 3, target: {kind: self}}
+              - {op: grant_keyword, keyword: lifesteal, target: {kind: self}}
+              - {op: battle_immunity}
+              - {op: grant_keyword, keyword: combo, target: {kind: self}}
+      text: "[贯通]。[爆能2]：{额外获得+1力量与[吸血]}。[爆能4]：{再额外获得+1力量与免疫战斗伤害}。[爆能8]：{再额外获得+1力量与[连击]。}"

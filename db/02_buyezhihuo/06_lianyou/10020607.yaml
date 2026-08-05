@@ -1,0 +1,28 @@
+id: 10020607
+name: 觉醒·镰鼬
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
+      rarity: SSR
+      level: 3
+      effects:
+        steps: []  # 使用时无额外效果
+      abilities:
+        # [觉醒]：{[充能]（先天关键字，觉醒不替换关键字）+ 能量出击旗标——觉醒时
+        # 登记玩家级 ext["energy_assault"]（鬼火与出击次数都为 0 时可耗 3 能量出击，
+        # 山童觉醒 on_awakened 同例）}
+        - when: on_awakened
+          condition: {target_shikigami: self}
+          steps:
+            - {op: energy_assault, cost: 3}
+        # 当镰鼬对牌手造成伤害时获得 1 点能量（同基础能力，觉醒替换后保留）
+        - when: on_player_damaged
+          condition: {player: opponent, source_shikigami: self}
+          steps:
+            - {op: gain_energy, amount: 1, target: {kind: self}}
+      text: "[觉醒]：{[充能]。当镰鼬对牌手造成伤害时，获得1点能量。你鬼火和出击次数都为0时，镰鼬可以消耗3点能量出击。}"

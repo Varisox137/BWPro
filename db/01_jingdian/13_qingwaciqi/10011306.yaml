@@ -19,4 +19,4 @@ versions:
           luck: 4
           steps:
             - {op: gain_shield, amount: 2, target: {kind: self}}
-      text: "当青蛙瓷器被攻击时，[运势4]：{获得2护甲。}"
+      text: "当青蛙瓷器被攻击时，[运势4]：{获得2点护甲。}"

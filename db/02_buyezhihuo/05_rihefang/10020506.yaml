@@ -1,0 +1,31 @@
+id: 10020506
+name: 日出有曜
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [fast]
+      effects:
+        steps: []  # 双择牌：基础效果为空，两个使用方式各自携带效果
+      methods:
+        # 方式 A：使一个式神的力量、生命变为基础值，清除护甲与破甲
+        # （reset_stats：直改非伤害/治疗事件）
+        - id: reset
+          target: {kind: choose, pool: any_shikigami}
+          effects:
+            steps:
+              - {op: reset_stats}
+          text: 使一个式神的力量、生命变为基础值，清除他的护甲与破甲
+        # 方式 B：清除一个牌手的出击加成效果（clear_boosts 只取牌手目标，无牌手目标
+        # 时回退控制者；any_character 为唯一含双方牌手的选择池——选中式神时按回退
+        # 处理，落点偏差备注）
+        - id: clear
+          target: {kind: choose, pool: any_character}
+          effects:
+            steps:
+              - {op: clear_boosts}
+          text: 清除一个牌手的出击加成效果
+      text: "[瞬发]。使一个式神的力量、生命变为基础值，清除他的护甲与破甲；或清除一个牌手的出击加成效果。"

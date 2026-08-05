@@ -1,0 +1,22 @@
+id: 10020405
+name: 贪食鬼
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          - {op: damage, amount: 3, target: {kind: all, pool: enemy_combat}}
+          - {op: heal, amount: 3, target: {kind: all, pool: self_player}}
+      methods:
+        # [爆能X]：消耗全部能量，额外造成 X 点伤害（方式 effects 追加到基础效果后）
+        - id: burst
+          energy_cost: "all"
+          effects:
+            steps:
+              - {op: damage, amount: {burst_x: true},
+                 target: {kind: all, pool: enemy_combat}}
+      text: "对敌方战斗区式神造成3点伤害，你恢复3点生命。[爆能X]：{额外造成X点伤害，X为全部能量。}"

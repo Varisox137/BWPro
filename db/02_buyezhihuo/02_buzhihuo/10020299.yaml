@@ -1,0 +1,19 @@
+id: 10020299
+name: 烬染不夜
+versions:
+  best: 20200327
+  history:
+    - date: 20200327
+      kind: summon
+      faction: 红莲
+      power: 1
+      health: 1
+      keywords: [haste]  # [迅捷]（先天关键字按永久类别入列，summon 统一通道）
+      ability:
+        # 攻击时改为对两个随机敌方角色造成等同于自身力量与战力（或乏力）之和的伤害
+        #（attack_replace 置事件替换旗标：效果伤害替换先攻/交战阶段，不受反击）
+        when: on_before_assault
+        condition: {attacker_shikigami: self}
+        steps:
+          - {op: attack_replace}
+      text: "[迅捷]。攻击时改为对两个随机敌方角色造成等同于自身力量与战力（或乏力）之和的伤害。"
