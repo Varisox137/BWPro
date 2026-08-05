@@ -19,7 +19,7 @@ def ctype_label(cdef) -> str:
 
 
 def static_stats(cdef) -> str:
-    """卡牌数值段（静态求值）：形态身材、倒计时、战斗牌战力/护甲、觉醒永久身材。"""
+    """卡牌数值段（静态求值）：形态身材、倒计时、战斗牌力量/护甲、觉醒永久身材。"""
     parts: list[str] = []
     if cdef.card_type == "form" and cdef.form_power is not None:
         parts.append(f"身材{cdef.form_power}/{cdef.form_health}")
@@ -34,7 +34,7 @@ def static_stats(cdef) -> str:
             elif st.op == "gain_shield" and isinstance(extra.get("amount"), int):
                 sh += extra["amount"]
         if pw:
-            parts.append(f"战力{pw:+d}")
+            parts.append(f"力量{pw:+d}")
         if sh:
             parts.append(f"护甲+{sh}")
     if cdef.subtype == "awaken":

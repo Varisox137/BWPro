@@ -240,6 +240,23 @@ def test_deck_from_code_rejects_illegal_deck():
         deckcode.deck_from_code(db, code)
 
 
+def test_available_deck_from_code_skips_rule_validation():
+    """available_deck_from_code（构筑编辑/导入用）：仅校验可用性——违反组卡规则的
+    非标准卡组可解析（仅不标 is_standard）；id 不存在/卡牌不属于出战式神仍拒绝。"""
+    db = make_test_db()
+    code = deckcode.encode_deck([(sid, []) for sid in TEST_IDS[:3]])
+    ids, cards = deckcode.available_deck_from_code(db, code)  # 3 式神：非标准但可用
+    assert ids == list(TEST_IDS[:3]) and cards == []
+    bad = deckcode.encode_deck([(TEST_IDS[0], [99999999])])
+    with pytest.raises(ValueError, match="不存在"):
+        deckcode.available_deck_from_code(db, bad)
+    stray = deckcode.encode_deck([(sid, []) for sid in TEST_IDS])
+    stray_cards = [[sid, cs + ([10000101] if i == 0 else cs)]
+                   for i, (sid, cs) in enumerate(deckcode.decode_deck(stray))]
+    with pytest.raises(ValueError, match="不属于出战式神"):
+        deckcode.available_deck_from_code(db, deckcode.encode_deck(stray_cards))
+
+
 # ==========================================================================
 # 本地卡组存储 v2 与卡组构筑/战前选卡（原 test_deckstore.py，
 # db/deckstore.py 与 client/deckbuilder.py）

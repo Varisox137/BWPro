@@ -202,7 +202,7 @@ _ENHANCE_OP_CN = {"damage": "伤害", "heal": "治疗", "set_health": "生命变
 
 def _stats_label(game: Game, p, c) -> str:
     """数值段（按实时增强计数求值）：
-    战斗牌战力与一次性护甲、形态身材、觉醒永久身材、增强类效果数值（伤害/治疗/生命变为）。"""
+    战斗牌力量与一次性护甲、形态身材、觉醒永久身材、增强类效果数值（伤害/治疗/生命变为）。"""
     cd = game.db.cards[c.id]
     parts: list[str] = []
     live = _live_enhance(p, c)
@@ -214,7 +214,7 @@ def _stats_label(game: Game, p, c) -> str:
         s = p.shikigami[seat] if seat is not None else None
         power, shield = game.combat_card_stats(cd.effects, c, s, p)
         if power:
-            parts.append(f"战力{power:+d}")
+            parts.append(f"力量{power:+d}")
         if shield:
             parts.append(f"护甲+{shield}")
     elif cd.card_type == "form" and cd.form_power is not None:

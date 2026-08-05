@@ -384,6 +384,8 @@ def test_env_alias_parse_and_label():
     assert parse_env_input("  ") is None
     assert parse_env_input("S1") == 20191212
     assert parse_env_input("s2") == 20200120
+    assert parse_env_input("经典") == 20191212   # 同一日期的中文别名
+    assert parse_env_input("公测") == 20191212
     assert parse_env_input("20191212") == 20191212
     with pytest.raises(ValueError):
         parse_env_input("S9")

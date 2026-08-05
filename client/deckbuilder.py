@@ -6,7 +6,7 @@
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
   自动创建；文件格式异常时提示并删除该文件）。每个卡组记录构筑环境 env
   （平衡性版本日期，null=最新；v2 文件读取时视为 null）：新建时先询问环境，
-  编辑中可用 e <环境> 切换（环境输入支持别名 S1/S2 或 8 位日期，见 db/envs.py；
+  编辑中可用 e <环境> 切换（环境输入支持别名 alias 或 8 位日期，见 db/envs.py；
   环境下不存在的式神强制更换、卡牌自动移除）；
   构筑与 is_standard 校验均按 db.at_date(env) 解析。
 - 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
@@ -44,7 +44,7 @@ STANDARD_COLOR = 94
 def _ask_env() -> int | None:
     """构筑环境询问：Enter = 最新数据；别名（S1/S2）或 8 位日期，反复校验直到合法。"""
     while True:
-        line = _input("构筑环境（S1/S2 或 8 位日期，Enter = 最新）> ")
+        line = _input("构筑环境（alias 或 8 位日期，Enter = 最新）> ")
         try:
             return parse_env_input(line)
         except ValueError as e:
@@ -259,7 +259,7 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
     while True:
         _print_deck(edb, team, picks)
         line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；"
-                      "e <环境> = 更改环境（S1/S2 或日期）；Enter = 完成 > ")
+                      "e <环境> = 更改环境（alias 或日期）；Enter = 完成 > ")
         if not line:
             ids = list(team)
             card_ids = [cid for sid in team for cid in picks.get(sid, [])]
@@ -438,7 +438,8 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
                 env = entry.get("env")
                 edb = db.at_date(env)
                 ids, cards = deckstore.entry_deck(entry)
-                deckcode.deck_from_code(edb, deckstore.entry_code(entry))  # 校验可用性
+                # 仅校验可用性（id 存在）：非标准卡组同样允许编辑（保存时不标 is_standard）
+                deckcode.available_deck_from_code(edb, deckstore.entry_code(entry))
             except (ValueError, IndexError):
                 print("序号有误或槽位卡组已失效，已取消")
                 continue
@@ -465,7 +466,7 @@ def _manage_loop(db: CardDatabase, store_path) -> None:
         code_line = _input("粘贴卡组码导入覆盖（Enter = 交互式构筑/编辑）> ")
         if code_line:
             try:
-                ids, card_ids = deckcode.deck_from_code(edb, code_line)
+                ids, card_ids = deckcode.available_deck_from_code(edb, code_line)
             except ValueError as e:
                 print(f"卡组码无效（{e}），未保存")
                 continue

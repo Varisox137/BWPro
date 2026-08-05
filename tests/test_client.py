@@ -65,7 +65,7 @@ def test_hand_card_colored_by_owner_seat(db, make_game, color_on):
 
 
 def test_hand_stats_labels(db, make_game):
-    """手牌数值段：战斗牌战力/护甲（含已装配增强）、形态身材、觉醒永久身材。"""
+    """手牌数值段：战斗牌力量/护甲（含已装配增强）、形态身材、觉醒永久身材。"""
     db.cards[10010161] = F.card(
         10010161, card_type="combat", token=True,
         steps=[F.Step(op="buff_power", amount={"enhance": True, "base": 1},
@@ -83,7 +83,7 @@ def test_hand_stats_labels(db, make_game):
     give(g, 0, 10010162)
     give(g, 0, 10010163)
     out = cli.render(g)
-    assert "战力+3" in out   # base 1 + 已装配增强 2
+    assert "力量+3" in out   # base 1 + 已装配增强 2
     assert "护甲+2" in out
     assert "身材5/9" in out
     assert "觉醒+1/+2" in out
@@ -112,7 +112,7 @@ def test_hand_stats_live_enhance(db, make_game):
     for cid in (10010164, 10010165, 10010166):
         p.card_mods[cid] = {"enhance": 2}
     out = cli.render(g)
-    assert "战力+3" in out      # 战斗牌：base 1 + 持久增强 2（未装配也显示）
+    assert "力量+3" in out      # 战斗牌：base 1 + 持久增强 2（未装配也显示）
     assert "伤害7" in out       # 法术：base 5 + 持久增强 2
     assert "生命变为12" in out
     assert out.count("增强+2") == 3
@@ -138,7 +138,7 @@ def test_hand_aura_display_live(db, make_game):
     p.ext["x"] = 3
     give(g, 0, 10010167)
     out = cli.render(g)
-    assert "战力+4" in out      # base 1 + 光环 ext 3
+    assert "力量+4" in out      # base 1 + 光环 ext 3
     assert "护甲+3" in out      # base 2 + 光环 1
     assert "[瞬发]" in out      # 光环授予
 
@@ -940,7 +940,7 @@ def test_deckbuilder_new_deck_env_flow(db, monkeypatch, capsys, tmp_path):
     feed(monkeypatch, lines)
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
-    assert "环境须为别名（S1/S2）或合法的 8 位日期" in out
+    assert "环境须为环境别名（alias）或合法的 8 位日期" in out
     loaded = deckstore.load_decks(db, store)
     assert len(loaded) == 1 and loaded[0]["env"] == 20991231
 
@@ -981,7 +981,7 @@ def test_net_lobby_env_command_alias_and_mode_gate(db, capsys):
     assert c.ws.sent[-1] == {"type": "env", "date": 20991231}
     c.handle_line("e 20261301")  # 非法日期：本地拦截
     assert len(c.ws.sent) == 2
-    assert "环境须为别名" in capsys.readouterr().out
+    assert "环境须为环境别名" in capsys.readouterr().out
     c.mode = "standard"          # 标准模式：固定最新环境，不可更改
     c.handle_line("e s2")
     assert len(c.ws.sent) == 2

@@ -69,3 +69,23 @@ def deck_from_code(db, code: str) -> tuple[list[int], list[int]]:
     if errors:
         raise ValueError("卡组不合法：" + "；".join(errors))
     return shikigami_ids, card_ids
+
+
+def available_deck_from_code(db, code: str) -> tuple[list[int], list[int]]:
+    """解码并仅校验可用性（式神/卡牌在当前库中存在、卡牌归属在队式神），
+    不做组卡规则校验——构筑的编辑/导入允许非标准卡组（仅不标记 is_standard）。
+    不可用抛 ValueError。对战入座校验请用 deck_from_code（全规则）。"""
+    deck = decode_deck(code)
+    shikigami_ids = [sid for sid, _ in deck]
+    card_ids = [cid for _, cards in deck for cid in cards]
+    for sid in shikigami_ids:
+        if sid not in db.shikigami:
+            raise ValueError(f"式神 {sid} 在当前环境下不存在")
+    for cid in card_ids:
+        c = db.cards.get(cid)
+        if c is None:
+            raise ValueError(f"卡牌 {cid} 在当前环境下不存在")
+        if c.shikigami not in shikigami_ids \
+                and getattr(c, "shikigami2", None) not in shikigami_ids:
+            raise ValueError(f"卡牌【{c.name}】不属于出战式神")
+    return shikigami_ids, card_ids
