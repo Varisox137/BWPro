@@ -12,3 +12,15 @@ versions:
         steps:
           - {op: reset_assaults}
       text: "[瞬发]。重置你的出击次数。"
+    - date: 20200423
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        # 出击次数 >0 → [鼓舞]获得+1战力和+1护甲；否则重置出击次数（step 级 condition
+        # 两段分流，崩雪 chosen_stunned 先例；assaults_left_ge/le 读控制者剩余出击次数）
+        steps:
+          - {op: basic_boost, power: 1, shield: 1, condition: {assaults_left_ge: 1}}
+          - {op: reset_assaults, condition: {assaults_left_le: 0}}
+      text: "[瞬发]。若你出击次数大于0，[鼓舞]：{获得+1战力和+1护甲}。否则重置你的出击次数。"

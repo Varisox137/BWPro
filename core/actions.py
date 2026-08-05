@@ -256,10 +256,12 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
     if ctx.source is not None and ctx.source.shikigami is not None:
         src = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
         if inherit_stats:
-            # 复制来源式神身材：基础+永久（不含临时/形态/战力），烟烟罗的分身
-            s.base_power = src.base_power + src.perm_power
-            s.base_health = src.base_health + src.perm_health
-            s.health = s.base_health
+            # 复制来源当前全部身材（维护者定案：当前力量含临时/光环增益、当前生命上限、
+            # 当前生命值含受伤不满）——以一次性永久修正落到实例（静态基值，
+            # 不进 dyn 缓存通道，召唤物自身的动态光环重算不丢失继承部分）
+            s.perm_power = src.eff_power - s.base_power
+            s.perm_health = src.max_health - s.base_health
+            s.health = min(src.health, s.max_health)
         if energy_ratio is not None:
             s.energy = int(src.energy * energy_ratio)  # 能量按比例复制（向下取整）
     s.ext["max_power"] = s.base_power + s.perm_power  # 力量历史峰值初值（断臂记账）
@@ -775,7 +777,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
              card_type: str | None = None, count: int | dict = 1, zone: str = "hand",
              max_level: int | str | None = None, exclude_self: bool = False,
              card_id: int | None = None, subtype: str | None = None,
-             level: int | str | None = None) -> None:
+             level: int | str | None = None, position: str = "bottom") -> None:
     """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。
 
     card_id 指定时直接生成该 id 的牌（可生成 token；黄金羽/金风流羽），绕开随机池。
@@ -819,6 +821,10 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         inst = CardInstance(uid=game.state.next_uid, id=cid)
         game.state.next_uid += 1
         game.move_card(p, inst, zone)
+        if zone == "deck" and position == "random":
+            # 置入牌库 = 随机插入（同心协力 20200423 维护者定案：随机位置，不洗牌）
+            p.deck.remove(inst)
+            p.deck.insert(game.rng.randrange(len(p.deck) + 1), inst)
         game._materialize(p, inst, game.db.cards[cid])  # 生成点统一快照
         game._log(f"生成了【{game.db.cards[cid].name}】")
 
@@ -1622,7 +1628,8 @@ def spell_echo(game, ctx, *, targets: list[Ref], sequence: list[int],
 
 
 def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
-                    inherit_chosen: list[Ref] | None = None) -> bool:
+                    inherit_chosen: list[Ref] | None = None,
+                    emit_extra: dict | None = None) -> bool:
     """凭空生成 cdef 的复制并以基础方式自动结算（不耗鬼火/瞬发/替代方式），用后入墓地、
     发 on_card_played（play_from="void"，triggered="auto"）。
 
@@ -1654,7 +1661,8 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
         affected = game._affected_stack.pop()["refs"]
     game.move_card(p, inst, "graveyard")  # 凭空生成的幻象牌用后入墓地
     game._emit_card_played(controller, inst.uid, cdef, affected,
-                           play_from="void", triggered="auto", chosen=chosen)
+                           play_from="void", triggered="auto", chosen=chosen,
+                           extra=emit_extra)
     return True
 
 
@@ -1663,12 +1671,12 @@ def mirror_spell(game, ctx, *, targets: list[Ref]) -> None:
     """复制施法（烟烟罗的分身"会复制她使用的法术牌"）：on_card_played 时机，
     凭空复制事件中的牌并自动使用一次（基础方式）。
 
-    仅主动使用（triggered=active）触发——复制自身发出的 on_card_played
-    （triggered=auto）天然不连锁；觉醒牌排除由数据侧条件（subtype_not: awaken）表达。
-    choose 目标沿用原选（仍合法）否则随机重选。
+    主动/响应/自动使用均触发（维护者定案：并非仅主动使用）——复制自身发出的事件
+    带 mirror_copy 标记，不再触发复制（防递归）；觉醒牌排除由数据侧条件
+    （subtype_not: awaken）表达。choose 目标沿用原选（仍合法）否则随机重选。
     """
     event = ctx.event or {}
-    if event.get("name") != "on_card_played" or event.get("triggered") != "active":
+    if event.get("name") != "on_card_played" or event.get("mirror_copy"):
         return
     if ctx.source is None or ctx.source.shikigami is None:
         return
@@ -1679,7 +1687,8 @@ def mirror_spell(game, ctx, *, targets: list[Ref]) -> None:
     s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
     game._log(f"{game.db.shikigami[s.id].name} 复制并自动使用了「{cdef.name}」")
     _auto_cast_copy(game, ctx.controller, cdef, ctx.source,
-                    inherit_chosen=event.get("chosen"))
+                    inherit_chosen=event.get("chosen"),
+                    emit_extra={"mirror_copy": True})
 
 
 @action("use_card_copy")
@@ -2819,6 +2828,10 @@ def reset_assaults(game, ctx, *, targets: list[Ref]) -> None:
 @action("clear_boosts")
 def clear_boosts(game, ctx, *, targets: list[Ref]) -> None:
     """清除目标牌手的全部出击加成（日出有曜 B 选项）；无牌手目标时默认控制者。"""
+    # 显式选择了目标（日出有曜单目标双效果定案）：目标是式神则空操作、目标是牌手则
+    # 对其生效；仅无目标时回退控制者
+    if targets and all(r.shikigami is not None for r in targets):
+        return
     refs = [r for r in targets if r.shikigami is None] or [Ref(player=ctx.controller)]
     for ref in refs:
         p = game.state.players[ref.player]

@@ -557,7 +557,8 @@
 - **本批数据侧登记**（2026-08 第十七阶段，「已展示」批次）：实例标志 `CardInstance.mods["revealed"]`（本局保持、随实例）；新 op `reveal`（mode=random/shikigami/all/event 四档，shikigami 档协战归属按 `_card_belongs_to` 统一口径）；新事件 `on_card_enter_hand`（入手统一钩子 `_enter_hand` 发出，延时时机）；`mulligan_hand` 扩展 `target_side`/`only_revealed`/`auto`（敌方已展示手牌自动调度）；`cost_delta_player` 扩展 `side`/`card_flag`（已展示手牌额外耗火）；conditional_keywords 算子 `enemy_hand_all_revealed`；on_card_played 载荷 `card_revealed`；TargetSpec 过滤键 `dealt_damage_turn`（ext 键同名记账）；`_step_amount` 动态键 `enemy_revealed_count`（三口径）。机制细节见第二十九章，术语登记见术语表「结算与事件」。
 - **本批数据侧登记**（2026-08 第十八阶段，经典包早期数据回退批次）：新事件 `on_ability_enter`（能力进场统一钩子：对局开始/升 1 级/复活/觉醒替换/变形与还原均经 `_register_ability_countdown` 发出，payload {player, shikigami, target: Ref}——萤草基础/觉醒）；能力型卡牌光环——card_aura 新作用域 `scope="ability"`（挂能力持有者，机制同 form）与新值 `shikigami="any"`（光环匹配任意所属式神的牌，存 None 通配）；`_clear_ability_card_auras` 统一清理（气绝/变形/还原/消失/觉醒替换前五调用点）；countdown_delta 新参数 `reset`（复原倒计时初值、不触发归零、无能力者空操作——疯魔琴心）；新 op `transform_card`（手牌按 id 原位变换为新卡，count=1，无匹配空操作）；破甲转化锚点 `ext["fragile_to_damage_if"]`（仅当受害者本有破甲时，新获得破甲才转化为等量伤害——20191212 碧羽散华，与无条件 `fragile_to_damage` 并存）；妖琴师觉醒牌牌面"倒计时-X"语义定为挂 `on_before_awaken`（基础能力+各觉醒牌 abilities 各带一块，替换前对旧倒计时生效；二次使用同名觉醒牌由觉醒能力块接续）；鸩觉醒牌牌面"倒计时-2"为效果步（先替换觉醒能力、后对刚注册的新倒计时 -2，归零即触发觉醒能力——维护者定案）。细节见术语表「结算与事件」。
 - **本批数据侧登记**（2026-08 第十九阶段，S3=20200227 批次）：环境别名新增 `S3=20200227`（db/envs.py；第二次平衡性调整，跳跳妹妹正式加入——其全部数据 date=20200227，早于该日期的环境下不可构筑/使用）；summon 新参数 `orb_cost`（效果内嵌鬼火费用：不足则召唤失败、其余步骤照常——坐下"额外消耗1点鬼火，召唤'番茄'"，维护者定案）；countdown_delta 正向增量确认可用（直接累加无上限、无能力者空操作——疯魔琴心 20200227"使一个敌方式神[倒计时]+2"，choose 目标 + 自身 -2 可归零触发基础能力）；跳跳弟弟整式神回退 20191212（肿胀体质去"进场 2 破甲"、尸毒体质门槛 6/15、觉醒 +1/+1），瘴疠体质/毒气喷泉/肿胀体质加 20200227 快照（毒气喷泉 20191212=获得等同非转移、20200227=转移语义）；凤鸣/疯魔琴心/命运之人加 20200227 快照；跳跳妹妹 20200227 正式服上线版（坐下改"永久 +1 力量+额外耗火召唤"、生气了啦 text"额外先攻击一次"=[连击] 同机制、觉醒·番茄去"随机 2 战斗牌置手"保留 +3/+3、番茄维持 3/4）。细节见术语表「结算与事件」。
-- **本批数据侧登记**（2026-08 第二十阶段，02 不夜之火批次——鸦天狗/不知火/小鹿男/烟烟罗/日和坊/镰鼬，包目录 `db/02_buyezhihuo/`，date/best=20200327）：能量系统（`ShikigamiState.energy` 上限 10、气绝保留）+ 关键字 `charge`（己方回合开始充能，批次顺序先倒计时后能量）；爆能——`PlayMethod.energy_cost`（int / "all"=爆能X 消耗全部能量、0 能量不可选）与 `PlayMethod.keywords`（方式临时授予关键字），方式 effects 追加到基础 effects 后（多档累计），动态数值 `{"burst_x": true}`（出牌快照 `card.mods["burst_x"]`，结算后清除）；新 op `move`（含 force）/ `gain_energy` / `spend_energy`（gate）/ `boost_on_combat_card` / `boost_no_consume` / `inspire_bonus` / `reset_assaults` / `clear_boosts` / `reset_stats` / `energy_assault` / `form_death_play` / `cancel_attack` / `attack_replace` / `battle_retarget` / `mirror_spell` / `use_card_copy`；新事件 `on_energy_gained`（延时，实际获得 >0 才发）；既有 op 扩展（summon `inherit_stats`/`energy_ratio`、heal `full`、stun `lasting`/`until_event` 持续眩晕条目 apply_seq/apply_uid/watch、stat_aura 新 kind `energy_power`/`ids_energy_power`、card_aura `require_holder_form`）；TargetSpec 过滤键 `keyword`；条件键 `holder_has_form`/`energy_ge`/`pre_play_form`（on_card_played 新 payload，萤草 20200327"结附形态才生效"用——best 保持 20191212）；响应 condition 不支持 self 须用具体式神 id；同心协力复制落库底、日出有曜方式B目标池 any_character 选中式神回退控制者（两处偏差见 card-status.md）；惊鸿之舞 10020208/日霭相织 10020221/烟影 10020451/煦日 10020551 未录入（raw 无完整效果文本），铃鹿御前未加入。机制细节见第三十章，术语登记见术语表「结算与事件」。
+- **本批数据侧登记**（2026-08 第二十阶段，02 不夜之火批次——鸦天狗/不知火/小鹿男/烟烟罗/日和坊/镰鼬，包目录 `db/02_buyezhihuo/`，date/best=20200327）：能量系统（`ShikigamiState.energy` 上限 10、气绝保留）+ 关键字 `charge`（己方回合开始充能，批次顺序先倒计时后能量）；爆能——`PlayMethod.energy_cost`（int / "all"=爆能X 消耗全部能量、0 能量不可选）与 `PlayMethod.keywords`（方式临时授予关键字），方式 effects 追加到基础 effects 后（多档累计），动态数值 `{"burst_x": true}`（出牌快照 `card.mods["burst_x"]`，结算后清除）；新 op `move`（含 force）/ `gain_energy` / `spend_energy`（gate）/ `boost_on_combat_card` / `boost_no_consume` / `inspire_bonus` / `reset_assaults` / `clear_boosts` / `reset_stats` / `energy_assault` / `form_death_play` / `cancel_attack` / `attack_replace` / `battle_retarget` / `mirror_spell` / `use_card_copy`；新事件 `on_energy_gained`（延时，实际获得 >0 才发）；既有 op 扩展（summon `inherit_stats`/`energy_ratio`、heal `full`、stun `lasting`/`until_event` 持续眩晕条目 apply_seq/apply_uid/watch、stat_aura 新 kind `energy_power`/`ids_energy_power`、card_aura `require_holder_form`）；TargetSpec 过滤键 `keyword`；条件键 `holder_has_form`/`energy_ge`/`pre_play_form`（on_card_played 新 payload，萤草 20200327"结附形态才生效"用——best 保持 20191212）；响应 condition 不支持 self 须用具体式神 id；惊鸿之舞 10020208/日霭相织 10020221/烟影 10020451/煦日 10020551 未录入（raw 无完整效果文本），铃鹿御前未加入。机制细节见第三十章，术语登记见术语表「结算与事件」。
+- **本批数据侧登记**（2026-08 第二十阶段续，维护者答复(1)-(10)定案 + 20200423 平衡数据）：定案落实——气绝式神回合开始不充能（`_turn_start_charge` 跳过；充能晚于倒计时减少，刚复活当回合即 +1）、能量满上限仍发 `on_energy_gained`（amount=0，体系无"后"时机）、summon `inherit_stats`=复制来源**全部当前身材**快照（含持续性/光环增益与受伤不满生命；静态永久修正，不进 dyn 缓存）、mirror_spell 主动与自动使用均触发（`mirror_copy` 标记防递归）、"置入牌库"=随机插入不洗牌（generate 新参数 `position: random`，同心协力不再固定库底）、日出有曜单目标双 step（reset_stats 对牌手空操作；clear_boosts 显式选牌手才生效、选式神空操作、无目标才回退控制者）；新条件键 `combat_empty`（friendly/enemy，统一取值并删 targets.py 的 self/opponent 死分支）/`assaults_left_ge`/`assaults_left_le`；20200423 平衡数据 10 卡追加快照（best 均未动）：吾即正义/偷袭/门前清/真意之歌/觉醒·不知火/沐浴阳光/阳炎/人多势众/二太郎之戟/一太郎之棒；蓄力机制预留英文名定案 `charging`（充能=charge 既有）。细节见术语表「结算与事件」。
 - 真实卡牌数据暂不入库；测试用 `tests/factories.py` 程序内构造 / `db/dummy.py` 空白占位。
 
 ## 二十三、组卡规则
@@ -694,10 +695,10 @@
 
 ### 一、能量与充能
 
-- **能量 energy**：式神级资源（`ShikigamiState.energy`，上限 10；气绝保留、气绝中仍可充能——暂定，待确认见 questions.md）。
+- **能量 energy**：式神级资源（`ShikigamiState.energy`，上限 10；气绝保留）。**气绝式神回合开始不充能**（气绝无能力——`_turn_start_charge` 跳过气绝者；充能批次晚于倒计时减少，刚复活的式神当回合即 +1，维护者定案）。
 - **[充能] charge**：实体关键字（先天经 `ShikigamiDef.keywords` 入永久类别，授予/形态同既有通道）：己方回合开始时该式神能量 +1（己方回合开始批次顺序：先倒计时批次、后能量充能）。
 - 统一入口 `Game._gain_energy` / `_spend_energy` / `_can_pay_energy`；效果 op 为 `gain_energy` / `spend_energy`（`gate: true` 时支付不足则中止当前效果块——祈晴/滋养/晴雨"消耗X能量，……"门控）。
-- **能量获得事件** `on_energy_gained`（延时时机，payload {player, target, old, new, amount}）：实际获得量 > 0 才发出——已达上限获得 0 时不发事件（暂定，待确认见 questions.md）；能力导致的连锁充能以 `emit_event: false` 防自连锁（烟烟罗基础/觉醒"获得能量时再获得"）。
+- **能量获得事件** `on_energy_gained`（延时时机，payload {player, target, old, new, amount}）：每次获得能量即发出——已达上限时照常发出、amount=0（体系只有"时"时机、无"后"时机，维护者定案）；能力导致的连锁充能以 `emit_event: false` 防自连锁（烟烟罗基础/觉醒"获得能量时再获得"）。
 
 ### 二、爆能
 
@@ -728,14 +729,14 @@
 
 ### 六、攻击替换 / 交战改向 / 取消攻击
 
-- **取消攻击** `cancel_attack`（鸦羽疾走"自动使用并取消本次攻击"）：响应挂 on_before_assault，置事件取消旗标，战斗流程在响应结算后检查并终止整场战斗；已支付的鬼火/出击次数不退还（暂定，待确认见 questions.md）。
-- **攻击替换** `attack_replace`（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力之和的伤害"）：响应 on_before_assault 置替换旗标，战斗流程以该效果伤害替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出；目标池为随机不重复的两个敌方**角色**（可含牌手——暂定，待确认见 questions.md）；X = 力量 + 战力（含乏力）。
-- **交战改向** `battle_retarget`（声东击西"本次的交战目标改为另一个敌方角色"）：登记到当前战斗上下文，目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（随机且可含牌手——暂定，待确认见 questions.md；排除原交战目标，无另一个敌方角色时该次攻击落空），仅本次战斗有效。
+- **取消攻击** `cancel_attack`（鸦羽疾走"自动使用并取消本次攻击"）：响应挂 on_before_assault，置事件取消旗标，战斗流程在响应结算后检查并终止整场战斗；已支付的鬼火/出击次数不退还（维护者定案）。
+- **攻击替换** `attack_replace`（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力之和的伤害"）：响应 on_before_assault 置替换旗标，战斗流程以该效果伤害替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出；目标池为随机不重复的两个敌方**角色**（可含牌手——维护者定案）；X = 力量 + 战力（含乏力）；该伤害为**非战斗伤害**（能力造成、非法术——kind=effect，不触发[吸血]，维护者定案）。
+- **交战改向** `battle_retarget`（声东击西"本次的交战目标改为另一个敌方角色"）：登记到当前战斗上下文，目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（随机且可含牌手——维护者定案；排除原交战目标，无另一个敌方角色时该次攻击落空），仅本次战斗有效。
 
 ### 七、复制使用与分身复制法术
 
-- **复制使用** `use_card_copy{card_id}`（爆能"{额外使用'三太郎之斧'}"类）：凭空生成指定牌复制并自动使用——不耗鬼火/瞬发名额/出击次数（暂定，待确认见 questions.md）；法术牌按基础方式效果结算（`_auto_cast_copy` 共用助手），战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地，照常 emit on_card_played（play_from=void、triggered=auto）。链式"再额外使用"= 数据侧并列多个 step。
-- **分身复制法术** `mirror_spell`（烟烟罗的分身"会复制她使用的法术牌"）：挂 on_card_played，复制持有者**主动使用**（triggered=active）的法术牌并自动使用一次（基础方式）——觉醒牌由数据侧条件（subtype_not: awaken）排除；choose 目标沿用原选（仍合法）否则随机重选；复制产生的 triggered=auto 事件天然不连锁。
+- **复制使用** `use_card_copy{card_id}`（爆能"{额外使用'三太郎之斧'}"类）：凭空生成指定牌复制并自动使用——不耗鬼火/瞬发名额/出击次数（维护者定案）；法术牌按基础方式效果结算（`_auto_cast_copy` 共用助手），战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地，照常 emit on_card_played（play_from=void、triggered=auto）。链式"再额外使用"= 数据侧并列多个 step。
+- **分身复制法术** `mirror_spell`（烟烟罗的分身"会复制她使用的法术牌"）：挂 on_card_played，复制持有者使用的法术牌并自动使用一次（基础方式）——**主动/响应/自动使用均触发**（维护者定案；引擎 `mirror_copy` 标记防递归，复制自身不连锁）；觉醒牌由数据侧条件（subtype_not: awaken）排除；choose 目标沿用原选（仍合法）否则随机重选。记仇类"敌方使用法术时"响应对自动使用同样命中（响应收集不过滤 triggered，现状即定案口径）。
 
 ### 八、萤草 20200327（能力要求结附形态）
 

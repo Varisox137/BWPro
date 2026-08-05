@@ -1678,7 +1678,8 @@ def test_cancel_attack_response_cancels_battle(db, make_game):
 def test_attack_replace_two_random_enemy_characters(db, make_game):
     """attack_replace（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力
     之和的伤害"）：先攻/交战阶段被替换为对两个随机敌方角色的效果伤害——无交战、
-    不受反击；on_after_assault 照常发出。"""
+    不受反击；替换伤害为非战斗伤害（维护者定案：能力造成，贯通/吸血等战斗伤害
+    监听不生效）；on_after_assault 照常发出。"""
     db.shikigami[100102].ability = F.block(
         F.Step(op="attack_replace"),
         when="on_before_assault", condition={"attacker_shikigami": "self"})
@@ -1686,10 +1687,57 @@ def test_attack_replace_two_random_enemy_characters(db, make_game):
     move(g, 1, 0)                              # B0（3 力量）驻战斗区：检验不受反击
     a = pa.shikigami[1]                        # 100102（1/6）
     a.level = 1
+    a.keywords.append("lifesteal")
+    a.health = 2                               # 吸血若生效会回到 3（战斗伤害才会）
     n = len(g.history)
     g.apply({"op": "assault", "index": 1})
-    assert a.health == 6                       # 不受反击
+    assert a.health == 2                       # 不受反击 + 非战斗伤害吸血不生效
     total = (sum(s.max_health - s.health for s in pb.shikigami)
              + (30 - pb.health))
     assert total == 2                          # X=1，两个随机敌方角色各 1
     assert "on_after_assault" in g.history[n:]
+
+
+# ---------- 维护者定案批：generate 随机入库 / clear_boosts·reset_stats 显式目标 ----------
+
+def test_generate_deck_random_position(db, make_game):
+    """generate zone=deck position=random（同心协力 20200423 定案："置入牌库"= 随机
+    插入不洗牌）：缺省 bottom 保持库底，random 按 randrange 落位。"""
+    gen = 10010196
+    db.cards[gen] = F.card(gen, token=True, steps=[
+        F.Step(op="generate", card_id=10010101, zone="deck")])
+    db.cards[gen + 1] = F.card(gen + 1, token=True, steps=[
+        F.Step(op="generate", card_id=10010101, zone="deck", position="random")])
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, gen)
+    assert pa.deck[-1].id == 10010101                  # 缺省：库底
+    g.rng.randrange = lambda n: 0                      # 固定落位验证随机通道接线
+    play(g, 0, gen + 1)
+    assert pa.deck[0].id == 10010101                   # random：插入 randrange 指定位置
+
+
+def test_clear_boosts_reset_stats_explicit_target_semantics(db, make_game):
+    """日出有曜单目标双效果定案：clear_boosts 显式选择牌手目标→对其生效；显式选择
+    式神目标→空操作（不回退控制者）；reset_stats 对牌手目标空操作。"""
+    db.cards[CLEAR_BOOSTS_SPELL] = F.card(
+        CLEAR_BOOSTS_SPELL, shikigami=100101, level=1, token=True, target=CHOOSE_ENEMY,
+        steps=[F.Step(op="clear_boosts")])
+    db.cards[10010198] = F.card(
+        10010198, shikigami=100101, level=1, token=True,
+        target=T(kind="choose", pool="enemy_player"),
+        steps=[F.Step(op="clear_boosts")])
+    db.cards[RESET_STATS_SPELL] = F.card(
+        RESET_STATS_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="reset_stats", target=T(kind="all", pool="enemy_player"))])
+    g, pa, pb = _mech_game(make_game)
+    pb.shikigami[0].level = 1
+    pa.assault_boosts = [{"power": 2, "shield": 2}]
+    pb.assault_boosts = [{"power": 1, "shield": 0}]
+    play(g, 0, CLEAR_BOOSTS_SPELL, target=Ref(player=1, shikigami=0))  # 显式式神目标
+    assert pa.assault_boosts and pb.assault_boosts     # 空操作：双方加成都在
+    play(g, 0, 10010198, target=Ref(player=1))         # 显式牌手目标
+    assert pb.assault_boosts == []                     # 只对目标牌手生效
+    assert pa.assault_boosts                           # 不回退控制者
+    pb.shikigami[0].temp_power = 3
+    play(g, 0, RESET_STATS_SPELL)                      # 牌手目标：空操作
+    assert pb.shikigami[0].temp_power == 3

@@ -13,5 +13,5 @@ versions:
           - {op: gain_shield, amount: 2, target: {kind: self}}
           # 若敌方战斗区没有式神（step 级条件 combat_empty，偷袭响应同款），眩晕敌方牌手
           - {op: stun, target: {kind: all, pool: enemy_player},
-             condition: {combat_empty: opponent}}
+             condition: {combat_empty: enemy}}
       text: "若敌方战斗区没有式神，[眩晕]敌方牌手。"

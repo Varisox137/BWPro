@@ -22,3 +22,24 @@ versions:
           steps:
             - {op: basic_boost, power: 1}
       text: "[觉醒]：{己方回合开始时，[鼓舞]：{获得+1战力}。你的[鼓舞]效果额外获得+1战力与+1护甲。}"
+    - date: 20200423
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        steps: []
+      abilities:
+        # [觉醒]：保留基础能力的回合开始鼓舞；能力进场登记玩家级旗标——
+        # 鼓舞额外+1战力/+1护甲（缺省永久作用域，觉醒常驻、跨气绝保留）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: inspire_bonus, power: 1, shield: 1}
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: basic_boost, power: 1}
+      text: "[觉醒]：{己方回合开始时，[鼓舞]：{获得+1战力}。你的[鼓舞]效果额外获得+1战力与+1护甲。}"

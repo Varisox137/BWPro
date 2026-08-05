@@ -11,8 +11,8 @@ versions:
       effects:
         steps:
           - {op: gain_energy, amount: 1, target: {kind: self}}
-          # 将一张此牌的复制置入你的牌库（generate zone=deck 经 move_card 置于库底——
-          # 原版为随机位置置入，落位偏差备注）并抓一张牌
-          - {op: generate, card_id: 10020604, zone: deck}
+          # 将一张此牌的复制置入你的牌库（generate zone=deck + position=random：
+          # 随机插入不洗牌）并抓一张牌
+          - {op: generate, card_id: 10020604, zone: deck, position: random}
           - {op: draw, count: 1}
       text: "[瞬发]。获得1能量。将一张此牌的复制置入你的牌库并抓一张牌。"

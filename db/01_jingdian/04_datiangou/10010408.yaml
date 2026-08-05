@@ -22,3 +22,26 @@ versions:
             - {op: add_mod, to: persistent, key: transformed, cap: 1,
                require: {key: spell_count, ge: 10}}
       text: "[增强]：{本局游戏大天狗若使用过10次法术，则消灭所有敌方式神。}"
+    - date: 20200423
+      card_type: spell
+      rarity: SR
+      level: 1
+      effects:
+        # 随机获得一张大天狗的不大于自身等级的其他法术牌（generate：max_level=source
+        # 卡牌等级 ≤ 来源式神当前等级；exclude_self 排除与来源同 id 的牌）
+        steps:
+          - {op: generate, shikigami: self, card_type: spell, max_level: source,
+             exclude_self: true}
+      alt_effects:
+        steps:
+          - {op: destroy, target: {kind: all, pool: enemy_shikigami}}
+      triggers:
+        # 本局大天狗每使用过一张法术（含觉醒法术、含自动使用）计数；
+        # 满 10 次置位 transformed——本局所有同名吾即正义（含之后生成的）打出改用 alt_effects
+        - when: on_card_played
+          condition: {player: self, card_type: spell, shikigami: 100104}
+          steps:
+            - {op: add_mod, to: persistent, key: spell_count}
+            - {op: add_mod, to: persistent, key: transformed, cap: 1,
+               require: {key: spell_count, ge: 10}}
+      text: "随机获得一张大天狗的不大于自身等级的其他法术牌。[增强]：{本局游戏大天狗若使用过10次法术，则此牌变为消灭所有敌方式神。}"

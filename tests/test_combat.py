@@ -1204,10 +1204,11 @@ def test_bench_targeted_battle_fallback_no_target(real_game):
     assert pb.shikigami[0].health == 0 or pb.shikigami[0].defeated
 
 
-def test_defeated_response_full_battle(real_game):
-    """偷袭[响应]：敌方战斗区式神气绝时自动使用——无当前战斗的响应战斗牌
-    按完整战斗流程发起新战斗。"""
-    g = real_game(GH_TEAM)
+def test_defeated_response_full_battle(gdb):
+    """偷袭[响应]（20191212 快照）：敌方战斗区式神气绝时自动使用——无当前战斗的响应战斗牌
+    按完整战斗流程发起新战斗（20200423 起偷袭响应改为敌方回合结束条件，
+    本用例钉旧快照；at_date 先例见 test_response.py 复仇复制）。"""
+    g = F.mk_game(gdb.at_date(20191212), team=GH_TEAM)
     pa, pb = F.battle_setup(g)
     pb.shikigami[0].level = 2                  # 响应等级要求（偷袭 2 级）
     pb.orb = 1                                 # 响应鬼火照常支付
@@ -1235,7 +1236,7 @@ def test_turn_end_response_after_queue_effects(db, make_game):
     db.cards[cid] = F.card(
         cid, card_type="combat", keywords=["trigger"], token=True,
         when="on_turn_end",
-        block_kw={"condition": {"player": "opponent", "combat_empty": "opponent"}},
+        block_kw={"condition": {"player": "opponent", "combat_empty": "enemy"}},
         steps=[F.Step(op="buff_power", amount=2, target=T(kind="self"))])
     g = make_game()
     pa, pb = g.state.players

@@ -325,7 +325,8 @@ def _charge_game(make_game, db):
 
 def test_charge_gain_cap_and_defeated_retain(make_game, db):
     """[充能]：己方回合开始获得 1 点能量（上限 10，对局开始的回合开始阶段已充 1 点）；
-    气绝时能量保留且继续充能。"""
+    气绝时能量保留但不充能（维护者定案：气绝无能力）；刚复活的式神当回合立即 +1
+    （复活批次 _turn_start_revive 先于充能批次）。"""
     g, pa, pb = _charge_game(make_game, db)
     s = pa.shikigami[IDX]
     assert s.energy == 1                   # 对局开始（A 第 1 回合开始）已充能
@@ -338,8 +339,10 @@ def test_charge_gain_cap_and_defeated_retain(make_game, db):
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     g._drain_queue()
     assert s.defeated and s.energy == 5    # 气绝保留
-    pass_turns(g, 2)                       # 气绝中继续充能（复活倒计时 3→2，仍气绝）
-    assert s.energy == 6
+    pass_turns(g, 2)                       # 气绝不充能（复活倒计时 3→2，仍气绝）
+    assert s.defeated and s.energy == 5
+    pass_turns(g, 4)                       # A 第 4 回合开始：倒计时 1→0 复活，同批次充能
+    assert not s.defeated and s.energy == 6
 
 
 def test_on_energy_gained_trigger_no_recursion(make_game, db):
@@ -536,8 +539,9 @@ COPY_SRC_COMBAT = 10010181   # 假"额外使用战斗牌"源牌
 
 def test_summon_inherit_stats_and_energy_ratio(make_game, db):
     """summon inherit_stats/energy_ratio（烟烟罗的分身"召唤时具有与烟烟罗相同的力量和
-    生命以及一半的能量"）：复制来源基础+永久身材（不含临时/形态），能量按比例向下取整；
-    召唤进场也算移动（ext move_count_turn，前置修正）。"""
+    生命以及一半的能量"）：快照来源当前全部身材（维护者定案——当前力量含临时/光环、
+    当前生命上限、当前生命值含受伤不满），以永久修正落地（不进 dyn 缓存，光环重算
+    不丢失）；能量按比例向下取整；召唤进场也算移动（ext move_count_turn，前置修正）。"""
     db.shikigami[FENSHEN] = F.shiki(FENSHEN, name="烟烟罗的分身", kind="summon",
                                     power=2, health=4)
     db.cards[SUMMON_SPELL] = F.card(
@@ -548,28 +552,32 @@ def test_summon_inherit_stats_and_energy_ratio(make_game, db):
     src = pa.shikigami[IDX]                  # 3/4
     src.perm_power = 2
     src.perm_health = 1
-    src.health += 1                          # 现 5/5（基础+永久）
-    src.temp_power = 5                       # 临时不复制
+    src.temp_power = 5                       # 临时增益也复制（定案）
+    src.health = 3                           # 当前生命值含受伤不满（上限 4+1=5）
     src.energy = 5
     g.apply({"op": "play_card", "uid": give(g, 0, SUMMON_SPELL).uid})
     fen = pa.shikigami[-1]
-    assert fen.base_power == 5 and fen.eff_power == 5   # 基础+永久，不含临时
-    assert fen.base_health == 5 and fen.health == 5
-    assert fen.energy == 2                              # floor(5 × 0.5)
-    assert fen.ext["move_count_turn"] == 1              # 召唤进场也算移动
+    assert fen.eff_power == 3 + 2 + 5        # 当前力量含永久+临时
+    assert fen.max_health == 5               # 当前生命上限
+    assert fen.health == 3                   # 当前生命值（不满照抄）
+    assert fen.energy == 2                   # floor(5 × 0.5)
+    assert fen.ext["move_count_turn"] == 1   # 召唤进场也算移动
+    g._refresh_stat_auras()
+    assert fen.eff_power == 10               # 继承部分为静态基值，光环重算不丢失
 
 
 def test_mirror_spell_copies_active_spell_play(make_game, db):
     """mirror_spell（烟烟罗的分身"会复制她使用的法术牌"）：在场分身监听 on_card_played
-    （card_type=spell、shikigami=烟烟罗、player=self、triggered=active、subtype_not=awaken）
-    ——主动使用的法术被凭空复制再结算一次；觉醒牌与复制自身（triggered=auto）不触发。"""
+    （card_type=spell、shikigami=烟烟罗、player=self、subtype_not=awaken）——主动使用
+    与自动使用（维护者定案放开）的法术都被凭空复制再结算一次；复制自身的事件带
+    mirror_copy 标记不再触发（防递归）；觉醒牌不触发。"""
     db.shikigami[FENSHEN] = F.shiki(
         FENSHEN, name="烟烟罗的分身", kind="summon", power=2, health=4,
         ability=F.block(
             F.Step(op="mirror_spell"),
             when="on_card_played",
             condition={"card_type": "spell", "shikigami": SID, "player": "self",
-                       "triggered": "active", "subtype_not": "awaken"}))
+                       "subtype_not": "awaken"}))
     db.cards[SUMMON_SPELL] = F.card(
         SUMMON_SPELL, shikigami=100103, level=1, token=True,
         steps=[F.Step(op="summon", shikigami=FENSHEN)])
@@ -579,6 +587,9 @@ def test_mirror_spell_copies_active_spell_play(make_game, db):
     db.cards[MIRROR_AWAKEN] = F.card(
         MIRROR_AWAKEN, shikigami=SID, subtype="awaken", tags=["awaken"], level=1,
         token=True)
+    db.cards[COPY_SRC] = F.card(
+        COPY_SRC, shikigami=100103, level=1, token=True, steps=[
+            F.Step(op="use_card_copy", card_id=MIRROR_DMG)])
     g, pa, pb = _game(make_game)
     pa.shikigami[2].level = 1                # 召唤牌属 100103（2 号位默认 0 级）
     g.apply({"op": "play_card", "uid": give(g, 0, SUMMON_SPELL).uid})
@@ -587,6 +598,10 @@ def test_mirror_spell_copies_active_spell_play(make_game, db):
     assert pb.health == 30 - 4               # 原牌 2 + 分身复制 2
     g.apply({"op": "play_card", "uid": give(g, 0, MIRROR_AWAKEN).uid})
     assert pb.health == 30 - 4               # 觉醒牌不触发复制
+    # 自动使用也触发（定案放开）：use_card_copy 凭空使用 → 分身再复制一次；
+    # 分身复制自身带 mirror_copy 标记不连锁（否则无限递归）
+    g.apply({"op": "play_card", "uid": give(g, 0, COPY_SRC).uid})
+    assert pb.health == 30 - 4 - 2 - 2       # 自动使用 2 + 分身复制 2，无连锁
 
 
 def test_use_card_copy_spell_chain_and_combat(make_game, db):
@@ -615,3 +630,22 @@ def test_use_card_copy_spell_chain_and_combat(make_game, db):
     assert pa.combat_index == IDX            # 来源式神已进战斗区
     assert pa.orb == 8                       # 复制不耗鬼火（仅源牌费 1）
     assert pa.assaults_left == assaults_before   # 不耗出击次数
+
+
+def test_energy_gain_at_cap_emits_zero_amount(make_game, db):
+    """满上限仍发"时"时机（维护者定案，对照满生命治疗）：能量 10 时再获得，
+    on_energy_gained 照常发出（amount=0、old==new），能量不变；emit_event=False
+    通道（烟烟罗类追加）与 n=0 调用不发事件；体系内只有"时"没有"后"
+    （无 on_after_energy_gained，对照 on_heal/on_after_heal 双时机）。"""
+    g, pa, pb = _charge_game(make_game, db)
+    s = pa.shikigami[IDX]
+    s.energy = 10
+    n = len(g.history)
+    assert g._gain_energy(pa, IDX, 3) == 0 and s.energy == 10
+    assert "on_energy_gained" in g.history[n:]         # 满上限仍发"时"（amount=0）
+    n = len(g.history)
+    assert g._gain_energy(pa, IDX, 1, emit_event=False) == 0
+    assert "on_energy_gained" not in g.history[n:]     # 追加通道不发（防递归）
+    n = len(g.history)
+    assert g._gain_energy(pa, IDX, 0) == 0
+    assert "on_energy_gained" not in g.history[n:]     # n=0 非获得尝试：不发

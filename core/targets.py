@@ -331,10 +331,14 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
     - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
     - {orb_ge: n}              ：控制者当前鬼火 ≥ n（"若你有 2 点鬼火"类）
+    - {assaults_left_ge|le: n} ：控制者剩余出击次数 ≥/≤ n（真意之歌 20200423
+      "若你出击次数大于0……否则……"两段 steps 门控）
     - {字段_not: 值}           ：事件字段 ≠ 给定值（{shikigami_not: null} = 专属牌/非中立，
       "己方式神使用法术牌"排除中立牌用）
     - {player_ext: <key>}      ：控制者 PlayerState.ext[key] 为真值（"本回合若使用过黄金羽"
       = feather_used_turn 记账键；千羽风之舞 step 级条件）
+    - {combat_empty: friendly|enemy}   一方战斗区为空（偷袭"敌方回合结束时战斗区
+      没有式神"类响应条件）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - {shikigami_active: <式神id>}  ：控制者的式神（按数据 id）在场——等级 ≥1、未气绝、
       未离场（[羁绊]触发条件："使用此牌时，对应式神等级不为 0 且未气绝"）
@@ -376,6 +380,20 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
         elif key == "orb_ge":
             if game.state.players[controller].orb < want:
                 return False
+        elif key == "assaults_left_ge":
+            # 控制者剩余出击次数 ≥ n（真意之歌 20200423"若你出击次数大于0"两段 steps 门控）
+            if game.state.players[controller].assaults_left < int(want):
+                return False
+        elif key == "assaults_left_le":
+            # 控制者剩余出击次数 ≤ n（上键的"否则"分支）
+            if game.state.players[controller].assaults_left > int(want):
+                return False
+        elif key == "combat_empty":
+            # 一方战斗区为空（偷袭"敌方回合结束时战斗区没有式神"）：friendly=控制者方、
+            # enemy=对方（响应场景 = 结束回合的敌方）
+            side = controller if want == "friendly" else 1 - controller
+            if game.state.players[side].combat_index is not None:
+                return False
         elif key == "shikigami_in_combat":
             cp = game.state.players[controller]
             ci = cp.combat_index
@@ -413,11 +431,6 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
         elif key == "dice_below_x":
             # 运势判定时"将失败"（觉醒·座敷童子重投门控）：事件当前骰点 < 所需点数 X
             if (int(event.get("dice", 0)) < int(event.get("x", 0))) != bool(want):
-                return False
-        elif key == "combat_empty":
-            # 指定方战斗区为空（偷袭响应"（敌方）战斗区没有式神"）：self=控制者 / opponent=对方
-            cp = game.state.players[controller if want == "self" else 1 - controller]
-            if cp.combat_index is not None:
                 return False
         elif key == "victim_lethal":
             # 事件 victim 将受致命伤害：面板伤害值 ≥ victim 当前生命（on_damage_start

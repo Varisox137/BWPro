@@ -19,7 +19,7 @@
 | 升级 | `upgrade` | 指令；`PlayerState.upgrades` 为本回合剩余升级机会 | ✅ |
 | 等级（勾玉） | `level` | 1 至 `config.max_level`；0 级 = 未在场 | ✅ |
 | 鬼火 | `orb` | 出牌/出击费用；己方回合开始重置，回合间不清零 | ✅ |
-| 能量 | `energy` | `ShikigamiState.energy`（不夜之火批次）：式神级资源，上限 10，气绝保留、气绝中仍可充能（暂定）；[充能] 式神己方回合开始 +1（批次顺序：先倒计时后能量）；爆能/能量出击等支付走 `engine._gain_energy/_spend_energy/_can_pay_energy` 统一入口 | ✅ |
+| 能量 | `energy` | `ShikigamiState.energy`（不夜之火批次）：式神级资源，上限 10，气绝保留；**气绝式神回合开始不充能**（气绝无能力，`_turn_start_charge` 跳过；充能晚于倒计时减少，刚复活当回合即 +1——维护者定案）；[充能] 式神己方回合开始 +1（批次顺序：先倒计时后能量）；爆能/能量出击等支付走 `engine._gain_energy/_spend_energy/_can_pay_energy` 统一入口 | ✅ |
 | 出击 | `assault` | 指令；耗 1 鬼火 + 每回合唯一出击次数（`assaults_left`），驻留战斗区 | ✅ |
 | 移动 | `move` | 指令；入战斗区不攻击；战斗区召唤物被移动 = 直接离场 | ✅ |
 | 战斗区 | combat zone / `combat_index` | 每方至多 1 式神驻留；己方回合开始退回准备区 | ✅ |
@@ -103,7 +103,7 @@
 | 运势 | `luck` | 运势判定 = luck check：块级门控 `EffectBlock.luck`（int=成功才结算 / `{"x":X,"on":"fail"}`=失败才结算）+ 步骤级 `luck_roll` 动作（x/judge/then/force_x1_if）；六时机管线与并行同步推进见 rules.md 第二十七章 | ✅ |
 | 增强 | `enhance` | | 🔧 |
 | 鼓舞/压制 | `basic_boost` / `assault_boosts` | 出击加成：`basic_boost` 动作登记于牌手（`PlayerState.assault_boosts`），下一次出击全部消耗——力量挂攻击后到期强化（战后核销）、护甲获得后保留；战斗牌不消耗。卡牌关键字 `inspire` 为卡面[鼓舞]标记（效果以 basic_boost 结算——桃之夭夭）。压制（负值）🔧 | ✅（鼓舞） |
-| 充能 | `charge` | 实体关键字（不夜之火批次）：己方回合开始时该式神能量 +1（上限 10，批次顺序先倒计时后能量；先天经 `ShikigamiDef.keywords` 入永久类别——小鹿男/烟烟罗/日和坊/镰鼬）；能量见「核心概念」能量行 | ✅ |
+| 充能 | `charge` | 实体关键字（不夜之火批次）：己方回合开始时该式神能量 +1（上限 10，批次顺序先倒计时后能量；气绝者不充能、刚复活当回合即 +1——维护者定案；先天经 `ShikigamiDef.keywords` 入永久类别——小鹿男/烟烟罗/日和坊/镰鼬）；能量见「核心概念」能量行 | ✅ |
 | 追猎 | `hunt` | 有目标的战斗：战斗牌持追猎主动使用时须选择 1 名合法敌方式神为战斗目标（不能选牌手；无合法目标则不能使用）；式神/形态持追猎主动出击可任选合法敌方式神为目标（不选 = 默认无目标战斗）；发起者无远程照常移入战斗区；`launch_attack` 类"使己方式神发起攻击"是无目标战斗，不吃追猎 | ✅ |
 | 贯通 | `piercing` | 对式神的非反击伤害超过其当前生命时，溢出部分改对所属牌手造成。是"伤害原因"的属性：式神持有的贯通仅传导至其战斗伤害与基础/觉醒/形态能力（含形态倒计时、延迟"会"）伤害；卡牌效果伤害不继承，除非步骤显式声明 `piercing: true`（实现：`ExecContext.is_ability` + damage/random_damage 动作缺省继承） | ✅ |
 | 穿刺 | `pierce` | 造成伤害前（伤害事件批次0，即时时机）移除受伤者所有护甲/屏障——与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于任意来源伤害（含非战斗伤害） | ✅ |
@@ -137,7 +137,7 @@
 
 ## 预留机制（译名确认，规则 Phase 5+）
 
-融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；"蓄力"原预留译名 `charge` 与充能冲突，落地时另行命名。）
+融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、赐能 `bless`、烹饪 `cook`、战技 `tactical`、蓄力 `charging`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；蓄力英文名 `charging` 为维护者定案预留，与充能 charge 区分。）
 
 ## 结算与事件
 
@@ -212,11 +212,11 @@
 | 敌方准备区 | `enemy_bench`（目标池） | 敌方全部准备区式神（与 enemy_combat 对应——崩山准备区段） | ✅ |
 | 基础关键字 | `keywords`（ShikigamiDef） | 式神先天关键字：`build_player` 初始化时入 `perm_keywords`（永久类别：气绝不清除、复活自动重新获得——山童先天[贯通]） | ✅ |
 | 生命下限钳制 | `min_health_turn`（ext 键，bump_ext 置位） | "本回合生命不会降到 1 以下"（狂啸）：伤害批次"扣减生命"处把伤害压到至多 当前生命-1，生命已为 1 时压为 0 提前终止（同护甲完全吸收；0 伤不触发受伤能力）；半回合作用域——任一回合开始双方清除（`_start_turn`）；[响应]经 `response` 覆盖块挂 on_damage_start，先于钳制置位 | ✅ |
-| 战斗区空置条件 | `combat_empty`（条件运算符） | {combat_empty: self\|opponent}：指定方战斗区没有式神（旧版偷袭响应"敌方战斗区没有式神"；现无实卡使用，机制保留） | ✅ |
+| 战斗区空置条件 | `combat_empty`（条件运算符） | {combat_empty: friendly\|enemy}：指定方战斗区没有式神（friendly=控制者方 / enemy=对方——取值第二十阶段续统一，原 self/opponent 死分支已删；偷袭 20200423"敌方回合结束时战斗区没有式神"响应、霜风"若敌方战斗区没有式神"step 条件） | ✅ |
 | 回合结束响应排序 | `_suppress_responses`（引擎标志） | 回合结束：on_turn_end 即时能力照常触发，但手牌响应收集被抑制——当前回合方的回合结束延时效果（队列）先结算完，再以合成 on_turn_end 事件收集对方手牌响应（答复3；现无实卡使用，机制保留）；延时效果改变局面（如战斗区变得非空）则响应条件复查不再满足 | ✅ |
 | 响应战斗牌新战斗 | （`_settle_response_card` 分支） | 无当前战斗、或**非"（被）攻击时"时机**触发的响应战斗牌（偷袭"当敌方战斗区式神气绝时"，挂 on_shikigami_defeated + in_combat payload）不插入当前战斗，按完整战斗事件流程发起一次新战斗（正常反击；战斗中触发即嵌套战斗）；攻击方按卡牌所属玩家解析（atk_ref 不取 state.active——响应方可能非当前回合方） | ✅ |
 | 有目标战斗扩展 | `target` 扩展键 `battle` / `optional` | battle=true：非追猎战斗牌的 choose 目标作为战斗目标（同追猎的有目标战斗管线、帷幕不可选——天翔鹤斩"改为攻击一个敌方准备区式神"）；optional=true：合法目标池为空时可不带目标使用（退化为无目标普通战斗） | ✅ |
-| 精确等级生成 | `level`（generate 参数） | int 或 "shikigami"：后者按 shikigami 参数所指式神当前等级精确匹配生成（醉酒当歌羁绊"获得一张茨木童子当前等级的战斗牌"；所指式神未出战/未在场空操作） | ✅ |
+| 精确等级生成 | `level` / `max_level` / `exclude_self`（generate 参数） | level：int 或 "shikigami"：后者按 shikigami 参数所指式神当前等级精确匹配生成（醉酒当歌羁绊"获得一张茨木童子当前等级的战斗牌"；所指式神未出战/未在场空操作）；max_level="source"：生成牌等级 ≤ 来源式神当前等级（吾即正义 20200423"不大于自身等级"）；exclude_self=True：候选池排除与来源同 id 的牌（"其他法术牌"） | ✅ |
 | 战斗牌数值不提取 | `no_extract`（step 参数） | 战斗牌的 buff_power/gain_shield(self) step 缺省提取为战力/一次性护甲在效果步之前结算；标 no_extract 则不提取、按步骤顺序执行（醉酒当歌"先自伤 3 再获得等量护甲"——前置结算会被自己的自伤消耗） | ✅ |
 | 鬼火储存 | `orb_store`（tags） | 觉醒·青行灯：己方在场有已觉醒且觉醒牌含此标记的式神时，回合开始鬼火不清零、改为累加并封顶 4 点（`min(4, orb+gain)`；`_orb_stored` 扫在场式神觉醒牌 tags；结算见 rules.md 回合流程步骤 5 注记） | ✅ |
 | 结算中交互选择 | `pending_choice` / `choose`（指令） / `deck_top_pick`（动作） | 效果结算中挂起等待玩家作答：deck_top_pick 检视牌库顶 count 张选 1 入手再洗牌、重复 times 次（times 可为 {"orb": true} = **1 + 效果结算时剩余鬼火**，0 火仍执行基础 1 次——第十阶段维护者答复；青灯夜谈）；挂起点存 `_suspended` 续点（内存态，随服务端房间的 Game 实例存活——客户端断线不丢，重连 resync 全量 state 带 pending_choice 可续答）、`GameState.pending_choice` 记 {kind, options, remaining}；pending 期间 apply() 只接受 choose 指令；触发式（triggered）块不挂起、空发即弃；联机 sanitize 对非选择方把 options 脱敏为等长占位（room.py），CLI/net 以 `choose <序号>` 作答；回合超时先随机作答到底再走常规超时流程（否则回合无法收尾、计时器不重启——room._on_timeout） | ✅ |
@@ -366,22 +366,24 @@
 | 卡牌变换 | `transform_card`（动作） | 手牌按 card_id 原位变换为 into 指定新卡（count=1；无匹配空操作；新 uid + `_materialize` 快照，继承 mods 中实例标志） | ✅ |
 | 召唤内嵌费用 | `orb_cost`（summon 参数） | 效果内嵌鬼火费用（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常）；足够则先支付（发 on_orb_changed，reason=summon_orb_cost）再召唤 | ✅ |
 | 能量充能/支付 | `gain_energy` / `spend_energy`（动作） | gain_energy：目标式神能量 +amount（封顶 10；`emit_event=False` 抑制事件防自连锁——烟烟罗基础/觉醒"获得能量时再获得"）；spend_energy：目标式神支付 amount 能量，`gate: true` 时支付不足中止当前效果块（AbortBlock——祈晴/滋养/晴雨/同生共死"消耗X能量，……"门控）；均走 `engine._gain_energy`/`_spend_energy` 统一入口（日和坊生命代偿、觉醒·日和坊免单同通道） | ✅ |
-| 能量获得事件 | `on_energy_gained` | 延时时机（queue），payload {player, target, old, new, amount}；实际获得量 > 0 才发出——已达上限获得 0 时不发事件（暂定，questions.md 待确认）；`engine._gain_energy` 统一发出（回合开始充能/卡牌效果同路径） | ✅ |
+| 能量获得事件 | `on_energy_gained` | 延时时机（queue），payload {player, target, old, new, amount}；每次获得能量即发出——已达上限照常发出、amount=0（体系只有"时"时机、无"后"时机，维护者定案）；`engine._gain_energy` 统一发出（回合开始充能/卡牌效果同路径） | ✅ |
 | 爆能X 快照 | `burst_x`（card.mods 键 / 动态数值键） | 爆能X（`energy_cost: "all"`，消耗全部能量、0 能量不可选）出牌时把当前能量快照写入 `card.mods["burst_x"]`，步骤数值 `{"burst_x": true}` 读取（`memo["burst_x"]` 优先，供触发块转写）；本次结算后清除（弹回回手不残留） | ✅ |
 | 移动（动作） | `move`（动作） | [移动]：目标式神战斗区↔准备区 toggle（复用 `_enter_combat`/`_retreat`；气绝/离场不行、眩晕不拦、召唤物退回即离场、尘缚锁定下移入静默无效）；`force=True` 可强制敌方式神入战斗区（羽迹），非强制敌方目标静默跳过；进出各计一次（`ext["move_count_turn"]`，半回合清除；召唤物进场算、气绝离场不算）；机制见 rules.md 第三十章 | ✅ |
 | 鼓舞旗标 | `boost_on_combat_card` / `boost_no_consume` / `inspire_bonus`（动作）/ `boost_flags`（ext 键） | 玩家级出击加成旗标（`PlayerState.ext["boost_flags"]` 条目 {kind, holder?}，三 op 共用 `_add_boost_flag`）：combat_card=战斗牌攻击也获得并消耗出击加成（不夜之舞）；no_consume=出击加成不因攻击消耗（离殇之舞）；inspire_bonus{power,shield}=basic_boost 数值额外加算、可叠加（觉醒·不知火）；`scope="form"` 绑定来源形态、离场清除（`_destroy_form` 同路径），缺省永久 | ✅ |
-| 出击/加成/身材重置 | `reset_assaults` / `clear_boosts` / `reset_stats`（动作） | reset_assaults：控制者出击次数恢复为 1（变化时 emit on_assaults_changed——真意之歌）；clear_boosts：清除目标牌手全部出击加成（targets 无牌手时默认控制者——日出有曜 B）；reset_stats：目标式神力量/生命变为基础值（清临时修正/攻击挂账/turn_power/战力，清护甲破甲，生命直设为变更后上限——非伤害/治疗事件；动态光环不动——日出有曜 A） | ✅ |
+| 出击/加成/身材重置 | `reset_assaults` / `clear_boosts` / `reset_stats`（动作） | reset_assaults：控制者出击次数恢复为 1（变化时 emit on_assaults_changed——真意之歌）；clear_boosts：清除目标牌手全部出击加成——**显式选牌手才生效、选式神空操作、无目标才回退控制者**（日出有曜 B，维护者定案单目标语义）；reset_stats：目标式神力量/生命变为基础值（清临时修正/攻击挂账/turn_power/战力，清护甲破甲，生命直设为变更后上限——非伤害/治疗事件；动态光环不动——日出有曜 A，牌手目标空操作） | ✅ |
 | 能量出击 | `energy_assault`（动作）/ `energy_assault`（ext 键） | 登记玩家级旗标（{holder, cost}——觉醒·镰鼬 on_awakened）：该玩家鬼火与出击次数都为 0 时旗标持有者可消耗 cost 能量出击（`_cmd_assault` 支付管线分支，消耗经 `_spend_energy`——免单/代偿同通道） | ✅ |
 | 形态气绝使用 | `form_death_play`（动作）/ `form_death_play`（ext 键） | 登记玩家级旗标（{holder, energy}——觉醒·小鹿男）：旗标持有者的形态牌在其气绝时可用，使用时消耗 energy 能量并**先复活**持有者再正常结附（`_cmd_play_card` 合法性/支付/复活管线；觉醒常驻玩家级旗标、跨气绝保留） | ✅ |
-| 取消攻击 | `cancel_attack`（动作） | on_before_assault 响应时置事件 `cancel` 旗标，战斗流程在响应结算后检查并终止整场战斗（鸦羽疾走）；已支付鬼火/出击次数不退还（暂定，questions.md 待确认）；非该时机静默跳过 | ✅ |
-| 攻击替换 | `attack_replace`（动作） | on_before_assault 响应时置事件 `attack_replace` 旗标，战斗流程以"对两个随机不重复敌方角色的效果伤害（X=力量+战力含乏力）"替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出（烬染不夜）；目标池含牌手（暂定，questions.md 待确认） | ✅ |
-| 交战改向 | `battle_retarget`（动作） | 登记到当前战斗上下文（`_battle_retarget`）：目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（可含牌手——暂定；排除原交战目标，无另一个敌方角色时落空），仅本次战斗有效（声东击西） | ✅ |
-| 复制使用 | `use_card_copy`（动作） | 凭空生成指定牌复制并自动使用（爆能"{额外使用'三太郎之斧'}"类）：不耗鬼火/瞬发名额/出击次数（暂定，questions.md 待确认）；法术按基础方式效果结算（`_auto_cast_copy` 共用助手）、战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地、照常 emit on_card_played（void/auto）；链式"再额外使用"=并列多个 step | ✅ |
-| 分身复制法术 | `mirror_spell`（动作） | 挂 on_card_played：复制持有者**主动使用**（triggered=active）的法术牌并自动使用一次（基础方式；觉醒牌由数据侧条件 subtype_not: awaken 排除）；choose 目标沿用原选（仍合法）否则随机重选；triggered=auto 天然不连锁（烟烟罗的分身） | ✅ |
-| 召唤继承 | `inherit_stats` / `energy_ratio`（summon 参数） | inherit_stats：召唤物复制来源式神基础+永久身材（不含临时/形态加成——暂定，questions.md 待确认）；energy_ratio：召唤物能量 = floor（来源能量 × 比例）（烟烟罗的分身 0.5） | ✅ |
+| 取消攻击 | `cancel_attack`（动作） | on_before_assault 响应时置事件 `cancel` 旗标，战斗流程在响应结算后检查并终止整场战斗（鸦羽疾走）；已支付鬼火/出击次数不退还（维护者定案）；非该时机静默跳过 | ✅ |
+| 攻击替换 | `attack_replace`（动作） | on_before_assault 响应时置事件 `attack_replace` 旗标，战斗流程以"对两个随机不重复敌方角色的效果伤害（X=力量+战力含乏力）"替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出（烬染不夜）；目标池可含牌手、伤害为**非战斗伤害**（能力造成、非法术——kind=effect，不触发[吸血]；均维护者定案） | ✅ |
+| 交战改向 | `battle_retarget`（动作） | 登记到当前战斗上下文（`_battle_retarget`）：目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（可含牌手——维护者定案；排除原交战目标，无另一个敌方角色时落空），仅本次战斗有效（声东击西） | ✅ |
+| 复制使用 | `use_card_copy`（动作） | 凭空生成指定牌复制并自动使用（爆能"{额外使用'三太郎之斧'}"类）：不耗鬼火/瞬发名额/出击次数（维护者定案）；法术按基础方式效果结算（`_auto_cast_copy` 共用助手）、战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地、照常 emit on_card_played（void/auto）；链式"再额外使用"=并列多个 step | ✅ |
+| 分身复制法术 | `mirror_spell`（动作） | 挂 on_card_played：复制持有者使用的法术牌并自动使用一次（基础方式）——**主动/响应/自动使用均触发**（维护者定案；引擎 `mirror_copy` 标记防递归，复制自身不连锁；觉醒牌由数据侧条件 subtype_not: awaken 排除）；choose 目标沿用原选（仍合法）否则随机重选（烟烟罗的分身） | ✅ |
+| 召唤继承 | `inherit_stats` / `energy_ratio`（summon 参数） | inherit_stats：召唤物复制来源**全部当前身材**（eff_power/max_health/health 快照为静态永久修正——含持续性/光环增益与受伤不满生命，不进 dyn 缓存；维护者定案，烟烟罗的分身）；energy_ratio：召唤物能量 = floor（来源能量 × 比例）（0.5） | ✅ |
 | 恢复至满 | `full`（heal 参数） | full=True：恢复至生命上限（沐浴阳光"恢复所有生命"；走 Game.heal 管线，实际治疗量按损失计） | ✅ |
 | 持续眩晕施加 | `lasting` / `until_event`（stun 参数） | lasting=True：持续眩晕条目（不随回合结束移除）；until_event=事件名列表：事件涉及看护式神（施加时来源，条目记 watch/watch_id）即经 `_release_lasting_stuns` 解除；`apply_seq`/`apply_uid` 记施加时点（emit_seq/卡牌 uid）防施加牌自身事件自解除（英雄无畏"直到鸦天狗使用牌、攻击或气绝"；气绝走现有清理）；条目结构见「关键词」眩晕行 | ✅ |
 | 能量光环 | `energy_power` / `ids_energy_power`（stat_aura kind） | energy_power{divisor}：持有者每有 divisor 点能量 +1 力量（人多势众"镰鼬每有2能量便获得1力量"，scope=form）；ids_energy_power{ids,divisor}：ids 匹配实体每有 divisor 点能量 +1 力量（烟雾缭绕对分身，scope=form）；连续型读取时求值，同 stat_aura 既有通道 | ✅ |
 | 形态要求光环 | `require_holder_form`（card_aura 参数） | 额外要求来源式神当前结附形态光环才生效（`_match_auras` 读取时动态判定——萤草 20200327"若萤草上有形态"）；scope=form/ability 清理同路径 | ✅ |
 | 关键字目标过滤 | `keyword`（TargetSpec 过滤键） | 按是否持有指定关键字过滤式神目标（三类关键字列表多重集任一含即算——沐浴阳光/冬日暖阳"己方的[充能]式神"）；spec_pool_refs 统一校验 | ✅ |
 | 能量/形态条件键 | `holder_has_form` / `energy_ge` / `pre_play_form`（条件运算符） | {holder_has_form: bool}=能力持有者当前是否结附形态（萤草 20200327）；{energy_ge: n}=能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）；{pre_play_form: bool}=on_card_played 新 payload——该牌使用前所属式神是否已结附形态（打出前快照：形态牌先结附后发事件，收集时求值的 holder_has_form 对该牌恒真） | ✅ |
+| 出击次数条件 | `assaults_left_ge` / `assaults_left_le`（条件运算符） | {assaults_left_ge: n} / {assaults_left_le: n}：控制者剩余出击次数 ≥/≤ n（真意之歌 20200423"若你出击次数大于0……否则……"两段 step 分流门控） | ✅ |
+| 置入牌库位置 | `position`（generate 参数） | position="random"：生成牌随机插入牌库、**不洗牌**（"置入牌库"原版语义，维护者定案——同心协力"将一张此牌的复制置入你的牌库"）；缺省按 zone 既有语义（deck=库底） | ✅ |

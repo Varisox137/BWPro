@@ -1164,3 +1164,57 @@ def test_revenge_echo_enemy_spell_data(gdb):
     assert pa.shikigami[2].health == 2 and pa.shikigami[2].shield == -1
     assert pb.shikigami[2].health == 3                        # 复制：施法者清姬受 1 伤
     assert any(c.id == 10011401 for c in pb.hand)             # B 侧条件回手（目标有破甲）
+
+
+# ==========================================================================
+# 记仇响应·自动使用法术 / 偷袭型 on_turn_end + combat_empty（维护者定案批）
+# ==========================================================================
+
+COPY_SRC_JC = 10010164   # 假"额外使用"源牌（use_card_copy 自动使用目标法术）
+REV_SPELL_E = 10010463   # 单体敌方式神 2 伤法术（自动使用时 choose 必命中 A 式神）
+TOU_XI = 10010165        # 假偷袭 20200423 型响应牌
+
+
+def test_revenge_echo_response_triggers_on_auto_use(db, make_game):
+    """记仇响应对自动使用的法术同样触发（维护者定案确认现状：响应收集不按 triggered
+    过滤——_collect_responses 只按 when/condition 匹配 on_card_played）：敌方
+    use_card_copy 凭空自动使用的单体己方式神法术命中时，记仇照常自动使用并注册监听；
+    本次触发法术本身不被复制（监听注册在其结算之后）。"""
+    _jichou(db)
+    db.cards[COPY_SRC_JC] = F.card(
+        COPY_SRC_JC, shikigami=YAO, cost=1, level=1, token=True,
+        steps=[F.Step(op="use_card_copy", card_id=REV_SPELL_E)])
+    db.cards[REV_SPELL_E] = F.card(
+        REV_SPELL_E, shikigami=YAO, cost=1, level=1, token=True,
+        target=T(kind="choose", pool="enemy_shikigami"), steps=[F.dmg(2)])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    pb.shikigami[YAO_IDX].level = 1
+    give(g, 0, JI_CHOU)
+    pass_turns(g)                                           # → B 回合
+    pb.orb = 9
+    play(g, 1, COPY_SRC_JC)   # 凭空自动使用 REV_SPELL_E：choose 随机选 A 式神
+    assert any(c.id == JI_CHOU for c in pa.graveyard)       # 响应触发：记仇已使用
+    assert len(pa.shikigami[BAI_IDX].delayed) == 1          # 注册监听
+    assert sum(s.max_health - s.health for s in pa.shikigami) == 2  # 本次不复制：仅原 2 伤
+
+
+def test_response_on_turn_end_combat_empty(db, make_game):
+    """偷袭 20200423 型响应：when=on_turn_end + condition {player: opponent,
+    combat_empty: enemy}——敌方回合结束且其战斗区无式神时自动使用（新条件键
+    combat_empty：friendly=控制者方/enemy=对方战斗区为空）；战斗区有人则不触发。"""
+    db.cards[TOU_XI] = F.card(
+        TOU_XI, shikigami=BAI, cost=1, level=1, token=True, keywords=["trigger"],
+        steps=[F.Step(op="draw", count=1)],
+        response=F.block(F.Step(op="draw", count=1), when="on_turn_end",
+                         condition={"player": "opponent", "combat_empty": "enemy"}))
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    give(g, 0, TOU_XI)
+    pass_turns(g, 2)                                        # B 回合结束（战斗区空）→ 响应
+    assert any(c.id == TOU_XI for c in pa.graveyard)
+    give(g, 0, TOU_XI)
+    move(g, 1, 0)                                           # B 回合内 B0 进战斗区
+    pass_turns(g, 1)                                        # B 回合结束：战斗区有人 → 不响应
+    assert any(c.id == TOU_XI for c in pa.hand)
+    assert not any(c.id == TOU_XI for c in pa.graveyard[1:])

@@ -16,3 +16,17 @@ versions:
           - {op: gain_energy, amount: 1,
              target: {kind: all, pool: friendly_shikigami, keyword: charge}}
       text: "恢复己方有[充能]的式神所有生命并使他们各获得1点能量。"
+    - date: 20200423
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        # 恢复己方有[充能]的式神所有生命（heal full: true 恢复至满，走正常治疗事件）
+        # 并各获得 1 点能量（TargetSpec keyword 过滤键：三列表多重集任一含 charge 即算）
+        steps:
+          - {op: heal, full: true,
+             target: {kind: all, pool: friendly_shikigami, keyword: charge}}
+          - {op: gain_energy, amount: 1,
+             target: {kind: all, pool: friendly_shikigami, keyword: charge}}
+      text: "[瞬发]。恢复己方有[充能]的式神所有生命并使他们各获得1点能量。"

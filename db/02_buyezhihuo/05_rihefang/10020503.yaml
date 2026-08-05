@@ -24,3 +24,22 @@ versions:
           - {op: damage, amount: 1, target: {kind: context, key: target}}
           - {op: stun, target: {kind: context, key: target}}
       text: "对一个式神造成1点伤害并[眩晕]它。[响应]：{当一个敌方式神升级时，额外消耗3能量，自动对该式神使用。}"
+    - date: 20200423
+      card_type: spell
+      rarity: SR
+      level: 2
+      keywords: [trigger]
+      target: {kind: choose, pool: any_shikigami}  # 一个式神（含己方）
+      effects:
+        steps:
+          - {op: damage, amount: 1}
+          - {op: stun}
+      response:
+        # [响应]：当一个敌方式神升级时，自动对该式神使用（20200423 起不再额外耗能）；
+        # on_upgrade payload target=升级式神 Ref，响应步显式取事件目标
+        when: on_upgrade
+        condition: {player: opponent}
+        steps:
+          - {op: damage, amount: 1, target: {kind: context, key: target}}
+          - {op: stun, target: {kind: context, key: target}}
+      text: "对一个式神造成1点伤害并[眩晕]它。[响应]：{当一个敌方式神升级时，自动对该式神使用。}"

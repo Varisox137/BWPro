@@ -750,14 +750,17 @@ class Game:
         old = s.energy
         s.energy = min(10, s.energy + n)
         gained = s.energy - old
+        # 满上限（实际获得 0）仍发"时"时机（维护者定案，对照满生命治疗）：amount=0、old==new；
+        # 能量体系只有"时"（on_energy_gained）没有"后"（无 on_after_energy_gained，
+        # 对照 on_heal/on_after_heal 双时机——此处注释注明差异）
+        if emit_event and (gained > 0 or n > 0):
+            pi0 = self.state.players.index(p)
+            self.emit("on_energy_gained", player=pi0,
+                      target=Ref(player=pi0, shikigami=i),
+                      old=old, new=s.energy, amount=gained)
         if gained > 0:
             self._settle(f"【能量】{self.db.shikigami[s.id].name} 能量 {old}→{s.energy}")
             self._refresh_stat_auras()  # 能量变化点：动态能量光环缓存重算
-            if emit_event:
-                pi = self.state.players.index(p)
-                self.emit("on_energy_gained", player=pi,
-                          target=Ref(player=pi, shikigami=i),
-                          old=old, new=s.energy, amount=gained)
         return gained
 
     def _energy_free_available(self, pi: int) -> bool:
@@ -1248,7 +1251,8 @@ class Game:
                           play_from: str = "hand", play_method: str | None = None,
                           triggered: str = "active",
                           chosen: list[Ref] | None = None,
-                          pre_play_form: bool = False) -> None:
+                          pre_play_form: bool = False,
+                          extra: dict | None = None) -> None:
         """使用后1（延时时机 on_card_played）统一发点。
 
         payload 携带卡牌静态信息（card_type/subtype/shikigami——触发块条件匹配用，
@@ -1271,7 +1275,8 @@ class Game:
                   golden_feather=("golden_feather" in cdef.tags),
                   play_from=play_from, play_method=play_method, triggered=triggered,
                   card_revealed=bool(played is not None and played.mods.get("revealed")),
-                  affected_refs=list(affected or ()), chosen=list(chosen or ()))
+                  affected_refs=list(affected or ()), chosen=list(chosen or ()),
+                  **(extra or {}))
 
     def _queue_awaken_stats(self, si: int, cdef: CardDef, card: CardInstance) -> None:
         """觉醒牌的永久身材增益（awaken_power/awaken_health）：法术觉醒使用事件流程
@@ -2446,7 +2451,10 @@ class Game:
         气绝式神能量保留且继续充能（等级 >= 1 即充，不看 in_play——in_play 含未气绝；
         召唤物离场 despawned 不充）。"""
         for i, s in enumerate(p.shikigami):
-            if s.level >= 1 and not s.despawned and self._has_keyword(s, "charge"):
+            # 气绝式神能量保留但不充能（维护者定案：气绝无能力）；复活批次先于本批次，
+            # 刚复活的式神当回合立即 +1；召唤物离场 despawned 不充
+            if (s.level >= 1 and not s.defeated and not s.despawned
+                    and self._has_keyword(s, "charge")):
                 self._gain_energy(p, i, 1)
 
     # ---------- 式神级倒计时框架（一名式神至多 1 个倒计时能力，新注册替换旧的） ----------
