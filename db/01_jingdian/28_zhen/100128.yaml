@@ -14,12 +14,4 @@ versions:
         steps:
           - {op: gain_shield, amount: 2, kind: fragile, target: {kind: all, pool: enemy_player}}
           - {op: bump_ext, key: zhen_proc, target: {kind: self}}
-      abilities:
-        # 觉醒·鸩牌面"使鸩的倒计时-2"——挂"觉醒前"（on_before_awaken，能力替换前），
-        # 对被替换掉的（旧）能力倒计时 -2，归零则先结算旧倒计时效果，再完成觉醒替换
-        # （妖琴师同构；鸩仅一张觉醒牌，二次使用由觉醒能力的同名块接续）
-        - when: on_before_awaken
-          condition: {player: self, target_shikigami: self}
-          steps:
-            - {op: countdown_delta, amount: -2, target: {kind: self}}
       text: "[倒计时2]：{使敌方牌手获得2破甲。}"

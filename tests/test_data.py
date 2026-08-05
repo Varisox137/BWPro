@@ -876,22 +876,23 @@ def test_convert_damage_net_effect(real_game):
 # ---------- 05 觉醒·鸩：x 累加 ----------
 
 def test_awaken_ext_scaling_countdown(real_game):
-    """觉醒：牌面-2 挂觉醒前（on_before_awaken，对旧倒计时生效——基础归零给 2 破甲、
-    x 累加）+ 永久 +1 力量；觉醒倒计时（initial 2，来源=觉醒牌 id）给 2+x 破甲
-    （x=基础+觉醒生效合计，觉醒后继续累加）。"""
+    """觉醒：牌面-2 为效果步（先替换觉醒能力、后对刚注册的新觉醒倒计时 -2——归零即触发
+    觉醒能力，x 累加）+ 永久 +1 力量；觉醒倒计时（initial 2，来源=觉醒牌 id）给 2+x
+    破甲（x=基础+觉醒生效合计，觉醒后继续累加）。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     s = pa.shikigami[IDX]
     pass_turns(g, 2)                          # 基础归零：pb -2，zhen_proc 1，重置 2
     assert pb.shield == -2
-    play(g, 0, ZHEN_AWAKEN)                   # 觉醒前 -2：基础再归零，pb -4，zhen_proc 2
-    assert pb.shield == -4
+    play(g, 0, ZHEN_AWAKEN)                   # 替换后 -2：新觉醒倒计时归零，pb -(2+1)=-3
+    assert pb.shield == -5
     assert s.awakened == ZHEN_AWAKEN
     assert s.perm_power == 1
     assert s.countdown == 2 and s.countdown_source == ZHEN_AWAKEN
+    assert s.ext["zhen_proc"] == 2            # 觉醒能力已生效一次（先给破甲再计数）
     pass_turns(g, 4)                          # A 第 4 回合开始觉醒归零（期间 B 回合开始清过 pb 破甲）
     assert pb.shield == -4                    # 2 + x(2) = 4
     assert s.ext["zhen_proc"] == 3            # 觉醒生效继续累加
-    assert pa.ext["countdown_history"] == [ZHEN, ZHEN, ZHEN_AWAKEN]
+    assert pa.ext["countdown_history"] == [ZHEN, ZHEN_AWAKEN, ZHEN_AWAKEN]
 
 
 # ---------- 06 致命诱惑：条件吸血 ----------

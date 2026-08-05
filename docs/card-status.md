@@ -172,12 +172,12 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 静态倒计时块（initial 2）：敌方牌手 2 破甲 + bump_ext 累计 x（zhen_proc，气绝不清）+ 觉醒·鸩牌面-2 挂 on_before_awaken 块（妖琴师同构，替换前对旧倒计时生效） |
+| 基础能力 | ✅ | 静态倒计时块（initial 2）：敌方牌手 2 破甲 + bump_ext 累计 x（zhen_proc，气绝不清） |
 | 01 鸩羽 | ✅ | battle_immunity 带 Step.condition：战斗开始时以 {defender: 被攻击者} 求值（defender_has_fragile） |
 | 02 鸩羽苏生 | ✅ | countdown_delta -2（可立即归零）+ 抽 1 |
 | 03 寂寥心象 | ✅ | 20191212 改"敌方式神本回合第一次获得破甲 → 鸩倒计时-1"（turn_mark 门控不变；删牌手分支与"等量破甲"支路） |
 | 04 毒蚀 | ✅ | convert_damage 战斗作用域：已按维护者答复(5)——伤害事件生成点全额转化为等量破甲（护甲不再先吸收；不再视为伤害）；响应挂 on_before_assault（条件显式式神 id，响应收集不带 holder） |
-| 05 觉醒·鸩 | ✅ | 20191212 使用效果改"使鸩的倒计时-2"（挂 on_before_awaken，见基础能力行）；x = 基础+觉醒倒计时生效合计（维护者答复 9），{base: 2, ext: zhen_proc} 动态数值；觉醒倒计时来源=觉醒牌 id，先给破甲再计数 |
+| 05 觉醒·鸩 | ✅ | 20191212 使用效果"使鸩的倒计时-2"= 效果步（维护者定案：先替换觉醒能力、后对刚注册的新倒计时 -2，归零即触发觉醒能力）；x = 基础+觉醒倒计时生效合计（维护者答复 9），{base: 2, ext: zhen_proc} 动态数值；觉醒倒计时来源=觉醒牌 id，先给破甲再计数 |
 | 06 致命诱惑 | ✅ | 战斗牌 grant_keyword step = 战斗作用域条件授予（吸血；战斗终止点移除） |
 | 07 碧羽散华 | ✅ | 双快照：20191212"对有破甲的角色才转化"（新锚点 ext fragile_to_damage_if——获得破甲前判定受害者 shield<0）/ 20200120（best）无条件转化（fragile_to_damage）；牌手沿用"其任一式神持标记"语义；与毒蚀同场经 converted 标记防循环 |
 | 08 毒之华 | ✅ | temp_grants 绑本次战斗；"一半生命"=受伤后当前生命向下取整（{half_health_of: victim}）；on_damage payload 补 battle 键供战斗绑定触发匹配 |
