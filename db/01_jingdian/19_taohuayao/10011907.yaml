@@ -1,9 +1,9 @@
 id: 10011907
 name: 桃华灼灼
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SSR
       level: 3
@@ -11,9 +11,7 @@ versions:
       conditional_keywords:
         - {keyword: fast, if_alive: true}  # 若桃花妖未气绝，此牌得[瞬发]
       effects:
-        # 复活己方所有式神，然后使所有己方式神获得[迅捷]（复活来源=桃花妖→连锁基础
-        # 赋益；第二步在复活结算后解析，新生复活者同样获得迅捷）
+        # 复活己方所有式神（复活来源=桃花妖→连锁基础赋益）
         steps:
           - {op: revive, target: {kind: all, pool: friendly_defeated}}
-          - {op: grant_keyword, keyword: haste, target: {kind: all, pool: friendly_shikigami}}
-      text: "若桃花妖未气绝，此牌得[瞬发]。复活己方所有式神，然后使所有己方式神获得[迅捷]。（桃花妖气绝时可用）"
+      text: "若桃花妖未气绝，此牌得[瞬发]。复活己方所有式神。（桃花妖气绝时可用）"

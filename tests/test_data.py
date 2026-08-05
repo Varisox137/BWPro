@@ -1493,8 +1493,8 @@ def test_awaken_trigger_only_when_defeated(real_game):
 THY = 100119     # 桃花妖（双方 0 号位）
 XINXI = 10011901          # 桃之馨息
 HUAXIN = 10011902         # 花信风
-YAOYAO = 10011903         # 桃之夭夭
-FENGSHI = 10011904        # 丰实
+YAOYAO = 10011904         # 桃之夭夭（id 按 raw 卡序重排，原 03）
+FENGSHI = 10011903        # 丰实（id 按 raw 卡序重排，原 04）
 CHUNFENG = 10011905       # 桃语春风
 SHENGKAI = 10011906       # 盛开
 ZHUOZHUO = 10011907       # 桃华灼灼
@@ -1549,9 +1549,9 @@ def test_lethal_immunity_once_then_form_removed(real_game):
     assert s1.defeated
 
 
-def test_mass_revive_haste(real_game):
-    """群体复活（桃华灼灼）：复活己方所有式神并全员获得[迅捷]；桃花妖未气绝时
-    [瞬发]、气绝时可用。"""
+def test_mass_revive(real_game):
+    """群体复活（桃华灼灼 20191212）：复活己方所有式神（无全员迅捷——现代版效果已去）；
+    桃花妖未气绝时[瞬发]、气绝时可用。"""
     g, pa, pb = _game(real_game, THY_TEAM, {IDX: 3, 1: 1, 2: 1})
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
     g.deal_to_shikigami(Ref(player=0, shikigami=2), 99, None)
@@ -1559,7 +1559,7 @@ def test_mass_revive_haste(real_game):
     play(g, 0, ZHUOZHUO)                      # 桃花妖未气绝：[瞬发]首张免费
     assert pa.orb == orb
     assert not pa.shikigami[1].defeated and not pa.shikigami[2].defeated
-    assert all("haste" in s.one_shot_keywords for s in pa.shikigami if s.in_play)
+    assert all("haste" not in s.one_shot_keywords for s in pa.shikigami if s.in_play)
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
     play(g, 0, ZHUOZHUO)                      # 气绝时可用：桃花妖自身一并复活
@@ -1567,11 +1567,13 @@ def test_mass_revive_haste(real_game):
 
 
 def test_awaken_heal_revive_buff_perm(real_game):
-    """觉醒·桃花妖：赋益改为永久 +2/+2（替换基础能力）；满血治疗（实际恢复 0）
-    仍触发；复活赋益与既有永久增益累加。"""
+    """觉醒·桃花妖（20191212 去使用效果治疗 5）：赋益改为永久 +2/+2（替换基础能力）；
+    满血治疗（实际恢复 0）仍触发；复活赋益与既有永久增益累加。"""
     g, pa, pb = _game(real_game, THY_TEAM, {IDX: 3, 1: 1})
     s1 = pa.shikigami[1]
-    play(g, 0, THY_AWAKEN, target=Ref(player=0, shikigami=1))   # 进场治疗 5（满血）
+    play(g, 0, THY_AWAKEN)                            # 无使用效果（仅能力替换）
+    assert pa.shikigami[IDX].awakened == THY_AWAKEN
+    play(g, 0, XINXI, target=Ref(player=0, shikigami=1))   # 桃之馨息治疗（满血）触发赋益
     assert (s1.perm_power, s1.perm_health) == (2, 2)
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
     play(g, 0, CHUNFENG, target=Ref(player=0, shikigami=1))     # 复活再赋益

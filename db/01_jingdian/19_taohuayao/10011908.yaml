@@ -1,20 +1,16 @@
 id: 10011908
 name: 觉醒·桃花妖
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
       awaken_power: 2   # +2/+1：永久身材增益，"觉醒后"延时时机之后授予
       awaken_health: 1
       rarity: SR
       level: 3
-      target: {kind: choose, pool: any_character}
-      effects:
-        # 为一个角色恢复5生命
-        steps:
-          - {op: heal, amount: 5}
+      effects: {steps: []}
       abilities:
         # [觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命}
         # （基础能力的永久强化版，替换非叠加）
@@ -28,4 +24,4 @@ versions:
           steps:
             - {op: buff_power, amount: 2, perm: true, target: {kind: context, key: shikigami}}
             - {op: buff_health, amount: 2, perm: true, target: {kind: context, key: shikigami}}
-      text: "为一个角色恢复5生命。[觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命。}"
+      text: "[觉醒]：{桃花妖治疗或复活己方式神时，使该式神永久获得2力量及2生命。}"

@@ -1,16 +1,22 @@
 id: 10011903
-name: 桃之夭夭
+name: 丰实
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      rarity: SR
+    - date: 20191212
+      card_type: form
+      rarity: R
       level: 2
-      cost: 0
-      keywords: [inspire]
+      form_power: 3
+      form_health: 7
       effects:
-        # 不消耗鬼火（cost: 0）。[鼓舞]：{获得+2战力与+2护甲}——basic_boost 出击加成通道
+        # 进场：随机为一个己方受伤式神恢复3点生命（friendly_injured 池 + random 1）
         steps:
-          - {op: basic_boost, power: 2, shield: 2}
-      text: "不消耗鬼火。[鼓舞]：{获得+2战力与+2护甲。}"
+          - {op: heal, amount: 3, target: {kind: all, pool: friendly_injured, random: 1}}
+      abilities:
+        # 己方回合开始时：同进场效果（每轮重新解析重新随机）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: heal, amount: 3, target: {kind: all, pool: friendly_injured, random: 1}}
+      text: "进场和己方回合开始时，随机为一个己方受伤式神恢复3点生命。"

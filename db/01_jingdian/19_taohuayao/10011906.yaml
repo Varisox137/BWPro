@@ -1,9 +1,9 @@
 id: 10011906
 name: 盛开
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 3
@@ -26,4 +26,4 @@ versions:
               count: 3
               steps:
                 - {op: heal, amount: 2, target: {kind: all, pool: friendly_injured, random: 1}}
-      text: "进场和己方回合开始时，随机为一个己方受伤式神恢复2生命，将此过程再重复2次。"
+      text: "进场和己方回合开始时，随机为一个己方受伤式神恢复2点生命，将此过程再重复2次。"

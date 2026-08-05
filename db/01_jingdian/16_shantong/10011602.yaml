@@ -12,3 +12,14 @@ versions:
           # 永久力量增益非战力：战斗牌流程按常规效果步执行（不提取为本次战斗战力）
           - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
       text: 山童永久获得1力量。
+    - date: 20200327
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        steps:
+          # 战斗牌身材 -1 护甲（提取为负数一次性护甲，结算经 _change_shield 转破甲
+          # 并保留——腐坏直拳先例）；永久力量增益非战力：按常规效果步执行
+          - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+          - {op: gain_shield, amount: -1, target: {kind: self}}
+      text: 山童永久获得1力量。

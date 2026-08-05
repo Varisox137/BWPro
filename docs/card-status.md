@@ -205,7 +205,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 先天[贯通]：ShikigamiDef.keywords → perm_keywords（永久类别，气绝不清除） |
 | 01 鲁莽 | ✅ | 己方回合开始 launch_attack 自动攻击（不耗火/次数；气绝/未在场空操作） |
-| 02 怪力 | ✅ | 永久 +1 力量按常规效果步执行（战斗牌流程不再误提取为本次战斗战力） |
+| 02 怪力 | ✅ | 双版本：20191212 +0/+0 / 20200327 +0/-1（战斗牌负护甲=1 破甲，腐坏直拳先例）；永久 +1 力量按常规效果步执行（战斗牌流程不再误提取为本次战斗战力） |
 | 03 怒吼 | ✅ | 全体己方式神临时 +1 力量（20191212：自身不再永久——raw 未标"永久"按默认临时，questions.md 待确认2） |
 | 04 笨拙 | ✅ | 双快照（20191212 形态 6/9 best / 20200120 形态 5/9）；power_override：敌方回合力量覆写为 0（覆写全部加成层），己方回合开始解除 |
 | 05 碎岩 | ✅ | +2/+2；20191212 去[穿刺]改伪关键字 pierce_armor——伤害事件批次 0 同穿刺时点处理，仅清零被攻击者正值护甲、不触屏障（terminology「穿刺」条登记） |
@@ -309,12 +309,12 @@
 | 基础能力 | ✅ | on_heal {source_shikigami: self, target_side: friendly, target_kind: shikigami} / on_shikigami_revived {source_shikigami: self, shikigami_side: friendly} → 临时 +1 力量（revive op 补 source/reason="effect" 传递；倒计时复活 source=None 不触发） |
 | 01 桃之馨息 | ✅ | choose any_character heal 5 |
 | 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，命中才洗牌库、未命中不洗——第十三阶段定案）；边界：选择池 friendly_shikigami 限在场式神（气绝/未升级式神暂不可选） |
-| 03 桃之夭夭 | ✅ | cost 0 + keywords [inspire]（鼓舞关键字登记）；basic_boost +2/+2 出击加成 |
-| 04 丰实 | ✅ | 形态 3/7：进场与 on_turn_start {player: self} → heal 3，friendly_injured 新池 + TargetSpec {random: 1} 新键（rng.sample，repeat 每轮重解析重随机） |
+| 03 丰实 | ✅ | id 按 raw 卡序重排（原 04）：形态 3/7：进场与 on_turn_start {player: self} → heal 3，friendly_injured 池 + TargetSpec {random: 1} 键（rng.sample，repeat 每轮重解析重随机） |
+| 04 桃之夭夭 | ✅ | id 按 raw 卡序重排（原 03）：cost 0 + keywords [inspire]（鼓舞关键字登记）；basic_boost +2/+2 出击加成 |
 | 05 桃语春风 | ✅ | choose friendly_defeated 新池 revive + grant_keyword haste（迅捷天然一次性类别） |
 | 06 盛开 | ✅ | 形态 4/9：进场与 on_turn_start → repeat 3 × heal 2（friendly_injured + random 1） |
-| 07 桃华灼灼 | ✅ | conditional_keywords {keyword: fast, if_alive: true}（未气绝得[瞬发]）+ playable_when_defeated；revive friendly_defeated 全体 → grant_keyword haste 全体（第二步在复活后解析，复活者同获迅捷） |
-| 08 觉醒·桃花妖 | ✅ | +2/+1；choose any_character heal 5；同基础两 trigger 改 perm +2/+2 |
+| 07 桃华灼灼 | ✅ | 20191212 回退去"全员[迅捷]"：conditional_keywords {keyword: fast, if_alive: true}（未气绝得[瞬发]）+ playable_when_defeated；revive friendly_defeated 全体 |
+| 08 觉醒·桃花妖 | ✅ | 20191212 回退去使用效果（原"为一个角色恢复5生命"）：+2/+1；同基础两 trigger 改 perm +2/+2 |
 | 51 桃红簇簇 | ✅ | 协战子选项（桃花妖侧形态 3/6；21 繁花似锦主牌待樱花妖 100403）：on_enter_combat/on_leave_combat 新事件 {player: self} → heal 2 context shikigami（治疗来源=桃花妖→连锁基础赋益）；on_damage_start {victim_side: friendly, victim_kind: shikigami, victim_lethal: true, victim_in_combat: false} → grant_immunity kind=all scope=once 新作用域（消耗式，_combat_immune/_effect_immune 命中即移除）→ destroy_form self；羁绊 step 级 condition {shikigami_active: 100403} 门控恒 False（樱花妖未加入） |
 
 ## 判官（100110）
@@ -429,7 +429,7 @@
 | 基础能力 | ✅ | 受到伤害时获得等量破甲（on_damage {victim_shikigami: self} → {event: amount}） |
 | 01 腐坏直拳 | ✅ | transfer_fragile 新 op：自己破甲清零、等量转移到被攻击的式神（"确定攻击目标后转移"以战斗牌效果步时序表达） |
 | 02 瘴疠体质 | ✅ | 双版本：20191212 形态 2/9 / 20200227（best）3/9：对其造成战斗伤害的式神获得 3 破甲 |
-| 03 毒气喷泉 | ✅ | 双版本：20191212（best）"获得等同于跳跳弟弟破甲的破甲"（{fragile_of: self} gain_shield 敌方全式神，来源保留破甲）/ 20200227 改转移语义（transfer_fragile 敌方全体，每名全量后来源清零）；增强 = 己方回合开始战斗区有式神则此牌得[瞬发] |
+| 03 毒气喷泉 | ✅ | 双版本：20191212"获得等同于跳跳弟弟破甲的破甲"（{fragile_of: self} gain_shield 敌方全式神，来源保留破甲）/ 20200227（best，维护者指定）改转移语义（transfer_fragile 敌方全体，每名全量后来源清零）；增强 = 己方回合开始战斗区有式神则此牌得[瞬发] |
 | 04 肿胀体质 | ✅ | 双版本：20191212 形态 3/14 / 20200227（best）4/14：keep_fragile 式神级破甲保留（形态结附期间破甲不在己方回合开始清除，形态离场解除）——20191212 回退去"进场 2 破甲" |
 | 05 觉醒·跳跳弟弟 | ✅ | 20191212 回退：+1/+1（原 +1/+3）；受伤获得等量破甲并永久 +1 生命 |
 | 06 甜蜜的负担 | ✅ | [瞬发][响应]"当你被攻击时自动使用此牌"：目标转移按守护先例——响应插入移入战斗区，无目标战斗重读战斗区驻留者（零新引擎代码） |
