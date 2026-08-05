@@ -1,9 +1,22 @@
 id: 10012408
 name: 余音
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
+      card_type: spell
+      rarity: SR
+      level: 3
+      effects:
+        # 妖琴师倒计时-3，重复一次该效果（合计两次；首次 -3 归零则触发倒计时效果并
+        # 循环重置，第二次继续作用于重置后的倒计时）
+        steps:
+          - op: repeat
+            count: 2
+            steps:
+              - {op: countdown_delta, amount: -3, target: {kind: self}}
+      text: 使妖琴师的[倒计时]-3，重复一次该效果。
+    - date: 20200120
       card_type: spell
       rarity: SR
       level: 3

@@ -322,9 +322,9 @@ YQS = 100124      # 妖琴师（双方 0 号位）
 RUZHENG = 10012401   # 觉醒·入阵歌
 JINGXIAN = 10012402  # 惊弦
 DAHEZOU = 10012403   # 大合奏
-SHENYUE = 10012404   # 觉醒·神乐歌
+SHENYUE = 10012406   # 觉醒·神乐歌
 FENGMO = 10012405    # 疯魔琴心
-MOYIN = 10012406     # 魔音扰心
+MOYIN = 10012404     # 魔音扰心
 ZHENHUN = 10012407   # 觉醒·镇魂歌
 YUYIN = 10012408     # 余音
 
@@ -405,8 +405,8 @@ def test_awaken_countdown_minus_before_replacement(real_game):
     play(g, 0, RUZHENG)                       # 基础归零治疗，替换为入阵歌
     assert pa.ext["countdown_history"] == [YQS]
     enemy_total = sum(x.health for x in pb.shikigami) + pb.health
-    play(g, 0, ZHENHUN)                       # 觉醒前：入阵歌倒计时 -3 → 归零 5 伤
-    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 5
+    play(g, 0, ZHENHUN)                       # 觉醒前：入阵歌倒计时 -3 → 归零 4 伤
+    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 4
     assert s.awakened == ZHENHUN
     assert s.countdown == 3 and s.countdown_source == ZHENHUN
     assert pa.ext["countdown_history"] == [YQS, RUZHENG]
@@ -424,17 +424,17 @@ def test_replay_countdown_history_order(real_game):
     pa.orb = 9                                # 回合开始已重置鬼火：重设便于核算
     enemy_total = sum(x.health for x in pb.shikigami) + pb.health
     play(g, 0, RUZHENG)                       # 觉醒前：基础归零治疗 23→26（history 追加 YQS）
-    play(g, 0, ZHENHUN)                       # 觉醒前：入阵歌归零 5 伤（history 追加 RUZHENG）
+    play(g, 0, ZHENHUN)                       # 觉醒前：入阵歌归零 4 伤（history 追加 RUZHENG）
     assert pa.ext["countdown_history"] == [YQS, YQS, RUZHENG]
     assert pa.health == 26
-    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 5
+    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 4
     assert pa.orb == 7                        # 9 - 2（镇魂歌未归零，无 +1 火）
     log_before = len(g.state.log)
-    play(g, 0, DAHEZOU)                       # 瞬发免费
-    # 依次重放：基础治疗（26→29）、入阵歌（敌方再 -5）；镇魂歌不在 history 不重放
+    play(g, 0, DAHEZOU)                       # 20191212 版无[瞬发]：收 1 火
+    # 依次重放：基础治疗（26→29）、入阵歌（敌方再 -4）；镇魂歌不在 history 不重放
     assert pa.health == 29
-    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 10
-    assert pa.orb == 7
+    assert enemy_total - (sum(x.health for x in pb.shikigami) + pb.health) == 8
+    assert pa.orb == 6
     replay_logs = [m for m in g.state.log[log_before:] if "重放" in m]
     ids = [next(sid for sid in (YQS, RUZHENG, ZHENHUN) if f"来源 {sid}）" in m)
            for m in replay_logs]
@@ -506,19 +506,18 @@ def test_countdown_delta_immediate_trigger_and_noop(real_game):
     assert pb.shikigami[3].countdown is None
 
 
-def test_countdown_delta_both_sides(real_game):
-    """疯魔琴心：敌方式神 +2（无倒计时能力者 -0），妖琴师 -2（可立即归零）。"""
+def test_countdown_reset_all_enemies(real_game):
+    """疯魔琴心（20191212 版 countdown_delta reset）：重置所有敌方角色的倒计时为
+    初始值；无倒计时能力者空操作，己方式神不受影响。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
     pb.shikigami[1].level = 1
     g._register_ability_countdown(1, 1)       # B 鸩倒计时 2
+    pb.shikigami[1].countdown = 1             # 模拟已被扣减
     s = pa.shikigami[IDX]
-    pa.health = 20
-    play(g, 0, FENGMO, target=Ref(player=1, shikigami=1))
-    assert pb.shikigami[1].countdown == 4     # 2 + 2
-    assert pa.health == 23                    # 自身 2-2=0：归零治疗
-    assert s.countdown == 3
-    play(g, 0, FENGMO, target=Ref(player=1, shikigami=3))       # B 妖刀姬无倒计时：+2 修正 -0
-    assert pb.shikigami[3].countdown is None
+    play(g, 0, FENGMO)
+    assert pb.shikigami[1].countdown == 2     # 重置回初始值
+    assert pb.shikigami[3].countdown is None  # 妖刀姬无倒计时能力：空操作
+    assert s.countdown == 2                   # 自身不受影响（initial 3，开局批次已 -1）
 
 
 def test_countdown_delta_allies_minus(real_game):
@@ -552,10 +551,10 @@ def test_countdown_delta_allies_minus(real_game):
 YJZT = 100126     # 以津真天（双方 0 号位）
 JYHS = 10012601   # 金羽焕生
 FZW = 10012602    # 风之舞
-JLFY = 10012603   # 金风流羽
-BKRS = 10012604   # 不可饶恕
-SGNS = 10012605   # 射怪鸟事
-YJZT_AWAKEN = 10012606  # 觉醒·以津真天
+JLFY = 10012605   # 金风流羽
+BKRS = 10012606   # 不可饶恕
+SGNS = 10012604   # 射怪鸟事
+YJZT_AWAKEN = 10012603  # 觉醒·以津真天
 QYFW = 10012607   # 千羽风之舞
 LLZY = 10012608   # 流浪之羽
 FEATHER = 10012651  # 黄金羽（token）
@@ -625,14 +624,18 @@ def test_wind_dance_enhance(real_game):
 # ---------- 03 金风流羽：视为黄金羽 / 条件免费 ----------
 
 def test_free_cost_after_tag_accounting(real_game):
-    """未用过黄金羽：正常 1 火，且自身视为黄金羽记账；用过之后：不耗火。"""
+    """20191212 版金风流羽不再"视为黄金羽"（不记账 feather_used_turn）：未用过
+    黄金羽正常 1 火；本回合用过黄金羽后不耗火。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
-    play(g, 0, JLFY)                          # 1 火（费用先于记账计算，自身不免自身）
+    play(g, 0, JLFY)                          # 1 火
     assert pa.orb == 8
-    assert pa.ext["feather_used_turn"] == 1   # tags golden_feather：视为黄金羽
+    assert "feather_used_turn" not in pa.ext  # 不再视为黄金羽：不记账
+    play(g, 0, FEATHER)                       # 真黄金羽（瞬发首张免费）记账
+    assert pa.orb == 8
+    assert pa.ext["feather_used_turn"] == 1
     play(g, 0, JLFY)                          # 本回合已用过黄金羽：0 火
     assert pa.orb == 8
-    assert pa.ext["feather_used_turn"] == 2
+    assert pa.ext["feather_used_turn"] == 1
 
 
 # ---------- 04 不可饶恕：回合级战斗免疫 ----------
@@ -713,27 +716,32 @@ def test_method_requires_awaken_gating(real_game):
 # ---------- 07 千羽风之舞：战斗牌其它效果步 ----------
 
 def test_conditional_step_by_player_ext(real_game):
-    """战斗牌其它效果步的 step 级条件（player_ext=feather_used_turn）：本回合未用过
-    黄金羽仅 +3/+3 不生成金风流羽；用过则战斗流程执行其它效果步置入手牌。"""
+    """千羽风之舞（transform_card，step 级条件 player_ext=feather_used_turn）：本回合
+    未用过黄金羽仅 +3/+3 不变牌；用过则将手牌中一张'黄金羽'原位变成'金风流羽'
+    （手牌无黄金羽为空操作）。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
-    play(g, 0, QYFW)
+    give(g, 0, FEATHER)
+    play(g, 0, QYFW)                          # 未用过：不发动变换
+    assert any(c.id == FEATHER for c in pa.hand)
     assert not any(c.id == JLFY for c in pa.hand)
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
-    play(g, 0, FEATHER)
+    give(g, 0, FEATHER)                       # 留在手牌的黄金羽
+    play(g, 0, FEATHER)                       # 本回合用过黄金羽
     play(g, 0, QYFW)
+    assert not any(c.id == FEATHER for c in pa.hand)   # 手牌黄金羽被变成金风流羽
     assert any(c.id == JLFY for c in pa.hand)
 
 
 # ---------- 08 流浪之羽：形态触发随机伤害 ----------
 
 def test_random_damage_on_tagged_play(real_game):
-    """结附期间使用黄金羽：随机对两个敌方式神各造成 2 点伤害（合计 4）。"""
+    """结附期间使用黄金羽：对所有敌方式神各造成 2 点伤害（20191212 版，合计 8）。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
     play(g, 0, LLZY)
     before = sum(s.health for s in pb.shikigami)
     play(g, 0, FEATHER)
     after = sum(s.health for s in pb.shikigami)
-    assert before - after == 4
+    assert before - after == 8
 
 
 # ==========================================================================
@@ -868,21 +876,22 @@ def test_convert_damage_net_effect(real_game):
 # ---------- 05 觉醒·鸩：x 累加 ----------
 
 def test_awaken_ext_scaling_countdown(real_game):
-    """觉醒：效果 2 破甲 + 永久 +1 力量；觉醒倒计时（initial 2，来源=觉醒牌 id）给
-    2+x 破甲（x=基础+觉醒生效合计，觉醒后继续累加）。"""
+    """觉醒：牌面-2 挂觉醒前（on_before_awaken，对旧倒计时生效——基础归零给 2 破甲、
+    x 累加）+ 永久 +1 力量；觉醒倒计时（initial 2，来源=觉醒牌 id）给 2+x 破甲
+    （x=基础+觉醒生效合计，觉醒后继续累加）。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     s = pa.shikigami[IDX]
     pass_turns(g, 2)                          # 基础归零：pb -2，zhen_proc 1，重置 2
     assert pb.shield == -2
-    play(g, 0, ZHEN_AWAKEN)                   # 效果：pb 再 -2
+    play(g, 0, ZHEN_AWAKEN)                   # 觉醒前 -2：基础再归零，pb -4，zhen_proc 2
     assert pb.shield == -4
     assert s.awakened == ZHEN_AWAKEN
     assert s.perm_power == 1
     assert s.countdown == 2 and s.countdown_source == ZHEN_AWAKEN
     pass_turns(g, 4)                          # A 第 4 回合开始觉醒归零（期间 B 回合开始清过 pb 破甲）
-    assert pb.shield == -3                    # 2 + x(1) = 3
-    assert s.ext["zhen_proc"] == 2            # 觉醒生效继续累加
-    assert pa.ext["countdown_history"] == [ZHEN, ZHEN_AWAKEN]
+    assert pb.shield == -4                    # 2 + x(2) = 4
+    assert s.ext["zhen_proc"] == 3            # 觉醒生效继续累加
+    assert pa.ext["countdown_history"] == [ZHEN, ZHEN, ZHEN_AWAKEN]
 
 
 # ---------- 06 致命诱惑：条件吸血 ----------
@@ -912,7 +921,8 @@ def test_lifesteal_denied_without_fragile(real_game):
 # ---------- 07 碧羽散华：获得破甲→伤害 ----------
 
 def test_fragile_gain_converts_to_damage(real_game):
-    """结附期间：敌方式神获得破甲转化为等量伤害；形态离场（替换）后标记清除。"""
+    """结附期间：敌方式神获得破甲转化为等量伤害；形态离场（替换）后标记清除。
+    （20200120 版无条件转化；默认环境=最新）"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 3})
     play(g, 0, BYSH)
     wolf = pb.shikigami[1]
@@ -928,6 +938,22 @@ def test_fragile_gain_converts_to_damage(real_game):
     assert pb.health == h and pb.shield == sh - 2      # 牌手也不再转化
 
 
+def test_fragile_gain_converts_only_if_already_fragile(gdb):
+    """碧羽散华 20191212 版（fragile_to_damage_if 锚点）：仅对本已持有破甲的角色
+    转化——无破甲者正常获得破甲；已有破甲者改为受到等量伤害（转化伤害仍吃既有
+    破甲增伤）。"""
+    db = gdb.at_date(20191212)
+    g = F.mk_game(db, seed=1, team=ZHEN_TEAM)
+    pa, pb = F.battle_setup(g, {IDX: 3})
+    play(g, 0, BYSH)
+    wolf = pb.shikigami[1]
+    wolf.base_health = wolf.health = 20       # 撑住转化伤害便于观察净效果
+    g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile")
+    assert wolf.shield == -3 and wolf.health == 20     # 无破甲者：正常获得，不转化
+    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile")
+    assert wolf.shield == 0 and wolf.health == 15      # 已有破甲：2 破甲 → 2+3 伤害，破甲随受伤清除
+
+
 # ---------- 08 毒之华：半血破甲 ----------
 
 def test_half_health_fragile(real_game):
@@ -940,10 +966,11 @@ def test_half_health_fragile(real_game):
     assert pa.shikigami[IDX].health == 4      # 反击 1（+0/+0 无护甲）
 
 
-# ---------- 03 寂寥心象：每回合合计一次 ----------
+# ---------- 03 寂寥心象：本回合第一次 ----------
 
 def test_fragile_countdown_once_per_turn_gate(real_game):
-    """敌方式神获得破甲 → 鸩倒计时 -2（可立即归零）；同回合后续事件被门控（合计一次）。"""
+    """20191212 版：敌方式神本回合第一次获得破甲 → 鸩倒计时 -1（开局批次后为 1，
+    立即归零）；同回合后续事件被门控。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     play(g, 0, JLXX)
     s = pa.shikigami[IDX]
@@ -951,48 +978,66 @@ def test_fragile_countdown_once_per_turn_gate(real_game):
     g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile")
     wolf = pb.shikigami[1]
     assert wolf.shield == -3                  # 事件本身的 3 破甲
-    assert pb.shield == -2                    # 倒计时 1-2 归零：牌手 2 破甲
+    assert pb.shield == -2                    # 倒计时 1-1 归零：牌手 2 破甲
     assert s.countdown == 2                   # 归零后循环重置
     assert s.ext["zhen_proc"] == 1
-    # 门控：同回合敌方式神再获破甲（妖刀姬）与牌手归零破甲均不再触发
+    # 门控：同回合敌方式神再获破甲不再触发
     g._change_shield(Ref(player=1, shikigami=2), 2, "test", kind="fragile")
     assert s.countdown == 2
     assert pb.shikigami[2].shield == -2
 
 
-def test_player_fragile_mirror_combat(real_game):
-    """敌方牌手获得破甲 → 敌方战斗区式神获得等量破甲；次回合门控清除可再触发。"""
+def test_player_fragile_not_triggered(real_game):
+    """20191212 版：敌方牌手获得破甲不触发寂寥心象（无牌手分支、不耗门控），
+    同回合敌方式神获得破甲仍可触发。"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 2})
     play(g, 0, JLXX)
-    move(g, 1, 1)                             # B 白狼入战斗区
     s = pa.shikigami[IDX]
     g._change_shield(Ref(player=1), 2, "test", kind="fragile")
-    assert pb.shikigami[1].shield == -2       # 等量（2）破甲
-    assert s.countdown == 1                   # 牌手分支不动倒计时
-    pass_turns(g, 1)                          # B 回合开始：双方门控清除（B 方破甲/护甲也清除）
-    move(g, 1, 1)                             # B 回合开始白狼已被延时移回，重新入战斗区
-    g._change_shield(Ref(player=1), 2, "test", kind="fragile")
-    assert pb.shikigami[1].shield == -2       # 再次触发（被清除后重新 -2）
+    assert pb.shield == -2                    # 牌手破甲本身生效
+    assert s.countdown == 1                   # 不触发：倒计时不动、门控未耗
+    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile")
+    assert s.countdown == 2                   # 式神分支触发：1-1 归零后循环重置
+    assert pb.shield == -4                    # 归零再给牌手 2 破甲
 
 
 # ==========================================================================
 # 萤草（100127）基础能力（原 test_yingcao.py 基础能力部分）
 #
-# 覆盖：萤草基础能力（使用与当前形态不同的形态牌时抽 1——当前无萤草形态牌，
-# 测试库临时注册两张验证机制对任意形态牌生效，见文件头 gdb 覆盖）。
+# 覆盖：萤草基础能力（20191212 版——萤草的形态牌获得[瞬发]且使用时抽一张牌；
+# [瞬发]经 scope=ability 卡牌光环在能力进场时登记，气绝移除、复活重注册）。
 # 队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]。
 # ==========================================================================
 
-def test_draw_on_different_form_attach(real_game):
-    """使用与当前形态不同的形态牌 → 抽 1；同形态再结附不触发。"""
+def test_form_fast_and_draw_on_form_play(real_game):
+    """萤草的形态牌获得[瞬发]（能力光环）且使用时抽一张牌——同形态再结附也触发。"""
     g, pa, pb = _game(real_game, YC_TEAM, {IDX: 1, 1: 1})
-    hand = len(pa.hand)
-    play(g, 0, YC_FORM_A)                     # 无当前形态 → 不同 → 抽 1
-    assert len(pa.hand) == hand + 1
-    play(g, 0, YC_FORM_A)                     # 同形态（id 相同）→ 不抽
-    assert len(pa.hand) == hand + 1
-    play(g, 0, YC_FORM_B)                     # 不同形态 → 抽 1
-    assert len(pa.hand) == hand + 2
+    hand, orb = len(pa.hand), pa.orb
+    play(g, 0, YC_FORM_A)                     # 光环瞬发：首张免费；抽 1
+    assert pa.orb == orb and len(pa.hand) == hand + 1
+    play(g, 0, YC_FORM_A)                     # 同形态也抽；瞬发名额已用，收 1 火
+    assert pa.orb == orb - 1 and len(pa.hand) == hand + 2
+
+
+def test_form_aura_removed_on_defeat(real_game):
+    """能力离场/进场：觉醒·萤草的通配形态光环随萤草气绝移除（其他式神的形态牌
+    不再瞬发），复活时能力进场重新注册（恢复瞬发）。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 3, 2: 2})
+    play(g, 0, 10012708)                      # 觉醒·萤草
+    orb = pa.orb
+    play(g, 0, 10010203)                      # 兵俑形态：通配光环瞬发 → 免费
+    assert pa.orb == orb
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g._drain_queue()
+    assert pa.shikigami[IDX].defeated
+    orb = pa.orb
+    play(g, 0, 10010205)                      # 光环已随能力离场移除：正常收 1 火
+    assert pa.orb == orb - 1
+    pa.shikigami[IDX].revive_countdown = 1
+    pass_turns(g, 2)                          # A 回合开始复活：能力进场重新登记光环
+    orb = pa.orb
+    play(g, 0, 10010205)                      # 恢复瞬发（本回合首张瞬发免费）
+    assert pa.orb == orb
 
 
 # ==========================================================================
@@ -1812,9 +1857,11 @@ def test_deck_out_burn_instead_of_loss(real_game):
 # ==========================================================================
 # 萤草（100127）卡牌（第十四阶段；基础能力测试见前段）
 #
-# 覆盖：吸取（选目标伤害+鼓舞）、治愈之光/勇气之光/安魂之光（进场+回合开始循环）、
-# 萤火点点（双择+有形态增强）、闪烁（本回合力量覆写+条件瞬发）、觉醒（形态进场
-# 效果再触发）、虹彩（三形态置入手牌）。测试形态 A/B 为 gdb 覆盖的衍生号段卡。
+# 覆盖：吸取（选目标伤害+鼓舞）、治愈之光/勇气之光/安魂之光（入场+回合开始循环）、
+# 萤火点点（双择+有形态增强）、闪烁（本回合力量覆写+响应）、觉醒·萤草（通配形态
+# 光环——己方式神的形态牌获得[瞬发]且使用时抽 1）、虹彩（三形态置入手牌）。
+# 形态牌自带[瞬发]已移除，由基础/觉醒能力的光环统一授予（测试形态 A/B 为 gdb
+# 覆盖的衍生号段卡）。
 # ==========================================================================
 
 def test_choose_target_damage_with_boost_shield(real_game):
@@ -1858,51 +1905,48 @@ def test_dual_play_methods_and_turn_start_enhance(real_game):
 
 
 def test_form_basic_boost_power_and_shield(real_game):
-    """勇气之光：[瞬发]进场与己方回合开始 [鼓舞]+1战力/+2护甲。"""
+    """勇气之光：进场与己方回合开始 [鼓舞]+2战力（[瞬发]由萤草能力光环授予）。"""
     g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
     play(g, 0, 10012704)
-    assert pa.assault_boosts == [{"power": 1, "shield": 2}]
+    assert pa.assault_boosts == [{"power": 2, "shield": 0}]
     pass_turns(g, 2)
-    assert pa.assault_boosts == [{"power": 1, "shield": 2}] * 2
+    assert pa.assault_boosts == [{"power": 2, "shield": 0}] * 2
 
 
 def test_power_zero_turn_via_response(real_game):
     """闪烁（主动使用）：敌方战斗区的式神本回合力量变为 0（任一回合开始解除）；
-    己方战斗区无人时无[瞬发]、正常收费。"""
+    无[瞬发]（20191212 版去掉增强瞬发），正常收费。"""
     g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
     move(g, 1, 0)
     b0 = pb.shikigami[0]                      # 萤草 2/5
     orb = pa.orb
     play(g, 0, 10012705)
-    assert pa.orb == orb - 1                  # 己方战斗区无人：条件瞬发不生效
+    assert pa.orb == orb - 1                  # 无瞬发：正常收 1 火
     assert b0.eff_power == 0
     pass_turns(g, 1)                          # B 回合开始：覆写解除
     assert b0.eff_power == 2
 
 
-def test_awaken_retriggers_form_enter_on_form_play(real_game):
-    """觉醒·萤草：+1/+1 永久；进场触发当前形态的进场效果；[觉醒]当萤草使用形态牌时
-    触发其进场效果并抽一张牌。"""
-    g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
+def test_awaken_form_aura_wildcard(real_game):
+    """觉醒·萤草：+2/+2 永久；[觉醒]己方式神的形态牌获得[瞬发]且使用时抽一张牌
+    （通配光环——含萤草以外式神的形态牌）。"""
+    g, pa, pb = _game(real_game, YC_TEAM, {0: 3, 2: 2})
     s = pa.shikigami[IDX]
-    play(g, 0, YC_FORM_B)                     # 结附测试形态 B：进场 +2 护甲
-    assert s.shield == 2
-    play(g, 0, 10012706)                      # 觉醒进场：形态 B 进场效果再触发
-    assert s.shield == 4
-    assert (s.perm_power, s.perm_health) == (1, 1) and s.awakened == 10012706
-    hand = len(pa.hand)
-    play(g, 0, YC_FORM_A)                     # 换形态：触发进场（空白）+ 抽 1
-    assert len(pa.hand) == hand + 1
+    play(g, 0, 10012708)
+    assert (s.perm_power, s.perm_health) == (2, 2) and s.awakened == 10012708
+    hand, orb = len(pa.hand), pa.orb
+    play(g, 0, 10010203)                      # 兵俑形态：通配光环瞬发免费 + 抽 1
+    assert pa.orb == orb and len(pa.hand) == hand + 1
 
 
 def test_form_gain_orb_and_generate_three_forms(real_game):
-    """安魂之光：[瞬发]进场获得 1 鬼火并为牌手恢复 2；虹彩：三种形态牌置入手牌。"""
+    """安魂之光：进场获得 1 鬼火（瞬发由能力光环授予）；虹彩：三种形态牌置入手牌。"""
     g, pa, pb = _game(real_game, YC_TEAM, {0: 3})
     pa.health = 25
     orb = pa.orb
-    play(g, 0, 10012707)                      # 瞬发首张免费 + 1 鬼火
-    assert pa.orb == orb + 1 and pa.health == 27
-    play(g, 0, 10012708)                      # 瞬发名额已用，1 火
+    play(g, 0, 10012706)                      # 光环瞬发首张免费 + 1 鬼火（不再回血）
+    assert pa.orb == orb + 1 and pa.health == 25
+    play(g, 0, 10012707)                      # 瞬发名额已用，1 火
     assert pa.orb == orb
     ids = {c.id for c in pa.hand}
-    assert {10012702, 10012704, 10012707} <= ids
+    assert {10012702, 10012704, 10012706} <= ids

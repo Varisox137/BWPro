@@ -1,9 +1,9 @@
 id: 10012607
 name: 千羽风之舞
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SR
       level: 3
@@ -11,6 +11,8 @@ versions:
         steps:
           - {op: buff_power, amount: 3, target: {kind: self}}
           - {op: gain_shield, amount: 3, target: {kind: self}}
-          # 其它效果步：战斗牌流程在战力/护甲提取后执行（step 级条件——本回合用过黄金羽）
-          - {op: generate, card_id: 10012603, condition: {player_ext: feather_used_turn}}
-      text: "本回合若使用过‘黄金羽’，将一张‘金风流羽’置于你的手牌。"
+          # 其它效果步：战斗牌流程在战力/护甲提取后执行（step 级条件——本回合用过黄金羽）。
+          # 20191212 公测版：手牌中一张黄金羽原位变成金风流羽（无匹配空操作）
+          - {op: transform_card, card_id: 10012651, into: 10012605, count: 1,
+             condition: {player_ext: feather_used_turn}}
+      text: "本回合若使用过‘黄金羽’，将你手牌中一张‘黄金羽’变成‘金风流羽’。"

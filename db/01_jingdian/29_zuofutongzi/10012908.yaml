@@ -1,21 +1,22 @@
 id: 10012908
-name: 福满乾坤
+name: 觉醒·座敷童子
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
-      rarity: SSR
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 3
+      rarity: SR
       level: 3
-      play_condition: {luck_success_total_ge: 12}
       effects:
-        # 三段效果依次对双方生效（己方先）：生命变30（set_health 非治疗、不触发治疗时机）
-        # → 抽手牌直至十张 → +3鬼火；draw {hand_to: n}/side 与 gain_orb side 为契约外扩展
-        steps:
-          - {op: set_health, amount: 30, target: {kind: all, pool: self_player}}
-          - {op: set_health, amount: 30, target: {kind: all, pool: enemy_player}}
-          - {op: draw, count: {hand_to: 10}, side: self}
-          - {op: draw, count: {hand_to: 10}, side: opponent}
-          - {op: gain_orb, amount: 3, side: self}
-          - {op: gain_orb, amount: 3, side: opponent}
-      text: "[条件]：{本局游戏双方[运势]判定成功12次}。使双方生命变为30，抽手牌直至十张，获得3点鬼火。"
+        steps: []
+      abilities:
+        # 判定时（即时时机）：判定者=己方且将失败（dice_below_x：当前骰点 < 所需 X，
+        # targets.py 条件算子）重投一次；强制 6 不豁免本流程（规则要点）
+        - when: on_luck_judge
+          condition: {judge: self, dice_below_x: true}
+          steps:
+            - {op: luck_reroll}
+      text: "[觉醒]：{每次[运势]判定中，当你[运势]判定失败时，重投一次。}"

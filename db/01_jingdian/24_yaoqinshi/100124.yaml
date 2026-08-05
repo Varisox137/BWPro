@@ -1,14 +1,15 @@
 id: 100124
 name: 妖琴师
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 3
       health: 4
       ability:
-        # 静态倒计时能力块（对局开始/升至1级/复活时注册）：[倒计时3] 己方所有角色恢复3生命
+        # 静态倒计时能力块（对局开始/升至1级/复活时注册）：[倒计时3] 为所有己方角色
+        # 恢复3点生命（含牌手，故拆 friendly_shikigami + self_player 两步）
         countdown: 3
         steps:
           - {op: heal, amount: 3, target: {kind: all, pool: friendly_shikigami}}
@@ -16,9 +17,9 @@ versions:
       abilities:
         # 使用妖琴师的觉醒法术牌时：妖琴师倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
         # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
-        # （第十阶段维护者答复；旧语义为 on_card_played 替换后对新倒计时 -3，已推翻）
+        # （第十阶段维护者答复"能力不变"：raw 文本虽挪入各觉醒牌使用效果，语义不变）
         - when: on_before_awaken
           condition: {player: self, target_shikigami: self}
           steps:
             - {op: countdown_delta, amount: -3, target: {kind: self}}
-      text: "[倒计时3]：{为己方所有角色恢复3生命}。当你使用妖琴师的[觉醒]法术牌时，使妖琴师的倒计时-3。"
+      text: "[倒计时3]：{为所有己方角色恢复3点生命}。"

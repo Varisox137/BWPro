@@ -1,25 +1,16 @@
 id: 10012707
-name: 安魂之光
+name: 虹彩
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
-      rarity: SR
+    - date: 20191212
+      card_type: spell
+      rarity: SSR
       level: 3
-      form_power: 4
-      form_health: 5
-      keywords: [fast]
       effects:
-        # 进场你获得1点鬼火，为你恢复2点生命
+        # 将萤草的三种形态牌置入手牌（治愈之光/勇气之光/安魂之光；生成点统一快照）
         steps:
-          - {op: gain_orb, amount: 1}
-          - {op: heal, amount: 2, target: {kind: all, pool: self_player}}
-      abilities:
-        # 己方回合开始时你获得1点鬼火，为你恢复2点生命
-        - when: on_turn_start
-          condition: {player: self}
-          steps:
-            - {op: gain_orb, amount: 1}
-            - {op: heal, amount: 2, target: {kind: all, pool: self_player}}
-      text: "[瞬发]。进场和己方回合开始时，你获得1点鬼火，为你恢复2点生命。"
+          - {op: generate, card_id: 10012702}
+          - {op: generate, card_id: 10012704}
+          - {op: generate, card_id: 10012706}
+      text: 将萤草的三种形态牌置入手牌。

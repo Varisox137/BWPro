@@ -13,6 +13,7 @@ EVENT_TIMING 登记各事件的默认类别；EffectBlock.timing 可为单卡覆
 
 CORE_EVENTS: frozenset[str] = frozenset({
     "on_game_start",        # 对局开始（游戏开始阶段能力，0 级式神也可触发）
+    "on_ability_enter",     # 能力进场（对局开始/升至 1 级/复活/觉醒替换/变形还原）{player, shikigami, target: Ref}
     "on_turn_start",        # 任一玩家回合开始 {player}
     "on_turn_end",          # 任一玩家回合结束 {player}
     "on_card_played",       # 卡牌使用后 {player, uid}

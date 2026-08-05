@@ -1,15 +1,17 @@
 id: 100125
 name: 一目连
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 2
       health: 6
       ability:
+        # 一目连的形态牌离场或被消灭时触发其倒计时效果。
+        # 早期文本不规范（只写"被消灭时"），能力不变（离场或消灭均触发，维护者定案）
         when: on_form_destroyed
         condition: {target_shikigami: self}
         steps:
           - {op: trigger_form_countdown}
-      text: 一目连的形态牌离场或被消灭时触发[倒计时]效果。
+      text: 一目连的形态牌被消灭时会触发[倒计时]效果。

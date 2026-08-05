@@ -1,13 +1,12 @@
 id: 10012703
 name: 萤火点点
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1
-      keywords: [fast]
       effects:
         steps: []  # 双择效果见 methods；enhance 修饰对两个方式同样生效
       methods:
@@ -29,4 +28,4 @@ versions:
           condition: {player: self, shikigami_has_form: 100127}
           steps:
             - {op: add_mod, to: persistent, key: enhance}
-      text: "[瞬发]。使一个己方式神+1生命或对一个敌方式神造成1点伤害。[增强]：{己方回合开始时，若萤草上有形态，此牌效果+1。}"
+      text: "使一个己方式神+1生命或对一个敌方式神造成1点伤害。[增强]：{己方回合开始时，若萤草上有形态，此牌效果+1。}"

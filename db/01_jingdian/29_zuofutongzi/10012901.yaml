@@ -1,25 +1,18 @@
 id: 10012901
 name: 金运大吉
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 1
       form_power: 3
       form_health: 6
-      effects:
-        steps:
-          # 进场：双方牌手各做运势4判定（judge=both，当前回合玩家先）；
-          # 判定者各自抽1——then 步以判定者为效果归属结算（需引擎侧确认该语义）
-          - op: luck_roll
-            x: 4
-            judge: both
-            then:
-              - {op: draw, count: 1}
+      effects: {steps: []}
       abilities:
-        # 己方回合开始时：同上
+        # 己方回合开始时：双方牌手各做运势4判定（judge=both，当前回合玩家先）；
+        # 判定者各自抽1——then 步以判定者为效果归属结算（需引擎侧确认该语义）
         - when: on_turn_start
           condition: {player: self}
           steps:
@@ -28,4 +21,4 @@ versions:
               judge: both
               then:
                 - {op: draw, count: 1}
-      text: "进场和己方回合开始时，双方牌手[运势4]：{抽一张牌。}"
+      text: "己方回合开始时，双方牌手[运势4]：{抽一张牌。}"

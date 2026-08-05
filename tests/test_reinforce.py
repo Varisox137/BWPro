@@ -23,7 +23,7 @@ LJHY = 10012652   # 鎏金幻羽（以津真天侧子卡）
 SBDY = 10012851   # 蚀刃毒羽（鸩侧子卡）
 LSGH = 10010151   # 灵矢贯虹（白狼侧子卡）
 FEATHER = 10012651  # 黄金羽 token
-JLFY = 10012603   # 金风流羽
+JLFY = 10012605   # 金风流羽
 
 TEAM = [100124, 100125, 100126, 100128]        # 妖琴师/一目连/以津真天/鸩（全苍叶）
 TEAM_WOLF = [100101, 100102, 100123, 100104]   # 白狼/兵俑/妖刀姬/大天狗
@@ -107,7 +107,7 @@ def test_play_choice_full_flow_and_main_exiled(make_game):
     assert not any(c.id == HYJX for c in pa.hand)         # token 已使用离手
     assert any(c.id == HYJX for c in pa.graveyard)
     assert len(pa.shikigami[YQS].delayed) == 1            # 延迟能力已登记
-    forms = {10012501, 10012502, 10012504, 10012506, 10012507, 10012508}
+    forms = {10012501, 10012502, 10012503, 10012504, 10012507, 10012508}
     assert any(c.id in forms for c in pa.hand)            # 羁绊：一目连形态牌入手
     assert len(pa.hand) == hand_before + 1  # give 主牌+生成 token+打出=抵消，羁绊 +1
 
@@ -116,7 +116,7 @@ def test_bond_gated_by_shikigami_active(make_game, gdb):
     """羁绊触发条件（维护者确认）：使用此牌时对应式神在场（等级 ≥1 且未气绝）。
     幻音绝弦（一目连 0 级/气绝不生成形态牌）、风韵雅乐（妖琴师气绝不生成觉醒牌）、
     涅槃业火（青行灯不在队不生成明灯；在场则生成）。"""
-    forms = {10012501, 10012502, 10012504, 10012506, 10012507, 10012508}
+    forms = {10012501, 10012502, 10012503, 10012504, 10012507, 10012508}
 
     def _form_count(pa):
         return sum(1 for c in pa.hand if c.id in forms)
@@ -135,7 +135,7 @@ def test_bond_gated_by_shikigami_active(make_game, gdb):
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 2})
     pa.shikigami[YQS].health = 0
     g.check_defeated(Ref(player=0, shikigami=YQS))
-    awakens = {10012401, 10012404, 10012407}
+    awakens = {10012401, 10012406, 10012407}
     before = sum(1 for c in pa.hand if c.id in awakens)   # 起手可能已含可构筑觉醒牌
     _play_reinforce(g, 0, FYZ, 1)
     assert sum(1 for c in pa.hand if c.id in awakens) == before
@@ -227,7 +227,7 @@ def test_replay_countdown_history(make_game):
     log_before = len(g.state.log)
     _play_reinforce(g, 0, FYZ, 1)             # 风韵雅乐（战斗牌：一目连出击）
     assert pb.health == 21                    # 重放投射 3（→24）+ 一目连 3 攻（→21）
-    awakens = {10012401, 10012404, 10012407}
+    awakens = {10012401, 10012406, 10012407}
     assert any(c.id in awakens for c in pa.hand)              # 羁绊：妖琴师觉醒牌入手
     assert any("重放" in m for m in g.state.log[log_before:])
 
@@ -274,7 +274,7 @@ def test_playable_when_defeated_gates_methods(make_game):
     """维护者答复(11)联动：已觉醒的以津真天气绝后，经鎏金幻羽修饰的黄金羽只能打
     敌方牌手（气绝时觉醒能力不在场，snipe 使用方式门控拒绝、无需选择目标）。"""
     g, pa, pb = _game(make_game, levels={YQS: 2, YML: 1, YJZT: 2, ZHEN: 2})
-    play(g, 0, 10012606)                      # 觉醒·以津真天
+    play(g, 0, 10012603)                      # 觉醒·以津真天
     f1 = give(g, 0, FEATHER)
     _play_reinforce(g, 0, ZMZY, 0)            # 鎏金幻羽修饰（气绝时可用）
     g.deal_to_shikigami(Ref(player=0, shikigami=YJZT), 99, None)

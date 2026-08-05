@@ -1,21 +1,22 @@
 id: 10012606
-name: 觉醒·以津真天
+name: 不可饶恕
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      subtype: awaken
-      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-      awaken_health: 1
-      rarity: SSR
+    - date: 20191212
+      card_type: form
+      rarity: SR
       level: 2
+      form_power: 4
+      form_health: 6
       effects:
         steps: []
       abilities:
-        # 觉醒倒计时（initial 1，来源=觉醒牌 id，替换基础倒计时）：[倒计时1] 黄金羽入手；
-        # "黄金羽可以敌方式神为目标"由黄金羽的使用方式（requires_awaken 门控）表达
-        - countdown: 1
+        # 结附期间：己方使用黄金羽后，以津真天获得"免疫战斗伤害。回合结束时
+        # 移除此能力"（维护者答复(3)：若不具有该能力才获得——unique 去重；scope=turn 回合号
+        # 记账即"回合结束时移除"的等价实现）
+        - when: on_card_played
+          condition: {player: self, golden_feather: true}
           steps:
-            - {op: generate, card_id: 10012651}
-      text: "[觉醒]：{[倒计时1]：{将一张‘黄金羽’置入手牌}。你的‘黄金羽’可以以敌方式神为目标。}"
+            - {op: grant_immunity, target: {kind: self}, unique: true}
+      text: 本回合若使用过‘黄金羽’，以津真天免疫战斗伤害。

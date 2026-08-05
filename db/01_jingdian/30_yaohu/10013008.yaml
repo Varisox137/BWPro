@@ -1,29 +1,17 @@
 id: 10013008
-name: 觉醒·妖狐
+name: 爱意绵绵
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
-      card_type: spell
-      subtype: awaken
-      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-      awaken_health: 2
-      rarity: SR
+    - date: 20200120
+      card_type: form
+      rarity: R
       level: 3
+      form_power: 5
+      form_health: 8
       effects:
-        steps: []
-      abilities:
-        # "你使用法术牌"含中立法术牌（无 shikigami 过滤，视为牌手使用；
-        # 区别觉醒凤凰火仅凤凰火的法术牌——规则要点）；伤害吃聚气 yaohu_dmg_bonus
-        - when: on_card_played
-          condition: {player: self, card_type: spell}
-          steps:
-            - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,
-               amount_ext_source: shikigami, pool: enemy_character, count: 1}
-        # 判定者=己方的运势判定成功（判定后延时触发；可因觉醒青蛙瓷器翻倍）
-        - when: on_luck_success
-          condition: {judge: self}
-          steps:
-            - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,
-               amount_ext_source: shikigami, pool: enemy_character, count: 1}
-      text: "[觉醒]：{当你使用法术牌或[运势]判定成功时，随机对一个敌方角色造成2点伤害。}"
+        steps:
+          # 手牌光环：手牌中所有法术牌伤害效果+1（不限妖狐的牌——card_aura
+          # shikigami=any 通配任意所属式神；damage_boost = 卡牌效果伤害加成，可叠加）
+          - {op: card_aura, shikigami: any, card_type: spell, damage_boost: 1, scope: form}
+      text: "你手牌所有法术牌伤害效果+1。"

@@ -1,22 +1,19 @@
 id: 10012604
-name: 不可饶恕
+name: 射怪鸟事
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
-      rarity: SR
+    - date: 20191212
+      card_type: spell
+      rarity: R
       level: 2
-      form_power: 4
-      form_health: 6
+      keywords: [fast, trigger]
       effects:
-        steps: []
-      abilities:
-        # 结附期间：己方使用黄金羽（含金风流羽）后，以津真天获得"免疫战斗伤害。回合结束时
-        # 移除此能力"（维护者答复(3)：若不具有该能力才获得——unique 去重；scope=turn 回合号
-        # 记账即"回合结束时移除"的等价实现）
-        - when: on_card_played
-          condition: {player: self, golden_feather: true}
-          steps:
-            - {op: grant_immunity, target: {kind: self}, unique: true}
-      text: 本回合若使用过‘黄金羽’，以津真天免疫战斗伤害。
+        # 响应收集不带 holder：显式式神 id（古尘之盾/见切同例）；discard 把实际弃牌数
+        # 写入块内暂存 memo["discarded_count"]，draw 以 {"memo": key} 读取"弃多少抽多少"
+        when: on_before_defeat
+        condition: {victim_shikigami: 100126}
+        steps:
+          - {op: discard, shikigami: self}
+          - {op: draw, count: {memo: discarded_count}}
+      text: "[瞬发]。弃掉所有以津真天的专属牌，抽等量的牌。[响应]：{当以津真天将死亡时，自动使用此牌。}"

@@ -109,15 +109,15 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 静态倒计时块（initial 3，治疗=两步：friendly_shikigami + self_player）+ "使用觉醒法术牌时倒计时-3"触发块（subtype: awaken 判等）；觉醒替换后由觉醒能力块的同名触发接续 |
-| 01 觉醒·入阵歌 | ✅ | 觉醒倒计时 distribute_damage 5（enemy_character）；打出即 -3 至 0 立即归零（同次出牌：先注册新倒计时再触发） |
+| 基础能力 | ✅ | 20191212：静态倒计时块（initial 3，治疗=两步：friendly_shikigami + self_player）+ "使用觉醒法术牌时倒计时-3"挂 on_before_awaken（能力替换前对旧倒计时生效，归零先结算旧效果再替换；觉醒替换后由觉醒能力块的同名块接续） |
+| 01 觉醒·入阵歌 | ✅ | 20191212：觉醒倒计时 distribute_damage 4（enemy_character）；牌面-3 挂 on_before_awaken |
 | 02 惊弦 | ✅ | choose any_shikigami 的 countdown_delta -2（可点任意式神；无倒计时修正 -0） |
-| 03 大合奏 | ✅ | replay_countdown(skip_forms)：按 countdown_history 首次出现顺序重放妖琴师生效过的基础/觉醒倒计时块（维护者答复(8)：形态来源不计入；_countdown_block_for 按来源 id 找回块） |
-| 04 觉醒·神乐歌 | ✅ | 倒计时-1 + 1 力量/1 生命（friendly_others；增益为临时修正，气绝清除）；同次 -3 立即归零 |
-| 05 疯魔琴心 | ✅ | choose enemy_shikigami +2（无倒计时修正 -0）+ 自身 -2（可立即归零） |
-| 06 魔音扰心 | ✅ | 主动=delay_grant(scope=turn) 登记一次性无效化；响应=response 覆盖块直接无效化当前用牌（CardDef.response 新字段：主动/响应结构不同） |
-| 07 觉醒·镇魂歌 | ✅ | 倒计时 draw 1 + gain_orb 1；同次 -3 立即归零 |
-| 08 余音 | ✅ | 自身 -3（立即归零）+ friendly_others -1（气绝者不在目标池） |
+| 03 大合奏 | ✅ | 20191212：无[瞬发]；replay_countdown(skip_forms)：按 countdown_history 首次出现顺序重放妖琴师生效过的基础/觉醒倒计时块（维护者答复(8)：形态来源不计入；_countdown_block_for 按来源 id 找回块） |
+| 04 魔音扰心 | ✅ | 主动=delay_grant(scope=turn) 登记一次性无效化；响应=response 覆盖块直接无效化当前用牌（CardDef.response 新字段：主动/响应结构不同） |
+| 05 疯魔琴心 | ✅ | 20191212 改为"重置所有敌方角色的倒计时"：countdown_delta reset=true（复原 countdown_initial，无倒计时能力者空操作） |
+| 06 觉醒·神乐歌 | ✅ | 倒计时-1 + 1 力量/1 生命（friendly_others；增益为临时修正，气绝清除）；牌面-3 挂 on_before_awaken |
+| 07 觉醒·镇魂歌 | ✅ | 倒计时 draw 1 + gain_orb 1；牌面-3 挂 on_before_awaken |
+| 08 余音 | ✅ | 双快照：20191212（best）自身 -3 并 repeat 一次 / 20200120 自身 -3 + friendly_others -1（气绝者不在目标池） |
 | 21 风之乐章 | ✅ | 协战主牌：options 双子选项，choice 选择后生成 token 视作从手牌使用，主牌离手进 exiled |
 | 51 幻音绝弦 | ✅ | delay_grant（on_turn_start，uses=1，不用 scope=turn 以免同批清除）：己方式神倒计时-1 + 气绝者气绝倒计时-2（revive 参数，≤0 立即复活）；羁绊=随机一目连形态牌 |
 
@@ -125,15 +125,15 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 离场/被消灭时触发倒计时 |
+| 基础能力 | ✅ | 20191212 文本"被消灭时触发"；实现保持离场/被消灭均触发（早期文本不规范，能力不变——维护者定案） |
 | 01 风符·破 | ✅ | |
 | 02 风符·护 | ✅ | |
-| 03 罡风 | ✅ | |
-| 04 风符·势 | ✅ | |
-| 05 觉醒·一目连 | ✅ | 进场/离场/被消灭均触发 |
-| 06 风符·瞬 | ✅ | |
+| 03 风符·势 | ✅ | |
+| 04 风符·瞬 | ✅ | 20191212：去[瞬发]（响应入场+回合结束自毁不变） |
+| 05 罡风 | ✅ | |
+| 06 觉醒·一目连 | ✅ | 20191212：去使用效果"随机获得形态牌"；能力进场/离场/被消灭均触发不变（文本规范化） |
 | 07 风符·湮 | ✅ | |
-| 08 风符·龙 | ✅ | 计数绑定卡牌实例 |
+| 08 风符·龙 | ✅ | 20191212：伤害 6→5；计数绑定卡牌实例 |
 | 51 风韵雅乐 | ✅ | 协战子选项（一目连侧战斗牌）：replay_countdown(100125) 重放 + 羁绊=随机妖琴师觉醒牌（generate subtype=awaken） |
 
 ## 以津真天（100126）
@@ -143,12 +143,12 @@
 | 基础能力 | ✅ | 静态倒计时块（initial 2）：generate card_id 指定生成黄金羽 token（token 不入随机池） |
 | 01 金羽焕生 | ✅ | generate card_id ×2 |
 | 02 风之舞 | ✅ | 卡牌触发器按 on_card_played 的 golden_feather payload 计数（add_mod persistent，打出装配快照；含金风流羽） |
-| 03 金风流羽 | ✅ | tags golden_feather 视为黄金羽（记账/触发同）；cost_zero_if {ext: feather_used_turn} 条件免费（费用先于记账计算，自身不免自身） |
-| 04 不可饶恕 | ✅ | grant_immunity(scope=turn, unique) 回合级战斗伤害免疫：回合号记账自然过期；多次使用黄金羽不重复授予 |
-| 05 射怪鸟事 | ✅ | 响应挂 on_before_defeat（条件显式式神 id）；discard 写 memo["discarded_count"] + draw {"memo": key} 组合"弃多少抽多少" |
-| 06 觉醒·以津真天 | ✅ | 觉醒倒计时 initial 1（来源=觉醒牌 id）；"黄金羽可以敌方角色为目标"由黄金羽的使用方式表达（见出入 5；已按维护者答复(11)） |
-| 07 千羽风之舞 | ✅ | 战斗牌"其它效果步"首个消费者（见出入 6）；step 级条件 {player_ext: feather_used_turn} |
-| 08 流浪之羽 | ✅ | 形态能力挂 on_card_played（golden_feather payload）；两条 random_damage 各取 1 目标，两次可命中同一目标 |
+| 03 觉醒·以津真天 | ✅ | 觉醒倒计时 initial 1（来源=觉醒牌 id）；"黄金羽可以敌方角色为目标"由黄金羽的使用方式表达（见出入 5；已按维护者答复(11)） |
+| 04 射怪鸟事 | ✅ | 响应挂 on_before_defeat（条件显式式神 id）；discard 写 memo["discarded_count"] + draw {"memo": key} 组合"弃多少抽多少" |
+| 05 金风流羽 | ✅ | 20191212：+0/+0、不再"视为黄金羽"（去 tags golden_feather，不记账）；cost_zero_if {ext: feather_used_turn} 条件免费保留 |
+| 06 不可饶恕 | ✅ | grant_immunity(scope=turn, unique) 回合级战斗伤害免疫：回合号记账自然过期；多次使用黄金羽不重复授予 |
+| 07 千羽风之舞 | ✅ | 20191212 改 transform_card：手牌一张'黄金羽'原位变成'金风流羽'（无匹配空操作）；step 级条件 {player_ext: feather_used_turn} |
+| 08 流浪之羽 | ✅ | 20191212 改全体：形态能力挂 on_card_played（golden_feather payload）→ 所有敌方式神 2 伤 |
 | 21 致命之羽 | ✅ | 协战主牌：同风之乐章（options=[鎏金幻羽, 蚀刃毒羽]） |
 | 51 黄金羽 | ✅ | 衍生 token 法术（不可构筑）；基础效果固定打敌方牌手，觉醒后狙击走 methods（choose 敌方角色） |
 | 52 鎏金幻羽 | ✅ | mod_hand 实例修饰（真黄金羽=tags+token 谓词，金风流羽不修饰；once_key 不可叠加）：气绝时可用/伤害+1/双方气绝倒计时-1 三读取点；羁绊=鸩倒计时-2 |
@@ -157,29 +157,29 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 使用与当前形态不同的形态牌时抽 1：on_form_attached payload form_changed（无当前形态或新旧形态 id 不同） |
-| 01 吸取 | ✅ | 使用时主动选择目标（choose any_shikigami）造成 2 伤害（维护者答复(4)，原投射定案作废）+ 鼓舞 2 护甲 |
-| 02 治愈之光 | ✅ | [瞬发]；进场与己方回合开始全体己方式神回 2 |
-| 03 萤火点点 | ✅ | [瞬发]；使用方式二选一（+1生命/打1）；增强"己方回合开始若萤草有形态此牌效果+1"（triggers 计数 add_mod enhance） |
-| 04 勇气之光 | ✅ | [瞬发]；进场与己方回合开始鼓舞 +1 战力 +2 护甲 |
-| 05 闪烁 | ✅ | [响应] 敌方式神进入战斗区自动使用；power_override scope=turn（ext power_zero_turn 半回合覆写）；增强 = conditional_keywords combat_nonempty（战斗区有式神得[瞬发]） |
-| 06 觉醒·萤草 | ✅ | trigger_form_enter 触发当前形态进场效果；觉醒能力"使用形态牌时触发当前形态进场效果并抽 1" |
-| 07 安魂之光 | ✅ | [瞬发]；进场与己方回合开始 +1 鬼火 + 己方牌手回 2 |
-| 08 虹彩 | ✅ | [瞬发]；generate 萤草三种形态牌各 1 张入手 |
+| 基础能力 | ✅ | 20191212 改为"萤草的形态牌获得[瞬发]且使用时抽一张牌"：on_ability_enter（新事件，能力进场统一路径）登记 card_aura scope="ability"（新作用域：随能力离场移除/进场重注册）+ on_card_played 形态牌抽 1 |
+| 01 吸取 | ✅ | 使用时主动选择目标（choose any_shikigami）造成 2 伤害（维护者答复(4)，原投射定案作废）+ 鼓舞 +2 护甲 |
+| 02 治愈之光 | ✅ | 入场与己方回合开始全体己方式神回 2（[瞬发]由能力光环统一授予，不入卡牌定义） |
+| 03 萤火点点 | ✅ | 使用方式二选一（+1生命/打1）；增强"己方回合开始若萤草有形态此牌效果+1"（triggers 计数 add_mod enhance）；20191212 去[瞬发] |
+| 04 勇气之光 | ✅ | 20191212：入场与己方回合开始鼓舞 +2 战力（原 +1 战力 +2 护甲） |
+| 05 闪烁 | ✅ | [响应] 敌方式神进入战斗区自动使用；power_override scope=turn（ext power_zero_turn 半回合覆写）；20191212 去增强瞬发 |
+| 06 安魂之光 | ✅ | 20191212：入场与己方回合开始 +1 鬼火（去牌手回 2） |
+| 07 虹彩 | ✅ | 20191212 去[瞬发]；generate 萤草三种形态牌各 1 张入手 |
+| 08 觉醒·萤草 | ✅ | 20191212：3 级 +2/+2（原 2 级 +1/+1）；[觉醒]己方式神的形态牌获得[瞬发]且使用时抽 1——card_aura shikigami="any"（新通配）scope="ability" + on_card_played 形态牌抽 1 |
 | 51 森佑灵引 | ✅ | 协战子选项（萤草侧）：search_deck card_type=form + max_level="target"（不高于目标式神等级）+ direct_play_power_ge=4（目标存活且力量≥4改为直接使用——不耗火 play_from=deck），检索命中即洗牌库（维护者答复(5)）；羁绊白狼获得[庇佑] |
 
 ## 鸩（100128）
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 静态倒计时块（initial 2）：敌方牌手 2 破甲 + bump_ext 累计 x（zhen_proc，气绝不清） |
+| 基础能力 | ✅ | 静态倒计时块（initial 2）：敌方牌手 2 破甲 + bump_ext 累计 x（zhen_proc，气绝不清）+ 觉醒·鸩牌面-2 挂 on_before_awaken 块（妖琴师同构，替换前对旧倒计时生效） |
 | 01 鸩羽 | ✅ | battle_immunity 带 Step.condition：战斗开始时以 {defender: 被攻击者} 求值（defender_has_fragile） |
 | 02 鸩羽苏生 | ✅ | countdown_delta -2（可立即归零）+ 抽 1 |
-| 03 寂寥心象 | ✅ | 每回合合计一次（turn_mark/turn_mark_not 门控，任一回合开始双方清除）；目标种类定分支；"等量"=事件获得量（{event: amount}）；敌方战斗区为空时该分支空结算但仍消耗名额 |
+| 03 寂寥心象 | ✅ | 20191212 改"敌方式神本回合第一次获得破甲 → 鸩倒计时-1"（turn_mark 门控不变；删牌手分支与"等量破甲"支路） |
 | 04 毒蚀 | ✅ | convert_damage 战斗作用域：已按维护者答复(5)——伤害事件生成点全额转化为等量破甲（护甲不再先吸收；不再视为伤害）；响应挂 on_before_assault（条件显式式神 id，响应收集不带 holder） |
-| 05 觉醒·鸩 | ✅ | x = 基础+觉醒倒计时生效合计（维护者答复 9），{base: 2, ext: zhen_proc} 动态数值；觉醒倒计时来源=觉醒牌 id，先给破甲再计数 |
+| 05 觉醒·鸩 | ✅ | 20191212 使用效果改"使鸩的倒计时-2"（挂 on_before_awaken，见基础能力行）；x = 基础+觉醒倒计时生效合计（维护者答复 9），{base: 2, ext: zhen_proc} 动态数值；觉醒倒计时来源=觉醒牌 id，先给破甲再计数 |
 | 06 致命诱惑 | ✅ | 战斗牌 grant_keyword step = 战斗作用域条件授予（吸血；战斗终止点移除） |
-| 07 碧羽散华 | ✅ | victim 侧 ext 标记（当前卡池仅鸩给予破甲，与"鸩造成的"等价；已按维护者答复(1)扩展到牌手——牌手沿用"其任一式神持标记"语义）；离场经 on_form_destroyed 前置 emit 的形态能力清除；与毒蚀同场时经 converted 标记防止转化循环（伤害→破甲→伤害，净效果=原伤害） |
+| 07 碧羽散华 | ✅ | 双快照：20191212"对有破甲的角色才转化"（新锚点 ext fragile_to_damage_if——获得破甲前判定受害者 shield<0）/ 20200120（best）无条件转化（fragile_to_damage）；牌手沿用"其任一式神持标记"语义；与毒蚀同场经 converted 标记防循环 |
 | 08 毒之华 | ✅ | temp_grants 绑本次战斗；"一半生命"=受伤后当前生命向下取整（{half_health_of: victim}）；on_damage payload 补 battle 键供战斗绑定触发匹配 |
 | 51 蚀刃毒羽 | ✅ | 协战子选项（鸩侧战斗牌）：已按维护者答复(2)重做——temp_grants 挂"攻击时"（on_before_assault），目标有破甲则 fragile_echo 记录数值，本次战斗结束后一次性回赋等量破甲（见出入 9）；羁绊=以津真天倒计时-2 |
 
@@ -398,29 +398,29 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | on_luck_judge（即时；判定者=己方且骰=1）→ luck_reroll（同一判定每个来源能力至多一次，重投同样吃必 6 修饰） |
-| 01 金运大吉 | ✅ | 形态 3/6；进场和己方回合开始 luck_roll{x:4, judge:both, then:[抽1]}（双方各生成事件、当前回合玩家先、判定者各自抽） |
-| 02 五谷丰壤 | ✅ | 形态 2/7；同上 then:[恢复 3 生命] |
+| 01 金运大吉 | ✅ | 20191212 去进场触发：己方回合开始 luck_roll{x:4, judge:both, then:[抽1]}（双方各生成事件、当前回合玩家先、判定者各自抽） |
+| 02 五谷丰壤 | ✅ | 20191212 同去进场触发；then:[恢复 3 生命] |
 | 03 福寿双全 | ✅ | 形态 4/5；增强{shikigami_has_form:100129}→[瞬发]+使用时抽 1；进场或仅替换离场时双方各 +1 鬼火（气绝消灭不触发） |
-| 04 家内安全 | ✅ | 形态 3/7；式神攻击后 luck:{x:4, on:fail} → stun{攻击者} |
+| 04 福满乾坤 | ✅ | 20191212：等级 3→1、[条件]改[增强]{luck_success_total_ge:15}（无 play_condition——可使用，各 step 以条件门控，不满足全跳过）；效果不变（双方生命变 30 → 抽至 10 张 → 各 +3 鬼火） |
 | 05 福运昌隆 | ✅ | 抽 1；luck_roll{x:4} → 获得 2 鬼火 |
-| 06 觉醒·座敷童子 | ✅ | +1/+3；on_luck_judge（判定者=己方且将失败，{dice_below_x: true}）→ luck_reroll |
+| 06 家内安全 | ✅ | 形态 3/7；式神攻击后 luck:{x:4, on:fail} → stun{攻击者} |
 | 07 和气满满 | ✅ | 形态 0/7；式神攻击时 luck:{x:4, on:fail} → 攻击者本次战斗力量变 0（power_override 战斗作用域） |
-| 08 福满乾坤 | ✅ | [条件] play_condition{luck_success_total_ge:12}（不满足任何方式不能用）；依次双方生命变 30（set_health 非治疗）→ 双方抽至 10 张（draw hand_to/side）→ 双方各 +3 鬼火（gain_orb side） |
+| 08 觉醒·座敷童子 | ✅ | +1/+3；on_luck_judge（判定者=己方且将失败，{dice_below_x: true}）→ luck_reroll |
 | 51 鸿运当头 | ✅ | 协战子选项（座敷侧）：luck_roll{x:4, then:[复活己方全部式神]} → random_play_form{friendly 在场}（各随机使用 1 张等级 ≤ 当前等级的专属形态牌，无池/气绝跳过）；羁绊（山兔在场，{shikigami_active:100117}）：search_deck card_id 检索'这把算我赢'置手 |
 
 ## 妖狐（100130）
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 妖狐使用法术牌时 luck:4 → random_damage{2 + amount_ext:yaohu_dmg_bonus(amount_ext_source:shikigami), enemy_character}；伤害流程按来源=妖狐每次伤害事件记 yaohu_damage_count +1 |
-| 01 风刃 | ✅ | [瞬发]；对一敌方角色造成 2 伤害 |
-| 02 聚气 | ✅ | [瞬发]；bump_ext{yaohu_dmg_bonus, self} + 抽 1（永久含基础与觉醒能力，跨气绝保留） |
-| 03 爱意绵绵 | ✅ | 形态 4/5；card_aura 手牌光环——手牌中妖狐法术牌伤害效果 +1（damage_boost 通道；第十六阶段落地——此前 spell_damage 通道引擎未实现的存量 bug 修复，参数名统一为 damage_boost） |
-| 04 命运之人 | ✅ | 形态 4/6；己方回合开始 generate '风刃' 置手 |
-| 05 无羁风弹 | ✅ | repeat_random_damage{2, all_other_shikigami, max:10, stop_on_defeat}（逐次插入结算，任一式神气绝即停） |
-| 06 叠风斩 | ✅ | 对一式神造成 2 伤害 → reuse_card（同目标，恰好两次；触发两次妖狐能力） |
-| 07 狂风刃卷 | ✅ | random_damage{2, enemy_character, sequential:true, count:5}（逐次独立随机、有放回）；增强{yaohu_damage_count>=20}→ count:10（{字段_ge} 事件无该字段时回退读控制者 ext——第十六阶段修复恒不触发的存量 bug） |
-| 08 觉醒·妖狐 | ✅ | +2/+2；觉醒能力两段：你使用法术牌（含中立法术牌）或运势判定成功时随机打一敌方角色 2（吃 yaohu_dmg_bonus；可因觉醒青蛙瓷器翻倍） |
+| 基础能力 | ✅ | 20200120 加入（开服无妖狐）：妖狐使用法术牌时 luck:4 → random_damage{2 + amount_ext:yaohu_dmg_bonus(amount_ext_source:shikigami), enemy_character}；伤害流程按来源=妖狐每次伤害事件记 yaohu_damage_count +1 |
+| 01 风刃 | ✅ | 20200120：[瞬发]；改[投射] 2 伤（pool=projectile，不再主动选目标） |
+| 02 聚气 | ✅ | 20200120：[瞬发]；bump_ext{yaohu_dmg_bonus, self}（去抽 1；永久含基础与觉醒能力，跨气绝保留） |
+| 03 命运之人 | ✅ | 20200120：形态 4/5（原 4/6）；己方回合开始 generate '风刃' 置手 |
+| 04 无羁风弹 | ✅ | repeat_random_damage{2, all_other_shikigami, max:10, stop_on_defeat}（逐次插入结算，任一式神气绝即停） |
+| 05 叠风斩 | ✅ | 对一式神造成 2 伤害 → reuse_card（同目标，恰好两次；触发两次妖狐能力） |
+| 06 狂风刃卷 | ✅ | random_damage{2, enemy_character, sequential:true, count:5}（逐次独立随机、有放回）；增强{yaohu_damage_count>=25}→ count:10（20200120：阈值 20→25） |
+| 07 觉醒·妖狐 | ✅ | +2/+2；觉醒能力两段：你使用法术牌（含中立法术牌）或运势判定成功时随机打一敌方角色 2（吃 yaohu_dmg_bonus；可因觉醒青蛙瓷器翻倍） |
+| 08 爱意绵绵 | ✅ | 20200120：3 级形态 5/8（原 1 级 4/5）；card_aura shikigami="any"（新通配）——手牌所有法术牌伤害效果 +1（damage_boost 通道，scope=form） |
 
 ## 跳跳弟弟（100120）
 

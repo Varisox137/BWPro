@@ -1,19 +1,14 @@
 id: 10012605
-name: 射怪鸟事
+name: 金风流羽
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
+    - date: 20191212
+      card_type: combat
       rarity: R
       level: 2
-      keywords: [fast, trigger]
+      cost_zero_if: {ext: feather_used_turn}  # 本回合若使用过黄金羽则不消耗鬼火
       effects:
-        # 响应收集不带 holder：显式式神 id（古尘之盾/见切同例）；discard 把实际弃牌数
-        # 写入块内暂存 memo["discarded_count"]，draw 以 {"memo": key} 读取"弃多少抽多少"
-        when: on_before_defeat
-        condition: {victim_shikigami: 100126}
-        steps:
-          - {op: discard, shikigami: self}
-          - {op: draw, count: {memo: discarded_count}}
-      text: "[瞬发]。弃掉所有以津真天的专属牌，抽等量的牌。[响应]：{当以津真天将气绝时，自动使用。}"
+        # 20191212 公测版：+0/+0 无身材增益；不再"视为黄金羽"（无 golden_feather tag）
+        steps: []
+      text: 本回合若使用过‘黄金羽’，此牌不消耗鬼火。

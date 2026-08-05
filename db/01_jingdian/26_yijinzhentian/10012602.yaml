@@ -1,9 +1,9 @@
 id: 10012602
 name: 风之舞
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SR
       level: 1
@@ -13,7 +13,7 @@ versions:
           - {op: buff_power, amount: {enhance: true, base: 0}, target: {kind: self}}
           - {op: gain_shield, amount: {enhance: true, base: 0}, target: {kind: self}}
       triggers:
-        # 卡牌触发器（游离）：己方每使用一张黄金羽（tags 标记，含金风流羽）+1 持久计数
+        # 卡牌触发器（游离）：己方每使用一张黄金羽（tags 标记）+1 持久计数
         - when: on_card_played
           condition: {player: self, golden_feather: true}
           steps:

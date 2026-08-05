@@ -1,9 +1,9 @@
 id: 100126
 name: 以津真天
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 苍叶
       power: 2
       health: 5
@@ -12,4 +12,5 @@ versions:
         countdown: 2
         steps:
           - {op: generate, card_id: 10012651}
-      text: "[倒计时2]：{将一张‘黄金羽’置入手牌。}"
+      # raw 原文末尾为全角左引号 typo（}“），逐字照录
+      text: "[倒计时2]：{将一张‘黄金羽’置入手牌。}“"

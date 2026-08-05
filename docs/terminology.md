@@ -265,6 +265,7 @@
 | `countdown_history` | `PlayerState.ext` | 本局倒计时能力生效序列（归零生效后追加来源 id：基础=式神 id / 觉醒=觉醒牌 id / 形态=形态牌 id；大合奏、风韵雅乐用） |
 | `recorded_card` | `ShikigamiState.ext` | 大天狗记录的法术牌数据 id（`set_countdown(record=True)` 写入；气绝丢失） |
 | `fragile_to_damage` | `ShikigamiState.ext` | 获得破甲转化为等量伤害（"获得破甲前"锚点，`Game._change_shield` 读取；碧羽散华用；答复(1)：牌手获得破甲同样转化——其任一式神持标记即生效） |
+| `fragile_to_damage_if` | `ShikigamiState.ext` | 条件破甲转化：仅当受害者当前已带破甲（shield<0）时，本次新获得破甲才转化为等量伤害（20191212 碧羽散华"若目标已有破甲"；锚点同 `fragile_to_damage`，`Game._change_shield` 读取；牌手分支同理） |
 | `feather_used_game` / `feather_used_turn` | `PlayerState.ext` | 黄金羽（tags 标记）牌使用计数：本局累计 / 本回合（己方回合开始清除；黄金羽动态免费与计数触发用） |
 | `zhen_proc` | `ShikigamiState.ext` | 鸩 x：基础+觉醒倒计时能力生效合计（倒计时块内 bump_ext step 累加；气绝不清、跨气绝保留，觉醒后继续累加） |
 | `turn_marks` | `PlayerState.ext` | "每回合合计一次"标记表（turn_mark 写入，任一回合开始双方清除；寂寥心象用） |
@@ -350,3 +351,7 @@
 | 使用已展示牌载荷 | `card_revealed`（on_card_played payload 键） | 被使用的牌在使用点是否具有"已展示"（读实例 mods）——{card_revealed: true} 匹配"使用已展示的手牌时"类触发（灵视/觉醒·觉） | ✅ |
 | 本回合伤害过滤 | `dealt_damage_turn`（TargetSpec 过滤键 / ext 键） | 本回合造成过伤害的角色过滤（记仇"本回合造成过伤害的敌方式神"）：伤害结算点 `_mark_dealt_damage_turn` 按来源式神记账 `ShikigamiState.ext["dealt_damage_turn"]`，任一回合开始清除（半回合作用域）；spec_pool_refs 统一校验 | ✅ |
 | 已展示计数 | `enemy_revealed_count`（动态数值键） | 敌方手牌中已展示牌计数（`_enemy_revealed_count`，引擎读取、活局面量）：三口径——`spell`=法术牌数（模仿+护甲）/ `other`=其他牌数（模仿+力量）/ `shikigami_of_chosen`=选择目标所指式神专属牌数（棒球炸弹增伤，协战归属同 _card_belongs_to）；`_step_amount` 签名加 chosen | ✅ |
+| 能力进场事件 | `on_ability_enter` | 式神能力进场统一钩子（延时时机 queue，payload {player, shikigami, target: Ref}）：对局开始/升 1 级/复活/觉醒替换/变形与还原均经 `_register_ability_countdown` 发出——萤草"当你使用法术牌时…"改为能力光环前置门控 | ✅ |
+| 能力光环 | `scope="ability"` / `shikigami="any"`（card_aura 参数） | scope="ability"：光环挂能力持有者（同 form 作用域机制），气绝/变形/还原/消失/觉醒替换前经 `_clear_ability_card_auras` 统一清理；shikigami="any"：光环匹配任意所属式神的牌（存 None，`_match_auras` 通配——爱意绵绵全式神手牌通道） | ✅ |
+| 倒计时复原 | `reset`（countdown_delta 参数） | 复原倒计时初值（countdown_initial）、不触发归零结算、无能力者空操作——疯魔琴心"使敌方式神的倒计时复原" | ✅ |
+| 卡牌变换 | `transform_card`（动作） | 手牌按 card_id 原位变换为 into 指定新卡（count=1；无匹配空操作；新 uid + `_materialize` 快照，继承 mods 中实例标志） | ✅ |

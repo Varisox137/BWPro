@@ -1,18 +1,37 @@
 id: 10012807
 name: 碧羽散华
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 3
       form_power: 5
       form_health: 7
       effects:
-        # "鸩造成的破甲效果转化为等量的伤害"：锚点为 ext["fragile_to_damage"]
-        # （"获得破甲前"转化，_change_shield 读取）——进场时标记所有敌方式神
-        # （当前卡池仅鸩给予破甲， victim 侧标记与"鸩造成的"等价；牌手不受此转化）
+        # "鸩对有破甲的角色造成的破甲效果转化为等量的伤害"：锚点 ext["fragile_to_damage_if"]
+        # （"获得破甲前"转化，_change_shield 读取——仅当受害者本已持有破甲才转化）；
+        # victim 侧标记与"鸩造成的"等价（当前卡池仅鸩给予破甲；牌手沿用任一式神持标记语义）
+        steps:
+          - {op: bump_ext, key: fragile_to_damage_if, target: {kind: all, pool: enemy_shikigami}}
+      abilities:
+        # 形态离场时清除标记
+        - when: on_form_destroyed
+          condition: {target_shikigami: self}
+          steps:
+            - {op: bump_ext, key: fragile_to_damage_if, amount: -1,
+               target: {kind: all, pool: enemy_shikigami}}
+      text: 鸩对有破甲的角色造成的破甲效果转化为等量的伤害。
+    - date: 20200120
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 5
+      form_health: 7
+      effects:
+        # "鸩造成的破甲效果转化为等量的伤害"：锚点 ext["fragile_to_damage"]
+        # （无条件转化；converted=True 防止与毒蚀的伤害→破甲转化来回循环）
         steps:
           - {op: bump_ext, key: fragile_to_damage, target: {kind: all, pool: enemy_shikigami}}
       abilities:

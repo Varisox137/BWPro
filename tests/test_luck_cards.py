@@ -334,11 +334,11 @@ ZFTZ = 100129
 JINYUN = 10012901       # 金运大吉
 WUGU = 10012902         # 五谷丰壤
 FUSHOU = 10012903       # 福寿双全
-JIANEI = 10012904       # 家内安全
+JIANEI = 10012906       # 家内安全
 FUYUN = 10012905        # 福运昌隆
-ZFTZ_AWAKEN = 10012906  # 觉醒·座敷童子
+ZFTZ_AWAKEN = 10012908  # 觉醒·座敷童子
 HEQI = 10012907         # 和气满满
-FUMAN = 10012908        # 福满乾坤
+FUMAN = 10012904        # 福满乾坤
 HONGYUN = 10012951      # 鸿运当头
 
 ZFTZ_TEAM = [100129, 100117, 100102, 100123]  # 山兔同队（鸿运当头羁绊）
@@ -368,20 +368,22 @@ def test_awaken_reroll_on_would_fail(gdb, monkeypatch):
 
 
 def test_judge_both_each_draw(gdb, monkeypatch):
-    """金运大吉（luck_roll judge=both）：进场时双方牌手各做运势4 判定，
-    判定者各自抽 1；单边失败则该方不抽（当前回合玩家先）。"""
+    """金运大吉（luck_roll judge=both）：己方回合开始时双方牌手各做运势4 判定，
+    判定者各自抽 1；单边失败则该方不抽（当前回合玩家先）。20191212 版去掉进场触发。"""
     g, pa, pb = _game(gdb, ZFTZ_TEAM)
+    play(g, 0, JINYUN)                         # 形态 3/6 进场（不触发判定）
     _force_dice(monkeypatch, g, [4, 4])
     ha, hb = len(pa.hand), len(pb.hand)
-    play(g, 0, JINYUN)                         # 形态 3/6 进场
-    assert len(pa.hand) == ha + 1              # give+打出抵消，己方判定成功抽 1
-    assert len(pb.hand) == hb + 1              # 敌方判定成功也抽 1
+    pass_turns(g, 2)                           # B 回合开始补抽 → A 回合开始：补抽+双方判定
+    assert len(pa.hand) == ha + 2              # 回合开始补抽 1 + 判定成功抽 1
+    assert len(pb.hand) == hb + 2              # B 回合补抽 1 + 判定成功抽 1
     g2, pa2, pb2 = _game(gdb, ZFTZ_TEAM)
+    play(g2, 0, JINYUN)
     _force_dice(monkeypatch, g2, [4, 2])       # 当前回合玩家先：A 成功、B 失败
     ha2, hb2 = len(pa2.hand), len(pb2.hand)
-    play(g2, 0, JINYUN)
-    assert len(pa2.hand) == ha2 + 1
-    assert len(pb2.hand) == hb2                # 单边失败：不抽
+    pass_turns(g2, 2)
+    assert len(pa2.hand) == ha2 + 2
+    assert len(pb2.hand) == hb2 + 1            # 单边失败不抽：仅 B 回合补抽 1
     assert pa2.ext["dice_history"] == [4] and pb2.ext["dice_history"] == [2]
 
 
@@ -419,21 +421,23 @@ def test_form_leave_orb_only_on_replace(gdb):
 
 
 def test_play_condition_gates_fumanqiankun(gdb):
-    """福满乾坤[条件]（play_condition luck_success_total_ge:12）：不满足任何方式不能用
-    （双方合计口径，单方 6 次不够）；满足后依次双方生命变 30、抽手牌至 10 张、各 +3 鬼火。"""
-    g, pa, pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 3})
-    with pytest.raises(IllegalAction):
-        play(g, 0, FUMAN)
-    pa.ext["luck_success_game"] = 6
-    with pytest.raises(IllegalAction):         # 单方 6 次不够：双方合计口径
-        play(g, 0, FUMAN)
-    pb.ext["luck_success_game"] = 6            # 合计 12 → 可用
+    """福满乾坤[增强]（20191212 版：等级 1、无 play_condition，各 step 以
+    luck_success_total_ge:15 门控）：条件不满足时可使用但无效果；满足（双方合计
+    15 次）后依次双方生命变 30、抽手牌至 10 张、各 +3 鬼火。"""
+    g, pa, pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 1})
     pa.health = 10
+    play(g, 0, FUMAN)                          # 合计 0 次：可用但全部步骤跳过
+    assert pa.health == 10 and pb.health == 30
+    pa.ext["luck_success_game"] = 8
+    pb.ext["luck_success_game"] = 6            # 合计 14 次：仍不够
+    play(g, 0, FUMAN)
+    assert pa.health == 10 and pb.health == 30
+    pb.ext["luck_success_game"] = 7            # 合计 15 → 生效
     pb.orb = 0
     play(g, 0, FUMAN)
     assert pa.health == 30 and pb.health == 30
     assert len(pa.hand) == 10 and len(pb.hand) == 10
-    assert pa.orb == 9 - 1 + 3
+    assert pa.orb == 9 - 1 - 1 - 1 + 3
     assert pb.orb == 3
 
 
@@ -456,12 +460,12 @@ def test_bond_search_deck_by_card_id(gdb):
 YH = 100130
 FENGREN = 10013001      # 风刃
 JUQI = 10013002         # 聚气
-AIYI = 10013003         # 爱意绵绵
-MINGYUN = 10013004      # 命运之人
-WUJI = 10013005         # 无羁风弹
-DIEFENG = 10013006      # 叠风斩
-KUANGFENG = 10013007    # 狂风刃卷
-YH_AWAKEN = 10013008    # 觉醒·妖狐
+AIYI = 10013008         # 爱意绵绵
+MINGYUN = 10013003      # 命运之人
+WUJI = 10013004         # 无羁风弹
+DIEFENG = 10013005      # 叠风斩
+KUANGFENG = 10013006    # 狂风刃卷
+YH_AWAKEN = 10013007    # 觉醒·妖狐
 
 YH_TEAM = [100130, 100101, 100102, 100123]
 

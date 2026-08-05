@@ -1,28 +1,27 @@
 id: 10012404
-name: 觉醒·神乐歌
+name: 魔音扰心
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
-      subtype: awaken
-      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-      rarity: R
+      rarity: SR
       level: 2
+      keywords: [trigger]
       effects:
-        steps: []
-      abilities:
-        # 觉醒倒计时（initial 3，来源=觉醒牌 id）：己方其他式神倒计时-1 并获得 1 力量与 1 生命
-        # （无倒计时能力者修正 -0；增益为临时修正，气绝清除）
-        - countdown: 3
-          steps:
-            - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
-            - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
-            - {op: buff_health, amount: 1, target: {kind: all, pool: friendly_others}}
-        # 使用妖琴师的觉醒法术牌时：倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
-        # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
-        - when: on_before_awaken
-          condition: {player: self, target_shikigami: self}
-          steps:
-            - {op: countdown_delta, amount: -3, target: {kind: self}}
-      text: "[觉醒]：{[倒计时3]：{己方其他式神倒计时-1并获得1力量与1生命}。当你使用妖琴师的觉醒法术牌时，使妖琴师的倒计时-3。}"
+        # 主动使用：登记一次性延迟能力"下一次敌方用牌的使用手牌前无效化"（本回合，
+        # 己方回合开始未消耗则清除）；无效化 = 跳过效果块、牌照常离手进墓地（费用已付不退）
+        steps:
+          - op: delay_grant
+            when: on_before_card_play
+            condition: {player: opponent}
+            scope: turn
+            steps:
+              - {op: nullify_card_play}
+      response:
+        # 响应（覆盖块，主动/响应结构不同）：敌方用牌的使用手牌前直接无效化该次使用
+        when: on_before_card_play
+        condition: {player: opponent}
+        steps:
+          - {op: nullify_card_play}
+      text: "敌方牌手本回合使用的下一张牌不会生效。[响应]：{当敌方牌手将使用牌时，自动使用此牌。}"

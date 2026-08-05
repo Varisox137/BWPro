@@ -1,22 +1,20 @@
 id: 10012906
-name: 觉醒·座敷童子
+name: 家内安全
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      subtype: awaken
-      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
-      awaken_health: 3
+    - date: 20191212
+      card_type: form
       rarity: SR
-      level: 3
+      level: 2
+      form_power: 3
+      form_health: 7
       effects:
         steps: []
       abilities:
-        # 判定时（即时时机）：判定者=己方且将失败（dice_below_x：当前骰点 < 所需 X，
-        # targets.py 条件算子）重投一次；强制 6 不豁免本流程（规则要点）
-        - when: on_luck_judge
-          condition: {judge: self, dice_below_x: true}
+        # 每当一个式神攻击后（不分敌我）：运势4判定失败则眩晕攻击者（契约 §3.1 luck on:fail）
+        - when: on_after_assault
+          luck: {x: 4, "on": fail}
           steps:
-            - {op: luck_reroll}
-      text: "[觉醒]：{每次[运势]判定中，当你[运势]判定失败时，重投一次。}"
+            - {op: stun, target: {kind: context, key: attacker}}
+      text: "每当一个式神攻击后[运势4]：{失败则被[眩晕]。}"

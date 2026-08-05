@@ -1,21 +1,26 @@
 id: 10012506
-name: 风符·瞬
+name: 觉醒·一目连
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
+    - date: 20191212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
       rarity: SR
       level: 2
-      form_power: 6
-      form_health: 9
-      keywords: [fast, trigger]
       effects:
-        when: on_before_assault
-        condition: {victim_shikigami: 100125}
+        # 20191212 公测版：删去使用效果"随机获得一张一目连的形态牌"
         steps: []
       abilities:
-        - when: on_turn_end
+        # 觉醒能力：形态进场或离场/被消灭时触发倒计时效果。
+        # 早期文本不规范（只写"进场或被消灭时"），能力不变（含离场触发，维护者定案）
+        - when: on_form_attached
+          condition: {target_shikigami: self}
           steps:
-            - {op: destroy_form, target: {kind: self}}
-      text: "[瞬发]。回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用。}"
+            - {op: trigger_form_countdown}
+        - when: on_form_destroyed
+          condition: {target_shikigami: self}
+          steps:
+            - {op: trigger_form_countdown}
+      text: "[觉醒]：{一目连的形态牌进场或被消灭时触发[倒计时]效果。}"

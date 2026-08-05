@@ -1,18 +1,29 @@
 id: 10013007
-name: 狂风刃卷
+name: 觉醒·妖狐
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
+    - date: 20200120
       card_type: spell
-      rarity: SSR
+      subtype: awaken
+      awaken_power: 2   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 2
+      rarity: SR
       level: 3
       effects:
-        steps:
-          # sequential：每次独立随机、插入结算、有放回（契约 §3.4）
-          - {op: random_damage, amount: 2, pool: enemy_character, sequential: true, count: 5}
-          # 增强（妖狐造成过20次伤害，牌手 ext yaohu_damage_count）：额外重复5次；
-          # yaohu_damage_count_ge 为契约外牌手 ext 条件算子，需引擎侧支持（同 §3.7 通道）
-          - {op: random_damage, amount: 2, pool: enemy_character, sequential: true, count: 5,
-             condition: {yaohu_damage_count_ge: 20}}
-      text: "随机对一个敌方角色造成2点伤害，重复5次。[增强]：{若本局游戏妖狐造成过20次伤害，额外重复5次。}"
+        steps: []
+      abilities:
+        # "你使用法术牌"含中立法术牌（无 shikigami 过滤，视为牌手使用；
+        # 区别觉醒凤凰火仅凤凰火的法术牌——规则要点）；伤害吃聚气 yaohu_dmg_bonus
+        - when: on_card_played
+          condition: {player: self, card_type: spell}
+          steps:
+            - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,
+               amount_ext_source: shikigami, pool: enemy_character, count: 1}
+        # 判定者=己方的运势判定成功（判定后延时触发；可因觉醒青蛙瓷器翻倍）
+        - when: on_luck_success
+          condition: {judge: self}
+          steps:
+            - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,
+               amount_ext_source: shikigami, pool: enemy_character, count: 1}
+      text: "[觉醒]：{当你使用法术牌或[运势]判定成功时，随机对一个敌方角色造成2点伤害。}"

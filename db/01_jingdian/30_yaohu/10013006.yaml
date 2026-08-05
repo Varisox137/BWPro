@@ -1,16 +1,18 @@
 id: 10013006
-name: 叠风斩
+name: 狂风刃卷
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
+    - date: 20200120
       card_type: spell
-      rarity: R
-      level: 2
-      target: {kind: choose, pool: any_shikigami}
+      rarity: SSR
+      level: 3
       effects:
         steps:
-          - {op: damage, amount: 2}
-          # 对其再次使用此牌（法术凭空 auto 管线、同目标；两次使用各触发一次妖狐基础能力）
-          - {op: reuse_card}
-      text: "对一个式神造成2点伤害，然后对其再次使用此牌。"
+          # sequential：每次独立随机、插入结算、有放回（契约 §3.4）
+          - {op: random_damage, amount: 2, pool: enemy_character, sequential: true, count: 5}
+          # 增强（妖狐造成过25次伤害，牌手 ext yaohu_damage_count）：额外重复5次；
+          # yaohu_damage_count_ge 为契约外牌手 ext 条件算子，需引擎侧支持（同 §3.7 通道）
+          - {op: random_damage, amount: 2, pool: enemy_character, sequential: true, count: 5,
+             condition: {yaohu_damage_count_ge: 25}}
+      text: "随机对一个敌方角色造成2点伤害，重复5次。[增强]：{若本局游戏妖狐造成过25次伤害，额外重复5次。}"

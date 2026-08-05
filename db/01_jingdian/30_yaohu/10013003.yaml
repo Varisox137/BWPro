@@ -1,17 +1,20 @@
 id: 10013003
-name: 爱意绵绵
+name: 命运之人
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
+    - date: 20200120
       card_type: form
-      rarity: R
-      level: 1
+      rarity: SR
+      level: 2
       form_power: 4
       form_health: 5
       effects:
-        steps:
-          # 手牌光环：手牌中妖狐的法术牌伤害效果+1（心技一体 card_aura 先例；
-          # damage_boost = 卡牌效果伤害加成，可叠加）
-          - {op: card_aura, shikigami: self, card_type: spell, damage_boost: 1, scope: form}
-      text: "你手牌中所有妖狐的法术牌伤害效果+1。"
+        steps: []
+      abilities:
+        # 己方回合开始时将一张'风刃'置手（generate card_id 先例：黄金羽）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: generate, card_id: 10013001}
+      text: "己方回合开始时，将一张‘风刃’置入手牌。"

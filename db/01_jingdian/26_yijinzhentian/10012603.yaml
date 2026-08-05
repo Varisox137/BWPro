@@ -1,15 +1,21 @@
 id: 10012603
-name: 金风流羽
+name: 觉醒·以津真天
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: combat
-      rarity: R
+    - date: 20191212
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: SSR
       level: 2
-      tags: [golden_feather]  # 使用时视为黄金羽（记账/触发与黄金羽同；自身不免自身费用——费用先于记账计算）
-      cost_zero_if: {ext: feather_used_turn}  # 本回合若使用过黄金羽则不消耗鬼火
       effects:
-        steps:
-          - {op: buff_power, amount: 1, target: {kind: self}}
-      text: 此牌使用时视为‘黄金羽’。本回合若使用过‘黄金羽’，此牌不消耗鬼火。
+        steps: []
+      abilities:
+        # 觉醒倒计时（initial 1，来源=觉醒牌 id，替换基础倒计时）：[倒计时1] 黄金羽入手；
+        # "黄金羽可以敌方式神为目标"由黄金羽的使用方式（requires_awaken 门控）表达
+        - countdown: 1
+          steps:
+            - {op: generate, card_id: 10012651}
+      text: "[觉醒]：{[倒计时1]：{将一张‘黄金羽’置入手牌}。你的‘黄金羽’可以以敌方式神为目标。}"

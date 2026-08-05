@@ -406,16 +406,22 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     turn："self"/"opponent" 限定回合方，仅己方/敌方回合时光环生效（伺机类）。
     scope 为失效时机："turn" = 己方回合开始清除（"本回合"类）；"form" = 绑定来源式神
     当前结附的形态，形态离场时移除（心技一体；气绝经 _destroy_form 同路径）；
+    "ability" = 绑定来源座次的当前能力，能力离场（气绝/变形/离场/觉醒替换）时移除，
+    能力进场（on_ability_enter）重新注册（萤草形态牌光环类）；
     "game" = 本局游戏有效，不清除（寒冬之心类）。
+    shikigami="any"：通配——命中控制者任意式神（含中立）的牌（觉醒·萤草
+    "己方式神的形态牌"、爱意绵绵"你手牌所有法术牌"）。
     """
     if turn not in (None, "self", "opponent"):
         raise ValueError(f"未知 card_aura 回合方限定: {turn}")
-    if scope not in ("turn", "form", "game"):
+    if scope not in ("turn", "form", "game", "ability"):
         raise ValueError(f"未知 card_aura 作用域: {scope}")
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("card_aura(shikigami=self) 需要来源式神")
-        sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+        sid: int | None = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+    elif shikigami == "any":
+        sid = None  # 通配：读取时命中任意所属式神的牌
     else:
         sid = int(shikigami)
     aura = {
@@ -430,12 +436,13 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         aura["shield_ext"] = shield_ext
     if damage_boost:
         aura["damage_boost"] = int(damage_boost)  # 卡牌效果伤害加成（寒冬之心的雪球）
-    if scope == "form":
+    if scope in ("form", "ability"):
         if ctx.source is None or ctx.source.shikigami is None:
-            raise ValueError("card_aura(scope=form) 需要来源式神")
-        aura["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态离场按持有者移除
+            raise ValueError(f"card_aura(scope={scope}) 需要来源式神")
+        aura["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态/能力离场按持有者移除
     game.state.players[ctx.controller].card_auras.append(aura)
-    game._log(f"{game.db.shikigami[sid].name} 的卡牌光环生效（{scope}）")
+    label = "全体式神" if sid is None else game.db.shikigami[sid].name
+    game._log(f"{label} 的卡牌光环生效（{scope}）")
 
 
 @action("stat_aura")
@@ -881,6 +888,33 @@ def replace_cards(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
         game._log(f"{p.name} 洗了牌库")
 
 
+@action("transform_card")
+def transform_card(game, ctx, *, targets: list[Ref], card_id: int, into: int,
+                   count: int = 1) -> None:
+    """手牌中至多 count 张指定数据 id 的牌原位变成另一张牌（千羽风之舞"将你手牌中
+    一张'黄金羽'变成'金风流羽'"；targets 忽略）。
+
+    原牌消失（不入墓地、不触发弃牌）；新牌占据原手牌位置（新 uid，经生成点统一
+    快照 _materialize；原位替换不改变手牌数，不走手牌上限路径）。无匹配牌为空操作。
+    """
+    from core.model import CardInstance
+    p = game.state.players[ctx.controller]
+    hand = p.zones.get("hand", [])
+    done = 0
+    for idx, inst in enumerate(list(hand)):
+        if done >= count:
+            break
+        if inst.id != int(card_id):
+            continue
+        new = CardInstance(uid=game.state.next_uid, id=int(into))
+        game.state.next_uid += 1
+        hand[idx] = new
+        game._materialize(p, new, game.db.cards[int(into)])
+        done += 1
+        game._log(f"{p.name} 手牌中的【{game.db.cards[int(card_id)].name}】"
+                  f"变成了【{game.db.cards[int(into)].name}】")
+
+
 @action("search_deck")
 def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target",
                 card_type: str | None = None, max_level: int | str | None = None,
@@ -1283,13 +1317,18 @@ def cap_damage(game, ctx, *, targets: list[Ref], to: str | int = "shield") -> No
 
 
 @action("countdown_delta")
-def countdown_delta(game, ctx, *, targets: list[Ref], amount: int,
-                    shikigami: int | None = None, revive: bool = False) -> None:
+def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
+                    shikigami: int | None = None, revive: bool = False,
+                    reset: bool = False) -> None:
     """目标式神倒计时增减 amount（±）。
 
     无倒计时能力或倒计时为 0（归零结算中）时修正为 -0（空操作，rules.md ch12
     增减流程 1）；减少后不大于 0 时走归零流程（_countdown_zero，与回合开始批次共用）。
     倒计时增减事件的独立时机批次暂不拆，首张监听卡出现时再引入。
+
+    reset=True（疯魔琴心"重置所有敌方角色的倒计时"）：倒计时复原为
+    countdown_initial，不触发归零流程；无倒计时能力者空操作。与 revive 互斥，
+    reset 优先判定。
 
     shikigami：按数据 id 指定控制者的式神（targets 忽略；协战羁绊"鸩/以津真天
     倒计时-2"——未出战为空操作）；revive=True：改为作用于气绝倒计时（减到 ≤0
@@ -1300,6 +1339,16 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int,
         pi = ctx.controller
         idx = game._find_shikigami(game.state.players[pi], int(shikigami))
         targets = [Ref(player=pi, shikigami=idx)] if idx is not None else []
+    if reset:
+        for ref in targets:
+            if ref.shikigami is None:
+                continue
+            s = game.state.players[ref.player].shikigami[ref.shikigami]
+            if s.countdown_block is None or s.countdown_initial is None:
+                continue  # 无倒计时能力：空操作
+            s.countdown = s.countdown_initial
+            game._log(f"{game.db.shikigami[s.id].name} 的倒计时重置为 {s.countdown_initial}")
+        return
     if revive:
         if targets:
             refs = targets

@@ -1,24 +1,23 @@
 id: 10012706
-name: 觉醒·萤草
+name: 安魂之光
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      subtype: awaken
-      awaken_power: 1   # 永久身材增益："觉醒后"延时时机之后授予
-      awaken_health: 1
+    - date: 20191212
+      card_type: form
       rarity: SR
-      level: 2
+      level: 3
+      form_power: 4
+      form_health: 5
+      # [瞬发]由萤草基础能力光环统一授予，不入卡牌定义
       effects:
-        # 触发萤草当前形态的进场效果（未结附形态空操作）
+        # 入场你获得1点鬼火
         steps:
-          - {op: trigger_form_enter}
+          - {op: gain_orb, amount: 1}
       abilities:
-        # [觉醒]：当萤草使用形态牌时，触发当前形态的进场效果，抽一张牌
-        - when: on_form_attached
-          condition: {target_shikigami: self}
+        # 己方回合开始时你获得1点鬼火
+        - when: on_turn_start
+          condition: {player: self}
           steps:
-            - {op: trigger_form_enter}
-            - {op: draw, count: 1}
-      text: "触发萤草当前形态的进场效果。[觉醒]：{当萤草使用形态牌时，触发当前形态的进场效果，抽一张牌。}"
+            - {op: gain_orb, amount: 1}
+      text: 入场和己方回合开始时，你获得1点鬼火。

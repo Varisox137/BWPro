@@ -1,15 +1,16 @@
 id: 10012903
 name: 福寿双全
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: SR
       level: 1
       form_power: 4
       form_health: 5
       conditional_keywords:
+        # "结附形态牌时"=现有 has_form 条件语义（在座即视为已结附），文本按 raw 规范化
         - {keyword: fast, shikigami_has_form: 100129}
       effects:
         steps:
@@ -26,4 +27,4 @@ versions:
           steps:
             - {op: gain_orb, amount: 1, side: self}
             - {op: gain_orb, amount: 1, side: opponent}
-      text: "[增强]：{座敷童子有形态牌时，此牌获得[瞬发]且使用时抽一张牌}。此牌进场或离场时，双方各获得1点鬼火。"
+      text: "[增强]：{座敷童子结附形态牌时，此牌获得[瞬发]且使用时抽一张牌}。此牌进场或离场时，双方各获得1点鬼火。"

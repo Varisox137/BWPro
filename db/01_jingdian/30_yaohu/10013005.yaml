@@ -1,16 +1,16 @@
 id: 10013005
-name: 无羁风弹
+name: 叠风斩
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
+    - date: 20200120
       card_type: spell
       rarity: R
       level: 2
+      target: {kind: choose, pool: any_shikigami}
       effects:
         steps:
-          # 双方除妖狐外未气绝式神中逐次随机打2（插入结算、有放回）；
-          # 任一式神气绝（含妖狐因插入结算气绝）或满 10 次即停（契约 §3.5/规则要点）
-          - {op: repeat_random_damage, amount: 2, pool: all_other_shikigami, max: 10,
-             stop_on_defeat: true}
-      text: "随机对一个其他式神造成2点伤害，重复此效果，直到任一式神气绝或此效果作用10次。"
+          - {op: damage, amount: 2}
+          # 对其再次使用此牌（法术凭空 auto 管线、同目标；两次使用各触发一次妖狐基础能力）
+          - {op: reuse_card}
+      text: "对一个式神造成2点伤害，然后对其再次使用此牌。"

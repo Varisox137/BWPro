@@ -1,23 +1,23 @@
 id: 10012704
 name: 勇气之光
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: SR
       level: 2
       form_power: 3
       form_health: 5
-      keywords: [fast]
+      # [瞬发]由萤草基础能力光环统一授予，不入卡牌定义
       effects:
-        # 进场[鼓舞]：获得+1战力与+2护甲
+        # 入场[鼓舞]：获得+2战力
         steps:
-          - {op: basic_boost, power: 1, shield: 2}
+          - {op: basic_boost, power: 2}
       abilities:
-        # 己方回合开始时[鼓舞]：获得+1战力与+2护甲
+        # 己方回合开始时[鼓舞]：获得+2战力
         - when: on_turn_start
           condition: {player: self}
           steps:
-            - {op: basic_boost, power: 1, shield: 2}
-      text: "[瞬发]。进场和己方回合开始时，[鼓舞]：{获得+1战力与+2护甲。}"
+            - {op: basic_boost, power: 2}
+      text: "入场和己方回合开始时，[鼓舞]：{获得+2战力。}"

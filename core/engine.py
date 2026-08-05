@@ -342,8 +342,8 @@ class Game:
         pi = next(i for i, q in enumerate(self.state.players) if q is p)
         out = []
         for a in p.card_auras:
-            if cdef.shikigami != a["shikigami"]:
-                continue
+            if a["shikigami"] is not None and cdef.shikigami != a["shikigami"]:
+                continue  # shikigami=None 为通配（"己方式神的形态牌"——觉醒·萤草/爱意绵绵）
             if a.get("card_type") is not None and a["card_type"] != cdef.card_type:
                 continue
             if a.get("card_id") is not None and a["card_id"] != cdef.id:
@@ -991,6 +991,7 @@ class Game:
                               target=Ref(player=self.state.active, shikigami=awaken_si))
                     # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活
                     # 保留觉醒状态）；动态倒计时继承见 _register_ability_countdown(awaken=)
+                    self._clear_ability_card_auras(p, self.state.active, awaken_si)  # 旧能力离场：其 ability 光环移除
                     p.shikigami[awaken_si].awakened = cdef.id
                     self._register_ability_countdown(self.state.active, awaken_si, awaken=True)
                     self._log(f"{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒")
@@ -1403,11 +1404,16 @@ class Game:
                 # 沿用"其任一式神持标记"语义（当前卡池仅鸩给予破甲，两者等价）
                 if ref.shikigami is not None:
                     s = p.shikigami[ref.shikigami]
-                    if s.ext.get("fragile_to_damage"):
+                    # fragile_to_damage_if：20191212 版碧羽散华——仅当受害者本已有
+                    # 破甲（shield < 0）时才转化（"对有破甲的角色"）
+                    if s.ext.get("fragile_to_damage") or (
+                            s.ext.get("fragile_to_damage_if") and old < 0):
                         self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 {delta} 点伤害")
                         self.deal_to_shikigami(ref, delta, None, converted=True)
                         return
-                elif any(st.ext.get("fragile_to_damage") for st in p.shikigami):
+                elif (any(st.ext.get("fragile_to_damage") for st in p.shikigami)
+                        or (old < 0 and any(st.ext.get("fragile_to_damage_if")
+                                            for st in p.shikigami))):
                     self._log(f"{p.name} 的破甲转化为 {delta} 点伤害")
                     self.deal_to_player(ref.player, delta, None, converted=True)
                     return
@@ -1798,6 +1804,7 @@ class Game:
         """召唤物离场：不进复活流程（保留坑位稳定下标）；keep_buffs 留下永久增减益。"""
         s = p.shikigami[i]
         d = self.db.shikigami[s.id]
+        self._clear_ability_card_auras(p, self.state.players.index(p), i)  # 能力离场：ability 光环移除
         if p.combat_index == i:
             p.combat_index = None
         s.despawned = True
@@ -1832,6 +1839,7 @@ class Game:
             ext={"max_power": d.power},  # 力量历史峰值初值（断臂记账）
             perm_keywords=list(d.keywords))  # 先天关键字按永久类别入列
         p.shikigami[i] = b
+        self._clear_ability_card_auras(p, pi, i)  # 原式神能力先离场：其 ability 光环移除
         self._log(f"{self.db.shikigami[s.id].name} 变形为 {d.name}")
         self._settle(f"【变形】{self.db.shikigami[s.id].name} 变形为 {d.name}"
                      f"（身材 {b.base_power}/{b.max_health}）")
@@ -1846,6 +1854,7 @@ class Game:
         if s.transform_origin is None or s.ext.get("transform_permanent"):
             return
         restored = ShikigamiState.model_validate(s.transform_origin)
+        self._clear_ability_card_auras(p, pi, i)  # 变形物能力离场：其 ability 光环移除（原式神光环还原后由能力进场重新注册）
         p.shikigami[i] = restored
         self._log(f"{self.db.shikigami[s.id].name} 变回 {self.db.shikigami[restored.id].name}")
         self._settle(f"【变形】{self.db.shikigami[s.id].name} 解除变形，"
@@ -2233,6 +2242,16 @@ class Game:
             s.countdown = min(s.countdown, 1) if s.countdown is not None else 1
         elif s.form is None or s.countdown_source != s.form.id:
             self._clear_countdown(s)
+        # 能力进场事件（对局开始/升至 1 级/复活/觉醒替换/变形与还原均经本路径）：
+        # 供"能力进场时登记"类能力监听（萤草形态光环——scope="ability" 卡牌光环）
+        self.emit("on_ability_enter", player=pi, shikigami=si,
+                  target=Ref(player=pi, shikigami=si))
+
+    def _clear_ability_card_auras(self, p: PlayerState, pi: int, si: int) -> None:
+        """能力离场（气绝/变形/离场/觉醒替换旧能力）：移除该座次能力授予的
+        scope="ability" 卡牌光环（萤草基础/觉醒的形态牌[瞬发]光环）。"""
+        p.card_auras[:] = [a for a in p.card_auras
+                           if not (a.get("scope") == "ability" and a.get("holder") == [pi, si])]
 
     def _countdown_block_for(self, source: int) -> EffectBlock | None:
         """按倒计时来源 id 找回对应的倒计时能力块（countdown_history 重放用，大合奏）。
@@ -2773,6 +2792,7 @@ class Game:
         s.defeated = True
         s.dying = False  # 濒死标记在气绝时清除
         self._clear_countdown(s)  # 气绝清除倒计时能力（大天狗记录的法术随之丢失，复活后不再具有）
+        self._clear_ability_card_auras(owner, ref.player, ref.shikigami)  # 能力离场：其授予的 ability 光环移除
         s.ext.pop("recorded_card", None)
         s.ext.pop("power_zero", None)  # 力量覆写随气绝清除（power_override）
         s.shield = 0

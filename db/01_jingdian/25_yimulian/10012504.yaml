@@ -1,17 +1,21 @@
 id: 10012504
-name: 风符·势
+name: 风符·瞬
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
-      rarity: R
+      rarity: SR
       level: 2
-      form_power: 3
-      form_health: 8
-      effects: {steps: []}
-      countdown: 2
-      countdown_effects:
-        steps:
-          - {op: basic_boost, power: 3, shield: 3}
-      text: "[倒计时2]：{[鼓舞]：{获得+3战力与+3护甲}。}"
+      form_power: 6
+      form_health: 9
+      keywords: [trigger]  # 20191212 公测版：无 [瞬发]
+      effects:
+        when: on_before_assault
+        condition: {victim_shikigami: 100125}
+        steps: []
+      abilities:
+        - when: on_turn_end
+          steps:
+            - {op: destroy_form, target: {kind: self}}
+      text: "[响应]：{当一目连被攻击时，自动使用此牌}。回合结束时此牌自毁。"

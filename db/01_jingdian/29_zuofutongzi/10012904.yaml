@@ -1,20 +1,27 @@
 id: 10012904
-name: 家内安全
+name: 福满乾坤
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: form
-      rarity: SR
-      level: 2
-      form_power: 3
-      form_health: 7
+    - date: 20191212
+      card_type: spell
+      rarity: SSR
+      level: 1
       effects:
-        steps: []
-      abilities:
-        # 每当一个式神攻击后（不分敌我）：运势4判定失败则眩晕攻击者（契约 §3.1 luck on:fail）
-        - when: on_after_assault
-          luck: {x: 4, "on": fail}
-          steps:
-            - {op: stun, target: {kind: context, key: attacker}}
-      text: "每当一个式神攻击后[运势4]：{失败则被[眩晕]。}"
+        # 增强语义（非使用前提）：双方运势判定成功合计<15 时全步骤跳过、牌仍可使用；
+        # 三段效果依次对双方生效（己方先）：生命变30（set_health 非治疗、不触发治疗时机）
+        # → 抽手牌直至十张 → +3鬼火；draw {hand_to: n}/side 与 gain_orb side 为契约外扩展
+        steps:
+          - {op: set_health, amount: 30, target: {kind: all, pool: self_player},
+             condition: {luck_success_total_ge: 15}}
+          - {op: set_health, amount: 30, target: {kind: all, pool: enemy_player},
+             condition: {luck_success_total_ge: 15}}
+          - {op: draw, count: {hand_to: 10}, side: self,
+             condition: {luck_success_total_ge: 15}}
+          - {op: draw, count: {hand_to: 10}, side: opponent,
+             condition: {luck_success_total_ge: 15}}
+          - {op: gain_orb, amount: 3, side: self,
+             condition: {luck_success_total_ge: 15}}
+          - {op: gain_orb, amount: 3, side: opponent,
+             condition: {luck_success_total_ge: 15}}
+      text: "[增强]：{本局游戏若双方[运势]判定成功15次，则双方生命变为30，抽手牌直至十张，获得3点鬼火。}"

@@ -1,15 +1,16 @@
 id: 10013001
 name: 风刃
 versions:
-  best: 20251212
+  best: 20200120
   history:
-    - date: 20251212
+    - date: 20200120
       card_type: spell
       rarity: R
       level: 1
       keywords: [fast]
-      target: {kind: choose, pool: enemy_character}
       effects:
         steps:
-          - {op: damage, amount: 2}
-      text: "[瞬发]。对一个敌方角色造成2点伤害。"
+          # 投射：优先敌方战斗区式神，空则敌方牌手（targets.py projectile 池，
+          # 风符·破先例）；不主动选目标
+          - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
+      text: "[瞬发]。[投射]：{造成2点伤害。}"
