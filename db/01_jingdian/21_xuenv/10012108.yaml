@@ -1,22 +1,30 @@
 id: 10012108
-name: 流霰
+name: 觉醒·雪女
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
-      rarity: SR
+      subtype: awaken
+      awaken_power: 2   # +2/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
+      rarity: SSR
       level: 3
-      target: {kind: choose, pool: enemy_character}
       effects:
-        # 对目标凭空自动使用一张'雪球'，本局每从手牌使用过一张'雪球'额外重复一次
-        # （定案(8)：auto_use 凭空生成不耗手牌/鬼火、继承本牌选择目标；凭空使用不经
-        # 手牌记账；目标可为敌方牌手）
-        steps:
-          - op: repeat
-            count: {ext: snowball_used_game, base: 1}
-            target: {kind: self}
-            steps:
-              - {op: auto_use, card_id: 10012151, inherit_target: true,
-                 target: {kind: self}}
-      text: "对一个敌方角色使用一张‘雪球’，本局游戏你每从手牌使用过一张‘雪球’额外重复一次。"
+        steps: []
+      abilities:
+        # [眩晕]受到雪女伤害的式神——任意伤害类别（战斗/法术/能力，定案(7)），
+        # on_damage 以来源匹配、不分 kind（test_on_damage_source_condition_any_kind 同型）
+        - when: on_damage
+          condition: {source_shikigami: self}
+          steps:
+            - {op: stun, target: {kind: context, key: victim}}
+        # 原基础能力（替换非叠加，故全量重写）收窄为雪女自己造成的眩晕
+        # （source_shikigami: self，定案(3)）：每回合雪女第一次眩晕敌方式神时得'雪球'
+        - when: on_stun
+          condition: {victim_side: enemy, victim_kind: shikigami, source_shikigami: self,
+                      turn_mark_not: snowball}
+          steps:
+            - {op: turn_mark, key: snowball}
+            - {op: generate, card_id: 10012151}
+      text: "[觉醒]：{[眩晕]受到雪女伤害的式神。每回合当雪女第一次[眩晕]敌方式神时，将一张‘雪球’置入手牌。}"

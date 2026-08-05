@@ -508,6 +508,38 @@ def test_auto_use_inherit_target_and_snowball_count(db, make_game):
     assert pa.ext["snowball_used_game"] == 1       # 凭空自动使用不计账
 
 
+def test_auto_use_from_hand_all_copies(db, make_game):
+    """流霰 20191212 型（auto_use from_hand）：手牌全部同名牌逐张免费自动使用——
+    目标强制继承本牌选择目标（可为牌手/己方角色，无视该牌自身限制）、离开手牌
+    进墓地、计入从手牌使用记账、不耗鬼火；无同名牌时空操作（定案(1)）。"""
+    snow = 10010169
+    db.cards[snow] = F.card(snow, tags=["snowball"], token=True,
+                            target=CHOOSE_ENEMY, steps=[F.dmg(1, CHOOSE_ENEMY)])
+    liuxian = 10010170
+    db.cards[liuxian] = F.card(liuxian, token=True,
+                               target=T(kind="choose", pool="any_character"), steps=[
+        Step(op="auto_use", card_id=snow, from_hand=True, inherit_target=True,
+             target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 3
+    s1, s2 = give(g, 0, snow), give(g, 0, snow)
+    play(g, 0, liuxian, target=Ref(player=1))      # 目标为敌方牌手
+    assert pb.shield == 3 and pb.health == 30      # 两张雪球各 1 点（强制命中牌手，护甲吸收）
+    assert pa.ext["snowball_used_game"] == 2       # 从手牌使用：计入记账
+    assert s1 in pa.graveyard and s2 in pa.graveyard
+    assert all(c.id != snow for c in pa.hand)
+    assert pa.orb == 2                             # 仅流霰本身耗 1 火
+    give(g, 0, snow)
+    own = Ref(player=0, shikigami=0)
+    hp = pa.shikigami[0].health
+    play(g, 0, liuxian, target=own)                # 目标为己方式神（无视雪球敌方限制）
+    assert pa.shikigami[0].health == hp - 1
+    assert pa.ext["snowball_used_game"] == 3
+    play(g, 0, liuxian, target=Ref(player=1))      # 手牌无雪球：空操作（仍需目标）
+    assert pb.shield == 3 and pb.health == 30
+
+
 
 # ---------- 第十六阶段补：眩晕存在性/计数通道（雪童子批次） ----------
 

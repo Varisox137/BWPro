@@ -1,9 +1,25 @@
 id: 10012305
 name: 禁锢之刀
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
+      card_type: combat
+      rarity: SR
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: {enhance: true, base: 1}, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      triggers:
+        # 按原版：妖刀姬消灭任意式神均计数（含因伤害转移等消灭己方式神）；
+        # source_side 限定己方式神为来源：镜像对局中敌方妖刀姬的击杀不计入本方计数
+        - when: on_shikigami_defeated
+          condition: {victim_kind: shikigami, source_side: friendly, source_shikigami: 100123}
+          steps:
+            - {op: add_mod, to: persistent, key: enhance, amount: 2}
+      text: "[增强]：{本局游戏妖刀姬每消灭一个式神，此牌获得+2力量。}"
+    - date: 20200120
       card_type: combat
       rarity: SR
       level: 2
@@ -12,8 +28,6 @@ versions:
           - {op: buff_power, amount: {enhance: true, base: 0}, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
       triggers:
-        # 按原版：妖刀姬消灭任意式神均计数（含因伤害转移等消灭己方式神）；
-        # source_side 限定己方式神为来源：镜像对局中敌方妖刀姬的击杀不计入本方计数
         - when: on_shikigami_defeated
           condition: {victim_kind: shikigami, source_side: friendly, source_shikigami: 100123}
           steps:

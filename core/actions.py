@@ -1433,13 +1433,19 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("auto_use")
 def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
-             inherit_target: bool = False) -> None:
+             inherit_target: bool = False, from_hand: bool = False) -> None:
     """凭空生成指定卡牌并免费自动使用（流霰"对目标使用一张'雪球'"；targets 忽略）。
 
     不耗鬼火、不视作从手牌使用、用后进墓地、play_from=void、triggered=auto，
     照常 emit on_card_played（recast_recorded 同管线）。inherit_target=True：
     不另选目标，以本效果的卡牌选择目标（ctx.chosen）作为其使用目标（目标继承
-    流霰目标）。目前仅支持法术牌（效果块结算）；[条件] 使用前提同检。
+    流霰目标，无视该牌自身目标限制）。目前仅支持法术牌（效果块结算）；
+    [条件] 使用前提同检。
+
+    from_hand=True（流霰 20191212"自动对其使用手牌中所有'雪球'"）：改为从手牌
+    移出全部同名牌逐张免费使用——不耗鬼火/不占瞬发位、用后进墓地、
+    play_from="hand"（计入"从手牌使用"记账 snowball_used_game，定案(1a)）、
+    逐张独立结算；手牌无同名牌时空操作（定案(1b)）。
     """
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
@@ -1448,10 +1454,30 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
         raise ValueError("auto_use 目前仅支持法术牌")
     if not game._play_condition_met(p, cdef):
         return  # [条件] 使用前提：自动使用同检
+    chosen = list(ctx.chosen or []) if inherit_target else []
+    if from_hand:
+        for inst in [c for c in p.hand if c.id == int(card_id)]:
+            p.hand.remove(inst)
+            game._log(f"自动使用了手牌的【{cdef.name}】")
+            game._affected_stack.append({"controller": ctx.controller, "refs": []})
+            try:
+                game._resolve_block(game._played_block(p, cdef, inst, None),
+                                    ExecContext(controller=ctx.controller,
+                                                source=ctx.source, card=inst,
+                                                chosen=chosen))
+            finally:
+                affected = game._affected_stack.pop()["refs"]
+            if ctx.source is not None and ctx.source.shikigami is not None:
+                game._clear_play_delayed(
+                    game.state.players[ctx.source.player].shikigami[ctx.source.shikigami])
+            game.move_card(p, inst, "graveyard")
+            game._account_card_played(p, cdef)  # 从手牌使用：计入 tags 记账
+            game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
+                                   play_from="hand", triggered="auto", chosen=chosen)
+        return
     inst = CardInstance(uid=game.state.next_uid, id=int(card_id))  # 凭空生成，不进任何区域
     game.state.next_uid += 1
     game._materialize(p, inst, cdef)  # 生成点统一快照
-    chosen = list(ctx.chosen or []) if inherit_target else []
     game._log(f"凭空自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:

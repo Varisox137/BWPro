@@ -1,16 +1,23 @@
 id: 10012106
-name: 寒冬之心
+name: 冰风暴
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
-      card_type: spell
-      rarity: R
+    - date: 20191212
+      card_type: form
+      rarity: SR
       level: 2
+      form_power: 2
+      form_health: 4
       effects:
-        steps:
-          - {op: generate, card_id: 10012151, count: 2}
-          # 本局游戏你所有'雪球'的伤害+1（card_aura tag 通道 + damage_boost +
-          # scope=game；命中 tags 含 snowball 的牌，可叠加）
-          - {op: card_aura, tag: snowball, damage_boost: 1, scope: game}
-      text: "将两张‘雪球’置入手牌。本局游戏你所有‘雪球’的伤害+1。"
+        steps: []
+      abilities:
+        # 每当敌方式神攻击后（家内安全 10012904"攻击后"先例）：对其造成1点伤害，
+        # 然后眩晕之——"受到此伤害的式神"即攻击者本身；伤害被护盾抵免等边界不区分，
+        # 与家内安全同口径直接眩晕
+        - when: on_after_assault
+          condition: {attacker_side: enemy}
+          steps:
+            - {op: damage, amount: 1, target: {kind: context, key: attacker}}
+            - {op: stun, target: {kind: context, key: attacker}}
+      text: "每当敌方式神攻击后，对其造成1点伤害，然后[眩晕]受到此伤害的式神。"

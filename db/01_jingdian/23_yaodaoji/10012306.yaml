@@ -1,14 +1,14 @@
 id: 10012306
 name: 妖刀万华
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: R
       level: 3
       form_power: 3
       form_health: 8
-      keywords: [combo]
+      keywords: [combo]  # 连击 = "战斗时额外先击中对手一次"（raw 文案，同机制）
       effects: {steps: []}
-      text: "[连击]"
+      text: "妖刀姬战斗时，将额外先击中对手一次。"

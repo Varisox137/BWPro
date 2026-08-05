@@ -1,13 +1,13 @@
 id: 10012199
 name: 冰墙
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       kind: summon
       faction: 青岚
       power: 0
-      health: 4
+      health: 2
       no_attack: true  # 不能发动攻击（出击校验与 launch_attack 同拦截）
       ability:
         # [眩晕]对其造成战斗伤害的式神（瘴疠体质 10012002 同管线；反击 kind=counter

@@ -1,9 +1,9 @@
 id: 10012301
 name: 不祥之刃
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: R
       level: 1
@@ -11,8 +11,10 @@ versions:
         steps:
           - {op: gain_shield, amount: 1, target: {kind: self}}
       temp_grants:
-        - when: on_shikigami_defeated
-          condition: {victim_side: enemy, victim_kind: shikigami, source_shikigami: self}
+        # 对敌方牌手造成伤害时抽一张牌：不限伤害类别（定案(4)）；source_shikigami
+        # 限定妖刀姬为来源
+        - when: on_player_damaged
+          condition: {source_shikigami: self}
           steps:
             - {op: draw, count: 1, target: {kind: all, pool: self_player}}
-      text: 消灭敌方式神时，抽一张牌。
+      text: 对敌方牌手造成伤害时，抽一张牌。

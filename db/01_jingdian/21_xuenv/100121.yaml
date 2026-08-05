@@ -1,12 +1,12 @@
 id: 100121
 name: 雪女
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 青岚
       power: 2
-      health: 5
+      health: 4
       ability:
         # 每回合一次（turn_mark/turn_mark_not 门控，寂寥心象先例）：你眩晕敌方式神时
         # 将一张'雪球'置入手牌（on_stun 即时时机；source_side 限定为己方来源的眩晕）

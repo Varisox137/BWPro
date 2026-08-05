@@ -1,9 +1,9 @@
 id: 10012302
 name: 见切
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: SR
       level: 1
@@ -14,4 +14,4 @@ versions:
         steps:
           - {op: buff_power, amount: 1, target: {kind: self}}
           - {op: battle_immunity, target: {kind: self}}
-      text: "免疫战斗伤害。[响应]：{当妖刀姬被攻击时，自动使用。}"
+      text: "免疫战斗伤害。[响应]：{当妖刀姬被攻击时，自动使用该牌。}"
