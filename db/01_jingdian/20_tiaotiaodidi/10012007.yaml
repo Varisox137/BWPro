@@ -1,25 +1,25 @@
 id: 10012007
 name: 尸毒体质
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: form
       rarity: SSR
       level: 3
       form_power: 5
-      form_health: 15
+      form_health: 14
       effects: {steps: []}
       abilities:
-        # 两段独立触发（定案(4)：单次受伤 >=10 时两段都触发；{amount_ge: n} 读事件伤害值）
+        # 两段独立触发（定案(4)：单次受伤达高段时两段都触发；{amount_ge: n} 读事件伤害值）
         - when: on_damage
-          condition: {victim_shikigami: self, amount_ge: 5}
+          condition: {victim_shikigami: self, amount_ge: 6}
           steps:
             - {op: gain_shield, amount: 3, kind: fragile,
                target: {kind: all, pool: enemy_shikigami}}
         - when: on_damage
-          condition: {victim_shikigami: self, amount_ge: 10}
+          condition: {victim_shikigami: self, amount_ge: 15}
           steps:
             - {op: gain_shield, amount: 10, kind: fragile,
                target: {kind: all, pool: enemy_player}}
-      text: "当跳跳弟弟受到>=5的伤害时，所有敌方式神获得3破甲。当跳跳弟弟受到>=10的伤害时，敌方牌手获得10破甲。"
+      text: "当跳跳弟弟受到>=6的伤害时，所有敌方式神获得3破甲。当跳跳弟弟受到>=15的伤害时，敌方牌手获得10破甲。"

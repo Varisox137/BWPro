@@ -355,3 +355,4 @@
 | 能力光环 | `scope="ability"` / `shikigami="any"`（card_aura 参数） | scope="ability"：光环挂能力持有者（同 form 作用域机制），气绝/变形/还原/消失/觉醒替换前经 `_clear_ability_card_auras` 统一清理；shikigami="any"：光环匹配任意所属式神的牌（存 None，`_match_auras` 通配——爱意绵绵全式神手牌通道） | ✅ |
 | 倒计时复原 | `reset`（countdown_delta 参数） | 复原倒计时初值（countdown_initial）、不触发归零结算、无能力者空操作——疯魔琴心"使敌方式神的倒计时复原" | ✅ |
 | 卡牌变换 | `transform_card`（动作） | 手牌按 card_id 原位变换为 into 指定新卡（count=1；无匹配空操作；新 uid + `_materialize` 快照，继承 mods 中实例标志） | ✅ |
+| 召唤内嵌费用 | `orb_cost`（summon 参数） | 效果内嵌鬼火费用（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常）；足够则先支付（发 on_orb_changed，reason=summon_orb_cost）再召唤 | ✅ |

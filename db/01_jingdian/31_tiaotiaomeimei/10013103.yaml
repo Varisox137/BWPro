@@ -1,17 +1,19 @@
 id: 10013103
 name: 坐下！
 versions:
-  best: 20251212
+  best: 20200227
   history:
-    - date: 20251212
+    - date: 20200227
       card_type: spell
       rarity: SR
       level: 1
       effects:
-        # 召唤'番茄'并使其永久得+1力量——结附牌手的本局光环（stat_aura ids_power：
-        # 对召唤番茄 10013199 与变形番茄 10013198 同生效，跨召唤保留、可叠加，定案(12)）
+        # 使'番茄'永久获得1力量——结附牌手的本局光环（stat_aura ids_power：
+        # 对召唤番茄 10013199 与变形番茄 10013198 同生效，跨召唤保留、可叠加，
+        # 定案(12)）；然后额外消耗 1 点鬼火召唤'番茄'（summon orb_cost：效果内嵌
+        # 费用，剩余鬼火不足则召唤失败、光环照常——定案）
         steps:
-          - {op: summon, shikigami: 10013199}
           - {op: stat_aura, kind: ids_power, ids: [10013199, 10013198], power: 1,
              scope: game}
-      text: "召唤‘番茄’并使其永久得+1力量。"
+          - {op: summon, shikigami: 10013199, orb_cost: 1}
+      text: "使‘番茄’永久获得1力量。然后额外消耗1点鬼火，召唤‘番茄’。"

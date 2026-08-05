@@ -1,13 +1,13 @@
 id: 10013104
 name: 生气了啦！
 versions:
-  best: 20251212
+  best: 20200227
   history:
-    - date: 20251212
+    - date: 20200227
       card_type: combat
       rarity: R
       level: 2
-      keywords: [combo]
+      keywords: [combo]   # "本次战斗额外先攻击一次" = [连击]（早期文本未定型，机制同一）
       effects:
         steps: []
-      text: "[连击]"
+      text: "本次战斗额外先攻击一次。"

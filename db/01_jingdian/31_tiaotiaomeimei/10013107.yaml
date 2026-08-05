@@ -1,9 +1,9 @@
 id: 10013107
 name: 不玩了啦！
 versions:
-  best: 20251212
+  best: 20200227
   history:
-    - date: 20251212
+    - date: 20200227
       card_type: combat
       rarity: SR
       level: 3
@@ -15,4 +15,4 @@ versions:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
           - {op: revive, target: {kind: self}}
-      text: "气绝时可用。复活跳跳妹妹。"
+      text: "可以在气绝时使用。复活跳跳妹妹。"

@@ -1,9 +1,9 @@
 id: 10013102
 name: 去咬他！
 versions:
-  best: 20251212
+  best: 20200227
   history:
-    - date: 20251212
+    - date: 20200227
       card_type: spell
       rarity: R
       level: 1

@@ -1,9 +1,9 @@
 id: 10013101
 name: 坏人走开
 versions:
-  best: 20251212
+  best: 20200227
   history:
-    - date: 20251212
+    - date: 20200227
       card_type: combat
       rarity: R
       level: 1

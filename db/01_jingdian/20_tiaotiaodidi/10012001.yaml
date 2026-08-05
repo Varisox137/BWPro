@@ -1,9 +1,9 @@
 id: 10012001
 name: 腐坏直拳
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: combat
       rarity: R
       level: 1

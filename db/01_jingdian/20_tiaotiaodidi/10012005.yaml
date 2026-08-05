@@ -1,13 +1,13 @@
 id: 10012005
 name: 觉醒·跳跳弟弟
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       subtype: awaken
-      awaken_power: 1   # +1/+3：永久身材增益，"觉醒后"延时时机之后授予
-      awaken_health: 3
+      awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
       rarity: SR
       level: 2
       effects: {steps: []}

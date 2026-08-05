@@ -443,16 +443,16 @@ def test_spell_echo_sequence_single_trigger(make_game):
     assert _echo(pa)["cursor"] == 0
     play(g, 0, NH)                            # 山童怒吼 → 回响凤鸣
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E]
-    assert pb.health == 25                    # 凤鸣 3 + 基础投射 1
+    assert pb.health == 26                    # 凤鸣 2 + 基础投射 1（默认环境 20200227）
     assert _echo(pa)["cursor"] == 1           # 自动使用不自连锁（只推进一次）
     play(g, 0, NH)                            # 同式神法术：不重复触发
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH]
-    assert pb.health == 25
+    assert pb.health == 26
     assert _echo(pa)["cursor"] == 1
     play(g, 0, QG)                            # 白狼起弓 → 回响引燃
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH, QG, YR_E]
     assert _echo(pa)["cursor"] == 2
-    assert pb.health == 24                    # 引燃随机打式神（打不死），基础投射 1 必中
+    assert pb.health == 25                    # 引燃随机打式神（打不死），基础投射 1 必中
 
 
    # 羁绊触发：明灯入手
@@ -468,7 +468,7 @@ def test_spell_echo_enemy_spell_triggers(make_game):
     assert _echo(pa)["cursor"] == 2
     assert any(c.id == YR_E for c in pa.graveyard)
     # 引燃随机打式神（全员 ≥3 血打不死）；回响牌均触发基础投射（必中牌手）
-    assert pb.health == 30 - 1 - 3 - 1 - 1    # 涅槃投射 + 凤鸣 + 两次投射
+    assert pb.health == 30 - 1 - 2 - 1 - 1    # 涅槃投射 + 凤鸣 + 两次投射
 
 
 def test_spell_echo_once_key_not_stackable(make_game):

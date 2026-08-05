@@ -1,9 +1,9 @@
 id: 10012003
 name: 毒气喷泉
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: SR
       level: 2
@@ -12,7 +12,21 @@ versions:
       conditional_keywords:
         - {keyword: fast, combat_nonempty: true}
       effects:
-        # 自己的破甲转移给敌方所有式神（每名各获全量后来源清零；来源无破甲空操作）
+        # 所有敌方式神获得等同于跳跳弟弟破甲的破甲（{fragile_of: self} 读来源当前
+        # 破甲量；来源保留自身破甲，非转移；无破甲为 0）
+        steps:
+          - {op: gain_shield, amount: {fragile_of: self}, kind: fragile,
+             target: {kind: all, pool: enemy_shikigami}}
+      text: "所有敌方式神获得等同于跳跳弟弟破甲的破甲。[增强]：{若己方回合开始你的战斗区有式神，此牌得[瞬发]。}"
+    - date: 20200227
+      card_type: spell
+      rarity: SR
+      level: 2
+      conditional_keywords:
+        - {keyword: fast, combat_nonempty: true}
+      effects:
+        # 改为转移语义：自己的破甲转移给敌方所有式神（每名各获全量后来源清零；
+        # 来源无破甲空操作）
         steps:
           - {op: transfer_fragile, target: {kind: all, pool: enemy_shikigami}}
-      text: "将自己的破甲转移到敌方所有式神上。[增强]：{若己方回合开始你的战斗区有式神，此牌得[瞬发]。}"
+      text: "将跳跳弟弟的破甲转移到所有敌方式神上。[增强]：{若己方回合开始你的战斗区有式神，此牌得[瞬发]。}"

@@ -1,9 +1,9 @@
 id: 10013106
 name: 出击！
 versions:
-  best: 20251212
+  best: 20200227
   history:
-    - date: 20251212
+    - date: 20200227
       card_type: spell
       rarity: SR
       level: 2

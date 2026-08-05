@@ -1,7 +1,7 @@
 id: 10013003
 name: 命运之人
 versions:
-  best: 20200120
+  best: 20200227
   history:
     - date: 20200120
       card_type: form
@@ -13,6 +13,20 @@ versions:
         steps: []
       abilities:
         # 己方回合开始时将一张'风刃'置手（generate card_id 先例：黄金羽）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: generate, card_id: 10013001}
+      text: "己方回合开始时，将一张‘风刃’置入手牌。"
+    - date: 20200227
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
         - when: on_turn_start
           condition: {player: self}
           steps:

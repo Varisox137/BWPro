@@ -1239,6 +1239,27 @@ def test_stat_aura_ids_power(db, make_game):
     assert pa.shikigami[0].eff_power == 6          # 4 基础 + 2 光环
 
 
+def test_summon_orb_cost(db, make_game):
+    """坐下 20200227 型 summon orb_cost：效果内嵌费用——剩余鬼火不足则召唤失败
+    （其余步骤照常），足够则先付 1 火再召唤。"""
+    tom = 10013199
+    db.shikigami[tom] = F.shiki(tom, kind="summon", name="番茄", power=3, health=4)
+    cid = 10010183
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="summon", shikigami=tom, orb_cost=1)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 1
+    n = len(pa.shikigami)
+    play(g, 0, cid)                                # 付牌费后 0 火：召唤失败
+    assert len(pa.shikigami) == n
+    pa.orb = 2
+    play(g, 0, cid)                                # 付牌费后 1 火：先付再召
+    assert pa.orb == 0
+    assert pa.shikigami[-1].id == tom
+    assert pa.shikigami[-1].in_play
+
+
 def test_player_aura_random_other_enemy_character(db, make_game):
     """出击·番茄型牌手光环：番茄造成战斗伤害时对另一个随机敌方角色造成伤害
     （{source_shikigami: [ids]} 列表匹配 + random_damage exclude_victim；光环可叠加）。"""

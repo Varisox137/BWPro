@@ -213,15 +213,25 @@ def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shie
 
 
 @action("summon")
-def summon(game, ctx, *, targets: list[Ref], shikigami: int) -> None:
+def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0) -> None:
     """为效果归属玩家召唤一个召唤物（定义须 kind=summon）。
 
     召唤物的生成视作其移动进入战斗区（但不视为从准备区离开）；
     若战斗区已有驻留者，其退回准备区（召唤物则直接离场）。
     若该召唤物定义 keep_buffs=True，则同名再召时继承上次离场时的永久增减益。
+    orb_cost>0（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：效果内嵌费用——
+    控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常），足够则先付再召。
     """
     d = game.db.shikigami[shikigami]
     p = game.state.players[ctx.controller]
+    if orb_cost:
+        if p.orb < orb_cost:
+            game._log(f"{p.name} 鬼火不足，召唤失败")
+            return
+        old = p.orb
+        p.orb -= orb_cost
+        game.emit("on_orb_changed", player=ctx.controller, old=old, new=p.orb,
+                  reason="summon_orb_cost")
     if game._combat_zone_locked(ctx.controller):
         # 尘缚之阵：兵俑在战斗区且己方战斗区有式神时，召唤召唤物的效果无效
         game._log(f"{p.name} 的召唤效果被尘缚之阵无效化")

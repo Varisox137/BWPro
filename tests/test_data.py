@@ -506,10 +506,12 @@ def test_countdown_delta_immediate_trigger_and_noop(real_game):
     assert pb.shikigami[3].countdown is None
 
 
-def test_countdown_reset_all_enemies(real_game):
+def test_countdown_reset_all_enemies(gdb):
     """疯魔琴心（20191212 版 countdown_delta reset）：重置所有敌方角色的倒计时为
     初始值；无倒计时能力者空操作，己方式神不受影响。"""
-    g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
+    db = gdb.at_date(20191212)
+    g = F.mk_game(db, seed=1, team=YQS_TEAM)
+    pa, pb = F.battle_setup(g, {IDX: 2})
     pb.shikigami[1].level = 1
     g._register_ability_countdown(1, 1)       # B 鸩倒计时 2
     pb.shikigami[1].countdown = 1             # 模拟已被扣减
@@ -518,6 +520,20 @@ def test_countdown_reset_all_enemies(real_game):
     assert pb.shikigami[1].countdown == 2     # 重置回初始值
     assert pb.shikigami[3].countdown is None  # 妖刀姬无倒计时能力：空操作
     assert s.countdown == 2                   # 自身不受影响（initial 3，开局批次已 -1）
+
+
+def test_countdown_plus_enemy_self_minus(real_game):
+    """疯魔琴心 20200227 版（默认环境）：选择一名敌方式神倒计时 +2（正向累加、无能力者
+    空操作），再使妖琴师倒计时 -2（可立即归零触发基础能力）。"""
+    g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
+    pb.shikigami[1].level = 1
+    g._register_ability_countdown(1, 1)       # B 鸩倒计时 2
+    s = pa.shikigami[IDX]
+    assert s.countdown == 2                   # initial 3，开局批次已 -1
+    play(g, 0, FENGMO, target=Ref(player=1, shikigami=1))
+    assert pb.shikigami[1].countdown == 4     # +2（无上限累加）
+    assert s.countdown == 3                   # 妖琴师 2-2 归零：基础能力触发后重置为 3
+    assert pa.ext["countdown_history"] == [YQS]
 
 
 def test_countdown_delta_allies_minus(real_game):
@@ -1059,8 +1075,8 @@ FHH_TEAM = [100105, 100116, 100101, 100123]
 def test_projectile_on_own_spell(real_game):
     """基础能力：凤凰火使用专属法术（凤鸣）→ [投射]1（B 战斗区空 → 打脸）。"""
     g, pa, pb = _game(real_game, FHH_TEAM)
-    play(g, 0, FM)                            # 凤鸣 3 + 投射 1
-    assert pb.health == 26
+    play(g, 0, FM)                            # 凤鸣 2 + 投射 1（默认环境 20200227）
+    assert pb.health == 27
 
 
 def test_kill_pings_enemy_player(real_game):
@@ -1086,8 +1102,8 @@ def test_boost_effect_damage(real_game):
     """焚羽：凤凰火造成的非战斗伤害 +1——凤鸣直击与基础投射均吃增幅。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 2})
     play(g, 0, FY)
-    play(g, 0, FM)                            # (3+1) + 投射 (1+1)
-    assert pb.health == 24
+    play(g, 0, FM)                            # (2+1) + 投射 (1+1)
+    assert pb.health == 25
 
 
 def test_awaken_projectile_any_spell(real_game):
@@ -1099,18 +1115,18 @@ def test_awaken_projectile_any_spell(real_game):
     assert pb.health == 29                    # 觉醒牌自身的使用事件已触发觉醒能力
     play(g, 0, 10011603)                      # 山童怒吼（其他式神的专属法术）→ 投射 1
     assert pb.health == 28
-    play(g, 0, FM)                            # 凤鸣 3 + 投射 1（只触发一次）
-    assert pb.health == 24
+    play(g, 0, FM)                            # 凤鸣 2 + 投射 1（只触发一次）
+    assert pb.health == 25
     assert pa.shikigami[IDX].perm_power == 1  # 觉醒 +1/+1
 
 
 def test_enhance_per_player_damage(real_game):
     """炎舞增强：凤凰火每对敌方牌手造成 1 次伤害 +1——凤鸣直击与投射各计 1 次。"""
     g, pa, pb = _game(real_game, FHH_TEAM, {IDX: 3})
-    play(g, 0, FM)                            # 直击 3 + 投射 1 = 2 次
+    play(g, 0, FM)                            # 直击 2 + 投射 1 = 2 次
     assert pa.card_mods[YW]["enhance"] == 2
     play(g, 0, YW)                            # (5+2) 贯通投射打脸；炎舞本身再触发基础投射 1
-    assert pb.health == 30 - 4 - 7 - 1
+    assert pb.health == 30 - 2 - 1 - 7 - 1
 
 
 def test_piercing_projectile_overflow(real_game):
