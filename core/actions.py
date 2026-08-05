@@ -167,7 +167,7 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
     上限上调伴随的当前生命等量增加是直改而非治疗：不走 heal 事件、不触发
     "恢复生命时"类能力（维护者确认：古尘之壁"获得x生命"不算治疗）。
     上限下调（负值，墨笔夺魂"降低生命"）：同步钳当前生命到新上限；上限降至
-    不大于 0 时目标气绝（维护者定案第十四阶段）。
+    不大于 0 时目标气绝（维护者定案）。
     amount_ctx / amount_ext / amount_ext_source / amount_sign：数值扩展（同 buff_power）。
     """
     amount = _luck_amount(game, ctx, amount, amount_ctx, amount_ext,
@@ -714,7 +714,7 @@ def destroy(game, ctx, *, targets: list[Ref]) -> None:
     """直接消灭目标（非伤害：生命归零走气绝流程；尘缚之阵的免疫直接消灭在此判定）。
     濒死者不能再次被消灭（早退）。
     目标为牌手时（夺命增强变后"消灭受到判官战斗伤害的角色"）：消灭牌手 = 直接获胜——
-    牌手气绝、对局进入待结束（维护者定案第十四阶段）。"""
+    牌手气绝、对局进入待结束（维护者定案）。"""
     for ref in targets:
         if ref.shikigami is None:
             pl = game.state.players[ref.player]
@@ -984,7 +984,7 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
 
     shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
     "self"=来源式神；或给出数据 id。仅实际检索到卡牌才洗牌库（未命中不洗——
-    维护者定案第十三阶段；检索类效果命中即洗，答复(5)）。
+    维护者定案；检索类效果命中即洗）。
     card_type：限定卡牌主类型（森佑灵引 card_type=form）；max_level="target"：卡牌
     等级 ≤ 选择目标式神当前等级（"不高于该式神等级"）；card_id：按数据 id 精确
     检索（鸿运当头羁绊检索'这把算我赢'）。
@@ -2094,7 +2094,7 @@ def power_override(game, ctx, *, targets: list[Ref], on: bool = True,
 
 def _orb_count(value: int | dict, p: PlayerState, base_default: int) -> int:
     """次数参数解析：int 直取；{"orb": true} = 1 + 效果结算时剩余鬼火（基础 1 次 +
-    每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——第十阶段维护者答复）；
+    每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——维护者答复）；
     {"ext": key, "base": n} = base + 效果归属玩家 PlayerState.ext[key] 计数
     （流霰"本局每从手牌使用过一张'雪球'额外重复一次"，读 snowball_used_game）；
     其它 dict 取 base（缺省 base_default）。repeat/deck_top_pick 共用。"""
@@ -2243,7 +2243,7 @@ def reattach_form(game, ctx, *, targets: list[Ref]) -> None:
     game._attach_form(p, si, card, game.db.cards[card.id])
 
 
-# ==================== 运势批次（第十五阶段；契约 .tokensave/opmap_luck_batch.md） ====================
+# ==================== 运势批次（契约 .tokensave/opmap_luck_batch.md） ====================
 
 
 @action("stun")

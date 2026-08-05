@@ -6,7 +6,7 @@
   卡组码导入；校验通过即自动写回并回到管理界面（q 返回主菜单；文件不存在时
   自动创建；文件格式异常时提示并删除该文件）。每个卡组记录构筑环境 env
   （平衡性版本日期，null=最新；v2 文件读取时视为 null）：新建时先询问环境，
-  编辑中可用 e <环境> 切换（环境输入支持别名 alias 或 8 位日期，见 db/envs.py；
+  编辑中可用 e <环境> 切换（环境输入支持别名 alias 或 8/6 位日期，见 db/envs.py；
   环境下不存在的式神强制更换、卡牌自动移除）；
   构筑与 is_standard 校验均按 db.at_date(env) 解析。
 - 新建与编辑的单式神选牌均为严格输入：必须恰好 8 个卡牌序号（序号须存在），
@@ -42,9 +42,9 @@ STANDARD_COLOR = 94
 
 
 def _ask_env() -> int | None:
-    """构筑环境询问：Enter = 最新数据；别名（S1/S2）或 8 位日期，反复校验直到合法。"""
+    """构筑环境询问：Enter = 最新数据；别名或 8/6 位日期，反复校验直到合法。"""
     while True:
-        line = _input("构筑环境（alias 或 8 位日期，Enter = 最新）> ")
+        line = _input("构筑环境（alias 或日期，Enter = 最新）> ")
         try:
             return parse_env_input(line)
         except ValueError as e:
@@ -251,7 +251,7 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
                picks: dict[int, list[int]]) -> tuple[list[int], list[int], int | None]:
     """在当前基础上编辑（db 为完整库，内部按 env 解析出环境库 edb 使用）：
     序号 = 编辑该式神卡牌；h <序号> = 更换式神（清空其卡牌）；
-    e <环境> = 更改构筑环境（别名 S1/S2 或 8 位日期；环境下不存在的式神强制更换、
+    e <环境> = 更改构筑环境（别名或 8/6 位日期；环境下不存在的式神强制更换、
     卡牌自动移除）；Enter = 完成。
     完成时做 is_standard 检查：不满足标准规则时打印错误但仍返回
     （保存为非标准卡组），不强制要求合法。返回 (式神 ids, 卡牌 ids, env)。"""

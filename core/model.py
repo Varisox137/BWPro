@@ -86,7 +86,7 @@ class ShikigamiState(BaseModel):
                     # （上限 10）；气绝时保留不清零；消耗走 engine._spend_energy 统一入口
     defeated: bool = False  # 气绝
     dying: bool = False  # 濒死：生命 ≤ 0 但气绝事件尚未结算（通用状态标记，语义见 docs/rules.md）
-    stuns: list[dict[str, Any]] = Field(default_factory=list)  # 眩晕条目（第十五阶段）：
+    stuns: list[dict[str, Any]] = Field(default_factory=list)  # 眩晕条目：
     # {"kind": "normal", "turn": 施加时控制者回合号}（普通眩晕，己方回合结束批次移除非本回合
     # 施加者）/ {"kind": "lasting", "until": ...}（持续眩晕，预留）；非空 = 眩晕：
     # 不能出击、不能主动使用/响应使用其卡牌（能力仍可触发）；气绝时清除
@@ -269,7 +269,7 @@ class GameState(BaseModel):
     settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；CLI 空闲点逐条展示用，与 log 指令回显分离）
     timeline: list[dict[str, str]] = Field(default_factory=list)  # 合并时间线（{"k": "s"|"l", "m": msg}：
     # _settle/_log 双通道按真实发生顺序的合流；联机/热坐的结算播放以此为准，避免
-    # "能力触发"类叙事行滞后到插入结算明细之后（第十阶段 thoughts(1)））
+    # "能力触发"类叙事行滞后到插入结算明细之后（维护者定案））
     temp_grants: list[TempGrant] = Field(default_factory=list)  # 一次性临时触发注册表
     pending_choice: dict | None = None  # 结算中交互选择（青灯夜谈 deck_top_pick：
     # {"kind", "player", "options": [uid], "remaining", "clear_orb"}）；挂起期间只接受

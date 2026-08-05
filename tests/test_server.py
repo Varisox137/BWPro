@@ -822,7 +822,7 @@ def test_room_mode_standard_gates_env(db):
 
 
 def test_sanitize_keeps_revealed_hand_cards():
-    """已展示脱敏例外（第十七阶段）：对手手牌中 mods.revealed 的卡保留真实内容，
+    """已展示脱敏例外：对手手牌中 mods.revealed 的卡保留真实内容，
     未展示手牌与牌库仍占位隐藏；原始 payload 不被修改。"""
     from server.room import _HIDDEN_CARD, sanitize_state
     payload = {"players": [

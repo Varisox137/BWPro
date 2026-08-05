@@ -10,7 +10,7 @@ versions:
       target: {kind: choose, pool: enemy_shikigami}
       effects:
         # 使一个敌方式神降低2力量与1生命（非永久；buff_health 负值同步钳当前生命，
-        # 上限降至 ≤0 目标气绝——第十四阶段引擎行为）
+        # 上限降至 ≤0 目标气绝——引擎行为）
         steps:
           - {op: buff_power, amount: -2}
           - {op: buff_health, amount: -1}

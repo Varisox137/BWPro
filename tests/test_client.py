@@ -122,7 +122,7 @@ def test_hand_stats_live_enhance(db, make_game):
 
 def test_hand_aura_display_live(db, make_game):
     """手牌光环实时显示：卡牌光环的数值（含 ext 通道求值）与授予关键字
-    在手牌数值段/关键字段即时反映（维护者定案第十三阶段）。"""
+    在手牌数值段/关键字段即时反映（维护者定案）。"""
     db.cards[10010167] = F.card(
         10010167, card_type="combat", token=True,
         steps=[F.Step(op="buff_power", amount=1, target=T(kind="self")),
@@ -940,7 +940,7 @@ def test_deckbuilder_new_deck_env_flow(db, monkeypatch, capsys, tmp_path):
     feed(monkeypatch, lines)
     deckbuilder.run_deckbuilder(db, store_path=store)
     out = capsys.readouterr().out
-    assert "环境须为环境别名（alias）或合法的 8 位日期" in out
+    assert "环境须为环境别名或合法日期" in out
     loaded = deckstore.load_decks(db, store)
     assert len(loaded) == 1 and loaded[0]["env"] == 20991231
 
@@ -958,8 +958,8 @@ def test_net_client_env_date_switches_db(db):
 
 
 def test_net_lobby_env_command_alias_and_mode_gate(db, capsys):
-    """准备阶段 e <环境>（房主、双方未准备）：别名 S1/S2 解析为日期下发；
-    标准模式拒绝更改；非法输入本地拦截不发消息。"""
+    """准备阶段 e <环境>（房主、双方未准备）：别名解析为日期下发（6 位日期
+    按 20YY 展开）；标准模式拒绝更改；非法输入本地拦截不发消息。"""
     import json
 
     from client.net import NetClient
@@ -975,14 +975,14 @@ def test_net_lobby_env_command_alias_and_mode_gate(db, capsys):
     c.in_lobby = True
     c.seat = 0
     c.mode = "free"
-    c.handle_line("e s1")
+    c.handle_line("e 经典")
     assert c.ws.sent == [{"type": "env", "date": 20191212}]
-    c.handle_line("e 20991231")
-    assert c.ws.sent[-1] == {"type": "env", "date": 20991231}
+    c.handle_line("e 200327")
+    assert c.ws.sent[-1] == {"type": "env", "date": 20200327}
     c.handle_line("e 20261301")  # 非法日期：本地拦截
     assert len(c.ws.sent) == 2
     assert "环境须为环境别名" in capsys.readouterr().out
     c.mode = "standard"          # 标准模式：固定最新环境，不可更改
-    c.handle_line("e s2")
+    c.handle_line("e 不夜之火")
     assert len(c.ws.sent) == 2
     assert "标准模式使用最新平衡性环境，不可更改" in capsys.readouterr().out

@@ -739,7 +739,7 @@ def test_heal_player_triggers_self_heal(db, make_game):
     assert s.health == 4             # 灵能恢复等量 3（ capped by 已损失）
 
 
-# ---------- 清姬伤害转化 / 庇佑 / 生命钳制 / 破甲保留（第十四阶段） ----------
+# ---------- 清姬伤害转化 / 庇佑 / 生命钳制 / 破甲保留 ----------
 
 def test_damage_to_fragile_conversion(db, make_game):
     """清姬型伤害转化（伪关键字 damage_to_fragile）：来源持标记且受伤者无破甲 →
@@ -828,7 +828,7 @@ def test_fragile_kept_by_enemy_awaken(db, make_game):
     assert b1.shield == 0
 
 
-# ---------- 第十六阶段：破甲转移 / 破甲保留 / 破甲量战力 / 光环伤害加成 / 伤害来源条件 ----------
+# ----------破甲转移 / 破甲保留 / 破甲量战力 / 光环伤害加成 / 伤害来源条件 ----------
 
 def test_transfer_fragile(db, make_game):
     """腐坏直拳型破甲转移：来源破甲等量转移给每个目标（多名各获全量、非分配）后

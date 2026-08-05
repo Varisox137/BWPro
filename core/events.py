@@ -51,7 +51,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
     "on_energy_gained",     # 式神获得能量后 {player, target: Ref, old, new, amount（实际获得量）}
     #                       （延时时机；[充能]批次与 gain_energy 统一发点，烟烟罗类触发挂载）
-    # ---- 运势事件时点（第十五阶段；thoughts.txt 运势事件流程，core/engine.py 运势管线）----
+    # ---- 运势事件时点（thoughts.txt 运势事件流程，core/engine.py 运势管线）----
     "on_luck_judge",        # 运势判定时 {luck（可变事件 dict）, judge, source, x, dice}（座敷童子重投）
     "on_luck_success",      # 运势判定后（成功）{judge, source, x, dice}（青蛙瓷器/岭上开花/觉醒妖狐）
     "on_luck_effect_after",  # 运势生效后 {judge, source, x, dice}（预留）

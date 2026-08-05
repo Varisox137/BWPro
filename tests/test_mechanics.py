@@ -967,7 +967,7 @@ def test_bond_generate_exact_level(real_game):
     assert any(c.id in (10010301, 10010304) for c in pa.hand)   # 鬼之手/黑焰之手
 
 
-# ---------- 弹回 / 本回合力量覆写 / 目标池过滤（第十四阶段） ----------
+# ---------- 弹回 / 本回合力量覆写 / 目标池过滤 ----------
 
 def test_rebound_returns_to_hand(db, make_game):
     """弹回（蛇行击型）：使用后回手而非入墓；再次打出时持久修饰快照按实例去重
@@ -1086,7 +1086,7 @@ def test_all_pool_has_fragile_filter(db, make_game):
     assert pb.shikigami[1].shield == 0           # 破甲受伤即消耗
 
 
-# ---------- 第十六阶段：no_attack / 额外鬼火 / 气绝可用战斗牌 / 计数条件回退 / ids 光环 ----------
+# ----------no_attack / 额外鬼火 / 气绝可用战斗牌 / 计数条件回退 / ids 光环 ----------
 
 SID = 100101
 

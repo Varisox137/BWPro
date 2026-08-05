@@ -377,23 +377,26 @@ def test_balance_version_real_db(gdb):
 
 
 def test_env_alias_parse_and_label():
-    """环境别名注册表（db/envs.py）：别名大小写不敏感、8 位日期校验、显示名。"""
+    """环境别名注册表（db/envs.py）：别名大小写不敏感、8/6 位日期校验、显示名。"""
     from db.envs import env_label, parse_env_input
 
     assert parse_env_input("") is None
     assert parse_env_input("  ") is None
-    assert parse_env_input("S1") == 20191212
-    assert parse_env_input("s2") == 20200120
-    assert parse_env_input("经典") == 20191212   # 同一日期的中文别名
-    assert parse_env_input("公测") == 20191212
+    assert parse_env_input("经典") == 20191212
+    assert parse_env_input("公测") == 20191212   # 同一日期的多个别名
+    assert parse_env_input("不夜之火") == 20200327
     assert parse_env_input("20191212") == 20191212
+    assert parse_env_input("191212") == 20191212   # 6 位日期按 20YY 展开
+    assert parse_env_input("200423") == 20200423
     with pytest.raises(ValueError):
         parse_env_input("S9")
     with pytest.raises(ValueError):
         parse_env_input("20191301")
     with pytest.raises(ValueError):
+        parse_env_input("991312")              # 6 位展开后非法
+    with pytest.raises(ValueError):
         parse_env_input("abc")
     assert env_label(None) == "标准(最新)"
-    assert env_label(20191212) == "S1(20191212)"
-    assert env_label(20200120) == "S2(20200120)"
+    assert env_label(20191212) == "经典(20191212)"   # 同一日期取先登记别名
+    assert env_label(20200327) == "不夜之火(20200327)"
     assert env_label(20251212) == "20251212"

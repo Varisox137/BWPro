@@ -9,7 +9,7 @@ versions:
       level: 1
       effects:
         steps:
-          # 次数 = 1 + 效果结算时剩余鬼火（第十阶段维护者答复：基础 1 次 + 每点剩余鬼火
+          # 次数 = 1 + 效果结算时剩余鬼火（维护者答复：基础 1 次 + 每点剩余鬼火
           # 重复 1 次，0 火仍执行基础 1 次）；每次重复经 pending_choice 挂起等 choose 作答，
           # 选择后洗牌库；末次后一次性清空鬼火（2→0 不经过 1）
           - {op: deck_top_pick, count: 3, times: {orb: true}, clear_orb: true}

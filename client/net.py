@@ -322,7 +322,7 @@ class NetClient:
         if self.in_lobby:
             # 准备阶段：r 准备/取消准备（服务端切换语义）、q 离开（left 应答后断连）；
             # 自由模式房主（seat 0）在双方均未准备时可 e <环境> 更改对局环境
-            # （别名 alias 或 8 位日期；e 无参 = 最新）。
+            # （别名 alias 或 8/6 位日期；e 无参 = 最新）。
             # lobby 指令在 COMMAND_ALIASES 解析之前处理（否则 e 会被映射为 end）
             if cmd in ("ready", "r"):
                 self.send({"type": "ready"})
@@ -560,7 +560,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
             mode = "free"
             try:
                 env_date = parse_env_input(
-                    _input("对局环境（alias 或 8 位日期，Enter = 标准）> "))
+                    _input("对局环境（alias 或日期，Enter = 标准）> "))
             except ValueError as e:
                 print(str(e))
                 return

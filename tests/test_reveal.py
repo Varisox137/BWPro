@@ -1,4 +1,4 @@
-"""「已展示」机制族（第十七阶段）测试。
+"""「已展示」机制族测试。
 
 覆盖：reveal 三档（含协战归属）/ 调度展示传递（rules.md:528-533）/ 强索自动调度 /
 on_card_played card_revealed 条件 / dealt_damage_turn 过滤 / enemy_hand_all_revealed
@@ -124,6 +124,32 @@ def test_on_card_played_card_revealed_condition(db, make_game):
     assert pb.health == 28                       # 使用已展示牌：触发
     g.apply({"op": "play_card", "uid": plain.uid})
     assert pb.health == 28                       # 使用未展示牌：不触发
+
+
+def test_burst_play_revealed_hand_triggers(db, make_game):
+    """爆能使用已展示的手牌同样触发"使用已展示的手牌时"能力（爆能=使用方式，
+    同一实例、同一 on_card_played 载荷 card_revealed；觉 灵视/觉醒·觉口径）。"""
+    db.shikigami[100101].ability = F.EffectBlock(
+        when="on_card_played",
+        condition={"player": "opponent", "card_revealed": True},
+        steps=[F.dmg(2, T(kind="all", pool="enemy_player"))])
+    CID = 10010173
+    db.cards[CID] = F.card(CID, shikigami=100102, level=1, token=True,
+                           steps=[F.dmg(1, T(kind="all", pool="enemy_player"))],
+                           methods=[F.method("burst", energy_cost=2, effects=F.block(
+                               F.dmg(1, T(kind="all", pool="enemy_player"))))])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pb.orb = 9
+    si_b = next(i for i, s in enumerate(pb.shikigami) if s.id == 100102)
+    pb.shikigami[si_b].energy = 2
+    rev = give(g, 1, CID)
+    rev.mods["revealed"] = True
+    pass_turns(g, 1)                             # 换 B 行动
+    g.apply({"op": "play_card", "uid": rev.uid, "play_method": "burst"})
+    assert pb.shikigami[si_b].energy == 0        # 爆能照常支付
+    assert pb.health == 28                       # 爆能使用已展示牌：触发
+    assert pa.health == 28                       # 牌面基础 1 + 爆能追加 1 照常结算
 
 
 def test_dealt_damage_turn_filter(db, make_game):

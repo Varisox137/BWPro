@@ -120,7 +120,7 @@ class EffectBlock(BaseModel):
     trigger_when_defeated: bool = False
     countdown: int | None = None  # 非 None = 倒计时能力块（不作事件监听）：初值=countdown，
     # 归零时执行 steps（式神级倒计时框架，core/engine.py；形态牌倒计时仍用 CardDef.countdown）
-    luck: int | dict[str, Any] | None = None  # 运势门控（第十五阶段）：触发后对控制者做
+    luck: int | dict[str, Any] | None = None  # 运势门控：触发后对控制者做
     # 运势判定，按结果决定是否结算 steps。int = 成功所需点数 X（成功才结算）；
     # {"x": X, "on": "fail"} = 判定失败才结算（家内安全/和气满满）。判定者默认控制者；
     # 并行入队/同步推进由引擎负责（core/engine.py 运势管线）

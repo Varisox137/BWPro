@@ -50,7 +50,7 @@ def _yc_form(cid: int, name: str, steps=()) -> CardDef:
 @pytest.fixture
 def gdb():
     """真实 db + 测试库临时注册：萤草测试形态牌 A（空白进场）/B（进场 +2 护甲，
-    衍生号段 52/53——萤草 01-08 已于第十四阶段补齐真卡）。
+    衍生号段 52/53——萤草 01-08 已补齐真卡）。
     本覆盖原属 test_yingcao.py，合并后萤草基础能力测试（本文件）与灵矢贯虹测试
     （test_reinforce.py）各持一份。"""
     db = CardDatabase.load()
@@ -323,7 +323,7 @@ def test_awaken_replace_and_initial_one(real_game):
 # 妖琴师（100124）（原 test_yaqinshi.py）
 #
 # 覆盖：基础倒计时治疗、三觉醒替换+"觉醒前"旧能力倒计时 -3 再完成替换（on_before_awaken，
-# 第十阶段维护者答复）、大合奏按 countdown_history 首次出现顺序重放（replay_countdown +
+# 维护者答复）、大合奏按 countdown_history 首次出现顺序重放（replay_countdown +
 # _countdown_block_for）、魔音扰心无效化（主动 delay_grant / 响应 response 覆盖块两路径）、
 # 惊弦/疯魔琴心/余音的 countdown_delta（含无倒计时修正 -0）、镇魂歌抽牌+鬼火。
 # 队伍固定 [妖琴师, 鸩, 以津真天, 妖刀姬]，妖琴师 0 号位开局自动 1 级（静态倒计时开局
@@ -372,7 +372,7 @@ def test_base_countdown_heals(real_game):
 # ---------- 法术觉醒："觉醒前"旧能力倒计时 -3，再完成替换（三张不同卡牌用例） ----------
 
 def test_awaken_countdown_minus_before_replacement(real_game):
-    """法术觉醒牌共用流程（觉醒·入阵歌/神乐歌/镇魂歌；第十阶段维护者答复）：
+    """法术觉醒牌共用流程（觉醒·入阵歌/神乐歌/镇魂歌；维护者答复）：
     永久身材修正 + 觉醒替换注册倒计时 3（来源=觉醒牌 id）；同名触发挂"觉醒前"
     （on_before_awaken，能力替换前）——对被替换掉的旧能力倒计时 -3，归零则先结算
     旧倒计时效果，再完成替换（新注册倒计时不受本次 -3 影响）。"""
@@ -427,7 +427,7 @@ def test_awaken_countdown_minus_before_replacement(real_game):
 # ---------- 03 大合奏：按 history 首次出现顺序重放 ----------
 
 def test_replay_countdown_history_order(real_game):
-    """大合奏：按 history 首次出现顺序依次重放，每种至多一次（第十阶段新语义：
+    """大合奏：按 history 首次出现顺序依次重放，每种至多一次（新语义：
     觉醒前旧能力 -3——入阵歌在镇魂歌觉醒前被归零计入 history，镇魂歌自身未归零）。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
     pa.health = 20
@@ -1446,7 +1446,7 @@ def test_response_combat_swaps_target(real_game):
 
 def test_response_vs_hunt_no_retarget(real_game):
     """守护 vs 追猎：响应有目标的战斗（追猎类）时守护者照常移入战斗区并获得
-    +0/+4，但攻击目标不转移——仍打原定目标（维护者定案第十三阶段）。"""
+    +0/+4，但攻击目标不转移——仍打原定目标（维护者定案）。"""
     g, pa, pb = _game(real_game, QS_TEAM, {IDX: 1, 1: 1})
     pb.shikigami[0].level = 2                 # 守护为 2 级牌
     pb.orb = 1                                # 响应付 1 火
@@ -1472,7 +1472,7 @@ def test_revive_self_playable_when_defeated(real_game):
 
 def test_only_when_defeated_gate(real_game):
     """气绝限定（心即归处）：only_when_defeated 硬门控——犬神存活时既不能主动
-    使用，也不会被响应结算（维护者定案第十三阶段）。"""
+    使用，也不会被响应结算（维护者定案）。"""
     g, pa, pb = _game(real_game, QS_TEAM, {IDX: 2})
     with pytest.raises(IllegalAction, match="气绝时可用"):
         play(g, 0, XINGUI)                        # 存活时主动使用被拒
@@ -1621,7 +1621,7 @@ def test_search_deck(real_game):
 
 def test_search_deck_miss_no_shuffle(real_game):
     """检索未命中（花信风）：牌库中没有该式神的牌时检索落空——不补牌也不洗牌
-    （维护者定案第十三阶段）。"""
+    （维护者定案）。"""
     g, pa, pb = _game(real_game, THY_TEAM)
     pa.deck[:] = [c for c in pa.deck if c.id // 100 != THY]   # 清空牌库中桃花妖的牌
     before = [c.uid for c in pa.deck]
@@ -1662,7 +1662,7 @@ def test_inspire_assault_boost(real_game):
 
 
 # ==========================================================================
-# 判官（100110）（第十四阶段）
+# 判官（100110）
 #
 # 覆盖：基础能力（消灭→敌方牌手 1 伤+己方恢复 1）、墨笔夺魂/勾诀连招（降身材+
 # 力量过滤消灭）、生死无常（战斗区双清）、无情（敌方气绝倒计时+1）、觉醒替换
@@ -1752,7 +1752,7 @@ def test_kill_count_grants_form_power_delta(real_game):
 
 
 # ==========================================================================
-# 清姬（100114）（第十四阶段）
+# 清姬（100114）
 #
 # 覆盖：先天伤害转化（无破甲→等量破甲）、蛇行击（弹回+破甲加伤）、焚身之火
 # （指定破甲+有破甲者全体伤害）、无名之毒（瞬发投射）、觉醒（破甲保留）、
@@ -1825,7 +1825,7 @@ def test_enemy_fragile_power_aura_and_halfturn_reset(real_game):
 
 
 # ==========================================================================
-# 书翁（100118）（第十四阶段）
+# 书翁（100118）
 #
 # 覆盖：基础能力（起始手牌+1）、开卷/墨染（抽牌+手牌半数伤害）、纪行（伤害牌手抽牌）、
 # 明心（回合抽牌改检视三选一）、万象之书（其他己方式神各一张）、觉醒（空库燃烧替换）。
@@ -1898,7 +1898,7 @@ def test_deck_out_burn_instead_of_loss(real_game):
 
 
 # ==========================================================================
-# 萤草（100127）卡牌（第十四阶段；基础能力测试见前段）
+# 萤草（100127）卡牌（基础能力测试见前段）
 #
 # 覆盖：吸取（选目标伤害+鼓舞）、治愈之光/勇气之光/安魂之光（入场+回合开始循环）、
 # 萤火点点（双择+有形态增强）、闪烁（本回合力量覆写+响应）、觉醒·萤草（通配形态

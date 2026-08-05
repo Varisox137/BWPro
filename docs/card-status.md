@@ -43,7 +43,7 @@
 | 06 会 | ✅ | 所选目标仅己方可见：delay_grant secret，联机状态脱敏抹除对手视角的 chosen |
 | 07 觉醒·白狼 | ✅ | 任意伤害（非仅战斗）触发，与原版一致 |
 | 08 无我 | ✅ | |
-| 21 森佑灵矢 | ✅ | 协战主牌（白狼&萤草，id 10010121）：第十四阶段随[庇佑]与检索直接使用形态机制落地 |
+| 21 森佑灵矢 | ✅ | 协战主牌（白狼&萤草，id 10010121）：随[庇佑]与检索直接使用形态机制落地 |
 | 51 灵矢贯虹 | ✅ | 协战子选项（白狼侧战斗牌）：三步齐备——法术强化力量再授予（reapply_attack_buff_power：离/无我等 attack_buffs 力量部分合计再授予，仅力量）、羁绊 1 萤草形态进场效果再触发（trigger_form_enter，未结附空操作）、羁绊 2 鼓舞消耗转化（维护者答复(3)） |
 
 ## 兵俑（100102）
@@ -294,11 +294,11 @@
 | 基础能力 | ✅ | on_upgrade {target_shikigami: self} → generate（指令升级与 level_up op 两来源均触发——on_upgrade payload 新增 target Ref，level_up 补 emit）；双快照：20191212 生成'羁绊的价值' best / 20200120 生成'心身炼磨' |
 | 01 羁绊的价值 | ✅ | 双快照：20191212 永久 +1/+1（tags [lianmo] 出牌记账 lianmo_used_game）best / 20200120 heal {missing_health: self} 恢复所有生命（姑获鸟觉醒先例，无 tag） |
 | 02 心斩 | ✅ | 战斗 +0/+2 |
-| 03 心即归处 | ✅ | revive self（20191212 去[瞬发]）；playable_when_defeated + only_when_defeated 字段（第十三阶段）："仅在犬神气绝时可用"硬门控——存活时主动使用报错、响应收集直接跳过 |
+| 03 心即归处 | ✅ | revive self（20191212 去[瞬发]）；playable_when_defeated + only_when_defeated 字段："仅在犬神气绝时可用"硬门控——存活时主动使用报错、响应收集直接跳过 |
 | 04 恶·即·斩 | ✅ | 战斗 +4/+0 |
-| 05 守护 | ✅ | id 按 raw 重排（原 06）；战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；追猎类定向战斗可响应——守护者照常移入并获得 +0/+4，但目标不转移仍打原定目标（第十三阶段定案）；text 按 raw 无"转移攻击目标"字样（见出入 20） |
+| 05 守护 | ✅ | id 按 raw 重排（原 06）；战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；追猎类定向战斗可响应——守护者照常移入并获得 +0/+4，但目标不转移仍打原定目标（维护者定案）；text 按 raw 无"转移攻击目标"字样（见出入 20） |
 | 06 心剑乱舞 | ✅ | id 按 raw 重排（原 07）；形态 4/9：card_aura scope=form keywords [fast]（犬神的牌获得[瞬发]，读取时求值） |
-| 07 心技一体 | ✅ | id 按 raw 重排（原 05）；level 2 形态 3/5 → level 3 形态 4/9；card_aura scope=form + power_ext/shield_ext（ext 数值通道，读 lianmo_used_game）；双快照：20191212 记账卡='羁绊的价值' best / 20200120 记账卡='心身炼磨'（均 tags [lianmo] 出牌记账）；手牌数值显示已含光环 ext 通道（第十三阶段，刃影叠岚同解） |
+| 07 心技一体 | ✅ | id 按 raw 重排（原 05）；level 2 形态 3/5 → level 3 形态 4/9；card_aura scope=form + power_ext/shield_ext（ext 数值通道，读 lianmo_used_game）；双快照：20191212 记账卡='羁绊的价值' best / 20200120 记账卡='心身炼磨'（均 tags [lianmo] 出牌记账）；手牌数值显示已含光环 ext 通道（刃影叠岚同解） |
 | 08 觉醒·犬神 | ✅ | +0/+0（20191212 去 +1/+1）；on_turn_end {player: self, holder_defeated: true} + trigger_when_defeated 字段（能力收集对气绝者放行——仅气绝时触发）：revive + perm +1/+1；raw 无气绝限定，机制保持仅气绝时触发（见出入 19） |
 | 51 心身炼磨 | ✅ | 衍生（20200120 起升级产物）：perm +1/+1；tags [lianmo] 保留；重写为 20200120 唯一版本——去 20251212 的动态瞬发（conditional_keywords {level_ge: 2}）与免费（cost_zero_if {level_ge: 3}） |
 
@@ -308,7 +308,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | on_heal {source_shikigami: self, target_side: friendly, target_kind: shikigami} / on_shikigami_revived {source_shikigami: self, shikigami_side: friendly} → 临时 +1 力量（revive op 补 source/reason="effect" 传递；倒计时复活 source=None 不触发） |
 | 01 桃之馨息 | ✅ | choose any_character heal 5 |
-| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，命中才洗牌库、未命中不洗——第十三阶段定案）；边界：选择池 friendly_shikigami 限在场式神（气绝/未升级式神暂不可选） |
+| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，命中才洗牌库、未命中不洗——维护者定案）；边界：选择池 friendly_shikigami 限在场式神（气绝/未升级式神暂不可选） |
 | 03 丰实 | ✅ | id 按 raw 卡序重排（原 04）：形态 3/7：进场与 on_turn_start {player: self} → heal 3，friendly_injured 池 + TargetSpec {random: 1} 键（rng.sample，repeat 每轮重解析重随机） |
 | 04 桃之夭夭 | ✅ | id 按 raw 卡序重排（原 03）：cost 0 + keywords [inspire]（鼓舞关键字登记）；basic_boost +2/+2 出击加成 |
 | 05 桃语春风 | ✅ | choose friendly_defeated 新池 revive + grant_keyword haste（迅捷天然一次性类别） |
@@ -322,12 +322,12 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | on_shikigami_defeated {victim_kind: shikigami, source_shikigami: self}（判官消灭式神）→ 打敌方牌手 1 + 己方牌手回 1；本体双快照（20191212 3/4 best / 20200120 2/4） |
-| 01 墨笔夺魂 | ✅ | buff_health 负值通道：上限下调同步钳当前生命，上限 ≤0 走气绝（第十四阶段定案） |
+| 01 墨笔夺魂 | ✅ | buff_health 负值通道：上限下调同步钳当前生命，上限 ≤0 走气绝（维护者定案） |
 | 02 勾诀 | ✅ | TargetSpec 过滤键 power_le（spec_pool_refs 统一校验/展示） |
 | 03 生死无常 | ✅ | [响应] 挂"己方战斗区式神被攻击时"；两连 destroy（任一侧战斗区为空该步空操作）；text 按 raw 对齐 |
 | 04 无情 | ✅ | 形态：countdown_delta revive=True——敌方式神气绝倒计时 +1 |
 | 05 觉醒·判官 | ✅ | +1/+1；20191212 为纯觉醒替换（去 -2力量/-1生命效果步与 target）；觉醒能力"当你消灭一个式神时"= {source_side: friendly}（己方任一式神消灭即触发，不限判官本人） |
-| 06 夺命 | ✅ | [必杀]（20191212 去[穿刺]）；增强：triggers 消灭计数 kill_count ≥13 → persistent transformed；变后 = temp_grants（绑本次战斗）on_damage/on_player_damaged {source_shikigami: self, kind: combat, card_transformed: 10011006} → destroy victim / damaged_player（destroy 支持牌手目标：消灭牌手 = 直接获胜，第十四阶段定案） |
+| 06 夺命 | ✅ | [必杀]（20191212 去[穿刺]）；增强：triggers 消灭计数 kill_count ≥13 → persistent transformed；变后 = temp_grants（绑本次战斗）on_damage/on_player_damaged {source_shikigami: self, kind: combat, card_transformed: 10011006} → destroy victim / damaged_player（destroy 支持牌手目标：消灭牌手 = 直接获胜，维护者定案） |
 | 07 死之宣告 | ✅ | destroy 任选式神（含己方） |
 | 08 断罪 | ✅ | 形态增强：triggers 消灭计数 → form_power_delta（_materialize 生成点统一快照，_mat 记账防重复合并） |
 
@@ -601,8 +601,8 @@
 
 ## 不夜之火偏差与暂定清单
 
-本批实现侧的 2 处偏差与 8 条暂定语义已于第二十阶段维护者答复（thoughts.txt 10 条）全部定案，
-现无悬挂项（结论归档于 questions.md「本轮已落实」第二十阶段续节）：
+本批实现侧的 2 处偏差与 8 条暂定语义经维护者答复（thoughts.txt 10 条）全部定案，
+现无悬挂项（结论归档于 questions.md「本轮已落实」）：
 
 - 偏差 2 处均已按定案改正消除：同心协力复制改"置入牌库"原版语义（generate position=random
   随机插入不洗牌，不再固定库底）；日出有曜改单目标双 step（clear_boosts 显式选牌手才生效、
@@ -642,12 +642,12 @@
     力量部分合计，作为攻击后到期强化再次授予；按原文只取力量，关键字不重复）；羁绊 1
     "攻击前触发萤草当前形态进场效果"实现为 trigger_form_enter（萤草基础数据已入库，
     未结附形态空操作）；羁绊 2 鼓舞消耗转化（前期答复 10，consume_assault_boosts）。
-    森佑灵矢主牌已于第十四阶段齐备（森佑灵引的[庇佑]与牌库检索直接使用形态均已实现）。
+    森佑灵矢主牌已齐备（森佑灵引的[庇佑]与牌库检索直接使用形态均已实现）。
 
 11. **爆牌统一路径**：手牌上限检查落在 move_card——抽牌、生成置入手牌、调度换牌等所有
-    进手路径共用同一爆牌流程（超出 hand_cap 的牌转而置入墓地）——第十四阶段定案。
+    进手路径共用同一爆牌流程（超出 hand_cap 的牌转而置入墓地）——维护者定案。
 12. **夺命变后与墨笔夺魂**：destroy 支持牌手目标（消灭牌手 = 直接获胜，走牌手气绝判负
-    流程）；buff_health 负值下调上限时同步钳当前生命，上限 ≤0 走气绝——第十四阶段定案。
+    流程）；buff_health 负值下调上限时同步钳当前生命，上限 ≤0 走气绝——维护者定案。
 13. **吸取**：raw"造成2点伤害"无目标限定词，按维护者答复(4)为使用时主动选择目标
     （任意式神）；此前的投射定案作废。
 14. **森佑灵引**：检索命中即洗牌库（维护者答复(5)：牌库检索类效果命中都需要洗牌库，
@@ -669,7 +669,7 @@
 20. **守护**：raw 无"敌方/转移攻击目标"字样（仅"当你其他式神被攻击时，自动使用此牌"），
     机制保持——响应挂 {attacker_side: enemy}，响应插入移入战斗区、无目标战斗重读目标；
     追猎/直击类有目标战斗中可响应（付火/+0/+4/移入照常）但不转移攻击目标
-    （第十三阶段定案）；text 按 raw 逐字。
+    （维护者定案）；text 按 raw 逐字。
 21. **调度/牌库拿牌隐含检索洗牌**：强索、青灯夜谈的 20191212 文本无"洗牌库"字样，
     但调度与非抽牌的牌库拿牌都隐含检索（维护者答复(7)(8)，早期文本未显式写明）——
     text 按 raw 逐字，行为照常洗牌（与森佑灵引出入 14 同一定案）。
@@ -691,4 +691,4 @@
   - 冰霜永冻 = 10012121（雪女 100121 < 雪童子 100122）；子选项 冰封 = 10012152（已入库）、雪刃 = 10012251（幻境未实现，暂缓）
   - 跳跳兄弟 = 10012021（跳跳弟弟 100120 < 跳跳哥哥）；跳跳哥哥未加入——主牌与子选项 尸瘴 = 10012051（幻境）均暂缓
 - 主牌均须等两位所属式神都已引入才能进 db（loader 校验 shikigami2 存在）；
-  剩余主牌待子选项机制：涅槃明灯（烛火重燃）、冰霜永冻（雪刃）、跳跳兄弟（跳跳哥哥未加入）；森佑灵矢已于第十四阶段齐备。
+  剩余主牌待子选项机制：涅槃明灯（烛火重燃）、冰霜永冻（雪刃）、跳跳兄弟（跳跳哥哥未加入）；森佑灵矢已齐备。

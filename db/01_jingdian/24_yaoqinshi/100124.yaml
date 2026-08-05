@@ -17,7 +17,7 @@ versions:
       abilities:
         # 使用妖琴师的觉醒法术牌时：妖琴师倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），
         # 对被替换掉的（旧）能力倒计时 -3，归零则先结算旧倒计时效果，再完成觉醒替换
-        # （第十阶段维护者答复"能力不变"：raw 文本虽挪入各觉醒牌使用效果，语义不变）
+        # （维护者答复"能力不变"：raw 文本虽挪入各觉醒牌使用效果，语义不变）
         - when: on_before_awaken
           condition: {player: self, target_shikigami: self}
           steps:
