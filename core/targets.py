@@ -374,8 +374,6 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {holder_has_form: true|false} ：能力持有者当前是否结附着形态（萤草 20200327
       能力两项动态要求"萤草结附有形态"才生效）
     - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）
-    - {battle_damage_ge: n}    ：本次战斗（事件 battle 所指）攻击方实际造成的战斗伤害
-      合计 ≥ n（光影"若本次战斗造成的伤害≧6"，on_after_assault 时机读取）
     - 其余按键值相等比较
     """
     if not condition:
@@ -520,12 +518,6 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             else:
                 return False
             if _ref_stunned(game, other) != bool(want):
-                return False
-        elif key == "battle_damage_ge":
-            # 本次战斗（事件 battle 所指）攻击方实际造成的战斗伤害合计 ≥ n
-            # （光影 temp_grants 门控"若本次战斗造成的伤害≧6"；on_after_assault 时机读取）
-            bid = event.get("battle")
-            if bid is None or game._battle_combat_dmg.get(bid, 0) < int(want):
                 return False
         elif key.endswith("_ge"):
             # 通用数值下限：事件字段 ≥ n（如 overheal_ge: 1 = 存在过量治疗）；

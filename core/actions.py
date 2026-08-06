@@ -2015,8 +2015,9 @@ def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> Non
 
 @action("double_damage_vs_fragile")
 def double_damage_vs_fragile(game, ctx, *, targets: list[Ref]) -> None:
-    """破甲双倍标记（targets 忽略）：登记到当前战斗上下文——该战斗中攻击方对有破甲的
-    式神造成的战斗伤害翻倍（义道；伤害管线于批次 4 破甲加伤后、护甲抵扣前读取，
+    """破甲双倍标记（targets 忽略）：登记到当前战斗上下文（战斗 id → 攻击者 Ref）——
+    仅此战斗牌发起的战斗中，攻击者本人对具有破甲的式神造成的战斗伤害翻倍（义道；
+    反击不翻倍，嵌套/插入战斗不继承；伤害管线于[暴击]时机=扣减生命前2读取，
     战斗终止点清除）。
 
     主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
@@ -2024,7 +2025,7 @@ def double_damage_vs_fragile(game, ctx, *, targets: list[Ref]) -> None:
     """
     if not game._battle_stack:
         return
-    game._battle_double_fragile.add(game._battle_stack[-1])
+    game._battle_double_fragile[game._battle_stack[-1]] = ctx.source
 
 
 @action("launch_attack")

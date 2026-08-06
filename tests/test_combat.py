@@ -5,7 +5,6 @@
 残心的 keep_attack_buffs、觉醒·兵俑的 keep_shield 同为第二批落地机制。
 测试辅助卡使用衍生号段（51+，token=True）。
 """
-from core import targets as targets_mod
 from core.actions import ACTIONS
 from core.engine import IllegalAction
 from core.model import Ref
@@ -26,8 +25,8 @@ ENEMY_PLAYER = T(kind="all", pool="enemy_player")
 # ---------- 连击 / 先攻 ----------
 
 def test_combo_kill_no_counter(db, make_game):
-    """连击：先攻阶段消灭被攻击者，不吃反击；无贯通第二段落空但战斗不终止
-    （on_after_assault 照常发出——义道/鹿角冲撞定案）。"""
+    """连击：先攻阶段消灭被攻击者，不吃反击；无贯通则战斗终止——不进第二段，
+    on_after_assault 等后续时机不结算（定案(6)，与先攻一致）。"""
     g = make_game()
     move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
@@ -38,29 +37,28 @@ def test_combo_kill_no_counter(db, make_game):
     g.apply({"op": "assault", "index": 0})
     assert b.defeated
     assert a.health == 4  # 未吃反击
-    assert "on_after_assault" in g.history  # 第二段落空，战斗不终止
+    assert "on_after_assault" not in g.history  # 战斗终止：后续时机不结算
 
 
 def test_combo_kill_revive_second_strike_original(db, make_game, monkeypatch):
-    """连击第一段击杀的被攻击者在交战阶段前复活：第二段打回原目标（反击照常）。
-
-    复活通道经 targets.is_veiled 钩子模拟（重选段的唯一同步插入点）。"""
+    """连击第一段击杀的被攻击者在求值点前已复活：战斗继续，第二段打回原目标
+    （反击照常）。复活通道经 check_defeated 钩子模拟（桃花妖类）。"""
     g = make_game()
     move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
     b.health = 1
     a = g.state.players[0].shikigami[0]
     a.keywords.append("combo")
-    orig_veiled = targets_mod.is_veiled
+    orig = type(g).check_defeated
     revived = {"done": False}
 
-    def revive_on_reselect(game, ref, controller):
+    def revive_after_defeat(self, ref, source=None, reason=None):
+        orig(self, ref, source=source, reason=reason)
         if ref.player == 1 and ref.shikigami == 0 and b.defeated and not revived["done"]:
             revived["done"] = True
-            game._revive(game.state.players[1], 1, 0)  # 气绝后复活（桃花妖类通道）
-        return orig_veiled(game, ref, controller)
+            g._revive(g.state.players[1], 1, 0)  # 气绝后复活（桃花妖类通道）
 
-    monkeypatch.setattr(targets_mod, "is_veiled", revive_on_reselect)
+    monkeypatch.setattr(type(g), "check_defeated", revive_after_defeat)
     g.apply({"op": "assault", "index": 0})
     assert revived["done"]
     assert not b.defeated
@@ -1447,8 +1445,9 @@ def test_battle_retarget_redirects_strike_to_other_enemy(db, make_game):
 # ==========================================================================
 
 def test_double_damage_vs_fragile(db, make_game):
-    """义道型破甲双倍：战斗牌 double_damage_vs_fragile 步提取绑定本次战斗——
-    对有破甲的式神造成的战斗伤害在破甲加伤后翻倍（破甲照常消耗）；对牌手不翻倍。"""
+    """义道型破甲双倍（[暴击]时机=扣减生命前2）：战斗牌 double_damage_vs_fragile 步
+    提取绑定本次战斗——攻击者本人对有破甲的式神造成的战斗伤害翻倍（破甲照常消耗）；
+    对牌手不翻倍；反击伤害不翻倍。"""
     cid = 10010174
     db.cards[cid] = F.card(cid, card_type="combat", token=True,
                            steps=[F.Step(op="double_damage_vs_fragile")])
@@ -1469,25 +1468,42 @@ def test_double_damage_vs_fragile(db, make_game):
     pb2.shield = -2
     play(g2, 0, cid)
     assert pb2.health == 25                  # 3 + 2 破甲（无翻倍）
+    # 反击不翻倍：攻击者持破甲吃反击，仅破甲加伤
+    g3 = make_game()
+    pa3, pb3 = g3.state.players
+    pa3.orb = 9
+    move(g3, 1, 0)
+    a3 = pa3.shikigami[0]
+    a3.health = 99
+    a3.shield = -2
+    play(g3, 0, cid)
+    assert a3.health == 94                   # 反击 3 + 2 破甲（无翻倍）
 
 
-def _memory_combat_card(db, cid, keywords=()):
-    """光影型记账战斗牌：战斗后若本次战斗造成伤害 ≧6，抽 1 并给己方牌手回合计一半血。"""
+def _yako_combat_card(db, cid, keywords=()):
+    """光影型战斗牌（+3 战力）：铃鹿御前造成战斗伤害时，若该次伤害 >=6——
+    抽 1 并给己方牌手回该次伤害一半的血（on_damage/on_player_damaged 双块，
+    按单个伤害事件判定；{event: amount, half: true} 数值键=事件值减半向下取整）。"""
+    grants = [F.EffectBlock(
+        when=w, condition={"kind": "combat", "source_shikigami": "self",
+                           "amount_ge": 6},
+        steps=[F.Step(op="draw", count=1),
+               F.Step(op="heal", amount={"event": "amount", "half": True},
+                      target=T(kind="all", pool="self_player"))])
+        for w in ("on_damage", "on_player_damaged")]
     db.cards[cid] = F.card(
-        cid, card_type="combat", keywords=list(keywords), steps=[], token=True,
-        temp_grants=[F.EffectBlock(
-            when="on_after_assault", condition={"battle_damage_ge": 6},
-            steps=[F.Step(op="draw", count=1),
-                   F.Step(op="heal", amount={"battle_damage_half": True},
-                          target=T(kind="all", pool="self_player"))])])
+        cid, card_type="combat", keywords=list(keywords), token=True,
+        steps=[F.Step(op="buff_power", amount=3, target=SELF)],
+        temp_grants=grants)
 
 
-def test_battle_damage_memory_condition_and_half(db, make_game):
-    """光影记账：battle_damage_ge 条件键读本次战斗攻击方实际战斗伤害合计（连击两段
-    合计），battle_damage_half 数值键回合计一半（向下取整）；不足阈值不触发。"""
-    _memory_combat_card(db, 10010175, keywords=["combo"])
-    _memory_combat_card(db, 10010176)
-    # 连击两段各 3，合计 6 ≧ 6：触发抽牌与回血 3
+def test_battle_damage_per_event_trigger(db, make_game):
+    """光影按单个伤害事件判定（定案）：该次伤害 >=6 才触发——贯通对式神+牌手两段
+    各 <6（合计 >=6）不触发；连击两段各 >=6 各触发一次；回血=该次伤害一半向下取整。"""
+    _yako_combat_card(db, 10010175, keywords=["combo"])
+    _yako_combat_card(db, 10010176)
+    _yako_combat_card(db, 10010177, keywords=["piercing"])
+    # 连击两段各 6：各触发一次（抽 2、回 3+3）
     g = make_game()
     pa, pb = g.state.players
     pa.orb = 9
@@ -1496,10 +1512,10 @@ def test_battle_damage_memory_condition_and_half(db, make_game):
     pb.shikigami[0].health = 99
     deck0 = len(pa.zones["deck"])
     play(g, 0, 10010175)
-    assert pb.shikigami[0].health == 93      # 两段合计 6
-    assert len(pa.zones["deck"]) == deck0 - 1
-    assert pa.health == 23                   # 6 // 2
-    # 单段 3 < 6：条件不成立，不抽不回
+    assert pb.shikigami[0].health == 87      # 两段各 6
+    assert len(pa.zones["deck"]) == deck0 - 2
+    assert pa.health == 26                   # 6//2 × 2 次
+    # 单段 6：触发一次（抽 1、回 3）
     g2 = make_game()
     pa2, pb2 = g2.state.players
     pa2.orb = 9
@@ -1508,6 +1524,20 @@ def test_battle_damage_memory_condition_and_half(db, make_game):
     pb2.shikigami[0].health = 99
     deck1 = len(pa2.zones["deck"])
     play(g2, 0, 10010176)
-    assert pb2.shikigami[0].health == 96
-    assert len(pa2.zones["deck"]) == deck1
-    assert pa2.health == 20
+    assert pb2.shikigami[0].health == 93
+    assert len(pa2.zones["deck"]) == deck1 - 1
+    assert pa2.health == 23
+    # 贯通：式神段 4（贯通修正按生命截断）+ 牌手段 2——各 <6 不触发（合计 6 也不算）
+    g3 = make_game()
+    pa3, pb3 = g3.state.players
+    pa3.orb = 9
+    pa3.health = 20
+    move(g3, 1, 0)
+    pb3.shikigami[0].health = 4
+    pb3.shield = 0
+    deck2 = len(pa3.zones["deck"])
+    play(g3, 0, 10010177)
+    assert pb3.shikigami[0].defeated         # 式神段 4
+    assert pb3.health == 28                  # 牌手段溢出 2
+    assert len(pa3.zones["deck"]) == deck2   # 未触发
+    assert pa3.health == 20

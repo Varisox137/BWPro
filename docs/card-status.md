@@ -499,7 +499,7 @@
 | 05 灵视 | ✅ | 形态 5/5；敌方牌手使用已展示的手牌时对他造成 2 伤（on_card_played 载荷 card_revealed 条件）；20191212 去[吸血]、改"你恢复 2 点生命"（heal 2 self_player） |
 | 06 记仇 | ✅ | 双版本：20191212（best）= "复仇复制"——delay_grant 一次性监听（跨回合留存）：下一次任意玩家对单个己方式神使用法术（chosen_side 新条件键，on_card_played 新增 chosen 载荷）→ echo_event_card 以觉方身份凭空复制、目标强制=施法者自身式神、不做合法性检查（维护者答复(5)）；20251212 = 消灭一个本回合造成过伤害的敌方式神（TargetSpec 过滤键 dealt_damage_turn——伤害结算点记账、回合开始清除）；[响应] 受到敌方式神伤害时自动对伤害来源使用（response 覆盖块 + context source） |
 | 07 心灵迷宫 | ✅ | 形态 5/5；敌方使用已展示的手牌额外耗 1 鬼火（cost_delta_player side=opponent + card_flag=revealed + scope=form——形态结附期间持续、离场移除；仍在 cost>0 门内，[瞬发]/[不消耗鬼火]全免）；增强：敌方手牌全部已展示时得[瞬发]（conditional_keywords 算子 enemy_hand_all_revealed） |
-| 08 觉醒·觉 | ✅ | 双快照：20191212（best 保持）2 级：+1/+1；展示敌方所有手牌（reveal mode=all 补存量）；觉醒被动①：每当一张牌进入敌方手牌时将其展示（入手统一钩子 on_card_enter_hand + reveal mode=event）；被动②：敌方牌手使用已展示的手牌时觉 +1/+1 / 20200520 3 级：使用效果 reveal all + on_turn_start reveal all（双方回合开始——暂定语义④；入手即展示被动按 raw 不带入） |
+| 08 觉醒·觉 | ✅ | 双快照：20191212（best 保持）2 级：+1/+1；展示敌方所有手牌（reveal mode=all 补存量）；觉醒被动①：每当一张牌进入敌方手牌时将其展示（入手统一钩子 on_card_enter_hand + reveal mode=event）；被动②：敌方牌手使用已展示的手牌时觉 +1/+1 / 20200520 3 级：使用效果 reveal all + on_turn_start reveal all（双方回合开始——维护者定案(4)确认；入手即展示被动按 raw 不带入） |
 
 （**经典包 01_jingdian 31 位式神至此完结**——不含未加入的协战对象：跳跳哥哥/樱花妖等；其协战牌主牌/子选项随之暂缓，见文末协战牌 id 设计。）
 
@@ -597,13 +597,13 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 紫岩 3/4；"对一个角色造成伤害时使其获得1破甲"（abilities 双块：on_damage/on_player_damaged {source_shikigami: self} → gain_shield fragile 1，二太郎之戟同管线） |
 | 01 白刃 | ✅ | 战斗 +1/+1 甲；conditional_keywords 新算子 enemy_fragile_ge2（敌方场上存在破甲 ≥2 的角色时此牌得[瞬发]） |
-| 02 霸主 | ✅ | 形态 4/5：grant_immunity 新 kind=fragile_source scope=form（免疫当前持有破甲的敌方式神造成的伤害——牌手来源不免疫、类别不限，暂定语义⑤） |
-| 03 光影 | ✅ | 战斗 +1/+1 甲；temp_grants on_after_assault + 新条件键 battle_damage_ge:6（_battle_combat_dmg 攻击方 kind=combat 实际扣血合计，暂定语义①）→ 抽 1 + heal 新数值键 {battle_damage_half: true} 己方牌手 |
+| 02 霸主 | ✅ | 形态 4/5：grant_immunity 新 kind=fragile_source scope=form（免疫当前持有破甲的敌方式神造成的伤害——牌手来源不免疫、类别不限，维护者定案(5)确认） |
+| 03 光影 | ✅ | 战斗 +1/+1 甲；temp_grants 双块 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + amount_ge:6——单伤害事件触发，维护者定案：贯通两段各<6合计>=6不触发、连击两段各>=6各触发一次）→ 抽 1 + heal {event: amount, half: true}（新数值通道：事件值减半向下取整，与 cap 同修饰位、cap 先截后减）己方牌手 |
 | 04 冥弓 | ✅ | distribute_damage 4 pool enemy_shikigami（随机分配给所有敌方式神——天狗风乱同管线收窄池，无新机制） |
-| 05 觉醒·铃鹿御前 | ✅ | +0/+1；abilities 双块同基础能力管线：gain_shield fragile {event: amount, cap: 3}（事件引用封顶新形式——暂定语义③） |
+| 05 觉醒·铃鹿御前 | ✅ | +0/+1；abilities 双块同基础能力管线：gain_shield fragile {event: amount, cap: 3}（事件引用封顶新形式——维护者定案(3)确认） |
 | 06 无往 | ✅ | 战斗 +0/+2 甲；choose 新目标池 enemy_fragile_or_combat（敌方有破甲的在场式神或敌方战斗区式神，或关系）→ 打 2 |
 | 07 归乡 | ✅ | 形态 4/8：on_before_assault {attacker_shikigami: self} 投射 3（生生不息同管线，无能量消耗） |
-| 08 义道 | ✅ | 战斗 -1/+2 甲，keywords [piercing, combo]；新 op double_damage_vs_fragile 为战斗牌专用提取步（破甲加伤后立即 ×2、限式神受害者、combat/counter 均翻倍——暂定语义②） |
+| 08 义道 | ✅ | 战斗 -1/+2 甲，keywords [piercing, combo]；新 op double_damage_vs_fragile 为战斗牌专用提取步——按[暴击]时机（扣减生命前2 挂点，engine.py:2895 锚点）：本张战斗牌发起的战斗内、铃鹿御前本人、kind=combat（反击不翻倍）、victim=持破甲式神 ×2，嵌套/插入战斗不继承（维护者定案(2)；[暴击]本体预留锚点） |
 
 （02 不夜之火 7 式神落地：前 6 式神各 8 卡但惊鸿之舞未录入（= 47 卡）+ 铃鹿御前 8 卡 = 55 卡 + 召唤物 2（烬染不夜 10020299、烟烟罗的分身 10020499）；前 6 式神 date/best=20200327、铃鹿御前 date/best=20200520。萤草 100127 加 20200327 快照见经典包萤草节。）
 
@@ -625,19 +625,6 @@
   mirror_spell 主动与自动使用均触发（改正）；battle_retarget 随机可含牌手（确认）；
   use_card_copy 不耗出击次数（确认）；气绝式神回合开始不充能（改正）；
   on_energy_gained 满上限照常发出 amount=0（改正）。
-
-## 铃鹿御前批次暂定清单
-
-本批实现侧暂定语义 6 条（待维护者确认，登记于 questions.md 待确认节）：
-
-1. **光影合计口径**：攻击方 kind=combat 实际扣血总和（连击两段合计、贯通溢出给牌手
-   计入、反击/攻击替换不计）；回血 = floor(合计/2) 给己方牌手。
-2. **义道翻倍点**：破甲加伤后立即 ×2、限式神受害者、combat/counter 都翻倍
-   （反击打持破甲攻击者也会翻倍——若只需"你造成的"需加来源限定）。
-3. **觉醒·铃鹿御前 cap**：事件引用值截断 min(本次伤害, 3)。
-4. **觉醒·觉 20200520 回合开始展示**：双方回合开始（on_turn_start 不分敌我）。
-5. **霸主来源限定**：来源须为敌方式神（牌手来源不免疫）、伤害类别不限。
-6. **连击落空**：无贯通击杀后战斗不再终止（on_after_assault 照常、第二段落空）。
 
 ## 与原版描述的出入（已决议，2026-07）
 

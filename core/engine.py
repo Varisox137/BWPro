@@ -128,11 +128,9 @@ class Game:
         self._battle_counter_piercing: set[int] = set()
         # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量)]，"攻击时"登记、战斗结束后回赋
         self._battle_echo: dict[int, list[tuple[Ref, int]]] = {}
-        # 义道：攻击方对有破甲的式神造成的战斗伤害翻倍的战斗 id 集合（终止点清除）
-        self._battle_double_fragile: set[int] = set()
-        # 光影记账：battle id → 本次战斗攻击方实际造成的战斗伤害合计（连击两段合计；
-        # 贯通溢出给牌手的同 kind 伤害亦计入；终止点清除；battle_damage_ge/half 读取）
-        self._battle_combat_dmg: dict[int, int] = {}
+        # 义道：battle id → 攻击者 Ref——仅此战斗牌发起的战斗（嵌套/插入不继承）中，
+        # 攻击者本人对有破甲的式神造成的战斗伤害翻倍（[暴击]时机=扣减生命前2；终止点清除）
+        self._battle_double_fragile: dict[int, Ref] = {}
         # 交战目标改换登记（声东击西 battle_retarget）：battle id -> [改换者 Ref]
         self._battle_retarget: dict[int, list[Ref]] = {}
         # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
@@ -490,9 +488,8 @@ class Game:
           值增伤"——按使用时快照而非计数器；怪力/怒吼的 perm buff 是既有 buff_power）；
         - {"ext": key}：来源式神 ext 计数（鸩觉醒"每触发过一次…额外+1"的 x）；
         - {"event": key}：触发事件 payload 中的数值（寂寥心象"获得等量破甲"）；
-          可叠加 "cap": n 对事件引用值做上限截断（觉醒·铃鹿御前"至多获得3点破甲"）；
-        - {"battle_damage_half": true}：本次战斗（事件 battle 所指）攻击方实际造成的
-          战斗伤害合计的一半，向下取整（光影"恢复等同于本次战斗造成伤害一半的生命"）；
+          可叠加 "cap": n 上限截断（觉醒·铃鹿御前"至多获得3点破甲"）与 "half": true
+          减半向下取整（光影"获得等同于一半伤害的生命"；cap 先截后减）；
         - {"half_health_of": key}：事件中的 Ref 所指角色当前生命的一半（向下取整，
           毒之华"等同于其一半生命的破甲"）。
         - {"max_power_gap": "self"}：来源式神历史峰值力量（ext["max_power"]）与当前
@@ -538,10 +535,9 @@ class Game:
                 val = int(event.get(raw["event"], 0))
                 if raw.get("cap") is not None:
                     val = min(val, int(raw["cap"]))  # 事件引用值上限截断（觉醒·铃鹿御前"至多3点"）
+                if raw.get("half"):
+                    val //= 2  # 事件引用值减半（向下取整；光影"获得等同于一半伤害的生命"）
                 base += val
-            if raw.get("battle_damage_half") and event is not None and game is not None:
-                # 本次战斗攻击方实际造成的战斗伤害合计的一半（向下取整；光影）
-                base += game._battle_combat_dmg.get(event.get("battle"), 0) // 2
             if raw.get("memo") and memo is not None:
                 base += int(memo.get(raw["memo"], 0))  # 块内暂存（巨浪 last_damage_total）
             if raw.get("burst_x"):
@@ -1653,8 +1649,8 @@ class Game:
         一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）；
         convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）；
         counter_piercing = 反击贯通：本战斗中被攻击方的反击伤害具有贯通（终止点清除标记）。
-        double_fragile = 义道：本战斗中攻击方对有破甲的式神造成的战斗伤害翻倍
-        （破甲加伤后立即翻倍、护甲抵扣前；终止点清除标记）。
+        double_fragile = 义道：仅此战斗中攻击者本人对有破甲的式神造成的战斗伤害翻倍
+        （[暴击]时机=扣减生命前2；反击/嵌套/插入战斗不翻倍；终止点清除标记）。
         target = 有目标的战斗的战斗目标（追猎；None = 无目标战斗，被攻击者按敌方战斗区/直击
         决定）；origin = 发起方式（"assault" 出击 / "card" 战斗牌 / "effect" 效果发起）——
         帷幕再校验时出击取消战斗、其余改为无目标战斗（thoughts.txt 帷幕定义）。
@@ -1665,7 +1661,6 @@ class Game:
         self._settle(f"—— 战斗开始：{self.db.shikigami[attacker.id].name} ——")
         grants: list[tuple[Ref, str, str]] = []
         self._battle_grants[bid] = grants
-        self._battle_combat_dmg[bid] = 0  # 光影记账：本战斗攻击方实际战斗伤害合计
         self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
         self._battle_followups[bid] = []  # 战斗结束后的追加攻击登记（战斗结束后结算）
         # 条件授予/免疫的求值事件：被攻击者 = 战斗目标；无目标时敌方战斗区式神，
@@ -1694,7 +1689,7 @@ class Game:
         if counter_piercing:
             self._battle_counter_piercing.add(bid)  # 反击贯通（反击事件生成/贯通修正读取）
         if double_fragile:
-            self._battle_double_fragile.add(bid)  # 义道：破甲双倍（伤害管线批次 4 读取）
+            self._battle_double_fragile[bid] = atk_ref  # 义道：破甲双倍（[暴击]时机读取）
         for block in temp_grants:
             self.state.temp_grants.append(TempGrant(
                 block=block, controller=atk_ref.player, holder=atk_ref, battle=bid,
@@ -1719,8 +1714,7 @@ class Game:
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
             self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
-            self._battle_double_fragile.discard(bid)  # 义道破甲双倍标记随战斗结束清除
-            self._battle_combat_dmg.pop(bid, None)  # 光影战斗伤害记账随战斗结束清除
+            self._battle_double_fragile.pop(bid, None)  # 义道破甲双倍标记随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗终止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_retarget.pop(bid, None)  # 交战目标改换登记随战斗终止清理
             self._battle_stack.pop()
@@ -1771,8 +1765,9 @@ class Game:
         获得帷幕（或已不可指定）时：有目标的出击不发起战斗，其余改为无目标战斗
         （thoughts.txt 帷幕定义）。确定目标（战斗准备步骤）：有目标用目标；无目标且
         攻击者持直击（确定目标前1）则被攻击者改为敌方牌手；否则敌方战斗区式神。
-        连击第一段击杀被攻击者不终止战斗：交战阶段重选——已复活（可被指定）则打回
-        原目标，未复活时贯通改打对方牌手、无贯通第二段落空（义道/鹿角冲撞定案）。
+        先攻阶段击杀被攻击者（定案(6)）：攻击者有贯通则被攻击者改为对方牌手，否则
+        终止本次战斗流程（后续时机不结算）——连击无贯通同样终止；被攻击者在求值点
+        已复活则战斗继续（连击第二段打回原目标）。
         锚点（未实现）：战斗结界中的嵌套战斗。
         """
         p = self.state.players[atk_ref.player]
@@ -1880,8 +1875,6 @@ class Game:
                 else:
                     self.deal_to_shikigami(r, x, atk_ref)
         else:
-            combo_downed: int | None = None  # 连击第一段击杀的被攻击者下标（交战阶段重选用）
-            attack_whiff = False  # 连击第二段落空旗标（无贯通且目标未复活）
             # ---- 先攻阶段：拥有连击/先攻的角色对对方造成战斗伤害，按（反击，攻击）并行 ----
             atk_first = combo or initiative
             def_first = vic_idx is not None and (
@@ -1900,14 +1893,10 @@ class Game:
                 self._run_damage_queue(events)
                 if self.state.pending_end:
                     return
-                # 被攻击者气绝：攻击者具有贯通则被攻击者改为对方牌手，否则终止战斗；
-                # 连击不终止——登记被击杀者，交战阶段重选（已复活则打回原目标，
-                # 贯通改打对方牌手，无贯通第二段落空）
+                # 被攻击者气绝：攻击者具有贯通则被攻击者改为对方牌手，否则终止战斗
+                # （定案(6)：连击无贯通第一段击杀同样终止，后续时机不结算）
                 if vic_idx is not None and d.shikigami[vic_idx].defeated:
-                    if combo:
-                        combo_downed = vic_idx
-                        vic_idx = None
-                    elif piercing:
+                    if piercing:
                         vic_idx = None
                     else:
                         self._log("被攻击方气绝，战斗终止")
@@ -1915,20 +1904,6 @@ class Game:
                 if attacker.defeated or attacker.despawned:
                     self._log("攻击方在先攻阶段气绝/离场，战斗终止")
                     return
-            # ---- 连击重选：第一段击杀的被攻击者已复活（可被指定）则第二段打回原目标；
-            # 未复活时贯通改打对方牌手，无贯通第二段落空（反击随 vic_idx=None 跳过）----
-            if combo_downed is not None:
-                re_ref = Ref(player=def_pi, shikigami=combo_downed)
-                re_st = d.shikigami[combo_downed]
-                if (not targets.is_veiled(self, re_ref, atk_ref.player)
-                        and re_st.in_play and not re_st.dying):
-                    vic_idx = combo_downed
-                    self._log("连击：被攻击者已复活，第二段攻击打回原目标")
-                elif piercing:
-                    vic_idx = None  # 贯通：被攻击者改为对方牌手
-                else:
-                    attack_whiff = True
-                    self._log("连击：被攻击者气绝且无贯通，第二段攻击落空")
             # ---- 交战阶段：具有先攻（非连击）的角色不再造成战斗伤害；远程不受反击 ----
             events = []
             if vic_idx is not None and not remote:
@@ -1939,7 +1914,7 @@ class Game:
                     ev = counter_event()
                     if ev is not None:
                         events.append(ev)
-            if not (initiative and not combo) and not attack_whiff:
+            if not (initiative and not combo):
                 ev = attack_event()
                 if ev is not None:
                     events.append(ev)
@@ -2904,10 +2879,6 @@ class Game:
                 ev.fragile = fragile  # 记账：破甲受伤即消耗，on_damage 时目标已无破甲
                 self._change_shield(ev.victim, holder.shield, "破甲计算", kind="fragile")
                 self._log(f"破甲使本次伤害增加 {fragile} 点")
-                if (s is not None and ev.kind in ("combat", "counter")
-                        and any(b in self._battle_double_fragile for b in self._battle_stack)):
-                    ev.amount *= 2  # 义道：对有破甲的式神造成的战斗伤害翻倍（破甲加伤后、护甲抵扣前）
-                    self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
             elif holder.shield > 0:
                 absorbed = min(holder.shield, ev.amount)
                 ev.amount -= absorbed
@@ -2921,6 +2892,17 @@ class Game:
             self._emit_damage_batch("on_before_health", ev)
         if ev.amount <= 0:
             return
+        # [暴击] 时机锚点（扣减生命前2；terminology.md 登记）：义道——本战斗牌发起的
+        # 战斗中，攻击者本人（ev.source == 登记攻击者）对具有破甲的式神造成的战斗伤害
+        # 翻倍（kind=combat 限攻击事件，反击不翻倍；嵌套/插入战斗按战斗 id 精确匹配
+        # 不继承；贯通路径破甲未被消耗按当前 shield<0 判定，非贯通按本事件已消耗的
+        # ev.fragile 判定；贯通修正提前结算批次 6 的路径同样走到此点）
+        if (s is not None and ev.kind == "combat" and self._battle_stack
+                and (s.shield < 0 or ev.fragile > 0)):
+            atk = self._battle_double_fragile.get(self._battle_stack[-1])
+            if atk is not None and ev.source == atk:
+                ev.amount *= 2
+                self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
         # 批次 7：合并——队列中 (来源, 受伤者, 原因) 均相同的伤害事件合并进最前者
         for other in list(dq):
             if other.source == ev.source and other.victim == ev.victim \
@@ -2956,7 +2938,6 @@ class Game:
                     return
             s.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
-            self._account_battle_combat_damage(ev)  # 光影记账：攻击方战斗伤害合计
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
@@ -2987,7 +2968,6 @@ class Game:
         else:
             p.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
-            self._account_battle_combat_damage(ev)  # 光影记账：攻击方战斗伤害合计
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
@@ -2999,17 +2979,6 @@ class Game:
             if p.health <= 0:
                 # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
                 self._set_pending_end(loser=ev.victim.player, defeat=True)
-
-    def _account_battle_combat_damage(self, ev: _DamageEvent) -> None:
-        """光影记账：本次战斗攻击方实际造成的战斗伤害合计（走到扣减生命批次才计）。
-
-        仅 kind="combat"（攻击事件；反击 counter 与攻击替换的 effect 不计）——连击两段
-        合计，贯通溢出给牌手的同 kind 事件亦计入；battle_damage_ge 条件键与
-        battle_damage_half 数值键（光影"若本次战斗造成的伤害≧6"）读取。"""
-        if ev.kind != "combat" or ev.amount <= 0 or not self._battle_stack:
-            return
-        bid = self._battle_stack[-1]
-        self._battle_combat_dmg[bid] = self._battle_combat_dmg.get(bid, 0) + ev.amount
 
     def _account_yaohu_damage(self, ev: _DamageEvent) -> None:
         """妖狐伤害计数（契约 §3.6）：伤害事件来源 = 妖狐且实际造成（走到扣减生命批次）

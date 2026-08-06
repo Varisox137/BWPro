@@ -13,13 +13,20 @@ versions:
           - {op: buff_power, amount: 1, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
       temp_grants:
-        # 若本次攻击造成的战斗伤害>=6：你抽一张牌并获得等同于一半伤害的生命
-        # （on_after_assault 绑定本次战斗；battle_damage_ge 条件键与
-        # battle_damage_half 数值键读事件 battle 所指的伤害合计）
-        - when: on_after_assault
-          condition: {battle_damage_ge: 6}
+        # 造成战斗伤害时，若该次伤害>=6：你抽一张牌并获得等同于一半伤害的生命
+        # （定案：按单个伤害事件判定——贯通对式神+牌手两段各<6不触发；连击两段
+        # 各>=6各触发一次；on_damage 式神受害者 / on_player_damaged 牌手受害者
+        # 双块；{event: amount, half: true} 数值键=事件引用值减半向下取整）
+        - when: on_damage
+          condition: {kind: combat, source_shikigami: self, amount_ge: 6}
           steps:
             - {op: draw, count: 1}
-            - {op: heal, amount: {battle_damage_half: true},
+            - {op: heal, amount: {event: amount, half: true},
+               target: {kind: all, pool: self_player}}
+        - when: on_player_damaged
+          condition: {kind: combat, source_shikigami: self, amount_ge: 6}
+          steps:
+            - {op: draw, count: 1}
+            - {op: heal, amount: {event: amount, half: true},
                target: {kind: all, pool: self_player}}
       text: "若本次攻击造成的战斗伤害>=6，你抽一张牌并获得等同于一半伤害的生命。"
