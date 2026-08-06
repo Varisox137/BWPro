@@ -11,7 +11,9 @@ versions:
       rarity: SR
       level: 2
       effects:
-        steps: []
+        # [投射]：{造成2点伤害}（使用效果，投射池=敌方牌手）
+        steps:
+          - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
       abilities:
         # [觉醒]：当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为 3）
         # （event: amount 取事件伤害值，cap 上限截断；双块同基础能力管线）
@@ -25,4 +27,4 @@ versions:
           steps:
             - {op: gain_shield, amount: {event: amount, cap: 3}, kind: fragile,
                target: {kind: context, key: damaged_player}}
-      text: "[觉醒]：{当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为3）。}"
+      text: "[投射]：{造成2点伤害}。[觉醒]：{当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为3）。}"

@@ -2004,16 +2004,27 @@ class Game:
             return
         power = sum(b.get("power", 0) for b in p.assault_boosts)
         shield = sum(b.get("shield", 0) for b in p.assault_boosts)
-        if power:
-            s.temp_power += power
-            s.attack_buffs.append({"power": power, "keywords": []})
-            self._record_max_power(s)
+        # 鼓舞随机关键字（惊鸿之舞 basic_boost keyword_random）：玩家级槽位
+        # ext["boost_keyword"]——本次攻击临时授予攻击者，经 attack_buffs 随该次战斗
+        # 结束移除；加成不被消耗时（离殇之舞 no_consume）槽位同样保留、下次出击再授予
+        bkw = p.ext.get("boost_keyword")
+        if power or bkw:
+            entry: dict = {"power": power, "keywords": []}
+            if power:
+                s.temp_power += power
+                self._record_max_power(s)
+            if bkw:
+                cls = self._grant_keyword(s, bkw)
+                entry["keywords"].append((bkw, cls))
+            s.attack_buffs.append(entry)
         if shield:
             self._change_shield(atk_ref, shield, "basic_boost")
-        self._log(f"{self.db.shikigami[s.id].name} 获得出击加成（+{power}力量/+{shield}护甲）")
+        suffix = f"，关键字 {bkw}" if bkw else ""
+        self._log(f"{self.db.shikigami[s.id].name} 获得出击加成（+{power}力量/+{shield}护甲{suffix}）")
         # 不消耗鼓舞（boost_no_consume 旗标，觉醒·不知火类）：出击加成保留，下次出击仍生效
         if not any(f.get("kind") == "no_consume" for f in p.ext.get("boost_flags", [])):
             p.assault_boosts.clear()
+            p.ext.pop("boost_keyword", None)
 
     def _combat_zone_locked(self, pi: int) -> bool:
         """尘缚之阵锁定：敌方战斗区有"结附带 combat_lock 标记形态"的式神，且己方战斗区有式神。
@@ -2318,6 +2329,7 @@ class Game:
         if self.state.winner is not None:
             return
         self._remove_expired_stuns(p)  # 己方回合结束批次：解除非本回合施加的眩晕
+        self._remove_turn_keyword_grants()  # scope="turn" 关键字授予随本回合结束移除（惊鸿之舞）
         ev = {"name": "on_turn_end", "_emit": self.state.next_emit_seq(),
               "player": self.state.active}
         for pend in self._collect_responses(ev, 1 - self.state.active):
@@ -2327,6 +2339,22 @@ class Game:
             return
         self.state.active = 1 - self.state.active
         self._start_turn()
+
+    def _remove_turn_keyword_grants(self) -> None:
+        """移除本回合授予的 scope="turn" 关键字（惊鸿之舞"所有己方式神本回合获得
+        [帷幕]和[不屈]"）：触发发生在哪方回合就在那方回合结束点移除（双方扫描、
+        按授予时回合号比对；已被消耗/气绝清除的实例由 _remove_keyword 安全跳过）。"""
+        for pl in self.state.players:
+            entries = pl.ext.get("turn_keyword_grants")
+            if not entries:
+                continue
+            kept = [e for e in entries if e["turn"] != self.state.turn]
+            for e in entries:
+                if e["turn"] == self.state.turn:
+                    self._remove_keyword(
+                        pl.shikigami[e["ref"].shikigami], e["keyword"], e["cls"])
+            if len(kept) != len(entries):
+                pl.ext["turn_keyword_grants"] = kept
 
     def _remove_expired_stuns(self, p: PlayerState) -> None:
         """己方回合结束批次（契约 §1）：移除"非本回合施加"的普通眩晕（turn != 当前

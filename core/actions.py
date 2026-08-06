@@ -662,7 +662,10 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
 
     scope="battle"：战斗作用域条件授予——绑定当前战斗上下文，战斗终止点按实例移除
     （觉醒·雪童子"与眩晕的式神交战时获得[连击]"：挂 on_before_assault + 条件
-    combat_opponent_stunned）；无战斗上下文时回退为常规授予。"""
+    combat_opponent_stunned）；无战斗上下文时回退为常规授予。
+    scope="turn"：当回合结束移除（惊鸿之舞"所有己方式神本回合获得[帷幕]和[不屈]"——
+    触发发生在哪方回合就在那方回合结束点移除，引擎 _remove_turn_keyword_grants 按
+    授予时回合号比对；一次性关键字（[不屈]）被正常消耗后不到回合结束即已移除）。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
@@ -673,6 +676,10 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
         if scope == "battle" and game._battle_stack:
             bid = game._battle_stack[-1]
             game._battle_grants.setdefault(bid, []).append((ref, keyword, cls))
+        if scope == "turn":
+            game.state.players[ref.player].ext.setdefault(
+                "turn_keyword_grants", []).append(
+                {"ref": ref, "keyword": keyword, "cls": cls, "turn": game.state.turn})
 
 
 @action("trigger_form_countdown")
@@ -733,18 +740,46 @@ def destroy(game, ctx, *, targets: list[Ref]) -> None:
         game.check_defeated(ref, source=ctx.source, reason="消灭")
 
 
+@action("random_branch")
+def random_branch(game, ctx, *, targets: list[Ref],
+                  branches: list | None = None) -> None:
+    """随机分支（targets 忽略；惊鸿之舞"每个回合开始时随机触发一个效果"）：
+    逐项求值 branch 的 condition（复用条件迷你语言，事件上下文为触发事件；
+    缺省/null 恒真），从通过者中均等概率随机选一项并执行其 steps；
+    无满足分支则空操作。branches 元素：{"condition": {...}|None, "steps": [Step 字典]}。
+    """
+    from db.schema import Step
+    ok = [b for b in (branches or [])
+          if game._match(b.get("condition"), ctx.event or {}, ctx.controller,
+                         holder=ctx.source)]
+    if not ok:
+        return
+    chosen = game.rng.choice(ok)
+    for st in chosen.get("steps", []):
+        game._run_step(Step.model_validate(st), ctx)
+
+
 @action("basic_boost")
-def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 0) -> None:
+def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 0,
+                keyword_random: list | None = None) -> None:
     """鼓舞：登记一笔出击加成（targets 忽略）。下一次出击时全部消耗——
     力量直到该次出击的战斗后，护甲保留；战斗牌不消耗出击加成。
     觉醒·不知火类旗标（inspire_bonus 登记的 PlayerState.ext["boost_flags"]）：
-    该玩家的鼓舞数值额外 +power/+shield（可叠加）。"""
+    该玩家的鼓舞数值额外 +power/+shield（可叠加）。
+    keyword_random：随机关键字池（惊鸿之舞鼓舞项"和一个随机效果"）——授予时从池中
+    均等随机一个存入玩家级关键字槽（ext["boost_keyword"]；槽至多一个，后授予的替换
+    已有）；消耗出击加成的攻击中临时授予攻击者、随加成消耗清除（引擎
+    _consume_assault_boosts；inspire_bonus 只加算数值，不影响关键字部分）。"""
     p = game.state.players[ctx.controller]
     power += sum(int(e.get("power", 0)) for e in p.ext.get("boost_flags", [])
                  if e.get("kind") == "inspire_bonus")
     shield += sum(int(e.get("shield", 0)) for e in p.ext.get("boost_flags", [])
                   if e.get("kind") == "inspire_bonus")
     p.assault_boosts.append({"power": power, "shield": shield})
+    if keyword_random:
+        kw = game.rng.choice(list(keyword_random))  # 均等随机；槽位替换语义
+        p.ext["boost_keyword"] = kw
+        game._log(f"{p.name} 的出击加成获得关键字 {kw}")
     game._log(f"{p.name} 获得出击加成（+{power}力量/+{shield}护甲）")
 
 
@@ -752,8 +787,9 @@ def basic_boost(game, ctx, *, targets: list[Ref], power: int = 0, shield: int = 
 def consume_assault_boosts(game, ctx, *, targets: list[Ref]) -> None:
     """消耗己方全部出击加成（鼓舞），作为该战斗牌赋予来源式神的加成
     （targets 忽略；灵矢贯虹羁绊，维护者答复 10：战力/护甲作为此战斗牌赋予的效果
-    ——战力持续到本次战斗结束后经 combat_power 核销、护甲保留；鼓舞中的关键字
-    当前卡池不存在，落地后在此扩展）。战斗牌本不消耗鼓舞，本步为牌面指定的例外。
+    ——战力持续到本次战斗结束后经 combat_power 核销、护甲保留；鼓舞关键字槽
+    （ext["boost_keyword"]，惊鸿之舞）同样转移——临时授予来源式神、经 attack_buffs
+    随本次战斗结束移除）。战斗牌本不消耗鼓舞，本步为牌面指定的例外。
     """
     if ctx.source is None or ctx.source.shikigami is None:
         raise ValueError("consume_assault_boosts 需要来源式神")
@@ -768,6 +804,10 @@ def consume_assault_boosts(game, ctx, *, targets: list[Ref]) -> None:
         s.combat_power += power
     if shield:
         game._change_shield(ctx.source, shield, "consume_assault_boosts")
+    bkw = p.ext.pop("boost_keyword", None)
+    if bkw:
+        cls = game._grant_keyword(s, bkw)
+        s.attack_buffs.append({"power": 0, "keywords": [(bkw, cls)]})
     game._log(f"{game.db.shikigami[s.id].name} 的鼓舞转化为本次战斗加成"
               f"（+{power}力量/+{shield}护甲）")
 

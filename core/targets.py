@@ -179,7 +179,9 @@ def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
     / stunned（是否眩晕，仅式神目标，式神过滤完即空）/ dealt_damage_turn（本回合
     造成过伤害的式神——萤草"伤害来源式神"过滤，伤害结算栈 + 回合开始清）；
     keyword（具有指定关键字的式神——三列表多重集 keywords/one_shot/perm 任一含即算，
-    日和坊"有[充能]的式神"过滤，牌手目标不匹配被滤除）。
+    日和坊"有[充能]的式神"过滤，牌手目标不匹配被滤除）；
+    highest_power（力量最高过滤——读 eff_power，并列全部保留交由后续 random 键均等取，
+    惊鸿之舞"力量最高的式神"）。
     不匹配 true 语义的目标被滤除。"""
     pw = extra.get("power_le")
     if pw is not None:
@@ -211,6 +213,17 @@ def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
             s = game.state.players[r.player].shikigami[r.shikigami]
             return any(kw in lst for lst in (s.keywords, s.one_shot_keywords, s.perm_keywords))
         refs = [r for r in refs if _has_kw(r)]
+    if extra.get("highest_power"):
+        # 力量最高过滤（惊鸿之舞"力量最高的式神"；读 eff_power，并列全部保留——
+        # 后续 random 键再均等取；牌手目标无力量被滤除）
+        cands = [r for r in refs if r.shikigami is not None]
+        if cands:
+            hi = max(game.state.players[r.player].shikigami[r.shikigami].eff_power
+                     for r in cands)
+            refs = [r for r in cands
+                    if game.state.players[r.player].shikigami[r.shikigami].eff_power == hi]
+        else:
+            refs = []
     return refs
 
 
@@ -350,6 +363,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       = feather_used_turn 记账键；千羽风之舞 step 级条件）
     - {combat_empty: friendly|enemy}   一方战斗区为空（偷袭"敌方回合结束时战斗区
       没有式神"类响应条件）
+    - {combat_occupied: friendly|enemy} ：一方战斗区有式神（combat_empty 的反向；
+      惊鸿之舞"己方战斗区有式神时才可能触发"类前置）
+    - {friendly_defeated_exists: true|false} ：控制者有气绝式神（同 friendly_defeated
+      池口径：未离场、等级 ≥1；惊鸿之舞复活项前置）
+    - {player_health_le: n}      ：控制者牌手当前生命 ≤ n（惊鸿之舞牌手护甲项前置）
+    - {player_missing_health_ge: n} ：控制者牌手已损生命 ≥ n（惊鸿之舞牌手治疗项前置）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - {shikigami_active: <式神id>}  ：控制者的式神（按数据 id）在场——等级 ≥1、未气绝、
       未离场（[羁绊]触发条件："使用此牌时，对应式神等级不为 0 且未气绝"）
@@ -404,6 +423,28 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             # enemy=对方（响应场景 = 结束回合的敌方）
             side = controller if want == "friendly" else 1 - controller
             if game.state.players[side].combat_index is not None:
+                return False
+        elif key == "combat_occupied":
+            # 一方战斗区有式神（combat_empty 的反向；惊鸿之舞战斗区增益项前置）
+            side = controller if want == "friendly" else 1 - controller
+            if game.state.players[side].combat_index is None:
+                return False
+        elif key == "friendly_defeated_exists":
+            # 控制者有气绝式神（未离场、等级 ≥1，同 friendly_defeated 池口径；
+            # 惊鸿之舞复活项前置）
+            ap = game.state.players[controller]
+            has = any(s.defeated and not s.despawned and s.level >= 1
+                      for s in ap.shikigami)
+            if has != bool(want):
+                return False
+        elif key == "player_health_le":
+            # 控制者牌手当前生命 ≤ n（惊鸿之舞牌手护甲项前置）
+            if game.state.players[controller].health > int(want):
+                return False
+        elif key == "player_missing_health_ge":
+            # 控制者牌手已损生命 ≥ n（惊鸿之舞牌手治疗项前置）
+            ap = game.state.players[controller]
+            if ap.max_health - ap.health < int(want):
                 return False
         elif key == "shikigami_in_combat":
             cp = game.state.players[controller]

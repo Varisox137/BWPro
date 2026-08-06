@@ -1853,3 +1853,147 @@ def test_event_amount_cap(db, make_game):
     g2.deal_to_player(0, 2, Ref(player=1, shikigami=0))
     g2._drain_queue()
     assert pa2.shield == -2                        # min(2, 3) = 2
+
+
+# ==========================================================================
+# 惊鸿之舞批次：random_branch / 分支条件键 / 鼓舞随机关键字槽 /
+# highest_power 过滤 / grant_keyword scope="turn"
+# ==========================================================================
+
+def test_random_branch_condition_filter(db, make_game):
+    """random_branch：只从条件通过的分支中均等随机（不满足的分支永不入选）；
+    无满足分支时空操作。"""
+    cid = 10010160
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(
+        op="random_branch",
+        branches=[
+            {"condition": {"player_health_le": 0},            # 永不满足
+             "steps": [{"op": "draw", "count": 1}]},
+            {"condition": {"player_missing_health_ge": 99},   # 永不满足
+             "steps": [{"op": "gain_orb", "amount": 1}]},
+            {"condition": None,                               # 恒真：唯一入选
+             "steps": [{"op": "gain_shield", "amount": 5,
+                        "target": {"kind": "all", "pool": "self_player"}}]},
+        ])])
+    cid2 = 10010161
+    db.cards[cid2] = F.card(cid2, token=True, steps=[F.Step(
+        op="random_branch",
+        branches=[{"condition": {"player_health_le": 0},
+                   "steps": [{"op": "draw", "count": 1}]}])])
+    g, pa, pb = _mech_game(make_game)
+    pa.orb = 2
+    deck0 = len(pa.zones["deck"])
+    play(g, 0, cid)
+    assert pa.shield == 5                    # 唯一满足分支执行
+    assert len(pa.zones["deck"]) == deck0    # draw 分支未执行
+    assert pa.orb == 1                       # gain_orb 分支未执行
+    play(g, 0, cid2)                         # 无满足分支：空操作不报错
+    assert len(pa.zones["deck"]) == deck0
+
+
+def test_kanko_branch_condition_keys(db, make_game):
+    """惊鸿分支条件键：friendly_defeated_exists / player_health_le /
+    player_missing_health_ge / combat_occupied。"""
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    ev = {}
+    assert not g._match({"friendly_defeated_exists": True}, ev, 0)
+    assert not g._match({"combat_occupied": "friendly"}, ev, 0)
+    assert g._match({"player_health_le": 30}, ev, 0)
+    assert not g._match({"player_health_le": 29}, ev, 0)
+    assert not g._match({"player_missing_health_ge": 6}, ev, 0)
+    pa.health = 24
+    assert g._match({"player_missing_health_ge": 6}, ev, 0)
+    move(g, 0, 0)
+    assert g._match({"combat_occupied": "friendly"}, ev, 0)
+    s = pa.shikigami[1]
+    s.level = 1
+    s.defeated = True
+    assert g._match({"friendly_defeated_exists": True}, ev, 0)
+
+
+def test_basic_boost_keyword_random_slot(db, make_game):
+    """鼓舞随机关键字（basic_boost keyword_random）：玩家级槽至多一个、后授予替换
+    已有；消耗加成的攻击中临时授予攻击者、随加成消耗清除。"""
+    ca, cb = 10010162, 10010163
+    db.cards[ca] = F.card(ca, token=True, steps=[F.Step(
+        op="basic_boost", power=2, shield=2, keyword_random=["combo"])])
+    db.cards[cb] = F.card(cb, token=True, steps=[F.Step(
+        op="basic_boost", power=2, shield=2, keyword_random=["remote"])])
+    g, pa, pb = _mech_game(make_game)
+    pb.shield = 0
+    play(g, 0, ca)
+    assert pa.ext.get("boost_keyword") == "combo"
+    play(g, 0, cb)                           # 后授予替换已有
+    assert pa.ext.get("boost_keyword") == "remote"
+    hp0 = pb.health
+    g.apply({"op": "assault", "index": 0})
+    assert pb.health == hp0 - 7              # 一段 3 + 两笔战力叠加 4（remote——非 combo 两段）
+    assert "boost_keyword" not in pa.ext     # 随加成消耗清除
+    # 槽中关键字在攻击中临时授予：combo 两段各 5，战斗后经 attack_buffs 移除
+    g2, pa2, pb2 = _mech_game(make_game)
+    pb2.shield = 0
+    play(g2, 0, ca)
+    hp1 = pb2.health
+    a2 = pa2.shikigami[0]
+    g2.apply({"op": "assault", "index": 0})
+    assert pb2.health == hp1 - 10            # combo：(3+2) × 2 段
+    assert "combo" not in a2.keywords        # 战斗结束移除
+    assert "boost_keyword" not in pa2.ext
+
+
+def test_grant_keyword_scope_turn(db, make_game):
+    """grant_keyword scope="turn"：当回合结束移除——敌方回合授予的也在该敌方回合
+    结束移除；[不屈]被触发后正常消耗（不到回合结束）。"""
+    sid = 10010164
+    db.cards[sid] = F.card(sid, token=True, steps=[F.Step(
+        op="grant_keyword", keyword="veil", scope="turn", target=T(kind="self"))])
+    # 己方回合授予 → 己方回合结束移除
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, sid)
+    s = pa.shikigami[0]
+    assert "veil" in s.keywords
+    pass_turns(g, 1)
+    assert "veil" not in s.keywords
+    # 敌方回合开始触发授予 → 该敌方回合结束移除
+    fid = 10010166
+    db.cards[fid] = F.card(
+        fid, card_type="form", level=1, token=True,
+        abilities=[F.EffectBlock(
+            when="on_turn_start",
+            steps=[F.Step(op="grant_keyword", keyword="veil", scope="turn",
+                          target=T(kind="self"))])])
+    g2, pa2, pb2 = _mech_game(make_game)
+    play(g2, 0, fid)
+    s2 = pa2.shikigami[0]
+    assert "veil" not in s2.keywords         # 己方回合开始已过，未授予
+    pass_turns(g2, 1)                        # B 回合开始：触发授予
+    assert "veil" in s2.keywords
+    g2._destroy_form(pa2, 0, "test")         # 防止下回合开始重复授予干扰断言
+    pass_turns(g2, 1)                        # B 回合结束：移除
+    assert "veil" not in s2.keywords
+    # 不屈一次性消耗语义不变：触发保留 1 血后即移除，不到回合结束
+    g3, pa3, pb3 = _mech_game(make_game)
+    s3 = pa3.shikigami[0]
+    s3.one_shot_keywords.append("unyielding")
+    g3.deal_to_shikigami(Ref(player=0, shikigami=0), 99, Ref(player=1, shikigami=0))
+    assert s3.health == 1
+    assert "unyielding" not in s3.one_shot_keywords
+
+
+def test_highest_power_filter(db, make_game):
+    """TargetSpec highest_power：先按力量最高过滤（并列全保留），再经 random 键均等取
+    （惊鸿之舞"力量最高"项；读 eff_power）。"""
+    cid = 10010165
+    db.cards[cid] = F.card(cid, token=True, steps=[F.dmg(
+        1, target=T(kind="all", pool="enemy_shikigami",
+                    highest_power=True, random=1))])
+    g, pa, pb = _mech_game(make_game)
+    pb.shikigami[1].level = 1
+    pb.shikigami[2].level = 1
+    pb.shikigami[1].temp_power = 2           # 5 力（并列最高）
+    pb.shikigami[2].temp_power = 2           # 5 力（并列最高）
+    play(g, 0, cid)
+    hurt = [i for i, s in enumerate(pb.shikigami) if s.health < s.max_health]
+    assert len(hurt) == 1
+    assert hurt[0] in (1, 2)                 # 只打并列最高之一（3 力 0 号位不入选）
