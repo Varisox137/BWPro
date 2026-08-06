@@ -13,12 +13,12 @@ versions:
       effects:
         steps: []
       abilities:
-        # [觉醒]：{攻击[眩晕]的敌方角色时不受战斗伤害，且额外先击中对手一次}——
-        # 仅主动攻击（attacker_shikigami: self + victim_stunned，定案(2)）；"先击中
-        # 一次"按[连击]（scope=battle 授予，引擎其后重读 combo 快照赶上本场判定）
+        # [觉醒]：{攻击[眩晕]的敌方角色时免疫战斗伤害，且获得[连击]}——
+        # 仅主动攻击（attacker_shikigami: self + victim_stunned，定案(2)）；连击
+        # 按 scope=battle 授予（引擎其后重读 combo 快照赶上本场判定）
         - when: on_before_assault
           condition: {attacker_shikigami: self, victim_stunned: true}
           steps:
             - {op: grant_keyword, keyword: combo, scope: battle, target: {kind: self}}
             - {op: battle_immunity, target: {kind: self}}
-      text: "[觉醒]：{雪童子攻击[眩晕]的敌方角色时不受战斗伤害，且额外先击中对手一次。}"
+      text: "[觉醒]：{雪童子攻击[眩晕]的敌方角色时获得[连击]且免疫战斗伤害。}"

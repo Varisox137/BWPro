@@ -9,6 +9,6 @@ versions:
       level: 3
       form_power: 3
       form_health: 8
-      keywords: [combo]  # 连击 = "战斗时额外先击中对手一次"（raw 文案，同机制）
+      keywords: [combo]  # [连击]
       effects: {steps: []}
-      text: "妖刀姬战斗时，将额外先击中对手一次。"
+      text: "[连击]"

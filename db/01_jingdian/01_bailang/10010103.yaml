@@ -12,4 +12,4 @@ versions:
         steps:
           - {op: buff_power, amount: -2, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
-      text: 将额外先击中目标一次。
+      text: "[连击]"

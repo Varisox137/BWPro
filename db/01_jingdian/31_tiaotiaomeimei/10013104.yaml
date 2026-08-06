@@ -7,7 +7,7 @@ versions:
       card_type: combat
       rarity: R
       level: 2
-      keywords: [combo]   # "本次战斗额外先攻击一次" = [连击]（早期文本未定型，机制同一）
+      keywords: [combo]   # [连击]
       effects:
         steps: []
-      text: "本次战斗额外先攻击一次。"
+      text: "[连击]"
