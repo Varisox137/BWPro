@@ -63,7 +63,9 @@ class ShikigamiState(BaseModel):
 
     id: int  # 数据 id：对应 db 中式神的 id
     kind: str = "shikigami"  # shikigami=式神（非召唤物） / summon=召唤物
-    faction: str = "无相"  # 派系，可被效果临时/永久改变
+    faction: str = "无相"  # 当前派系，可被效果临时改变
+    perm_faction: str = "无相"  # 永久派系：组建/进场时定死（召唤物/变形物继承效果来源式神的
+    # perm_faction，式神替换物用自身 def faction）；效果临时改派系只动 faction
     level: int = 0  # 0 级 = 未在场：能力不触发、不能行动、不可被指定（除特殊说明）
     home_slot: int | None = None  # 所属准备区编号（1-4）；召唤物为 None（无准备区可归）
     entry_order: int = 0  # 角色进场顺序：牌手为 0，式神按入场顺序 1-4
@@ -207,7 +209,6 @@ class PlayerState(BaseModel):
     mulligans_left: int = 0  # 调度阶段剩余调度次数
     mulligan_done: bool = False  # 调度阶段：该玩家已确认完成
     config: dict[str, Any] = Field(default_factory=dict)  # 对 GameConfig 的玩家级覆盖
-    summon_legacy: dict[int, dict[str, int]] = Field(default_factory=dict)  # 同名召唤物再召时保留的永久增减益（key=召唤物定义 id）
     card_mods: dict[int, dict[str, Any]] = Field(default_factory=dict)  # 持久修饰 store：card_id → 修饰（"本局游戏每……"类，打出时装配快照）
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）

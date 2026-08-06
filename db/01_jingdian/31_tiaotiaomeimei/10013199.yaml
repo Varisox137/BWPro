@@ -8,5 +8,4 @@ versions:
       faction: 红莲
       power: 3
       health: 4
-      keep_buffs: true  # 同名再召继承上次离场时的永久增减益（rules.md 召唤物节）
       text: ""

@@ -29,7 +29,7 @@ def build_player(
     for idx, sid in enumerate(shikigami_ids):
         d = db.shikigami[sid]
         shikigami.append(ShikigamiState(
-            id=sid, kind=d.kind, faction=d.faction,
+            id=sid, kind=d.kind, faction=d.faction, perm_faction=d.faction,
             home_slot=idx + 1, entry_order=idx + 1,
             base_power=d.power, base_health=d.health, health=d.health,
             ext={"max_power": d.power},  # 力量历史峰值初值 = 基础力量（断臂记账）

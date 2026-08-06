@@ -6,19 +6,19 @@ versions:
     - date: 20200227
       card_type: spell
       subtype: awaken
-      awaken_power: 3   # +3/+3：永久身材增益——变形在第①步发生，觉醒后时机的
-      awaken_health: 3  # 增益落到同座次的变形物'番茄'上（"永久+3/+3 结附变形物"）
+      awaken_power: 3   # +3/+3：永久身材增益——替换在第①步发生，觉醒后时机的
+      awaken_health: 3  # 增益落到同座次的替换物'番茄'上（"永久+3/+3 结附替换物"）
       rarity: SSR
       level: 3
       effects:
-        # 非标准觉醒（定案(13)）： subtype=awaken 的标准能力替换流程仍会被引擎触发
-        # （置 awakened），但第①步变形以新状态对象取代座次（awakened 随之丢弃、番茄
-        # 无能力块），实际无能力替换；跳跳妹妹的额外耗火为先天伪关键字，变形后同失效。
+        # 非标准觉醒（定案(13)，式神替换而非变形）： subtype=awaken 的标准能力替换
+        # 流程仍会被引擎触发（置 awakened），但第①步替换以新状态对象取代座次
+        # （awakened 随之丢弃、番茄无能力块），实际无能力替换；跳跳妹妹的额外耗火
+        # 为先天伪关键字，替换后同失效。
         steps:
-          # ① 永久变形为'番茄'（不还原、气绝不还原；可用原式神的战斗牌）
-          - {op: transform, into: 10013198, permanent: true, owner_combat: true,
-             target: {kind: self}}
-          # ② 手牌+牌库中她的非战斗牌各随机替换成战斗牌（self 经 transform_owner
+          # ① 式神替换为'番茄'（无快照不还原、气绝复活仍为番茄；可使用原式神的全部卡牌）
+          - {op: replace, into: 10013198, target: {kind: self}}
+          # ② 手牌+牌库中她的非战斗牌各随机替换成战斗牌（self 经 replace_owner
           # 仍指跳跳妹妹）
           - {op: replace_cards}
           # ③ 牌手永久钩子：之后生成她的非战斗牌时改为随机战斗牌

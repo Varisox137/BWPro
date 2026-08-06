@@ -28,12 +28,12 @@ CHOOSE_ENEMY = T(kind="choose", pool="enemy_shikigami")
 
 def shiki(sid: int = 100101, name: str | None = None, kind: str = "shikigami",
           faction: str = "红莲", power: int = 3, health: int = 4,
-          ability: EffectBlock | None = None, keep_buffs: bool = False,
+          ability: EffectBlock | None = None,
           origin: str | None = None, **kw) -> ShikigamiDef:
     """构造一个测试用式神定义。默认 version 为 VER，可用 kw 覆盖任意字段。"""
     return ShikigamiDef(id=sid, version=VER, name=name or f"式神{sid}", kind=kind,
                         faction=faction, origin=origin, power=power, health=health,
-                        ability=ability, keep_buffs=keep_buffs, **kw)
+                        ability=ability, **kw)
 
 
 def card(cid: int, shikigami: int | None = 100101, name: str | None = None,

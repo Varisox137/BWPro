@@ -250,8 +250,8 @@ def test_interleaved_vs_atomic(db, make_game):
 
 
 def _add_wall(db):
-    """召唤物墙：0/3，keep_buffs。"""
-    db.shikigami[10010199] = F.shiki(10010199, kind="summon", power=0, health=3, keep_buffs=True)
+    """召唤物墙：0/3。"""
+    db.shikigami[10010199] = F.shiki(10010199, kind="summon", power=0, health=3)
     db.cards[10010151] = F.card(10010151, token=True,
                                 steps=[F.Step(op="summon", shikigami=10010199)])
 
@@ -291,12 +291,18 @@ def test_combat_summon_stays_and_move_despawns(db, make_game):
     assert wall.revive_countdown == 0                      # 非气绝：不进复活流程
 
 
-def test_summon_and_keep_buffs(db, make_game):
-    """keep_buffs：同名召唤物再召时保留永久增减益。"""
+def test_summon_resummon_is_fresh_entity(db, make_game):
+    """同名召唤物再召是新实体：不继承上次在场时获得的永久增减益（keep_buffs 说法
+    不存在，维护者定案）；跨召唤的增益由 stat_aura ids_power scope=game 牌手光环
+    承担（光环再召仍生效，见 test_stat_aura_ids_power）。本测试同场验证两点。"""
     _add_wall(db)
     db.cards[10010152] = F.card(
         10010152, token=True, steps=[F.Step(op="buff_power", amount=2, perm=True,
                                             target=T(kind="all", pool="friendly_shikigami"))])
+    db.cards[10010155] = F.card(
+        10010155, token=True, steps=[F.Step(op="stat_aura", kind="ids_power",
+                                            ids=[10010199], power=1, scope="game",
+                                            target=T(kind="self"))])
     _add_damage_card(db, cid=10010153, amount=3)
     g = make_game()
     a = g.state.players[0]
@@ -305,20 +311,22 @@ def test_summon_and_keep_buffs(db, make_game):
     wall = a.shikigami[4]
     g.apply({"op": "play_card", "uid": give(g, 0, 10010152).uid})
     assert wall.perm_power == 2 and wall.eff_power == 2
-    # 击杀：离场并留下 legacy
+    g.apply({"op": "play_card", "uid": give(g, 0, 10010155).uid})
+    assert wall.eff_power == 3                           # 光环 +1 即时生效
+    # 击杀：离场（不留下任何继承记账）
     g.apply({"op": "end_turn"})
     b = g.state.players[1]
     b.orb = 2
     g.apply({"op": "play_card", "uid": give(g, 1, 10010153).uid,
              "target": Ref(player=0, shikigami=4)})
     assert wall.despawned is True and wall.revive_countdown == 0
-    assert a.summon_legacy[10010199]["perm_power"] == 2
-    # 再召：保留永久增减益
+    # 再召：新实体——永久增益不继承，但牌手光环仍生效
     g.apply({"op": "end_turn"})
     a.orb = 2
     g.apply({"op": "play_card", "uid": give(g, 0, 10010151).uid})
     wall2 = a.shikigami[5]
-    assert wall2.perm_power == 2 and wall2.eff_power == 2
+    assert wall2.perm_power == 0
+    assert wall2.eff_power == 1                          # 仅 stat_aura 光环 +1
 
 
 def test_zero_damage_aborts_resolution(db, make_game):
@@ -1233,7 +1241,7 @@ def test_stat_aura_ids_power(db, make_game):
     # 变形体（id ∈ ids）同享
     trans = 10010180
     db.cards[trans] = F.card(trans, token=True, steps=[
-        F.Step(op="transform", into=tom2, permanent=True, target=T(kind="self"))])
+        F.Step(op="transform", into=tom2, target=T(kind="self"))])
     play(g, 0, trans)
     assert pa.shikigami[0].id == tom2
     assert pa.shikigami[0].eff_power == 6          # 4 基础 + 2 光环
@@ -1997,3 +2005,137 @@ def test_highest_power_filter(db, make_game):
     hurt = [i for i, s in enumerate(pb.shikigami) if s.health < s.max_health]
     assert len(hurt) == 1
     assert hurt[0] in (1, 2)                 # 只打并列最高之一（3 力 0 号位不入选）
+
+
+# ---------- TargetSpec 块内随机目标复用（memo 键）/ 含气绝过滤（include_defeated） ----------
+
+def test_target_memo_random_reuse(db, make_game):
+    """TargetSpec memo 键（须与 random 同用）：首次取样结果存入 ctx.memo[key]，同块
+    后续同 key 的解析直接复用、不再重新取样/过滤（惊鸿之舞"同一随机目标获得2力量
+    与[贯通]"——两步须落到同一式神）。"""
+    cid = 10010166
+    spec = T(kind="all", pool="friendly_shikigami", random=1, memo="dance_target")
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="buff_power", amount=2, target=spec),
+        F.Step(op="grant_keyword", keyword="piercing", target=spec)])
+    g, pa, pb = _mech_game(make_game)
+    pa.shikigami[1].level = 1
+    pa.shikigami[2].level = 1                        # 3 名在场，随机取 1
+    play(g, 0, cid)
+    buffed = [i for i, s in enumerate(pa.shikigami) if s.temp_power == 2]
+    pierced = [i for i, s in enumerate(pa.shikigami) if "piercing" in s.keywords]
+    assert len(buffed) == 1
+    assert buffed == pierced                         # 两步复用同一随机目标
+
+
+def test_include_defeated_random_perm_buff(db, make_game):
+    """TargetSpec include_defeated：friendly_shikigami 池纳入未离场的气绝式神（口径同
+    friendly_defeated 池：defeated 且未离场且等级 >=1）；气绝式神可获永久增益记账
+    （当前生命不随上限上调；惊鸿之舞"随机两名己方式神（无论是否气绝）各永久+1/+1"）。
+    同 memo 键使 +1 力量与 +1 生命落到同两名。"""
+    cid = 10010167
+    spec = T(kind="all", pool="friendly_shikigami", include_defeated=True,
+             random=2, memo="dance_pair")
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="buff_power", amount=1, perm=True, target=spec),
+        F.Step(op="buff_health", amount=1, perm=True, target=spec)])
+    g, pa, pb = _mech_game(make_game)
+    d = pa.shikigami[2]
+    d.level = 2
+    d.defeated = True                                # 气绝（未离场、等级 >=1）：纳入池
+    d.health = 0
+    play(g, 0, cid)                                  # 池 = 在场 0 号 + 气绝 2 号（恰 2 名）
+    got_power = [i for i, s in enumerate(pa.shikigami) if s.perm_power == 1]
+    got_health = [i for i, s in enumerate(pa.shikigami) if s.perm_health == 1]
+    assert got_power == [0, 2] and got_health == [0, 2]   # 含气绝者；两步同目标
+    assert d.defeated and d.health == 0              # 气绝时上限上调不同步当前生命
+
+
+# ---------- 派系永久/当前分离（perm_faction）与衍生物派系继承 ----------
+
+def test_summon_inherits_source_perm_faction(db, make_game):
+    """召唤物进场派系 = 召唤效果来源式神的 perm_faction；无来源式神（中立牌）时回退
+    召唤物 def faction。式神 perm_faction 组建时定死为 def faction。"""
+    tom = 10010199
+    db.shikigami[tom] = F.shiki(tom, kind="summon", name="番茄", power=0, health=3,
+                                faction="紫岩")
+    cid = 10010168
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(op="summon", shikigami=tom)])
+    g, pa, pb = _mech_game(make_game)
+    assert pa.shikigami[0].perm_faction == "红莲"    # 组建时定死（base_db 100101 红莲）
+    play(g, 0, cid)                                  # 来源 = 100101（红莲）
+    wall = pa.shikigami[-1]
+    assert wall.faction == "红莲" and wall.perm_faction == "红莲"   # 非 def 的紫岩
+    cid2 = 10010169
+    db.cards[cid2] = F.card(cid2, shikigami=None, token=True,
+                            steps=[F.Step(op="summon", shikigami=tom)])
+    play(g, 0, cid2)                                 # 中立牌无来源式神：回退 def faction
+    assert pa.shikigami[-1].faction == "紫岩"
+    assert pa.shikigami[-1].perm_faction == "紫岩"
+
+
+def test_transform_inherits_source_perm_faction(db, make_game):
+    """变形物进场派系 = 变形效果来源式神的 perm_faction（无来源回退变形物 def faction）。"""
+    tom = 10010198
+    db.shikigami[tom] = F.shiki(tom, kind="transform", name="纸人", power=1, health=1,
+                                faction="青岚")
+    trans = 10010170
+    db.cards[trans] = F.card(trans, token=True, steps=[
+        F.Step(op="transform", into=tom, target=T(kind="self"))])
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, trans)                                # 来源 = 100101（红莲）
+    s = pa.shikigami[0]
+    assert s.id == tom
+    assert s.faction == "红莲" and s.perm_faction == "红莲"
+
+
+# ---------- 记仇复制 × 雪球（echo_event_card × generate / auto_use from_hand） ----------
+
+def _jue_vs_xuenv(gdb):
+    """觉方（无雪女）vs 雪女方的对局（记仇 2019/吹雪/流霰/雪球，at_date(20191212)）。"""
+    from core.model import GameConfig
+    from core.setup import new_game
+    db2 = gdb.at_date(20191212)
+    ta = [100108, 100112, 100116, 100115]            # 青岚+红莲（觉带队，无雪女）
+    tb = [100121, 100112, 100116, 100115]            # 雪女带队，同派系组合
+    return new_game(db2, ("A", ta, F.deck_of(*ta)), ("B", tb, F.deck_of(*tb)),
+                    seed=1, first=0, shuffle_team=False, mulligan=False,
+                    config=GameConfig(auto_skip_upgrade=True))
+
+
+def test_echo_generate_enters_listener_hand(gdb):
+    """记仇复制敌方吹雪（觉方队伍无雪女）："将一张'雪球'置入手牌"置入监听控制者
+    （觉方）手牌，复制的伤害目标强制为施法者雪女；该雪球因雪女未出战而打不出。"""
+    g = _jue_vs_xuenv(gdb)
+    pa, pb = F.battle_setup(g, {0: 2, 2: 1})         # 觉 2 级（记仇 2 级牌）；B 全员 1 级
+    play(g, 0, 10010806)                             # 记仇：注册一次性监听
+    pass_turns(g)                                    # → B 回合
+    pb.orb = 9
+    hp_a = pa.shikigami[2].health
+    hp_x = pb.shikigami[0].health                    # 雪女
+    play(g, 1, 10012102, target=Ref(player=0, shikigami=2))   # B 吹雪 → A 己方式神
+    assert pa.shikigami[2].health == hp_a - 3        # 原效果 3 伤
+    assert pb.shikigami[0].health == hp_x - 3        # 复制：目标=施法者雪女
+    assert any(c.id == 10012151 for c in pa.hand)    # 雪球置入觉方手牌
+    snow = next(c for c in pa.hand if c.id == 10012151)
+    pass_turns(g)                                    # → A 回合
+    with pytest.raises(IllegalAction, match="未出战"):
+        g.apply({"op": "play_card", "uid": snow.uid})  # 雪女未出战：雪球不可用
+
+
+def test_echo_auto_use_from_hand_targets_caster(gdb):
+    """记仇复制敌方流霰：自动使用监听方（觉方）手牌中的所有'雪球'，目标强制为施法者
+    （敌方雪女）——from_hand 读取监听方手牌、目标继承复制的选择目标（施法者）、
+    计入觉方的从手牌使用记账。"""
+    g = _jue_vs_xuenv(gdb)
+    pa, pb = F.battle_setup(g, {0: 2, 2: 1})
+    pb.shikigami[0].level = 3                        # 雪女 3 级（流霰 3 级牌）
+    give(g, 0, 10012151)                             # 觉方手牌先有一张雪球
+    play(g, 0, 10010806)                             # 记仇：注册监听
+    pass_turns(g)                                    # → B 回合
+    pb.orb = 9
+    hp_x = pb.shikigami[0].health
+    play(g, 1, 10012107, target=Ref(player=0, shikigami=2))   # B 流霰 → A 己方式神
+    assert not any(c.id == 10012151 for c in pa.hand)         # 觉方雪球已被自动使用
+    assert pb.shikigami[0].health == hp_x - 1        # 雪球 1 伤强制打到施法者雪女
+    assert pa.ext["snowball_used_game"] == 1         # 从手牌使用记账（觉方）

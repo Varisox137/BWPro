@@ -1018,21 +1018,14 @@ class Game:
         si: int | None = None
         fdp_cost: int | None = None  # 气绝形态使用（form_death_play 旗标）的能量消耗
         if cdef.shikigami is not None:
-            si = self._find_shikigami(p, cdef.shikigami)
+            si = self._find_card_owner(p, cdef.shikigami)
             sname = self.db.shikigami[cdef.shikigami].name
             if si is None:
-                ti = next((j for j, st in enumerate(p.shikigami)
-                           if st.transform_owner == cdef.shikigami), None)
-                if ti is not None:
-                    # 变形物保留"所属式神"= 原式神 id：原式神被变形中，其牌不能使用——
-                    # 觉醒·番茄特例（transform owner_combat 标记）：永久变形物可使用
-                    # 原式神的战斗牌（仅战斗牌，定案(13)②），此时以其座次为来源
-                    if cdef.card_type == "combat" and p.shikigami[ti].ext.get("owner_combat_ok"):
-                        si = ti
-                    else:
-                        raise IllegalAction(f"{sname} 被变形中，不能使用其卡牌")
-                else:
-                    raise IllegalAction(f"{sname} 未出战")
+                if any(st.transform_owner == cdef.shikigami for st in p.shikigami):
+                    # 变形物保留"所属式神"= 原式神 id：原式神被变形中，其牌不能使用
+                    # （式神替换物不在此列——replace_owner 路径已在 _find_card_owner 放行）
+                    raise IllegalAction(f"{sname} 被变形中，不能使用其卡牌")
+                raise IllegalAction(f"{sname} 未出战")
             s = p.shikigami[si]
             if s.stuns:
                 raise IllegalAction(f"{sname} 眩晕中，不能使用其卡牌")
@@ -2086,28 +2079,24 @@ class Game:
                       shikigami=Ref(player=self.state.players.index(p), shikigami=i))
 
     def _despawn(self, p: PlayerState, i: int) -> None:
-        """召唤物离场：不进复活流程（保留坑位稳定下标）；keep_buffs 留下永久增减益。"""
+        """召唤物离场：不进复活流程（保留坑位稳定下标）；同名再召是新实体，不继承永久增减益。"""
         s = p.shikigami[i]
         d = self.db.shikigami[s.id]
         self._clear_ability_card_auras(p, self.state.players.index(p), i)  # 能力离场：ability 光环移除
         if p.combat_index == i:
             p.combat_index = None
         s.despawned = True
-        if d.keep_buffs:
-            # 同名召唤物再召时保留永久增减益（如跳跳妹妹-番茄）
-            p.summon_legacy[s.id] = {
-                "perm_power": s.perm_power,
-                "perm_health": s.perm_health,
-            }
         self._log(f"{d.name} 离场")
 
     # ---------- 变形（transform；契约 §2，thoughts.txt 变形相关） ----------
 
-    def _transform_shikigami(self, p: PlayerState, i: int, into: int) -> None:
-        """把座次 i 的式神灵变为变形物 into：A 离场（能力先离场）→ B 继承座位进场
+    def _transform_shikigami(self, p: PlayerState, i: int, into: int,
+                             source: Ref | None = None) -> None:
+        """把座次 i 的式神变为变形物 into：A 离场（能力先离场）→ B 继承座位进场
         （能力后进场）。B 不继承 A 的增减益；A 的完整状态快照存入 B.transform_origin，
         解除变形时原样还原（连续变形继承最初的快照）；B 保留"所属式神"= 原式神 id
-        （transform_owner，变形物无法使用原式神的任何牌）。"""
+        （transform_owner，变形物无法使用原式神的任何牌）。
+        B 的进场派系 = 变形效果来源式神（source）的永久派系，无来源时回退 into def faction。"""
         d = self.db.shikigami[into]
         if d.kind != "transform":
             raise ValueError(f"transform 的目标 {into} 不是变形物（kind=transform）")
@@ -2115,9 +2104,12 @@ class Game:
         origin = (s.transform_origin if s.transform_origin is not None
                   else s.model_dump(exclude={"transform_origin"}))
         owner_id = s.transform_owner if s.transform_owner is not None else s.id
+        faction = d.faction
+        if source is not None and source.shikigami is not None:
+            faction = self.state.players[source.player].shikigami[source.shikigami].perm_faction
         pi = self.state.players.index(p)
         b = ShikigamiState(
-            id=into, kind="transform", faction=d.faction,
+            id=into, kind="transform", faction=faction, perm_faction=faction,
             level=s.level, home_slot=s.home_slot, entry_order=s.entry_order,
             base_power=d.power, base_health=d.health, health=d.health,
             transform_owner=owner_id, transform_origin=origin,
@@ -2130,13 +2122,39 @@ class Game:
                      f"（身材 {b.base_power}/{b.max_health}）")
         self._register_ability_countdown(pi, i)  # 能力后进场：注册变形物的倒计时能力块
 
+    def _replace_shikigami(self, p: PlayerState, i: int, into: int) -> None:
+        """式神替换（觉醒·番茄；非变形）：座次 i 的式神 A 被替换物 B 实体取代——
+        B 继承座次与 A 的当前等级；无快照/不还原（不设 transform_origin，气绝前2
+        还原路径天然跳过，B 气绝复活仍为 B）；ext["replace_owner"] 记原式神 id，
+        出牌/响应校验据此放行原式神的全部卡牌（无变形"不能使用原式神卡牌"限制）。
+        B 的派系 = B def 自身的 faction。"""
+        d = self.db.shikigami[into]
+        if d.kind != "transform":
+            raise ValueError(f"replace 的目标 {into} 不是替换物定义（kind=transform）")
+        s = p.shikigami[i]
+        owner_id = s.ext.get("replace_owner", s.id)  # 连续替换仍指向最初的原式神
+        pi = self.state.players.index(p)
+        b = ShikigamiState(
+            id=into, kind="transform", faction=d.faction, perm_faction=d.faction,
+            level=s.level, home_slot=s.home_slot, entry_order=s.entry_order,
+            base_power=d.power, base_health=d.health, health=d.health,
+            ext={"max_power": d.power,  # 力量历史峰值初值（断臂记账）
+                 "replace_owner": owner_id},
+            perm_keywords=list(d.keywords))  # 先天关键字按永久类别入列
+        p.shikigami[i] = b
+        self._clear_ability_card_auras(p, pi, i)  # 原式神能力离场：其 ability 光环移除
+        self._log(f"{self.db.shikigami[s.id].name} 替换为 {d.name}")
+        self._settle(f"【替换】{self.db.shikigami[s.id].name} 替换为 {d.name}"
+                     f"（身材 {b.base_power}/{b.max_health}）")
+        self._register_ability_countdown(pi, i)  # 能力后进场（替换物无能力块时为空操作）
+
     def _untransform(self, pi: int, i: int) -> None:
         """解除座次 i 变形物的变形：按 transform_origin 快照还原原式神当时状态
-        （身材/增减益/能力；变形物在场期间的改动不保留）。无快照（非变形物）为空操作。
-        永久变形（ext["transform_permanent"]，觉醒·番茄）跳过——不还原。"""
+        （身材/增减益/能力；变形物在场期间的改动不保留）。无快照（非变形物；
+        式神替换物 replace 不设快照，天然不还原）为空操作。"""
         p = self.state.players[pi]
         s = p.shikigami[i]
-        if s.transform_origin is None or s.ext.get("transform_permanent"):
+        if s.transform_origin is None:
             return
         restored = ShikigamiState.model_validate(s.transform_origin)
         self._clear_ability_card_auras(p, pi, i)  # 变形物能力离场：其 ability 光环移除（原式神光环还原后由能力进场重新注册）
@@ -3123,10 +3141,10 @@ class Game:
                   battle=self._battle_stack[-1] if self._battle_stack else None)
         if s.defeated:
             return  # 气绝前 1 的插入结算中已被其它事件标记气绝
-        if s.transform_origin is not None and not s.ext.get("transform_permanent"):
+        if s.transform_origin is not None:
             # 变形物"气绝前2"（契约 §2）：解除变形、原式神以已气绝状态进场——快照还原
             # 到原座次后继续正常气绝流程（形态消灭/非永久修正清除/复活倒计时/气绝事件）；
-            # 永久变形（觉醒·番茄）跳过——变形物气绝即气绝，复活仍为变形物（定案(13)②）
+            # 式神替换物（replace，无快照）天然跳过——替换物气绝即气绝，复活仍为替换物
             restored = ShikigamiState.model_validate(s.transform_origin)
             restored.health = 0
             restored.dying = False
@@ -3506,10 +3524,11 @@ class Game:
             eb = self._response_block(cdef)
             if "trigger" not in cdef.keywords or eb.when != event["name"]:
                 continue
-            si = self._find_shikigami(p, cdef.shikigami) if cdef.shikigami is not None else None
+            si = self._find_card_owner(p, cdef.shikigami) if cdef.shikigami is not None else None
             if cdef.shikigami is not None:
                 if si is None:
-                    continue  # 对应式神未出战（含被变形中——变形物无法使用原式神的牌）
+                    continue  # 对应式神未出战（含被变形中——变形物无法使用原式神的牌；
+                    # 式神替换物经 _find_card_owner 的 replace_owner 通道放行）
                 s = p.shikigami[si]
                 if s.stuns:
                     continue  # 眩晕式神不能响应使用其卡牌
@@ -3569,7 +3588,7 @@ class Game:
             return True
         si: int | None = None
         if cdef.shikigami is not None:
-            si = self._find_shikigami(p, cdef.shikigami)
+            si = self._find_card_owner(p, cdef.shikigami)
             if si is None:
                 return True
             s = p.shikigami[si]
@@ -3867,6 +3886,17 @@ class Game:
             if s.id == defn_id:
                 return i
         return None
+
+    def _find_card_owner(self, p: PlayerState, defn_id: int) -> int | None:
+        """卡牌所属式神的座次：按数据 id 直查；查不到时查式神替换标记
+        （ext["replace_owner"]，觉醒·番茄——替换物承继原式神的全部卡牌使用权，
+        以替换物座次为来源）。变形物（transform_owner）不在此列——变形中不能使用
+        原式神的牌。"""
+        si = self._find_shikigami(p, defn_id)
+        if si is not None:
+            return si
+        return next((j for j, st in enumerate(p.shikigami)
+                     if st.ext.get("replace_owner") == defn_id), None)
 
     def _own_shikigami(self, p: PlayerState, i: int) -> ShikigamiState:
         if not 0 <= i < len(p.shikigami):

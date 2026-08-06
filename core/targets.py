@@ -28,6 +28,12 @@ pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / sel
 TargetSpec 额外键：
 - {"random": n}：kind=all 时在解析结果中随机取 n 个（盛开"随机一个受伤己方式神"，
   配合 repeat 每轮重新随机）；不足 n 个时取全部
+- {"memo": key}（须与 random 同用）：块内随机目标复用——首次解析把取样结果存入
+  ctx.memo[key]，同块后续同 key 的解析直接复用该 refs（不再取样、不再重新过滤；
+  惊鸿之舞"同一随机目标获得2力量与[贯通]"/"随机两名己方式神各永久+1/+1"）
+- {"include_defeated": true}：对 friendly_shikigami / enemy_shikigami 池，把未离场的
+  气绝式神也纳入（口径同 friendly_defeated 池：defeated 且 not despawned 且 level>=1；
+  惊鸿之舞"随机两名己方式神（无论是否气绝）"）
 - {"power_le": n}：按 eff_power ≤ n 过滤式神目标（勾诀"力量<=2的敌方式神"；choose
   合法性校验经 spec_pool_refs、kind=all 解析经 resolve 应用）
 - {"has_fragile": true|false}：按是否持有破甲过滤角色目标（焚身之火"所有有破甲的
@@ -262,6 +268,13 @@ def resolve(game, spec, ctx) -> list[Ref]:
     if spec.kind == "self":
         return [ctx.source] if ctx.source else []
     if spec.kind == "all":
+        extra = spec.model_extra or {}
+        memo_key = extra.get("memo")
+        rnd = extra.get("random")
+        if memo_key is not None and rnd is not None \
+                and getattr(ctx, "memo", None) and memo_key in ctx.memo:
+            # 块内随机目标复用：直接复用首次取样结果（不再取样、不再重新过滤）
+            return list(ctx.memo[memo_key])
         if spec.pool == "friendly_others":
             # 己方其他在场式神：排除效果来源（古尘之壁）
             refs = [r for r in pool_refs(game, "friendly_shikigami", ctx.controller)
@@ -281,21 +294,33 @@ def resolve(game, spec, ctx) -> list[Ref]:
                     if r.player == side]
         else:
             refs = pool_refs(game, spec.pool, ctx.controller)
-        sid = (spec.model_extra or {}).get("shikigami")
+        if extra.get("include_defeated") and spec.pool in (
+                "friendly_shikigami", "enemy_shikigami"):
+            # 含气绝过滤键：把未离场的气绝式神也纳入池（口径同 friendly_defeated 池）
+            side = ctx.controller if spec.pool == "friendly_shikigami" \
+                else 1 - ctx.controller
+            refs += [Ref(player=side, shikigami=i)
+                     for i, s in enumerate(game.state.players[side].shikigami)
+                     if s.defeated and not s.despawned and s.level >= 1]
+        sid = extra.get("shikigami")
         if sid is not None:
             # 按数据 id 过滤式神（豪焰固定项 buff 茨木、羁绊伤酒吞类"指定式神"）
             refs = [r for r in refs if r.shikigami is not None
                     and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
-        refs = _spec_filtered(game, refs, spec.model_extra or {})
-        if (spec.model_extra or {}).get("exclude_victim"):
+        refs = _spec_filtered(game, refs, extra)
+        if extra.get("exclude_victim"):
             # 排除触发事件的 victim（胧月雪华斩"对所有其他[眩晕]的敌方角色"——
             # 与 random_damage 的 exclude_victim 参数同语义）
             vic = (ctx.event or {}).get("victim")
             refs = [r for r in refs if r != vic]
-        rnd = (spec.model_extra or {}).get("random")
         if rnd is not None and len(refs) > int(rnd):
             # 随机取 n 个（盛开"随机一个受伤己方式神"；repeat 每轮重新解析重新随机）
             refs = game.rng.sample(refs, int(rnd))
+        if memo_key is not None and rnd is not None:
+            # 块内随机目标复用：首次取样结果存 ctx.memo[key]（惊鸿之舞"同一随机目标"）
+            if ctx.memo is None:
+                ctx.memo = {}
+            ctx.memo[memo_key] = list(refs)
         return refs
     if spec.kind == "choose":
         return _chosen(game, ctx)

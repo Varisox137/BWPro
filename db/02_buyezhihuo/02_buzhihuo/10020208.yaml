@@ -20,15 +20,15 @@ versions:
         #  3 己方牌手恢复6点生命。（仅在己方牌手已损生命>=6时才可能触发）
         #  4 所有己方式神本回合获得[帷幕]和[不屈]。
         #  5 [眩晕]一名敌方力量最高的式神。
-        #  6 所有敌方式神降低2点力量。
+        #  6 所有敌方式神降低2点力量。（非永久持续减益：跨回合保留、气绝时清除）
         #  7 所有敌方式神获得3点破甲。
         #  8 抽一张牌。
         #  9 获得1点鬼火。
         # 10 召唤"烬染不夜"。
         # 11 所有己方式神获得1力量、1生命和1护甲。
         # 12 己方战斗区式神获得2力量、2生命和2护甲。（仅在己方战斗区有式神时才可能触发）
-        # 13 己方一名力量最高的式神获得2力量和[贯通]。
-        # 14 随机两名己方式神永久获得1力量与1生命。
+        # 13 己方一名力量最高的式神获得2力量和[贯通]。（并列最高均等随机取一，两步同一目标）
+        # 14 随机两名己方式神永久获得1力量与1生命。（无论是否气绝）
         # 15 所有己方式神获得[迅捷]。
         # 16 对所有敌方式神造成2点伤害。
         # 17 对敌方牌手造成4点伤害。
@@ -63,10 +63,10 @@ versions:
                   steps:
                     - {op: stun,
                        target: {kind: all, pool: enemy_shikigami, highest_power: true, random: 1}}
-                # 6 所有敌方式神降低2点力量（暂定永久：perm 记账，复活保留）
+                # 6 所有敌方式神降低2点力量（非永久持续减益：跨回合保留、气绝时清除——维护者定案）
                 - condition: null
                   steps:
-                    - {op: buff_power, amount: -2, perm: true,
+                    - {op: buff_power, amount: -2,
                        target: {kind: all, pool: enemy_shikigami}}
                 # 7 所有敌方式神获得3点破甲
                 - condition: null
@@ -103,20 +103,22 @@ versions:
                        target: {kind: all, pool: friendly_combat}}
                     - {op: gain_shield, amount: 2,
                        target: {kind: all, pool: friendly_combat}}
-                # 13 己方一名力量最高的式神获得2力量和[贯通]（并列最高均等随机取一）
+                # 13 己方一名力量最高的式神获得2力量和[贯通]（并列最高均等随机取一；
+                #    memo: b13 两步复用同一随机目标——维护者定案）
                 - condition: null
                   steps:
                     - {op: buff_power, amount: 2,
-                       target: {kind: all, pool: friendly_shikigami, highest_power: true, random: 1}}
+                       target: {kind: all, pool: friendly_shikigami, highest_power: true, random: 1, memo: b13}}
                     - {op: grant_keyword, keyword: piercing,
-                       target: {kind: all, pool: friendly_shikigami, highest_power: true, random: 1}}
-                # 14 随机两名己方式神永久获得1力量与1生命
+                       target: {kind: all, pool: friendly_shikigami, highest_power: true, random: 1, memo: b13}}
+                # 14 随机两名己方式神永久获得1力量与1生命（无论是否气绝：include_defeated 纳入未离场气绝式神；
+                #    memo: b14 两步复用同一组随机目标——维护者定案）
                 - condition: null
                   steps:
                     - {op: buff_power, amount: 1, perm: true,
-                       target: {kind: all, pool: friendly_shikigami, random: 2}}
+                       target: {kind: all, pool: friendly_shikigami, include_defeated: true, random: 2, memo: b14}}
                     - {op: buff_health, amount: 1, perm: true,
-                       target: {kind: all, pool: friendly_shikigami, random: 2}}
+                       target: {kind: all, pool: friendly_shikigami, include_defeated: true, random: 2, memo: b14}}
                 # 15 所有己方式神获得[迅捷]（一次性关键字，天然消耗语义，无 scope）
                 - condition: null
                   steps:

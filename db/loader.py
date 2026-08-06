@@ -246,13 +246,13 @@ class CardDatabase:
                     errors.append(f"{where}: summon 引用的式神 {sid} 不存在")
                 elif d.kind != "summon":
                     errors.append(f"{where}: summon 只能召唤 kind=summon 的式神（{sid} 不是）")
-            elif step.op == "transform":
+            elif step.op in ("transform", "replace"):
                 sid = (step.model_extra or {}).get("into")
                 d = self.shikigami.get(sid)
                 if d is None:
-                    errors.append(f"{where}: transform 引用的式神 {sid} 不存在")
+                    errors.append(f"{where}: {step.op} 引用的式神 {sid} 不存在")
                 elif d.kind != "transform":
-                    errors.append(f"{where}: transform 只能变形成 kind=transform 的式神（{sid} 不是）")
+                    errors.append(f"{where}: {step.op} 只能指向 kind=transform 的式神（{sid} 不是）")
             elif step.op == "emit":
                 # 自定义事件须在核心事件或 events.yaml 中声明
                 event_name = (step.model_extra or {}).get("event")

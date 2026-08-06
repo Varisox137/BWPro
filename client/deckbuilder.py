@@ -33,7 +33,7 @@ from client import cardfmt, tui
 from client.textutil import colored
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, DeckRules, rules_summary, validate_deck
-from db.envs import env_label as _env_label, parse_env_input
+from db.envs import env_label as _env_label, parse_env_input, show_faction as _show_faction
 from db.loader import CardDatabase
 from db.packs import PACK_NAMES, PACKS
 
@@ -82,19 +82,27 @@ def _input(prompt: str) -> str:
 
 # ---------- 显示 ----------
 
-def _shiki_rows(defs: list) -> list[tuple[str, ...]]:
+def _shiki_rows(defs: list, show_faction: bool = True) -> list[tuple[str, ...]]:
     """式神列表行（已对齐）：[序号] 名称｜派系｜力量/生命 ｜能力文本（末列由调用方
-    决定同行拼接或挪次行）。"""
-    rows = [(f"[{i + 1}]", d.name, d.faction, f"{d.power}/{d.health}",
-             d.text or "") for i, d in enumerate(defs)]
+    决定同行拼接或挪次行）。show_faction=False（四相琉璃前的环境）时派系列留空。"""
+    rows = [(f"[{i + 1}]", d.name, d.faction if show_faction else "",
+             f"{d.power}/{d.health}", d.text or "") for i, d in enumerate(defs)]
     return cardfmt.align_rows(rows)
 
 
-def _print_shikigami(defs: list, marked: set[int] | None = None) -> None:
+def _shiki_cells(r: tuple[str, ...], mark: str = "") -> str:
+    """式神行首段（名称｜派系｜力量/生命）：派系列为空时整列省略（含分隔符）。"""
+    if r[2].strip():
+        return f"{r[1]}{mark}｜{r[2]}｜{r[3]}"
+    return f"{r[1]}{mark}｜{r[3]}"
+
+
+def _print_shikigami(defs: list, marked: set[int] | None = None,
+                     show_faction: bool = True) -> None:
     """式神列表：首行 [序号] 名称｜派系｜力量/生命；能力文本挪次行缩进 4 格。"""
-    for d, r in zip(defs, _shiki_rows(defs)):
+    for d, r in zip(defs, _shiki_rows(defs, show_faction)):
         mark = " ✓" if marked and d.id in marked else ""
-        print(f"  {r[0]} {r[1]}{mark}｜{r[2]}｜{r[3]}")
+        print(f"  {r[0]} {_shiki_cells(r, mark)}")
         if r[4].strip():
             print(f"    {r[4]}")
 
@@ -115,11 +123,13 @@ def _pack_groups(pool: list) -> list[tuple[str, list]]:
 
 
 def _select_shikigami(db: CardDatabase, *, need: int = 1,
-                      exclude: set[int] | None = None) -> list | None:
+                      exclude: set[int] | None = None,
+                      show_faction: bool = True) -> list | None:
     """二级目录（版本包 → 式神，翻页显示）+ 全名直选的式神选择器。
 
     need=1 选 1 名（编辑更换式神），need=4 选 4 名（新建卡组）；q 取消返回 None。
     输入：当前列表序号 / n p 翻页 / b 返回包列表 / 式神全名（可空格分隔多名）。
+    show_faction=False（四相琉璃前的环境）时列表不显示派系列。
     """
     pool = [d for d in available_shikigami(db)
             if exclude is None or d.id not in exclude]
@@ -145,7 +155,7 @@ def _select_shikigami(db: CardDatabase, *, need: int = 1,
             print("")
             print(f"—— {pack_name}（第 {page + 1}/{pages} 页；已选 "
                   f"{'、'.join(d.name for d in chosen) or '无'}）——")
-            _print_shikigami(shown, marked=chosen_ids)
+            _print_shikigami(shown, marked=chosen_ids, show_faction=show_faction)
             prompt = "序号选择；n 下页 p 上页 b 返回包列表；全名直选 > "
             listing = shown
         try:  # EOF（输入关闭）= 取消选择，避免 _input 吞 EOF 后空行死循环
@@ -231,13 +241,15 @@ def _deck_list_lines(decks: list[dict]) -> None:
                       STANDARD_COLOR if d.get("standard") else None))
 
 
-def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]]) -> None:
+def _print_deck(db: CardDatabase, team: list[int], picks: dict[int, list[int]],
+                show_faction: bool = True) -> None:
     """当前卡组总览：每个式神一行（对齐的数值+能力文本）+ 其已选卡牌与张数。"""
     total = sum(len(v) for v in picks.values())
     print("")
     print(f"—— 当前卡组（共 {total} 张）——")
-    for r, sid in zip(_shiki_rows([db.shikigami[s] for s in team]), team):
-        print(f"  {r[0]} {r[1]}｜{r[2]}｜{r[3]} {r[4]}".rstrip())
+    shiki_rows = _shiki_rows([db.shikigami[s] for s in team], show_faction)
+    for r, sid in zip(shiki_rows, team):
+        print(f"  {r[0]} {_shiki_cells(r)} {r[4]}".rstrip())
         cards = picks.get(sid, [])
         names = "  ".join(f"{db.cards[c].name}×{n}"
                           for c, n in Counter(cards).items())
@@ -257,7 +269,7 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
     （保存为非标准卡组），不强制要求合法。返回 (式神 ids, 卡牌 ids, env)。"""
     edb = db.at_date(env)
     while True:
-        _print_deck(edb, team, picks)
+        _print_deck(edb, team, picks, show_faction=_show_faction(env))
         line = _input("序号 = 编辑该式神卡牌；h <序号> = 更换式神；"
                       "e <环境> = 更改环境（alias 或日期）；Enter = 完成 > ")
         if not line:
@@ -285,7 +297,7 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
                     continue
                 print(f"{db.shikigami[sid].name} 在该环境下不可用，请更换式神")
                 result = _select_shikigami(
-                    new_edb, need=1,
+                    new_edb, need=1, show_faction=_show_faction(new_env),
                     exclude=(set(team) | {d.id for d in swaps.values()}) - {sid})
                 if result is None:
                     print("已取消，保留原环境")
@@ -314,7 +326,8 @@ def _edit_deck(db: CardDatabase, env: int | None, team: list[int],
             except (ValueError, IndexError):
                 print("序号有误")
                 continue
-            result = _select_shikigami(edb, need=1, exclude=set(team))
+            result = _select_shikigami(edb, need=1, exclude=set(team),
+                                       show_faction=_show_faction(env))
             if result is None:
                 print("已取消更换")
                 continue
@@ -363,7 +376,7 @@ def _interactive_build(db: CardDatabase, env: int | None,
     进入增量编辑循环（Enter 完成）。选择阶段取消返回 None。
     式神/卡牌池按构筑环境 env 解析（None = 最新）。"""
     edb = db.at_date(env)
-    chosen = _select_shikigami(edb, need=4)
+    chosen = _select_shikigami(edb, need=4, show_faction=_show_faction(env))
     if chosen is None:
         print("已取消")
         return None

@@ -225,12 +225,16 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
 
     召唤物的生成视作其移动进入战斗区（但不视为从准备区离开）；
     若战斗区已有驻留者，其退回准备区（召唤物则直接离场）。
-    若该召唤物定义 keep_buffs=True，则同名再召时继承上次离场时的永久增减益。
+    进场派系 = 召唤效果来源式神的永久派系（perm_faction；无来源式神时回退 def faction）。
     orb_cost>0（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：效果内嵌费用——
     控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常），足够则先付再召。
     """
     d = game.db.shikigami[shikigami]
     p = game.state.players[ctx.controller]
+    src: ShikigamiState | None = None
+    if ctx.source is not None and ctx.source.shikigami is not None:
+        src = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    faction = src.perm_faction if src is not None else d.faction
     if orb_cost:
         if p.orb < orb_cost:
             game._log(f"{p.name} 鬼火不足，召唤失败")
@@ -244,17 +248,11 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
         game._log(f"{p.name} 的召唤效果被尘缚之阵无效化")
         return
     s = ShikigamiState(
-        id=shikigami, kind="summon", faction=d.faction, level=1,
+        id=shikigami, kind="summon", faction=faction, perm_faction=faction, level=1,
         home_slot=None,
         base_power=d.power, base_health=d.health, health=d.health,
         perm_keywords=list(d.keywords))  # 先天关键字（充能/迅捷等）按永久类别入列（同 build_player）
-    legacy = p.summon_legacy.get(shikigami)
-    if legacy:
-        s.perm_power = legacy.get("perm_power", 0)
-        s.perm_health = legacy.get("perm_health", 0)
-        s.health += s.perm_health
-    if ctx.source is not None and ctx.source.shikigami is not None:
-        src = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+    if src is not None:
         if inherit_stats:
             # 复制来源当前全部身材（维护者定案：当前力量含临时/光环增益、当前生命上限、
             # 当前生命值含受伤不满）——以一次性永久修正落到实例（静态基值，
@@ -929,14 +927,14 @@ def gen_replace(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     该式神的非 to_type 牌时，改为随机一张该式神的 to_type 牌。
 
     登记于控制者 PlayerState.ext["gen_replace"]，generate 单点读取（一切生成路径
-    生效）；重复登记后者覆盖前者。shikigami="self" 时取来源式神（变形物取其
-    transform_owner 原式神 id——永久变形后"她的牌"仍指原式神的牌）。
+    生效）；重复登记后者覆盖前者。shikigami="self" 时取来源式神（式神替换物/变形物取
+    其 replace_owner/transform_owner 原式神 id——替换/变形后"她的牌"仍指原式神的牌）。
     """
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("gen_replace(shikigami=self) 需要来源式神")
         s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
-        sid = s.transform_owner if s.transform_owner is not None else s.id
+        sid = s.ext.get("replace_owner") or s.transform_owner or s.id
     else:
         sid = int(shikigami)
     p = game.state.players[ctx.controller]
@@ -953,7 +951,7 @@ def replace_cards(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
     非 exclude_type 牌各随机替换为一张她的 to_type 牌。
 
     原牌置入墓地；替换牌生成到原所在区域（生成点统一快照 _materialize），
-    牌库有替换则洗一次牌库。shikigami="self" 同 gen_replace（变形物取原式神 id）。
+    牌库有替换则洗一次牌库。shikigami="self" 同 gen_replace（替换物/变形物取原式神 id）。
     """
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
@@ -961,7 +959,7 @@ def replace_cards(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("replace_cards(shikigami=self) 需要来源式神")
         s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
-        sid = s.transform_owner if s.transform_owner is not None else s.id
+        sid = s.ext.get("replace_owner") or s.transform_owner or s.id
     else:
         sid = int(shikigami)
     pool = [c.id for c in game.db.cards.values()
@@ -2366,15 +2364,29 @@ def stun(game, ctx, *, targets: list[Ref], kind: str = "normal",
 
 
 @action("transform")
-def transform(game, ctx, *, targets: list[Ref], into: int,
-              permanent: bool = False, owner_combat: bool = False) -> None:
-    """把目标式神灵变为变形物 into（契约 §2；into 须为 kind=transform 的式神定义）。
-    未在场/濒死者为空操作。
+def transform(game, ctx, *, targets: list[Ref], into: int) -> None:
+    """把目标式神变为变形物 into（契约 §2；into 须为 kind=transform 的式神定义）。
+    未在场/濒死者为空操作。变形物进场派系 = 变形效果来源式神的永久派系（无来源回退
+    into def faction）。觉醒·番茄类"式神替换"不走本 op，见 replace。"""
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if not s.in_play or s.dying:
+            continue
+        game._transform_shikigami(game.state.players[ref.player], ref.shikigami,
+                                  int(into), source=ctx.source)
 
-    permanent=True（觉醒·番茄）：永久变形——untransform 跳过、气绝前2 不还原
-    （变形物气绝即气绝，复活仍为变形物）。
-    owner_combat=True（觉醒·番茄特例）：变形物可使用原式神（transform_owner）的
-    战斗牌（仅战斗牌；出牌校验白名单，见 engine._cmd_play_card）。
+
+@action("replace")
+def replace(game, ctx, *, targets: list[Ref], into: int) -> None:
+    """式神替换（觉醒·番茄；非变形）：目标座次式神 A 被替换物 B 实体取代（into 须为
+    kind=transform 的式神定义——构筑排除沿用变形物通道）。未在场/濒死者为空操作。
+
+    与变形的区别：无快照/不还原（不设 transform_origin，气绝前2 还原路径天然跳过，
+    B 气绝复活仍为 B）；无"不能使用原式神卡牌"限制（ext["replace_owner"] 记原式神
+    id，出牌/响应校验放行原式神全部卡牌）；继承 A 的当前等级；派系 = B def 自身
+    faction。觉醒流程的 awaken_power/health 增益排在觉醒后结算，落到同座次替换物上。
     """
     for ref in targets:
         if ref.shikigami is None:
@@ -2382,13 +2394,7 @@ def transform(game, ctx, *, targets: list[Ref], into: int,
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if not s.in_play or s.dying:
             continue
-        game._transform_shikigami(game.state.players[ref.player], ref.shikigami, int(into))
-        if permanent or owner_combat:
-            b = game.state.players[ref.player].shikigami[ref.shikigami]
-            if permanent:
-                b.ext["transform_permanent"] = True
-            if owner_combat:
-                b.ext["owner_combat_ok"] = True
+        game._replace_shikigami(game.state.players[ref.player], ref.shikigami, int(into))
 
 
 @action("untransform")

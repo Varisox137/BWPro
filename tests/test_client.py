@@ -64,6 +64,60 @@ def test_hand_card_colored_by_owner_seat(db, make_game, color_on):
         assert f"\033[{code}m【卡{cid}】" in out
 
 
+def test_foreign_shikigami_hand_card_neutral_color(db, make_game, color_on):
+    """外来式神手牌（所属式神不在己方队伍四座次内，如记仇复制敌方法术后
+    生成的牌）与中立牌一致：不着座次色、不特殊标记；队伍内牌仍着座次色。"""
+    g = make_game()
+    db.cards[10020151] = F.card(10020151, shikigami=100201, token=True)  # 所属不在队伍
+    db.cards[10000052] = F.card(10000052, shikigami=None, token=True)     # 中立牌
+    give(g, 0, 10010101)
+    give(g, 0, 10020151)
+    give(g, 0, 10000052)
+    out = cli.render(g)
+    for cid in (10020151, 10000052):
+        line = next(l for l in out.splitlines() if f"【卡{cid}】" in l)
+        assert "\033[" not in line
+    assert f"\033[{cli.SEAT_COLORS[0]}m【卡10010101】" in out
+
+
+# ---------- 派系显示分界（原版派系概念自四相琉璃 20210330 才引入）----------
+
+def test_faction_display_env_boundary(db, make_game, color_off):
+    """对局场况派系列：env_date < 20210330 整列不显示；None（最新）与
+    >= 分界日期正常显示（含对齐列不残留）。"""
+    from db.envs import FACTION_DISPLAY_MIN_DATE, show_faction
+    assert not show_faction(20200327)          # 不夜之火（当前最晚环境别名）
+    assert show_faction(FACTION_DISPLAY_MIN_DATE) == show_faction(20210330)
+    assert show_faction(None)                  # 最新数据
+    g = make_game()
+    for env in (None, FACTION_DISPLAY_MIN_DATE):
+        out = cli.render(g, env_date=env)
+        assert "[红莲]" in out and "[紫岩]" in out and "[无相]" in out
+    hidden = cli.render(g, env_date=20200327)
+    assert "[红莲]" not in hidden and "[紫岩]" not in hidden
+    assert "[无相]" not in hidden
+    line = next(l for l in hidden.splitlines() if "式神100101" in l)
+    assert re.search(r"Lv\d+\s+攻", line)      # 派系列整列移除（等级后直跟状态）
+
+
+def test_deckbuilder_faction_display_by_env(db, capsys):
+    """构筑式神列表与卡组详情：四相琉璃前环境隐藏派系列（含分隔符不残留），
+    之后环境正常显示。"""
+    from client import deckbuilder
+    defs = [db.shikigami[s] for s in F.TEAM]
+    deckbuilder._print_shikigami(defs, show_faction=False)
+    out = capsys.readouterr().out
+    assert "红莲" not in out and "紫岩" not in out
+    deckbuilder._print_shikigami(defs, show_faction=True)
+    out = capsys.readouterr().out
+    assert "红莲" in out and "紫岩" in out
+    picks = {s: [] for s in F.TEAM}
+    deckbuilder._print_deck(db, F.TEAM, picks, show_faction=False)
+    assert "红莲" not in capsys.readouterr().out
+    deckbuilder._print_deck(db, F.TEAM, picks, show_faction=True)
+    assert "红莲" in capsys.readouterr().out
+
+
 def test_hand_stats_labels(db, make_game):
     """手牌数值段：战斗牌力量/护甲（含已装配增强）、形态身材、觉醒永久身材。"""
     db.cards[10010161] = F.card(

@@ -412,42 +412,76 @@ def test_on_stun_event_per_turn_gate(db, make_game):
     assert len(pa.hand) == n1 + 1              # 跨回合重置后可再触发
 
 
-def test_permanent_transform_and_owner_combat(db, make_game):
-    """桃花灼灼型永续变形：不随离场/气绝还原；变形物可使用原式神的战斗牌（仅战斗牌，
-    其余牌仍按"被变形中"拒绝）。"""
+def test_replace_keeps_seat_level_and_original_cards(db, make_game):
+    """式神替换（觉醒·番茄型 replace op）：替换物继承座次与原式神当前等级、无快照
+    不还原（untransform 空操作、气绝前2 跳过）；可使用原式神的全部卡牌（法术牌与
+    战斗牌均可，以替换物座次为来源）——与变形"不能使用原式神卡牌"相区别；
+    派系 = 替换物 def 自身 faction。"""
     tom = 10010198
-    db.shikigami[tom] = F.shiki(tom, kind="transform", name="番茄", power=3, health=3)
-    trans = 10010165
-    db.cards[trans] = F.card(trans, token=True, steps=[
-        Step(op="transform", into=tom, permanent=True, owner_combat=True,
-             target=T(kind="self"))])
+    db.shikigami[tom] = F.shiki(tom, kind="transform", name="番茄", power=3, health=3,
+                                faction="紫岩")
+    rep = 10010165
+    db.cards[rep] = F.card(rep, token=True, steps=[
+        Step(op="replace", into=tom, target=T(kind="self"))])
     combat = 10010166
     db.cards[combat] = F.card(combat, card_type="combat", token=True)
     g = make_game()
     pa, pb = g.state.players
     pa.orb = 9
-    play(g, 0, trans)
+    pa.shikigami[0].level = 2                        # 原式神当前等级
+    play(g, 0, rep)
     s = pa.shikigami[0]
     assert s.id == tom and s.kind == "transform"
-    assert s.ext["transform_permanent"] and s.ext["owner_combat_ok"]
+    assert s.level == 2                              # 继承原式神当前等级
+    assert s.transform_origin is None                # 无快照/不还原
+    assert s.ext["replace_owner"] == SID
+    assert s.faction == "紫岩"                        # 派系 = 替换物 def 自身（非原式神）
     g._untransform(0, 0)
-    assert pa.shikigami[0].id == tom               # 永久变形不还原
-    # 原式神的法术牌不能用
-    spell = give(g, 0, SID * 100 + 2)
-    with pytest.raises(IllegalAction):
-        g.apply({"op": "play_card", "uid": spell.uid})
-    # 原式神的战斗牌可以（以变形物座次为来源）
+    assert pa.shikigami[0].id == tom                 # 替换不是变形：不还原
+    # 原式神的法术牌可用（等级门控按替换物继承的等级；不再仅限战斗牌）
+    play(g, 0, SID * 100 + 2)
+    assert any(c.id == SID * 100 + 2 for c in pa.graveyard)
+    # 原式神的战斗牌可用（以替换物座次为来源）
     pb.shikigami[0].health = 20
-    pb.shikigami[0].base_power = 0                 # 免反击干扰
+    pb.shikigami[0].base_power = 0                   # 免反击干扰
     move(g, 1, 0)
     play(g, 0, combat)
-    assert pb.shikigami[0].health == 17            # 变形物 3 战力
-    # 气绝不还原（气绝前2 跳过）：变形物气绝即气绝
+    assert pb.shikigami[0].health == 17              # 替换物 3 战力
+    # 气绝不还原（气绝前2 无快照跳过）：替换物气绝即气绝，复活仍为替换物
     s = pa.shikigami[0]
     s.health = 0
     g.check_defeated(Ref(player=0, shikigami=0))
     assert pa.shikigami[0].defeated and pa.shikigami[0].id == tom
     assert pa.shikigami[0].revive_countdown > 0
+
+
+def test_replace_coexists_with_summon_and_awaken_stats(db, make_game):
+    """觉醒·番茄型觉醒增益时序与同名共存：替换在效果块第①步发生，觉醒后结算的
+    awaken_power/health 永久增益落到同座次替换物上；觉醒番茄（替换物）与召唤番茄
+    （召唤物同名）可同时在场。"""
+    tom_t, tom_s = 10010198, 10010199
+    db.shikigami[tom_t] = F.shiki(tom_t, kind="transform", name="番茄", power=3, health=3)
+    db.shikigami[tom_s] = F.shiki(tom_s, kind="summon", name="番茄", power=3, health=3)
+    aw = 10010167
+    db.cards[aw] = F.card(aw, token=True, subtype="awaken", level=3,
+                          awaken_power=3, awaken_health=3, steps=[
+        Step(op="replace", into=tom_t, target=T(kind="self"))])
+    sumc = 10010168
+    db.cards[sumc] = F.card(sumc, token=True, steps=[
+        Step(op="summon", shikigami=tom_s)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    pa.shikigami[0].level = 3
+    play(g, 0, aw)
+    s = pa.shikigami[0]
+    assert s.id == tom_t
+    assert s.perm_power == 3 and s.perm_health == 3  # +3/+3 落到替换物
+    assert s.health == 6                             # 上限上调同步当前生命（3+3）
+    play(g, 0, sumc)                                 # 召唤同名番茄：独立实体同时在场
+    idx = len(pa.shikigami) - 1
+    assert pa.shikigami[idx].id == tom_s and pa.shikigami[idx].kind == "summon"
+    assert pa.shikigami[0].id == tom_t and pa.shikigami[0].in_play
 
 
 def test_gen_replace_and_replace_cards(db, make_game):

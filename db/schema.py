@@ -236,7 +236,6 @@ class ShikigamiDef(BaseModel):
     health: int  # 基础生命
     keywords: list[str] = Field(default_factory=list)  # 先天关键字（如贯通）：
     # 入场即具有，按永久类别入列（气绝不清除、复活自动重新获得；core/setup.py 初始化）
-    keep_buffs: bool = False  # 仅召唤物：离场后同名再召是否保留永久增减益
     no_attack: bool = False  # 仅召唤物/衍生物类：不能发动攻击（冰墙；出击校验与
     # 效果发起的额外攻击 launch_attack 同拦截）
     wip: bool = False  # 半成品式神（仅基础数据/卡牌未齐）：不进构筑可选池与测试卡组

@@ -23,6 +23,7 @@ from client.textutil import display_width as _display_width, pad as _pad
 from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
+from db.envs import show_faction as _show_faction
 from db.loader import CardDatabase
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
@@ -124,13 +125,16 @@ def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
     return len(game.state.timeline)
 
 
-def show_field(game: Game, printer: SettlePrinter, viewer: int | None = None) -> None:
+def show_field(game: Game, printer: SettlePrinter, viewer: int | None = None,
+               env_date: int | None = None) -> None:
     """空闲点场况：作为一块入打印队列尾——排在已入队的结算明细之后播完再显示
     （thoughts(1)：每次操作的结算细节全部打印完之后再显示场况）；整段一次性
-    直出（paced=False），不逐条 sleep。对局已结束不再显示场况（终局只打印结果块）。"""
+    直出（paced=False），不逐条 sleep。对局已结束不再显示场况（终局只打印结果块）。
+    env_date 为对局环境（None = 最新），四相琉璃前不显示派系列。"""
     if game.state.winner is not None:
         return
-    printer.enqueue(render(game, viewer=viewer).split("\n"), paced=False)
+    printer.enqueue(render(game, viewer=viewer, env_date=env_date).split("\n"),
+                    paced=False)
 
 
 def parse_ref(code: str, active: int) -> Ref:
@@ -179,7 +183,9 @@ def _seat_color(p, index: int) -> int | None:
 
 
 def _card_color(game: Game, p, c) -> int | None:
-    """手牌的座次色 = 所属式神的座次色；中立牌/生成牌无色。"""
+    """手牌的座次色 = 所属式神的座次色；中立牌/生成牌无色。
+    所属式神不在己方队伍四座次内（如记仇复制敌方法术后生成的外来牌）
+    与中立牌一致：不着座次色。"""
     cd = game.db.cards[c.id]
     if cd.shikigami is None:
         return None
@@ -298,12 +304,15 @@ def player_segments(game: Game, viewer: int | None = None) -> tuple[str, str]:
     return _player_segment(game, own, viewer), _player_segment(game, 1 - own, viewer)
 
 
-def render(game: Game, viewer: int | None = None) -> str:
+def render(game: Game, viewer: int | None = None,
+           env_date: int | None = None) -> str:
     """场况渲染。viewer 为"己方"视角玩家下标（着色/手牌展示）；
-    None = 当前行动方（热坐）。"""
+    None = 当前行动方（热坐）。env_date 为对局环境（None = 最新）：
+    四相琉璃（20210330）前的环境不显示式神派系列。"""
     st = game.state
     view = st.active if viewer is None else viewer
     active = st.players[st.active]
+    show_faction = _show_faction(env_date)
     lines = [
         "",
         f"===== 当前玩家第 {active.turn_count} 回合（总第 {st.turn - 1} 回合）| {active.name} 行动中 =====",
@@ -365,18 +374,20 @@ def render(game: Game, viewer: int | None = None) -> str:
     name_w = max((_display_width(name) for _, name, _, _, _, _ in all_rows), default=0)
     kind_w = max((_display_width(kind) for _, _, kind, _, _, _ in all_rows), default=0)
     level_w = max((_display_width(f"Lv{lv}") for _, _, _, lv, _, _ in all_rows), default=0)
-    faction_w = max((_display_width(f"[{f}]") for _, _, _, _, f, _ in all_rows), default=0)
+    faction_w = max((_display_width(f"[{f}]") for _, _, _, _, f, _ in all_rows),
+                    default=0) if show_faction else 0
 
     for pi, rows in player_rows:
         lines.append(_player_segment(game, pi))
         for i, name, kind, lv, faction, status in rows:
             color = _seat_color(p, i) if pi == view else None
+            faction_seg = f"{_pad(f'[{faction}]', faction_w)} " if show_faction else ""
             line = (
                 f"    [{_pad(str(i + 1), idx_w)}] "
                 f"{_colored(_pad(name, name_w), color)}"
                 f"{_pad(kind, kind_w)} "
                 f"{_pad(f'Lv{lv}', level_w)} "
-                f"{_pad(f'[{faction}]', faction_w)} "
+                f"{faction_seg}"
                 f"{status}"
             )
             lines.append(line)

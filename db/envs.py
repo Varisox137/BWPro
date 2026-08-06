@@ -22,6 +22,16 @@ ENV_ALIASES: dict[str, int] = {
     "不夜之火": 20200327,
 }
 
+# 派系显示分界：原版游戏"式神派系"概念自四相琉璃版本（20210330）才引入——
+# 该日期之前的环境中，卡组构筑与对局内显示均不显示派系（数据层 faction 字段
+# 与引擎实体属性保留不动）。四相琉璃包未落地，不登记环境别名。
+FACTION_DISPLAY_MIN_DATE = 20210330
+
+
+def show_faction(date: int | None) -> bool:
+    """该环境日期下是否显示式神派系：None（最新数据）或 >= 分界日期显示。"""
+    return date is None or date >= FACTION_DISPLAY_MIN_DATE
+
 
 def parse_env_input(text: str) -> int | None:
     """解析环境输入：空串 → None（标准环境/最新）；别名（大小写不敏感）→

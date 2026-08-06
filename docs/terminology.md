@@ -70,7 +70,7 @@
 | 卡包 | `cardpack` | 式神所属版本资料包，即 id 的 vv 段（式神 1avvss / 卡牌 1avvvvcc） | ✅ |
 | 异画 | alt art（id 的 a 位） | 式神/卡牌/中立牌 id 的第 2 位（'0' = 默认卡面）；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留 | 🔧 |
 | 平衡性版本 | `versions` | yaml 顶层仅 id/name/versions 三项，规则数据全部在 versions.history 的版本快照中（每条 = date + 完整数据，不按差量；首条 date = 发布日期）；`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用）；加载/解析结果的 `version` = 所取快照 date；卡牌的 shikigami 由 id 推导注入、cost 默认 1，均不入数据；解析规则见 db/versioning.py。真实数据起点 = 20191212 公测开服（历史平衡性数据源见 card_data_raw.md「平衡性调整」节） | ✅ |
-| 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间分标准模式（固定最新，不可更改）与自由模式（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新；环境输入/显示支持别名（经典/不夜之火等）与 8/6 位日期，解析见 db/envs.py | ✅ |
+| 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间分标准模式（固定最新，不可更改）与自由模式（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新；环境输入/显示支持别名（经典/不夜之火等）与 8/6 位日期，解析见 db/envs.py；**客户端派系显示分界** `FACTION_DISPLAY_MIN_DATE=20210330` + `show_faction(date)`（db/envs.py——deckbuilder 与对局渲染按环境日期隐藏派系列，早于分界不显示派系；外来式神手牌按中立色） | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
 | 同源 | `origin` | 原形/SP 共享 origin，不能同时出战 | ✅ |
 | 衍生卡 | `token` | 对局中生成，不可入卡组（序号从 51 开始递增） | ✅ |
@@ -254,6 +254,7 @@
 | 检索扩展 | `card_type` / `max_level` / `direct_play_power_ge` / `shuffle`（search_deck 参数） | card_type 限定卡牌主类型；max_level="target"：卡牌等级 ≤ 选择目标式神当前等级（"不高于该式神等级"）；direct_play_power_ge=n：选择目标式神存活且力量 ≥ n 时改为直接使用（不耗鬼火、play_from=deck、triggered=auto；目前仅支持形态牌直接结附给选择目标——森佑灵引"若该式神力量≥4且存活，改为直接使用"；置入手牌/直接使用前按生成点统一快照 _materialize）；shuffle=false 命中也不洗牌库（森佑灵引——raw 无"然后洗牌库"句，区别于花信风，维护者定案） | ✅ |
 | 生成友方其他式神 | `shikigami="friendly_others"`（generate 参数） | 逐各其他己方式神（出战队列中除来源外，含 0 级/气绝——万象之书"其他己方式神"按出战队列全体取池，维护者定案）各随机生成一张其卡牌；generate `_spawn` 重构统一生成路径 | ✅ |
 | 目标池与过滤扩展 | `friendly_combat` / `enemy_fragile_or_combat`（池）/ `power_le` / `has_fragile` / `highest_power`（TargetSpec 过滤键） | friendly_combat=己方战斗区式神；enemy_fragile_or_combat=敌方有破甲的在场式神或敌方战斗区式神（或关系——无往）；power_le=n 过滤力量 ≤ n、has_fragile 过滤持破甲者（spec_pool_refs 统一校验/展示——判官夺命/勾魂索）；highest_power=true 按力量最高过滤（读 eff_power，并列全保留交由 random 键均等取——惊鸿之舞"力量最高"项） | ✅ |
+| 随机取样复用 / 气绝纳入 | `memo` / `include_defeated`（TargetSpec 键） | memo=<key>：kind=all+random:n+memo 时同块后续步骤复用首次取样 refs（惊鸿之舞分支 13 力量与[贯通]落同一式神、分支 14 力量与生命落同一组——维护者定案）；include_defeated=true：friendly/enemy_shikigami 池纳入未离场气绝式神（惊鸿之舞分支 14"随机两名己方式神无论是否气绝"） | ✅ |
 | 条件算子扩展 | `shikigami_has_form` / `card_transformed` / `combat_nonempty` | {shikigami_has_form: <式神id>}=控制者的式神（按数据 id）结附着形态；{card_transformed: <卡牌id>}=控制者持久 store 中该同名卡已"变为"；combat_nonempty 为 conditional_keywords 判定键（己方战斗区有人时获得关键字——闪烁"战斗区有式神时得[瞬发]"，engine:284 行，式神未出战不满足） | ✅ |
 | 语境目标扩展 | `damaged_player`（TargetSpec context 键） | 事件中受到伤害的牌手（on_player_damaged payload 的 player 下标 → Ref；夺命"消灭受到判官战斗伤害的角色"的牌手分支） | ✅ |
 | 数值键扩展 | `{"hand_count_half": "controller"}`（动态数值） | 效果归属玩家当前手牌数的一半（向下取整；判官"手牌数的一半"类 X） | ✅ |
@@ -293,6 +294,7 @@
 | `yaohu_damage_count` | `PlayerState.ext` | 妖狐伤害计数：伤害流程按来源=妖狐时每次伤害事件 +1（`_account_yaohu_damage`；狂风刃卷增强 {yaohu_damage_count>=20} 读数） |
 | `yaohu_dmg_bonus` | `ShikigamiState.ext` | 聚气：妖狐能力伤害永久 +1（bump_ext 写入，跨气绝保留、觉醒后继续累计；amount_ext + amount_ext_source="shikigami" 读取） |
 | `transform_origin` / `transform_owner` | `ShikigamiState`（字段，非 ext） | 变形还原式神快照（State dump，不含本字段；被变形时写入，原式神该值非空则继承——连续变形还原到最初；解除时按快照还原当时状态）/ 变形物"所属式神" = 原式神 id（变形物不能使用原式神的任何牌——出牌校验拒绝；万象之书类按原式神取牌的挂读处） |
+| 永久派系 | `perm_faction`（`ShikigamiState` 字段） | 式神进场时记录的永久派系（`faction` 属性=当前派系）；召唤物/变形物进场派系=来源式神 perm_faction（engine summon/_transform_shikigami） |
 | `transform_permanent` | `ShikigamiState.ext`（变形物） | 永久变形标记（transform permanent=True 写入；untransform 与气绝前2 还原跳过——变形物气绝即气绝、复活仍为变形物，觉醒·番茄） |
 | `gen_replace` | `PlayerState.ext` | 生成替换钩子（{shikigami, to_type}；gen_replace 动作登记、generate 单点读取、重复登记覆盖——觉醒·番茄"她的非战斗牌改为随机战斗牌"） |
 | `snowball_used_game` | `PlayerState.ext` | 本局从手牌使用'雪球'（tags snowball）计数（出牌统一记账 `_account_card_played`；流霰 repeat {"ext": ...} 读数） |
@@ -351,7 +353,8 @@
 | 战斗作用域关键字授予 | `scope="battle"` / `scope="turn"`（grant_keyword 参数） | scope="battle"=战斗作用域条件授予：绑定当前战斗上下文，战斗终止点按实例移除（觉醒·雪童子"交战时获得[连击]"——效果步中的授予同样吃战斗作用域）；scope="turn"=授予方当回合结束移除（条目存玩家 `ext["turn_keyword_grants"]`，按授予时回合号比对——惊鸿之舞"所有己方式神本回合获得[帷幕]和[不屈]"；一次性关键字[不屈]被正常消耗后不到回合结束） | ✅ |
 | 换牌 | `replace_cards` / `gen_replace`（动作） | replace_cards：把控制者 zones（默认手牌+牌库）中该式神的所有非 exclude_type 牌各随机替换为一张该式神的 to_type 牌（原牌入墓地、替换牌生成到原区域并统一快照，牌库有替换则洗一次牌库——觉醒·番茄③）；gen_replace：牌手永久生成替换钩子（登记 `PlayerState.ext["gen_replace"]` {shikigami, to_type}，generate 单点读取——之后生成该式神的非 to_type 牌时改为随机一张 to_type 牌，重复登记后者覆盖前者——觉醒·番茄④）；shikigami="self" 时变形物取其 transform_owner 原式神 id | ✅ |
 | 雪球记账 | `snowball`（tags）/ `snowball_used_game` | 出牌统一记账：tags 含 snowball 的牌从手牌使用时 `PlayerState.ext["snowball_used_game"]` +1（本局累计不清；流霰 repeat {"ext": ...} 读数；寒冬之心 card_aura tag 谓词同用此标记） | ✅ |
-| 变形 | `transform` / `untransform`（动作） | transform{into}：目标式神灵变为 kind=transform 变形物（原式神快照存 `transform_origin`，连续变形继承最初快照；未在场/濒死空操作）；untransform：按快照还原原式神当时状态（纸人/小纸人能力：己方回合结束变回）；**`permanent=True` 永久变形**（untransform 跳过、气绝前2 不还原——变形物气绝即气绝、复活仍为变形物，觉醒·番茄）；**`owner_combat=True` 变形物用牌白名单**——永久变形物可使用原式神的战斗牌（仅战斗牌，出牌校验以变形物座次为来源放行，定案(13)②） | ✅ |
+| 变形 | `transform` / `untransform`（动作） | transform{into}：目标式神灵变为 kind=transform 变形物（原式神快照存 `transform_origin`，连续变形继承最初快照；未在场/濒死空操作）；untransform：按快照还原原式神当时状态（纸人/小纸人能力：己方回合结束变回）；`permanent`/`owner_combat` 永久变形通道已删——觉醒·番茄 10013108 迁移至「式神替换」replace（见下条） | ✅ |
+| 式神替换 | `replace`（动作）/ `replace_owner`（ext 键） | replace{into}：目标式神被替换物取代——继承座次/等级，无快照不还原（替换物气绝即气绝、复活仍为替换物）；`ext["replace_owner"]` 放行原式神全部卡牌（出牌校验）；派系=替换物 def faction；与原式神（召唤物）可同时在场（觉醒·番茄 10013108——维护者定案 4 点） | ✅ |
 | 使用前提 | `play_condition`（CardDef）/ [条件]（卡面） | [条件] 使用前提：不满足则任何方式都不能使用——主动（`_cmd_play_card`）、响应（收集/复查）、自动使用统一以条件迷你语言对控制者求值（事件载荷为空，用 dice_six_ge/luck_success_total_ge 等控制者 ext 算子；福满乾坤）；CLI 可用性置灰。[条件] 为卡面标记（text 内），不进 KEYWORDS 表 | ✅ |
 | 运势条件算子 | `dice_six_ge` / `dice_distinct_ge` / `luck_success_total_ge` / `dice_below_x` | {dice_six_ge: n}=控制者投出 6 次数（ext dice_six_count）≥ n（送祝福/快来保护我增强）；{dice_distinct_ge: n}=dice_history 去重数 ≥ n（九莲宝灯动态身材同读数）；{luck_success_total_ge: n}=双方 luck_success_game 合计 ≥ n（福满乾坤 play_condition）；{dice_below_x: true}=运势判定时事件当前骰点 < 所需 X（"将失败"重投门控——觉醒座敷） | ✅ |
 | 运势数值扩展 | `amount_ctx` / `amount_ext` / `amount_ext_source` / `amount_sign` | 伤害类（damage/random_damage/distribute_damage）与 buff 类（buff_power/buff_health）数值扩展：amount_ctx 累加效果上下文变量（luck_dice——骰子炸弹）；amount_ext 累加 ext 计数——默认读来源式神所属牌手 ext（谁还不听话 dice_six_count），amount_ext_source="shikigami" 改读来源式神 ext（聚气 yaohu_dmg_bonus）；amount_sign=-1 转 debuff（来打我呀减力量） | ✅ |
