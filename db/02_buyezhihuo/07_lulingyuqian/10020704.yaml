@@ -1,0 +1,15 @@
+id: 10020704
+name: 冥弓
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          # 造成 4 点伤害，随机分配给所有敌方式神（天狗风乱 10010405 同管线，
+          # pool 收窄为敌方式神）
+          - {op: distribute_damage, amount: 4, pool: enemy_shikigami}
+      text: "造成4点伤害，随机分配给所有敌方式神。"

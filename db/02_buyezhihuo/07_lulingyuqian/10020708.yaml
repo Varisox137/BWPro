@@ -1,0 +1,18 @@
+id: 10020708
+name: 义道
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: combat
+      rarity: SSR
+      level: 3
+      keywords: [piercing, combo]
+      effects:
+        # -1/+2（战斗牌数值通道）；double_damage_vs_fragile = 对有破甲的式神造成
+        # 双倍伤害（战斗流程提取步，不按普通 step 执行）
+        steps:
+          - {op: buff_power, amount: -1, target: {kind: self}}
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          - {op: double_damage_vs_fragile}
+      text: "[贯通]，[连击]。对有破甲的式神造成双倍伤害。"

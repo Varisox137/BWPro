@@ -1,0 +1,18 @@
+id: 10020702
+name: 霸主
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 4
+      form_health: 5
+      effects:
+        # 免疫有破甲的敌方式神对其造成的伤害（fragile_source 免疫类别；
+        # scope=form 随形态离场经 _destroy_form 清除）
+        steps:
+          - {op: grant_immunity, kind: fragile_source, scope: form,
+             target: {kind: self}}
+      text: "免疫有破甲的敌方式神对其造成的伤害。"

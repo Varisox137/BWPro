@@ -22,6 +22,8 @@ pool：enemy_shikigami / friendly_shikigami / any_shikigami / enemy_player / sel
        "为其操控者的所有角色"，仅 kind=all 可用，读 ctx.memo["last_heal_targets"]）
      / friendly_injured（己方在场且已受伤（生命 < 上限）的式神；丰实/盛开"受伤的己方式神"）
      / friendly_defeated（己方已气绝式神——未离场、等级 ≥1；桃华灼灼"复活所有己方式神"）
+     / enemy_fragile_or_combat（敌方有破甲的在场式神或敌方战斗区式神——或关系，
+       含持破甲的敌方牌手；无往"攻击有破甲的敌方式神或敌方战斗区式神"）
 
 TargetSpec 额外键：
 - {"random": n}：kind=all 时在解析结果中随机取 n 个（盛开"随机一个受伤己方式神"，
@@ -54,6 +56,7 @@ POOLS = frozenset({
     "side_of_last_heal",
     "friendly_injured",
     "friendly_defeated",
+    "enemy_fragile_or_combat",
 })
 
 
@@ -113,6 +116,14 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
         if ci is not None and cp.shikigami[ci].in_play:
             return [Ref(player=controller, shikigami=ci)]
         return []
+    if pool == "enemy_fragile_or_combat":
+        # 无往：敌方有破甲的在场式神或敌方战斗区式神（或关系；含持破甲的敌方牌手）
+        ep = game.state.players[enemy]
+        refs = [r for r in alive_shiki(enemy)
+                if ep.shikigami[r.shikigami].shield < 0 or r.shikigami == ep.combat_index]
+        if ep.shield < 0:
+            refs.append(Ref(player=enemy))
+        return refs
     if pool == "enemy_bench":
         # 敌方准备区：在场且不在战斗区的敌方式神（山童类"攻击准备区式神"）
         ep = game.state.players[enemy]
@@ -363,6 +374,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {holder_has_form: true|false} ：能力持有者当前是否结附着形态（萤草 20200327
       能力两项动态要求"萤草结附有形态"才生效）
     - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）
+    - {battle_damage_ge: n}    ：本次战斗（事件 battle 所指）攻击方实际造成的战斗伤害
+      合计 ≥ n（光影"若本次战斗造成的伤害≧6"，on_after_assault 时机读取）
     - 其余按键值相等比较
     """
     if not condition:
@@ -507,6 +520,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             else:
                 return False
             if _ref_stunned(game, other) != bool(want):
+                return False
+        elif key == "battle_damage_ge":
+            # 本次战斗（事件 battle 所指）攻击方实际造成的战斗伤害合计 ≥ n
+            # （光影 temp_grants 门控"若本次战斗造成的伤害≧6"；on_after_assault 时机读取）
+            bid = event.get("battle")
+            if bid is None or game._battle_combat_dmg.get(bid, 0) < int(want):
                 return False
         elif key.endswith("_ge"):
             # 通用数值下限：事件字段 ≥ n（如 overheal_ge: 1 = 存在过量治疗）；

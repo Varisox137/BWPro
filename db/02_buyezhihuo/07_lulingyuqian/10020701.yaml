@@ -1,0 +1,18 @@
+id: 10020701
+name: 白刃
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        # +1/+1（战斗牌数值通道：战力/护甲提取）
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      conditional_keywords:
+        # [增强]：若敌方有破甲>=2 的角色，此牌获得[瞬发]
+        - {keyword: fast, enemy_fragile_ge2: true}
+      text: "[增强]：{若敌方有破甲>=2的角色，此牌获得[瞬发]。}"

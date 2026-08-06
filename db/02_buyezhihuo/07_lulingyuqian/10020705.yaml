@@ -1,0 +1,28 @@
+id: 10020705
+name: 觉醒·铃鹿御前
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 0  # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        steps: []
+      abilities:
+        # [觉醒]：当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为 3）
+        # （event: amount 取事件伤害值，cap 上限截断；双块同基础能力管线）
+        - when: on_damage
+          condition: {source_shikigami: self}
+          steps:
+            - {op: gain_shield, amount: {event: amount, cap: 3}, kind: fragile,
+               target: {kind: context, key: victim}}
+        - when: on_player_damaged
+          condition: {source_shikigami: self}
+          steps:
+            - {op: gain_shield, amount: {event: amount, cap: 3}, kind: fragile,
+               target: {kind: context, key: damaged_player}}
+      text: "[觉醒]：{当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为3）。}"

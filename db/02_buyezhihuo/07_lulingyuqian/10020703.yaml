@@ -1,0 +1,25 @@
+id: 10020703
+name: 光影
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        # +1/+1（战斗牌数值通道：战力/护甲提取）
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      temp_grants:
+        # 若本次攻击造成的战斗伤害>=6：你抽一张牌并获得等同于一半伤害的生命
+        # （on_after_assault 绑定本次战斗；battle_damage_ge 条件键与
+        # battle_damage_half 数值键读事件 battle 所指的伤害合计）
+        - when: on_after_assault
+          condition: {battle_damage_ge: 6}
+          steps:
+            - {op: draw, count: 1}
+            - {op: heal, amount: {battle_damage_half: true},
+               target: {kind: all, pool: self_player}}
+      text: "若本次攻击造成的战斗伤害>=6，你抽一张牌并获得等同于一半伤害的生命。"

@@ -1741,3 +1741,115 @@ def test_clear_boosts_reset_stats_explicit_target_semantics(db, make_game):
     pb.shikigami[0].temp_power = 3
     play(g, 0, RESET_STATS_SPELL)                      # 牌手目标：空操作
     assert pb.shikigami[0].temp_power == 3
+
+
+# ==========================================================================
+# 铃鹿御前批次：霸主破甲来源免疫 / enemy_fragile_ge2 / enemy_fragile_or_combat /
+# event amount cap
+# ==========================================================================
+
+def _fragile_source_immunity_spell(db, cid=10010184):
+    """霸主型：授予来源式神"免疫破甲敌方式神的伤害"（grant_immunity
+    kind=fragile_source / scope=form）。"""
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(
+        op="grant_immunity", scope="form", kind="fragile_source",
+        target=T(kind="self"))])
+    return cid
+
+
+def test_fragile_source_immunity(db, make_game):
+    """破甲来源免疫：伤害来源为当前持有破甲的敌方式神时免疫（伤害类别不限）；
+    来源破甲消失后不再免疫；己方来源（即使持破甲）不免疫。"""
+    _fragile_source_immunity_spell(db)
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, 10010184)
+    ref = Ref(player=0, shikigami=0)
+    src = Ref(player=1, shikigami=0)
+    pb.shikigami[0].shield = -2                    # 来源持破甲：免疫
+    g.deal_to_shikigami(ref, 3, src)
+    assert pa.shikigami[0].health == 4
+    pb.shikigami[0].shield = 0                     # 破甲消失：不免疫
+    g.deal_to_shikigami(ref, 3, src)
+    assert pa.shikigami[0].health == 1
+    pa.shikigami[1].level = 1
+    pa.shikigami[1].shield = -1                    # 己方来源持破甲：不免疫
+    g.deal_to_shikigami(ref, 1, Ref(player=0, shikigami=1))
+    assert pa.shikigami[0].health == 0
+
+
+def test_fragile_source_immunity_form_scope_cleanup(db, make_game):
+    """scope=form：形态离场经 _destroy_form 清除形态作用域免疫条目（霸主为形态牌）。"""
+    _fragile_source_immunity_spell(db)
+    db.cards[10010185] = F.card(10010185, card_type="form", level=1, token=True)
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, 10010184)
+    s = pa.shikigami[0]
+    assert any(e.get("kind") == "fragile_source" for e in s.immunities)
+    play(g, 0, 10010185)                           # 结附形态
+    g._destroy_form(pa, 0, "test")
+    assert not any(e.get("kind") == "fragile_source" for e in s.immunities)
+
+
+def test_enemy_fragile_ge2_keyword(db, make_game):
+    """conditional_keywords 算子 enemy_fragile_ge2：敌方场上存在破甲 ≧2 的角色
+    （在场式神或牌手）才授予关键字（铃鹿御前型条件瞬发）。"""
+    cid = 10010186
+    db.cards[cid] = F.card(cid, token=True, conditional_keywords=[
+        {"keyword": "fast", "enemy_fragile_ge2": True}])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, cid)
+    cdef = db.cards[cid]
+    assert "fast" not in g._card_keywords(pa, cdef, inst)
+    pb.shikigami[0].shield = -1                    # 破甲 1：不成立
+    assert "fast" not in g._card_keywords(pa, cdef, inst)
+    pb.shikigami[0].shield = -2                    # 式神气破甲 2：成立
+    assert "fast" in g._card_keywords(pa, cdef, inst)
+    pb.shikigami[0].shield = 0
+    pb.shield = -2                                 # 牌手破甲 2：成立
+    assert "fast" in g._card_keywords(pa, cdef, inst)
+
+
+def test_pool_enemy_fragile_or_combat(db, make_game):
+    """无往型目标池 enemy_fragile_or_combat：敌方有破甲的在场式神或敌方战斗区式神
+    （或关系；含持破甲的敌方牌手）。"""
+    cid = 10010197
+    db.cards[cid] = F.card(cid, token=True, steps=[F.dmg(1)],
+                           target=T(kind="choose", pool="enemy_fragile_or_combat"))
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, cid)
+    assert g.legal_targets(0, inst) == []          # 无破甲且战斗区空：空池
+    move(g, 1, 0)                                  # 战斗区式神入池（无破甲也算）
+    pb.shikigami[1].level = 1
+    pb.shikigami[1].shield = -1                    # 破甲准备区式神入池
+    got = g.legal_targets(0, inst)
+    assert sorted((r.player, r.shikigami) for r in got) == [(1, 0), (1, 1)]
+    pb.shield = -2                                 # 牌手持破甲：牌手入池
+    assert Ref(player=1) in g.legal_targets(0, inst)
+
+
+def test_event_amount_cap(db, make_game):
+    """_step_amount {"event": key, "cap": n}：事件引用值经上限截断（觉醒·铃鹿御前
+    "至多获得3点破甲"型）；不超过上限时取原值。"""
+    cid = 10010183
+    db.cards[cid] = F.card(
+        cid, card_type="form", level=1, token=True,
+        abilities=[F.EffectBlock(
+            when="on_player_damaged", condition={"player": "self"},
+            steps=[F.Step(op="gain_shield",
+                          amount={"event": "amount", "cap": 3}, kind="fragile",
+                          target=T(kind="context", key="damaged_player"))])])
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, cid)
+    g.deal_to_player(0, 5, Ref(player=1, shikigami=0))
+    g._drain_queue()
+    assert pa.shield == -3                         # min(5, 3)：上限截断
+    # 不破上限取原值（开新局：避免既有破甲加伤抬高事件值干扰读数）
+    g2 = make_game()
+    pa2, pb2 = g2.state.players
+    pa2.orb = 9
+    play(g2, 0, cid)
+    g2.deal_to_player(0, 2, Ref(player=1, shikigami=0))
+    g2._drain_queue()
+    assert pa2.shield == -2                        # min(2, 3) = 2

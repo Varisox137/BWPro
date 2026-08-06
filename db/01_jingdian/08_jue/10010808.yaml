@@ -29,3 +29,26 @@ versions:
             - {op: buff_power, amount: 1, target: {kind: self}}
             - {op: buff_health, amount: 1, target: {kind: self}}
       text: "[觉醒]：{展示敌方所有手牌。当敌方牌手使用已展示的手牌时，觉获得1力量与1生命。}"
+    - date: 20200520
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1  # 永久身材增益："觉醒后"延时时机之后授予（法术觉醒使用事件流程）
+      awaken_health: 1
+      rarity: SR
+      level: 3
+      effects:
+        steps:
+          # 使用效果：展示敌方所有手牌
+          - {op: reveal, mode: all}
+      abilities:
+        # [觉醒]：回合开始时展示敌方所有手牌（无 condition = 双方回合开始均触发）
+        - when: on_turn_start
+          steps:
+            - {op: reveal, mode: all}
+        # 当敌方牌手使用已展示的手牌时，觉获得 1 力量与 1 生命
+        - when: on_card_played
+          condition: {player: opponent, card_revealed: true}
+          steps:
+            - {op: buff_power, amount: 1, target: {kind: self}}
+            - {op: buff_health, amount: 1, target: {kind: self}}
+      text: "展示敌方所有手牌。[觉醒]：{回合开始时，展示敌方所有手牌。当敌方牌手使用已展示的手牌时，觉获得1力量与1生命。}"

@@ -1,0 +1,17 @@
+id: 10020706
+name: 无往
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: combat
+      rarity: SR
+      level: 2
+      # 一个有破甲的或在战斗区的敌方角色（choose 池 enemy_fragile_or_combat）
+      target: {kind: choose, pool: enemy_fragile_or_combat}
+      effects:
+        # +0/+2（战斗牌数值通道）；damage 作用于所指定目标
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          - {op: damage, amount: 2}
+      text: "对一个有破甲的或在战斗区的敌方角色造成2点伤害。"

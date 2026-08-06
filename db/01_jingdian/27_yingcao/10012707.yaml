@@ -14,3 +14,15 @@ versions:
           - {op: generate, card_id: 10012704}
           - {op: generate, card_id: 10012706}
       text: 将萤草的三种形态牌置入手牌。
+    - date: 20200520
+      card_type: spell
+      rarity: SSR
+      level: 3
+      keywords: [fast]
+      effects:
+        # 将萤草的三种形态牌置入手牌（治愈之光/勇气之光/安魂之光；生成点统一快照）
+        steps:
+          - {op: generate, card_id: 10012702}
+          - {op: generate, card_id: 10012704}
+          - {op: generate, card_id: 10012706}
+      text: "[瞬发]。将萤草的三种形态牌置入手牌。"

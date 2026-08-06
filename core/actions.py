@@ -1915,17 +1915,20 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
     kind="combat_damage"（缺省）：免疫 kind ∈ (combat, counter) 的战斗伤害；
     kind="effect"：免疫非战斗伤害（法术/能力等），from_side="enemy" 限定伤害来源
     属于敌方（无来源/己方来源不免疫）；kind="all"：免疫全部伤害（牌手目标=舍生；
-    式神目标=桃红簇簇"免疫该伤害"）。
+    式神目标=桃红簇簇"免疫该伤害"）；kind="fragile_source"：免疫当前持有破甲的
+    敌方式神造成的伤害（霸主；来源须为式神，牌手来源不免疫），伤害类别不限。
     scope="turn"：免疫到当前回合结束——以回合号记账（{"turn": 当前回合}），
     按回合号比对，跨回合自然过期，无需清理；scope="perm"：无过期键，
     持续在场期间有效，随气绝清除（immunities 气绝清空，复活需重新授予）；
-    scope="once"：消耗式，命中任意一类伤害即免疫一次并移除（桃红簇簇）。
+    scope="once"：消耗式，命中任意一类伤害即免疫一次并移除（桃红簇簇）；
+    scope="form"：形态作用域——条目带 form 标记，随形态离场经 _destroy_form 清除
+    （霸主为形态牌；气绝清空 immunities 的既有通道同样生效）。
     unique=True：目标已持有同等免疫条目时不再重复授予（维护者答复(3)：不可饶恕
     "若不具有该能力则获得"——回合内多次使用黄金羽只授予一次）。
     """
-    if scope not in ("turn", "perm", "once"):
+    if scope not in ("turn", "perm", "once", "form"):
         raise ValueError(f"未知 grant_immunity 作用域: {scope}")
-    if kind not in ("combat_damage", "effect", "all"):
+    if kind not in ("combat_damage", "effect", "all", "fragile_source"):
         raise ValueError(f"未知 grant_immunity 免疫类别: {kind}")
     if from_side not in (None, "enemy"):
         raise ValueError(f"未知 grant_immunity 来源限定: {from_side}")
@@ -1937,6 +1940,8 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
             entry["turn"] = game.state.turn
         if scope == "once":
             entry["once"] = True  # 消耗式免疫：命中即移除（_combat_immune/_effect_immune）
+        if scope == "form":
+            entry["form"] = True  # 形态作用域：形态离场经 _destroy_form 清除（霸主）
         if ref.shikigami is None:
             # 牌手级免疫（舍生）：存 PlayerState.immunities，伤害管线按回合号过期
             pl = game.state.players[ref.player]
@@ -1950,8 +1955,10 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
                               for e in s.immunities):
                 continue
             s.immunities.append(entry)
-            label = {"combat_damage": "战斗伤害", "effect": "非战斗伤害", "all": "所有伤害"}[kind]
-            scope_label = {"turn": "本回合", "perm": "持续", "once": "下一次"}[scope]
+            label = {"combat_damage": "战斗伤害", "effect": "非战斗伤害", "all": "所有伤害",
+                     "fragile_source": "破甲式神的伤害"}[kind]
+            scope_label = {"turn": "本回合", "perm": "持续", "once": "下一次",
+                           "form": "形态在场"}[scope]
             game._log(f"{game.db.shikigami[s.id].name} 免疫{label}（{scope_label}）")
 
 
@@ -2004,6 +2011,20 @@ def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> Non
     if not game._battle_stack:
         return
     game._battle_convert.add(game._battle_stack[-1])
+
+
+@action("double_damage_vs_fragile")
+def double_damage_vs_fragile(game, ctx, *, targets: list[Ref]) -> None:
+    """破甲双倍标记（targets 忽略）：登记到当前战斗上下文——该战斗中攻击方对有破甲的
+    式神造成的战斗伤害翻倍（义道；伤害管线于批次 4 破甲加伤后、护甲抵扣前读取，
+    战斗终止点清除）。
+
+    主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
+    响应插入使用时作为普通动作执行，登记到被插入的当前战斗。
+    """
+    if not game._battle_stack:
+        return
+    game._battle_double_fragile.add(game._battle_stack[-1])
 
 
 @action("launch_attack")

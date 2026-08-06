@@ -1,0 +1,20 @@
+id: 10020707
+name: 归乡
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 8
+      effects:
+        steps: []
+      abilities:
+        # 出击时[投射]：造成 3 点伤害（生生不息 10020308 同管线，无能量消耗）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self}
+          steps:
+            - {op: damage, amount: 3, target: {kind: all, pool: projectile}}
+      text: "出击时[投射]：{造成3点伤害。}"

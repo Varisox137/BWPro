@@ -1,0 +1,24 @@
+id: 100207
+name: 铃鹿御前
+versions:
+  best: 20200520
+  history:
+    - date: 20200520  # 发布日期
+      faction: 紫岩
+      power: 3
+      health: 4
+      abilities:
+        # 当铃鹿御前对一个角色造成伤害时，使其获得 1 破甲（双块：式神受害者走
+        # on_damage context victim，牌手受害者走 on_player_damaged context
+        # damaged_player；二太郎之戟 10020605 同管线）
+        - when: on_damage
+          condition: {source_shikigami: self}
+          steps:
+            - {op: gain_shield, amount: 1, kind: fragile,
+               target: {kind: context, key: victim}}
+        - when: on_player_damaged
+          condition: {source_shikigami: self}
+          steps:
+            - {op: gain_shield, amount: 1, kind: fragile,
+               target: {kind: context, key: damaged_player}}
+      text: "当铃鹿御前对一个角色造成伤害时，使其获得1破甲。"

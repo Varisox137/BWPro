@@ -17,3 +17,17 @@ versions:
         steps:
           - {op: stun, target: {kind: context, key: source}}
       text: "不能发动攻击。[眩晕]对其造成战斗伤害的式神。"
+    - date: 20200520
+      kind: summon
+      faction: 青岚
+      power: 0
+      health: 4
+      no_attack: true  # 不能发动攻击（出击校验与 launch_attack 同拦截）
+      ability:
+        # [眩晕]对其造成战斗伤害的式神（瘴疠体质 10012002 同管线；反击 kind=counter
+        # 不命中——仅 kind=combat）
+        when: on_damage
+        condition: {victim_shikigami: self, kind: combat}
+        steps:
+          - {op: stun, target: {kind: context, key: source}}
+      text: "不能发动攻击。[眩晕]对其造成战斗伤害的式神。"
