@@ -28,3 +28,27 @@ versions:
             - {op: gain_shield, amount: {event: amount, cap: 3}, kind: fragile,
                target: {kind: context, key: damaged_player}}
       text: "[投射]：{造成2点伤害}。[觉醒]：{当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为3）。}"
+    - date: 20200624
+      card_type: spell
+      subtype: awaken
+      awaken_power: 0
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        # [投射]：{造成1点伤害}（使用效果，投射池=敌方牌手；20200624 由 2 下调为 1）
+        steps:
+          - {op: damage, amount: 1, target: {kind: all, pool: projectile}}
+      abilities:
+        # [觉醒]：当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为 3）
+        - when: on_damage
+          condition: {source_shikigami: self}
+          steps:
+            - {op: gain_shield, amount: {event: amount, cap: 3}, kind: fragile,
+               target: {kind: context, key: victim}}
+        - when: on_player_damaged
+          condition: {source_shikigami: self}
+          steps:
+            - {op: gain_shield, amount: {event: amount, cap: 3}, kind: fragile,
+               target: {kind: context, key: damaged_player}}
+      text: "[投射]：{造成1点伤害}。[觉醒]：{当铃鹿御前对一个角色造成伤害时，使其获得等量的破甲（最大为3）。}"

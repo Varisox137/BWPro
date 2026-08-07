@@ -336,7 +336,7 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 伪关键字 damage_to_fragile 永久通道（ShikigamiDef.keywords → perm_keywords，死亡不清）：伤害事件生成点对无破甲受伤者全额转化为等量破甲（不再视为伤害；与毒蚀同位置，converted 防循环） |
-| 01 蛇行击 | ✅ | 双版本：20191212（best）= [瞬发] 1 伤 + 条件式增强（chosen_has_fragile 新 Step 条件键：目标有破甲 → bounce_self 条件回手 + 伤害再 +1）；20251212 = [瞬发][弹回] 2 伤——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并） |
+| 01 蛇行击 | ✅ | 双版本：20191212（best）= [瞬发] 1 伤 + 条件式增强（chosen_has_fragile 新 Step 条件键：目标有破甲 → bounce_self 条件回手 + 伤害再 +1）；20200624 = [瞬发][弹回] 2 伤——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并） |
 | 02 淬毒 | ✅ | 所有敌方角色 2（经伤害转化：无破甲者转为 2 破甲） |
 | 03 剧毒之盾 | ✅ | 2 护甲 + delay_grant scope=turn bind=chosen（"本回合获得'使受到它战斗伤害的式神获得3破甲'"）；[响应] 挂"己方战斗区式神被攻击时"自动对其使用 |
 | 04 氤氲蛇姬 | ✅ | 20191212 重写：形态 4/6，敌方回合结束时敌方战斗区式神 +2 破甲（on_turn_end {player: opponent} → gain_shield kind=fragile enemy_combat） |
@@ -600,7 +600,7 @@
 | 02 霸主 | ✅ | 形态 4/5：grant_immunity 新 kind=fragile_source scope=form（免疫当前持有破甲的敌方式神造成的伤害——牌手来源不免疫、类别不限，维护者定案(5)确认） |
 | 03 光影 | ✅ | 战斗 +1/+1 甲；temp_grants 双块 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + amount_ge:6——单伤害事件触发，维护者定案：贯通两段各<6合计>=6不触发、连击两段各>=6各触发一次）→ 抽 1 + heal {event: amount, half: true}（新数值通道：事件值减半向下取整，与 cap 同修饰位、cap 先截后减）己方牌手 |
 | 04 冥弓 | ✅ | distribute_damage 4 pool enemy_shikigami（随机分配给所有敌方式神——天狗风乱同管线收窄池，无新机制） |
-| 05 觉醒·铃鹿御前 | ✅ | +0/+1；abilities 双块同基础能力管线：gain_shield fragile {event: amount, cap: 3}（事件引用封顶新形式——维护者定案(3)确认） |
+| 05 觉醒·铃鹿御前 | ✅ | +0/+1；abilities 双块同基础能力管线：gain_shield fragile {event: amount, cap: 3}（事件引用封顶新形式——维护者定案(3)确认）；20200624 快照使用效果投射 2→1（best 仍 20200520） |
 | 06 无往 | ✅ | 战斗 +0/+2 甲；choose 新目标池 enemy_fragile_or_combat（敌方有破甲的在场式神或敌方战斗区式神，或关系）→ 打 2 |
 | 07 归乡 | ✅ | 形态 4/8：on_before_assault {attacker_shikigami: self} 投射 3（生生不息同管线，无能量消耗） |
 | 08 义道 | ✅ | 战斗 -1/+2 甲，keywords [piercing, combo]；新 op double_damage_vs_fragile 为战斗牌专用提取步——按[暴击]时机（扣减生命前2 挂点，engine.py:2895 锚点）：本张战斗牌发起的战斗内、铃鹿御前本人、kind=combat（反击不翻倍）、victim=持破甲式神 ×2，嵌套/插入战斗不继承（维护者定案(2)；[暴击]本体预留锚点） |
@@ -624,6 +624,13 @@
   mirror_spell 主动与自动使用均触发（改正）；battle_retarget 随机可含牌手（确认）；
   use_card_copy 不耗出击次数（确认）；气绝式神回合开始不充能（改正）；
   on_energy_gained 满上限照常发出 amount=0（改正）。
+
+# 03 月夜幻响（20200624，预留）
+
+- 环境别名 `月夜幻响` = 20200624 已登记（db/envs.py）；包编号 `03_yueyehuanxiang` 已登记（db/packs.py）。
+- card_data_raw 已预留 9 位式神名单：吸血姬（100301 红莲）、泷夜叉姬（100302 紫岩）、辉夜姬（100303 青岚，含衍生物 99 石钵）、荒（100304 青岚）、彼岸花（100305 红莲）、久次良（100306 紫岩）、山风（100307 苍叶）、孟婆（100308 青岚）、天井下（100309 紫岩，含衍生 51/52/99 妖怪屋系列）。
+- **幻境机制未实现，本包数据一律不录入**（机制未实现不进数据）；raw 中两张协战主牌 海潮深渊（久次良&蟹姬）/鸮羽共鸣（山风&薰）标注"未加入"（第二所属式神未引入），其子选项均为幻境牌，随包一并暂缓。
+- 20200624 平衡性快照 2 张已入库：蛇行击（清姬 01，原占位日期 20251212 更正为 20200624，best 仍 20191212）、觉醒·铃鹿御前（使用效果投射 2→1，best 仍 20200520）。
 
 ## 与原版描述的出入（已决议，2026-07）
 

@@ -16,7 +16,7 @@ versions:
           - {op: damage, amount: 1, condition: {chosen_has_fragile: true}}
           - {op: damage, amount: 1}
       text: "[瞬发]。对一个式神造成1点伤害。[增强]：若其有破甲则将此牌移回手上并伤害+1。"
-    - date: 20251212
+    - date: 20200624
       card_type: spell
       rarity: R
       level: 1
