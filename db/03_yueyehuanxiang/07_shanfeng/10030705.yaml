@@ -1,0 +1,22 @@
+id: 10030705
+name: 斩
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 3
+      form_health: 8
+      effects:
+        steps: []
+      abilities:
+        # 当山风触发[倒计时]能力时，本次攻击获得[必杀]：scope=next_battle 战斗外挂账
+        # ext["next_battle_keywords"]，绑定归零块随后发起的那次攻击（倒计时块内无
+        # 战斗上下文——维护者定案(6)，见 questions.md (10)）
+        - when: on_countdown_proc
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: grant_keyword, keyword: lethal, scope: next_battle, target: {kind: self}}
+      text: "当山风触发[倒计时]能力时，本次攻击获得[必杀]。"

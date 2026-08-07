@@ -1,0 +1,21 @@
+id: 10030906
+name: 焕然之音
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 5
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 己方回合结束时，若你有式神的护甲>=5，抽一张牌：friendly_armor_ge 条件键
+        #（控制者有在场式神护甲 ≥ n——活局面量）
+        - when: on_turn_end
+          condition: {active: self, friendly_armor_ge: 5}
+          steps:
+            - {op: draw, count: 1}
+      text: "己方回合结束时，若你有式神的护甲>=5，抽一张牌。"

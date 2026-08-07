@@ -509,16 +509,21 @@ class Room:
                         self.game.apply({"op": "ready", "player": pi})
             else:  # 回合超时：先收尾结算中交互选择，升级阶段先随机升级，再结束回合
                 if st.pending_choice is not None:
-                    # 检视选牌（青灯夜谈）挂起时随机作答到底——否则 apply 拒绝 choose
-                    # 以外的指令，回合无法超时收尾、计时器 key 不变也不会重启（死局）
+                    # 结算中交互选择（检视选牌/交互弃牌/忘忧牌名）挂起时随机作答到底——
+                    # 否则 apply 拒绝 choose 以外的指令，回合无法超时收尾、计时器
+                    # key 不变也不会重启（死局）。card_name 两级选择的作答键为
+                    # choice（数据 id），其余 kind 为 uid（实例 uid）
                     chooser = st.players[st.pending_choice["player"]].name
                     while st.pending_choice is not None:
                         pend = st.pending_choice
-                        self.game.apply({"op": "choose",
-                                         "uid": self.rng.choice(pend["options"]),
-                                         "player": pend["player"]})
+                        cmd = {"op": "choose", "player": pend["player"]}
+                        if pend.get("kind") == "card_name":
+                            cmd["choice"] = self.rng.choice(pend["options"])
+                        else:
+                            cmd["uid"] = self.rng.choice(pend["options"])
+                        self.game.apply(cmd)
                     await self._broadcast(protocol.notice(
-                        f"{chooser} 的检视选牌超时，已随机选择"))
+                        f"{chooser} 的交互选择超时，已随机选择"))
                 p = st.players[st.active]
                 if st.phase == "upgrade":
                     while st.phase == "upgrade" and p.upgrades > 0:

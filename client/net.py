@@ -387,12 +387,42 @@ class NetClient:
             self.send_cmd({"op": "mulligan", "uid": card.uid})
             return
         if st.pending_choice is not None:
-            # 结算中交互选择（青灯夜谈）：choose <序号> 作答；对方的选择只提示等待
+            # 结算中交互选择：choose <序号> 作答；对方的选择只提示等待
             pend = st.pending_choice
             if pend.get("player") != self.me:
-                print("等待对方完成检视选牌")
+                print("等待对方完成交互选择")
                 return
             p = st.players[self.me]
+            kind = pend.get("kind")
+            if kind == "discard_pick":
+                # 交互弃牌（意外之喜）：从手牌选一张弃置
+                opts = [c for u in pend["options"]
+                        for c in [next((x for x in p.hand if x.uid == u), None)] if c]
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose", "uid": opts[int(args[0]) - 1].uid})
+                    return
+                print("—— 弃置手牌：输入 choose <序号> 弃置一张 ——")
+                for i, c in enumerate(opts):
+                    cd = self.db.cards[c.id]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                return
+            if kind == "card_name":
+                # 忘忧的旋律（两级）：先选敌方式神，再选其一张牌名（作答键 choice）
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose",
+                                   "choice": pend["options"][int(args[0]) - 1]})
+                    return
+                if pend.get("stage") == "shikigami":
+                    print("—— 选择敌方式神：输入 choose <序号> ——")
+                    for i, sid in enumerate(pend["options"]):
+                        print(f"  [{i + 1}] {self.db.shikigami[sid].name}")
+                else:
+                    print("—— 选择一张牌名：输入 choose <序号> ——")
+                    for i, cid in enumerate(pend["options"]):
+                        cd = self.db.cards[cid]
+                        print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                return
+            # 检视牌库顶（青灯夜谈/明心）
             opts = [c for u in pend["options"]
                     for c in [next((x for x in p.deck if x.uid == u), None)] if c]
             if cmd == "choose" and args:

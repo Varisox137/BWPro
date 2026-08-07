@@ -1,0 +1,18 @@
+id: 10030907
+name: 汇聚
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 3
+      keywords: [fast]
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        # 将场上所有的护甲和破甲都转移到一个式神上：consolidate_shields——目标以外
+        # 双方所有角色（在场式神+双方牌手）的护甲/破甲整值清零、代数和加算到目标
+        #（正=护甲/负=破甲；目标自身原值不经移除——维护者定案）
+        steps:
+          - {op: consolidate_shields}
+      text: "[瞬发]。将场上所有的护甲和破甲都转移到一个式神上。"

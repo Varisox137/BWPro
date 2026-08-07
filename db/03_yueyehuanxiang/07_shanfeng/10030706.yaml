@@ -1,0 +1,21 @@
+id: 10030706
+name: 突
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 2
+      effects:
+        # 使山风[倒计时]-2；[增强] 每有一个山风以外持有[倒计时]的未气绝己方式神 +1——
+        # {base: 2, countdown_holders: friendly_others, negate: true} 动态数值取负；
+        # 过量效果（原始-实际，countdown_delta 写入块内暂存 countdown_overkill）使其
+        # 获得等量力量和生命——非永久持续性增益（定案(3)）
+        steps:
+          - {op: countdown_delta,
+             amount: {base: 2, countdown_holders: friendly_others, negate: true},
+             target: {kind: self}}
+          - {op: buff_power, amount: {memo: countdown_overkill}, target: {kind: self}}
+          - {op: buff_health, amount: {memo: countdown_overkill}, target: {kind: self}}
+      text: "使山风[倒计时]-2，过量效果会使其获得等量的力量和生命。[增强]：{你每有一个山风以外的具有[倒计时]的未气绝式神，此效果+1。}"

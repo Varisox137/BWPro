@@ -51,6 +51,14 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
     "on_energy_gained",     # 式神获得能量后 {player, target: Ref, old, new, amount（实际获得量）}
     #                       （延时时机；[充能]批次与 gain_energy 统一发点，烟烟罗类触发挂载）
+    # ---- 倒计时事件（月夜幻响批次；发点见 core/engine.py 倒计时框架与 countdown_delta）----
+    "on_countdown_proc",    # 倒计时能力归零生效时 {shikigami: Ref, source（来源 id）, once}
+    #                       （即时时机：先于归零效果块结算，烈/刚/斩类"当触发[倒计时]能力时"，
+    #                       其增益赶上归零块发起的攻击）
+    "on_countdown_reduced", # 倒计时减少时 {shikigami: Ref, original（原始减少量）,
+    #                       actual（实际减少量=修正到剩余）, by_card（是否卡牌效果）}
+    #                       （每次减少动作发一次；延时时机——觉醒·山风共享监听按
+    #                       "源效果块结算完毕后"顺序结算，势类用 timing: insert 覆盖为即时）
     # ---- 运势事件时点（thoughts.txt 运势事件流程，core/engine.py 运势管线）----
     "on_luck_judge",        # 运势判定时 {luck（可变事件 dict）, judge, source, x, dice}（座敷童子重投）
     "on_luck_success",      # 运势判定后（成功）{judge, source, x, dice}（青蛙瓷器/岭上开花/觉醒妖狐）
@@ -76,5 +84,6 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
     "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程，thoughts.txt）
+    "on_countdown_proc": "insert",    # 倒计时能力归零生效时：即时时机（先于归零块结算）
     "on_luck_judge": "insert",        # 运势判定时：即时时机（重投改写骰点后再确定结果）
 }

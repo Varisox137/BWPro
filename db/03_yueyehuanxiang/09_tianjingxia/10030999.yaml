@@ -1,0 +1,12 @@
+id: 10030999
+name: 妖怪屋
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      kind: summon
+      faction: 紫岩
+      power: 1
+      health: 1
+      keywords: [haste]  # [迅捷]（先天关键字按永久类别入列，烬染不夜 10020299 先例）
+      text: "[迅捷]"

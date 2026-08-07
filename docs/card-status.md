@@ -625,12 +625,71 @@
   use_card_copy 不耗出击次数（确认）；气绝式神回合开始不充能（改正）；
   on_energy_gained 满上限照常发出 amount=0（改正）。
 
-# 03 月夜幻响（20200624，预留）
+# 03 月夜幻响（20200624，首批 4 式神落地）
 
 - 环境别名 `月夜幻响` = 20200624 已登记（db/envs.py）；包编号 `03_yueyehuanxiang` 已登记（db/packs.py）。
-- card_data_raw 已预留 9 位式神名单：吸血姬（100301 红莲）、泷夜叉姬（100302 紫岩）、辉夜姬（100303 青岚，含衍生物 99 石钵）、荒（100304 青岚）、彼岸花（100305 红莲）、久次良（100306 紫岩）、山风（100307 苍叶）、孟婆（100308 青岚）、天井下（100309 紫岩，含衍生 51/52/99 妖怪屋系列）。
-- **幻境机制未实现，本包数据一律不录入**（机制未实现不进数据）；raw 中两张协战主牌 海潮深渊（久次良&蟹姬）/鸮羽共鸣（山风&薰）标注"未加入"（第二所属式神未引入），其子选项均为幻境牌，随包一并暂缓。
+- card_data_raw 已预留 9 位式神名单：吸血姬（100301 红莲）、泷夜叉姬（100302 紫岩）、辉夜姬（100303 青岚，含衍生物 99 石钵）、荒（100304 青岚）、彼岸花（100305 红莲）、久次良（100306 紫岩）、山风（100307 苍叶）、孟婆（100308 青岚）、天井下（100309 紫岩，含衍生 51/52/99 妖怪屋系列）。**首批落地 4 位**：吸血姬/山风/孟婆/天井下（date/best=20200624，各 8 卡 + 天井下衍生 51/52/99）；其余 5 位（泷夜叉姬/辉夜姬/荒/彼岸花/久次良）随后续批次。
+- **幻境机制未实现，本包幻境牌一律不录入**（机制未实现不进数据）；raw 中两张协战主牌 海潮深渊（久次良&蟹姬）/鸮羽共鸣（山风&薰）标注"未加入"（第二所属式神未引入），其子选项均为幻境牌，随包一并暂缓。
 - 20200624 平衡性快照 2 张已入库：蛇行击（清姬 01，原占位日期 20251212 更正为 20200624，best 仍 20191212）、觉醒·铃鹿御前（使用效果投射 2→1，best 仍 20200520）。
+
+## 吸血姬（100301）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | on_heal {target_side: friendly, target_kind: player} → buff_power 1 **perm: false**（thoughts(4) 定案：一次性持续性增益、气绝清除）+ gain_shield 1 |
+| 01 血袭 | ✅ | 战斗 +0/+0，[吸血] |
+| 02 血蝠之盾 | ✅ | grant_redirect 一次性伤害转移（ext["damage_redirects"]，类别不限定案）；[响应] on_before_assault {victim_side: friendly} 自动对其使用 |
+| 03 血怒 | ✅ | [瞬发][吸血] 对敌方牌手 1 伤；[增强] = CardDef.triggers 游离块 on_heal {target_side: enemy, target_kind: player, card_in_hand} → add_mod damage_boost 累加 |
+| 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血不限伤害类别——暂定见 questions.md (9)） |
+| 05 渴血之时 | ✅ | 形态 3/6，[吸血] |
+| 06 血香 | ✅ | 战斗 +2/+1；conditional_keywords player_health_ge 30 → [连击]（thoughts(3) 按 ≥ 判定） |
+| 07 觉醒·吸血姬 | ✅ | +1/+1；觉醒能力 on_heal 同条件 → buff_power（perm: false）/gain_shield {event: amount, cap: 5} |
+| 08 猩红之月 | ✅ | 形态 5/8 [吸血] + card_aura card_type=spell 授 lifesteal scope=form（法术伤害读卡牌关键字吸血） |
+
+## 山风（100307）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | [倒计时3]：launch_attack + grant_keyword unyielding **scope=next_battle**（既定修正——倒计时块无战斗上下文，定案(6)） |
+| 01 烈 | ✅ | 形态 3/4：on_countdown_proc {shikigami_shikigami: self} → buff_power/buff_health 1 perm（即时、先于归零块） |
+| 02 迅 | ✅ | countdown_delta shikigami=100307 -2；[响应] 山风被攻击时自动使用并重复一次（合计 -4） |
+| 03 势 | ✅ | 形态 3/6 [贯通]：on_countdown_reduced **timing: insert** → attack_buff power={"event": "original"}（定案(5) 按原始减少量） |
+| 04 刚 | ✅ | 形态 3/8：on_countdown_proc → gain_shield 4 |
+| 05 斩 | ✅ | 形态 3/8：on_countdown_proc → grant_keyword lethal scope=next_battle |
+| 06 突 | ✅ | countdown_delta {base: 2, countdown_holders: friendly_others, negate: true}（[增强]按其他倒计时式神数叠加）；过量 {memo: countdown_overkill} → buff_power/buff_health 非永久（定案(3)） |
+| 07 岚 | ✅ | repeat {countdown_sum: true} 套 countdown_delta -1（X=全队当前倒计时总和） |
+| 08 觉醒·山风 | ✅ | +1/+1；觉醒能力①[倒计时3] grant_immunity combat_damage scope=next_battle + launch_attack（定案(8) 全程免疫）；②on_countdown_reduced {by_card, shikigami_side: friendly, shikigami_not_shikigami: 100307} + trigger_when_defeated → 两步 countdown_delta {event: original, negate: true}（存活减倒计时/气绝 revive 减气绝倒计时） |
+
+## 孟婆（100308）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | on_player_damaged {source_shikigami: self} → remove_deck bottom 1 side=opponent（入 exiled 不进墓地） |
+| 01 孟婆汤 | ✅ | choose 牌手（any_character 池代）→ remove_deck bottom 3 按 targets[0].player |
+| 02 意外之喜 | ✅ | draw 2 + discard_pick 1（交互弃牌 pending_choice）；conditional_keywords enemy_deck_le 16 → [瞬发] |
+| 03 天降之物 | ✅ | 形态 4/5：on_turn_end {active: self} → remove_deck bottom 1 side=self + side=opponent 两步 |
+| 04 牙牙我们走 | ✅ | 形态 5/7 [贯通]；conditional_mods enemy_deck_le 16 → form_power_delta/form_health_delta +3 |
+| 05 汤盆冲撞 | ✅ | 投射 4；conditional_mods enemy_deck_le 16 → double_damage（"护甲计算前1"翻倍） |
+| 06 奈何桥头 | ✅ | 形态 4/6：on_card_played（延时）→ purge_copies side=event_player（card_id 缺省读事件；在场同名实体不受影响） |
+| 07 觉醒·孟婆 | ✅ | +1/+2；觉醒能力同基础能力 count=5 |
+| 08 忘忧的旋律 | ✅ | purge_named_card 两级交互（pending_choice kind="card_name"：选敌方式神→选牌名，作答键 choice） |
+
+## 天井下（100309）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | on_turn_start/on_turn_end 双块 {active: self, hand_lacks: 10030951} → generate 灵力 |
+| 01 骚声 | ✅ | [瞬发] choose {shield_nonzero: true} 任意角色 → strip_shield + add_mod shield_boost {memo: stripped_shield} 写 51/52 手牌实例 |
+| 02 欢愉之音 | ✅ | 形态 3/5：tags [shield_gain_boost]（己方获得护甲+1/敌方获得破甲+1） |
+| 03 遮雨 | ✅ | heal {"max_shield_or_fragile": true} 己方牌手 |
+| 04 妖怪屋的醒转 | ✅ | choose {strippable: true} → strip_shield + summon 10030999 stats_memo="stripped_shield"（基础值口径、复活保留定案） |
+| 05 破碎之音 | ✅ | 形态 6/5：on_before_defeat {victim_has_fragile, source_side: friendly} → damage 3 对 victim_player（击杀判定前移——伤害致死先消耗破甲不触发，仅直接消灭触发） |
+| 06 焕然之音 | ✅ | 形态 5/6：on_turn_end {active: self, friendly_armor_ge: 5} → draw 1 |
+| 07 汇聚 | ✅ | [瞬发] choose 式神 → consolidate_shields（全场护甲/破甲代数和归集，目标自身原值不移除定案） |
+| 08 觉醒·天井下 | ✅ | +2/+2；使用效果 transform_hand_card 51→52（原牌 exiled 暂定、shield_boost 随牌转移——questions.md (11)）；觉醒能力双块 hand_lacks 10030952 → generate 之泉 |
+| 51 妖怪屋·灵力 | ✅ | 衍生 token：多择两用法（基础=己方 1 护甲 / methods fragile=敌方 1 破甲）；triggers on_shield_changed {reason: turn_start_clear, gained: false, card_in_hand} 双情形 → shield_boost 累加 |
+| 52 妖怪屋·灵力之泉 | ✅ | 衍生 token：全体己方 1 护甲 + 全体敌方 1 破甲；triggers 同 51 |
+| 99 妖怪屋 | ✅ | 召唤物 1/1，先天[迅捷] |
 
 ## 与原版描述的出入（已决议，2026-07）
 

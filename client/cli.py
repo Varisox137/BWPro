@@ -657,9 +657,47 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
     show_field(game, printer)
     while game.state.winner is None:
         if game.state.pending_choice is not None:
-            # 结算中交互选择（青灯夜谈）：展示可检视牌并等待选择
+            # 结算中交互选择：展示可选项并等待选择
             pend = game.state.pending_choice
             p = game.state.players[pend["player"]]
+            kind = pend.get("kind")
+            if kind == "discard_pick":
+                # 交互弃牌（意外之喜）：从手牌选一张弃置
+                opts = [next(c for c in p.hand if c.uid == u) for u in pend["options"]]
+                print(f"—— {p.name} 选择一张手牌弃置 ——")
+                for i, c in enumerate(opts):
+                    cd = game.db.cards[c.id]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                try:
+                    pick = int(tui.prompt("弃置哪张 > ")) - 1
+                    game.apply({"op": "choose", "uid": opts[pick].uid,
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
+            if kind == "card_name":
+                # 忘忧的旋律（两级）：先选敌方式神，再选其一张牌名（作答键 choice）
+                if pend.get("stage") == "shikigami":
+                    print(f"—— {p.name} 选择敌方式神 ——")
+                    for i, sid in enumerate(pend["options"]):
+                        print(f"  [{i + 1}] {game.db.shikigami[sid].name}")
+                else:
+                    print(f"—— {p.name} 选择一张牌名 ——")
+                    for i, cid in enumerate(pend["options"]):
+                        cd = game.db.cards[cid]
+                        print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                try:
+                    pick = int(tui.prompt("选择 > ")) - 1
+                    game.apply({"op": "choose", "choice": pend["options"][pick],
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
+            # 检视牌库顶（青灯夜谈/明心）
             opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
             print(f"—— {p.name} 检视牌库顶 {len(opts)} 张牌 ——")
             for i, c in enumerate(opts):

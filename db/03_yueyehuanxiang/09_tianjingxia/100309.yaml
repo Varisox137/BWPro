@@ -1,0 +1,21 @@
+id: 100309
+name: 天井下
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 紫岩
+      power: 2
+      health: 5
+      abilities:
+        # 己方回合开始或结束时，若你手牌中没有'妖怪屋·灵力'，将其置入手牌——
+        # 双块（开始/结束各一）；{hand_lacks: <卡牌id>} 条件键 + generate 置手
+        - when: on_turn_start
+          condition: {active: self, hand_lacks: 10030951}
+          steps:
+            - {op: generate, card_id: 10030951}
+        - when: on_turn_end
+          condition: {active: self, hand_lacks: 10030951}
+          steps:
+            - {op: generate, card_id: 10030951}
+      text: "己方回合开始或结束时，若你手牌中没有‘妖怪屋·灵力’，将其置入手牌。"

@@ -1,0 +1,30 @@
+id: 10030952
+name: 妖怪屋·灵力之泉
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      token: true
+      level: 1
+      effects:
+        # 使所有己方式神获得1点护甲并使所有敌方式神获得1点破甲；[增强] 见 triggers
+        steps:
+          - {op: gain_shield, amount: 1, target: {kind: all, pool: friendly_shikigami}}
+          - {op: gain_shield, amount: 1, kind: fragile,
+             target: {kind: all, pool: enemy_shikigami}}
+      triggers:
+        # [增强] 每当己方角色的护甲或敌方角色的破甲因回合开始移除时，此牌效果+1
+        #（同'妖怪屋·灵力' 10030951 双块）
+        - when: on_shield_changed
+          condition: {reason: turn_start_clear, gained: false, card_in_hand: true,
+                      kind: shield, target_side: friendly}
+          steps:
+            - {op: add_mod, to: hand, key: shield_boost, amount: 1}
+        - when: on_shield_changed
+          condition: {reason: turn_start_clear, gained: false, card_in_hand: true,
+                      kind: fragile, target_side: enemy}
+          steps:
+            - {op: add_mod, to: hand, key: shield_boost, amount: 1}
+      text: "使所有己方式神获得1点护甲并使所有敌方式神获得1点破甲。[增强]：{每当己方角色的护甲或敌方角色的破甲因回合开始移除时，此牌效果+1。}"

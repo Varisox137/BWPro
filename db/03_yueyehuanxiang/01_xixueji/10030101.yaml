@@ -1,0 +1,14 @@
+id: 10030101
+name: 血袭
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      keywords: [lifesteal]
+      effects:
+        # +0/+0 无身材增益；keywords 由战斗牌流程提取授予（文射 10010103 先例）
+        steps: []
+      text: "[吸血]"

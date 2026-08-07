@@ -1,0 +1,19 @@
+id: 10030804
+name: 牙牙我们走
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 5
+      form_health: 7
+      keywords: [piercing]
+      conditional_mods:
+        # [增强] 若敌方牌库张数<=16，此牌获得3力量和3生命——动态实例修饰
+        # form_power_delta/form_health_delta（装配点按条件写入，叠加到形态基础身材）
+        - {enemy_deck_le: 16, mods: {form_power_delta: 3, form_health_delta: 3}}
+      effects:
+        steps: []
+      text: "[贯通]。[增强]：{若敌方牌库张数<=16，此牌获得3力量和3生命。}"

@@ -1,0 +1,30 @@
+id: 10030908
+name: 觉醒·天井下
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2
+      awaken_health: 2
+      rarity: SSR
+      level: 3
+      effects:
+        # 将你手牌中的'妖怪屋·灵力'转化为'妖怪屋·灵力之泉'：transform_hand_card——
+        # 原牌移入 exiled（去向暂定，见 questions.md (11)），新实例入手并复制原实例
+        # 修饰（shield_boost 等实例增强随牌转移；觉醒 +2/+2 由 awaken 字段自动结算）
+        steps:
+          - {op: transform_hand_card, from_id: 10030951, into_id: 10030952}
+      abilities:
+        # 觉醒能力：己方回合开始或结束时，若你手牌中没有'妖怪屋·灵力之泉'，将其
+        # 置入手牌（同基础能力双块，之泉版）
+        - when: on_turn_start
+          condition: {active: self, hand_lacks: 10030952}
+          steps:
+            - {op: generate, card_id: 10030952}
+        - when: on_turn_end
+          condition: {active: self, hand_lacks: 10030952}
+          steps:
+            - {op: generate, card_id: 10030952}
+      text: "将你手牌中的‘妖怪屋·灵力’转化为‘妖怪屋·灵力之泉’。[觉醒]：{己方回合开始或结束时，若你手牌中没有‘妖怪屋·灵力之泉’，将其置入手牌。}"

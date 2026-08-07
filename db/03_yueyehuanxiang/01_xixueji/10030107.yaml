@@ -1,0 +1,25 @@
+id: 10030107
+name: 觉醒·吸血姬
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1
+      awaken_health: 1
+      rarity: SR
+      level: 3
+      effects:
+        # 觉醒替换基础能力（+1/+1 由 awaken_power/awaken_health 字段自动结算）
+        steps: []
+      abilities:
+        # 每当你恢复生命时，吸血姬获得等量的力量和护甲（每次最大为5）——
+        # {event: amount, cap: 5} 按事件治疗量动态取值并封顶（觉醒·铃鹿御前 cap 先例）；
+        # 力量 perm: false（一次性持续性增益、气绝清除——维护者 thoughts(4) 定案同基础能力）
+        - when: on_heal
+          condition: {target_side: friendly, target_kind: player}
+          steps:
+            - {op: buff_power, amount: {event: amount, cap: 5}, perm: false, target: {kind: self}}
+            - {op: gain_shield, amount: {event: amount, cap: 5}, target: {kind: self}}
+      text: "[觉醒]：{每当你恢复生命时，吸血姬获得等量的力量和护甲。（每次最大为5）}"

@@ -961,3 +961,159 @@ def test_cap_damage_fixed_value(db, make_game):
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, None)
     assert s.shield == 0             # 封顶 3 后护甲吸收 2
     assert s.health == 1
+
+
+# ---------- 治疗时牌手条件 / 0 治疗触发（吸血姬批次：on_heal 条件键组合） ----------
+
+def test_on_heal_player_side_condition(db, make_game):
+    """on_heal 牌手条件组合 {target_kind: player, target_side: friendly|enemy}：
+    治疗目标是己方/敌方牌手（基础能力=+1力量+1护甲；力量为一次性持续性增益非永久，
+    护甲回合开始正常移除——均走既有通道）。"""
+    db.shikigami[SID].ability = F.block(
+        F.Step(op="buff_power", amount=1, target=T(kind="self")),
+        F.Step(op="gain_shield", amount=1, target=T(kind="self")),
+        when="on_heal", condition={"target_kind": "player", "target_side": "friendly"})
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    pa.health = 20
+    g.heal(Ref(player=0, shikigami=IDX), 2, None)   # 治疗己方式神：不触发
+    g._drain_queue()
+    assert s.temp_power == 0 and s.shield == 0
+    pb.health = 20
+    g.heal(Ref(player=1), 2, None)                  # 治疗敌方牌手：不触发
+    g._drain_queue()
+    assert s.temp_power == 0 and s.shield == 0
+    g.heal(Ref(player=0), 3, None)                  # 治疗己方牌手：+1 力量 +1 护甲
+    g._drain_queue()
+    assert pa.health == 23
+    assert s.temp_power == 1 and s.shield == 1
+
+
+def test_on_heal_zero_amount_still_triggers(db, make_game):
+    """恢复量为 0 也触发"治疗时"（on_heal）；觉醒型等量增益 {event: amount, cap: 5}
+    按实际治疗量取、上限 5。"""
+    db.shikigami[SID].ability = F.block(
+        F.Step(op="buff_power", amount={"event": "amount", "cap": 5},
+               target=T(kind="self")),
+        F.Step(op="gain_shield", amount={"event": "amount", "cap": 5},
+               target=T(kind="self")),
+        when="on_heal", condition={"target_kind": "player", "target_side": "friendly"})
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    pa.health = 22
+    g.heal(Ref(player=0), 8, None)                  # 实际恢复 8：cap 5 → +5/+5
+    g._drain_queue()
+    assert pa.health == 30
+    assert s.temp_power == 5 and s.shield == 5
+    g.heal(Ref(player=0), 3, None)                  # 满血：恢复量为 0 仍触发（+0）
+    g._drain_queue()
+    assert s.temp_power == 5 and s.shield == 5
+    assert "on_heal" in g.history
+    assert "on_after_heal" not in g.history[-2:]    # 0 治疗不触发"治疗后"
+
+
+# ---------- 延迟吸血授予（初拥型：可叠加、与[吸血]关键字叠加） ----------
+
+def test_delayed_lifesteal_grant_stacks(db, make_game):
+    """初拥型"本回合获得造成战斗伤害时为其牌手恢复等量生命"（delay_grant bind=chosen
+    scope=turn）：多次授予各触发一次、与[吸血]关键字叠加；[吸血]自身不叠加——
+    两张授予 + 吸血，3 点战斗伤害依次 3 次恢复 3（维护者定案）。
+    授予挂 on_damage（式神受伤）与 on_player_damaged（牌手受伤）两个事件各一层；
+    与引擎吸血通道一致不限伤害类别（效果伤害同样触发，见 test_lifesteal_heals_player_after_damage）。"""
+    cid = 10010168
+    grant_steps = [{"op": "heal", "amount": {"event": "amount"},
+                    "target": {"kind": "all", "pool": "self_player"}}]
+    db.cards[cid] = F.card(
+        cid, shikigami=SID, level=1, token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        steps=[F.Step(op="delay_grant", bind="chosen", when="on_damage",
+                      condition={"source_shikigami": "self"}, scope="turn", uses=99,
+                      steps=grant_steps),
+               F.Step(op="delay_grant", bind="chosen", when="on_player_damaged",
+                      condition={"source_shikigami": "self"}, scope="turn", uses=99,
+                      steps=grant_steps)])
+    g, pa, pb = _game(make_game)
+    pa.shikigami[1].level = 1
+    a = pa.shikigami[1]                              # 1/6（100102）
+    a.keywords.append("lifesteal")
+    a.keywords.append("lifesteal")                   # [吸血]自身不叠加（多重集也只恢复一次）
+    tgt = Ref(player=0, shikigami=1)
+    play(g, 0, cid, target=tgt)                      # 初拥 ×1
+    play(g, 0, cid, target=tgt)                      # 初拥 ×2
+    pa.health = 10
+    g.apply({"op": "assault", "index": 1})           # 直击 B 牌手 1 点战斗伤害
+    assert pb.health == 29
+    assert pa.health == 13                           # 吸血 1 次 + 初拥 2 次 = 3 次恢复 1
+    # 式神受伤分支（on_damage）：效果伤害同样触发（引擎吸血通道语义，伤害类别不限）
+    cid2 = 10010251
+    db.cards[cid2] = F.card(cid2, shikigami=100102, level=1, token=True,
+                            steps=[F.Step(op="damage", amount=2,
+                                          target=T(kind="all", pool="enemy_shikigami"))])
+    pb.shikigami[0].level = 1
+    play(g, 0, cid2)
+    assert pa.health == 19                           # 吸血 2 + 初拥 2×2 = 3 次恢复 2
+    pass_turns(g, 2)
+    pa.health = 10
+    g.apply({"op": "assault", "index": 1})           # 次回合：授予已过期，只剩吸血 1 次
+    assert pa.health == 11
+
+
+# ---------- 法术牌吸血光环（猩红之月型：吸血判定读来源卡牌实例关键字） ----------
+
+def test_card_aura_lifesteal_on_spell_damage(db, make_game):
+    """猩红之月型"你的法术牌获得[吸血]"：card_aura(keywords=["lifesteal"],
+    card_type="spell") 后，法术牌效果伤害触发吸血（来源式神无 lifesteal 也生效，
+    吸血判定扩展读来源卡牌实例关键字）；两处命中只恢复一次（[吸血]不叠加）。"""
+    g, pa, pb = _game(make_game)
+    src = pa.shikigami[IDX]                          # 3 力量，无 lifesteal
+    cid = 10010169
+    db.cards[cid] = F.card(cid, shikigami=SID, level=1, token=True,
+                           steps=[F.Step(op="damage", amount=2,
+                                         target=T(kind="all", pool="enemy_player"))])
+    pa.health = 20
+    play(g, 0, cid)                                  # 无光环：不恢复
+    assert pb.health == 28
+    assert pa.health == 20
+    pa.card_auras.append({"shikigami": None, "card_type": "spell", "card_id": None,
+                          "tag": None, "keywords": ["lifesteal"], "cost_zero": False,
+                          "power": 0, "shield": 0, "turn": None, "scope": "game"})
+    play(g, 0, cid)                                  # 法术牌获得[吸血]：恢复 2
+    assert pb.health == 26
+    assert pa.health == 22
+    src.keywords.append("lifesteal")                 # 式神关键字 + 卡牌光环双命中：仍只恢复一次
+    play(g, 0, cid)
+    assert pb.health == 24
+    assert pa.health == 24
+
+
+# ---------- 伤害转移（血蝠之盾型：下一次伤害改由牌手承受） ----------
+
+def test_damage_redirect_to_player(db, make_game):
+    """血蝠之盾型伤害转移（grant_redirect）：下一次将受到的伤害以其牌手为受伤者重新
+    结算——牌手护甲照常吸收、牌手免疫照常生效；一次性消耗；式神自身屏障不随转移
+    消耗；伤害类别不限。"""
+    cid = 10010170
+    db.cards[cid] = F.card(
+        cid, shikigami=SID, level=1, token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        steps=[F.Step(op="grant_redirect")])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    s.one_shot_keywords.append("barrier")
+    pa.shield = 2
+    play(g, 0, cid, target=Ref(player=0, shikigami=IDX))
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, Ref(player=1, shikigami=0),
+                        kind="combat")
+    assert pa.shield == 0                            # 牌手护甲吸收 2
+    assert pa.health == 27                           # 牌手承受剩余 3
+    assert s.health == 4                             # 式神无伤
+    assert "barrier" in s.one_shot_keywords          # 屏障不随转移消耗
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0))
+    assert "barrier" not in s.one_shot_keywords      # 一次性：第二次正常结算（屏障抵消）
+    assert pa.health == 27 and s.health == 4
+    # 牌手免疫照常参与转移后的结算
+    play(g, 0, cid, target=Ref(player=0, shikigami=IDX))
+    pa.immunities.append({"kind": "all", "turn": g.state.turn})
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0))
+    assert pa.health == 27 and s.health == 4         # 转移后被牌手免疫
+    assert not s.ext.get("damage_redirects")         # 挂账已消耗

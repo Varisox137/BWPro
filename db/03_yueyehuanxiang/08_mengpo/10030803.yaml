@@ -1,0 +1,21 @@
+id: 10030803
+name: 天降之物
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # 己方回合结束时，双方牌手各将牌库底一张牌移除（remove_deck side 两步各磨一方）
+        - when: on_turn_end
+          condition: {active: self}
+          steps:
+            - {op: remove_deck, count: 1, side: self}
+            - {op: remove_deck, count: 1, side: opponent}
+      text: "己方回合结束时，双方牌手各将牌库底一张牌移除。"

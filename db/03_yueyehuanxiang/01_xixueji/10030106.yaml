@@ -1,0 +1,18 @@
+id: 10030106
+name: 血香
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: SR
+      level: 2
+      conditional_keywords:
+        # [增强] 若你生命值为30，此牌获得[连击]（白刃 enemy_fragile_ge2 先例）
+        - {keyword: combo, player_health_ge: 30}
+      effects:
+        # +2/+1（战斗牌数值通道：力量挂攻击后到期强化、护甲获得后保留——义道先例）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "[增强]：{若你生命值为30，此牌获得[连击]。}"

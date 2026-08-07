@@ -1,0 +1,19 @@
+id: 10030108
+name: 猩红之月
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SSR
+      level: 3
+      form_power: 5
+      form_health: 8
+      keywords: [lifesteal]
+      effects:
+        # 你的法术牌获得[吸血]：card_aura 谓词 card_type=spell（shikigami=any 通配
+        # 控制者任意式神的牌——爱意绵绵"你手牌所有法术牌"先例），scope=form 随形态
+        # 离场移除；引擎已支持法术伤害读取卡牌关键字[吸血]（治疗归控制者牌手）
+        steps:
+          - {op: card_aura, shikigami: any, card_type: spell, keywords: [lifesteal], scope: form}
+      text: "[吸血]。你的法术牌获得[吸血]。"

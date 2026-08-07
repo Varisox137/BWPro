@@ -1,0 +1,16 @@
+id: 10030105
+name: 渴血之时
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 3
+      form_health: 6
+      keywords: [lifesteal]
+      effects:
+        # 形态 keywords 结附期间授予宿主（engine._attach_form 统一通道）；无其它效果
+        steps: []
+      text: "[吸血]"

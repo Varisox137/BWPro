@@ -1,0 +1,25 @@
+id: 10030102
+name: 血蝠之盾
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        # "下一次将受到的伤害改由其牌手承受"：grant_redirect 一次性伤害转移（挂账
+        # ext["damage_redirects"]，伤害事件生成点消耗一层、以受伤者的牌手为受伤者
+        # 重新结算；伤害类别不限——维护者定案）
+        steps:
+          - {op: grant_redirect}
+      response:
+        # 响应：当你的式神被攻击时，自动对其使用（choose 目标自动取事件 victim，
+        # victim_kind 收紧到式神——直接攻击牌手不触发；寒冰之盾 10012101 先例）
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: shikigami}
+        steps:
+          - {op: grant_redirect}
+      text: "使一个式神获得‘下一次将受到的伤害改由其牌手承受’。[响应]：{当你的式神被攻击时，自动对其使用。}"

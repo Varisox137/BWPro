@@ -2139,3 +2139,470 @@ def test_echo_auto_use_from_hand_targets_caster(gdb):
     assert not any(c.id == 10012151 for c in pa.hand)         # 觉方雪球已被自动使用
     assert pb.shikigami[0].health == hp_x - 1        # 雪球 1 伤强制打到施法者雪女
     assert pa.ext["snowball_used_game"] == 1         # 从手牌使用记账（觉方）
+
+
+# ---------- 手牌限定卡牌触发器（血怒型）/ 条件关键字 player_health_ge（血香型） ----------
+
+def test_card_trigger_hand_only_damage_boost_stacks(db, make_game):
+    """血怒型"每当敌方牌手获得生命时，此牌伤害+1"：CardDef.triggers 游离触发块 +
+    card_in_hand 门控（仅手牌中触发）——on_heal {target_kind: player,
+    target_side: enemy} 时手牌本卡实例 damage_boost 累加（可叠加入口，无 once_key）。"""
+    cid = 10010187
+    cdef = F.card(cid, shikigami=100101, level=1, token=True,
+                  steps=[F.Step(op="damage", amount=1,
+                                target=T(kind="all", pool="enemy_player"))])
+    cdef.triggers = [F.block(
+        F.Step(op="add_mod", to="hand", key="damage_boost", amount=1),
+        when="on_heal",
+        condition={"target_kind": "player", "target_side": "enemy",
+                   "card_in_hand": True})]
+    db.cards[cid] = cdef
+    g, pa, pb = _mech_game(make_game)
+    pb.health = 20
+    g.heal(Ref(player=1), 3)             # 手牌无本卡实例：不触发（card_in_hand 门控）
+    g._drain_queue()
+    g.heal(Ref(player=0), 1)             # 己方牌手治疗：条件不满足，不触发
+    g._drain_queue()
+    inst = give(g, 0, cid)
+    assert not inst.mods
+    g.heal(Ref(player=1), 3)             # 敌方牌手获得生命：+1
+    g._drain_queue()
+    assert inst.mods.get("damage_boost") == 1
+    g.heal(Ref(player=1), 3)             # 再次：可叠加 +1
+    g._drain_queue()
+    assert inst.mods.get("damage_boost") == 2
+    pb.health = 30
+    g.apply({"op": "play_card", "uid": inst.uid})
+    assert pb.health == 27               # 伤害 1 + 增强 2
+
+
+def test_conditional_keyword_player_health_ge(db, make_game):
+    """conditional_keywords 算子 player_health_ge：己方牌手当前生命 ≥ n 时授予关键字
+    （血香型条件[连击]"若你生命值为30"），低于阈值不授予。"""
+    cid = 10010188
+    db.cards[cid] = F.card(cid, token=True, card_type="combat", conditional_keywords=[
+        {"keyword": "combo", "player_health_ge": 30}])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, cid)
+    cdef = db.cards[cid]
+    assert "combo" in g._card_keywords(pa, cdef, inst)      # 满生命 30：成立
+    pa.health = 29
+    assert "combo" not in g._card_keywords(pa, cdef, inst)  # 低于 30：不成立
+
+
+# ==================== 月夜幻响包第二批（磨牌/移除/交互选择/护甲破甲扩展） ====================
+
+
+def test_remove_deck(db, make_game):
+    """磨牌 op（孟婆类）：牌库底/顶 N 张移入 exiled——不进墓地；默认磨敌方，
+    有选择目标（"选择一个牌手"）时按目标牌手；position="top" 磨牌库顶。"""
+    cid = 10010192
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(op="remove_deck", count=2)])
+    cid2 = 10010193
+    db.cards[cid2] = F.card(cid2, token=True,
+                            target=T(kind="choose", pool="any_character"),
+                            steps=[F.Step(op="remove_deck", count=3, position="top")])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    b_deck = len(pb.deck)
+    play(g, 0, cid)
+    assert len(pb.deck) == b_deck - 2               # 敌方牌库底 2 张移除
+    assert len(pb.zones.get("exiled", [])) == 2     # 进 exiled
+    assert len(pb.graveyard) == 0                   # 不进墓地
+    top_ids = [c.id for c in pa.deck[:3]]
+    play(g, 0, cid2, target=Ref(player=0))          # 选择自己：磨己方牌库顶 3 张
+    assert [c.id for c in pa.zones["exiled"]] == top_ids
+
+
+def test_conditional_keyword_enemy_deck_le(db, make_game):
+    """conditional_keywords 算子 enemy_deck_le：敌方牌库张数 ≤ n 时授予关键字
+    （意外之喜型条件[瞬发]），高于阈值不授予。"""
+    cid = 10010189
+    db.cards[cid] = F.card(cid, token=True, card_type="combat", conditional_keywords=[
+        {"keyword": "fast", "enemy_deck_le": 16}])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, cid)
+    cdef = db.cards[cid]
+    assert len(pb.deck) > 16
+    assert "fast" not in g._card_keywords(pa, cdef, inst)   # 敌方牌库 > 16：不授予
+    del pb.deck[16:]
+    assert "fast" in g._card_keywords(pa, cdef, inst)       # ≤ 16：授予
+
+
+def test_conditional_mods_double_damage(db, make_game):
+    """conditional_mods 装配 + double_damage：满足[增强]条件（敌方牌库 ≤ 16）打出时
+    写入实例修饰，伤害在"护甲计算前1"翻倍（汤盆冲撞）；不满足不翻倍。"""
+    cid = 10010190
+    db.cards[cid] = F.card(cid, token=True, steps=[F.dmg(4)], target=CHOOSE_ENEMY,
+                           conditional_mods=[
+                               {"enemy_deck_le": 16, "mods": {"double_damage": True}}])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pb.shikigami[0].health = 6
+    play(g, 0, cid, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].health == 2              # 敌方牌库 > 16：不翻倍（6 - 4）
+    g2 = make_game(2)
+    pa2, pb2 = F.battle_setup(g2, {0: 1})
+    del pb2.deck[16:]
+    pb2.shikigami[0].health = 6
+    play(g2, 0, cid, target=Ref(player=1, shikigami=0))
+    assert pb2.shikigami[0].defeated                # ≤ 16：翻倍（6 - 8 → 气绝）
+
+
+def test_conditional_mods_form_stats(db, make_game):
+    """conditional_mods 形态身材：满足[增强]条件打出时 form_power_delta/form_health_delta
+    写入实例，结附时生效（牙牙我们走"此牌获得3力量和3生命"）；不满足为原身材。"""
+    cid = 10010191
+    db.cards[cid] = F.card(cid, token=True, card_type="form",
+                           form_power=5, form_health=7, keywords=["piercing"],
+                           conditional_mods=[
+                               {"enemy_deck_le": 16,
+                                "mods": {"form_power_delta": 3, "form_health_delta": 3}}])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    play(g, 0, cid)
+    s = pa.shikigami[0]
+    assert (s.base_power, s.max_health) == (5, 7)   # 敌方牌库 > 16：原身材
+    g2 = make_game(2)
+    pa2, pb2 = F.battle_setup(g2, {0: 1})
+    del pb2.deck[16:]
+    play(g2, 0, cid)
+    s2 = pa2.shikigami[0]
+    assert (s2.base_power, s2.max_health) == (8, 10)  # ≤ 16：+3/+3
+
+
+def test_purge_copies_on_card_played(db, make_game):
+    """奈何桥头：形态能力挂 on_card_played（双方用牌均触发），按事件 card_id 移除
+    用牌方手牌与牌库中的全部同名牌（进 exiled）；刚使用的那张已离手不受影响，
+    未用牌方的同名牌不受影响。"""
+    form = 10010162
+    db.cards[form] = F.card(form, token=True, card_type="form",
+                            form_power=4, form_health=6,
+                            abilities=[F.block(F.Step(op="purge_copies"),
+                                               when="on_card_played")])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    play(g, 0, form)                                # 结附形态（token 牌：牌库无同名）
+    victim = 10010351                               # 自定义非衍生卡（1 级，属 100103）
+    db.cards[victim] = F.card(victim, shikigami=100103, level=1)
+    deck_copy = F.CardInstance(uid=g.state.next_uid, id=victim)
+    g.state.next_uid += 1
+    pb.deck.append(deck_copy)                       # B 牌库 1 张同名牌
+    give(g, 1, victim)                              # B 手牌 1 张同名牌（另一张由 play 发）
+    give(g, 0, victim)                              # A 手牌 1 张同名牌：不受影响
+    pass_turns(g, 1)                                # 换 B 回合
+    play(g, 1, victim)                              # B 使用同名牌 → 移除 B 手牌+牌库同名
+    assert not any(c.id == victim for c in pb.hand)
+    assert not any(c.id == victim for c in pb.deck)
+    assert sum(1 for c in pb.zones.get("exiled", []) if c.id == victim) == 2
+    assert any(c.id == victim for c in pb.graveyard)    # 刚使用的那张在墓地（非移除）
+    assert any(c.id == victim for c in pa.hand)         # 未用牌方的同名牌保留
+
+
+def test_discard_pick_choice(db, make_game):
+    """交互弃牌（意外之喜）：discard_pick 挂起 pending_choice（kind="discard_pick"），
+    挂起期间只接受 choose；非作答方/非法 uid 报错；作答后弃置并入墓地、续跑剩余步骤。"""
+    cid = 10010194
+    db.cards[cid] = F.card(cid, token=True,
+                           steps=[F.Step(op="discard_pick"), F.Step(op="draw", count=1)])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    other = give(g, 0, 10010101)
+    play(g, 0, cid)
+    pend = g.state.pending_choice
+    assert pend is not None and pend["kind"] == "discard_pick"
+    assert other.uid in pend["options"]
+    with pytest.raises(IllegalAction):              # 挂起期间非 choose 指令被拒
+        g.apply({"op": "end_turn"})
+    with pytest.raises(IllegalAction):              # 非作答方
+        g.apply({"op": "choose", "uid": other.uid, "player": 1})
+    with pytest.raises(IllegalAction):              # 不在可选之列
+        g.apply({"op": "choose", "uid": 999999, "player": 0})
+    hand_before = len(pa.hand)
+    g.apply({"op": "choose", "uid": other.uid, "player": 0})
+    assert other in pa.graveyard                    # 弃置入墓地
+    assert g.state.pending_choice is None
+    assert len(pa.hand) == hand_before              # 续块执行 draw：-1 弃 +1 抽
+
+
+def test_card_name_two_stage_purge(db, make_game):
+    """忘忧的旋律两级选择（kind="card_name"）：stage="shikigami" 选敌方式神（含气绝，
+    token/衍生牌不入池）→ stage="card" 选其可构筑牌名 → 移除其手牌与牌库全部同名牌。"""
+    cid = 10010195
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(op="purge_named_card")])
+    db.cards[10010251] = F.card(10010251, shikigami=100102, token=True)  # 衍生牌不入池
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pb.shikigami[1].defeated = True                 # 气绝式神仍可选
+    give(g, 1, 10010203)
+    play(g, 0, cid)
+    pend = g.state.pending_choice
+    assert pend["kind"] == "card_name" and pend["stage"] == "shikigami"
+    assert 100102 in pend["options"]                # 含气绝式神
+    g.apply({"op": "choose", "choice": 100102, "player": 0})
+    pend = g.state.pending_choice
+    assert pend["stage"] == "card"
+    assert 10010201 in pend["options"]              # 可构筑本家卡入池
+    assert 10010251 not in pend["options"]          # token 不入池
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "choose", "choice": 10010301, "player": 0})  # 非该式神的牌
+    g.apply({"op": "choose", "choice": 10010203, "player": 0})
+    assert g.state.pending_choice is None
+    assert not any(c.id == 10010203 for c in pb.hand)
+    assert not any(c.id == 10010203 for c in pb.deck)
+    assert any(c.id == 10010203 for c in pb.zones.get("exiled", []))
+    assert any(c.id == 10010203 for c in pa.deck)   # 使用方（A）的同名牌不受影响
+
+
+def test_hand_lacks_generate_gate(db, make_game):
+    """hand_lacks 条件键（天井下基础能力型）：己方回合结束且手牌无指定 id 时生成该牌；
+    已有同名手牌时不生成；非己方回合不触发。"""
+    token = 10010151
+    db.cards[token] = F.card(token, token=True)
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="generate", card_id=token),
+        when="on_turn_end", condition={"hand_lacks": token, "active": "self"})
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pass_turns(g, 1)                                # A 回合结束：手牌无 token → 生成
+    assert sum(1 for c in pa.hand if c.id == token) == 1
+    pass_turns(g, 2)                                # B 结束（非己方）→ A 结束（已有 token）
+    assert sum(1 for c in pa.hand if c.id == token) == 1
+
+
+def _add_lingli(db, cid=10010151):
+    """妖怪屋·灵力型 token：获得 1 点护甲的法术 + [增强]计次触发器（回合开始移除
+    己方护甲/敌方破甲时 shield_boost +1，card_in_hand 门控）。"""
+    db.cards[cid] = F.card(
+        cid, token=True,
+        steps=[F.Step(op="gain_shield", amount=1, target=T(kind="self"))],
+        triggers=[
+            F.block(F.Step(op="add_mod", to="hand", key="shield_boost"),
+                    when="on_shield_changed",
+                    condition={"reason": "turn_start_clear", "kind": "shield",
+                               "target_side": "friendly", "gained": False,
+                               "card_in_hand": True}),
+            F.block(F.Step(op="add_mod", to="hand", key="shield_boost"),
+                    when="on_shield_changed",
+                    condition={"reason": "turn_start_clear", "kind": "fragile",
+                               "target_side": "enemy", "gained": False,
+                               "card_in_hand": True}),
+        ])
+    return cid
+
+
+def test_shield_boost_charge_on_turn_start_clear(db, make_game):
+    """灵力[增强]计次（回合开始移除挂点）：每个被回合开始移除护甲的己方角色 /
+    被移除破甲的敌方角色各 +1（实例级叠加，card_in_hand 门控）；打出时 shield_boost
+    累加进获得量。保留的（keep）与未移除的角色不计。"""
+    token = _add_lingli(db)
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, token)
+    pa.shikigami[0].shield = 3                      # 己方护甲 ×2（式神 + 牌手）
+    pa.shield = 2
+    pb.shikigami[0].shield = -2                     # 敌方破甲 ×1
+    pass_turns(g, 1)                                # B 回合开始：敌方破甲移除 +1
+    assert inst.mods.get("shield_boost") == 1
+    pass_turns(g, 1)                                # A 回合开始：己方护甲 ×2 移除 +2
+    assert inst.mods.get("shield_boost") == 3
+    inst2 = give(g, 0, token)                       # 后入手的同名实例：独立计数
+    assert not inst2.mods
+    pa.orb = 9
+    g.apply({"op": "play_card", "uid": inst.uid})
+    assert pa.shikigami[0].shield == 4              # 获得 1 + shield_boost 3
+
+
+def test_strip_shield_memo_and_filter(db, make_game):
+    """骚声：strip_shield 整值移除目标护甲/破甲（各发 on_shield_changed）并记
+    memo["stripped_shield"]，后续 add_mod（card_id 覆盖写入其他牌）按移除量增强；
+    shield_nonzero 过滤键使无护甲/破甲的角色不是合法目标。"""
+    lingli = 10010151
+    db.cards[lingli] = F.card(lingli, token=True)
+    cid = 10010196
+    db.cards[cid] = F.card(
+        cid, token=True,
+        target=T(kind="choose", pool="any_character", shield_nonzero=True),
+        steps=[F.Step(op="strip_shield"),
+               F.Step(op="add_mod", to="hand", key="shield_boost", card_id=lingli,
+                      amount={"memo": "stripped_shield"})])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, lingli)
+    pb.shikigami[1].shield = -3
+    with pytest.raises(IllegalAction):              # 无护甲/破甲的角色不可选
+        play(g, 0, cid, target=Ref(player=1, shikigami=2))
+    play(g, 0, cid, target=Ref(player=1, shikigami=1))
+    assert pb.shikigami[1].shield == 0              # 破甲整值移除
+    assert inst.mods.get("shield_boost") == 3       # 等量增强手牌灵力
+
+
+def test_shield_gain_boost_form_aura(db, make_game):
+    """欢愉之音（shield_gain_boost 形态标记）：其控制者方角色获得护甲 +1、敌方角色
+    获得破甲 +1（获得量增益，"获得护甲/破甲前2"）；敌方获得护甲/己方获得破甲不受影响。"""
+    form = 10010197
+    db.cards[form] = F.card(form, token=True, card_type="form",
+                            form_power=3, form_health=5, tags=["shield_gain_boost"])
+    db.cards[10010198] = F.card(10010198, token=True, steps=[
+        F.Step(op="gain_shield", amount=1, target=T(kind="all", pool="friendly_character"))])
+    db.cards[10010199] = F.card(10010199, token=True, steps=[
+        F.Step(op="gain_shield", amount=1, kind="fragile",
+               target=T(kind="all", pool="enemy_character"))])
+    db.cards[10010200] = F.card(10010200, token=True, steps=[
+        F.Step(op="gain_shield", amount=1, target=T(kind="all", pool="enemy_player"))])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    play(g, 0, form)
+    play(g, 0, 10010198)
+    assert pa.shikigami[1].shield == 2              # 己方角色获得护甲 1+1
+    assert pa.shield == 2                           # 牌手同
+    play(g, 0, 10010199)
+    assert pb.shikigami[0].shield == -2             # 敌方角色获得破甲 1+1（牌手同 -2）
+    play(g, 0, 10010200)
+    assert pb.shield == -1                          # 敌方获得护甲不加：-2 + 1（未 +2）
+
+
+def test_max_shield_or_fragile_amount(db, make_game):
+    """遮雨动态键 {"max_shield_or_fragile": true}：双方所有角色（在场式神 + 牌手）
+    |shield| 最大值作为数值（正护甲与负破甲同口径）。"""
+    cid = 10010461
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="heal", amount={"max_shield_or_fragile": True},
+               target=T(kind="all", pool="self_player"))])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pa.health = 20
+    pa.shikigami[0].shield = 2
+    pa.shield = 3
+    pb.shikigami[1].shield = -5                     # 场上最大：5 破甲
+    play(g, 0, cid)
+    assert pa.health == 25                          # 恢复 5
+
+
+def test_summon_stats_memo(db, make_game):
+    """妖怪屋的醒转：strip_shield 记 memo → summon stats_memo 覆写召唤物基础身材
+    （基础值口径，非增益）；strippable 过滤键：己方目标须有护甲、敌方目标须有破甲。"""
+    db.shikigami[900001] = F.shiki(900001, kind="summon", name="妖怪屋",
+                                   power=1, health=1)
+    cid = 10010462
+    db.cards[cid] = F.card(
+        cid, token=True,
+        target=T(kind="choose", pool="any_character", strippable=True),
+        steps=[F.Step(op="strip_shield"),
+               F.Step(op="summon", shikigami=900001, stats_memo="stripped_shield")])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pa.shikigami[0].shield = 4
+    pb.shikigami[0].shield = 3                      # 敌方护甲：不是合法目标
+    with pytest.raises(IllegalAction):
+        play(g, 0, cid, target=Ref(player=1, shikigami=0))
+    play(g, 0, cid, target=Ref(player=0, shikigami=0))
+    assert pa.shikigami[0].shield == 0
+    s = pa.shikigami[-1]                            # 召唤物
+    assert s.id == 900001
+    assert (s.base_power, s.base_health, s.health) == (4, 4, 4)
+    assert pa.combat_index == len(pa.shikigami) - 1  # 召唤即入战斗区
+
+
+def test_consolidate_shields(db, make_game):
+    """汇聚：目标以外双方所有角色（在场式神 + 牌手）的护甲/破甲整值清零，
+    代数和（正护甲 + 负破甲）加算到目标式神（目标原值不经移除，获得流程自然抵消）。"""
+    cid = 10010463
+    db.cards[cid] = F.card(cid, token=True,
+                           target=T(kind="choose", pool="any_shikigami"),
+                           steps=[F.Step(op="consolidate_shields")])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1, 2: 1})
+    pa.shikigami[0].shield = 2
+    pa.shikigami[1].shield = -3
+    pa.shield = 1
+    pb.shikigami[0].shield = 4
+    pb.shield = -1                                  # 代数和 2-3+1+4-1 = 3
+    play(g, 0, cid, target=Ref(player=0, shikigami=2))
+    assert pa.shikigami[2].shield == 3              # 合计为获得护甲
+    for holder in (pa.shikigami[0], pa.shikigami[1], pb.shikigami[0]):
+        assert holder.shield == 0                   # 其余角色清零
+    assert pa.shield == 0 and pb.shield == 0
+    # 负向合计：目标原值保留，获得破甲先抵消目标护甲
+    pa.shikigami[2].shield = 1
+    pb.shikigami[1].shield = -3                     # 代数和 -3（目标护甲不计入）
+    play(g, 0, cid, target=Ref(player=0, shikigami=2))
+    assert pa.shikigami[2].shield == -2             # 1 护甲 + 3 破甲 → -2
+    assert pb.shikigami[1].shield == 0
+
+
+def test_transform_hand_card(db, make_game):
+    """觉醒·天井下转化：手牌 from_id 实例移入 exiled（暂定去向），生成 into_id
+    新实例入手并携带原实例修饰（shield_boost 随牌转移）；步骤级 hand_has 条件门控。"""
+    lingli, zhiquan = 10010151, 10010152
+    db.cards[lingli] = F.card(lingli, token=True)
+    db.cards[zhiquan] = F.card(zhiquan, token=True)
+    cid = 10010464
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="transform_hand_card", from_id=lingli, into_id=zhiquan,
+               condition={"hand_has": lingli})])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    inst1 = give(g, 0, lingli)
+    inst1.mods["shield_boost"] = 3
+    inst2 = give(g, 0, lingli)
+    play(g, 0, cid)
+    assert inst1 in pa.zones.get("exiled", [])      # 原牌移出（暂定 exiled，待确认）
+    assert inst2 in pa.zones.get("exiled", [])
+    new = [c for c in pa.hand if c.id == zhiquan]
+    assert len(new) == 2
+    assert sum(c.mods.get("shield_boost", 0) for c in new) == 3  # 增强随牌转移
+    assert "_mat" not in new[0].mods
+    play(g, 0, cid)                                 # 手牌无灵力：hand_has 门控空过
+    assert not any(c.id == lingli for c in pa.zones.get("exiled", [])
+                   if c.uid not in (inst1.uid, inst2.uid))
+
+
+def test_before_defeat_fragile_kill(db, make_game):
+    """破碎之音核查（纯数据）：形态能力挂 on_before_defeat + victim_has_fragile +
+    source_side=friendly——伤害致死会先消耗破甲（天然不触发），仅直接消灭
+    （气绝时仍持破甲）触发对牌手伤害。"""
+    form = 10010465
+    db.cards[form] = F.card(
+        form, token=True, card_type="form", form_power=6, form_health=5,
+        abilities=[F.block(
+            F.Step(op="damage", amount=3, target=T(kind="context", key="victim_player")),
+            when="on_before_defeat",
+            condition={"victim_has_fragile": True, "source_side": "friendly"})])
+    db.cards[10010466] = F.card(10010466, token=True, steps=[F.dmg(4)],
+                                target=CHOOSE_ENEMY)
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    play(g, 0, form)
+    pb.shikigami[1].shield = -2
+    pb.shikigami[1].health = 4
+    play(g, 0, 10010466, target=Ref(player=1, shikigami=1))
+    assert pb.shikigami[1].defeated                 # 破甲增伤致死
+    assert pb.health == 30                          # 破甲已被消耗：不触发
+    pb.shikigami[2].shield = -2
+    pb.shikigami[2].health = 0                      # 直接消灭（仍持破甲）
+    g.check_defeated(Ref(player=1, shikigami=2),
+                     source=Ref(player=0, shikigami=0), reason="消灭")
+    g._drain_queue()
+    assert pb.shikigami[2].defeated
+    assert pb.health == 27                          # 触发：对牌手 3 伤
+
+
+def test_friendly_armor_ge(db, make_game):
+    """friendly_armor_ge 条件键（焕然之音型）：己方回合结束且有在场式神护甲 ≥ n
+    时触发；不足 n / 非己方回合不触发。"""
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="draw", count=1),
+        when="on_turn_end", condition={"friendly_armor_ge": 5, "active": "self"})
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pa.shikigami[0].shield = 5
+    hand_before = len(pa.hand)
+    pass_turns(g, 1)                                # A 回合结束：护甲 5 → 抽 1
+    assert len(pa.hand) == hand_before + 1
+    pa.shikigami[0].shield = 4
+    hand_before = len(pa.hand)
+    pass_turns(g, 2)                                # B 结束（非己方）+ A 结束（护甲 4）
+    assert len(pa.hand) == hand_before + 1          # 仅 A 回合开始的正常抽 1

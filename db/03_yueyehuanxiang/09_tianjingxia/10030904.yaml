@@ -1,0 +1,19 @@
+id: 10030904
+name: 妖怪屋的醒转
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 2
+      target: {kind: choose, pool: any_character, strippable: true}
+      effects:
+        # 移除一个己方角色上的护甲或敌方角色上的破甲（strippable 目标口径：己方护甲
+        # 或敌方破甲持有者可选；strip_shield 移除量写 memo），召唤'妖怪屋'并使其
+        # 力量和生命等同于被移除量——summon stats_memo 基础值覆写（复活后按该基础值
+        # 保留，维护者定案）
+        steps:
+          - {op: strip_shield}
+          - {op: summon, shikigami: 10030999, stats_memo: stripped_shield}
+      text: "移除一个己方角色上的护甲或敌方角色上的破甲，召唤一个‘妖怪屋’并使其力量和生命等同于被移除的护甲或破甲。"

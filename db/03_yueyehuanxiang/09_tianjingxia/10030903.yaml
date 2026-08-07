@@ -1,0 +1,16 @@
+id: 10030903
+name: 遮雨
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        # 为你恢复等同于场上最大护甲或破甲的生命：{"max_shield_or_fragile": true}
+        # 动态数值——双方所有角色（在场式神+牌手）|shield| 最大值，护甲/破甲同口径
+        steps:
+          - {op: heal, amount: {max_shield_or_fragile: true},
+             target: {kind: all, pool: self_player}}
+      text: "为你恢复等同于场上最大护甲或破甲的生命。"

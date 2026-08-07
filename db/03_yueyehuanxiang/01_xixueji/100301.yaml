@@ -1,0 +1,19 @@
+id: 100301
+name: 吸血姬
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 红莲
+      power: 3
+      health: 4
+      ability:
+        # 每当你恢复生命时：on_heal payload 的 target 为 Ref——target_side（归属）+
+        # target_kind（式神/牌手）组合判"治疗目标是己方牌手"；力量为一次性赋予的
+        # 持续性增益（perm: false——非永久、跨回合保留、气绝清除，维护者 thoughts(4) 定案）
+        when: on_heal
+        condition: {target_side: friendly, target_kind: player}
+        steps:
+          - {op: buff_power, amount: 1, perm: false, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "每当你恢复生命时，吸血姬获得1力量与1护甲。"

@@ -1,0 +1,18 @@
+id: 100307
+name: 山风
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 苍叶
+      power: 3
+      health: 4
+      ability:
+        # 静态倒计时能力块（以津真天 100126 先例）：[倒计时3] 发起一次攻击，本次战斗
+        # 获得[不屈]；scope="next_battle"——倒计时块内无战斗上下文，战斗外挂账
+        # ext["next_battle_keywords"]，下一次作为攻击者发起的战斗开始消费（维护者定案(6)）
+        countdown: 3
+        steps:
+          - {op: grant_keyword, keyword: unyielding, scope: next_battle, target: {kind: self}}
+          - {op: launch_attack, shikigami: self}
+      text: "[倒计时3]：{发起一次攻击，本次战斗获得[不屈]。}"

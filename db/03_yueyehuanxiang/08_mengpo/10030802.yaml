@@ -1,0 +1,19 @@
+id: 10030802
+name: 意外之喜
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      conditional_keywords:
+        # [增强] 若敌方牌库张数<=16，此牌获得[瞬发]
+        - {keyword: fast, enemy_deck_le: 16}
+      effects:
+        # 抽两张牌，弃一张牌——discard_pick 交互弃牌（pending_choice 结算中交互，
+        # 控制者从手牌自选 1 张弃置；无手牌不挂起直接跳过）
+        steps:
+          - {op: draw, count: 2}
+          - {op: discard_pick, count: 1}
+      text: "抽两张牌，弃一张牌。[增强]：{若敌方牌库张数<=16，此牌获得[瞬发]。}"

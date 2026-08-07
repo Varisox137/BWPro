@@ -1,0 +1,16 @@
+id: 10030707
+name: 岚
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 3
+      effects:
+        # 使山风[倒计时]-1，重复 X 次（X=全队当前[倒计时]总和）：repeat 套
+        # countdown_delta，count 动态 {"countdown_sum": true}（出牌时求值）
+        steps:
+          - {op: repeat, count: {countdown_sum: true},
+             steps: [{op: countdown_delta, amount: -1, target: {kind: self}}]}
+      text: "使山风[倒计时]-1，重复X次。X为你所有式神当前[倒计时]总和。"

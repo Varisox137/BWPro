@@ -1,0 +1,22 @@
+id: 10030901
+name: 骚声
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 1
+      keywords: [fast]
+      target: {kind: choose, pool: any_character, shield_nonzero: true}
+      effects:
+        # 移除一个角色上的护甲或破甲：strip_shield 整值清零（实际移除量写块内暂存
+        # stripped_shield）；使手牌中的'灵力'/'灵力之泉'增强等量的效果——add_mod
+        # shield_boost 按 memo 量写入两 id 手牌实例（card_id 单值，各一条）
+        steps:
+          - {op: strip_shield}
+          - {op: add_mod, to: hand, card_id: 10030951, key: shield_boost,
+             amount: {memo: stripped_shield}}
+          - {op: add_mod, to: hand, card_id: 10030952, key: shield_boost,
+             amount: {memo: stripped_shield}}
+      text: "[瞬发]。移除一个角色上的护甲或破甲，使手牌中的‘妖怪屋·灵力’或‘妖怪屋·灵力之泉’增强等量的效果。"

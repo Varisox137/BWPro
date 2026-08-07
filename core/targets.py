@@ -48,6 +48,7 @@ POOLS = frozenset({
     "friendly_shikigami",
     "any_shikigami",
     "enemy_player",
+    "any_player",
     "self_player",
     "projectile",
     "enemy_combat",
@@ -105,6 +106,9 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
         return alive_shiki(controller) + alive_shiki(enemy)
     if pool == "enemy_player":
         return [Ref(player=enemy)]
+    if pool == "any_player":
+        # 双方牌手（孟婆汤"选择一个牌手"）
+        return [Ref(player=controller), Ref(player=enemy)]
     if pool == "self_player":
         return [Ref(player=controller)]
     if pool == "enemy_combat":
@@ -180,14 +184,17 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
     raise ValueError(f"未知目标池: {pool}")
 
 
-def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
+def _spec_filtered(game, refs: list[Ref], extra: dict,
+                   controller: int | None = None) -> list[Ref]:
     """TargetSpec 额外过滤键（model_extra）统一应用：power_le（力量上限）/ has_fragile（有无破甲）
     / stunned（是否眩晕，仅式神目标，式神过滤完即空）/ dealt_damage_turn（本回合
     造成过伤害的式神——萤草"伤害来源式神"过滤，伤害结算栈 + 回合开始清）；
     keyword（具有指定关键字的式神——三列表多重集 keywords/one_shot/perm 任一含即算，
     日和坊"有[充能]的式神"过滤，牌手目标不匹配被滤除）；
     highest_power（力量最高过滤——读 eff_power，并列全部保留交由后续 random 键均等取，
-    惊鸿之舞"力量最高的式神"）。
+    惊鸿之舞"力量最高的式神"）；shield_nonzero（持有护甲或破甲的角色——骚声"移除一个
+    角色上的护甲或破甲"，shield != 0）；strippable（醒转目标口径，需 controller：
+    己方角色须有护甲 shield > 0、敌方角色须有破甲 shield < 0）。
     不匹配 true 语义的目标被滤除。"""
     pw = extra.get("power_le")
     if pw is not None:
@@ -230,6 +237,22 @@ def _spec_filtered(game, refs: list[Ref], extra: dict) -> list[Ref]:
                     if game.state.players[r.player].shikigami[r.shikigami].eff_power == hi]
         else:
             refs = []
+    if extra.get("shield_nonzero"):
+        # 持有护甲或破甲的角色（骚声"移除一个角色上的护甲或破甲"；shield != 0，
+        # 式神/牌手目标同口径）
+        def _nonzero(r: Ref) -> bool:
+            pl = game.state.players[r.player]
+            holder = pl.shikigami[r.shikigami] if r.shikigami is not None else pl
+            return holder.shield != 0
+        refs = [r for r in refs if _nonzero(r)]
+    if extra.get("strippable") and controller is not None:
+        # 醒转目标口径："移除一个己方角色上的护甲或敌方角色上的破甲"——
+        # 己方角色须有护甲（shield > 0），敌方角色须有破甲（shield < 0）
+        def _strippable(r: Ref) -> bool:
+            pl = game.state.players[r.player]
+            holder = pl.shikigami[r.shikigami] if r.shikigami is not None else pl
+            return holder.shield > 0 if r.player == controller else holder.shield < 0
+        refs = [r for r in refs if _strippable(r)]
     return refs
 
 
@@ -252,7 +275,7 @@ def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> li
     """choose 目标合法性校验用：pool_refs + TargetSpec 额外过滤键（勾诀 power_le；
     legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。"""
     refs = pool_refs(game, spec.pool, controller, targeted=targeted)
-    return _spec_filtered(game, refs, spec.model_extra or {})
+    return _spec_filtered(game, refs, spec.model_extra or {}, controller)
 
 
 def resolve(game, spec, ctx) -> list[Ref]:
@@ -307,7 +330,7 @@ def resolve(game, spec, ctx) -> list[Ref]:
             # 按数据 id 过滤式神（豪焰固定项 buff 茨木、羁绊伤酒吞类"指定式神"）
             refs = [r for r in refs if r.shikigami is not None
                     and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
-        refs = _spec_filtered(game, refs, extra)
+        refs = _spec_filtered(game, refs, extra, ctx.controller)
         if extra.get("exclude_victim"):
             # 排除触发事件的 victim（胧月雪华斩"对所有其他[眩晕]的敌方角色"——
             # 与 random_damage 的 exclude_victim 参数同语义）
@@ -418,6 +441,16 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {holder_has_form: true|false} ：能力持有者当前是否结附着形态（萤草 20200327
       能力两项动态要求"萤草结附有形态"才生效）
     - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）
+    - {card_in_hand: true}   ：卡牌触发器（CardDef.triggers）专用——控制者手牌中须
+      有该卡实例才触发（血怒"此牌伤害+1"类手牌限定触发；由 _collect_card_triggers
+      消费，不进本函数的按键循环）
+    - {hand_has: <卡牌id>}   ：控制者手牌中有该数据 id 的牌（转化步门控）
+    - {hand_lacks: <卡牌id>} ：控制者手牌中没有该数据 id 的牌（天井下"若你手牌中
+      没有'妖怪屋·灵力'"类生成门控）
+    - {enemy_deck_le: n}     ：敌方牌库张数 ≤ n（月夜幻响包条件[增强]；
+      conditional_mods 装配求值与步骤门控共用）
+    - {friendly_armor_ge: n} ：控制者有在场式神护甲 ≥ n（焕然之音"若你有式神的
+      护甲>=5"）
     - 其余按键值相等比较
     """
     if not condition:
@@ -546,6 +579,23 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if holder is None or holder.shikigami is None:
                 return False
             if game.state.players[holder.player].shikigami[holder.shikigami].energy < int(want):
+                return False
+        elif key == "hand_has":
+            # 控制者手牌中有该数据 id 的牌（觉醒·天井下转化步门控）
+            if not any(c.id == int(want) for c in game.state.players[controller].hand):
+                return False
+        elif key == "hand_lacks":
+            # 控制者手牌中没有该数据 id 的牌（天井下"若你手牌中没有'灵力'"）
+            if any(c.id == int(want) for c in game.state.players[controller].hand):
+                return False
+        elif key == "enemy_deck_le":
+            # 敌方牌库张数 ≤ n（月夜幻响包条件[增强]：conditional_mods 求值/步骤门控）
+            if len(game.state.players[1 - controller].deck) > int(want):
+                return False
+        elif key == "friendly_armor_ge":
+            # 控制者有在场式神护甲 ≥ n（焕然之音"若你有式神的护甲>=5"）
+            if not any(s.in_play and s.shield >= int(want)
+                       for s in game.state.players[controller].shikigami):
                 return False
         elif key == "chosen_stunned":
             # 卡牌选择目标中有眩晕角色（Step 级条件专用；崩雪"已眩晕则消灭、否则眩晕"）

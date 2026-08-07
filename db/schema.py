@@ -191,6 +191,12 @@ class CardDef(BaseModel):
     # 动态关键字：满足条件的条目把 keyword 加入实际关键字（读取点 _card_keywords，
     # 对手中/生成的一切副本生效）。条目条件（可组合）：level_ge=卡牌所属式神当前等级 ≥ n
     # （心身炼磨"犬神 2 级获得[瞬发]"）；if_alive=所属式神在场未气绝（桃华灼灼）
+    conditional_mods: list[dict[str, Any]] = Field(default_factory=list)
+    # 动态实例修饰：装配点（engine._materialize——打出付费后/效果结算前、生成入手）
+    # 按条目条件把 mods 键写入该实例（牙牙我们走[增强]身材 form_power_delta/
+    # form_health_delta、汤盆冲撞[增强]伤害翻倍 double_damage）。条目结构：
+    # {"mods": {键: 值}, 条件键...}，条件键用条件迷你语言（控制者视角、空事件
+    # 求值；enemy_deck_le = 敌方牌库张数 ≤ n）
     abilities: list[EffectBlock] = Field(default_factory=list)  # 觉醒牌的觉醒能力块（打出时替换式神能力）/ 形态牌的形态能力块（结附期间生效）
     countdown: int | None = None  # 形态牌倒计时初始值（结附时授予式神，离场/气绝移除）
     countdown_effects: EffectBlock | None = None  # 倒计时归零时执行的效果块（重置为初始值后执行）

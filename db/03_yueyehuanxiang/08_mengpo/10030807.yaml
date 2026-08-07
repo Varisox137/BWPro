@@ -1,0 +1,22 @@
+id: 10030807
+name: 觉醒·孟婆
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1
+      awaken_health: 2
+      rarity: SR
+      level: 3
+      effects:
+        # 觉醒替换基础能力（+1/+2 由 awaken_power/awaken_health 字段自动结算）
+        steps: []
+      abilities:
+        # 每当孟婆对敌方牌手造成伤害时，将他牌库底五张牌移除（同基础能力，count=5）
+        - when: on_player_damaged
+          condition: {source_shikigami: self}
+          steps:
+            - {op: remove_deck, count: 5, side: opponent}
+      text: "[觉醒]：{每当孟婆对敌方牌手造成伤害时，将他牌库底五张牌移除。}"

@@ -1,0 +1,21 @@
+id: 10030806
+name: 奈何桥头
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 每当牌手使用一张牌时，将其手牌和牌库中的同名牌移除：purge_copies 按事件
+        # card_id 判定同名（刚使用的那张已离手不在移除范围；在场同名实体不受影响；
+        # 默认 queue 延时时机）
+        - when: on_card_played
+          steps:
+            - {op: purge_copies, side: event_player}
+      text: "每当牌手使用一张牌时，将其手牌和牌库中的同名牌移除。"

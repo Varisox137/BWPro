@@ -1,0 +1,35 @@
+id: 10030708
+name: 觉醒·山风
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1
+      awaken_health: 1
+      rarity: SSR
+      level: 3
+      effects:
+        # 觉醒替换基础能力（+1/+1 由 awaken_power/awaken_health 字段自动结算）
+        steps: []
+      abilities:
+        # 觉醒能力①：[倒计时3] 发起一次攻击，本次战斗免疫战斗伤害——grant_immunity
+        # scope=next_battle（倒计时块内无战斗上下文，战斗外挂账、下一次作为攻击者
+        # 发起的战斗开始消费；定案(8)：全程免疫其战斗伤害）
+        - countdown: 3
+          steps:
+            - {op: grant_immunity, kind: combat_damage, scope: next_battle, target: {kind: self}}
+            - {op: launch_attack, shikigami: self}
+        # 觉醒能力②：你的牌对山风以外的未气绝己方式神造成的减少倒计时效果对山风
+        # 造成等量效果（山风气绝时有效）——{by_card: true} 限定卡牌效果（倒计时自然
+        # 减少不共享）；存活减倒计时（无倒计时自动空操作）+ 气绝时减气绝倒计时
+        - when: on_countdown_reduced
+          trigger_when_defeated: true
+          condition: {by_card: true, shikigami_side: friendly, shikigami_not_shikigami: 100307}
+          steps:
+            - {op: countdown_delta, amount: {event: original, negate: true},
+               target: {kind: self}}
+            - {op: countdown_delta, amount: {event: original, negate: true},
+               revive: true, target: {kind: self}, condition: {holder_defeated: true}}
+      text: "[觉醒]：{[倒计时3]：{发起一次攻击，本次战斗免疫战斗伤害}。你的牌对山风以外的未气绝己方式神造成的减少倒计时效果对山风造成等量效果。（山风气绝时有效）}"

@@ -1,0 +1,22 @@
+id: 10030702
+name: 迅
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 1
+      keywords: [trigger]
+      effects:
+        # 使山风[倒计时]-2（shikigami 参数按数据 id 定位，targets 忽略；未出战空操作）
+        steps:
+          - {op: countdown_delta, shikigami: 100307, amount: -2}
+      response:
+        # 响应：当山风被攻击时自动使用此牌并重复一次该效果（两步同 op，合计-4）
+        when: on_before_assault
+        condition: {victim_shikigami: 100307}
+        steps:
+          - {op: countdown_delta, shikigami: 100307, amount: -2}
+          - {op: countdown_delta, shikigami: 100307, amount: -2}
+      text: "使山风[倒计时]-2。[响应]：{当山风被攻击时，自动使用此牌并重复一次该效果。}"

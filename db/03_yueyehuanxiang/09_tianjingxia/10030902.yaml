@@ -1,0 +1,15 @@
+id: 10030902
+name: 欢愉之音
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 3
+      form_health: 5
+      tags: [shield_gain_boost]  # 己方角色获得护甲/敌方角色获得破甲时效果+1（gain_shield 结算读取点按形态在场求值）
+      effects:
+        steps: []
+      text: "己方角色获得护甲或敌方角色获得破甲时效果+1。"

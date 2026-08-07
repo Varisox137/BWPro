@@ -1,0 +1,16 @@
+id: 10030808
+name: 忘忧的旋律
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: SSR
+      level: 3
+      effects:
+        # 选择敌方式神的一张牌名，将其手牌和牌库中所有同名牌移除：purge_named_card
+        # 两级交互选择（pending_choice kind="card_name"——先选敌方式神、再选该式神
+        # 可构筑牌池中的一张牌名，作答键 choice）
+        steps:
+          - {op: purge_named_card}
+      text: "选择敌方式神的一张牌名，将其手牌和牌库中所有同名牌移除。"

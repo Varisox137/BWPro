@@ -687,3 +687,227 @@ def test_generate_three_combat_cards(db, make_game):
     gen = pa.hand[-3:]
     assert {c.id for c in gen} <= {c1, c2}
     assert all(db.cards[c.id].card_type == "combat" for c in gen)
+
+
+# ==========================================================================
+# 倒计时事件（月夜幻响批次：on_countdown_proc / on_countdown_reduced）
+# ==========================================================================
+
+CD3 = 100103    # 第三式神位（2 号位）
+IDX3 = 2
+
+
+def _attack_countdown(db, initial=2, sid=CD, extra_steps=()):
+    """倒计时归零 = 发起一次攻击的能力块（山风型；extra_steps 在攻击前执行）。"""
+    db.shikigami[sid].ability = F.EffectBlock(
+        countdown=initial,
+        steps=[*extra_steps, F.Step(op="launch_attack")])
+
+
+def _register(make_game_game, pi, si):
+    """手动升级后补注册倒计时能力（测试直接改 level 不经 level_up 通道）。"""
+    make_game_game._register_ability_countdown(pi, si)
+
+
+def test_countdown_proc_buffs_before_launched_attack(db, make_game):
+    """on_countdown_proc（烈/刚型"当触发[倒计时]能力时"）：即时时机先于归零块结算——
+    形态能力授予的永久 +1/+1 与护甲赶上归零块发起的攻击。"""
+    _attack_countdown(db, initial=2)
+    cid = 10010171
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, card_type="form", level=1, token=True,
+        form_power=3, form_health=4,
+        abilities=[F.block(
+            F.Step(op="buff_power", amount=1, perm=True, target=T(kind="self")),
+            F.Step(op="buff_health", amount=1, perm=True, target=T(kind="self")),
+            F.Step(op="gain_shield", amount=4, target=T(kind="self")),
+            when="on_countdown_proc", condition={"shikigami_shikigami": "self"})])
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    s = pa.shikigami[IDX]
+    play(g, 0, cid)
+    pass_turns(g, 2)                     # A 第 2 回合开始：倒计时归零 → 先授予再攻击
+    assert s.perm_power == 1 and s.perm_health == 1
+    assert pb.health == 26               # 攻击 3+1=4（若授予晚于攻击则为 3）
+    assert s.shield == 4                 # 敌方战斗区为空无反击：护甲保留
+
+
+def test_countdown_proc_next_battle_keyword(db, make_game):
+    """on_countdown_proc + grant_keyword scope="next_battle"（斩型"本次攻击获得[必杀]"）：
+    战斗外授予挂账，绑定下一次作为攻击者发起的战斗（该次倒计时发起的战斗本身），
+    战斗终止点核销（维护者定案(6)）。"""
+    _attack_countdown(db, initial=2)
+    cid = 10010172
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, card_type="form", level=1, token=True,
+        form_power=3, form_health=4,
+        abilities=[F.block(
+            F.Step(op="grant_keyword", keyword="lethal", scope="next_battle",
+                   target=T(kind="self")),
+            when="on_countdown_proc", condition={"shikigami_shikigami": "self"})])
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]
+    pb = g.state.players[1]
+    pb.shikigami[0].level = 1
+    play(g, 0, cid)
+    pass_turns(g, 1)
+    move(g, 1, 0)                        # B0（3/4）驻战斗区
+    pass_turns(g, 1)                     # A 第 2 回合开始：归零 → 必杀攻击 B0
+    assert pb.shikigami[0].defeated      # 3 伤未致死，[必杀]令其气绝
+    assert not any("lethal" in lst for lst in
+                   (s.keywords, s.one_shot_keywords, s.perm_keywords))  # 战斗后核销
+    assert "next_battle_keywords" not in s.ext
+
+
+def test_next_battle_immunity_full_battle(db, make_game):
+    """grant_immunity scope="next_battle"（觉醒·山风型"本次战斗免疫战斗伤害"）：
+    该次战斗全程免疫战斗伤害（反击也免疫）；战斗结束后不再免疫（维护者定案(8)）。"""
+    _attack_countdown(db, initial=2, extra_steps=[
+        F.Step(op="grant_immunity", scope="next_battle", target=T(kind="self"))])
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]                # 3/4
+    pb = g.state.players[1]
+    pb.shikigami[0].level = 1
+    pass_turns(g, 1)
+    move(g, 1, 0)                        # B0（3/4）驻战斗区
+    pass_turns(g, 1)                     # 归零：免疫授予 → 攻击（反击被免疫）
+    b0 = pb.shikigami[0]
+    assert b0.health == 1                # 攻击 3 照常
+    assert s.health == 4                 # 反击 3 被免疫
+    assert not s.immunities              # 战斗终止点清除
+    assert "next_battle_immunities" not in s.ext
+    g.apply({"op": "assault", "index": IDX})  # 同回合再次攻击：免疫已过期
+    assert s.health == 1                 # 反击 3 正常命中
+
+
+def test_countdown_reduced_original_attack_buff(db, make_game):
+    """on_countdown_reduced + attack_buff 动态力量 {event: original}（势型"当倒计时
+    减少时获得等量力量直到下次攻击后"）：按原始减少量授予（定案(5)），timing: insert
+    赶在归零块攻击前生效，攻击后核销。"""
+    _attack_countdown(db, initial=5)     # 开局后倒计时 4
+    cid = 10010173
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, card_type="form", level=1, token=True,
+        form_power=3, form_health=6,
+        abilities=[F.block(
+            F.Step(op="attack_buff", power={"event": "original"},
+                   target=T(kind="self")),
+            when="on_countdown_reduced", timing="insert",
+            condition={"shikigami_shikigami": "self"})])
+    _delta_card(db, 10010174, -7)        # 减少 7（实际只能减 4）
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    s = pa.shikigami[IDX]
+    play(g, 0, cid)
+    play(g, 0, 10010174)                 # 倒计时 4 → 归零（original=7, actual=4）
+    assert pb.health == 20               # 攻击 3+7=10（按原始值 7 而非实际值 4）
+    assert s.temp_power == 0             # 攻击后到期强化已核销
+    assert s.countdown == 5              # 循环型重置
+
+
+def test_countdown_overkill_memo_and_holders_enhance(db, make_game):
+    """突型：countdown_delta 动态减少量 {base: 2, countdown_holders: friendly_others,
+    negate}（[增强]按山风以外持倒计时能力的未气绝式神像数）；过量部分
+    （original - actual）经 ctx.memo["countdown_overkill"] 转化为等量临时力量/生命
+    （定案(3)：非永久持续性增益）。"""
+    _cd_ability(db, initial=5)           # 开局后倒计时 4；归零块 = 打敌方牌手 2
+    _cd_ability(db, initial=3, sid=CD2)
+    cid = 10010175
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, level=1, token=True,
+        steps=[F.Step(op="countdown_delta",
+                      amount={"base": 2, "countdown_holders": "friendly_others",
+                              "negate": True},
+                      target=T(kind="self")),
+               F.Step(op="buff_power", amount={"memo": "countdown_overkill"},
+                      target=T(kind="self")),
+               F.Step(op="buff_health", amount={"memo": "countdown_overkill"},
+                      target=T(kind="self"))])
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    s = pa.shikigami[IDX]
+    pa.shikigami[IDX2].level = 1
+    _register(g, 0, IDX2)                # CD2 成为倒计时持有者（增强计数 1）
+    s.countdown = 2                      # 减少 3 > 剩余 2：过量 1
+    play(g, 0, cid)
+    assert pb.health == 28               # 倒计时归零效果 2 伤
+    assert s.temp_power == 1 and s.temp_health == 1   # 过量 1 → +1/+1（临时非永久）
+    assert s.countdown == 5              # 循环型重置
+
+
+def test_countdown_sum_repeat(db, make_game):
+    """岚型：repeat count={"countdown_sum": true} = 己方所有式神当前倒计时总和
+    （含目标自身，结算时一次性取值），每次重复是一次独立减少动作（各发一次
+    on_countdown_reduced）。"""
+    _cd_ability(db, initial=5)           # 开局后倒计时 4
+    _cd_ability(db, initial=3, sid=CD2)
+    cid = 10010176
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, level=1, token=True,
+        steps=[F.Step(op="repeat", count={"countdown_sum": True},
+                      steps=[{"op": "countdown_delta", "amount": -1,
+                              "target": {"kind": "self"}}])])
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    s = pa.shikigami[IDX]
+    pa.shikigami[IDX2].level = 1
+    _register(g, 0, IDX2)                # CD2 倒计时 3：总和 4+3=7
+    n = len(g.history)
+    play(g, 0, cid)                      # 4→0（第 4 次归零：打 2、重置 5）→ 5→2
+    assert pb.health == 28
+    assert s.countdown == 2
+    assert g.history[n:].count("on_countdown_reduced") == 7
+
+
+def test_awakened_countdown_share(db, make_game):
+    """觉醒·山风型共享：己方卡牌效果对山风以外未气绝己方式神的倒计时减少，
+    对山风造成等量效果——按"每次减少动作"延迟结算（源效果块完毕后，定案(8)）；
+    山风气绝时减少其气绝倒计时；非卡牌来源（式神能力）不共享。"""
+    _cd_ability(db, initial=5)           # 山风位：开局后倒计时 4
+    _cd_ability(db, initial=3, sid=CD3)
+    AW = 10010199
+    db.cards[AW] = F.card(AW, shikigami=CD, level=3, token=True, abilities=[F.block(
+        F.Step(op="countdown_delta", amount={"event": "original", "negate": True},
+               target=T(kind="self"), condition={"holder_defeated": False}),
+        F.Step(op="countdown_delta", revive=True,
+               amount={"event": "original", "negate": True},
+               target=T(kind="self"), condition={"holder_defeated": True}),
+        when="on_countdown_reduced", trigger_when_defeated=True,
+        condition={"by_card": True, "shikigami_side": "friendly",
+                   "shikigami_not_shikigami": CD})])
+    # 余音型减少牌（属 CD2，只减 CD3 的倒计时，避开源式神与山风）
+    cid = 10010252
+    db.cards[cid] = F.card(
+        cid, shikigami=CD2, level=1, token=True,
+        steps=[F.Step(op="countdown_delta", amount=-1,
+                      target=T(kind="all", pool="friendly_shikigami",
+                               shikigami=CD3))])
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]
+    s.awakened = AW                      # 直接置觉醒态（不经觉醒牌使用流程）
+    pa.shikigami[IDX2].level = 1
+    pa.shikigami[IDX3].level = 1
+    _register(g, 0, IDX3)                # CD3 倒计时 3
+    n = len(g.history)
+    play(g, 0, cid)                      # CD3 3→2：一次减少动作 → 共享山风 4→3
+    play(g, 0, cid)                      # CD3 2→1 → 共享山风 3→2
+    assert s.countdown == 2
+    assert g.history[n:].count("on_countdown_reduced") == 4   # 余音 2 次 + 共享应用 2 次
+    # 非卡牌来源（式神能力，ctx.card 为空）：不共享
+    from core.model import ExecContext
+    blk = F.block(F.Step(op="countdown_delta", amount=-1, target=T(kind="self")))
+    g._resolve_block(blk, ExecContext(controller=0, source=Ref(player=0, shikigami=IDX3),
+                                      is_ability=True))
+    g._drain_queue()
+    assert pa.shikigami[IDX3].countdown == 3  # 能力减少本身生效（归零：打 2 敌方牌手后重置）
+    assert g.state.players[1].health == 28
+    assert s.countdown == 2                   # 山风不变（by_card=False 不共享）
+    # 山风气绝时：共享减少其气绝倒计时（复活倒计时）
+    s.countdown = None
+    s.countdown_block = None
+    s.defeated = True
+    s.revive_countdown = 3
+    pa.shikigami[IDX3].countdown = 2
+    play(g, 0, cid)                      # CD3 2→1 → 共享：复活倒计时 3→2
+    assert s.revive_countdown == 2
+    assert s.defeated

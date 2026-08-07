@@ -1,0 +1,16 @@
+id: 10030801
+name: 孟婆汤
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: any_player}
+      effects:
+        # 选择一个牌手，将他牌库底三张牌移除：remove_deck 有选择目标时按
+        # targets[0].player 磨该方（目标池 any_player=双方牌手）
+        steps:
+          - {op: remove_deck, count: 3, position: bottom}
+      text: "选择一个牌手，将他牌库底三张牌移除。"

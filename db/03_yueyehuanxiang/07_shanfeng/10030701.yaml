@@ -1,0 +1,22 @@
+id: 10030701
+name: 烈
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 3
+      form_health: 4
+      effects:
+        steps: []
+      abilities:
+        # 当山风触发[倒计时]能力时：on_countdown_proc（即时时机、先于归零块结算——
+        # 授予赶上归零块发起的攻击）；{shikigami_shikigami: self} 限定山风本人的倒计时
+        - when: on_countdown_proc
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+            - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+      text: "当山风触发[倒计时]能力时，永久获得1力量和1生命。"

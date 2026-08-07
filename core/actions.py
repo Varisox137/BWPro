@@ -73,10 +73,11 @@ def damage(game, ctx, *, targets: list[Ref], amount: int = 0,
     total = 0
     for ref in targets:
         if ref.shikigami is None:
-            total += game.deal_to_player(ref.player, amount, ctx.source, spell=spell)
+            total += game.deal_to_player(ref.player, amount, ctx.source, spell=spell,
+                                         card=ctx.card)
         else:
             total += game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce,
-                                            spell=spell)
+                                            spell=spell, card=ctx.card)
     if ctx.memo is not None:
         # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用（风神一扇）
         ctx.memo["last_damage_victims"] = [r for r in targets if r.shikigami is not None]
@@ -208,7 +209,11 @@ def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shie
     护甲/破甲/增益。护甲/破甲变化按即时时机发出 on_shield_changed 事件（payload 带 kind）。
     no_extract=True：战斗牌中该步不提取为战斗牌护甲前置结算，按步骤顺序执行
     （醉酒当歌"先自伤 3 再获得等量护甲"——前置结算会被自己的自伤消耗）。
+    实例修饰 shield_boost（妖怪屋·灵力[增强]"此牌效果+1"）在获得量（amount > 0，
+    护甲/破甲同）上累加——与 damage 读 damage_boost 同通道。
     """
+    if amount > 0 and ctx.card is not None:
+        amount += int(ctx.card.mods.get("shield_boost", 0))
     for ref in targets:
         if ref.shikigami is None:
             game._change_shield(ref, amount, "gain_shield", kind=kind)
@@ -220,7 +225,8 @@ def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shie
 
 @action("summon")
 def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
-           inherit_stats: bool = False, energy_ratio: float | None = None) -> None:
+           inherit_stats: bool = False, energy_ratio: float | None = None,
+           stats_memo: str | None = None) -> None:
     """为效果归属玩家召唤一个召唤物（定义须 kind=summon）。
 
     召唤物的生成视作其移动进入战斗区（但不视为从准备区离开）；
@@ -228,6 +234,9 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
     进场派系 = 召唤效果来源式神的永久派系（perm_faction；无来源式神时回退 def faction）。
     orb_cost>0（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：效果内嵌费用——
     控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常），足够则先付再召。
+    stats_memo：召唤物基础力量/生命覆写为块内暂存 ctx.memo[key] 的数值
+    （妖怪屋的醒转"使其力量和生命等同于被移除的护甲或破甲"——基础值口径，
+    维护者定案：复活后按该基础值保留，非一次性增益）。
     """
     d = game.db.shikigami[shikigami]
     p = game.state.players[ctx.controller]
@@ -262,6 +271,12 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
             s.health = min(src.health, s.max_health)
         if energy_ratio is not None:
             s.energy = int(src.energy * energy_ratio)  # 能量按比例复制（向下取整）
+    if stats_memo is not None:
+        # 基础身材覆写（妖怪屋的醒转）：读块内暂存的移除量，基础值口径（复活保留）
+        v = int((ctx.memo or {}).get(stats_memo, 0))
+        s.base_power = v
+        s.base_health = v
+        s.health = v
     s.ext["max_power"] = s.base_power + s.perm_power  # 力量历史峰值初值（断臂记账）
     p.shikigami.append(s)
     idx = len(p.shikigami) - 1
@@ -279,10 +294,12 @@ def emit_event(game, ctx, *, targets: list[Ref], event: str, payload: dict | Non
 @action("attack_buff")
 def attack_buff(game, ctx, *, targets: list[Ref], power: int = 0,
                 keywords: list[str] | None = None) -> None:
-    """攻击后到期临时强化（起弓/离/无我）：立即生效并挂账 attack_buffs。
+    """攻击后到期临时强化（起弓/离/无我/势）：立即生效并挂账 attack_buffs。
 
     在目标式神自身作为攻击者的战斗终止点统一核销（rules.md:174"直到攻击后"）；
     持有 keep_attack_buffs（残心）时跳过核销。气绝时随临时修正一并清空。
+    power 支持动态数值 dict（{"event": key} 等，经 _run_step 统一流水线求值——
+    势"当倒计时减少时获得等量的力量直到下次攻击后"，定案(5)：按原始减少量）。
     """
     for ref in targets:
         if ref.shikigami is None:
@@ -342,7 +359,8 @@ def transfer_fragile(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("add_mod")
 def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
-            amount: int = 1, cap: int | None = None, require: dict | None = None) -> None:
+            amount: int = 1, cap: int | None = None, require: dict | None = None,
+            card_id: int | None = None) -> None:
     """写入修饰（docs/enhance-design.md 写入三目标；targets 忽略）。
 
     - to=persistent：写入控制者的持久 store `card_mods[ctx.card_id]`（"本局游戏每……"类，
@@ -353,8 +371,11 @@ def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
     cap 为累积上限（如"最多+3"）。
     require={"key": k, "ge": n}：条件写入——同一 store 中键 k 的当前值 ≥ n 才执行
     本次写入（吾即正义"使用过 10 次法术则变为"：先计数、再按计数置位 transformed）。
+    card_id：写入目标卡牌 id 覆盖（to=persistent/hand 用）——写入与来源卡不同 id
+    的修饰（骚声"使手牌中的'灵力'/'灵力之泉'增强等量的效果"）；缺省回退 ctx.card_id。
     """
     p = game.state.players[ctx.controller]
+    cid = int(card_id) if card_id is not None else ctx.card_id
 
     def _bump(store: dict, k: str) -> None:
         if require is not None and store.get(require.get("key"), 0) < require.get("ge", 1):
@@ -364,14 +385,14 @@ def add_mod(game, ctx, *, targets: list[Ref], to: str, key: str = "enhance",
             store[k] = min(store[k], cap)
 
     if to == "persistent":
-        if ctx.card_id is None:
+        if cid is None:
             raise ValueError("add_mod(to=persistent) 需要 ctx.card_id（卡牌触发器来源卡）")
-        _bump(p.card_mods.setdefault(ctx.card_id, {}), key)
+        _bump(p.card_mods.setdefault(cid, {}), key)
     elif to == "hand":
-        if ctx.card_id is None:
+        if cid is None:
             raise ValueError("add_mod(to=hand) 需要 ctx.card_id（卡牌触发器来源卡）")
         for c in p.hand:
-            if c.id == ctx.card_id:
+            if c.id == cid:
                 _bump(c.mods, key)
     elif to == "instance":
         if ctx.card is None:
@@ -661,6 +682,10 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
     scope="battle"：战斗作用域条件授予——绑定当前战斗上下文，战斗终止点按实例移除
     （觉醒·雪童子"与眩晕的式神交战时获得[连击]"：挂 on_before_assault + 条件
     combat_opponent_stunned）；无战斗上下文时回退为常规授予。
+    scope="next_battle"：战斗外授予、绑定目标下一次作为攻击者发起的战斗——挂账
+    ext["next_battle_keywords"]，战斗开始时经 _resolve_combat 消费（授予并走终止点
+    核销通道；气绝清除）。倒计时能力块内无战斗上下文，"本次攻击获得[X]"类用此
+    （斩"本次攻击获得[必杀]"——仅限该次倒计时发起的战斗本身，维护者定案(6)）。
     scope="turn"：当回合结束移除（惊鸿之舞"所有己方式神本回合获得[帷幕]和[不屈]"——
     触发发生在哪方回合就在那方回合结束点移除，引擎 _remove_turn_keyword_grants 按
     授予时回合号比对；一次性关键字（[不屈]）被正常消耗后不到回合结束即已移除）。"""
@@ -669,6 +694,10 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if not s.in_play:
+            continue
+        if scope == "next_battle":
+            s.ext.setdefault("next_battle_keywords", []).append({"keyword": keyword})
+            game._log(f"{game.db.shikigami[s.id].name} 将在其下一次攻击的战斗中获得关键字")
             continue
         cls = game._grant_keyword(s, keyword)
         if scope == "battle" and game._battle_stack:
@@ -1123,7 +1152,7 @@ def random_damage(game, ctx, *, targets: list[Ref], amount: int = 0, pool: str,
             r = game.rng.choice(legal)  # 有放回：每次独立随机
             game._run_damage_queue(
                 [_DamageEvent(source=ctx.source, victim=r, amount=amount, kind="effect",
-                              piercing=pierce, spell=spell)],
+                              piercing=pierce, spell=spell, card=ctx.card)],
                 defer_defeats=deferred)
         for ref, source, reason in deferred:
             game.check_defeated(ref, source=source, reason=reason)
@@ -1132,7 +1161,7 @@ def random_damage(game, ctx, *, targets: list[Ref], amount: int = 0, pool: str,
     chosen = game.rng.sample(refs, n)
     game._run_damage_queue([
         _DamageEvent(source=ctx.source, victim=r, amount=amount, kind="effect",
-                     piercing=pierce, spell=spell)
+                     piercing=pierce, spell=spell, card=ctx.card)
         for r in chosen
     ])
 
@@ -1166,7 +1195,7 @@ def distribute_damage(game, ctx, *, targets: list[Ref], amount: int = 0, pool: s
         r = game.rng.choice(legal)
         game._run_damage_queue(
             [_DamageEvent(source=ctx.source, victim=r, amount=1, kind="effect",
-                          piercing=pierce, spell=spell)],
+                          piercing=pierce, spell=spell, card=ctx.card)],
             defer_defeats=deferred)
     for ref, source, reason in deferred:
         game.check_defeated(ref, source=source, reason=reason)
@@ -1422,7 +1451,13 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
 
     无倒计时能力或倒计时为 0（归零结算中）时修正为 -0（空操作，rules.md ch12
     增减流程 1）；减少后不大于 0 时走归零流程（_countdown_zero，与回合开始批次共用）。
-    倒计时增减事件的独立时机批次暂不拆，首张监听卡出现时再引入。
+
+    减少（amount < 0 且实际作用于持有倒计时者）时发出 on_countdown_reduced：
+    payload 带 original（原始减少量，定案(5)：势按原始值获得力量）、actual（实际
+    减少量=修正到剩余）、by_card（ctx.card 非空=卡牌效果，觉醒·山风共享的判定依据，
+    定案(8)）。原始与实际之差（过量部分）累计写入块内暂存 ctx.memo
+    ["countdown_overkill"]，供同块后续 step 以 {"memo": "countdown_overkill"} 动态
+    数值引用（突"过量效果会使其获得等量的力量和生命"，定案(3)：非永久持续性增益）。
 
     reset=True（疯魔琴心"重置所有敌方角色的倒计时"）：倒计时复原为
     countdown_initial，不触发归零流程；无倒计时能力者空操作。与 revive 互斥，
@@ -1471,6 +1506,15 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if s.countdown is None or s.countdown <= 0 or s.countdown_block is None:
             continue  # 修正为 -0：无倒计时能力 / 倒计时为 0（归零结算中的自身增减）
+        if amount < 0:
+            original = -amount
+            actual = min(original, s.countdown)  # 实际减少修正到剩余（定案(5)）
+            if ctx.memo is not None:
+                ctx.memo["countdown_overkill"] = (int(ctx.memo.get("countdown_overkill", 0))
+                                                  + original - actual)
+            game.emit("on_countdown_reduced",
+                      shikigami=ref, original=original, actual=actual,
+                      by_card=ctx.card is not None)
         s.countdown += amount
         if s.countdown <= 0:
             game._countdown_zero(ref.player, ref.shikigami)
@@ -1961,10 +2005,14 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
     scope="once"：消耗式，命中任意一类伤害即免疫一次并移除（桃红簇簇）；
     scope="form"：形态作用域——条目带 form 标记，随形态离场经 _destroy_form 清除
     （霸主为形态牌；气绝清空 immunities 的既有通道同样生效）。
+    scope="next_battle"：战斗外授予、绑定目标下一次作为攻击者发起的战斗——挂账
+    ext["next_battle_immunities"]，战斗开始时经 _resolve_combat 消费（条目绑定该
+    战斗 id，全程免疫其战斗伤害；气绝清除）。倒计时能力块内无战斗上下文，
+    "本次战斗免疫战斗伤害"类用此（觉醒·山风，维护者定案(8)：全程免疫）。
     unique=True：目标已持有同等免疫条目时不再重复授予（维护者答复(3)：不可饶恕
     "若不具有该能力则获得"——回合内多次使用黄金羽只授予一次）。
     """
-    if scope not in ("turn", "perm", "once", "form"):
+    if scope not in ("turn", "perm", "once", "form", "next_battle"):
         raise ValueError(f"未知 grant_immunity 作用域: {scope}")
     if kind not in ("combat_damage", "effect", "all", "fragile_source"):
         raise ValueError(f"未知 grant_immunity 免疫类别: {kind}")
@@ -1992,12 +2040,41 @@ def grant_immunity(game, ctx, *, targets: list[Ref], scope: str = "turn",
                               and (scope == "perm" or e.get("turn") == game.state.turn)
                               for e in s.immunities):
                 continue
+            if scope == "next_battle":
+                # 战斗外挂账：下一次作为攻击者的战斗开始时消费（_resolve_combat）
+                s.ext.setdefault("next_battle_immunities", []).append(
+                    {"kind": kind, "from": from_side})
+                game._log(f"{game.db.shikigami[s.id].name} 将在其下一次攻击的战斗中免疫伤害")
+                continue
             s.immunities.append(entry)
             label = {"combat_damage": "战斗伤害", "effect": "非战斗伤害", "all": "所有伤害",
                      "fragile_source": "破甲式神的伤害"}[kind]
             scope_label = {"turn": "本回合", "perm": "持续", "once": "下一次",
                            "form": "形态在场"}[scope]
             game._log(f"{game.db.shikigami[s.id].name} 免疫{label}（{scope_label}）")
+
+
+@action("grant_redirect")
+def grant_redirect(game, ctx, *, targets: list[Ref], to: str = "player",
+                   uses: int = 1) -> None:
+    """授予目标式神伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"）。
+
+    挂账 ext["damage_redirects"]（每层独立，多张可叠加；气绝清除）：伤害事件流程
+    生成点消耗一层，以受伤者的牌手为受伤者重新结算该伤害事件——牌手的护甲/破甲/
+    免疫照常参与，式神自身的屏障/免疫不随转移消耗；伤害类别不限（维护者定案）。
+    to 目前仅支持 "player"（改由其牌手承受）；uses 为每层可转移次数（缺省 1）。
+    """
+    if to != "player":
+        raise ValueError(f"未知 grant_redirect 转移目标: {to}")
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if not s.in_play:
+            continue
+        for _ in range(int(uses)):
+            s.ext.setdefault("damage_redirects", []).append({"to": to})
+        game._log(f"{game.db.shikigami[s.id].name} 将受到的伤害将改由其牌手承受")
 
 
 @action("gain_orb")
@@ -2157,8 +2234,13 @@ def _orb_count(value: int | dict, p: PlayerState, base_default: int) -> int:
     每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——维护者答复）；
     {"ext": key, "base": n} = base + 效果归属玩家 PlayerState.ext[key] 计数
     （流霰"本局每从手牌使用过一张'雪球'额外重复一次"，读 snowball_used_game）；
+    {"countdown_sum": true} = 该玩家所有式神当前倒计时总和（岚"X为你所有式神当前
+    [倒计时]总和"——气绝者倒计时已清除不计；含重复目标自身，结算时一次性取值）；
     其它 dict 取 base（缺省 base_default）。repeat/deck_top_pick 共用。"""
     if isinstance(value, dict):
+        if value.get("countdown_sum"):
+            return sum(int(s.countdown) for s in p.shikigami
+                       if s.countdown is not None and s.countdown > 0)
         if value.get("ext") is not None:
             return int(value.get("base", 0)) + int(p.ext.get(value["ext"], 0))
         return 1 + p.orb if value.get("orb") else int(value.get("base", base_default))
@@ -2507,7 +2589,7 @@ def repeat_random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: st
         r = game.rng.choice(refs)
         game._run_damage_queue([
             _DamageEvent(source=ctx.source, victim=r, amount=int(amount), kind="effect",
-                         piercing=pierce, spell=spell)])
+                         piercing=pierce, spell=spell, card=ctx.card)])
         if game.state.pending_end or game.state.winner is not None:
             break
         if stop_on_defeat:
@@ -2959,3 +3041,157 @@ def form_death_play(game, ctx, *, targets: list[Ref], energy: int = 3) -> None:
         "holder": [ctx.source.player, ctx.source.shikigami], "energy": int(energy)}
     game._log(f"{game.db.shikigami[p.shikigami[ctx.source.shikigami].id].name} 的形态牌"
               f"在其气绝时可用（消耗 {int(energy)} 点能量并复活）")
+
+
+
+@action("remove_deck")
+def remove_deck(game, ctx, *, targets: list[Ref], position: str = "bottom",
+                count: int | dict = 1, side: str | None = None) -> None:
+    """磨牌（孟婆类）：把指定方牌库顶/底的 N 张牌移入 exiled（移除游戏，不进墓地）。
+
+    目标：有选择目标（孟婆汤"选择一个牌手"）时按 targets[0].player；否则按 side
+    （"self"/"opponent"，缺省 opponent；天降之物用两次调用各磨一方）。position
+    = bottom（牌库底，缺省）/ top（牌库顶——牌库顶为列表头部，draw_cards 同口径）。
+    count 支持动态值 {"memo": key}（读块内暂存，同 draw）。
+    """
+    if targets:
+        sides = [targets[0].player]
+    elif side == "self":
+        sides = [ctx.controller]
+    else:
+        sides = [1 - ctx.controller]
+    for pi in sides:
+        p = game.state.players[pi]
+        if isinstance(count, dict):
+            n = int((ctx.memo or {}).get(count.get("memo"), 0))
+        else:
+            n = int(count)
+        if position == "top":
+            cards = list(p.deck[:n])
+        else:
+            cards = list(p.deck[-n:]) if n > 0 else []
+        for c in cards:
+            game.move_card(p, c, "exiled")
+            game._log(f"{p.name} 牌库{'顶' if position == 'top' else '底'}的"
+                      f"【{game.db.cards[c.id].name}】被移除")
+
+
+@action("purge_copies")
+def purge_copies(game, ctx, *, targets: list[Ref], card_id: int | None = None,
+                 side: str = "event_player") -> None:
+    """移除指定数据 id 同名牌在指定方手牌与牌库中的全部复制（移入 exiled；targets 忽略）。
+
+    奈何桥头"每当牌手使用一张牌时，将其手牌和牌库中的同名牌移除"：card_id 缺省读
+    事件 payload 的 card_id（on_card_played 按数据 id 判定同名；刚使用的那张已离手，
+    不在移除范围），side="event_player" 取事件中的用牌方。
+    side="opponent"：控制者的敌方（忘忧的旋律两级选择确定牌名后调用）。
+    在场同名实体（结附的形态等）不受影响——本 op 只扫手牌与牌库两区域。
+    """
+    cid = int(card_id) if card_id is not None else (ctx.event or {}).get("card_id")
+    if cid is None:
+        return
+    if side == "event_player":
+        pi = (ctx.event or {}).get("player")
+        if not isinstance(pi, int):
+            return
+    else:
+        pi = 1 - ctx.controller
+    p = game.state.players[pi]
+    copies = [c for c in p.hand if c.id == cid] + [c for c in p.deck if c.id == cid]
+    for c in copies:
+        game.move_card(p, c, "exiled")
+    if copies:
+        game._log(f"{p.name} 的 {len(copies)} 张【{game.db.cards[cid].name}】被移除")
+
+
+@action("discard_pick")
+def discard_pick(game, ctx, *, targets: list[Ref], count: int = 1) -> None:
+    """交互弃牌（意外之喜"弃一张牌"；targets 忽略）：开启结算中交互选择
+    （pending_choice kind="discard_pick"），由控制者从手牌选 count 张弃置
+    （作答/续块见 engine._cmd_choose；无手牌时不挂起，直接跳过）。"""
+    game._open_discard_pick(ctx.controller, int(count))
+
+
+@action("purge_named_card")
+def purge_named_card(game, ctx, *, targets: list[Ref]) -> None:
+    """忘忧的旋律（targets 忽略）：选择敌方式神的一张牌名，将其手牌与牌库中
+    所有同名牌移除。两级交互选择（pending_choice kind="card_name"：
+    stage="shikigami" 选敌方式神 → stage="card" 选该式神可构筑牌池中的一张牌名），
+    作答/续块见 engine._cmd_choose。"""
+    game._open_card_name_pick(ctx.controller)
+
+
+@action("strip_shield")
+def strip_shield(game, ctx, *, targets: list[Ref]) -> None:
+    """整值移除目标角色（式神或牌手）的护甲或破甲（骚声/妖怪屋的醒转/汇聚共用）。
+
+    shield > 0 清零（按失去护甲走 _change_shield，发 on_shield_changed）；
+    shield < 0 清零（按失去破甲）；为 0 跳过。实际移除量（绝对值合计）写入
+    块内暂存 ctx.memo["stripped_shield"]（供后续 step 以 {"memo": "stripped_shield"}
+    动态数值引用——骚声"使手牌中的'灵力'增强等量的效果"）。
+    """
+    total = 0
+    for ref in targets:
+        pl = game.state.players[ref.player]
+        holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+        if holder.shield == 0:
+            continue
+        old = holder.shield
+        kind = "shield" if old > 0 else "fragile"
+        game._change_shield(ref, -abs(old), "strip_shield", kind=kind)
+        total += abs(old)
+    if ctx.memo is not None:
+        ctx.memo["stripped_shield"] = total
+
+
+@action("consolidate_shields")
+def consolidate_shields(game, ctx, *, targets: list[Ref]) -> None:
+    """汇聚：把场上所有的护甲和破甲都转移到一个式神上（目标为 choose 的单个式神）。
+
+    目标以外双方所有角色（在场式神 + 双方牌手）的护甲/破甲逐一整值清零
+    （各走 _change_shield 发 on_shield_changed），合计为正值护甲与负值破甲的
+    代数和；合计非 0 则对目标加算（正 = 获得护甲 / 负 = 获得破甲，获得流程
+    先抵消目标反向值再盈余——目标自身原值不经移除，维护者定案）。
+    """
+    if not targets:
+        return
+    goal = targets[0]
+    total = 0
+    for pi, pl in enumerate(game.state.players):
+        refs = [Ref(player=pi, shikigami=i) for i, s in enumerate(pl.shikigami) if s.in_play]
+        refs.append(Ref(player=pi))
+        for ref in refs:
+            if ref == goal:
+                continue
+            holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+            if holder.shield == 0:
+                continue
+            old = holder.shield
+            kind = "shield" if old > 0 else "fragile"
+            game._change_shield(ref, -abs(old), "consolidate_shields", kind=kind)
+            total += old  # 代数和：正护甲 + 负破甲（shield 为有符号字段）
+    if total > 0:
+        game._change_shield(goal, total, "consolidate_shields", kind="shield")
+    elif total < 0:
+        game._change_shield(goal, -total, "consolidate_shields", kind="fragile")
+
+
+@action("transform_hand_card")
+def transform_hand_card(game, ctx, *, targets: list[Ref], from_id: int,
+                        into_id: int) -> None:
+    """手牌转化（觉醒·天井下；targets 忽略）：控制者手牌中所有 from_id 实例
+    移入 exiled（原牌去向暂定 exiled，待维护者确认），各生成一张 into_id 新实例
+    入手，并复制原实例的修饰（shield_boost 等实例增强随牌转移；_mat 装配记账键
+    不复制——新实例按自身 id 重新快照持久修饰）。"""
+    from core.model import CardInstance
+    p = game.state.players[ctx.controller]
+    for c in [c for c in p.hand if c.id == int(from_id)]:
+        mods = {k: v for k, v in c.mods.items() if k != "_mat"}
+        game.move_card(p, c, "exiled")
+        inst = CardInstance(uid=game.state.next_uid, id=int(into_id))
+        game.state.next_uid += 1
+        game.move_card(p, inst, "hand")
+        game._materialize(p, inst, game.db.cards[inst.id])  # 生成点统一快照
+        inst.mods.update(mods)
+        game._log(f"{p.name} 的【{game.db.cards[from_id].name}】转化为"
+                  f"【{game.db.cards[inst.id].name}】")

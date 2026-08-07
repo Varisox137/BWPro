@@ -1,0 +1,22 @@
+id: 10030905
+name: 破碎之音
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 6
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # 每当你击杀有破甲的式神时，对其牌手造成3点伤害：on_before_defeat 即时钩子
+        #（击杀判定前移——伤害致死会先消耗破甲天然不触发，仅直接消灭/仍持破甲的
+        # 气绝触发；victim_has_fragile + source_side=friendly 双门控，引擎代理已验证）
+        - when: on_before_defeat
+          condition: {victim_has_fragile: true, source_side: friendly}
+          steps:
+            - {op: damage, amount: 3, target: {kind: context, key: victim_player}}
+      text: "每当你击杀有破甲的式神时，对其牌手造成3点伤害。"
