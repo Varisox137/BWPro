@@ -177,6 +177,9 @@ class CardDef(BaseModel):
     cost: int = 1  # 鬼火消耗
     form_power: int | None = None  # 形态牌结附时的基础力量（card_type=form 时使用）
     form_health: int | None = None  # 形态牌结附时的基础生命（card_type=form 时使用）
+    durability: int | None = None  # 幻境牌耐久（正整数；card_type=field 时必填——
+    # 使用后"召唤幻境"：实体以此耐久入所属牌手幻境队列）
+    field_front: bool = False  # 幻境进场置于幻境队列队首（缺省 False = 队尾；规范"零"条）
     keywords: list[str] = Field(default_factory=list)
     target: TargetSpec = Field(default_factory=TargetSpec)
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段。

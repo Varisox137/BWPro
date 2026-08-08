@@ -234,6 +234,7 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
     进场派系 = 召唤效果来源式神的永久派系（perm_faction；无来源式神时回退 def faction）。
     orb_cost>0（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：效果内嵌费用——
     控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常），足够则先付再召。
+    召唤物为新进场者：entry_order 取本队当前最大值 +1（排本队最后——答复(2)）。
     stats_memo：召唤物基础力量/生命覆写为块内暂存 ctx.memo[key] 的数值
     （妖怪屋的醒转"使其力量和生命等同于被移除的护甲或破甲"——基础值口径，
     维护者定案：复活后按该基础值保留，非一次性增益）。
@@ -259,6 +260,7 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
     s = ShikigamiState(
         id=shikigami, kind="summon", faction=faction, perm_faction=faction, level=1,
         home_slot=None,
+        entry_order=max((x.entry_order for x in p.shikigami), default=0) + 1,  # 新进场排最后
         base_power=d.power, base_health=d.health, health=d.health,
         perm_keywords=list(d.keywords))  # 先天关键字（充能/迅捷等）按永久类别入列（同 build_player）
     if src is not None:
@@ -1256,8 +1258,24 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         "uses": int(uses),
         "secret": secret,
         "scope": scope,
+        "seq": game.state.next_ability_seq(),  # 能力进场序号（卡牌赋予的能力进场点，答复(4)）
     })
     game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
+
+
+@action("phantom_destroy")
+def phantom_destroy(game, ctx, *, targets: list[Ref]) -> None:
+    """幻境消灭待结算项（引擎内部 op，数据不直接使用；targets 忽略）。
+
+    耐久归零时由 _change_phantom_durability 生成（延时）：执行幻境消灭事件流程的
+    "从幻境队列移除 → 幻境消灭后（延时）"半段；"消灭前"（延时）已在生成点发出。
+    幻境对象/来源/原因经 ctx.event 传递（phantom_obj 身份比对，已出队则跳过）。
+    """
+    ev = ctx.event or {}
+    ph = ev.get("phantom_obj")
+    if ph is not None:
+        game._destroy_phantom(ctx.controller, ph, ev.get("source"),
+                              ev.get("reason") or "耐久归零")
 
 
 @action("nullify_card_play")

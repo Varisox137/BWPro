@@ -32,6 +32,7 @@ from core.model import (
     CardInstance,
     ExecContext,
     GameState,
+    PhantomState,
     PlayerState,
     Ref,
     ShikigamiState,
@@ -97,6 +98,7 @@ class _Pending:
     block: EffectBlock
     ctx: ExecContext
     temp_grant: TempGrant | None = None  # 来自一次性临时触发的待结算项（结算后 uses-1）
+    seq: int = 0  # 能力进场序号（收集排序用；0=未登记，保持原有收集顺序）
 
 
 class Game:
@@ -1153,12 +1155,10 @@ class Game:
         if card is None:
             raise IllegalAction(f"区域 {play_from} 中没有这张牌")
         cdef = self.db.cards[card.id]
-        # Phase 1 实现法术牌、形态牌、战斗牌；协战牌走子选项流程（_cmd_play_reinforce）。
+        # Phase 1 实现法术牌、形态牌、战斗牌、幻境牌；协战牌走子选项流程（_cmd_play_reinforce）。
         if cdef.card_type == "reinforce":
             self._cmd_play_reinforce(p, card, cdef, cmd)
             return
-        if cdef.card_type == "field":
-            raise IllegalAction(f"【{cdef.name}】的卡牌类型 {cdef.card_type} 尚未实现")
         # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（响应/自动使用同检）
         if not self._play_condition_met(p, cdef):
             raise IllegalAction(f"【{cdef.name}】的使用条件未满足")
@@ -1294,6 +1294,22 @@ class Game:
                 if si is None:
                     raise IllegalAction("战斗牌必须有所属式神")
                 self._resolve_combat_card(p, si, card, cdef, method, chosen)
+            elif cdef.card_type == "field":
+                # 幻境牌（规范第一条）：先以所使用的牌"召唤幻境"（入队 +
+                # on_summon_phantom），再执行幻境本身的进场效果（effects 块）。
+                # 使用后卡牌本体入墓地（同法术——幻境实体独立存续，消灭时不再做
+                # 卡牌移动；简化口径待维护者确认）
+                self.move_card(p, card, "graveyard")
+                self._summon_phantom(
+                    self.state.active, card, cdef,
+                    Ref(player=self.state.active, shikigami=si) if si is not None else None)
+                ctx = ExecContext(
+                    controller=self.state.active,
+                    source=Ref(player=self.state.active, shikigami=si) if si is not None else None,
+                    card=card,
+                    chosen=chosen,
+                )
+                self._resolve_block(self._played_block(p, cdef, card, method), ctx)
             else:
                 self.move_card(p, card, "graveyard")
                 ctx = ExecContext(
@@ -1630,7 +1646,8 @@ class Game:
                 self.state.temp_grants.append(TempGrant(
                     block=blk, controller=pi, holder=ref,
                     battle=self._battle_stack[-1],
-                    uses=int((blk.model_extra or {}).get("uses", 1))))  # 同 _resolve_combat
+                    uses=int((blk.model_extra or {}).get("uses", 1)),  # 同 _resolve_combat
+                    seq=self.state.next_ability_seq()))
         # 其余 steps（battle_immunity 等）照常执行——登记到当前战斗上下文
         ctx = ExecContext(controller=pi, source=ref, card=card)
         for step in block.steps:
@@ -1871,7 +1888,8 @@ class Game:
             self.state.temp_grants.append(TempGrant(
                 block=block, controller=atk_ref.player, holder=atk_ref, battle=bid,
                 # uses 扩展键（缺省 1）：战斗内可多次触发（胧月雪华斩"造成伤害时"）
-                uses=int((block.model_extra or {}).get("uses", 1))))
+                uses=int((block.model_extra or {}).get("uses", 1)),
+                seq=self.state.next_ability_seq()))
         try:
             self._battle_flow(atk_ref, attacker, move=move, target=target, origin=origin)
         finally:
@@ -2315,7 +2333,8 @@ class Game:
         B 继承座次与 A 的当前等级；无快照/不还原（不设 transform_origin，气绝前2
         还原路径天然跳过，B 气绝复活仍为 B）；ext["replace_owner"] 记原式神 id，
         出牌/响应校验据此放行原式神的全部卡牌（无变形"不能使用原式神卡牌"限制）。
-        B 的派系 = B def 自身的 faction。"""
+        B 的派系 = B def 自身的 faction。替换视作新进场：entry_order 取本队当前
+        最大值 +1（排本队最后——答复(3)）。"""
         d = self.db.shikigami[into]
         if d.kind != "transform":
             raise ValueError(f"replace 的目标 {into} 不是替换物定义（kind=transform）")
@@ -2324,7 +2343,8 @@ class Game:
         pi = self.state.players.index(p)
         b = ShikigamiState(
             id=into, kind="transform", faction=d.faction, perm_faction=d.faction,
-            level=s.level, home_slot=s.home_slot, entry_order=s.entry_order,
+            level=s.level, home_slot=s.home_slot,
+            entry_order=max(x.entry_order for x in p.shikigami) + 1,
             base_power=d.power, base_health=d.health, health=d.health,
             ext={"max_power": d.power,  # 力量历史峰值初值（断臂记账）
                  "replace_owner": owner_id},
@@ -2354,11 +2374,30 @@ class Game:
         self._settle(f"【变形】{self.db.shikigami[s.id].name} 解除变形，"
                      f"还原为 {self.db.shikigami[restored.id].name}")
         if restored.in_play:
-            # 能力后进场（同复活/升级路径）；快照已携带倒计时（变形时的剩余值）时
-            # 不重新注册——还原按剩余倒计时继续（维护者定案："还原为倒计时1的山风"），
-            # 能力进场的重新注册会把倒计时重置为初值
-            if restored.countdown is None:
-                self._register_ability_countdown(pi, i)
+            # 式神先进场（entry_order 已在上文更新），其各能力再依次进场（答复(6)：
+            # 基础/觉醒能力 → 形态能力 → 灵咒能力（预留）→ 卡牌赋予的延迟能力），
+            # 各自记录新能力进场序号（on_ability_enter 随基础/觉醒进场发出）。
+            # 快照已携带倒计时（变形时剩余值）时以其覆盖重新注册结果——还原按剩余
+            # 倒计时继续（维护者定案："还原为倒计时1的山风"）
+            snap_cd = (restored.countdown, restored.countdown_initial,
+                       restored.countdown_block, restored.countdown_once,
+                       restored.countdown_source)
+            for entry in restored.delayed:
+                # 快照经 model_dump/model_validate 往返：block/chosen 还原为模型对象
+                # （须在能力进场事件发出前完成——收集器会读 delayed）
+                if isinstance(entry.get("block"), dict):
+                    entry["block"] = EffectBlock.model_validate(entry["block"])
+                if isinstance(entry.get("chosen"), dict):
+                    entry["chosen"] = Ref.model_validate(entry["chosen"])
+            self._register_ability_countdown(pi, i)  # 基础/觉醒能力进场
+            if snap_cd[0] is not None:
+                (restored.countdown, restored.countdown_initial,
+                 restored.countdown_block, restored.countdown_once,
+                 restored.countdown_source) = snap_cd
+            if restored.form is not None:
+                restored.ability_entry["form"] = self.state.next_ability_seq()  # 形态能力进场
+            for entry in restored.delayed:  # 卡牌赋予的延迟能力进场
+                entry["seq"] = self.state.next_ability_seq()
 
     def _attach_form(self, p: PlayerState, i: int, card: CardInstance, cdef: CardDef) -> None:
         """为式神结附形态牌：先消灭旧形态，再用形态身材覆盖基础身材。
@@ -2371,6 +2410,7 @@ class Game:
         if s.form is not None:
             self._destroy_form(p, i, reason="replace")
         s.form = card
+        s.ability_entry["form"] = self.state.next_ability_seq()  # 形态能力进场序号（答复(4)）
         # 形态牌具有倒计时时，式神获得该倒计时能力（替换当前倒计时；rules.md ch10 结附流程）
         if cdef.countdown is not None:
             self._register_countdown(s, initial=cdef.countdown,
@@ -2430,6 +2470,7 @@ class Game:
                   uid=old.uid, reason=reason,
                   target=Ref(player=pi, shikigami=i), card=old)
         s.form = None
+        s.ability_entry.pop("form", None)  # 形态能力离场（进场序号一并失效）
         # 形态离场仅清除该形态授予的倒计时（rules.md ch10 消灭流程）；
         # 已被 set_countdown/能力注册替换的倒计时不受影响
         if s.countdown_source == old.id:
@@ -2736,14 +2777,21 @@ class Game:
         归零流程（先即时插入结算、再重置/移除）见 _countdown_zero，与 countdown_delta
         动作共用；灵咒倒计时随灵咒机制引入。每次减少发出 on_countdown_reduced
         （original=actual=1，非卡牌来源；势类"倒计时减少时"监听挂此事件）。
-        处理顺序 = 进场顺序（entry_order 升序——维护者定案：初始=座位顺序，再进场
-        （变形/还原）排到本队最后；批次按下标快照遍历，块内改动不影响本轮遍历）。
+        处理顺序 = 进场顺序（entry_order 升序）且**动态取序**（答复(5)：批次非快照——
+        每步重新取剩余未处理者中 entry_order 最小者；批次内进场顺序变化立即生效，
+        批次内新进场者（如归零效果中的还原）排在后面当轮也处理。已处理按
+        （座次, 实体 id）记账：归零重置/循环型不被二次处理，同座次新实体可处理）。
         """
-        for i in sorted(range(len(p.shikigami)),
-                        key=lambda j: p.shikigami[j].entry_order):
+        processed: set[tuple[int, int]] = set()
+        while True:
+            rest = [i for i in range(len(p.shikigami))
+                    if (i, p.shikigami[i].id) not in processed
+                    and p.shikigami[i].countdown is not None and p.shikigami[i].in_play]
+            if not rest:
+                break
+            i = min(rest, key=lambda j: p.shikigami[j].entry_order)
             s = p.shikigami[i]
-            if s.countdown is None or not s.in_play:
-                continue
+            processed.add((i, s.id))
             s.countdown -= 1
             self.emit("on_countdown_reduced",
                       shikigami=Ref(player=pi, shikigami=i),
@@ -2813,6 +2861,9 @@ class Game:
             s.countdown = min(s.countdown, 1) if s.countdown is not None else 1
         elif s.form is None or s.countdown_source != s.form.id:
             self._clear_countdown(s)
+        # 能力进场序号（答复(4)(6)：同事件触发按能力进场顺序排序；对局开始/升级/
+        # 复活/觉醒替换/变形与还原均经本路径重新记录）
+        s.ability_entry["ability"] = self.state.next_ability_seq()
         # 能力进场事件（对局开始/升至 1 级/复活/觉醒替换/变形与还原均经本路径）：
         # 供"能力进场时登记"类能力监听（萤草形态光环——scope="ability" 卡牌光环）
         self.emit("on_ability_enter", player=pi, shikigami=si,
@@ -3278,6 +3329,8 @@ class Game:
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
+            # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
+            self._phantom_durability_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind,
@@ -3460,6 +3513,112 @@ class Game:
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
                   in_combat=in_combat, summon=(s.kind == "summon"),
                   battle=self._battle_stack[-1] if self._battle_stack else None)
+
+    # ==================== 幻境（card_type="field"）管线 ====================
+
+    def _summon_phantom(self, pi: int, card: CardInstance, cdef: CardDef,
+                        source: Ref | None, reason: str = "使用") -> None:
+        """"召唤幻境"事件（要素：来源、原因、要召唤的幻境——规范第二条）：来源的所属
+        牌手将该幻境添加至自身幻境队列末尾（field_front 标记者置于队首），发
+        "召唤幻境后"（延时 on_summon_phantom；辉夜姬能力/[融合]等挂点预留）。
+        幻境实体耐久 = 幻境牌 durability（正整数必填）。"""
+        if cdef.durability is None or cdef.durability <= 0:
+            raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（durability）")
+        p = self.state.players[pi]
+        ph = PhantomState(card_id=cdef.id, durability=cdef.durability,
+                          shikigami=cdef.shikigami)
+        if cdef.field_front:
+            p.phantoms.insert(0, ph)
+        else:
+            p.phantoms.append(ph)
+        idx = p.phantoms.index(ph)
+        self._log(f"{p.name} 召唤了幻境【{cdef.name}】（耐久 {ph.durability}）")
+        self._settle(f"【幻境】{p.name} 召唤幻境【{cdef.name}】"
+                     f"（耐久 {ph.durability}，队列第 {idx + 1} 位）")
+        self.emit("on_summon_phantom", player=pi, phantom=idx, card_id=cdef.id,
+                  source=source, reason=reason)
+
+    def _phantom_source(self, pi: int, ph: PhantomState) -> Ref | None:
+        """幻境能力/伤害的来源归属（规范"零"条）：该在场幻境有所属式神且该式神在场
+        → 该式神；否则为无来源（None）。"""
+        if ph.shikigami is None:
+            return None
+        p = self.state.players[pi]
+        for si, s in enumerate(p.shikigami):
+            if s.id == ph.shikigami and s.in_play:
+                return Ref(player=pi, shikigami=si)
+        return None
+
+    def _change_phantom_durability(self, pi: int, idx: int, amount: int,
+                                   source: Ref | None, reason: str) -> None:
+        """幻境耐久变化事件流程（规范第四条）：变化前（即时 on_before_phantom_
+        durability，监听者可改可变 change["amount"]）→ 变化量为负则修正为
+        max(变化量, -剩余耐久) → 耐久 += 变化量（下限 0）→ 耐久 0 生成（延时的）
+        幻境消灭事件 → 变化后（延时 on_phantom_durability_changed）。变化量 0 终止。"""
+        p = self.state.players[pi]
+        ph = p.phantoms[idx]
+        change = {"amount": amount}
+        self.emit("on_before_phantom_durability", player=pi, phantom=idx,
+                  card_id=ph.card_id, change=change, old=ph.durability,
+                  source=source, reason=reason)
+        amt = int(change["amount"])
+        if amt < 0:
+            amt = max(amt, -ph.durability)  # 至多降为 0（规范"零"条）
+        if amt == 0:
+            return
+        old = ph.durability
+        ph.durability = max(0, ph.durability + amt)
+        self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card_id].name}】"
+                     f"耐久 {old}→{ph.durability}")
+        if ph.durability == 0:
+            # 生成（延时的）幻境消灭事件："消灭前"监听器先入队（触发/执行时幻境仍在
+            # 队列中），移除与"消灭后"由 phantom_destroy 待结算项执行
+            self.emit("on_before_phantom_destroy", player=pi, phantom=idx,
+                      card_id=ph.card_id, source=source, reason=reason)
+            self.queue.append(_Pending(
+                EffectBlock(steps=[Step(op="phantom_destroy")]),
+                ExecContext(controller=pi,
+                            event={"phantom_obj": ph, "source": source,
+                                   "reason": reason})))
+        self.emit("on_phantom_durability_changed", player=pi, phantom=idx,
+                  card_id=ph.card_id, old=old, new=ph.durability, amount=amt,
+                  source=source, reason=reason)
+
+    def _phantom_durability_loss(self, pi: int, amount: int, source: Ref | None) -> None:
+        """规范第三条：牌手因受伤减少生命后（伤害事件流程"扣减生命"完成后立即，
+        早于"受到伤害后"延时时机），其幻境队列首个幻境减少等量耐久。"""
+        p = self.state.players[pi]
+        if amount > 0 and p.phantoms:
+            self._change_phantom_durability(pi, 0, -amount, source, "伤害")
+
+    def _destroy_phantom(self, pi: int, ph: PhantomState,
+                         source: Ref | None, reason: str) -> None:
+        """幻境消灭事件流程后半段（规范第四条）：从所属牌手幻境队列移除（其能力
+        同时从牌手移除——收集器按队列实况读取）→ "幻境消灭后"（延时）。"""
+        p = self.state.players[pi]
+        if not any(x is ph for x in p.phantoms):
+            return  # 已被移除（同链重复生成/先行消灭）
+        idx = next(i for i, x in enumerate(p.phantoms) if x is ph)
+        p.phantoms.pop(idx)
+        self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card_id].name}】被消灭")
+        self.emit("on_phantom_destroyed", player=pi, card_id=ph.card_id,
+                  source=source, reason=reason)
+
+    def _collect_phantoms(self, event: dict, pi: int) -> list[_Pending]:
+        """收集牌手幻境队列的幻境能力（幻境牌 def 的 abilities 块；在场期间牌手拥有
+        该能力——规范"零"条；按队列顺序收集）。能力来源 = 幻境来源归属
+        （_phantom_source：所属式神在场→该式神，否则无来源）。"""
+        out: list[_Pending] = []
+        p = self.state.players[pi]
+        for ph in p.phantoms:
+            for ability in self.db.cards[ph.card_id].abilities:
+                if ability.when != event["name"]:
+                    continue
+                holder = self._phantom_source(pi, ph)
+                if self._match(ability.condition, event, pi, holder=holder):
+                    out.append(_Pending(ability, ExecContext(
+                        controller=pi, source=holder, event=event, is_ability=True)))
+        return out
 
     def _set_pending_end(self, loser: int | None = None, defeat: bool = False) -> None:
         """把游戏标记为"待结束"。
@@ -3651,6 +3810,8 @@ class Game:
         out: list[_Pending] = []
         for pi in (self.state.active, 1 - self.state.active):
             out.extend(self._collect_abilities(event, pi))
+            # 牌手幻境队列的幻境能力（式神能力之后、卡牌触发器之前；按队列顺序）
+            out.extend(self._collect_phantoms(event, pi))
             # 第三收集来源（式神能力之后、响应牌之前，docs/enhance-design.md 第一节）：
             # 卡牌触发器（全库游离触发块）与一次性临时触发（按注册顺序，只收一次）
             out.extend(self._collect_card_triggers(event, pi))
@@ -3699,7 +3860,8 @@ class Game:
         return out
 
     def _collect_temp_grants(self, event: dict) -> list[_Pending]:
-        """收集一次性临时触发（state.temp_grants）：战斗绑定者只响应本战斗内的事件。"""
+        """收集一次性临时触发（state.temp_grants）：战斗绑定者只响应本战斗内的事件；
+        按能力进场序号升序（稳定——同注册顺序）。"""
         out: list[_Pending] = []
         for grant in self.state.temp_grants:
             if grant.block.when != event["name"]:
@@ -3709,7 +3871,8 @@ class Game:
             if self._match(grant.block.condition, event, grant.controller, holder=grant.holder):
                 out.append(_Pending(grant.block, ExecContext(
                     controller=grant.controller, source=grant.holder, event=event),
-                    temp_grant=grant))
+                    temp_grant=grant, seq=grant.seq))
+        out.sort(key=lambda pend: pend.seq)
         return out
 
     def _resolve_pending(self, pend: _Pending) -> None:
@@ -3727,17 +3890,21 @@ class Game:
 
     def _collect_abilities(self, event: dict, pi: int) -> list[_Pending]:
         """收集玩家 pi 的式神被动能力（已觉醒的式神改读觉醒牌的觉醒能力块；
-        结附形态时追加形态牌的形态能力块——觉醒替换不覆盖形态能力）。"""
+        结附形态时追加形态牌的形态能力块——觉醒替换不覆盖形态能力）。
+        收集结果按能力进场序号升序（稳定排序——答复(4)：同时机触发的能力按"能力"
+        的进场顺序而非式神座位；未登记序号的为 0，保持原有座位/注册顺序）。"""
         out: list[_Pending] = []
         p = self.state.players[pi]
         for si, s in enumerate(p.shikigami):
+            ability_seq = s.ability_entry.get("ability", 0)
             if s.awakened is not None:
-                blocks = list(self.db.cards[s.awakened].abilities)
+                blocks = [(b, ability_seq) for b in self.db.cards[s.awakened].abilities]
             else:
-                blocks = list(self.db.shikigami[s.id].all_abilities)
+                blocks = [(b, ability_seq) for b in self.db.shikigami[s.id].all_abilities]
             if s.form is not None:
-                blocks += self.db.cards[s.form.id].abilities
-            for ability in blocks:
+                form_seq = s.ability_entry.get("form", 0)
+                blocks += [(b, form_seq) for b in self.db.cards[s.form.id].abilities]
+            for ability, aseq in blocks:
                 if ability.countdown is not None:
                     continue  # 倒计时能力块不作事件监听（由倒计时框架归零时结算）
                 if ability.when != event["name"]:
@@ -3756,7 +3923,7 @@ class Game:
                 if self._match(ability.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
                     out.append(_Pending(ability, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si), event=event,
-                        is_ability=True)))
+                        is_ability=True), seq=aseq))
             # 法术回响序列（spell_echo 登记于 ext）：持有者以外的式神（含敌方）从手牌
             # 使用法术牌时收集一次回响结算（同 id 法术每回合至多一次、序列游标未走完；
             # 结算处 spell_echo_recast 复查）
@@ -3769,7 +3936,7 @@ class Game:
                         and echo["cursor"] < len(echo["sequence"])):
                     out.append(_Pending(_SPELL_ECHO_BLOCK, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si),
-                        event=event, is_ability=True)))
+                        event=event, is_ability=True), seq=ability_seq))
             # 绑定式神的一次性延迟能力（会）：先触发后执行，收集即消耗；气绝时已清除
             for entry in s.delayed:
                 block = entry["block"]
@@ -3779,9 +3946,11 @@ class Game:
                     chosen = [entry["chosen"]] if entry.get("chosen") is not None else []
                     out.append(_Pending(block, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si),
-                        event=event, chosen=chosen, is_ability=True)))
+                        event=event, chosen=chosen, is_ability=True),
+                        seq=int(entry.get("seq", 0))))
                     entry["uses"] -= 1
             s.delayed[:] = [e for e in s.delayed if e["uses"] > 0]
+        out.sort(key=lambda pend: pend.seq)
         return out
 
     @staticmethod

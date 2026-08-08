@@ -68,7 +68,10 @@ class ShikigamiState(BaseModel):
     # perm_faction，式神替换物用自身 def faction）；效果临时改派系只动 faction
     level: int = 0  # 0 级 = 未在场：能力不触发、不能行动、不可被指定（除特殊说明）
     home_slot: int | None = None  # 所属准备区编号（1-4）；召唤物为 None（无准备区可归）
-    entry_order: int = 0  # 角色进场顺序：牌手为 0，式神按入场顺序 1-4；再进场（变形/还原）排本队最后
+    entry_order: int = 0  # 角色进场顺序：牌手为 0，式神按入场顺序 1-4；再进场（变形/还原/召唤/替换）排本队最后
+    ability_entry: dict[str, int] = Field(default_factory=dict)  # 各能力的进场序号
+    # （"ability"=基础/觉醒能力、"form"=形态能力；进场点记录——对局开始/升级/复活/觉醒替换/
+    # 形态结附/变形与还原；同事件触发按能力进场顺序排序，thoughts 答复(4)(6)；快照携带、还原重记）
     base_power: int  # 基础力量（形态会改写，Phase 5）
     base_health: int  # 基础生命
     perm_power: int = 0  # 永久增减益修正（气绝后复活保留）
@@ -185,6 +188,19 @@ class ExecContext:
     # TargetSpec(kind="context", key="last_damage_victims") 引用（风神一扇）
 
 
+class PhantomState(BaseModel):
+    """在场幻境实体（幻境机制；幻境牌 card_type="field" 使用后"召唤幻境"入队）。
+
+    所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，在场期间随队列存续生效）；
+    耐久 0 被消灭（耐久变化/消灭事件流程见 engine._change_phantom_durability）。
+    """
+
+    card_id: int  # 幻境牌数据 id（名称/能力块读 db.cards[card_id]）
+    durability: int  # 当前耐久（正整数；牌手受伤时队列首个幻境减少等量耐久，0 = 消灭）
+    shikigami: int | None = None  # 所属式神数据 id（= 幻境牌的所属式神；伤害来源归属用：
+    # 该式神在场时幻境伤害来源为该式神，否则为无来源伤害——规范"零"条）
+
+
 class PlayerState(BaseModel):
     """局内"牌手"：有生命/护甲、可被指定为目标的参战实体。
 
@@ -219,6 +235,8 @@ class PlayerState(BaseModel):
     # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
     immunities: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级伤害免疫条目
     # （舍生"本回合你免疫所有伤害"；{"kind": "all", "turn": 回合号}，按回合号比对过期）
+    phantoms: list[PhantomState] = Field(default_factory=list)  # 幻境队列（有序；
+    # 牌手因受伤减少生命后，首个幻境减少等量耐久；耐久 0 消灭出队）
     ext: dict[str, Any] = Field(default_factory=dict)  # 牌手级专用运行时数据（约定键见
     # docs/terminology.md：countdown_history 本局倒计时能力生效序列 等）
 
@@ -253,6 +271,7 @@ class TempGrant(BaseModel):
     holder: Ref | None = None  # 能力持有者（条件 self 匹配基准）
     battle: int | None = None  # 绑定的战斗 id；None = 不绑定
     uses: int = 1  # 剩余触发次数
+    seq: int = 0  # 能力进场序号（注册时记录；同事件触发按序排序，0=未登记按注册顺序）
 
 
 class GameState(BaseModel):
@@ -265,6 +284,7 @@ class GameState(BaseModel):
     pending_loser: int | None = None  # 待结束时的失败方下标；-1 表示平局
     next_uid: int = 1
     emit_seq: int = 0  # 事件编号：每次 emit 递增，持久化到状态以支持回放/断线重连
+    ability_seq: int = 0  # 能力进场序号：每次能力进场递增（同事件触发排序用）
     config: GameConfig = Field(default_factory=GameConfig)
     log: list[str] = Field(default_factory=list)
     settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；CLI 空闲点逐条展示用，与 log 指令回显分离）
@@ -281,3 +301,8 @@ class GameState(BaseModel):
         """取下一个事件编号并递增。"""
         self.emit_seq += 1
         return self.emit_seq
+
+    def next_ability_seq(self) -> int:
+        """取下一个能力进场序号并递增（答复(4)：同事件触发按能力进场顺序排序）。"""
+        self.ability_seq += 1
+        return self.ability_seq

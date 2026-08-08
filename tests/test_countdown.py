@@ -1028,3 +1028,119 @@ def test_turn_start_countdown_entry_order_seat_default(db, make_game):
     pass_turns(g, 2)                     # A 第 3 回合开始：神乐歌归零 → +1/+1（已无倒计时可减）
     assert pa.shikigami[IDX].perm_power == 1
     assert pb.health == 27               # 无第二次攻击（一次型已移除）
+
+
+# ---------- 进场顺序关联点（维护者答复 (1)(2)(3)(4)(5)动态/(6)） ----------
+
+def test_revive_keeps_entry_order(db, make_game):
+    """答复(1)：气绝复活不改变实体进场顺序（entry_order 保持原值）。"""
+    g, pa = _game(make_game)
+    orders = [s.entry_order for s in pa.shikigami]
+    pa.shikigami[IDX].health = 0
+    g.check_defeated(Ref(player=0, shikigami=IDX))
+    assert pa.shikigami[IDX].defeated
+    g._revive(pa, 0, IDX)
+    assert [s.entry_order for s in pa.shikigami] == orders
+
+
+def test_summon_entry_order_newest(db, make_game):
+    """答复(2)：召唤物 = 新进场者，entry_order 排本队最后。"""
+    tom = 100199
+    db.shikigami[tom] = F.shiki(tom, kind="summon", name="番茄", power=1, health=1)
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(op="summon", shikigami=tom)])
+    g, pa = _game(make_game)
+    play(g, 0, cid)
+    s = pa.shikigami[-1]
+    assert s.id == tom and s.kind == "summon"
+    assert s.entry_order == max(x.entry_order for x in pa.shikigami[:-1]) + 1
+
+
+def test_replace_entry_order_newest(db, make_game):
+    """答复(3)：式神替换（replace）的替换物 = 新进场者，entry_order 排本队最后。"""
+    into = 100198
+    db.shikigami[into] = F.shiki(into, kind="transform", name="替身", power=2, health=2)
+    cid = 10010151
+    db.cards[cid] = F.card(
+        cid, token=True, steps=[F.Step(op="replace", into=into, target=T(kind="self"))])
+    g, pa = _game(make_game)
+    play(g, 0, cid)
+    s = pa.shikigami[IDX]
+    assert s.id == into
+    assert s.entry_order == max(x.entry_order for x in pa.shikigami if x is not s) + 1
+
+
+def test_ability_entry_order_drives_trigger(db, make_game):
+    """答复(4)：同时机能力按"能力进场序号"排序而非座位——后登记者后触发；
+    气绝复活 = 能力重新进场（序号排到最后），触发顺序随之反转。"""
+    db.shikigami[CD].ability = F.block(when="on_draw")
+    db.shikigami[CD2].ability = F.block(when="on_draw")
+    g, pa = _game(make_game)
+    pa.shikigami[IDX2].level = 1
+    _register(g, 0, IDX)                   # A 能力先登记（序号小）
+    _register(g, 0, IDX2)                  # B 能力后登记（序号大）
+    g.emit("on_draw", player=0, count=1)
+    assert [(p.ctx.controller, p.ctx.source.shikigami) for p in g.queue
+            if p.ctx.controller == 0] == [(0, IDX), (0, IDX2)]
+    g._drain_queue()
+    pa.shikigami[IDX].health = 0
+    g.check_defeated(Ref(player=0, shikigami=IDX))
+    g._revive(pa, 0, IDX)                  # 复活：A 能力重新进场，序号排到 B 之后
+    g.emit("on_draw", player=0, count=1)
+    assert [(p.ctx.controller, p.ctx.source.shikigami) for p in g.queue
+            if p.ctx.controller == 0] == [(0, IDX2), (0, IDX)]
+
+
+def test_countdown_batch_dynamic_new_entrant(db, make_game):
+    """答复(5)：回合开始倒计时批次动态取序——批次结算中被复活（倒计时重新进场）
+    的式神当轮即被处理（静态快照式批次则不会）。"""
+    db.shikigami[100103].ability = F.EffectBlock(
+        countdown=1, steps=[F.Step(op="launch_attack")])   # C：倒计时1 发起攻击
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    pa.shikigami[IDX2].level = 1
+    pa.shikigami[2].level = 1
+    # A（座位 0，倒计时1 一次型）：复活 C
+    g._register_countdown(
+        pa.shikigami[IDX], initial=1, once=True, source=CD,
+        block=F.EffectBlock(steps=[F.Step(
+            op="revive", target=T(kind="all", pool="friendly_defeated"))]))
+    # B（座位 1，倒计时1 一次型）：打敌方牌手 5
+    g._register_countdown(
+        pa.shikigami[IDX2], initial=1, once=True, source=CD2,
+        block=F.EffectBlock(steps=[F.Step(
+            op="damage", amount=5, target=T(kind="all", pool="enemy_player"))]))
+    # C 批次开始前气绝（复活倒计时拉高，排除自然复活干扰）
+    pa.shikigami[2].health = 0
+    g.check_defeated(Ref(player=0, shikigami=2))
+    pa.shikigami[2].revive_countdown = 99
+    pass_turns(g, 2)                     # A 第 2 回合开始：A 复活 C → B 打 5 → C 当轮攻击 2
+    assert pa.shikigami[2].defeated is False
+    assert pb.health == 23               # 30 - 5 - 2（快照式批次 C 不处理 → 25）
+
+
+def test_untransform_ability_reentry_sequence(db, make_game):
+    """答复(6)：解除变形还原时，基础/觉醒能力 → 形态能力 → 卡牌赋予的延迟能力
+    依次重新进场（各自记录新的递增能力进场序号）。"""
+    db.shikigami[PAPER_DUMMY] = F.shiki(PAPER_DUMMY, kind="transform",
+                                        name="纸人", power=1, health=1)
+    form_cid = 10010153
+    db.cards[form_cid] = F.card(form_cid, shikigami=CD, card_type="form", level=1,
+                                form_power=3, form_health=6, token=True)
+    delay_cid = 10010154
+    db.cards[delay_cid] = F.card(
+        delay_cid, shikigami=CD, level=1, token=True,
+        steps=[F.Step(op="delay_grant", when="on_draw")])
+    g, pa = _game(make_game)
+    play(g, 0, form_cid)
+    play(g, 0, delay_cid)
+    s0 = pa.shikigami[IDX]
+    old_form = s0.ability_entry["form"]
+    old_delay = s0.delayed[0]["seq"]
+    g._transform_shikigami(pa, IDX, PAPER_DUMMY)
+    g._untransform(0, IDX)
+    s0 = pa.shikigami[IDX]
+    new_ability = s0.ability_entry["ability"]
+    assert new_ability > old_delay                        # 各能力全部重新进场（新序号）
+    assert s0.ability_entry["form"] > new_ability         # 形态能力在基础能力之后进场
+    assert s0.delayed[0]["seq"] > s0.ability_entry["form"]  # 延迟能力最后进场
