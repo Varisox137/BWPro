@@ -58,7 +58,21 @@ KEYWORDS = frozenset({
     #                             （清姬基础/觉醒共用通道，永久类别死亡不清；卡面不出现）
     "extra_orb_cost",           # 引擎级伪关键字：该式神出击/使用其战斗牌需额外消耗 1 点鬼火
     #                             （跳跳妹妹基础能力通道，[迅捷]/[瞬发]/不消耗鬼火时全免；卡面不出现）
+    # ---- 能力伪关键字（式神 def / 觉醒牌 keywords 携带，引擎读取时求值；卡面不出现）----
+    "power_if_field",           # 若你有幻境 +1 力量（泷夜叉姬基础）
+    "power_per_field",          # 你每有一个幻境 +1 力量（觉醒·泷夜叉姬）
+    "power_if_shield",          # 有护甲时 +1 力量（久次良基础；白骨之盾"获得基础能力"授予通道）
+    "power_equal_shield",       # 力量 = 当前护甲（觉醒·久次良；覆写口径）
+    "field_stack",              # 所属式神的幻境同时只存在一个、耐久叠加（辉夜姬基础）
+    "field_ability_stack",      # 同上且能力块也叠加（觉醒·辉夜姬）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
+
+# 能力伪关键字集合：觉醒替换基础能力时按本集合换绑（移除基础式神的、授予觉醒牌的；
+# 气绝不清——永久类别随觉醒状态保留，读取处以 in_play 门控）。engine 觉醒点引用。
+ABILITY_PSEUDO_KEYWORDS = frozenset({
+    "power_if_field", "power_per_field", "power_if_shield", "power_equal_shield",
+    "field_stack", "field_ability_stack",
+})
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
 # 天然持久性类别入列（见 core.model.ShikigamiState 与 docs/terminology.md）。
@@ -180,6 +194,8 @@ class CardDef(BaseModel):
     intensity: int | None = None  # 幻境牌耐久（正整数；card_type=field 时必填——
     # 使用后"召唤幻境"：实体以此耐久入所属牌手幻境队列）
     field_front: bool = False  # 幻境进场置于幻境队列队首（缺省 False = 队尾；规范"零"条）
+    field_keywords: list[str] = Field(default_factory=list)  # 幻境实体关键字（card_type=field
+    # 时召唤拷贝到 FieldState.keywords——贯通/帷幕等幻境语义；与卡牌自身的使用关键字分离）
     keywords: list[str] = Field(default_factory=list)
     target: TargetSpec = Field(default_factory=TargetSpec)
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段。

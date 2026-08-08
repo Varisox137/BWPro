@@ -1,0 +1,21 @@
+id: 10030306
+name: 觉醒·辉夜姬
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # +1/+1
+      awaken_health: 1
+      rarity: SR
+      level: 3
+      keywords: [field_ability_stack]  # [觉醒]：幻境同时只存在一个但能力和耐久会叠加
+      # ——能力伪关键字（觉醒时换绑授予，替换基础 field_stack；引擎 _summon_field 通道）
+      effects:
+        steps:
+          # [增强]：若本局游戏已召唤五个不同的辉夜姬幻境，召唤她的五种幻境且耐久都
+          # 为1（叠加机制下五种合并入同一实体：合计 5 耐久 + 全部能力块）
+          - {op: summon_field, shikigami: self, pick: all, intensity: 1,
+             condition: {field_summon_distinct_ge: {count: 5, shikigami: self}}}
+      text: "[觉醒]：{辉夜姬的幻境同时只能存在一个但能力和耐久会叠加}。[增强]：{若本局游戏已召唤五个不同的辉夜姬幻境，召唤她的五种幻境且耐久都为1。}"

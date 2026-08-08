@@ -1,0 +1,32 @@
+id: 10030407
+name: 月坠
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: SSR
+      level: 3
+      intensity: 15
+      effects:
+        steps: []
+      abilities:
+        # 当此牌获得耐久时，效果+2（可变变化量修正：仅正向变化 +2——挂耐久变化前
+        # insert 批次，field_self 限定此牌自身）
+        - when: on_before_field_intensity
+          condition: {field_self: true}
+          steps:
+            - {op: boost_change, amount: 2}
+        # 自己回合开始时获得3耐久
+        - when: on_turn_start
+          condition: {active: self}
+          steps:
+            - {op: field_op, pick: self_field, amount: 3}
+        # 然后若耐久>=30则自毁并对所有敌方角色造成10点伤害（任意途径获得耐久后在
+        # 变化事件判定达阈值即触发；自毁归零不再重复触发）
+        - when: on_field_intensity_changed
+          condition: {field_self: true, field_intensity_ge: 30}
+          steps:
+            - {op: field_op, pick: self_field, action: destroy}
+            - {op: damage, amount: 10, target: {kind: all, pool: enemy_character}}
+      text: "当此牌获得耐久时，效果+2。自己回合开始时获得3耐久，然后若耐久>=30则自毁并对所有敌方角色造成10点伤害。"

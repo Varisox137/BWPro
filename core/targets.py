@@ -451,6 +451,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       conditional_mods 装配求值与步骤门控共用）
     - {friendly_armor_ge: n} ：控制者有在场式神护甲 ≥ n（焕然之音"若你有式神的
       护甲>=5"）
+    - {friendly_field_intensity_ge: n} ：控制者有任一幻境当前耐久 ≥ n（竹取物语
+      "若辉夜姬的幻境耐久>=20"；多幻境场景按"存在性"口径）
+    - {field_summon_distinct_ge: n|{count, shikigami}} ：控制者本局召唤过的不同名
+      幻境牌数 ≥ n（觉醒·辉夜姬[增强]；shikigami 限定所属式神，"self"=能力持有者）
     - 其余按键值相等比较
     """
     if not condition:
@@ -597,6 +601,34 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if not any(s.in_play and s.shield >= int(want)
                        for s in game.state.players[controller].shikigami):
                 return False
+        elif key == "friendly_field_intensity_ge":
+            # 控制者有任一幻境当前耐久 ≥ n（竹取物语"若辉夜姬的幻境耐久>=20"——
+            # 她的幻境同时只存在一个，任一即该幻境；多幻境场景按"存在性"口径）
+            if not any(x.intensity >= int(want)
+                       for x in game.state.players[controller].fields):
+                return False
+        elif key == "field_summon_distinct_ge":
+            # 控制者本局召唤过的不同名幻境牌数 ≥ n（觉醒·辉夜姬[增强]"已召唤五个
+            # 不同的辉夜姬幻境"；ext field_summon_ids 记账）。值 = n（不限式神）或
+            # {count: n, shikigami: <式神id>|"self"}（限定所属式神；self=能力持有者）
+            if isinstance(want, dict):
+                n = int(want.get("count", 1))
+                sid = want.get("shikigami")
+                if sid == "self":
+                    if holder is None or holder.shikigami is None:
+                        return False
+                    sid = game.state.players[holder.player].shikigami[holder.shikigami].id
+            else:
+                n, sid = int(want), None
+            ids = game.state.players[controller].ext.get("field_summon_ids", [])
+            if sid is not None:
+                ids = [i for i in ids if game.db.cards[i].shikigami == int(sid)]
+            if len(set(ids)) < n:
+                return False
+        elif key == "friendly_field":
+            # 控制者幻境队列有幻境（泷夜叉姬/久次良"若你有幻境"系列；步级/能力条件通用）
+            if bool(game.state.players[controller].fields) != bool(want):
+                return False
         elif key == "chosen_stunned":
             # 卡牌选择目标中有眩晕角色（Step 级条件专用；崩雪"已眩晕则消灭、否则眩晕"）
             matched = any(_ref_stunned(game, r) for r in (chosen or []))
@@ -634,6 +666,14 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             else:
                 return False
             if _ref_stunned(game, other) != bool(want):
+                return False
+        elif key.endswith("_le"):
+            # 通用数值上限：事件字段 ≤ n（黄泉花境"耐久降低"amount_le: -1 类；
+            # 事件无该字段时回退读控制者 PlayerState.ext，同 _ge 口径）
+            val = event.get(key[:-3])
+            if val is None:
+                val = game.state.players[controller].ext.get(key[:-3], 0)
+            if int(val) > int(want):
                 return False
         elif key.endswith("_ge"):
             # 通用数值下限：事件字段 ≥ n（如 overheal_ge: 1 = 存在过量治疗）；

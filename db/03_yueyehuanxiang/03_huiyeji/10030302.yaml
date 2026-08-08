@@ -1,0 +1,28 @@
+id: 10030302
+name: 火鼠裘
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 1
+      intensity: 5
+      effects:
+        steps: []
+      abilities:
+        # 当敌方式神对你造成战斗伤害时，他受到2点伤害（牌手受伤事件为
+        # on_player_damaged，player=受伤牌手下标）
+        - when: on_player_damaged
+          condition: {player: self, kind: combat,
+                      source_kind: shikigami, source_side: enemy}
+          steps:
+            - {op: damage, amount: 2, target: {kind: context, key: source}}
+        # 若此牌耐久>=10，当敌方式神对你的式神造成战斗伤害时，他受到1点伤害
+        - when: on_damage
+          condition: {field_intensity_ge: 10, victim_kind: shikigami,
+                      victim_side: friendly, kind: combat,
+                      source_kind: shikigami, source_side: enemy}
+          steps:
+            - {op: damage, amount: 1, target: {kind: context, key: source}}
+      text: "当敌方式神对你造成战斗伤害时，他受到2点伤害。若此牌耐久>=10，当敌方式神对你的式神造成战斗伤害时，他受到1点伤害。"

@@ -1,0 +1,26 @@
+id: 10030304
+name: 佛前石钵
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 2
+      intensity: 5
+      effects:
+        steps: []
+      abilities:
+        # 己方回合结束时若你战斗区没有式神，召唤一个'石钵'
+        - when: on_turn_end
+          condition: {active: self, combat_empty: friendly}
+          steps:
+            - {op: summon, shikigami: 10030399}
+        # 若此牌耐久>=10，便使其获得4力量（"使其"= 本次召唤的石钵；两段同事件按
+        # abilities 顺序结算，先召唤后增益）
+        - when: on_turn_end
+          condition: {active: self, combat_empty: friendly, field_intensity_ge: 10}
+          steps:
+            - {op: buff_power, amount: 4,
+               target: {kind: all, pool: friendly_shikigami, shikigami: 10030399}}
+      text: "己方回合结束时若你战斗区没有式神，召唤一个‘石钵’。若此牌耐久>=10，便使其获得4力量。"

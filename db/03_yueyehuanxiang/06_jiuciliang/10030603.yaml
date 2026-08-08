@@ -1,0 +1,28 @@
+id: 10030603
+name: 白骨之盾
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: friendly_shikigami}  # 「己方其他式神」：choose 池
+      # 无排除持有者先例（响应路径由 victim_not_shikigami 保证——见 questions.md）
+      effects:
+        steps:
+          - {op: gain_shield, amount: 4}
+          # 「本回合获得久次良的基础能力」= 授予能力伪关键字 power_if_shield（有护甲
+          # 时+1力量——stat_aura 通道对所有持有者通用），scope=turn 回合结束移除
+          - {op: grant_keyword, keyword: power_if_shield, scope: turn}
+      response:
+        # [响应]：当己方其他式神被攻击时，自动对其使用（choose 目标自动取事件
+        # victim，同沧海之盾 10010703 先例）
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: shikigami,
+                    victim_not_shikigami: 100306}
+        steps:
+          - {op: gain_shield, amount: 4}
+          - {op: grant_keyword, keyword: power_if_shield, scope: turn}
+      text: "使一个己方其他式神获得4护甲并本回合获得久次良的基础能力。[响应]：{当己方其他式神被攻击时，自动对其使用。}"

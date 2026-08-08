@@ -38,7 +38,7 @@ from core.model import (
     ShikigamiState,
     TempGrant,
 )
-from db.schema import CardDef, EffectBlock, PlayMethod, Step, TargetSpec
+from db.schema import ABILITY_PSEUDO_KEYWORDS, CardDef, EffectBlock, PlayMethod, Step, TargetSpec
 
 
 class IllegalAction(Exception):
@@ -243,6 +243,29 @@ class Game:
                     # 人多势众：持有者每有 divisor 点能量 +power 力量（读取时求值）
                     src.ext["dyn_power"] += (src.energy // int(aura.get("divisor", 1))) \
                         * int(aura.get("power", 1))
+                elif kind == "field_count_stats":
+                    # 星辰之境[增强]：控制者每有一个幻境，持有者 +power/+health（读取时求值）
+                    n = len(pl.fields)
+                    src.ext["dyn_power"] += n * int(aura.get("power", 1))
+                    src.ext["dyn_health"] += n * int(aura.get("health", 1))
+        for pi, pl in enumerate(self.state.players):
+            # 幻境/护甲关联的连续条件力量修饰（伪关键字，先天关键字按永久类别入列——
+            # 泷夜叉姬基础 power_if_field"若你有幻境+1力量"/觉醒 power_per_field"每有
+            # 一个幻境+1力量"；久次良基础 power_if_shield"有护甲时+1力量"/觉醒
+            # power_equal_shield"力量=当前护甲"（覆写口径：基础+永久+临时修正不计
+            # 战斗战力）；读取时求值，觉醒替换/气绝随关键字通道自动失效）
+            for s in pl.shikigami:
+                if not s.in_play:
+                    continue
+                if pl.fields and self._has_keyword(s, "power_if_field"):
+                    s.ext["dyn_power"] += 1
+                if pl.fields and self._has_keyword(s, "power_per_field"):
+                    s.ext["dyn_power"] += len(pl.fields)
+                if s.shield > 0 and self._has_keyword(s, "power_if_shield"):
+                    s.ext["dyn_power"] += 1
+                if self._has_keyword(s, "power_equal_shield"):
+                    s.ext["dyn_power"] += max(0, s.shield) - (
+                        s.base_power + s.perm_power + s.temp_power)
         for pi, pl in enumerate(self.state.players):
             # 青蛙瓷器光环（契约"引擎读"）：其控制者本回合（含敌方回合）运势判定成功过
             # （ext luck_success_turn == 当前回合号）则在场的青蛙瓷器 +2 力量——不叠加、
@@ -371,6 +394,12 @@ class Game:
                 continue  # "此牌"限定：仅命中指定数据 id
             if a.get("tag") is not None and a["tag"] not in cdef.tags:
                 continue  # 标记限定：仅命中 tags 含该标记的牌（寒冬之心的"雪球"）
+            if a.get("level") is not None and a["level"] != cdef.level:
+                continue  # 使用等级限定：仅命中该等级的牌（火照之路"等级为1的牌"）
+            fo = a.get("field_obj")
+            if fo is not None and not any(fo is x for pl in self.state.players
+                                          for x in pl.fields):
+                continue  # scope="field"：来源幻境已离场，光环失效（火照之路类）
             turn = a.get("turn")
             if turn is not None and (turn == "self") != (self.state.active == pi):
                 continue  # 回合方条件不满足：光环不生效
@@ -452,6 +481,15 @@ class Game:
                 ai = next((i for i, s in enumerate(p.shikigami) if s.id == want), None)
                 if ai is None or p.shikigami[ai].form is None:
                     continue
+            if ck.get("friendly_field") and not p.fields:
+                continue  # 你有幻境（曜断型条件[瞬发]）
+            if ck.get("deck_field_distinct_ge") is not None:
+                # 牌库中本卡所属式神的不同名幻境牌数 ≥ n（五道难题型条件[瞬发]）
+                distinct = {c.id for c in p.deck
+                            if self.db.cards[c.id].card_type == "field"
+                            and self.db.cards[c.id].shikigami == cdef.shikigami}
+                if len(distinct) < int(ck["deck_field_distinct_ge"]):
+                    continue
             kws.add(ck["keyword"])
         if cdef.alt_remove_keywords and self._is_transformed(p, cdef, card):
             kws -= set(cdef.alt_remove_keywords)  # "变为"后失去关键字（如瞬发）
@@ -502,7 +540,8 @@ class Game:
                      memo: dict | None = None,
                      controller: int | None = None,
                      chosen: list[Ref] | None = None,
-                     key: str = "amount") -> int:
+                     key: str = "amount",
+                     field=None) -> int:
         """解析步骤的 amount 参数（docs/enhance-design.md 数值解析流水线）：
 
         - {"enhance": true, "base": n}：base + 实例已装配的 enhance 修饰；
@@ -534,6 +573,10 @@ class Game:
           "每有一个[眩晕]的敌方角色便+1力量"；活局面量，engine._enemy_stunned_count）。
         - {"hand_count_half": "controller"}：效果归属玩家当前手牌数的一半（向下取整，
           墨染"等同于你手牌数量一半的伤害"）。
+        - {"field_intensity": "self"}：触发来源幻境（ctx.field）当前耐久（星轨
+          "造成等同于它耐久的伤害"——幻境能力块专用，读取时求值）。
+        - {"field_count": "controller"}：控制者当前幻境数（鲸骨·开[增强]
+          "你每有一个幻境，此牌便获得+1力量和+1护甲"——活局面量）。
         - {"enemy_revealed_count": "spell"|"other"|"shikigami_of_chosen"}：敌方手牌中
           已展示牌的计数——按法术牌/非法术牌/属于被选择式神（含其参与的协战牌，
           _card_belongs_to 口径）三口径（"已展示"机制，engine._enemy_revealed_count）。
@@ -553,6 +596,10 @@ class Game:
             base = int(raw.get("base", 0))
             if raw.get("hand_count_half") and game is not None and controller is not None:
                 base += len(game.state.players[controller].hand) // 2  # "一半"：向下取整
+            if raw.get("field_intensity") and field is not None:
+                base += int(field.intensity)  # 触发来源幻境当前耐久（星轨）
+            if raw.get("field_count") and game is not None and controller is not None:
+                base += len(game.state.players[controller].fields)  # 控制者幻境数（鲸骨·开）
             if raw.get("enhance") and card is not None:
                 base += int(card.mods.get("enhance", 0))
             if raw.get("shield_of") and s is not None:
@@ -1150,6 +1197,14 @@ class Game:
         card = next((c for c in p.zones.get(play_from, []) if c.uid == uid), None)
         if card is None:
             raise IllegalAction(f"区域 {play_from} 中没有这张牌")
+        if play_from == "deck":
+            # 彼岸归航（幻境实体关键字 deck_top_play）：牌库顶的牌视同手牌使用——
+            # 仅限牌库顶一张、须该幻境在场；合法性/目标/等级判定与手牌一致，
+            # 等级 1 的牌不耗鬼火（费用求值处覆盖），使用时受 2 点伤害（结算后）
+            if not p.deck or p.deck[0] is not card:
+                raise IllegalAction("只能使用牌库顶的牌")
+            if not any("deck_top_play" in f.keywords for f in p.fields):
+                raise IllegalAction("需要【彼岸归航】在场才能使用牌库顶的牌")
         cdef = self.db.cards[card.id]
         # Phase 1 实现法术牌、形态牌、战斗牌、幻境牌；协战牌走子选项流程（_cmd_play_reinforce）。
         if cdef.card_type == "reinforce":
@@ -1213,6 +1268,8 @@ class Game:
             raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
         # 费用 = （方式覆盖或基础）+ 方式增减 + 实例修饰；瞬发仅免鬼火，其余条件照常
         cost = self._effective_cost(p, cdef, card=card, method=method)
+        if play_from == "deck" and cdef.level == 1:
+            cost = 0  # 彼岸归航："你牌库顶等级为1的牌不消耗鬼火"
         if p.orb < cost:
             raise IllegalAction(f"鬼火不足（需要 {cost}，现有 {p.orb}）")
         # 爆能（不夜之火批次）：使用方式带 energy_cost 时须额外支付能量；
@@ -1325,6 +1382,18 @@ class Game:
                     # 保留觉醒状态）；动态倒计时继承见 _register_ability_countdown(awaken=)
                     self._clear_ability_card_auras(p, self.state.active, awaken_si)  # 旧能力离场：其 ability 光环移除
                     p.shikigami[awaken_si].awakened = cdef.id
+                    # 能力伪关键字换绑（觉醒替换基础能力）：移除基础式神 def 携带的
+                    # 伪关键字（如 power_if_field）、授予觉醒牌 keywords 携带的（如
+                    # power_per_field）——永久类别，气绝/复活随觉醒状态保留
+                    st_aw = p.shikigami[awaken_si]
+                    base_pseudo = (set(self.db.shikigami[st_aw.id].keywords)
+                                   & ABILITY_PSEUDO_KEYWORDS)
+                    if base_pseudo:
+                        st_aw.perm_keywords = [k for k in st_aw.perm_keywords
+                                               if k not in base_pseudo]
+                    for kw in cdef.keywords:
+                        if kw in ABILITY_PSEUDO_KEYWORDS and kw not in st_aw.perm_keywords:
+                            st_aw.perm_keywords.append(kw)
                     self._register_ability_countdown(self.state.active, awaken_si, awaken=True)
                     self._log(f"{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒")
                     self._settle(f"【觉醒】{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒"
@@ -1352,6 +1421,18 @@ class Game:
                                play_from=play_from, play_method=method_id,
                                triggered="active", chosen=chosen,
                                pre_play_form=pre_play_form)
+        if play_from == "hand":
+            # 火照之路（card_aura self_damage_on_play）：命中的牌从手牌使用时
+            # 其控制者受到 N 点伤害（使用效果结算完毕后）——来源为牌手自身
+            # （己方伤害：彼岸花基础/觉醒"每当你受到己方伤害时"可触发）
+            self_damage = sum(int(a.get("self_damage_on_play", 0))
+                              for a in self._match_auras(p, cdef))
+            if self_damage > 0:
+                self.deal_to_player(self.state.active, self_damage,
+                                    Ref(player=self.state.active))
+        if play_from == "deck":
+            # 彼岸归航："当你以此法使用牌时，你受到2点伤害"（来源为牌手自身，同上）
+            self.deal_to_player(self.state.active, 2, Ref(player=self.state.active))
         self._rebound_check(p, card, cdef)  # 弹回：使用后回手而非入墓
 
     def _rebound_check(self, p: PlayerState, card: CardInstance, cdef: CardDef) -> None:
@@ -3034,7 +3115,11 @@ class Game:
 
     def _ability_piercing(self, ctx: ExecContext) -> bool:
         """能力伤害的贯通继承：仅当伤害来自式神能力（is_ability：基础/觉醒/形态/延迟能力）
-        且来源式神具有贯通时成立；卡牌效果伤害不继承（terminology.md「贯通」）。"""
+        且来源式神具有贯通时成立；卡牌效果伤害不继承（terminology.md「贯通」）。
+        幻境能力伤害另读触发来源幻境实体（ctx.field）的贯通关键字（星轨[贯通]——
+        幻境实体关键字 channel，与来源式神是否持贯通无关）。"""
+        if ctx.field is not None and "piercing" in ctx.field.keywords:
+            return True
         if not ctx.is_ability or ctx.source is None or ctx.source.shikigami is None:
             return False
         s = self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
@@ -3313,8 +3398,18 @@ class Game:
                       kind=ev.kind, fragile=ev.fragile,
                       battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
+            # 铃鹿山的秘宝（幻境实体关键字 health_floor_one）：生命不会降到 1 以下——
+            # 扣减生命前钳制伤害量（超出部分免除，不走"扣减生命"即未实际造成）
+            if any("health_floor_one" in f.keywords for f in p.fields):
+                ev.amount = min(ev.amount, p.health - 1)
+                if ev.amount <= 0:
+                    return
             p.health -= ev.amount
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
+            if ev.source is not None and ev.source.player == ev.victim.player:
+                p.ext["self_damage_taken"] = True  # 本局受到过己方伤害记账
+                # （彼岸花基础/觉醒"每当你受到己方伤害时"的条件谓词见 source_side；
+                # 死亡之花[增强]"本局游戏你受到过一次己方伤害"读此键）
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
@@ -3506,17 +3601,50 @@ class Game:
 
     # ==================== 幻境（card_type="field"）管线 ====================
 
-    def _summon_field(self, pi: int, card: CardInstance, cdef: CardDef,
-                        source: Ref | None, reason: str = "使用") -> None:
+    def _summon_field(self, pi: int, card: CardInstance | None, cdef: CardDef,
+                        source: Ref | None, reason: str = "使用",
+                        intensity_override: int | None = None) -> None:
         """"召唤幻境"事件（要素：来源、原因、要召唤的幻境——规范第二条）：来源的所属
         牌手将该幻境添加至自身幻境队列末尾（field_front 标记者置于队首），发
-        "召唤幻境后"（延时 on_summon_field；辉夜姬能力/[融合]等挂点预留）。
-        幻境实体耐久 = 幻境牌 intensity（正整数必填）。"""
+        "召唤幻境后"（延时 on_summon_field）。
+        幻境实体耐久 = 幻境牌 intensity（正整数必填；intensity_override 覆写——
+        觉醒·辉夜姬增强"耐久都为1"）+ 召唤牌实例 mods.intensity_boost
+        （五道难题"使其获得5耐久"）。card=None 为凭空直接召唤（summon_field 动作——
+        残阳无影/竹取物语类，不经使用事件）。
+        辉夜姬基础（伪关键字 field_stack）：她的幻境同时只能存在一个——已有她的幻境
+        在场时不新建实体，耐久叠加到在场者（走 _change_field_intensity 事件流程）；
+        觉醒（伪关键字 field_ability_stack）另叠加能力块（合并实体 extra_abilities
+        重复持有同名牌能力块）。"""
         if cdef.intensity is None or cdef.intensity <= 0:
             raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（intensity）")
         p = self.state.players[pi]
-        ph = FieldState(card_id=cdef.id, intensity=cdef.intensity,
-                          shikigami=cdef.shikigami)
+        boost = int(card.mods.get("intensity_boost", 0)) if card is not None else 0
+        intensity = (int(intensity_override) if intensity_override is not None
+                     else cdef.intensity) + boost
+        if cdef.id not in p.ext.setdefault("field_summon_ids", []):
+            p.ext["field_summon_ids"].append(cdef.id)  # 本局召唤过的幻境牌 id 记账
+            # （觉醒·辉夜姬增强"已召唤五个不同的辉夜姬幻境"读取；叠加召唤同记）
+        stacker = next((s for s in p.shikigami
+                        if s.in_play and s.id == cdef.shikigami
+                        and (self._has_keyword(s, "field_stack")
+                             or self._has_keyword(s, "field_ability_stack"))), None)
+        if stacker is not None:
+            idx = next((i for i, x in enumerate(p.fields)
+                        if x.shikigami == cdef.shikigami), None)
+            if idx is not None:
+                existing = p.fields[idx]
+                if self._has_keyword(stacker, "field_ability_stack"):
+                    existing.extra_abilities.extend(self.db.cards[cdef.id].abilities)
+                self._log(f"{p.name} 的幻境【{self.db.cards[existing.card_id].name}】"
+                          f"叠加了【{cdef.name}】（耐久 +{intensity}）")
+                self._change_field_intensity(pi, idx, intensity, source, "耐久叠加")
+                self.emit("on_summon_field", player=pi, field=idx, card_id=cdef.id,
+                          source=source, reason=reason)
+                return
+        ph = FieldState(card_id=cdef.id, intensity=intensity,
+                        shikigami=cdef.shikigami,
+                        mods=dict(card.mods) if card is not None else {},
+                        keywords=list(cdef.field_keywords))
         if cdef.field_front:
             p.fields.insert(0, ph)
         else:
@@ -3595,19 +3723,40 @@ class Game:
                   source=source, reason=reason)
 
     def _collect_fields(self, event: dict, pi: int) -> list[_Pending]:
-        """收集牌手幻境队列的幻境能力（幻境牌 def 的 abilities 块；在场期间牌手拥有
-        该能力——规范"零"条；按队列顺序收集）。能力来源 = 幻境来源归属
-        （_field_source：所属式神在场→该式神，否则无来源）。"""
+        """收集牌手幻境队列的幻境能力（在场期间牌手拥有——规范"零"条；按队列顺序）。
+        能力块 = 幻境牌 def 的 abilities（跳过 mods.disabled_abilities 登记的下标——
+        荒海"失去此能力"）+ extra_abilities（辉夜姬觉醒叠加块）。
+        能力来源 = 幻境来源归属（_field_source：所属式神在场→该式神，否则无来源）；
+        来源幻境实体随 ctx.field 传递（自毁/改降/"此牌"自指语义定位用）。
+        专用条件键 field_intensity_ge：触发来源幻境自身耐久 ≥ n（辉夜姬各幻境
+        "若此牌耐久>=10"二段）；field_self：仅"此牌"自身的幻境事件（月坠"当此牌
+        获得耐久时"/黄泉花境"当此牌的耐久降低时"——按队列下标比对 event.field）。
+        两键由收集器消费、不进条件迷你语言。"""
         out: list[_Pending] = []
         p = self.state.players[pi]
-        for ph in p.fields:
-            for ability in self.db.cards[ph.card_id].abilities:
+        for ph_idx, ph in enumerate(p.fields):
+            disabled = set(ph.mods.get("disabled_abilities", ()))
+            blocks = [b for i, b in enumerate(self.db.cards[ph.card_id].abilities)
+                      if i not in disabled]
+            blocks = [*blocks, *ph.extra_abilities]
+            for ability in blocks:
                 if ability.when != event["name"]:
                     continue
+                cond = ability.condition
+                if cond and "field_self" in cond:
+                    if event.get("field") != ph_idx:
+                        continue
+                    cond = {k: v for k, v in cond.items() if k != "field_self"} or None
+                if cond and "field_intensity_ge" in cond:
+                    if ph.intensity < int(cond["field_intensity_ge"]):
+                        continue
+                    cond = {k: v for k, v in cond.items()
+                            if k != "field_intensity_ge"} or None
                 holder = self._field_source(pi, ph)
-                if self._match(ability.condition, event, pi, holder=holder):
+                if self._match(cond, event, pi, holder=holder):
                     out.append(_Pending(ability, ExecContext(
-                        controller=pi, source=holder, event=event, is_ability=True)))
+                        controller=pi, source=holder, event=event,
+                        is_ability=True, field=ph)))
         return out
 
     def _set_pending_end(self, loser: int | None = None, defeat: bool = False) -> None:
@@ -3867,6 +4016,7 @@ class Game:
 
     def _resolve_pending(self, pend: _Pending) -> None:
         """结算一个待触发项；一次性临时触发结算后 uses-1，归零移除（按对象身份比较）。"""
+        pend.ctx.block = pend.block  # 触发块自指（field_rebound"失去此能力"定位用）
         self._resolve_block(pend.block, pend.ctx)
         grant = pend.temp_grant
         if grant is None:
@@ -4281,7 +4431,8 @@ class Game:
                                                     memo=ctx.memo,
                                                     controller=ctx.controller,
                                                     chosen=ctx.chosen,
-                                                    key=num_key)
+                                                    key=num_key,
+                                                    field=ctx.field)
         fn(self, ctx, targets=refs, **params)
 
     def _op_params(self, op: str, fn) -> frozenset:

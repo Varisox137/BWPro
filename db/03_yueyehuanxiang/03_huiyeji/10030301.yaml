@@ -1,0 +1,27 @@
+id: 10030301
+name: 燕子安贝
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 1
+      intensity: 5
+      effects:
+        steps: []
+      abilities:
+        # 自己回合结束时，使所有己方角色各恢复1点生命，使所有其他己方幻境各获得1耐久
+        - when: on_turn_end
+          condition: {active: self}
+          steps:
+            - {op: heal, amount: 1, target: {kind: all, pool: friendly_character}}
+            - {op: field_op, side: self, pick: others, amount: 1}
+        # 若此牌耐久>=10，敌方回合结束时，再触发上述效果一次（field_intensity_ge =
+        # 收集器专用条件键：触发幻境自身耐久阈值）
+        - when: on_turn_end
+          condition: {active: opponent, field_intensity_ge: 10}
+          steps:
+            - {op: heal, amount: 1, target: {kind: all, pool: friendly_character}}
+            - {op: field_op, side: self, pick: others, amount: 1}
+      text: "自己回合结束时，使所有己方角色各恢复1点生命，使所有其他己方幻境各获得1耐久。若此牌耐久>=10，敌方回合结束时，再触发上述效果一次。"

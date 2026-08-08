@@ -1,0 +1,21 @@
+id: 10030207
+name: 胧月无眠
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: SSR
+      level: 3
+      effects:
+        steps: []
+      temp_grants:
+        # 攻击后随机消灭一个你的幻境并再次使用此牌：无幻境时不触发（消灭为前提，
+        # block 级条件截断）；再次使用走 auto_use 战斗牌通道（免费、完整战斗流程），
+        # 递归深度由可消灭幻境数天然限制
+        - when: on_after_assault
+          condition: {attacker_shikigami: self, friendly_field: true}
+          steps:
+            - {op: field_op, side: self, pick: random, action: destroy}
+            - {op: auto_use, card_id: 10030207}
+      text: "攻击后随机消灭一个你的幻境并再次使用此牌。"

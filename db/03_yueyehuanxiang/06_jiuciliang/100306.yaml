@@ -1,0 +1,13 @@
+id: 100306
+name: 久次良
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 紫岩
+      power: 2
+      health: 6
+      keywords: [power_if_shield]  # 「久次良有护甲时获得1力量」——能力伪关键字
+      # （引擎 _refresh_stat_auras 读取时求值；觉醒时换绑移除；白骨之盾"获得久次良
+      # 的基础能力"= 授予同名关键字）
+      text: "久次良有护甲时获得1力量。"

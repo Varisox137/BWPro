@@ -1,0 +1,16 @@
+id: 100304
+name: 荒
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 青岚
+      power: 2
+      health: 6
+      ability:
+        # 每当荒造成战斗伤害时，使己方所有幻境获得1耐久
+        when: on_damage
+        condition: {source_shikigami: self, kind: combat}
+        steps:
+          - {op: field_op, side: self, pick: all, amount: 1}
+      text: "每当荒造成战斗伤害时，使己方所有幻境获得1耐久。"

@@ -2754,3 +2754,694 @@ def test_on_summon_field_delayed(db, make_game):
     assert "on_summon_field" in g.history
     assert len(pa.fields) == 1
     assert pa.shield == 3
+
+
+# ==========================================================================
+# 幻境能力（第二批）：能力块注册/叠加/定向操作/改降/自指条件/连续力量/
+# 秘宝钳制/己方伤害/火照之路/牌库顶出牌
+# ==========================================================================
+
+def test_field_summon_stacks_kaguya(db, make_game):
+    """辉夜姬基础/觉醒（伪关键字 field_stack/field_ability_stack）：她的幻境同时
+    只能存在一个——再召唤不新建实体、耐久叠加到在场者（走耐久变化事件流）；觉醒
+    另叠加能力块（合并实体持多块、同批触发）；召唤记账 field_summon_ids 照记。"""
+    db.shikigami[100101] = F.shiki(100101, keywords=["field_stack",
+                                                    "field_ability_stack"])
+    _field(db, 10010151, intensity=3, abilities=[F.block(when="on_draw")])
+    _field(db, 10010152, intensity=2, abilities=[F.block(
+        F.Step(op="gain_shield", amount=1, target=T(kind="all", pool="self_player")),
+        when="on_draw")])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, 10010151)
+    play(g, 0, 10010152)
+    assert len(pa.fields) == 1                      # 不新建实体
+    assert pa.fields[0].card_id == 10010151
+    assert pa.fields[0].intensity == 5              # 3 + 2 叠加
+    assert len(pa.fields[0].extra_abilities) == 1   # 觉醒：能力块叠加
+    assert pa.ext["field_summon_ids"] == [10010151, 10010152]  # 五种幻境记账（觉醒增强读）
+    g.emit("on_draw", player=0, count=1)
+    assert len(g.queue) == 2                        # 原能力 + 叠加能力同批触发
+    g._drain_queue()
+    assert pa.shield == 1                           # 叠加块已结算
+
+
+def test_field_intensity_boost_on_summon(db, make_game):
+    """五道难题"使其获得5耐久"：召唤牌实例 mods.intensity_boost 在召唤时结算入耐久。"""
+    _field(db, 10010151, intensity=3)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    inst = give(g, 0, 10010151)
+    inst.mods["intensity_boost"] = 5
+    g.apply({"op": "play_card", "uid": inst.uid})
+    assert pa.fields[0].intensity == 8              # 3 + 5
+    assert pa.fields[0].mods["intensity_boost"] == 5  # mods 快照随实体
+
+
+def test_field_op_intensity_all_friendly(db, make_game):
+    """荒基础/残阳无影型：field_op(side=self, pick=all, action=intensity)
+    己方全部幻境 +N 耐久（走耐久变化事件流）。"""
+    _field(db, 10010151)
+    _field(db, 10010152)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    cid = 10010153
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="field_op", side="self", pick="all", action="intensity", amount=3)])
+    pa.orb = 9
+    play(g, 0, cid)
+    assert [ph.intensity for ph in pa.fields] == [6, 5]
+
+
+def test_field_op_destroy_max_intensity_and_random(db, make_game):
+    """月之奥义型（max_intensity 并列随机）与胧月无眠型（random）：消灭敌方耐久
+    最大幻境 / 随机消灭己方一个幻境——均走完整消灭事件流。"""
+    _field(db, 10010151)
+    _field(db, 10010152)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pb.fields.append(FieldState(card_id=10010152, intensity=6, shikigami=100101))
+    cid = 10010153
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="field_op", side="enemy", pick="max_intensity", action="destroy")])
+    pa.orb = 9
+    play(g, 0, cid)
+    g._drain_queue()
+    assert [ph.card_id for ph in pb.fields] == [10010151]   # 最大者（6）被消灭
+    assert "on_field_destroyed" in g.history
+    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=1, shikigami=100101))
+    cid2 = 10010154
+    db.cards[cid2] = F.card(cid2, token=True, steps=[
+        F.Step(op="field_op", side="self", pick="random", action="destroy")])
+    play(g, 0, cid2)
+    g._drain_queue()
+    assert len(pa.fields) == 1                      # 随机消灭一个
+
+
+def test_field_op_self_destroy_triggers_destroy_flow(db, make_game):
+    """星轨/星陨/月坠"然后自毁"（pick=self_field）：经 ctx.field 定位触发来源
+    幻境，归零走完整消灭事件流——"被消灭时"能力（on_before_field_destroy，
+    触发时幻境仍在队）照常结算。"""
+    _field(db, 10010151, intensity=4, abilities=[
+        F.block(F.Step(op="field_op", pick="self_field", action="destroy"),
+                when="on_turn_start"),
+        F.block(F.Step(op="gain_shield", amount=3,
+                       target=T(kind="all", pool="self_player")),
+                when="on_before_field_destroy"),
+    ])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, 10010151)
+    g._drain_queue()
+    g.emit("on_turn_start", player=0)
+    g._drain_queue()
+    assert pa.fields == []                          # 自毁出队
+    assert pa.shield == 3                           # "被消灭时"能力已结算
+    assert "on_field_destroyed" in g.history
+
+
+def test_redirect_to_field(db, make_game):
+    """泷夜叉姬新月之哀/日轮之城型（redirect_to_field 挂 on_after_shield）：受伤
+    改降触发来源幻境等量耐久——耐久足够全改降、不足部分照常结算；max_amount 封顶
+    （竹取物语"最多降低5耐久"）。"""
+    _field(db, 10010151, intensity=10, abilities=[F.block(
+        F.Step(op="redirect_to_field"), when="on_after_shield",
+        condition={"victim_shikigami": "self"})])
+    _field(db, 10010152, intensity=3, abilities=[F.block(
+        F.Step(op="redirect_to_field"), when="on_after_shield",
+        condition={"victim_shikigami": "self"})])
+    _field(db, 10010153, intensity=20, abilities=[F.block(
+        F.Step(op="redirect_to_field", max_amount=5), when="on_after_shield",
+        condition={"victim_shikigami": "self"})])
+    g = make_game()
+    pa = g.state.players[0]
+    s0 = pa.shikigami[0]                            # 3/4
+    # 耐久足够：4 伤全改降
+    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101))
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 4, Ref(player=1, shikigami=0))
+    assert s0.health == 4 and pa.fields[0].intensity == 6
+    # 耐久不足：3 耐久改降 3（幻境消灭），余 2 照常
+    pa.fields.clear()
+    pa.fields.append(FieldState(card_id=10010152, intensity=3, shikigami=100101))
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
+    g._drain_queue()
+    assert pa.fields == [] and s0.health == 2       # 4 - 2
+    # max_amount 封顶：8 伤只改降 5
+    s0.health = 4
+    pa.fields.append(FieldState(card_id=10010153, intensity=20, shikigami=100101))
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 8, Ref(player=1, shikigami=0))
+    assert pa.fields[0].intensity == 15 and s0.health == 1  # 4 - 3
+
+
+def test_boost_change_positive_only(db, make_game):
+    """月坠"当此牌获得耐久时，效果+2"（boost_change 挂 on_before_field_intensity、
+    field_self 自指）：自身正向变化 +2；负向变化（牌手受伤扣耐久）不修正、其他
+    幻境的变化不触发。"""
+    _field(db, 10010151, intensity=15, abilities=[F.block(
+        F.Step(op="boost_change", amount=2), when="on_before_field_intensity",
+        condition={"field_self": True})])
+    _field(db, 10010152, intensity=5)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.fields.append(FieldState(card_id=10010151, intensity=15, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=5, shikigami=100101))
+    g._change_field_intensity(0, 0, 3, None, "效果")     # 自身获得 3 → +2 = 5
+    assert pa.fields[0].intensity == 20
+    g._change_field_intensity(0, 1, 3, None, "效果")     # 其他幻境获得：不触发
+    assert pa.fields[1].intensity == 8
+    assert pa.fields[0].intensity == 20
+    g.deal_to_player(0, 4, Ref(player=1, shikigami=0))   # 负向变化：不 +2
+    assert pa.fields[0].intensity == 16
+
+
+def test_field_rebound_loses_ability(db, make_game):
+    """荒海"被消灭时，将此牌回手并失去此能力"（field_rebound 挂
+    on_before_field_destroy）：同名牌回手且实例登记 disabled_abilities——
+    再次召唤后该能力不再注册（不再回手）。"""
+    _field(db, 10010151, intensity=2, abilities=[
+        F.block(F.Step(op="field_rebound"), when="on_before_field_destroy")])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, 10010151)
+    g.deal_to_player(0, 2, Ref(player=1, shikigami=0))   # 归零消灭
+    g._drain_queue()
+    assert pa.fields == []
+    back = next(c for c in pa.hand if c.id == 10010151)  # 本体（墓地）回手
+    assert back.mods["disabled_abilities"] == [0]
+    g.apply({"op": "play_card", "uid": back.uid})        # 再次使用召唤
+    assert len(pa.fields) == 1
+    g.deal_to_player(0, 2, Ref(player=1, shikigami=0))   # 再次归零
+    g._drain_queue()
+    assert pa.fields == []
+    assert not any(c.id == 10010151 for c in pa.hand)    # 已失去回手能力
+
+
+def test_draw_until_level_sum(db, make_game):
+    """血华散"抽牌直至所抽牌等级总和>=5"（draw_until）：逐张抽、累计所抽牌
+    使用等级，达到总和即停。"""
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="draw_until", level_sum_ge=5)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    total, want = 0, 0
+    for c in pa.deck:                           # 按当前牌库顶顺序预估应抽张数
+        total += db.cards[c.id].level
+        want += 1
+        if total >= 5:
+            break
+    before = len(pa.hand)
+    play(g, 0, cid)
+    assert len(pa.hand) == before + want
+
+
+def test_conditional_power_pseudo_keywords(db, make_game):
+    """连续条件力量伪关键字（stat_aura 读取时求值）：power_if_field（有幻境+1）、
+    power_per_field（每幻境+1）、power_if_shield（有护甲+1）、power_equal_shield
+    （力量=当前护甲——泷夜叉姬基础/觉醒、久次良基础/觉醒）。"""
+    g = make_game()
+    pa = g.state.players[0]
+    s0 = pa.shikigami[0]                        # 3/4
+    s0.keywords.append("power_if_field")
+    g._refresh_stat_auras()
+    assert s0.eff_power == 3                    # 无幻境不加
+    _field(db, 10010151)
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    g._refresh_stat_auras()
+    assert s0.eff_power == 4                    # 有幻境 +1
+    s0.keywords.remove("power_if_field")
+    s0.keywords.append("power_per_field")
+    g._refresh_stat_auras()
+    assert s0.eff_power == 5                    # 每幻境 +1（2 个）
+    s0.keywords.remove("power_per_field")
+    s0.keywords.append("power_if_shield")
+    g._refresh_stat_auras()
+    assert s0.eff_power == 3                    # 无护甲不加（动态加成不残留）
+    s0.shield = 2
+    g._refresh_stat_auras()
+    assert s0.eff_power == 4                    # 有护甲 +1
+    s0.keywords.remove("power_if_shield")
+    s0.keywords.append("power_equal_shield")
+    s0.shield = 5
+    g._refresh_stat_auras()
+    assert s0.eff_power == 5                    # 力量 = 当前护甲
+
+
+def test_friendly_field_condition(db, make_game):
+    """条件键 friendly_field（泷夜叉姬/久次良"若你有幻境"系列）：有幻境才触发。"""
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="gain_shield", amount=2, target=T(kind="all", pool="self_player")),
+        when="on_draw", condition={"friendly_field": True})
+    g = make_game()
+    pa = g.state.players[0]
+    g.emit("on_draw", player=0, count=1)
+    assert not g.queue                          # 无幻境不触发
+    _field(db, 10010151)
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    g.emit("on_draw", player=0, count=1)
+    assert len(g.queue) == 1
+    g._drain_queue()
+    assert pa.shield == 2
+
+
+def test_health_floor_one(db, make_game):
+    """铃鹿山的秘宝（幻境实体关键字 health_floor_one）：生命不会降到 1 以下——
+    扣减生命前钳制；生命已为 1 时伤害完全免除。"""
+    g = make_game()
+    pa = g.state.players[0]
+    _field(db, 10010151)
+    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101,
+                                keywords=["health_floor_one"]))
+    pa.health = 5
+    g.deal_to_player(0, 10, Ref(player=1, shikigami=0))
+    assert pa.health == 1                       # 10 伤只扣 4
+    g.deal_to_player(0, 3, Ref(player=1, shikigami=0))
+    assert pa.health == 1                       # 已为 1：免除
+    assert g.state.winner is None
+
+
+def test_self_damage_taken_bookkeeping(db, make_game):
+    """彼岸花基础型"每当你受到己方伤害时"：on_player_damaged 条件
+    {player: self, source_side: friendly}；引擎记账 ext.self_damage_taken
+    （死亡之花[增强]读数）。"""
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="damage", amount=1, target=T(kind="all", pool="enemy_player")),
+        when="on_player_damaged",
+        condition={"player": "self", "source_side": "friendly"})
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    g.deal_to_player(0, 2, Ref(player=1, shikigami=0))   # 敌方来源：不算己方伤害
+    assert pb.health == 30
+    assert not pa.ext.get("self_damage_taken")
+    g.deal_to_player(0, 2, Ref(player=0, shikigami=0))   # 己方来源
+    g._drain_queue()
+    assert pa.ext["self_damage_taken"] is True
+    assert pb.health == 29                      # 基础能力反打 1
+
+
+def test_card_aura_level_self_damage_scope_field(db, make_game):
+    """火照之路型（card_aura level 谓词 + self_damage_on_play + scope="field"）：
+    手牌等级 1 的牌获得[瞬发]与"使用时你受到 1 点伤害"；来源幻境离场后光环失效。"""
+    _field(db, 10010151, intensity=8, abilities=[F.block(
+        F.Step(op="card_aura", shikigami="any", level=1, keywords=["fast"],
+               self_damage_on_play=1, scope="field"),
+        when="on_summon_field", condition={"field_self": True})])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    for s in pa.shikigami:
+        s.level = 3                             # 满足手牌等级要求
+    play(g, 0, 10010151)
+    g._drain_queue()
+    pa.orb = 0
+    lv1 = next(c for c in pa.hand if db.cards[c.id].level == 1)
+    g.apply({"op": "play_card", "uid": lv1.uid})       # [瞬发]：0 鬼火可用
+    assert pa.health == 29                               # 使用时自伤 1
+    g.deal_to_player(0, 8, Ref(player=1, shikigami=0))   # 幻境消灭
+    g._drain_queue()
+    assert pa.fields == []
+    lv1b = next(c for c in pa.hand if db.cards[c.id].level == 1)
+    with pytest.raises(IllegalAction):                   # 光环失效：瞬发没了
+        g.apply({"op": "play_card", "uid": lv1b.uid})
+
+
+def test_auto_use_combat_card(db, make_game):
+    """胧月无眠型"再次使用此牌"（auto_use 扩展战斗牌）：凭空再次使用战斗牌——
+    不耗鬼火/不占出击次数，照常发起完整战斗。"""
+    combat_cid = 10010152
+    db.cards[combat_cid] = F.card(combat_cid, card_type="combat", token=True,
+                                  keywords=[])
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True,
+                           steps=[F.Step(op="auto_use", card_id=combat_cid)])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    move(g, 1, 0)                              # B0（3/4）驻战斗区
+    orb_before = pa.orb
+    play(g, 0, cid)
+    assert pb.shikigami[0].health == 1         # 战斗照常（3 攻对 3/4）
+    assert pa.orb == orb_before - 1            # 只耗法术本身 1 火（再次使用免费）
+    assert any(c.id == combat_cid for c in pa.graveyard)   # 再次使用的牌入墓地
+
+
+def test_summon_field_direct_and_random(db, make_game):
+    """summon_field：card 指定 id 直接召唤（佛前石钵类，不经使用事件、耐久=卡牌值）；
+    shikigami+pick=random 从该式神全部非 token 幻境牌随机召唤（竹取物语类）。"""
+    _field(db, 10010161, intensity=4)
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True,
+                           steps=[F.Step(op="summon_field", card=10010161)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, cid)
+    assert [ph.card_id for ph in pa.fields] == [10010161]
+    assert pa.fields[0].intensity == 4
+    assert "on_summon_field" in g.history
+    # pick=random 候选池 = db 中该式神全部非 token 幻境牌（token dummy 不入池）
+    db.cards[10010162] = F.card(10010162, shikigami=100101, card_type="field",
+                                intensity=2)
+    cid2 = 10010152
+    db.cards[cid2] = F.card(cid2, token=True, steps=[
+        F.Step(op="summon_field", shikigami=100101, pick="random")])
+    play(g, 0, cid2)
+    assert len(pa.fields) == 2
+    assert pa.fields[-1].card_id == 10010162        # 候选只有它（10010161 为 token）
+
+
+def test_deck_top_play(db, make_game):
+    """彼岸归航（幻境实体关键字 deck_top_play）：牌库顶的牌视同手牌使用——
+    等级 1 不耗鬼火、使用后受 2 点伤害、用后进墓地不视为抽牌；无该幻境/
+    非牌库顶不可用。"""
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    for s in pa.shikigami:
+        s.level = 3                             # 满足手牌等级要求
+    top = next(c for c in pa.hand if db.cards[c.id].level == 1)
+    pa.hand.remove(top)
+    pa.deck.insert(0, top)                      # 显式造牌库顶（开局抽牌后顶牌等级不定）
+    with pytest.raises(IllegalAction):          # 无彼岸归航：不可用牌库顶
+        g.apply({"op": "play_card", "uid": top.uid, "play_from": "deck"})
+    _field(db, 10010151)
+    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101,
+                                keywords=["deck_top_play"]))
+    second = pa.deck[1]
+    with pytest.raises(IllegalAction):          # 非牌库顶：不可用
+        g.apply({"op": "play_card", "uid": second.uid, "play_from": "deck"})
+    hand_before = len(pa.hand)
+    g.apply({"op": "play_card", "uid": top.uid, "play_from": "deck"})
+    assert pa.orb == 9                          # 等级 1：不耗鬼火
+    assert pa.health == 28                      # 以此法使用：受 2 点伤害
+    assert top in pa.graveyard                  # 用后进墓地
+    assert len(pa.hand) == hand_before          # 不视为抽牌
+    assert len(pa.deck) and pa.deck[0] is second
+
+
+def test_field_grant_keyword_veil(db, make_game):
+    """方圆之备型（field_op action=grant_keyword）：己方所有幻境获得[帷幕]
+    （幻境实体关键字入列；choose 类取对象操作的帷幕排除随首卡落地）。"""
+    _field(db, 10010151)
+    _field(db, 10010152)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    cid = 10010153
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="field_op", side="self", pick="all", action="grant_keyword",
+               keyword="veil")])
+    pa.orb = 9
+    play(g, 0, cid)
+    assert all("veil" in ph.keywords for ph in pa.fields)
+
+
+def test_field_played_grants_haste_and_attack(db, make_game):
+    """觉醒·荒/命运螺旋型（纯数据组合验证条件键）：on_card_played 条件
+    {card_type: "field"}——使用幻境牌时授予[迅捷]/可挂攻击类步骤。"""
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="grant_keyword", keyword="haste", target=T(kind="self")),
+        when="on_card_played", condition={"card_type": "field"})
+    _field(db, 10010151)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, 10010151)
+    g._drain_queue()
+    s0 = pa.shikigami[0]
+    assert any("haste" in lst for lst in
+               (s0.keywords, s0.one_shot_keywords, s0.perm_keywords))
+
+
+def test_awaken_swaps_ability_pseudo_keywords(db, make_game):
+    """能力伪关键字觉醒换绑（泷夜叉姬/久次良觉醒型）：觉醒时移除基础式神 def
+    携带的伪关键字（power_if_field）、授予觉醒牌 keywords 携带的
+    （power_per_field）——永久类别；非伪关键字（charge 等）不受影响。"""
+    db.shikigami[100101].keywords.append("power_if_field")
+    cid = 10010191
+    db.cards[cid] = F.card(cid, token=True, subtype="awaken", level=2,
+                           keywords=["power_per_field"],
+                           awaken_power=0, awaken_health=1)
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 2})
+    s0 = pa.shikigami[0]
+    assert "power_if_field" in s0.perm_keywords       # 先天关键字按永久类别入列
+    _field(db, 10010151)
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    g._refresh_stat_auras()
+    assert s0.eff_power == 4                          # 基础：有幻境 +1
+    play(g, 0, cid)                                   # 觉醒
+    assert "power_if_field" not in s0.perm_keywords   # 基础伪关键字移除
+    assert "power_per_field" in s0.perm_keywords      # 觉醒伪关键字授予
+    g._refresh_stat_auras()
+    assert s0.eff_power == 5                          # 换绑后：每幻境 +1（2 个），不再 +1
+
+
+def test_field_ability_stack_merges_abilities(db, make_game):
+    """觉醒·辉夜姬型（伪关键字 field_ability_stack）：叠加召唤同名牌幻境时不新建
+    实体，耐久叠加且能力块合并进在场实体 extra_abilities（重复持有同名牌能力块）。"""
+    _field(db, 10010151, intensity=3, abilities=[F.block(
+        F.Step(op="draw", amount=1), when="on_turn_start")])
+    _field(db, 10010152, intensity=2, abilities=[F.block(
+        F.Step(op="gain_orb", amount=1), when="on_turn_start")])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.shikigami[0].perm_keywords.append("field_ability_stack")
+    pa.orb = 9
+    play(g, 0, 10010151)
+    play(g, 0, 10010152)                              # 叠加：不新建实体
+    assert len(pa.fields) == 1
+    ph = pa.fields[0]
+    assert ph.intensity == 5                          # 耐久叠加
+    assert len(ph.extra_abilities) == 1               # 第二张的能力块并入
+    g._drain_queue()
+    g.emit("on_turn_start", player=0)                 # 两块能力都注册
+    assert len(g.queue) == 2
+
+
+def test_conditional_keywords_friendly_field(db, make_game):
+    """conditional_keywords 算子 friendly_field（曜断型条件[瞬发]）：控制者有
+    幻境才授予关键字。"""
+    cid = 10010192
+    db.cards[cid] = F.card(cid, token=True, card_type="combat", conditional_keywords=[
+        {"keyword": "fast", "friendly_field": True}])
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, cid)
+    cdef = db.cards[cid]
+    assert "fast" not in g._card_keywords(pa, cdef, inst)   # 无幻境：不授予
+    _field(db, 10010151)
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    assert "fast" in g._card_keywords(pa, cdef, inst)       # 有幻境：授予
+
+
+def test_conditional_keywords_deck_field_distinct(db, make_game):
+    """conditional_keywords 算子 deck_field_distinct_ge（五道难题型条件[瞬发]）：
+    牌库中本卡所属式神的不同名幻境牌数 ≥ n 才授予（其他式神的幻境牌不计）。"""
+    cid = 10010193
+    db.cards[cid] = F.card(cid, token=True, conditional_keywords=[
+        {"keyword": "fast", "deck_field_distinct_ge": 2}])
+    _field(db, 10010151, sid=100101)
+    _field(db, 10010152, sid=100101)
+    _field(db, 10010161, sid=100102)                        # 其他式神的幻境牌
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    inst = give(g, 0, cid)
+    cdef = db.cards[cid]
+    pa.deck.insert(0, F.CardInstance(uid=9001, id=10010161))
+    assert "fast" not in g._card_keywords(pa, cdef, inst)   # 他式神幻境不计
+    pa.deck.insert(0, F.CardInstance(uid=9002, id=10010151))
+    pa.deck.insert(0, F.CardInstance(uid=9003, id=10010151))  # 同名不重复计
+    assert "fast" not in g._card_keywords(pa, cdef, inst)
+    pa.deck.insert(0, F.CardInstance(uid=9004, id=10010152))
+    assert "fast" in g._card_keywords(pa, cdef, inst)       # 两种不同名：授予
+
+
+def test_field_intensity_dynamic_amount(db, make_game):
+    """星轨/星陨型动态数值：damage amount={field_intensity: self} = 触发幻境当前
+    耐久；repeat count={field_intensity: self} 重复耐久次；幻境实体[贯通]
+    （FieldState.keywords）使幻境能力伤害带贯通（溢出分流牌手）。"""
+    _field(db, 10010151, intensity=8, abilities=[F.block(
+        F.Step(op="damage", amount={"field_intensity": "self"},
+               target=T(kind="all", pool="projectile")),
+        F.Step(op="field_op", pick="self_field", action="destroy"),
+        when="on_turn_start", condition={"active": "self"})])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    pa.fields.append(FieldState(card_id=10010151, intensity=8, shikigami=100101,
+                                keywords=["piercing"]))
+    move(g, 1, 0)                                   # 敌方战斗区有人
+    pb.shikigami[0].shield = 2
+    g.emit("on_turn_start", player=0)
+    g._drain_queue()
+    assert pb.shikigami[0].health == 0              # 8 伤：2 护甲 + 4 生命
+    assert pb.health == 28                          # 贯通溢出 2 给牌手
+    assert pa.fields == []                          # 然后自毁
+    # repeat 重复耐久次（星陨型）：3 耐久 → 3 次 2 伤
+    _field(db, 10010152, intensity=3, abilities=[F.block(
+        F.Step(op="repeat", count={"field_intensity": "self"}, steps=[
+            {"op": "damage", "amount": 2,
+             "target": {"kind": "all", "pool": "enemy_player"}}]),
+        when="on_turn_start", condition={"active": "self"})])
+    pa.fields.append(FieldState(card_id=10010152, intensity=3, shikigami=100101))
+    g.emit("on_turn_start", player=0)
+    g._drain_queue()
+    assert pb.health == 22                          # 28 - 3×2
+
+
+def test_search_deck_field_intensity_boost(db, make_game):
+    """五道难题型：search_deck(card_type="field", intensity_boost=5) 从牌库检索
+    幻境牌置入手牌（随机代替选择），实例获得 5 耐久修饰——使用时召唤耐久
+    = 牌面 + 5。"""
+    _field(db, 10010161, intensity=5)
+    cid = 10010194
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="search_deck", shikigami="self", card_type="field",
+               intensity_boost=5)])
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    pa.deck.insert(0, F.CardInstance(uid=9001, id=10010161))
+    play(g, 0, cid)
+    got = next(c for c in pa.hand if c.id == 10010161)
+    assert got.mods["intensity_boost"] == 5
+    g.apply({"op": "play_card", "uid": got.uid})    # 打出检索到手的那张（非新发实例）
+    assert pa.fields[0].intensity == 10             # 牌面 5 + 修饰 5
+
+
+def test_discard_card_type_random_pick(db, make_game):
+    """余辉型：discard(shikigami="all", card_type="field", count=1, random_pick=True)
+    只弃幻境牌（随机代替玩家选择），非幻境牌留手。"""
+    _field(db, 10010151)
+    cid = 10010195
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="discard", shikigami="all", card_type="field", count=1,
+               random_pick=True)])
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    fld = give(g, 0, 10010151)
+    hand_before = len(pa.hand)
+    play(g, 0, cid)
+    assert fld in pa.graveyard                      # 幻境牌被弃
+    assert len(pa.hand) == hand_before - 1          # 弃 1；token 卡给了又用掉互抵
+    assert all(db.cards[c.id].card_type != "field" for c in pa.hand)
+
+
+def test_summon_field_all_and_intensity_override(db, make_game):
+    """觉醒·辉夜姬增强型：summon_field(pick="all", intensity=1) 召唤所属式神全部
+    非 token 幻境牌各一、耐久覆写为 1；条件键 field_summon_distinct_ge 按本局
+    召唤过的不同名幻境牌数（可限定所属式神）判定。"""
+    # 候选池 = db 中该式神全部非 token 幻境牌（token dummy 不入池，须显式非 token）
+    db.cards[10010161] = F.card(10010161, shikigami=100101, card_type="field",
+                                intensity=5)
+    db.cards[10010162] = F.card(10010162, shikigami=100101, card_type="field",
+                                intensity=4)
+    cid = 10010196
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="summon_field", shikigami=100101, pick="all", intensity=1)])
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    play(g, 0, cid)
+    assert sorted(ph.card_id for ph in pa.fields) == [10010161, 10010162]
+    assert all(ph.intensity == 1 for ph in pa.fields)   # 耐久覆写
+    cond = {"field_summon_distinct_ge": {"count": 2, "shikigami": "self"}}
+    holder = Ref(player=0, shikigami=0)
+    assert targets_mod.match_condition(g, cond, {}, 0, holder=holder)
+    cond3 = {"field_summon_distinct_ge": {"count": 3, "shikigami": "self"}}
+    assert not targets_mod.match_condition(g, cond3, {}, 0, holder=holder)
+
+
+def test_redirect_to_field_by_shikigami(db, make_game):
+    """竹取物语/永劫轮回型：非幻境来源（形态/基础能力块，ctx.field 为 None）
+    redirect_to_field(field_shikigami="self")——己方式神受伤由控制者首个所属
+    幻境代承（max_amount 截断，超出部分照常结算）；victim_not_shikigami 排除
+    持有者自身（其伤害由幻境自身能力块处理）；条件键
+    friendly_field_intensity_ge 按任一幻境耐久判定。"""
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="redirect_to_field", field_shikigami="self", max_amount=5),
+        when="on_after_shield",
+        condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                   "victim_not_shikigami": 100101})
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    _field(db, 10010151, intensity=10)
+    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101))
+    s1 = pa.shikigami[1]
+    hp0 = s1.health
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 7, Ref(player=1, shikigami=0))
+    assert pa.fields[0].intensity == 5              # 代承 5（max_amount 截断）
+    assert s1.health == hp0 - 2                     # 超出 2 照常结算
+    # 持有者自身受伤：victim_not_shikigami 排除，不经本块
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 3, Ref(player=1, shikigami=0))
+    assert pa.fields[0].intensity == 5
+    assert targets_mod.match_condition(
+        g, {"friendly_field_intensity_ge": 5}, {}, 0)
+    assert not targets_mod.match_condition(
+        g, {"friendly_field_intensity_ge": 6}, {}, 0)
+
+
+def test_field_op_pick_others(db, make_game):
+    """燕子安贝型（field_op pick="others"）：给除触发来源幻境外的全部己方幻境
+    加耐久——来源幻境自身不受影响。"""
+    _field(db, 10010151, intensity=3, abilities=[F.block(
+        F.Step(op="field_op", side="self", pick="others", amount=1),
+        when="on_draw")])
+    _field(db, 10010152, intensity=2)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    g.emit("on_draw", player=0, count=1)
+    g._drain_queue()
+    assert pa.fields[0].intensity == 3              # 来源自身不加
+    assert pa.fields[1].intensity == 3              # 其他幻境 +1
+
+
+def test_stat_aura_field_count_stats(db, make_game):
+    """星辰之境型（stat_aura kind="field_count_stats"）：控制者每有一个幻境，
+    持有者 +1/+1——活局面量，幻境数变化随读取点刷新。"""
+    cid = 10010197
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="stat_aura", kind="field_count_stats", power=1, health=1)])
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    _field(db, 10010151)
+    play(g, 0, cid)
+    s0 = pa.shikigami[0]
+    assert s0.eff_power == 3                        # 无幻境
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    g._refresh_stat_auras()
+    assert s0.eff_power == 5                        # 2 幻境 +2
+    assert s0.max_health == 6
+    pa.fields.pop()
+    g._refresh_stat_auras()
+    assert s0.eff_power == 4                        # 幻境减少随读取回落
+
+
+def test_player_source_damage_is_friendly(db, make_game):
+    """己方伤害链补全：伤害来源为牌手自身（火照之路/彼岸归航自伤点
+    deal_to_player(..., Ref(player=active))）同样满足 source_side: friendly——
+    "每当你受到己方伤害时"能力（彼岸花基础/觉醒型，挂 on_player_damaged）可触发。"""
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="damage", amount=1, target=T(kind="all", pool="enemy_player")),
+        when="on_player_damaged",
+        condition={"player": "self", "source_side": "friendly"})
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    g.deal_to_player(0, 2, Ref(player=0))           # 牌手自身为来源（自伤）
+    g._drain_queue()
+    assert pb.health == 29                          # 触发反打 1
+    assert pa.ext["self_damage_taken"] is True

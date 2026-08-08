@@ -1,0 +1,23 @@
+id: 10030206
+name: 月之奥义
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      temp_grants:
+        # 当对牌手造成战斗伤害时，消灭一个他耐久最大的幻境（并列随机；牌手受伤
+        # 事件为 on_player_damaged，player=受伤牌手下标——限定敌方）；uses 放开
+        # 使[连击]第二段同样触发
+        - when: on_player_damaged
+          uses: 99
+          condition: {source_shikigami: self, player: opponent, kind: combat}
+          steps:
+            - {op: field_op, side: enemy, pick: max_intensity, action: destroy}
+      text: "当对牌手造成战斗伤害时，消灭一个他耐久最大的幻境。"

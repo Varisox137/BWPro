@@ -1,0 +1,12 @@
+id: 100302
+name: 泷夜叉姬
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 紫岩
+      power: 3
+      health: 4
+      keywords: [power_if_field]  # 「若你有幻境，泷夜叉姬便获得1力量」——能力伪关键字
+      # （引擎 _refresh_stat_auras 读取时求值；觉醒时换绑移除，见 schema ABILITY_PSEUDO_KEYWORDS）
+      text: "若你有幻境，泷夜叉姬便获得1力量。"

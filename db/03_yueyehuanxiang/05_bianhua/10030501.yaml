@@ -1,0 +1,21 @@
+id: 10030501
+name: 赤团华
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # 每当己方式神攻击时，彼岸花对你造成1点伤害（来源=彼岸花→己方伤害，
+        # 可触发彼岸花基础/觉醒的"受到己方伤害时"）
+        - when: on_before_assault
+          condition: {attacker_side: friendly, attacker_kind: shikigami}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: self_player}}
+      text: "每当己方式神攻击时，彼岸花对你造成1点伤害。"

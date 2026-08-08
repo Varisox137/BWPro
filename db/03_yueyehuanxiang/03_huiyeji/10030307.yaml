@@ -1,0 +1,25 @@
+id: 10030307
+name: 蓬莱玉枝
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: SR
+      level: 3
+      intensity: 5
+      effects:
+        steps: []
+      abilities:
+        # 每个回合开始时（双方回合），抽一张牌并获得1点鬼火
+        - when: on_turn_start
+          steps:
+            - {op: draw, amount: 1}
+            - {op: gain_orb, amount: 1}
+        # 若此牌耐久>=10，效果翻倍（再触发一次）
+        - when: on_turn_start
+          condition: {field_intensity_ge: 10}
+          steps:
+            - {op: draw, amount: 1}
+            - {op: gain_orb, amount: 1}
+      text: "每个回合开始时，抽一张牌并获得1点鬼火。若此牌耐久>=10，效果翻倍。"

@@ -1,0 +1,24 @@
+id: 10030205
+name: 觉醒·泷夜叉姬
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 0   # +0/+1
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      keywords: [power_per_field]  # 「你每有一个幻境她便获得1力量」——能力伪关键字
+      # （觉醒时换绑授予，引擎 _refresh_stat_auras 读取时求值）
+      effects:
+        steps: []
+      abilities:
+        # [觉醒]：若你有幻境，泷夜叉姬攻击时便获得[先攻]（战斗作用域授予，
+        # 同觉醒·雪童子"交战获得[连击]"先例）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self, friendly_field: true}
+          steps:
+            - {op: grant_keyword, keyword: initiative, scope: battle, target: {kind: self}}
+      text: "[觉醒]：{若你有幻境，泷夜叉姬攻击时便获得[先攻]；你每有一个幻境她便获得1力量。}"

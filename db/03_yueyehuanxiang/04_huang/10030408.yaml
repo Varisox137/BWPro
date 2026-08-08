@@ -1,0 +1,22 @@
+id: 10030408
+name: 命运螺旋
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 5
+      form_health: 8
+      effects:
+        steps: []
+      abilities:
+        # 当你使用幻境牌时，使荒发动攻击且免疫本次战斗伤害（next_battle 挂账 +
+        # 额外攻击通道——战斗开始时消费并绑定该战斗，同觉醒·山风先例）
+        - when: on_card_played
+          condition: {card_type: field, player: self}
+          steps:
+            - {op: grant_immunity, scope: next_battle, target: {kind: self}}
+            - {op: launch_attack, shikigami: self}
+      text: "当你使用幻境牌时，使荒发动攻击且免疫本次战斗伤害。"

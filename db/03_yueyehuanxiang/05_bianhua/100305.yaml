@@ -1,0 +1,18 @@
+id: 100305
+name: 彼岸花
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      faction: 红莲
+      power: 3
+      health: 4
+      ability:
+        # 每当你受到己方伤害时，对敌方牌手造成1点伤害（己方伤害 = 来源归属己方，
+        # 含自伤——火照之路/血华散/彼岸归航等自伤点来源为牌手自身；牌手受伤事件
+        # 为 on_player_damaged，player=受伤牌手下标）
+        when: on_player_damaged
+        condition: {player: self, source_side: friendly}
+        steps:
+          - {op: damage, amount: 1, target: {kind: all, pool: enemy_player}}
+      text: "每当你受到己方伤害时，对敌方牌手造成1点伤害。"

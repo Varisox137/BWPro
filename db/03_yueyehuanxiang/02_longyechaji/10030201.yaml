@@ -1,0 +1,16 @@
+id: 10030201
+name: 曜断
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      conditional_keywords:
+        - {keyword: fast, friendly_field: true}  # [增强]：若你有幻境，此牌获得[瞬发]
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "[增强]：{若你有幻境，此牌获得[瞬发]。}"

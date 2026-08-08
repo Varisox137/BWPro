@@ -693,6 +693,83 @@
 | 52 妖怪屋·灵力之泉 | ✅ | 衍生 token：全体己方 1 护甲 + 全体敌方 1 破甲；triggers 同 51 |
 | 99 妖怪屋 | ✅ | 召唤物 1/1，先天[迅捷] |
 
+## 泷夜叉姬（100302）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | 能力伪关键字 power_if_field（有幻境时 +1 力量，读取时求值；觉醒换绑通道登记） |
+| 01 曜断 | ✅ | 战斗牌；conditional_keywords friendly_field → [瞬发] |
+| 02 新月之哀 | ✅ | 幻境 耐久1 [瞬发]；能力 on_after_shield {victim_shikigami: self, kind: effect} → redirect_to_field（非战斗伤害改降此幻境耐久） |
+| 03 日轮之城 | ✅ | 同构战斗伤害版（kind: combat） |
+| 04 残阳无影 | ✅ | 战斗牌；进场 summon_field pick=random（"选择召唤"以随机代替选择——暂定见 questions.md）；on_player_damaged {source_shikigami: self, player: opponent} → field_op pick=all 全幻境 +3 耐久 |
+| 05 觉醒·泷夜叉姬 | ✅ | 觉醒牌 keywords 伪关键字换绑（power_per_field 每幻境 +1 力量）；能力 on_before_assault {attacker_shikigami: self, friendly_field} → grant_keyword initiative scope=battle |
+| 06 月之奥义 | ✅ | 战斗牌；on_player_damaged {source_shikigami: self, player: opponent, kind: combat} → field_op side=enemy pick=max_intensity destroy（消灭敌方耐久最大幻境） |
+| 07 胧月无眠 | ✅ | 战斗牌；on_after_assault {attacker_shikigami: self, friendly_field} → field_op pick=random destroy 己方随机幻境 + auto_use 再次使用此牌（auto_use 战斗牌通道） |
+| 08 永劫轮回 | ✅ | 形态；进场 summon_field shikigami=self pick=all（两个幻境全召唤）；能力 on_after_shield {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100302} → redirect_to_field field_shikigami=self（其他己方式神受伤也转移——转移目标幻境口径暂定见 questions.md） |
+
+## 辉夜姬（100303）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | 能力伪关键字 field_stack（幻境同时仅一个、同名再召唤耐久叠加——_summon_field 叠加路径） |
+| 01 燕子安贝 | ✅ | 幻境 耐久5；①on_turn_end {active: self} → heal 全体己方 1 + field_op pick=others 其他幻境 +1；②敌方回合结束且 field_intensity_ge 10 再触发一次 |
+| 02 火鼠裘 | ✅ | 幻境 耐久5；①on_player_damaged {player: self, kind: combat} → 来源式神 2 伤；②耐久≥10 on_damage {victim_kind: shikigami, 己方} → 来源式神 1 伤 |
+| 03 五道难题 | ✅ | search_deck shikigami=self card_type=field + intensity_boost 5（入手实例 +5 耐久）；conditional_keywords deck_field_distinct_ge 5 → [瞬发] |
+| 04 佛前石钵 | ✅ | 幻境 耐久5；on_turn_end {active: self, combat_empty: friendly} → summon 石钵；耐久≥10 追加 buff_power 4（对在场石钵，friendly_shikigami shikigami=10030399 池） |
+| 05 龙首之玉 | ✅ | 幻境 耐久5；on_turn_end → projectile 2；耐久≥10 追加 enemy_bench 各 1 伤 |
+| 06 觉醒·辉夜姬 | ✅ | 觉醒牌 keywords 伪关键字换绑 field_ability_stack（能力与耐久都叠加——extra_abilities 合并入已有实体，单实体结算暂定见 questions.md）；效果 {field_summon_distinct_ge: {count: 5, shikigami: self}} → summon_field pick=all intensity=1（五幻境各 1 耐久全召唤） |
+| 07 蓬莱玉枝 | ✅ | 幻境 耐久5；on_turn_start → draw 1 + gain_orb 1；耐久≥10 双块"效果翻倍"（再来一份） |
+| 08 竹取物语 | ✅ | 形态；on_turn_end → summon_field pick=random 随机召唤她的幻境；on_after_shield {victim_shikigami: self, friendly_field_intensity_ge: 20} → redirect_to_field field_shikigami=self max_amount=5（"辉夜姬的幻境"取首个——暂定见 questions.md） |
+| 99 石钵 | ✅ | 召唤物（佛前石钵衍生） |
+
+## 荒（100304）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | on_damage {source_shikigami: self, kind: combat} → field_op pick=all 全幻境 +1 耐久 |
+| 01 星轨 | ✅ | 幻境 耐久4，field_keywords [piercing]（幻境能力伤害贯通——_ability_piercing 并入 ctx.field.keywords）；on_turn_start {active: self} → damage {field_intensity: self} 投射 + field_op self_field destroy 自毁 |
+| 02 荒海 | ✅ | 幻境 耐久1 [瞬发]；on_before_field_destroy {field_self} → field_rebound（回手并失去此能力——一次性回手标记） |
+| 03 余辉 | ✅ | discard shikigami=all card_type=field count=1 random_pick（"弃一张幻境牌"以随机代替选择——暂定见 questions.md）→ draw 3 |
+| 04 星陨 | ✅ | 幻境 耐久4；on_turn_start {active: self} → repeat count={field_intensity: self} 套 damage 2 随机敌方角色 + field_op self_field destroy 自毁 |
+| 05 星辰之境 | ✅ | 形态；stat_aura kind=field_count_stats power/health 1（每有一个幻境 +1/+1） |
+| 06 觉醒·荒 | ✅ | 觉醒能力双块：基础同款（战斗伤害 → 全幻境 +1）+ on_card_played {card_type: field, player: self} → grant_keyword haste（使用幻境牌时荒得[迅捷]） |
+| 07 月坠 | ✅ | 幻境 耐久15；on_before_field_intensity {field_self} → boost_change +2（"当此牌获得耐久时，效果+2"——任意获得途径口径暂定见 questions.md）；on_turn_start {active: self} → +3 耐久；on_field_intensity_changed {field_self, field_intensity_ge: 30} → 自毁 + 全体敌方 10 伤 |
+| 08 命运螺旋 | ✅ | 形态；on_card_played {card_type: field, player: self} → grant_immunity scope=next_battle + launch_attack（免疫本次战斗伤害并发动攻击） |
+
+## 彼岸花（100305）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | on_player_damaged {player: self, source_side: friendly} → 敌方牌手 1 伤（"己方伤害"=己方来源对己方牌手——自伤 source=己方牌手自身口径） |
+| 01 赤团华 | ✅ | 形态；on_before_assault {attacker_side: friendly, attacker_kind: shikigami} → 彼岸花对己方牌手 1 伤 |
+| 02 火照之路 | ✅ | 幻境 耐久8；on_summon_field {field_self} → card_aura level=1 授 [fast] + self_damage_on_play 1，scope=field（光环绑定来源幻境实体、离场失效） |
+| 03 觉醒·彼岸花 | ✅ | 效果 双方牌手各 3 伤；觉醒能力 on_player_damaged {player: self, source_side: friendly} → projectile 1 |
+| 04 花开彼岸 | ✅ | 形态 [迅捷]；on_damage {victim_shikigami: self} → 己方牌手受 {event: amount} 等量伤害 |
+| 05 黄泉花境 | ✅ | 幻境 耐久4；on_field_intensity_changed {field_self, amount_le: -1} → basic_boost +2/+2（_le 后缀读事件 amount） |
+| 06 死亡之花 | ✅ | choose any_shikigami（含己方，引燃先例）damage {enhance, base: 2}；conditional_mods self_damage_taken_ge 1 → enhance+1（ext self_damage_taken 记账，打出装配时求值） |
+| 07 血华散 | ✅ | draw_until level_sum_ge 5（抽至所抽牌等级总和≥5）+ 己方牌手 5 伤 |
+| 08 彼岸归航 | ✅ | 幻境 耐久10，field_keywords [deck_top_play]（牌库顶视同手牌使用、等级 1 不耗火、以此法使用受 2 伤——出牌管线 play_from=deck 通道） |
+
+## 久次良（100306）
+
+| 卡 | 状态 | 备注 |
+|----|------|------|
+| 基础能力 | ✅ | 能力伪关键字 power_if_shield（有护甲时 +1 力量） |
+| 01 鲸骨·驻 | ✅ | 战斗牌 gain_shield 2 |
+| 02 铃鹿山的守护 | ✅ | 幻境 耐久6；on_damage {victim_side: friendly, victim_kind: shikigami} → 受伤式神 gain_shield 1（context victim） |
+| 03 白骨之盾 | ✅ | choose friendly_shikigami（"己方其他式神"choose 池口径暂定见 questions.md）→ gain_shield 4 + grant_keyword power_if_shield scope=turn；[响应] on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100306} 自动对其使用 |
+| 04 鱼鳞之备 | ✅ | 形态；进场与 on_turn_start {active: self, friendly_field} → gain_shield 2 |
+| 05 鲸骨·开 | ✅ | 战斗牌；buff_power/gain_shield amount={field_count: controller}（每幻境 +1 力量/+1 护甲） |
+| 06 方圆之备 | ✅ | 形态（久次良得[帷幕]）；进场与 on_summon_field {player: self} → field_op pick=all grant_keyword veil（在场及后续幻境——幻境帷幕仅标记、结算拦截未实现，见 questions.md）；进场与 on_turn_start {friendly_field} → 全体己方式神 3 护甲 |
+| 07 觉醒·久次良 | ✅ | 觉醒牌 keywords 伪关键字换绑 power_equal_shield（力量等同于护甲） |
+| 08 铃鹿山的秘宝 | ✅ | 幻境，field_keywords [health_floor_one]（己方生命不降到 1 以下——伤害管线钳制） |
+
+## 月夜幻响完结说明与暂定清单
+
+- 03 月夜幻响包 9 式神全部完结（首批 4 + 本批 5），含 20 张幻境牌；幻境机制全链落地（队列/耐久/能力管线/叠加/牌库顶使用/生命下限）。
+- 暂定/报备口径（待维护者确认，统一登记在 `questions.md` 待确认节）：随机代替选择 ×3（残阳无影"选择召唤"、竹取物语"随机召唤"的目标池、余辉"弃一张幻境牌"）、永劫轮回②转移目标幻境口径、帷幕幻境仅标记、白骨之盾 choose 池、月坠"任意途径获得耐久"判定、竹取物语取首个幻境、觉醒·辉夜姬叠加合并单实体。
+- 牌手受伤事件接线：`on_player_damaged`（payload player=下标）+ `source_side: friendly/opponent`——彼岸花基础/觉醒、火鼠裘①、残阳无影/月之奥义 temp_grants 均按此；式神受伤才是 `on_damage`（victim=Ref）。
+
 ## 与原版描述的出入（已决议，2026-07）
 
 1. **妖刀姬基础/觉醒能力**：按原版"对敌方牌手造成**伤害**时"（任意伤害）实现。
@@ -768,7 +845,7 @@
   - 致命之羽 = 10012621（以津真天 100126 < 鸩 100128）；子选项 鎏金幻羽 = 10012652、蚀刃毒羽 = 10012851
   - 涅槃明灯 = 10010521（凤凰火 100105 < 青行灯 100112）；子选项 涅槃业火 = 10010551、烛火重燃 = 10011251（主牌与烛火重燃未实现）
   - 福星高照 = 10011721（山兔 100117 < 座敷童子 100129）；子选项 幸运兔兔 = 10011751、鸿运当头 = 10012951（已入库）
-  - 冰霜永冻 = 10012121（雪女 100121 < 雪童子 100122）；子选项 冰封 = 10012152（已入库）、雪刃 = 10012251（幻境未实现，暂缓）
-  - 跳跳兄弟 = 10012021（跳跳弟弟 100120 < 跳跳哥哥）；跳跳哥哥未加入——主牌与子选项 尸瘴 = 10012051（幻境）均暂缓
+  - 冰霜永冻 = 10012121（雪女 100121 < 雪童子 100122）；子选项 冰封 = 10012152（已入库）、雪刃 = 10012251（幻境机制已落地，卡牌未录入）
+  - 跳跳兄弟 = 10012021（跳跳弟弟 100120 < 跳跳哥哥）；跳跳哥哥未加入——主牌与子选项 尸瘴 = 10012051（幻境机制已落地，式神/卡牌未录入）均暂缓
 - 主牌均须等两位所属式神都已引入才能进 db（loader 校验 shikigami2 存在）；
   剩余主牌待子选项机制：涅槃明灯（烛火重燃）、冰霜永冻（雪刃）、跳跳兄弟（跳跳哥哥未加入）；森佑灵矢已齐备。

@@ -1,0 +1,17 @@
+id: 10030405
+name: 星辰之境
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 5
+      form_health: 5
+      effects:
+        steps:
+          # [增强]：你每有一个幻境，此牌便获得1力量和1生命（动态身材光环，读取时
+          # 求值——活局面量；形态离场经 _destroy_form 同路径移除）
+          - {op: stat_aura, kind: field_count_stats, power: 1, health: 1}
+      text: "[增强]：{你每有一个幻境，此牌便获得1力量和1生命。}"

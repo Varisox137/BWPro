@@ -186,19 +186,30 @@ class ExecContext:
     memo: dict[str, Any] | None = None  # 块内步骤间暂存（由 _resolve_block 初始化）：
     # damage 动作写入 last_damage_victims（上一步伤害的受伤者），后续 step 以
     # TargetSpec(kind="context", key="last_damage_victims") 引用（风神一扇）
+    field: Any = None  # 触发来源幻境实体（幻境能力块结算时持有——自毁/改降耐久/
+    # 自身耐久条件等"此牌"自指语义的定位依据；非幻境能力为 None）
+    block: Any = None  # 正在结算的效果块（_resolve_pending 塞入——field_rebound
+    # "失去此能力"按对象身份定位触发块在 def.abilities 中的下标用；on_play 为 None）
 
 
 class FieldState(BaseModel):
     """在场幻境实体（幻境机制；幻境牌 card_type="field" 使用后"召唤幻境"入队）。
 
-    所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，在场期间随队列存续生效）；
-    耐久 0 被消灭（耐久变化/消灭事件流程见 engine._change_field_intensity）。
+    所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，跳过 mods.disabled_abilities
+    登记的下标——荒海"失去此能力"；外加 extra_abilities 叠加块——辉夜姬觉醒"能力和
+    耐久会叠加"合并持多块；在场期间随队列存续生效）；耐久 0 被消灭（耐久变化/消灭
+    事件流程见 engine._change_field_intensity）。
     """
 
     card_id: int  # 幻境牌数据 id（名称/能力块读 db.cards[card_id]）
     intensity: int  # 当前耐久（正整数；牌手受伤时队列首个幻境减少等量耐久，0 = 消灭）
     shikigami: int | None = None  # 所属式神数据 id（= 幻境牌的所属式神；伤害来源归属用：
     # 该式神在场时幻境伤害来源为该式神，否则为无来源伤害——规范"零"条）
+    mods: dict[str, Any] = Field(default_factory=dict)  # 召唤牌实例 mods 快照
+    # （intensity_boost 已于召唤时结算入耐久；disabled_abilities = 被移除的能力块下标）
+    keywords: list[str] = []  # 幻境实体关键字（召唤时拷贝 CardDef.field_keywords——
+    # 帷幕/health_floor_one/deck_top_play 等幻境语义；方圆之备类效果可后续授予入列）
+    extra_abilities: list = []  # 叠加合并获得的能力块（EffectBlock 列表，免循环引用不注解）
 
 
 class PlayerState(BaseModel):

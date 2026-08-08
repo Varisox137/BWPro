@@ -1,0 +1,25 @@
+id: 10030204
+name: 残阳无影
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: SR
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          # 「选择召唤一个泷夜叉姬的幻境」：随机代替玩家选择（同 search_deck 惯例；
+          # choose 通道待 pending_choice 落地后补——见 questions.md）
+          - {op: summon_field, shikigami: self, pick: random}
+      temp_grants:
+        # 当对牌手造成伤害时（不限战斗类别），使泷夜叉姬的所有幻境获得3耐久（牌手
+        # 受伤事件为 on_player_damaged，player=受伤牌手下标——限定敌方）；uses 放开
+        # 使[连击]第二段同样触发（同胧月雪华斩先例）
+        - when: on_player_damaged
+          uses: 99
+          condition: {source_shikigami: self, player: opponent}
+          steps:
+            - {op: field_op, side: self, pick: all, amount: 3}
+      text: "选择召唤一个泷夜叉姬的幻境。当对牌手造成伤害时，使泷夜叉姬的所有幻境获得3耐久。"

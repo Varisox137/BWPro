@@ -1,0 +1,15 @@
+id: 10030403
+name: 余辉
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: SR
+      level: 2
+      effects:
+        steps:
+          # 「弃一张幻境牌」：随机代替玩家选择（同 search_deck 惯例）
+          - {op: discard, shikigami: all, card_type: field, count: 1, random_pick: true}
+          - {op: draw, amount: 3}
+      text: "弃一张幻境牌，然后抽三张牌。"

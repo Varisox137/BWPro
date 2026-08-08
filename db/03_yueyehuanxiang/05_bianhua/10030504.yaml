@@ -1,0 +1,23 @@
+id: 10030504
+name: 花开彼岸
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 7
+      form_health: 5
+      keywords: [haste]
+      effects:
+        steps: []
+      abilities:
+        # 每当彼岸花受到伤害时，你受到等量的伤害（来源=彼岸花→己方伤害链，
+        # 可触发基础/觉醒；牌手受伤不再回流本块——victim 限定彼岸花自身）
+        - when: on_damage
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: damage, amount: {event: amount},
+               target: {kind: all, pool: self_player}}
+      text: "[迅捷]。每当彼岸花受到伤害时，你受到等量的伤害。"

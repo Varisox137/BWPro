@@ -1,0 +1,20 @@
+id: 10030203
+name: 日轮之城
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 1
+      intensity: 1
+      keywords: [fast]
+      effects:
+        steps: []
+      abilities:
+        # 泷夜叉姬受到的战斗伤害改为降低此幻境的耐久（同新月之哀通道）
+        - when: on_after_shield
+          condition: {victim_shikigami: self, kind: combat}
+          steps:
+            - {op: redirect_to_field}
+      text: "[瞬发]。泷夜叉姬受到的战斗伤害改为降低此幻境的耐久。"

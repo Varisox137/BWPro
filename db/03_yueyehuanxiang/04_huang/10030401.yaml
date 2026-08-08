@@ -1,0 +1,23 @@
+id: 10030401
+name: 星轨
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 1
+      intensity: 4
+      field_keywords: [piercing]  # [贯通]：幻境实体关键字（召唤时拷贝到实体；
+      # 幻境能力伤害带贯通，引擎 _ability_piercing 读取）
+      effects:
+        steps: []
+      abilities:
+        # 己方回合开始时，[投射]：造成等同于它耐久的伤害，然后自毁
+        - when: on_turn_start
+          condition: {active: self}
+          steps:
+            - {op: damage, amount: {field_intensity: self},
+               target: {kind: all, pool: projectile}}
+            - {op: field_op, pick: self_field, action: destroy}
+      text: "[贯通]。己方回合开始时，[投射]：{造成等同于它耐久的伤害}，然后自毁。"

@@ -1,0 +1,21 @@
+id: 10030202
+name: 新月之哀
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 1
+      intensity: 1
+      keywords: [fast]
+      effects:
+        steps: []
+      abilities:
+        # 泷夜叉姬受到的非战斗伤害改为降低此幻境的耐久（改降量 = min(伤害余量, 当前耐久)，
+        # 不足部分照常结算；"护甲计算后"批次 insert 挂点）
+        - when: on_after_shield
+          condition: {victim_shikigami: self, kind: effect}
+          steps:
+            - {op: redirect_to_field}
+      text: "[瞬发]。泷夜叉姬受到的非战斗伤害改为降低此幻境的耐久。"

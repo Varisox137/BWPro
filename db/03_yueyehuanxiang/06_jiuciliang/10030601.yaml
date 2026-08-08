@@ -1,0 +1,15 @@
+id: 10030601
+name: 鲸骨·驻
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        # 战斗 +0/+2：护甲由 gain_shield 授予（文射 10010103 先例——战斗牌身材增益
+        # 走 effects steps，目标 self；力量 0 增益不写步）
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: ""

@@ -1,0 +1,16 @@
+id: 10030605
+name: 鲸骨·开
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: combat
+      rarity: R
+      level: 2
+      effects:
+        steps:
+          # [增强]：你每有一个幻境，此牌便获得+1力量和+1护甲（活局面量——战斗牌
+          # 战力/护甲提取走 _step_amount 同一流水线，使用与展示读取时求值）
+          - {op: buff_power, amount: {field_count: controller}, target: {kind: self}}
+          - {op: gain_shield, amount: {field_count: controller}, target: {kind: self}}
+      text: "[增强]：{你每有一个幻境，此牌便获得+1力量和+1护甲。}"

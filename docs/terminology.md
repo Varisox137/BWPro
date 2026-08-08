@@ -12,7 +12,7 @@
 | 召唤物 | `summon` | `kind = "summon"`；气绝即离场、不可升级、入场 1 级（暂定）、生成即进入战斗区 | ✅ |
 | 变形物 | `kind = "transform"` | `ShikigamiDef.kind="transform"`：视同召唤物类不入构筑池/测试卡组；由 `transform` 动作变入（继承座位/等级，不继承增减益；变形/还原均为再进场——进场顺序排本队最后，见「进场顺序」行），`untransform`/气绝前2 按 `transform_origin` 快照还原（快照携带的剩余倒计时优先保留、不被能力进场重置初值）；保留"所属式神" `transform_owner`（无法使用原式神的牌） | ✅ |
 | 实体 | entity / `ShikigamiState` | 局内式神或召唤物；记录 `home_slot`（准备区编号 1-4，召唤物 None） | ✅ |
-| 幻境 | `FieldState` / `PlayerState.fields` | 在场幻境实体（card_id/intensity/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（框架已落地，实卡未录入） | ✅ |
+| 幻境 | `FieldState` / `PlayerState.fields` | 在场幻境实体（card_id/intensity/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（机制与首批实卡均已落地——03 月夜幻响第二批） | ✅ |
 | 气绝 | `defeated` | `ShikigamiState.defeated`；倒计时后复活 | ✅ |
 | 濒死 | `dying` | 生命 ≤ 0 但气绝事件尚未结算（伤害流程扣减生命后先标记，气绝时清除）：不受伤害/治疗、不进随机与选择目标池、不能再次被消灭；能力照常（in_play 不变）、可以攻击 | ✅ |
 | 离场 | `despawned` | 召唤物气绝或被移动即离场（不视为移动、非气绝、不进复活流程） | ✅ |
@@ -62,7 +62,7 @@
 | 法术牌 | `spell` | card_type | ✅ |
 | 战斗牌 | `combat` | card_type | ✅ |
 | 形态牌 | `form` | card_type | ✅ |
-| 幻境牌 | `field`（card_type） | card_type=field + `intensity`（耐久，必填正整数）/ `field_front`（进场置队首旗标，缺省队尾）：使用后先"召唤幻境"入所属牌手幻境队列、再执行进场效果，本体入墓地（报备口径）。框架已落地，实卡未录入 | ✅（框架） |
+| 幻境牌 | `field`（card_type） | card_type=field + `intensity`（耐久，必填正整数）/ `field_front`（进场置队首旗标，缺省队尾）：使用后先"召唤幻境"入所属牌手幻境队列、再执行进场效果，本体入墓地（报备口径）。首批实卡已落地（03 月夜幻响第二批 20 张）；在场实体的关键字经 `field_keywords` 声明（不经 `keywords`，loader 不校验 KEYWORDS 子集——health_floor_one/deck_top_play/piercing 已生效、veil 仅标记） | ✅ |
 | 协战牌 | `reinforce` / `options` / `choice` | card_type=协战主牌（shikigami 主 + shikigami2 副双归属）；`options` = 两个子选项 token 卡 id（[0] 主侧 [1] 副侧）；打出时 cmd 带 `choice`（0/1）选择 → 合法性（出战/等级/鬼火/目标）按子卡 → 生成 token 入手并视作从手牌使用（完整使用事件流程）→ 主牌离手进 `exiled` 区（不进墓地）；[羁绊] 不进关键词表，实现为子卡普通 steps；**羁绊触发条件 = 使用此牌时对应式神在场（等级 ≥1 且未气绝）**——step 级 `condition: {shikigami_active: <式神id>}` 门控（generate 类），倒计时增减/发起攻击/形态进场类由 op 空操作语义隐式满足 | ✅ |
 | 觉醒牌 | `subtype = "awaken"` | **不是主类型**：任意 card_type + subtype（rules.md:502）；法术觉醒使用事件流程：墓地 → `on_before_awaken`（觉醒前，即时）→ 替换式神能力 → 法术本身效果 → `on_awakened`（觉醒后，延时）→ 永久身材增益（`awaken_power`/`awaken_health`） | ✅ |
 | 觉醒（状态） | `awakened` | `ShikigamiState.awakened` = 觉醒牌 id；能力改读该牌 `abilities` 块；气绝/复活保留（但气绝时能力不在场——觉醒门控类判定要求未气绝） | ✅ |
@@ -127,6 +127,8 @@
 | 额外鬼火（伪关键字） | `extra_orb_cost` | 引擎级伪关键字（跳跳妹妹先天，`ShikigamiDef.keywords` → perm_keywords）：该式神出击/使用其战斗牌需额外消耗 1 点鬼火（出击共 2 火）；[迅捷]出击、[瞬发]/[不消耗鬼火]用牌时全免（定案(11)） | ✅ |
 | 不能攻击 | `no_attack`（ShikigamiDef 字段） | 仅召唤物/衍生物类：不能发动攻击（冰墙）——出击校验拦截、效果发起的攻击（launch_attack）为空操作 | ✅ |
 | （引擎级） | `keep_attack_buffs` | 攻击后到期强化不因攻击移除（残心；卡面不出现此关键字） | ✅ |
+| 能力伪关键字 | `power_if_field` / `power_per_field` / `power_if_shield` / `power_equal_shield` / `field_stack` / `field_ability_stack`（schema `ABILITY_PSEUDO_KEYWORDS`） | 属"式神能力"而非卡牌/实体关键字：写在式神基础能力 keywords 或觉醒牌 keywords 中，觉醒时引擎把基础式神的伪关键字移除、改为授予觉醒牌（perm 类别）——power_if_field 有幻境 +1 力量（泷夜叉姬）/ power_per_field 每幻境 +1 力量（觉醒·泷夜叉姬）/ power_if_shield 有护甲 +1 力量（久次良）/ power_equal_shield 力量=护甲（觉醒·久次良）/ field_stack 同名幻境再召唤耐久叠加（辉夜姬）/ field_ability_stack 能力与耐久都叠加——extra_abilities 合并入已有实体（觉醒·辉夜姬）；前四个身材类读取时求值（stat_aura 通道）、grant_keyword scope=turn 可临时授予（白骨之盾） | ✅ |
+| 幻境实体关键字 | `field_keywords`（CardDef 字段） | 幻境牌声明进场实体持有关键字（不经 `keywords`，loader 不校验 KEYWORDS 子集；召唤时拷贝到 FieldState，离场失效）：health_floor_one 己方生命不降到 1 以下（铃鹿山的秘宝）/ deck_top_play 牌库顶视同手牌、等级 1 不耗火、以此法使用受 2 伤（彼岸归航——出牌管线 play_from=deck 通道）/ piercing 幻境能力伤害贯通（星轨——`_ability_piercing` 并入 ctx.field.keywords）/ veil 仅作标记（方圆之备 field_op grant_keyword veil——结算拦截未实现，见 questions.md） | ✅ |
 
 **关键字持久性三类**（每类均为可重复多重集，存于 `ShikigamiState`）：
 
@@ -140,7 +142,7 @@
 
 ## 预留机制（译名确认，规则 Phase 5+）
 
-融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、赐能 `blessing`、烹饪 `cook`、战技 `tactical`、蓄力 `charging`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；蓄力英文名 `charging` 为维护者定案预留，与充能 charge 区分。）
+融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、赐能 `blessing`、烹饪 `cook`、战技 `tactical`、蓄力 `charging`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；幻境/幻境耐久已于月夜幻响批次落地——card_type=field、耐久=`intensity`，见 rules.md 第三十一章与「核心概念」；蓄力英文名 `charging` 为维护者定案预留，与充能 charge 区分。）
 
 ## 结算与事件
 
@@ -270,6 +272,10 @@
 | 延迟能力次数 | `uses`（delay_grant 参数） | 延迟能力可触发次数（默认 1；uses=99 表示回合内不限次） | ✅ |
 | 生命增益钳制 | buff_health 负值 | 上限下调（负值，墨笔夺魂"降低生命"）：同步钳当前生命到新上限；上限降至 ≤0 时目标气绝（维护者定案） | ✅ |
 | 战斗绑定临时触发 | `battle`（on_player_damaged payload 键） | 牌手伤害事件补战斗上下文键——战斗牌绑定注册的 temp_grants（uses 递减）对牌手伤害也生效 | ✅ |
+| 幻境定向 op 组 | `field_op` / `summon_field` / `redirect_to_field` / `boost_change` / `field_rebound` / `draw_until`（动作） | field_op：对幻境增减耐久/消灭/授关键字——pick=self/others/all/random/max_intensity/self_field，action=destroy/grant_keyword（残阳无影/星轨自毁/方圆之备授帷幕）；summon_field：效果直接召唤幻境——shikigami 限定、pick=random/all（竹取物语/永劫轮回/觉醒·辉夜姬）、intensity 覆写入场耐久、同名叠加走 field_stack/field_ability_stack 路径；redirect_to_field：伤害改由幻境承受——field_shikigami 定位控制者首个该式神幻境、max_amount 上限（新月之哀/日轮之城/竹取物语/永劫轮回）；boost_change：on_before_field_intensity 可变 change 改量（月坠"获得耐久效果+2"）；field_rebound：幻境消灭前回手并失去该能力（荒海）；draw_until：抽至所抽牌等级总和 ≥n（血华散 level_sum_ge） | ✅ |
+| 幻境配套参数 | `intensity_boost`（search_deck）/ `card_type`+`random_pick`（discard）/ `field_intensity`（repeat count/动态数值）/ `field_count`（动态数值） | search_deck 检索幻境入手写 mods 耐久 +n（五道难题）；discard 按卡牌类型定向弃牌、random_pick 随机代替选择（余辉——暂定见 questions.md）；动态数值 {"field_intensity": "self"}=来源幻境当前耐久（星轨投射、星陨重复次数）、{"field_count": "controller"}=控制者幻境数（鲸骨·开、stat_aura field_count_stats——星辰之境每幻境 +1/+1） | ✅ |
+| 己方伤害口径 | `source_side: friendly` + 自伤 source=己方牌手自身 | 火照之路/彼岸归航/觉醒·彼岸花效果等对己方牌手的自伤以己方牌手自身为伤害来源（非 None），计入"己方式神/卡牌/牌手效果造成的伤害"链；ext `self_damage_taken` 记账——conditional_mods 算子 `self_damage_taken_ge` 打出装配时求值（死亡之花[增强]）；牌手受伤挂 `on_player_damaged`（payload player=下标）与式神受伤 `on_damage`（victim=Ref）区分 | ✅ |
+| 幻境条件键 | `friendly_field` / `friendly_field_intensity_ge` / `field_summon_distinct_ge` / `_le`（通用后缀） | {friendly_field: true}=控制者有任一在场幻境（曜断/鱼鳞之备门控、conditional_keywords 算子同名）；{friendly_field_intensity_ge: n}=任一幻境耐久 ≥n（竹取物语 20 耐久门控）；{field_summon_distinct_ge: n 或 {count, shikigami:"self"\|id}}=本局召唤过的不同名幻境数（ext `field_summon_ids` 记账——觉醒·辉夜姬五幻境增强）；`_le` 后缀=事件 payload/控制者 ext 值 ≤n（黄泉花境 amount_le: -1"耐久降低时"，与既有 `_ge` 对偶）；幻境能力收集器键 `field_self`（该幻境自身）/ `field_intensity_ge`（耐久 ≥n 才生效——"若此牌耐久>=10"系）；conditional_keywords 算子 `deck_field_distinct_ge`=牌库不同名幻境牌数 ≥n（五道难题[瞬发]） | ✅ |
 
 **ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）：
 
@@ -315,6 +321,10 @@
 | `move_count_turn` | `ShikigamiState.ext` | 本回合 [移动] 次数（`_enter_combat`/`_retreat` 进出各计一次；召唤物进场算、气绝离场不算；任一回合开始清除——半回合作用域；正义必胜 {ext: move_count_turn} 读取） |
 | `form_death_play` | `PlayerState.ext` | 形态牌气绝使用旗标（{holder, energy}；form_death_play 动作登记，觉醒·小鹿男）：持有者气绝时其形态牌可用——耗 energy 能量、先复活再结附（觉醒常驻、跨气绝保留） |
 | `burst_x` | `CardInstance.mods` | 爆能X 能量快照（energy_cost="all" 出牌时写入当前能量；步骤数值 {"burst_x": true} 读取，memo 同名键优先；本次结算后清除，弹回回手不残留） |
+| `self_damage_taken` | `PlayerState.ext` | 本局受到过己方来源伤害标记/计数（己方来源对己方牌手造成伤害时引擎记账——含自伤 source=牌手自身；死亡之花 conditional_mods self_damage_taken_ge 读取） |
+| `field_summon_ids` | `PlayerState.ext` | 本局召唤过的幻境数据 id 列表（_summon_field 记账；条件键 field_summon_distinct_ge 按去重数/所属式神读取——觉醒·辉夜姬"召唤五个不同幻境"） |
+| `intensity_boost` | `CardInstance.mods` | 检索入手的幻境耐久增量（search_deck intensity_boost 写入；召唤入场时加到初始耐久——五道难题 +5） |
+| `disabled_abilities` / `extra_abilities` | `FieldState`（字段） | 幻境能力叠加合并：field_ability_stack 同名再召唤时新能力并入已有实体 extra_abilities、重复能力记入 disabled_abilities 去重（觉醒·辉夜姬"能力和耐久会叠加"；单实体结算口径暂定见 questions.md） |
 
 ## 增强与修饰（设计已定，部分已实现；见 `docs/enhance-design.md`）
 

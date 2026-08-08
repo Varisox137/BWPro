@@ -1,0 +1,33 @@
+id: 10030606
+name: 方圆之备
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 5
+      form_health: 8
+      keywords: [veil]  # 久次良获得[帷幕]（形态 keywords 结附期间授予通道）
+      effects:
+        steps:
+          # 你的所有幻境获得[帷幕]（已在场者——幻境实体关键字；之后召唤的由
+          # abilities 块授予；帷幕对幻境的取对象排除待 choose 通道，见 questions.md）
+          - {op: field_op, side: self, pick: all, action: grant_keyword, keyword: veil}
+          # 进场时若你有幻境，己方所有式神获得3护甲
+          - {op: gain_shield, amount: 3, target: {kind: all, pool: friendly_shikigami},
+             condition: {friendly_field: true}}
+      abilities:
+        # 之后召唤的己方幻境同样获得[帷幕]（授予幂等——已持有者跳过）
+        - when: on_summon_field
+          condition: {player: self}
+          steps:
+            - {op: field_op, side: self, pick: all, action: grant_keyword,
+               keyword: veil}
+        # 己方回合开始时若你有幻境，己方所有式神获得3护甲
+        - when: on_turn_start
+          condition: {active: self, friendly_field: true}
+          steps:
+            - {op: gain_shield, amount: 3, target: {kind: all, pool: friendly_shikigami}}
+      text: "久次良和你的所有幻境获得[帷幕]。进场或己方回合开始时若你有幻境，己方所有式神获得3护甲。"

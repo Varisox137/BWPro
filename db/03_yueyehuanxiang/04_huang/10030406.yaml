@@ -1,0 +1,26 @@
+id: 10030406
+name: 觉醒·荒
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1   # +1/+1
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        steps: []
+      abilities:
+        # [觉醒]：每当荒造成战斗伤害时，使己方所有幻境获得1耐久（基础能力保留）
+        - when: on_damage
+          condition: {source_shikigami: self, kind: combat}
+          steps:
+            - {op: field_op, side: self, pick: all, amount: 1}
+        # 每当你使用幻境牌时，荒获得[迅捷]（一次性类别，出击消耗）
+        - when: on_card_played
+          condition: {card_type: field, player: self}
+          steps:
+            - {op: grant_keyword, keyword: haste, target: {kind: self}}
+      text: "[觉醒]：{每当荒造成战斗伤害时，使己方所有幻境获得1耐久。每当你使用幻境牌时，荒获得[迅捷]。}"

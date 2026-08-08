@@ -1,0 +1,16 @@
+id: 10030508
+name: 彼岸归航
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: SSR
+      level: 3
+      intensity: 10
+      field_keywords: [deck_top_play]  # 「牌库顶视同手牌使用/等级1不耗火/以此法
+      # 使用受2伤」——幻境实体关键字（引擎出牌管线 play_from=deck 通道，召唤时
+      # 拷贝到实体，离场即失效）
+      effects:
+        steps: []
+      text: "你可以将牌库顶的牌视同手牌使用。当你以此法使用牌时，你受到2点伤害。你牌库顶等级为1的牌不消耗鬼火。"

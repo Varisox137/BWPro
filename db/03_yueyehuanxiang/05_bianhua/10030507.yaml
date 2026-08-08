@@ -1,0 +1,16 @@
+id: 10030507
+name: 血华散
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 3
+      effects:
+        steps:
+          # 抽牌直至所抽牌等级总和>=5（逐张经 draw 管线；抽空/判负/保底终止）
+          - {op: draw_until, level_sum_ge: 5}
+          # 对你造成5点伤害（来源=彼岸花→己方伤害，可触发基础/觉醒）
+          - {op: damage, amount: 5, target: {kind: all, pool: self_player}}
+      text: "抽牌直至所抽牌等级总和>=5，对你造成5点伤害。"

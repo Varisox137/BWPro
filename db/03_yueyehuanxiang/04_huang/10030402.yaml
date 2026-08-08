@@ -1,0 +1,22 @@
+id: 10030402
+name: 荒海
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 1
+      intensity: 1
+      keywords: [fast]
+      effects:
+        steps: []
+      abilities:
+        # 被消灭时，将此牌回手并失去此能力（on_before_field_destroy 消灭前挂点；
+        # field_self 限定仅自身被消灭时触发；mods.disabled_abilities 记下本块下标，
+        # 下次召唤起不再注册）
+        - when: on_before_field_destroy
+          condition: {field_self: true}
+          steps:
+            - {op: field_rebound}
+      text: "[瞬发]。被消灭时，将此牌回手并失去此能力。"

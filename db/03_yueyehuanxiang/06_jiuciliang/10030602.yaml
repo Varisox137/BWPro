@@ -1,0 +1,19 @@
+id: 10030602
+name: 铃鹿山的守护
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: SR
+      level: 1
+      intensity: 6
+      effects:
+        steps: []
+      abilities:
+        # 每当己方式神受到伤害时，该式神获得1护甲
+        - when: on_damage
+          condition: {victim_side: friendly, victim_kind: shikigami}
+          steps:
+            - {op: gain_shield, amount: 1, target: {kind: context, key: victim}}
+      text: "每当己方式神受到伤害时，该式神获得1护甲。"

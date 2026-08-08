@@ -1,0 +1,23 @@
+id: 10030604
+name: 鱼鳞之备
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: form
+      rarity: R
+      level: 2
+      form_power: 4
+      form_health: 6
+      effects:
+        steps:
+          # 进场时若你有幻境，久次良获得2护甲
+          - {op: gain_shield, amount: 2, target: {kind: self},
+             condition: {friendly_field: true}}
+      abilities:
+        # 己方回合开始时若你有幻境，久次良获得2护甲
+        - when: on_turn_start
+          condition: {active: self, friendly_field: true}
+          steps:
+            - {op: gain_shield, amount: 2, target: {kind: self}}
+      text: "进场或己方回合开始时若你有幻境，久次良获得2护甲。"

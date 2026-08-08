@@ -1,0 +1,23 @@
+id: 10030305
+name: 龙首之玉
+versions:
+  best: 20200624
+  history:
+    - date: 20200624  # 发布日期
+      card_type: field
+      rarity: R
+      level: 2
+      intensity: 5
+      effects:
+        steps: []
+      abilities:
+        # 每个回合结束时（双方回合），[投射]：造成2点伤害
+        - when: on_turn_end
+          steps:
+            - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
+        # 若此牌耐久>=10，再对敌方准备区式神各造成1点伤害
+        - when: on_turn_end
+          condition: {field_intensity_ge: 10}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: enemy_bench}}
+      text: "每个回合结束时，[投射]：{造成2点伤害}。若此牌耐久>=10，再对敌方准备区式神各造成1点伤害。"
