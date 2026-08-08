@@ -12,7 +12,7 @@
 | 召唤物 | `summon` | `kind = "summon"`；气绝即离场、不可升级、入场 1 级（暂定）、生成即进入战斗区 | ✅ |
 | 变形物 | `kind = "transform"` | `ShikigamiDef.kind="transform"`：视同召唤物类不入构筑池/测试卡组；由 `transform` 动作变入（继承座位/等级，不继承增减益；变形/还原均为再进场——进场顺序排本队最后，见「进场顺序」行），`untransform`/气绝前2 按 `transform_origin` 快照还原（快照携带的剩余倒计时优先保留、不被能力进场重置初值）；保留"所属式神" `transform_owner`（无法使用原式神的牌） | ✅ |
 | 实体 | entity / `ShikigamiState` | 局内式神或召唤物；记录 `home_slot`（准备区编号 1-4，召唤物 None） | ✅ |
-| 幻境 | `PhantomState` / `PlayerState.phantoms` | 在场幻境实体（card_id/intensity/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（框架已落地，实卡未录入） | ✅ |
+| 幻境 | `FieldState` / `PlayerState.fields` | 在场幻境实体（card_id/intensity/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（框架已落地，实卡未录入） | ✅ |
 | 气绝 | `defeated` | `ShikigamiState.defeated`；倒计时后复活 | ✅ |
 | 濒死 | `dying` | 生命 ≤ 0 但气绝事件尚未结算（伤害流程扣减生命后先标记，气绝时清除）：不受伤害/治疗、不进随机与选择目标池、不能再次被消灭；能力照常（in_play 不变）、可以攻击 | ✅ |
 | 离场 | `despawned` | 召唤物气绝或被移动即离场（不视为移动、非气绝、不进复活流程） | ✅ |
@@ -386,7 +386,7 @@
 | 本回合伤害过滤 | `dealt_damage_turn`（TargetSpec 过滤键 / ext 键） | 本回合造成过伤害的角色过滤（记仇"本回合造成过伤害的敌方式神"）：伤害结算点 `_mark_dealt_damage_turn` 按来源式神记账 `ShikigamiState.ext["dealt_damage_turn"]`，任一回合开始清除（半回合作用域）；spec_pool_refs 统一校验 | ✅ |
 | 已展示计数 | `enemy_revealed_count`（动态数值键） | 敌方手牌中已展示牌计数（`_enemy_revealed_count`，引擎读取、活局面量）：三口径——`spell`=法术牌数（模仿+护甲）/ `other`=其他牌数（模仿+力量）/ `shikigami_of_chosen`=选择目标所指式神专属牌数（棒球炸弹增伤，协战归属同 _card_belongs_to）；`_step_amount` 签名加 chosen | ✅ |
 | 能力进场事件 | `on_ability_enter` | 式神能力进场统一钩子（延时时机 queue，payload {player, shikigami, target: Ref}）：对局开始/升 1 级/复活/觉醒替换/变形与还原均经 `_register_ability_countdown` 发出——萤草"当你使用法术牌时…"改为能力光环前置门控 | ✅ |
-| 幻境事件 | `on_summon_phantom` / `on_before_phantom_intensity` / `on_phantom_intensity_changed` / `on_before_phantom_destroy` / `on_phantom_destroyed` | 召唤幻境后（延时 {player, phantom（队列下标）, card_id, source, reason}——辉夜姬能力/[融合]挂点预留）/ 耐久变化前（即时，payload 含可变 change dict，监听者可改 change["amount"]——荒"月坠"）/ 耐久变化后（延时 {old, new, amount（实际变化量带符号）}，负量 clamp——黄泉花境）/ 消灭前（延时，触发时幻境仍在队列——不见岳各幻境）/ 消灭后（延时，发出时已出队，预留；报备口径：排在耐久变化后之后）。流程见 rules.md 第三十一章（事件名原 durability 版本已作废——术语定名 intensity） | ✅ |
+| 幻境事件 | `on_summon_field` / `on_before_field_intensity` / `on_field_intensity_changed` / `on_before_field_destroy` / `on_field_destroyed` | 召唤幻境后（延时 {player, field（队列下标）, card_id, source, reason}——辉夜姬能力/[融合]挂点预留）/ 耐久变化前（即时，payload 含可变 change dict，监听者可改 change["amount"]——荒"月坠"）/ 耐久变化后（延时 {old, new, amount（实际变化量带符号）}，负量 clamp——黄泉花境）/ 消灭前（延时，触发时幻境仍在队列——不见岳各幻境）/ 消灭后（延时，发出时已出队，预留；报备口径：排在耐久变化后之后）。流程见 rules.md 第三十一章（英文键映射定稿：幻境=field、耐久=intensity、队首=field_front、内部 op=field_destroy；原 phantom/durability 命名均作废） | ✅ |
 | 能力光环 | `scope="ability"` / `shikigami="any"`（card_aura 参数） | scope="ability"：光环挂能力持有者（同 form 作用域机制），气绝/变形/还原/消失/觉醒替换前经 `_clear_ability_card_auras` 统一清理；shikigami="any"：光环匹配任意所属式神的牌（存 None，`_match_auras` 通配——爱意绵绵全式神手牌通道） | ✅ |
 | 倒计时复原 | `reset`（countdown_delta 参数） | 复原倒计时初值（countdown_initial）、不触发归零结算、无能力者空操作——疯魔琴心"使敌方式神的倒计时复原" | ✅ |
 | 卡牌变换 | `transform_card`（动作） | 手牌按 card_id 原位变换为 into 指定新卡（count=1；无匹配空操作；新 uid + `_materialize` 快照，继承 mods 中实例标志） | ✅ |
@@ -413,4 +413,4 @@
 | 能量/形态条件键 | `holder_has_form` / `energy_ge` / `pre_play_form`（条件运算符） | {holder_has_form: bool}=能力持有者当前是否结附形态（萤草 20200327）；{energy_ge: n}=能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）；{pre_play_form: bool}=on_card_played 新 payload——该牌使用前所属式神是否已结附形态（打出前快照：形态牌先结附后发事件，收集时求值的 holder_has_form 对该牌恒真） | ✅ |
 | 出击次数条件 | `assaults_left_ge` / `assaults_left_le`（条件运算符） | {assaults_left_ge: n} / {assaults_left_le: n}：控制者剩余出击次数 ≥/≤ n（真意之歌 20200423"若你出击次数大于0……否则……"两段 step 分流门控） | ✅ |
 | 置入牌库位置 | `position`（generate 参数） | position="random"：生成牌随机插入牌库、**不洗牌**（"置入牌库"原版语义，维护者定案——同心协力"将一张此牌的复制置入你的牌库"）；缺省按 zone 既有语义（deck=库底） | ✅ |
-| 幻境消灭 | `phantom_destroy`（动作） | **内部 op，数据不可用**：耐久 0 消灭流的待结算项——将幻境从所属牌手队列移除（能力同时失效）并发 `on_phantom_destroyed`（rules.md 第三十一章第四节） | ✅ |
+| 幻境消灭 | `field_destroy`（动作） | **内部 op，数据不可用**：耐久 0 消灭流的待结算项——将幻境从所属牌手队列移除（能力同时失效）并发 `on_field_destroyed`（rules.md 第三十一章第四节） | ✅ |

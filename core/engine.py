@@ -32,7 +32,7 @@ from core.model import (
     CardInstance,
     ExecContext,
     GameState,
-    PhantomState,
+    FieldState,
     PlayerState,
     Ref,
     ShikigamiState,
@@ -1292,11 +1292,11 @@ class Game:
                 self._resolve_combat_card(p, si, card, cdef, method, chosen)
             elif cdef.card_type == "field":
                 # 幻境牌（规范第一条）：先以所使用的牌"召唤幻境"（入队 +
-                # on_summon_phantom），再执行幻境本身的进场效果（effects 块）。
+                # on_summon_field），再执行幻境本身的进场效果（effects 块）。
                 # 使用后卡牌本体入墓地（同法术——幻境实体独立存续，消灭时不再做
                 # 卡牌移动；简化口径待维护者确认）
                 self.move_card(p, card, "graveyard")
-                self._summon_phantom(
+                self._summon_field(
                     self.state.active, card, cdef,
                     Ref(player=self.state.active, shikigami=si) if si is not None else None)
                 ctx = ExecContext(
@@ -3320,7 +3320,7 @@ class Game:
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
-            self._phantom_intensity_loss(ev.victim.player, ev.amount, ev.source)
+            self._field_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind,
@@ -3506,29 +3506,29 @@ class Game:
 
     # ==================== 幻境（card_type="field"）管线 ====================
 
-    def _summon_phantom(self, pi: int, card: CardInstance, cdef: CardDef,
+    def _summon_field(self, pi: int, card: CardInstance, cdef: CardDef,
                         source: Ref | None, reason: str = "使用") -> None:
         """"召唤幻境"事件（要素：来源、原因、要召唤的幻境——规范第二条）：来源的所属
         牌手将该幻境添加至自身幻境队列末尾（field_front 标记者置于队首），发
-        "召唤幻境后"（延时 on_summon_phantom；辉夜姬能力/[融合]等挂点预留）。
+        "召唤幻境后"（延时 on_summon_field；辉夜姬能力/[融合]等挂点预留）。
         幻境实体耐久 = 幻境牌 intensity（正整数必填）。"""
         if cdef.intensity is None or cdef.intensity <= 0:
             raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（intensity）")
         p = self.state.players[pi]
-        ph = PhantomState(card_id=cdef.id, intensity=cdef.intensity,
+        ph = FieldState(card_id=cdef.id, intensity=cdef.intensity,
                           shikigami=cdef.shikigami)
         if cdef.field_front:
-            p.phantoms.insert(0, ph)
+            p.fields.insert(0, ph)
         else:
-            p.phantoms.append(ph)
-        idx = p.phantoms.index(ph)
+            p.fields.append(ph)
+        idx = p.fields.index(ph)
         self._log(f"{p.name} 召唤了幻境【{cdef.name}】（耐久 {ph.intensity}）")
         self._settle(f"【幻境】{p.name} 召唤幻境【{cdef.name}】"
                      f"（耐久 {ph.intensity}，队列第 {idx + 1} 位）")
-        self.emit("on_summon_phantom", player=pi, phantom=idx, card_id=cdef.id,
+        self.emit("on_summon_field", player=pi, field=idx, card_id=cdef.id,
                   source=source, reason=reason)
 
-    def _phantom_source(self, pi: int, ph: PhantomState) -> Ref | None:
+    def _field_source(self, pi: int, ph: FieldState) -> Ref | None:
         """幻境能力/伤害的来源归属（规范"零"条）：该在场幻境有所属式神且该式神在场
         → 该式神；否则为无来源（None）。"""
         if ph.shikigami is None:
@@ -3539,16 +3539,16 @@ class Game:
                 return Ref(player=pi, shikigami=si)
         return None
 
-    def _change_phantom_intensity(self, pi: int, idx: int, amount: int,
+    def _change_field_intensity(self, pi: int, idx: int, amount: int,
                                    source: Ref | None, reason: str) -> None:
-        """幻境耐久变化事件流程（规范第四条）：变化前（即时 on_before_phantom_
+        """幻境耐久变化事件流程（规范第四条）：变化前（即时 on_before_field_
         intensity，监听者可改可变 change["amount"]）→ 变化量为负则修正为
         max(变化量, -剩余耐久) → 耐久 += 变化量（下限 0）→ 耐久 0 生成（延时的）
-        幻境消灭事件 → 变化后（延时 on_phantom_intensity_changed）。变化量 0 终止。"""
+        幻境消灭事件 → 变化后（延时 on_field_intensity_changed）。变化量 0 终止。"""
         p = self.state.players[pi]
-        ph = p.phantoms[idx]
+        ph = p.fields[idx]
         change = {"amount": amount}
-        self.emit("on_before_phantom_intensity", player=pi, phantom=idx,
+        self.emit("on_before_field_intensity", player=pi, field=idx,
                   card_id=ph.card_id, change=change, old=ph.intensity,
                   source=source, reason=reason)
         amt = int(change["amount"])
@@ -3562,49 +3562,49 @@ class Game:
                      f"耐久 {old}→{ph.intensity}")
         if ph.intensity == 0:
             # 生成（延时的）幻境消灭事件："消灭前"监听器先入队（触发/执行时幻境仍在
-            # 队列中），移除与"消灭后"由 phantom_destroy 待结算项执行
-            self.emit("on_before_phantom_destroy", player=pi, phantom=idx,
+            # 队列中），移除与"消灭后"由 field_destroy 待结算项执行
+            self.emit("on_before_field_destroy", player=pi, field=idx,
                       card_id=ph.card_id, source=source, reason=reason)
             self.queue.append(_Pending(
-                EffectBlock(steps=[Step(op="phantom_destroy")]),
+                EffectBlock(steps=[Step(op="field_destroy")]),
                 ExecContext(controller=pi,
-                            event={"phantom_obj": ph, "source": source,
+                            event={"field_obj": ph, "source": source,
                                    "reason": reason})))
-        self.emit("on_phantom_intensity_changed", player=pi, phantom=idx,
+        self.emit("on_field_intensity_changed", player=pi, field=idx,
                   card_id=ph.card_id, old=old, new=ph.intensity, amount=amt,
                   source=source, reason=reason)
 
-    def _phantom_intensity_loss(self, pi: int, amount: int, source: Ref | None) -> None:
+    def _field_intensity_loss(self, pi: int, amount: int, source: Ref | None) -> None:
         """规范第三条：牌手因受伤减少生命后（伤害事件流程"扣减生命"完成后立即，
         早于"受到伤害后"延时时机），其幻境队列首个幻境减少等量耐久。"""
         p = self.state.players[pi]
-        if amount > 0 and p.phantoms:
-            self._change_phantom_intensity(pi, 0, -amount, source, "伤害")
+        if amount > 0 and p.fields:
+            self._change_field_intensity(pi, 0, -amount, source, "伤害")
 
-    def _destroy_phantom(self, pi: int, ph: PhantomState,
+    def _destroy_field(self, pi: int, ph: FieldState,
                          source: Ref | None, reason: str) -> None:
         """幻境消灭事件流程后半段（规范第四条）：从所属牌手幻境队列移除（其能力
         同时从牌手移除——收集器按队列实况读取）→ "幻境消灭后"（延时）。"""
         p = self.state.players[pi]
-        if not any(x is ph for x in p.phantoms):
+        if not any(x is ph for x in p.fields):
             return  # 已被移除（同链重复生成/先行消灭）
-        idx = next(i for i, x in enumerate(p.phantoms) if x is ph)
-        p.phantoms.pop(idx)
+        idx = next(i for i, x in enumerate(p.fields) if x is ph)
+        p.fields.pop(idx)
         self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card_id].name}】被消灭")
-        self.emit("on_phantom_destroyed", player=pi, card_id=ph.card_id,
+        self.emit("on_field_destroyed", player=pi, card_id=ph.card_id,
                   source=source, reason=reason)
 
-    def _collect_phantoms(self, event: dict, pi: int) -> list[_Pending]:
+    def _collect_fields(self, event: dict, pi: int) -> list[_Pending]:
         """收集牌手幻境队列的幻境能力（幻境牌 def 的 abilities 块；在场期间牌手拥有
         该能力——规范"零"条；按队列顺序收集）。能力来源 = 幻境来源归属
-        （_phantom_source：所属式神在场→该式神，否则无来源）。"""
+        （_field_source：所属式神在场→该式神，否则无来源）。"""
         out: list[_Pending] = []
         p = self.state.players[pi]
-        for ph in p.phantoms:
+        for ph in p.fields:
             for ability in self.db.cards[ph.card_id].abilities:
                 if ability.when != event["name"]:
                     continue
-                holder = self._phantom_source(pi, ph)
+                holder = self._field_source(pi, ph)
                 if self._match(ability.condition, event, pi, holder=holder):
                     out.append(_Pending(ability, ExecContext(
                         controller=pi, source=holder, event=event, is_ability=True)))
@@ -3801,7 +3801,7 @@ class Game:
         for pi in (self.state.active, 1 - self.state.active):
             out.extend(self._collect_abilities(event, pi))
             # 牌手幻境队列的幻境能力（式神能力之后、卡牌触发器之前；按队列顺序）
-            out.extend(self._collect_phantoms(event, pi))
+            out.extend(self._collect_fields(event, pi))
             # 第三收集来源（式神能力之后、响应牌之前，docs/enhance-design.md 第一节）：
             # 卡牌触发器（全库游离触发块）与一次性临时触发（按注册顺序，只收一次）
             out.extend(self._collect_card_triggers(event, pi))

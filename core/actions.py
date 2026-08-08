@@ -1264,18 +1264,18 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
 
 
-@action("phantom_destroy")
-def phantom_destroy(game, ctx, *, targets: list[Ref]) -> None:
+@action("field_destroy")
+def field_destroy(game, ctx, *, targets: list[Ref]) -> None:
     """幻境消灭待结算项（引擎内部 op，数据不直接使用；targets 忽略）。
 
-    耐久归零时由 _change_phantom_intensity 生成（延时）：执行幻境消灭事件流程的
+    耐久归零时由 _change_field_intensity 生成（延时）：执行幻境消灭事件流程的
     "从幻境队列移除 → 幻境消灭后（延时）"半段；"消灭前"（延时）已在生成点发出。
-    幻境对象/来源/原因经 ctx.event 传递（phantom_obj 身份比对，已出队则跳过）。
+    幻境对象/来源/原因经 ctx.event 传递（field_obj 身份比对，已出队则跳过）。
     """
     ev = ctx.event or {}
-    ph = ev.get("phantom_obj")
+    ph = ev.get("field_obj")
     if ph is not None:
-        game._destroy_phantom(ctx.controller, ph, ev.get("source"),
+        game._destroy_field(ctx.controller, ph, ev.get("source"),
                               ev.get("reason") or "耐久归零")
 
 

@@ -52,17 +52,17 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_energy_gained",     # 式神获得能量后 {player, target: Ref, old, new, amount（实际获得量）}
     #                       （延时时机；[充能]批次与 gain_energy 统一发点，烟烟罗类触发挂载）
     # ---- 幻境事件（幻境机制；发点见 core/engine.py 幻境管线）----
-    "on_summon_phantom",    # 召唤幻境后 {player, phantom（队列下标）, card_id, source, reason}
+    "on_summon_field",    # 召唤幻境后 {player, field（队列下标）, card_id, source, reason}
     #                       （延时时机；辉夜姬基础/觉醒能力、[融合]机制等挂点——预留）
-    "on_before_phantom_intensity",  # 幻境耐久变化前 {player, phantom, card_id,
+    "on_before_field_intensity",  # 幻境耐久变化前 {player, field, card_id,
     #                       change（可变 dict：amount）, old, source, reason}
     #                       （即时时机；荒"月坠"等挂点——监听者可改 change["amount"]）
-    "on_phantom_intensity_changed",  # 幻境耐久变化后 {player, phantom, card_id,
+    "on_field_intensity_changed",  # 幻境耐久变化后 {player, field, card_id,
     #                       old, new, amount（实际变化量，带符号）, source, reason}
     #                       （延时时机；荒"月坠"/彼岸花"黄泉花境"等挂点）
-    "on_before_phantom_destroy",  # 幻境消灭前 {player, phantom, card_id, source, reason}
+    "on_before_field_destroy",  # 幻境消灭前 {player, field, card_id, source, reason}
     #                       （延时时机；不见岳各幻境等挂点——触发时幻境仍在队列中）
-    "on_phantom_destroyed",  # 幻境消灭后 {player, card_id, source, reason}
+    "on_field_destroyed",  # 幻境消灭后 {player, card_id, source, reason}
     #                       （延时时机，预留；发出时幻境已出队）
     # ---- 倒计时事件（月夜幻响批次；发点见 core/engine.py 倒计时框架与 countdown_delta）----
     "on_countdown_proc",    # 倒计时能力归零生效时 {shikigami: Ref, source（来源 id）, once}
@@ -98,6 +98,6 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
     "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程，thoughts.txt）
     "on_countdown_proc": "insert",    # 倒计时能力归零生效时：即时时机（先于归零块结算）
-    "on_before_phantom_intensity": "insert",  # 幻境耐久变化前：即时时机（修正变化量）
+    "on_before_field_intensity": "insert",  # 幻境耐久变化前：即时时机（修正变化量）
     "on_luck_judge": "insert",        # 运势判定时：即时时机（重投改写骰点后再确定结果）
 }

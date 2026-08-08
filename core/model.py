@@ -188,11 +188,11 @@ class ExecContext:
     # TargetSpec(kind="context", key="last_damage_victims") 引用（风神一扇）
 
 
-class PhantomState(BaseModel):
+class FieldState(BaseModel):
     """在场幻境实体（幻境机制；幻境牌 card_type="field" 使用后"召唤幻境"入队）。
 
     所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，在场期间随队列存续生效）；
-    耐久 0 被消灭（耐久变化/消灭事件流程见 engine._change_phantom_intensity）。
+    耐久 0 被消灭（耐久变化/消灭事件流程见 engine._change_field_intensity）。
     """
 
     card_id: int  # 幻境牌数据 id（名称/能力块读 db.cards[card_id]）
@@ -235,7 +235,7 @@ class PlayerState(BaseModel):
     # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
     immunities: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级伤害免疫条目
     # （舍生"本回合你免疫所有伤害"；{"kind": "all", "turn": 回合号}，按回合号比对过期）
-    phantoms: list[PhantomState] = Field(default_factory=list)  # 幻境队列（有序；
+    fields: list[FieldState] = Field(default_factory=list)  # 幻境队列（有序；
     # 牌手因受伤减少生命后，首个幻境减少等量耐久；耐久 0 消灭出队）
     ext: dict[str, Any] = Field(default_factory=dict)  # 牌手级专用运行时数据（约定键见
     # docs/terminology.md：countdown_history 本局倒计时能力生效序列 等）

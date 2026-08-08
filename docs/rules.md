@@ -760,10 +760,10 @@
 ### 零、幻境是什么
 
 - 作为卡牌，幻境牌具有"耐久"属性（正整数）——`CardDef` card_type=`field`，字段 `intensity`（必填正整数）/ `field_front`（进场置队首旗标，缺省 False=队尾）。
-- 作为在场实体（`PhantomState`：card_id/intensity/shikigami），幻境在场时其所属牌手拥有该幻境的能力（能力块 = 幻境牌 def 的 abilities，随队列存续生效）。
-- 每个牌手有自己的幻境队列（`PlayerState.phantoms`，有序）；幻境进场一般添加到队列末尾（`field_front` 者置于队首）。
+- 作为在场实体（`FieldState`：card_id/intensity/shikigami），幻境在场时其所属牌手拥有该幻境的能力（能力块 = 幻境牌 def 的 abilities，随队列存续生效）。
+- 每个牌手有自己的幻境队列（`PlayerState.fields`，有序）；幻境进场一般添加到队列末尾（`field_front` 者置于队首）。
 - 每当一名牌手因受伤而减少生命后，其幻境队列的首个幻境减少等量耐久（至多降为 0）；耐久为 0 的幻境被消灭。
-- 幻境造成的伤害：该在场幻境有所属式神且在场时，伤害来源为该式神；无或所属式神不在场（如被变形）则为无来源伤害（`Game._phantom_source`）。
+- 幻境造成的伤害：该在场幻境有所属式神且在场时，伤害来源为该式神；无或所属式神不在场（如被变形）则为无来源伤害（`Game._field_source`）。
 
 ### 一、幻境牌的使用事件
 
@@ -774,7 +774,7 @@
 
 - 要素：来源、原因、要召唤的幻境。召唤可因使用幻境牌，或因效果直接召唤。
 - 来源的所属牌手将该幻境添加至自身幻境队列末尾（`field_front` 者置队首）。
-- **召唤幻境后**（延时时机 `on_summon_phantom`，payload {player, phantom（队列下标）, card_id, source, reason}）：辉夜姬基础/觉醒能力、[融合]机制等挂点——预留。
+- **召唤幻境后**（延时时机 `on_summon_field`，payload {player, field（队列下标）, card_id, source, reason}）：辉夜姬基础/觉醒能力、[融合]机制等挂点——预留。
 
 ### 三、牌手受伤与幻境的耐久值扣减
 
@@ -783,18 +783,18 @@
 
 ### 四、幻境（作为实体）的相关事件
 
-- **幻境耐久变化事件**（要素：来源/原因，目标幻境，变化量；`Game._change_phantom_intensity`）：
-  1. **耐久变化前**（即时时机 `on_before_phantom_intensity`，payload 含可变 change dict——监听者可改 change["amount"]）：荒"月坠"等挂点；
+- **幻境耐久变化事件**（要素：来源/原因，目标幻境，变化量；`Game._change_field_intensity`）：
+  1. **耐久变化前**（即时时机 `on_before_field_intensity`，payload 含可变 change dict——监听者可改 change["amount"]）：荒"月坠"等挂点；
   2. 若变化量为负：修正为 max（变化量， −剩余耐久）（负量 clamp）；
   3. 耐久 = 耐久 + 变化量；若耐久 = 0：生成（延时的）幻境消灭事件；
-  4. **耐久变化后**（延时时机 `on_phantom_intensity_changed`，payload 含 old/new/amount 实际变化量带符号）：荒"月坠"、彼岸花"黄泉花境"等挂点。
+  4. **耐久变化后**（延时时机 `on_field_intensity_changed`，payload 含 old/new/amount 实际变化量带符号）：荒"月坠"、彼岸花"黄泉花境"等挂点。
 - **幻境消灭事件**（要素：来源/原因，目标幻境）：
-  1. **幻境消灭前**（延时时机 `on_before_phantom_destroy`；触发时幻境仍在队列中）：不见岳各幻境等挂点；
-  2. 将该幻境从所属牌手的幻境队列中移除（其能力同时从所属牌手上失效）——移除与"消灭后"由内部 op `phantom_destroy`（**数据不可用**）的待结算项执行；
-  3. **幻境消灭后**（延时时机 `on_phantom_destroyed`；发出时幻境已出队）：预留。报备口径：消灭后监听器排在耐久变化后之后。
+  1. **幻境消灭前**（延时时机 `on_before_field_destroy`；触发时幻境仍在队列中）：不见岳各幻境等挂点；
+  2. 将该幻境从所属牌手的幻境队列中移除（其能力同时从所属牌手上失效）——移除与"消灭后"由内部 op `field_destroy`（**数据不可用**）的待结算项执行；
+  3. **幻境消灭后**（延时时机 `on_field_destroyed`；发出时幻境已出队）：预留。报备口径：消灭后监听器排在耐久变化后之后。
 
 ### 附：实现备注
 
-- 幻境事件名/payload 登记见 `core/events.py`；管线见 `core/engine.py` 幻境段（`_summon_phantom` / `_change_phantom_intensity` / `_destroy_phantom` / `_phantom_source`）。
+- 幻境事件名/payload 登记见 `core/events.py`；管线见 `core/engine.py` 幻境段（`_summon_field` / `_change_field_intensity` / `_destroy_field` / `_field_source`）。
 - 伤害管线接入点：`Game._run_damage_queue` 扣减生命步之后、受伤后延时之前。
-- 术语定名：耐久英文键 = `intensity`（CardDef 字段/PhantomState 字段/事件名同；原 durability 命名作废）。
+- 术语定名：幻境英文键 = `field`（card_type / `FieldState` / `PlayerState.fields` / 事件名前缀 / 内部 op `field_destroy` / payload 键 field——原 phantom 命名作废）；耐久英文键 = `intensity`（CardDef 字段/FieldState 字段/事件名同；原 durability 命名作废）；队首旗标 = `field_front`。
