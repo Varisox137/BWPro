@@ -135,10 +135,6 @@ class Game:
         # 义道：battle id → 攻击者 Ref——仅此战斗牌发起的战斗（嵌套/插入不继承）中，
         # 攻击者本人对有破甲的式神造成的战斗伤害翻倍（[暴击]时机=扣减生命前2；终止点清除）
         self._battle_double_fragile: dict[int, Ref] = {}
-        # 斩型"本次攻击获得[必杀]"（grant_keyword scope="next_battle"）：battle id →
-        # [攻击者 Ref]——必杀仅限该次战斗本身（答复(10) 定案），不授予式神关键字实例
-        # （不带入嵌套战斗、不出现在关键字列表）；终止点清除
-        self._battle_next_lethal: dict[int, list[Ref]] = {}
         # 交战目标改换登记（声东击西 battle_retarget）：battle id -> [改换者 Ref]
         self._battle_retarget: dict[int, list[Ref]] = {}
         # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
@@ -1844,14 +1840,10 @@ class Game:
         # 倒计时能力等"本次战斗"类战斗外授予（grant_keyword/grant_immunity scope="next_battle"）：
         # 挂账在攻击者 ext，下一次作为攻击者的战斗开始时消费——关键字走终止点核销通道、
         # 免疫条目绑定本战斗 id（斩"本次攻击获得[必杀]"/觉醒·山风"本次战斗免疫战斗伤害"）。
-        # 斩型必杀（答复(10) 定案）：不授予关键字实例，改记账 _battle_next_lethal——
-        # 仅限该次战斗本身，不带入嵌套战斗；其余 next_battle 关键字维持原通道。
-        # next_battle 免疫默认覆盖本战斗内的嵌套战斗（nested 缺省 True，答复(10) 定案；
-        # 挂账可显式 nested: false 收窄为仅本战斗）
+        # 两者范围一致（维护者改判）：持续到该次战斗事件结束后，含期间插入的嵌套战斗
+        # （关键字实例在外层战斗终止点核销；免疫 nested 缺省 True，挂账可显式
+        # nested: false 收窄为仅本战斗）。
         for e in attacker.ext.pop("next_battle_keywords", []):
-            if e["keyword"] == "lethal":
-                self._battle_next_lethal.setdefault(bid, []).append(atk_ref)
-                continue
             cls = self._grant_keyword(attacker, e["keyword"])
             grants.append((atk_ref, e["keyword"], cls))
         for e in attacker.ext.pop("next_battle_immunities", []):
@@ -1910,7 +1902,6 @@ class Game:
             self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
             self._battle_double_fragile.pop(bid, None)  # 义道破甲双倍标记随战斗结束清除
-            self._battle_next_lethal.pop(bid, None)  # 斩型必杀记账随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗终止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_retarget.pop(bid, None)  # 交战目标改换登记随战斗终止清理
             self._battle_stack.pop()
@@ -3303,15 +3294,14 @@ class Game:
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
-            # 必杀：来源式神持 lethal，或斩型"本次攻击获得[必杀]"记账（_battle_next_lethal，
-            # 答复(10) 定案——仅限该次倒计时发起的战斗本身，不带入嵌套战斗；不授予关键字
-            # 实例，故不出现在关键字列表），且本次伤害实际造成（走到扣减生命即已造成）——
+            # 必杀：来源式神持 lethal（含斩型"本次攻击获得[必杀]"经 next_battle 统一
+            # 通道授予的关键字实例——范围与免疫一致：该次战斗全程含嵌套战斗，外层战斗
+            # 终止点核销；维护者改判），且本次伤害实际造成（走到扣减生命即已造成）——
             # 令受伤者在该次伤害事件后延时结算气绝事件，不提前标濒死；与伤害本身
             # 导致的气绝并行结算（同入 victims 队列，check_defeated 幂等去重）
             if ev.source is not None and ev.source.shikigami is not None:
                 src0 = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
-                if self._has_keyword(src0, "lethal") or ev.source in self._battle_next_lethal.get(
-                        self._battle_stack[-1] if self._battle_stack else -1, ()):
+                if self._has_keyword(src0, "lethal"):
                     victims.append((ev.victim, ev.source, "必杀"))
             if (self._affected_stack
                     and ev.victim.player != self._affected_stack[-1]["controller"]
@@ -3330,7 +3320,7 @@ class Game:
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
-            self._phantom_durability_loss(ev.victim.player, ev.amount, ev.source)
+            self._phantom_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind,
@@ -3521,20 +3511,20 @@ class Game:
         """"召唤幻境"事件（要素：来源、原因、要召唤的幻境——规范第二条）：来源的所属
         牌手将该幻境添加至自身幻境队列末尾（field_front 标记者置于队首），发
         "召唤幻境后"（延时 on_summon_phantom；辉夜姬能力/[融合]等挂点预留）。
-        幻境实体耐久 = 幻境牌 durability（正整数必填）。"""
-        if cdef.durability is None or cdef.durability <= 0:
-            raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（durability）")
+        幻境实体耐久 = 幻境牌 intensity（正整数必填）。"""
+        if cdef.intensity is None or cdef.intensity <= 0:
+            raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（intensity）")
         p = self.state.players[pi]
-        ph = PhantomState(card_id=cdef.id, durability=cdef.durability,
+        ph = PhantomState(card_id=cdef.id, intensity=cdef.intensity,
                           shikigami=cdef.shikigami)
         if cdef.field_front:
             p.phantoms.insert(0, ph)
         else:
             p.phantoms.append(ph)
         idx = p.phantoms.index(ph)
-        self._log(f"{p.name} 召唤了幻境【{cdef.name}】（耐久 {ph.durability}）")
+        self._log(f"{p.name} 召唤了幻境【{cdef.name}】（耐久 {ph.intensity}）")
         self._settle(f"【幻境】{p.name} 召唤幻境【{cdef.name}】"
-                     f"（耐久 {ph.durability}，队列第 {idx + 1} 位）")
+                     f"（耐久 {ph.intensity}，队列第 {idx + 1} 位）")
         self.emit("on_summon_phantom", player=pi, phantom=idx, card_id=cdef.id,
                   source=source, reason=reason)
 
@@ -3549,28 +3539,28 @@ class Game:
                 return Ref(player=pi, shikigami=si)
         return None
 
-    def _change_phantom_durability(self, pi: int, idx: int, amount: int,
+    def _change_phantom_intensity(self, pi: int, idx: int, amount: int,
                                    source: Ref | None, reason: str) -> None:
         """幻境耐久变化事件流程（规范第四条）：变化前（即时 on_before_phantom_
-        durability，监听者可改可变 change["amount"]）→ 变化量为负则修正为
+        intensity，监听者可改可变 change["amount"]）→ 变化量为负则修正为
         max(变化量, -剩余耐久) → 耐久 += 变化量（下限 0）→ 耐久 0 生成（延时的）
-        幻境消灭事件 → 变化后（延时 on_phantom_durability_changed）。变化量 0 终止。"""
+        幻境消灭事件 → 变化后（延时 on_phantom_intensity_changed）。变化量 0 终止。"""
         p = self.state.players[pi]
         ph = p.phantoms[idx]
         change = {"amount": amount}
-        self.emit("on_before_phantom_durability", player=pi, phantom=idx,
-                  card_id=ph.card_id, change=change, old=ph.durability,
+        self.emit("on_before_phantom_intensity", player=pi, phantom=idx,
+                  card_id=ph.card_id, change=change, old=ph.intensity,
                   source=source, reason=reason)
         amt = int(change["amount"])
         if amt < 0:
-            amt = max(amt, -ph.durability)  # 至多降为 0（规范"零"条）
+            amt = max(amt, -ph.intensity)  # 至多降为 0（规范"零"条）
         if amt == 0:
             return
-        old = ph.durability
-        ph.durability = max(0, ph.durability + amt)
+        old = ph.intensity
+        ph.intensity = max(0, ph.intensity + amt)
         self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card_id].name}】"
-                     f"耐久 {old}→{ph.durability}")
-        if ph.durability == 0:
+                     f"耐久 {old}→{ph.intensity}")
+        if ph.intensity == 0:
             # 生成（延时的）幻境消灭事件："消灭前"监听器先入队（触发/执行时幻境仍在
             # 队列中），移除与"消灭后"由 phantom_destroy 待结算项执行
             self.emit("on_before_phantom_destroy", player=pi, phantom=idx,
@@ -3580,16 +3570,16 @@ class Game:
                 ExecContext(controller=pi,
                             event={"phantom_obj": ph, "source": source,
                                    "reason": reason})))
-        self.emit("on_phantom_durability_changed", player=pi, phantom=idx,
-                  card_id=ph.card_id, old=old, new=ph.durability, amount=amt,
+        self.emit("on_phantom_intensity_changed", player=pi, phantom=idx,
+                  card_id=ph.card_id, old=old, new=ph.intensity, amount=amt,
                   source=source, reason=reason)
 
-    def _phantom_durability_loss(self, pi: int, amount: int, source: Ref | None) -> None:
+    def _phantom_intensity_loss(self, pi: int, amount: int, source: Ref | None) -> None:
         """规范第三条：牌手因受伤减少生命后（伤害事件流程"扣减生命"完成后立即，
         早于"受到伤害后"延时时机），其幻境队列首个幻境减少等量耐久。"""
         p = self.state.players[pi]
         if amount > 0 and p.phantoms:
-            self._change_phantom_durability(pi, 0, -amount, source, "伤害")
+            self._change_phantom_intensity(pi, 0, -amount, source, "伤害")
 
     def _destroy_phantom(self, pi: int, ph: PhantomState,
                          source: Ref | None, reason: str) -> None:

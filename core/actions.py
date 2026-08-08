@@ -687,8 +687,9 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
     scope="next_battle"：战斗外授予、绑定目标下一次作为攻击者发起的战斗——挂账
     ext["next_battle_keywords"]，战斗开始时经 _resolve_combat 消费（授予并走终止点
     核销通道；气绝清除）。倒计时能力块内无战斗上下文，"本次攻击获得[X]"类用此
-    （斩"本次攻击获得[必杀]"——仅限该次倒计时发起的战斗本身，维护者定案(6)(10)；
-    lethal 特判：不授予关键字实例，改记账 _battle_next_lethal，不带入嵌套战斗）。
+    （斩"本次攻击获得[必杀]"——持续到该次战斗事件结束后，含期间插入的嵌套战斗，
+    与觉醒·山风"本次战斗免疫战斗伤害"范围一致，维护者改判；无特判通道，统一
+    授予关键字实例、外层战斗终止点核销）。
     scope="turn"：当回合结束移除（惊鸿之舞"所有己方式神本回合获得[帷幕]和[不屈]"——
     触发发生在哪方回合就在那方回合结束点移除，引擎 _remove_turn_keyword_grants 按
     授予时回合号比对；一次性关键字（[不屈]）被正常消耗后不到回合结束即已移除）。"""
@@ -1267,7 +1268,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
 def phantom_destroy(game, ctx, *, targets: list[Ref]) -> None:
     """幻境消灭待结算项（引擎内部 op，数据不直接使用；targets 忽略）。
 
-    耐久归零时由 _change_phantom_durability 生成（延时）：执行幻境消灭事件流程的
+    耐久归零时由 _change_phantom_intensity 生成（延时）：执行幻境消灭事件流程的
     "从幻境队列移除 → 幻境消灭后（延时）"半段；"消灭前"（延时）已在生成点发出。
     幻境对象/来源/原因经 ctx.event 传递（phantom_obj 身份比对，已出队则跳过）。
     """

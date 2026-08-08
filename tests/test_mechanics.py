@@ -2613,11 +2613,11 @@ def test_friendly_armor_ge(db, make_game):
 # 队列顺位 / 伤害来源归属 / "召唤幻境后"时机
 # ==========================================================================
 
-def _field(db, cid, *, durability=3, sid=100101, abilities=None, steps=None,
+def _field(db, cid, *, intensity=3, sid=100101, abilities=None, steps=None,
            front=False):
-    """登记一张幻境牌 dummy（card_type="field"，durability 必填）。"""
+    """登记一张幻境牌 dummy（card_type="field"，intensity 必填）。"""
     db.cards[cid] = F.card(
-        cid, shikigami=sid, card_type="field", token=True, durability=durability,
+        cid, shikigami=sid, card_type="field", token=True, intensity=intensity,
         field_front=front, abilities=abilities or [], steps=steps or [])
     return cid
 
@@ -2625,15 +2625,15 @@ def _field(db, cid, *, durability=3, sid=100101, abilities=None, steps=None,
 def test_field_play_summons_phantom(db, make_game):
     """规范第一条：幻境牌使用后本体入墓地并"召唤幻境"入队——缺省队尾、
     field_front 标记者队首。"""
-    _field(db, 10010151, durability=3)
-    _field(db, 10010152, durability=2)
-    _field(db, 10010153, durability=4, front=True)
+    _field(db, 10010151, intensity=3)
+    _field(db, 10010152, intensity=2)
+    _field(db, 10010153, intensity=4, front=True)
     g = make_game()
     pa = g.state.players[0]
     pa.orb = 9
     play(g, 0, 10010151)
     assert [ph.card_id for ph in pa.phantoms] == [10010151]
-    assert pa.phantoms[0].durability == 3
+    assert pa.phantoms[0].intensity == 3
     play(g, 0, 10010152)
     assert [ph.card_id for ph in pa.phantoms] == [10010151, 10010152]   # 队尾
     play(g, 0, 10010153)
@@ -2644,43 +2644,43 @@ def test_field_play_summons_phantom(db, make_game):
 def test_field_enter_effects_after_summon(db, make_game):
     """规范第一条：进场效果在"召唤幻境"之后结算——对己方牌手的进场伤害
     命中刚入队的队首幻境（先召唤后效果则为 5-2=3，反之为 5）。"""
-    _field(db, 10010151, durability=5,
+    _field(db, 10010151, intensity=5,
            steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="self_player"))])
     g = make_game()
     pa = g.state.players[0]
     pa.orb = 9
     play(g, 0, 10010151)
-    assert pa.phantoms[0].durability == 3
+    assert pa.phantoms[0].intensity == 3
 
 
-def test_phantom_durability_loss_on_player_damage(db, make_game):
+def test_phantom_intensity_loss_on_player_damage(db, make_game):
     """规范第三条：牌手因受伤减少生命后立即（早于"受到伤害后"延时时机）队首幻境
     减少等量耐久；变化量为负修正为 max(变化量, -剩余耐久)（归零消灭、不转负数）。"""
     _field(db, 10010151)
     _field(db, 10010152)
     g = make_game()
     pa = g.state.players[0]
-    pa.phantoms.append(PhantomState(card_id=10010151, durability=3, shikigami=100101))
-    pa.phantoms.append(PhantomState(card_id=10010152, durability=5, shikigami=100101))
+    pa.phantoms.append(PhantomState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.phantoms.append(PhantomState(card_id=10010152, intensity=5, shikigami=100101))
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))
-    assert pa.phantoms[0].durability == 1                # 3 - 2（只扣队首）
-    assert pa.phantoms[1].durability == 5
-    assert g.history.index("on_phantom_durability_changed") \
+    assert pa.phantoms[0].intensity == 1                # 3 - 2（只扣队首）
+    assert pa.phantoms[1].intensity == 5
+    assert g.history.index("on_phantom_intensity_changed") \
         < g.history.index("on_player_damaged")
     g.deal_to_player(0, 4, Ref(player=1, shikigami=0))   # 超过剩余耐久：修正为 -1
     g._drain_queue()
     assert [ph.card_id for ph in pa.phantoms] == [10010152]   # 归零消灭
-    assert pa.phantoms[0].durability == 5
+    assert pa.phantoms[0].intensity == 5
     assert "on_phantom_destroyed" in g.history
 
 
 def test_phantom_destroy_flow(db, make_game):
     """规范第四条：耐久归零 → "幻境消灭前"（延时，触发/执行时幻境仍在队）→
     从队列移除（能力随之失效）→ "幻境消灭后"（延时）。"""
-    _field(db, 10010151, durability=2, abilities=[F.block(when="on_draw")])
+    _field(db, 10010151, intensity=2, abilities=[F.block(when="on_draw")])
     g = make_game()
     pa = g.state.players[0]
-    pa.phantoms.append(PhantomState(card_id=10010151, durability=2, shikigami=100101))
+    pa.phantoms.append(PhantomState(card_id=10010151, intensity=2, shikigami=100101))
     g.state.temp_grants.append(TempGrant(
         block=F.block(F.Step(op="gain_shield", amount=2,
                              target=T(kind="all", pool="self_player")),
@@ -2705,13 +2705,13 @@ def test_phantom_queue_order_after_destroy(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa = g.state.players[0]
-    pa.phantoms.append(PhantomState(card_id=10010151, durability=2, shikigami=100101))
-    pa.phantoms.append(PhantomState(card_id=10010152, durability=3, shikigami=100101))
+    pa.phantoms.append(PhantomState(card_id=10010151, intensity=2, shikigami=100101))
+    pa.phantoms.append(PhantomState(card_id=10010152, intensity=3, shikigami=100101))
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))
     g._drain_queue()
     assert [ph.card_id for ph in pa.phantoms] == [10010152]
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))
-    assert pa.phantoms[0].durability == 1   # 新队首承担（3 - 2）
+    assert pa.phantoms[0].intensity == 1   # 新队首承担（3 - 2）
 
 
 def test_phantom_damage_source_attribution(db, make_game):
@@ -2726,7 +2726,7 @@ def test_phantom_damage_source_attribution(db, make_game):
     s0 = pa.shikigami[0]
     s0.keywords.append("lifesteal")
     pa.health = 20
-    pa.phantoms.append(PhantomState(card_id=10010151, durability=3, shikigami=100101))
+    pa.phantoms.append(PhantomState(card_id=10010151, intensity=3, shikigami=100101))
     g.emit("on_draw", player=0, count=1)
     g._drain_queue()
     assert pb.health == 28

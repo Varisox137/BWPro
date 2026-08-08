@@ -940,21 +940,25 @@ def test_next_battle_immunity_nested_default(db, make_game):
     assert not s.immunities              # 战斗终止点清除（消费条目随战斗结束移除）
 
 
-def test_next_battle_lethal_battle_scoped(db, make_game):
-    """斩型"本次攻击获得[必杀]"记账（_battle_next_lethal，维护者答复(10) 定案）：
-    仅限记账的那次战斗本身——外层战斗 1 伤即令受伤者气绝；嵌套战斗（战斗栈压入
-    新 id）内同来源伤害不触发必杀（不授予关键字实例，不带入嵌套战斗）。"""
+def test_next_battle_lethal_nested_effective(db, make_game):
+    """斩型"本次攻击获得[必杀]"（维护者改判：范围与觉醒·山风免疫一致——持续到该次
+    战斗事件结束后，含期间插入的嵌套战斗）：next_battle 授予回归统一关键字通道
+    （战斗开始授予实例、外层战斗终止点核销），嵌套战斗内同来源伤害同样触发必杀。"""
     g, pa = _game(make_game)
     src = Ref(player=0, shikigami=0)
     b0 = g.state.players[1].shikigami[0]
     b1 = g.state.players[1].shikigami[1]
-    g._battle_next_lethal[1] = [src]                 # 斩型记账：外层战斗 id=1
-    g._battle_stack.append(1)
+    s0 = pa.shikigami[0]
+    cls = g._grant_keyword(s0, "lethal")   # 战斗开始消费 next_battle 挂账（统一通道）
+    g._battle_stack.append(1)                        # 外层战斗
     g.deal_to_shikigami(Ref(player=1, shikigami=0), 1, src, kind="combat")
-    assert b0.defeated                               # 外层战斗：1 伤未致死，必杀令气绝
+    assert b0.defeated                               # 1 伤未致死，必杀令气绝
     g._battle_stack.append(2)                        # 嵌套战斗
     g.deal_to_shikigami(Ref(player=1, shikigami=1), 1, src, kind="combat")
-    assert b1.health == 5 and not b1.defeated        # 必杀不带入嵌套战斗
+    assert b1.defeated                               # 嵌套战斗内必杀同样生效（改判）
+    g._remove_keyword(s0, "lethal", cls)             # 外层战斗终止点核销
+    assert not any("lethal" in lst for lst in
+                   (s0.keywords, s0.one_shot_keywords, s0.perm_keywords))
 
 
 # ==========================================================================
@@ -1064,10 +1068,14 @@ def test_replace_entry_order_newest(db, make_game):
     db.cards[cid] = F.card(
         cid, token=True, steps=[F.Step(op="replace", into=into, target=T(kind="self"))])
     g, pa = _game(make_game)
+    old_ability_seq = pa.shikigami[IDX].ability_entry["ability"]
     play(g, 0, cid)
     s = pa.shikigami[IDX]
     assert s.id == into
     assert s.entry_order == max(x.entry_order for x in pa.shikigami if x is not s) + 1
+    # 答复(6) 精神延伸：替换物的能力同样重新进场（经 _register_ability_countdown
+    # 记新能力进场序号——替换物无能力块时也记录）
+    assert s.ability_entry["ability"] > old_ability_seq
 
 
 def test_ability_entry_order_drives_trigger(db, make_game):

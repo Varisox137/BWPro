@@ -12,7 +12,7 @@
 | 召唤物 | `summon` | `kind = "summon"`；气绝即离场、不可升级、入场 1 级（暂定）、生成即进入战斗区 | ✅ |
 | 变形物 | `kind = "transform"` | `ShikigamiDef.kind="transform"`：视同召唤物类不入构筑池/测试卡组；由 `transform` 动作变入（继承座位/等级，不继承增减益；变形/还原均为再进场——进场顺序排本队最后，见「进场顺序」行），`untransform`/气绝前2 按 `transform_origin` 快照还原（快照携带的剩余倒计时优先保留、不被能力进场重置初值）；保留"所属式神" `transform_owner`（无法使用原式神的牌） | ✅ |
 | 实体 | entity / `ShikigamiState` | 局内式神或召唤物；记录 `home_slot`（准备区编号 1-4，召唤物 None） | ✅ |
-| 幻境 | `PhantomState` / `PlayerState.phantoms` | 在场幻境实体（card_id/durability/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（框架已落地，实卡未录入） | ✅ |
+| 幻境 | `PhantomState` / `PlayerState.phantoms` | 在场幻境实体（card_id/intensity/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（框架已落地，实卡未录入） | ✅ |
 | 气绝 | `defeated` | `ShikigamiState.defeated`；倒计时后复活 | ✅ |
 | 濒死 | `dying` | 生命 ≤ 0 但气绝事件尚未结算（伤害流程扣减生命后先标记，气绝时清除）：不受伤害/治疗、不进随机与选择目标池、不能再次被消灭；能力照常（in_play 不变）、可以攻击 | ✅ |
 | 离场 | `despawned` | 召唤物气绝或被移动即离场（不视为移动、非气绝、不进复活流程） | ✅ |
@@ -62,7 +62,7 @@
 | 法术牌 | `spell` | card_type | ✅ |
 | 战斗牌 | `combat` | card_type | ✅ |
 | 形态牌 | `form` | card_type | ✅ |
-| 幻境牌 | `field`（card_type） | card_type=field + `durability`（耐久，必填正整数）/ `field_front`（进场置队首旗标，缺省队尾）：使用后先"召唤幻境"入所属牌手幻境队列、再执行进场效果，本体入墓地（报备口径）。框架已落地，实卡未录入 | ✅（框架） |
+| 幻境牌 | `field`（card_type） | card_type=field + `intensity`（耐久，必填正整数）/ `field_front`（进场置队首旗标，缺省队尾）：使用后先"召唤幻境"入所属牌手幻境队列、再执行进场效果，本体入墓地（报备口径）。框架已落地，实卡未录入 | ✅（框架） |
 | 协战牌 | `reinforce` / `options` / `choice` | card_type=协战主牌（shikigami 主 + shikigami2 副双归属）；`options` = 两个子选项 token 卡 id（[0] 主侧 [1] 副侧）；打出时 cmd 带 `choice`（0/1）选择 → 合法性（出战/等级/鬼火/目标）按子卡 → 生成 token 入手并视作从手牌使用（完整使用事件流程）→ 主牌离手进 `exiled` 区（不进墓地）；[羁绊] 不进关键词表，实现为子卡普通 steps；**羁绊触发条件 = 使用此牌时对应式神在场（等级 ≥1 且未气绝）**——step 级 `condition: {shikigami_active: <式神id>}` 门控（generate 类），倒计时增减/发起攻击/形态进场类由 op 空操作语义隐式满足 | ✅ |
 | 觉醒牌 | `subtype = "awaken"` | **不是主类型**：任意 card_type + subtype（rules.md:502）；法术觉醒使用事件流程：墓地 → `on_before_awaken`（觉醒前，即时）→ 替换式神能力 → 法术本身效果 → `on_awakened`（觉醒后，延时）→ 永久身材增益（`awaken_power`/`awaken_health`） | ✅ |
 | 觉醒（状态） | `awakened` | `ShikigamiState.awakened` = 觉醒牌 id；能力改读该牌 `abilities` 块；气绝/复活保留（但气绝时能力不在场——觉醒门控类判定要求未气绝） | ✅ |
@@ -191,7 +191,7 @@
 | 战斗条件授予 | `defender_has_fragile`（条件运算符） | 战斗牌效果块中的 grant_keyword / battle_immunity step 由战斗流程提取为战斗作用域授予，Step.condition 在战斗开始时以 {"defender": 被攻击者} 求值（鸩羽/致命诱惑"若攻击有破甲的角色"） | ✅ |
 | 玩家扩展条件 | `player_ext`（条件运算符） | {player_ext: key}：控制者 `PlayerState.ext[key]` 为真值（"本回合若使用过黄金羽"= feather_used_turn；千羽风之舞 step 级条件用） | ✅ |
 | 战斗/非战斗伤害免疫 | `grant_immunity`（动作） | scope="turn"：目标式神免疫战斗伤害到当前回合结束——以回合号记账（immunities 条目 {"turn": n}），过期条目于回合开始清理（`_start_turn` 双方过滤，防显示残留——不可饶恕用）；scope="perm"：持续在场期间有效（气绝清除、复活重新授予）；scope="once"：消耗式——命中任意一类伤害即免疫一次并移除（桃红簇簇）；kind="effect" + from_side="enemy"：非战斗伤害免疫、只免疫敌方来源（无来源或己方来源不免疫——觉醒·山童，`_effect_immune` 在伤害流程"伤害开始时"批次内判定）；kind="all"：免疫全部伤害——牌手目标条目存 `PlayerState.immunities`、按 turn 回合号记账+回合开始清理，`_player_immune` 在伤害管线入口判定（舍生）；式神目标搭配 scope="once"（桃红簇簇，`_combat_immune`/`_effect_immune` 匹配 kind 扩 "all"）；kind="fragile_source"：免疫当前持有破甲的**敌方式神**造成的任意种类伤害（牌手来源不免疫——"有破甲的敌方式神"明文，维护者定案确认；伤害类别不限；`_fragile_source_immune` 伤害管线免疫判定段；scope="form" 随形态离场清除——霸主） | ✅ |
-| 下次战斗作用域授予 | `scope="next_battle"`（grant_keyword / grant_immunity 参数） | 战斗外授予、绑定目标下一次作为**攻击者**发起的战斗——挂账 `ext["next_battle_keywords"]` / `ext["next_battle_immunities"]`，战斗开始经 `_resolve_combat` 消费（关键字授予/免疫条目绑定该战斗 id、走战斗终止点移除；气绝清除）。倒计时能力块内无战斗上下文，"本次战斗获得/免疫"类用此（山风基础能力[不屈]/斩[必杀]/觉醒·山风免疫战斗伤害——维护者定案(6)(8)）。grant_keyword 的 lethal 特判=仅限该次战斗本身记账、不带入嵌套战斗（斩——答复(10)）；grant_immunity 免疫条目 nested 缺省 True、覆盖期间插入的战斗（觉醒·山风"直到该次倒计时发起的攻击结束后"——答复(10)） | ✅ |
+| 下次战斗作用域授予 | `scope="next_battle"`（grant_keyword / grant_immunity 参数） | 战斗外授予、绑定目标下一次作为**攻击者**发起的战斗——挂账 `ext["next_battle_keywords"]` / `ext["next_battle_immunities"]`，战斗开始经 `_resolve_combat` 消费（关键字授予/免疫条目绑定该战斗 id、走战斗终止点移除；气绝清除）。倒计时能力块内无战斗上下文，"本次战斗获得/免疫"类用此（山风基础能力[不屈]/斩[必杀]/觉醒·山风免疫战斗伤害——维护者定案(6)(8)）。斩/觉醒·山风范围经维护者**改判**统一：持续到该次战斗事件结束后、**含期间插入的嵌套战斗**——原 grant_keyword 的 lethal 特判通道（仅限该次战斗本身记账、不带入嵌套）已删除，统一走实例授予（覆盖答复(10) 前半） | ✅ |
 | 弃牌计数暂存 | `discarded_count`（memo 键） | discard 动作结算后把实际弃牌数写入块内暂存 `ctx.memo["discarded_count"]`；draw 的 count 支持 {"memo": key} 读取（射怪鸟事"弃多少抽多少"两步组合） | ✅ |
 | 使用方式觉醒门控 | `requires_awaken`（PlayMethod 扩展字段） | 选择该使用方式时所属式神须已觉醒且未气绝/离场（气绝时觉醒能力不在场——答复(11)），否则 IllegalAction（黄金羽觉醒后"以敌方角色为目标"方式） | ✅ |
 | 响应效果覆盖 | `response`（CardDef） | 响应牌的效果块覆盖：主动使用效果与响应效果结构不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/结算改读本块；缺省用 effects | ✅ |
@@ -386,7 +386,7 @@
 | 本回合伤害过滤 | `dealt_damage_turn`（TargetSpec 过滤键 / ext 键） | 本回合造成过伤害的角色过滤（记仇"本回合造成过伤害的敌方式神"）：伤害结算点 `_mark_dealt_damage_turn` 按来源式神记账 `ShikigamiState.ext["dealt_damage_turn"]`，任一回合开始清除（半回合作用域）；spec_pool_refs 统一校验 | ✅ |
 | 已展示计数 | `enemy_revealed_count`（动态数值键） | 敌方手牌中已展示牌计数（`_enemy_revealed_count`，引擎读取、活局面量）：三口径——`spell`=法术牌数（模仿+护甲）/ `other`=其他牌数（模仿+力量）/ `shikigami_of_chosen`=选择目标所指式神专属牌数（棒球炸弹增伤，协战归属同 _card_belongs_to）；`_step_amount` 签名加 chosen | ✅ |
 | 能力进场事件 | `on_ability_enter` | 式神能力进场统一钩子（延时时机 queue，payload {player, shikigami, target: Ref}）：对局开始/升 1 级/复活/觉醒替换/变形与还原均经 `_register_ability_countdown` 发出——萤草"当你使用法术牌时…"改为能力光环前置门控 | ✅ |
-| 幻境事件 | `on_summon_phantom` / `on_before_phantom_durability` / `on_phantom_durability_changed` / `on_before_phantom_destroy` / `on_phantom_destroyed` | 召唤幻境后（延时 {player, phantom（队列下标）, card_id, source, reason}——辉夜姬能力/[融合]挂点预留）/ 耐久变化前（即时，payload 含可变 change dict，监听者可改 change["amount"]——荒"月坠"）/ 耐久变化后（延时 {old, new, amount（实际变化量带符号）}，负量 clamp——黄泉花境）/ 消灭前（延时，触发时幻境仍在队列——不见岳各幻境）/ 消灭后（延时，发出时已出队，预留；报备口径：排在耐久变化后之后）。流程见 rules.md 第三十一章 | ✅ |
+| 幻境事件 | `on_summon_phantom` / `on_before_phantom_intensity` / `on_phantom_intensity_changed` / `on_before_phantom_destroy` / `on_phantom_destroyed` | 召唤幻境后（延时 {player, phantom（队列下标）, card_id, source, reason}——辉夜姬能力/[融合]挂点预留）/ 耐久变化前（即时，payload 含可变 change dict，监听者可改 change["amount"]——荒"月坠"）/ 耐久变化后（延时 {old, new, amount（实际变化量带符号）}，负量 clamp——黄泉花境）/ 消灭前（延时，触发时幻境仍在队列——不见岳各幻境）/ 消灭后（延时，发出时已出队，预留；报备口径：排在耐久变化后之后）。流程见 rules.md 第三十一章（事件名原 durability 版本已作废——术语定名 intensity） | ✅ |
 | 能力光环 | `scope="ability"` / `shikigami="any"`（card_aura 参数） | scope="ability"：光环挂能力持有者（同 form 作用域机制），气绝/变形/还原/消失/觉醒替换前经 `_clear_ability_card_auras` 统一清理；shikigami="any"：光环匹配任意所属式神的牌（存 None，`_match_auras` 通配——爱意绵绵全式神手牌通道） | ✅ |
 | 倒计时复原 | `reset`（countdown_delta 参数） | 复原倒计时初值（countdown_initial）、不触发归零结算、无能力者空操作——疯魔琴心"使敌方式神的倒计时复原" | ✅ |
 | 卡牌变换 | `transform_card`（动作） | 手牌按 card_id 原位变换为 into 指定新卡（count=1；无匹配空操作；新 uid + `_materialize` 快照，继承 mods 中实例标志） | ✅ |

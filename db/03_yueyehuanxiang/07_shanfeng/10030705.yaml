@@ -14,7 +14,8 @@ versions:
       abilities:
         # 当山风触发[倒计时]能力时，本次攻击获得[必杀]：scope=next_battle 战斗外挂账
         # ext["next_battle_keywords"]，绑定归零块随后发起的那次攻击（倒计时块内无
-        # 战斗上下文——维护者定案(6)，见 questions.md (10)）
+        # 战斗上下文——维护者定案(6)，见 questions.md (10)）；范围与觉醒·山风免疫一致：
+        # 持续到该次战斗事件结束后（含插入战斗）——维护者改判
         - when: on_countdown_proc
           condition: {shikigami_shikigami: self}
           steps:

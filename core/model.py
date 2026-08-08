@@ -192,11 +192,11 @@ class PhantomState(BaseModel):
     """在场幻境实体（幻境机制；幻境牌 card_type="field" 使用后"召唤幻境"入队）。
 
     所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，在场期间随队列存续生效）；
-    耐久 0 被消灭（耐久变化/消灭事件流程见 engine._change_phantom_durability）。
+    耐久 0 被消灭（耐久变化/消灭事件流程见 engine._change_phantom_intensity）。
     """
 
     card_id: int  # 幻境牌数据 id（名称/能力块读 db.cards[card_id]）
-    durability: int  # 当前耐久（正整数；牌手受伤时队列首个幻境减少等量耐久，0 = 消灭）
+    intensity: int  # 当前耐久（正整数；牌手受伤时队列首个幻境减少等量耐久，0 = 消灭）
     shikigami: int | None = None  # 所属式神数据 id（= 幻境牌的所属式神；伤害来源归属用：
     # 该式神在场时幻境伤害来源为该式神，否则为无来源伤害——规范"零"条）
 
