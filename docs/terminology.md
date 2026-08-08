@@ -34,7 +34,7 @@
 | 墓地 | `graveyard` | 区域（UI 不可见） | ✅ |
 | 除外区 | `exiled` | 标准区域之一（放逐/移出游戏；协战主牌使用后亦进入此区） | ✅ |
 | 弃牌 | `discard` | `discard` 动作：弃掉手牌中谓词匹配的牌（所属式神/全部，可限张数），进入墓地 | ✅ |
-| 移除 | `remove` | 移出游戏（如孟婆），与弃牌区分 | 🔧 |
+| 移除 | `remove` | 移出游戏（入 exiled 区域），与弃牌区分——已落地：`remove_deck`（磨牌，牌库顶/底 N 张入 exiled，孟婆系）/`purge_copies`（同名牌手牌+牌库移除，奈何桥头）/`purge_named_card`（命名清除，忘忧的旋律）/`transform_hand_card`（转化原牌 exiled） | ✅ |
 
 ## 属性与修正
 
@@ -93,7 +93,7 @@
 | 响应 | `trigger` | 敌方回合满足条件必发，其余要求照常 | ✅ |
 | 疾速 | `swift` | 若有出击次数则改为消耗 1 次出击次数而不消耗鬼火 | 🔧 |
 | 突袭 | `strike` | 使一个式神仅在下一次出击且与敌方式神战斗时获得增益 | 🔧 |
-| 免疫 | `immune` | 免疫某类伤害/效果；战斗伤害免疫已实现为带作用域的 `battle_immunity`（见本节末说明），通用免疫 🔧 | 🔧 |
+| 免疫 | `immune` | 免疫某类伤害/效果：战斗伤害免疫（带作用域的 `battle_immunity`，见本节末说明）、敌方非战斗伤害免疫（grant_immunity kind="effect"+from_side，觉醒·山童）、消耗式免疫（scope="once"，桃红簇簇）、牌手全伤害免疫（kind="all"，舍生）均已实现；通用免疫（免疫效果/指定）🔧 | ✅（伤害类） |
 | 倒计时 | `countdown` | 式神级倒计时能力（一名式神至多 1 个，新注册替换旧的；不论基础/觉醒/形态来源）：三要素 `countdown_initial`（初值）/ `countdown_block`（归零效果块，`EffectBlock.countdown` 非 None 的能力块或形态牌 `countdown_effects`）/ `countdown_once`（一次型），另记来源 `countdown_source`（基础=式神 id / 觉醒=觉醒牌 id / 形态=形态牌 id）。注册时机：能力进场（对局开始/升至 1 级/复活）、觉醒替换、形态结附、`set_countdown` 动作；形态离场仅清除形态授予的，气绝清除。归零（rules.md ch12 修订版）：先即时插入结算（此时仍为 0，块内对自身 `countdown_delta` 修正为 -0）→ 记账 `countdown_history` → 循环型重置/一次型移除 | ✅ |
 | 直击 | `direct` | 战斗事件"确定目标前1"：若本次战斗无目标，被攻击者改为敌方牌手（无视敌方战斗区式神）；追猎已选定目标时直击被覆盖 | ✅ |
 | 迅捷 | `haste` | 一次性：出击的鬼火消耗处不消耗鬼火，随后失去一个一次性迅捷；仍消耗出击次数 | ✅ |
@@ -101,13 +101,13 @@
 | 不屈 | `unyielding` | 生命>1 且伤害≥当前生命时保留 1 点生命；一次性不屈触发后全部消耗，持续/永久不屈保留可再触发；生命=1 不触发 | ✅ |
 | 眩晕 | `stuns` / `is_stunned` | 眩晕条目列表（式神 `ShikigamiState.stuns` / 牌手 `PlayerState.ext["stuns"]`）：普通 `{"kind":"normal","turn":n}`（己方回合结束批次移除非本回合施加者）、持续 `{"kind":"lasting",...}`（不夜之火批次落地——按来源结束时机解除：`until_event` 事件名列表 + `watch` 看护式神座次/watch_id，事件涉及看护者即解除，`engine._release_lasting_stuns`；`apply_seq`/`apply_uid` 记施加时点的事件序号/卡牌 uid 防自解除——英雄无畏"直到鸦天狗使用牌、攻击或气绝"，气绝走现有清理）；眩晕=列表非空。门控：式神禁出击/主动/响应用牌、牌手全体禁出击；气绝清除。`stun` 动作施加 | ✅ |
 | 运势 | `luck` | 运势判定 = luck check：块级门控 `EffectBlock.luck`（int=成功才结算 / `{"x":X,"on":"fail"}`=失败才结算）+ 步骤级 `luck_roll` 动作（x/judge/then/force_x1_if）；六时机管线与并行同步推进见 rules.md 第二十七章 | ✅ |
-| 增强 | `enhance` | | 🔧 |
+| 增强 | `enhance` | 卡面[增强]话术，无统一机制（enhance-design.md 核心决策）：已多通道落地——`CardDef.triggers` 游离触发块（card_in_hand 门控，血怒/灵力）、`conditional_mods` 装配点动态实例修饰（牙牙我们走/汤盆冲撞）、`conditional_keywords` 读取时谓词求值（白刃/意外之喜）、实例修饰随牌转移 | ✅ |
 | 鼓舞/压制 | `basic_boost` / `assault_boosts` | 出击加成：`basic_boost` 动作登记于牌手（`PlayerState.assault_boosts`），下一次出击全部消耗——力量挂攻击后到期强化（战后核销）、护甲获得后保留；战斗牌不消耗。卡牌关键字 `inspire` 为卡面[鼓舞]标记（效果以 basic_boost 结算——桃之夭夭）。**随机关键字槽**：basic_boost 参数 `keyword_random=[...]`——授予时均等随机一个存入玩家级槽 `ext["boost_keyword"]`（至多一个、后授予替换已有；消耗加成的攻击中临时授予攻击者、随加成消耗清除，no_consume 旗标下保留；consume_assault_boosts 同步转移、经 attack_buffs 随本次战斗移除——惊鸿之舞"和一个随机效果"）。压制（负值）🔧 | ✅（鼓舞） |
 | 充能 | `charge` | 实体关键字（不夜之火批次）：己方回合开始时该式神能量 +1（上限 10，批次顺序先倒计时后能量；气绝者不充能、刚复活当回合即 +1——维护者定案；先天经 `ShikigamiDef.keywords` 入永久类别——小鹿男/烟烟罗/日和坊/镰鼬）；能量见「核心概念」能量行 | ✅ |
 | 追猎 | `hunt` | 有目标的战斗：战斗牌持追猎主动使用时须选择 1 名合法敌方式神为战斗目标（不能选牌手；无合法目标则不能使用）；式神/形态持追猎主动出击可任选合法敌方式神为目标（不选 = 默认无目标战斗）；发起者无远程照常移入战斗区；`launch_attack` 类"使己方式神发起攻击"是无目标战斗，不吃追猎 | ✅ |
 | 贯通 | `piercing` | 对式神的非反击伤害超过其当前生命时，溢出部分改对所属牌手造成。是"伤害原因"的属性：式神持有的贯通仅传导至其战斗伤害与基础/觉醒/形态能力（含形态倒计时、延迟"会"）伤害；卡牌效果伤害不继承，除非步骤显式声明 `piercing: true`（实现：`ExecContext.is_ability` + damage/random_damage 动作缺省继承）；与连击交互——连击第一段击杀被攻击者时贯通同样改打对方牌手（无贯通则终止战斗、后续时机不结算；维护者定案，见「连击」） | ✅ |
 | 穿刺 | `pierce` | 造成伤害前（伤害事件批次0，即时时机）移除受伤者所有护甲/屏障——与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于任意来源伤害（含非战斗伤害） | ✅ |
-| 穿刺（仅护甲变体） | `pierce_armor` | 伪关键字（碎岩 20191212，卡面为描述文本不出现括号关键字）：与穿刺同点（伤害事件批次0）处理，仅清零受伤者正值护甲、不触屏障/不动破甲；后期版本卡面即[穿刺]，可视作该变体的更名（questions.md 待确认1） | ✅ |
+| 穿刺（仅护甲变体） | `pierce_armor` | 伪关键字（碎岩 20191212，卡面为描述文本不出现括号关键字）：与穿刺同点（伤害事件批次0）处理，仅清零受伤者正值护甲、不触屏障/不动破甲；后期版本卡面即[穿刺]，可视作该变体的更名（维护者已定案） | ✅ |
 | 吸血 | `lifesteal` | 伤害流程"造成/受到伤害后"（延时，优先级 1 锚点）：来源式神持有则生成以其控制者牌手为执行者的恢复生命事件（治疗量 = 该次伤害值，走 `Game.heal` 管线；实现 `Game._queue_lifesteal` 合成 _Pending 入队） | ✅ |
 | 投射 | `projectile`（目标池） | 优先敌方战斗区式神，战斗区为空则退回敌方牌手 | ✅ |
 | 唯一 | `unique` | | 🔧 |
@@ -158,7 +158,7 @@
 | 直接消灭 | `destroy` / `destroy_form`（动作） | 非伤害消灭：生命归零走气绝流程 / 消灭当前结附的形态（直接消灭免疫为扩展锚点） | ✅ |
 | 调度 | `mulligan` | 游戏开始阶段：返回 1 张起始手牌再随机抽 1，双方各 3 次 | ✅ |
 | 半回合 | `turn` | GameState.turn，双方交替 +1 | ✅ |
-| 延迟能力 | `delayed` / `delay_grant`（动作） | 绑定式神的一次性延迟能力（会）：条目 {block, chosen, uses, secret, scope}，事件匹配时先触发后执行、收集即消耗；气绝清除（变形离场保留——变形未实现）；scope="turn" 时己方回合开始清除（魔音扰心类）、scope="play" 时该次出牌结算结束清除（黑羽之刃类"本次使用期间"）；secret=True 时选择目标对敌方保密（联机脱敏抹除对手视角的 chosen） | ✅ |
+| 延迟能力 | `delayed` / `delay_grant`（动作） | 绑定式神的一次性延迟能力（会）：条目 {block, chosen, uses, secret, scope}，事件匹配时先触发后执行、收集即消耗；气绝清除（变形离场保留）；scope="turn" 时己方回合开始清除（魔音扰心类）、scope="play" 时该次出牌结算结束清除（黑羽之刃类"本次使用期间"）；secret=True 时选择目标对敌方保密（联机脱敏抹除对手视角的 chosen） | ✅ |
 | 伤害上限 | `cap_damage`（动作） | 改写伤害事件中可变伤害对象的数值：to="shield" 时至多为受伤式神当前护甲（森罗之阵）；**to=<整数> 时面板值封顶该定值（雪融之时"每次至多只会受到3点伤害"，护甲吸收照常在后结算）**；须挂 on_damage_start 等含 damage payload 的时点批次 | ✅ |
 | 战斗区锁定 | `combat_lock`（tags） | 尘缚之阵：携带者（兵俑）在战斗区且敌方战斗区有式神时，会使敌方战斗区式神被替换的效果无效且不能进行（不看发起者）——召唤召唤物无效、准备区式神不能发起无远程的战斗（出击/战斗牌）、响应战斗牌插入移入不可用、enter_combat / force_enter_combat 效果无效；退回准备区不受限；效果发起的战斗暂无来源 | ✅ |
 | 免疫直接消灭 | `destroy_immune`（tags） | 结附带此标记形态的式神在战斗区时，`destroy` 动作对其无效（日志记"免疫了本次消灭"）；伤害消灭/形态消灭不受影响。（现无实卡携带——原携带者尘缚之阵 2026-08 起按开服 raw 移除；引擎机制与合成数据测试保留） | ✅ |
@@ -318,7 +318,7 @@
 | 中文 | 代码标识 | 说明 | 状态 |
 |---|---|---|---|
 | 卡牌触发器 | `triggers`（CardDef） | 卡面"增强"等的实现机制之一：游离触发块（when/condition/steps）；emit 时全库扫描匹配，为第三收集来源（式神能力之后、响应牌之前） | ✅ |
-| 实时监测 | `monitors` / Monitor | 卡面"增强"等的实现机制之一：状态谓词 + 修饰，读取/打出装配时求值，不存储 | 🔧 |
+| 实时监测 | `monitors` / Monitor | 卡面"增强"等的实现机制之一：状态谓词 + 修饰，读取/打出装配时求值，不存储。主通道已落地——读取时谓词求值由 `conditional_keywords`（白刃得[瞬发]）承担、打出装配注入修饰由 `conditional_mods`（牙牙我们走/汤盆冲撞）承担；enhance-design.md 草案的 monitors 字段本体（amount_mult/pre_grants/temp_grants 通道）未采用/未实现 | ✅（主通道） |
 | 即时装配 | `_materialize` | 打出时由"定义块 ⊕ 活跃修饰"装配本次实际效果（persistent 快照入实例 mods），用完即弃 | ✅ |
 | 修饰 | `mods` | 实例级（`CardInstance.mods`：enhance 数值/keywords_add/cost_delta，mod_hand 写入的 playable_when_defeated/damage_boost/revive_haste，及 random_enhance 写入的 form_power_delta/form_health_delta（`_attach_form` 结附时叠加形态身材）/revive_on_play（气绝中使用该形态先复活来源式神，`_play_form_card` 读取）/enhance_got（实例已获强化 key 去重表）等读取点键）与 (玩家, card_id) 级持久 store（`PlayerState.card_mods`，"本局游戏每……"类计数） | ✅ |
 | 卡牌光环 | `card_auras` | 谓词匹配的卡牌获得关键词/不耗鬼火/数值加成（读取时求值，覆盖已有与新生成的牌）；scope 决定失效时机（"turn"=己方回合开始清除；**"form"=绑定来源式神当前形态、形态离场移除**——心技一体/心剑乱舞，气绝经 _destroy_form 同路径；连续型/属性型光环为扩展锚点）。谓词通道：shikigami（必）/ card_type / **card_id**（"此牌"自指——伺机）/ **turn**（"self"/"opponent" 限定回合方——伺机"敌方回合时此牌+2力量"）；**数值通道 power/shield 为战斗牌战力/一次性护甲加值，可叠加**（多次授予累加，与 keywords 的集合语义不同——刃影叠岚；combat_card_stats 读取时叠加）；**power_ext/shield_ext 数值改读 `PlayerState.ext[key]`**（心技一体"本局每使用过一张'心身炼磨'+1/+1"——出牌记账 lianmo_used_game，读取时求值；手牌数值显示已含光环 ext 通道——刃影叠岚同解）；**tag 谓词**（仅命中 tags 含该标记的牌——寒冬之心"你所有'雪球'"）；**damage_boost 卡牌效果伤害 +N 通道**（damage 动作读取时叠加，可叠加；爱意绵绵的 spell_damage 存量通道落地并统一参数名为 damage_boost）；**scope="game"** 本局游戏有效、不清除（寒冬之心类） | ✅ |
@@ -346,7 +346,7 @@
 | 随机使用形态 | `random_play_form`（动作） | 目标各随机使用 1 张等级 ≤ 其当前等级的专属形态牌（凭空自动使用：`_play_form_card` + on_card_played(triggered=auto)，play_condition 同检）；无可用形态/气绝者跳过（鸿运当头） | ✅ |
 | 骰子修饰 | `set_dice_modifier`（动作） | mode="six"：判定者级光环必 6，写控制者牌手 ext `dice_force_six`（记持有者座次 `dice_force_six_holder`，形态进场 on/离场 off——萌即正义）；mode="six_once"：来源级，写来源式神 ext `dice_force_six_once`，下次以其为来源的判定首投必 6 并消耗（这把算我赢） | ✅ |
 | 随机弃牌 | `discard_random`（动作） | 随机弃目标牌手 count 张手牌（rng.sample；targets 缺省回退控制者——转运）。与 `discard` 的顺序/谓词弃牌语义不同，故独立 op | ✅ |
-| 眩晕施加 | `stun`（动作） | 目标角色获得眩晕条目（kind 默认 normal，记控制者回合号；lasting 预留）；式神条目存 `ShikigamiState.stuns`、牌手存 `PlayerState.ext["stuns"]`；门控与解除见 rules.md 第二十八章 | ✅ |
+| 眩晕施加 | `stun`（动作） | 目标角色获得眩晕条目（kind 默认 normal，记控制者回合号；lasting 持续眩晕已落地——`lasting`/`until_event` 参数见「持续眩晕施加」行）；式神条目存 `ShikigamiState.stuns`、牌手存 `PlayerState.ext["stuns"]`；门控与解除见 rules.md 第二十八章 | ✅ |
 | 眩晕事件 | `on_stun` | 角色被眩晕后发出（即时时机 insert，payload {victim, source}；stun 施加点发出，同 on_shield_changed 变化点位置）——雪女"每回合一次，当你[眩晕]敌方式神时"挂点（每回合一次配 turn_mark 门控） | ✅ |
 | 破甲转移 | `transfer_fragile`（动作） | 来源（式神或牌手，targets 缺省回退来源）当前破甲清零、目标获得等量破甲；目标可为敌方全体角色（每名全量——毒气喷泉）；腐坏直拳"确定攻击目标后转移"以战斗牌效果步表达 | ✅ |
 | 破甲保留授予 | `keep_fragile`（动作） | 目标式神获得 `keep_fragile`（形态结附期间其破甲在己方回合开始不清除——肿胀体质；形态离场解除；见「属性与修正」破甲保留行） | ✅ |
