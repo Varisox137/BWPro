@@ -12,7 +12,7 @@ versions:
       level: 3
       effects:
         # 将你手牌中的'妖怪屋·灵力'转化为'妖怪屋·灵力之泉'：transform_hand_card——
-        # 原牌移入 exiled（去向暂定，见 questions.md (11)），新实例入手并复制原实例
+        # 原牌移入 exiled（去向答复(11) 定案），新实例入手并复制原实例
         # 修饰（shield_boost 等实例增强随牌转移；觉醒 +2/+2 由 awaken 字段自动结算）
         steps:
           - {op: transform_hand_card, from_id: 10030951, into_id: 10030952}

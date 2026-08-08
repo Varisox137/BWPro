@@ -13,14 +13,14 @@ versions:
         # 造成1点伤害 + 被选式神本回合获得"造成战斗伤害时为其牌手恢复等量生命"：
         # delay_grant 双块（bind=chosen 登记到被选式神、scope=turn 本回合、uses=99
         # 不限次）——式神伤害 on_damage / 牌手伤害 on_player_damaged 两事件各挂一块，
-        # 均按事件 amount 治疗己方牌手；引擎吸血语义不限伤害类别（效果伤害亦触发，
-        # 暂定待确认见 questions.md (9)）
+        # 均按事件 amount 治疗己方牌手；kind: [combat, counter] 限战斗伤害类别
+        # （直击+反击；效果伤害不触发——答复(9) 定案）
         steps:
           - {op: damage, amount: 1}
           - {op: delay_grant, bind: chosen, scope: turn, uses: 99, when: on_damage,
-             condition: {source_shikigami: self},
+             condition: {source_shikigami: self, kind: [combat, counter]},
              steps: [{op: heal, amount: {event: amount}, target: {kind: all, pool: self_player}}]}
           - {op: delay_grant, bind: chosen, scope: turn, uses: 99, when: on_player_damaged,
-             condition: {source_shikigami: self},
+             condition: {source_shikigami: self, kind: [combat, counter]},
              steps: [{op: heal, amount: {event: amount}, target: {kind: all, pool: self_player}}]}
       text: "[瞬发]。对一个式神造成1点伤害，它本回合获得‘造成战斗伤害时为其牌手恢复等量生命’。"

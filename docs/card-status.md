@@ -531,7 +531,7 @@
 | 05 觉醒·不知火 | ✅ | 双快照：20200327 +0/+0 / 20200423 +1/+1（best 保持 20200327）；inspire_bonus{1,1}（鼓舞数值额外 +1/+1，玩家级永久旗标、可叠加）+ 基础同款回合开始鼓舞 |
 | 06 星火之歌 | ✅ | 召唤'烬染不夜'（10020299） |
 | 07 离殇之舞 | ✅ | 形态 5/5：boost_no_consume scope=form（出击加成不消耗旗标） |
-| 08 惊鸿之舞 | ✅ | 形态 SSR 3 级 7/7（date/best=20200327）；on_turn_start（无 condition，双方回合开始均触发）单步 random_branch 19 分支（新 op：逐项求值 condition、通过者均等随机一项、无满足空操作；raw 清单与触发前置括注保留为 yaml 注释）——分支前置新条件键 friendly_defeated_exists/player_health_le/player_missing_health_ge/combat_occupied；分支 19 鼓舞带 keyword_random 随机关键字槽（ext["boost_keyword"]，池=[不屈/吸血/远程/必杀/贯通/连击]）；分支 5/13 highest_power 过滤（并列全保留交 random 均等取）；分支 4 grant_keyword scope="turn"；分支 6 敌方全体 -2 力量按永久暂定、分支 13/14 多步随机目标独立取样（暂定 2 条见 questions.md 待确认节） |
+| 08 惊鸿之舞 | ✅ | 形态 SSR 3 级 7/7（date/best=20200327）；on_turn_start（无 condition，双方回合开始均触发）单步 random_branch 19 分支（新 op：逐项求值 condition、通过者均等随机一项、无满足空操作；raw 清单与触发前置括注保留为 yaml 注释）——分支前置新条件键 friendly_defeated_exists/player_health_le/player_missing_health_ge/combat_occupied；分支 19 鼓舞带 keyword_random 随机关键字槽（ext["boost_keyword"]，池=[不屈/吸血/远程/必杀/贯通/连击]）；分支 5/13 highest_power 过滤（并列全保留交 random 均等取）；分支 4 grant_keyword scope="turn"；分支 6 敌方全体 -2 力量=非永久持续减益（跨回合保留、气绝清除）、分支 13/14 多步随机目标经 memo 键复用同次取样（14 加 include_defeated 含气绝——均已定案） |
 | 99 烬染不夜 | ✅ | 召唤物 1/1，先天[迅捷]；attack_replace（攻击时改为对两个随机不重复敌方角色造成 力量+战力 效果伤害，无交战不受反击；目标池含牌手、伤害为非战斗伤害 kind=effect 不触发[吸血]——均维护者定案） |
 
 ## 小鹿男（100203）
@@ -636,14 +636,14 @@
 
 | 卡 | 状态 | 备注 |
 |----|------|------|
-| 基础能力 | ✅ | on_heal {target_side: friendly, target_kind: player} → buff_power 1 **perm: false**（thoughts(4) 定案：一次性持续性增益、气绝清除）+ gain_shield 1 |
+| 基础能力 | ✅ | on_after_heal {target_side: friendly, target_kind: player} → buff_power 1 **perm: false**（thoughts(4) 定案：一次性持续性增益、气绝清除）+ gain_shield 1 |
 | 01 血袭 | ✅ | 战斗 +0/+0，[吸血] |
 | 02 血蝠之盾 | ✅ | grant_redirect 一次性伤害转移（ext["damage_redirects"]，类别不限定案）；[响应] on_before_assault {victim_side: friendly} 自动对其使用 |
-| 03 血怒 | ✅ | [瞬发][吸血] 对敌方牌手 1 伤；[增强] = CardDef.triggers 游离块 on_heal {target_side: enemy, target_kind: player, card_in_hand} → add_mod damage_boost 累加 |
-| 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血不限伤害类别——暂定见 questions.md (9)） |
+| 03 血怒 | ✅ | [瞬发][吸血] 对敌方牌手 1 伤；[增强] = CardDef.triggers 游离块 on_after_heal {target_side: enemy, target_kind: player, card_in_hand} → add_mod damage_boost 累加；吸血姬受伤 → choose any_character 补 1 伤（答复(12) 定案） |
+| 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血限战斗伤害 kind: [combat, counter]、反击也算——答复(9) 定案） |
 | 05 渴血之时 | ✅ | 形态 3/6，[吸血] |
 | 06 血香 | ✅ | 战斗 +2/+1；conditional_keywords player_health_ge 30 → [连击]（thoughts(3) 按 ≥ 判定） |
-| 07 觉醒·吸血姬 | ✅ | +1/+1；觉醒能力 on_heal 同条件 → buff_power（perm: false）/gain_shield {event: amount, cap: 5} |
+| 07 觉醒·吸血姬 | ✅ | +1/+1；觉醒能力 on_after_heal 同条件 → buff_power（perm: false）/gain_shield {event: amount, cap: 5} |
 | 08 猩红之月 | ✅ | 形态 5/8 [吸血] + card_aura card_type=spell 授 lifesteal scope=form（法术伤害读卡牌关键字吸血） |
 
 ## 山风（100307）
@@ -655,10 +655,10 @@
 | 02 迅 | ✅ | countdown_delta shikigami=100307 -2；[响应] 山风被攻击时自动使用并重复一次（合计 -4） |
 | 03 势 | ✅ | 形态 3/6 [贯通]：on_countdown_reduced **timing: insert** → attack_buff power={"event": "original"}（定案(5) 按原始减少量） |
 | 04 刚 | ✅ | 形态 3/8：on_countdown_proc → gain_shield 4 |
-| 05 斩 | ✅ | 形态 3/8：on_countdown_proc → grant_keyword lethal scope=next_battle |
+| 05 斩 | ✅ | 形态 3/8：on_countdown_proc → grant_keyword lethal scope=next_battle（lethal 仅限该次倒计时发起的攻击本身记账、不带入嵌套——答复(10) 定案） |
 | 06 突 | ✅ | countdown_delta {base: 2, countdown_holders: friendly_others, negate: true}（[增强]按其他倒计时式神数叠加）；过量 {memo: countdown_overkill} → buff_power/buff_health 非永久（定案(3)） |
 | 07 岚 | ✅ | repeat {countdown_sum: true} 套 countdown_delta -1（X=全队当前倒计时总和） |
-| 08 觉醒·山风 | ✅ | +1/+1；觉醒能力①[倒计时3] grant_immunity combat_damage scope=next_battle + launch_attack（定案(8) 全程免疫）；②on_countdown_reduced {by_card, shikigami_side: friendly, shikigami_not_shikigami: 100307} + trigger_when_defeated → 两步 countdown_delta {event: original, negate: true}（存活减倒计时/气绝 revive 减气绝倒计时） |
+| 08 觉醒·山风 | ✅ | +1/+1；觉醒能力①[倒计时3] grant_immunity combat_damage scope=next_battle + launch_attack（免疫直到该次倒计时发起的攻击结束后、含期间插入的战斗——nested 缺省 True，答复(10) 定案）；②on_countdown_reduced {by_card, shikigami_side: friendly, shikigami_not_shikigami: 100307} + trigger_when_defeated → 两步 countdown_delta {event: original, negate: true}（存活减倒计时/气绝 revive 减气绝倒计时） |
 
 ## 孟婆（100308）
 
@@ -683,10 +683,10 @@
 | 02 欢愉之音 | ✅ | 形态 3/5：tags [shield_gain_boost]（己方获得护甲+1/敌方获得破甲+1） |
 | 03 遮雨 | ✅ | heal {"max_shield_or_fragile": true} 己方牌手 |
 | 04 妖怪屋的醒转 | ✅ | choose {strippable: true} → strip_shield + summon 10030999 stats_memo="stripped_shield"（基础值口径、复活保留定案） |
-| 05 破碎之音 | ✅ | 形态 6/5：on_before_defeat {victim_has_fragile, source_side: friendly} → damage 3 对 victim_player（击杀判定前移——伤害致死先消耗破甲不触发，仅直接消灭触发） |
+| 05 破碎之音 | ✅ | 形态 6/5：on_before_defeat {victim_has_fragile, source_side: friendly} → damage 3 对 victim_player（触发时判目标有无破甲即可、不限仅直接消灭——答复(7) 定案） |
 | 06 焕然之音 | ✅ | 形态 5/6：on_turn_end {active: self, friendly_armor_ge: 5} → draw 1 |
 | 07 汇聚 | ✅ | [瞬发] choose 式神 → consolidate_shields（全场护甲/破甲代数和归集，目标自身原值不移除定案） |
-| 08 觉醒·天井下 | ✅ | +2/+2；使用效果 transform_hand_card 51→52（原牌 exiled 暂定、shield_boost 随牌转移——questions.md (11)）；觉醒能力双块 hand_lacks 10030952 → generate 之泉 |
+| 08 觉醒·天井下 | ✅ | +2/+2；使用效果 transform_hand_card 51→52（原牌 exiled——答复(11) 确认、shield_boost 随牌转移）；觉醒能力双块 hand_lacks 10030952 → generate 之泉 |
 | 51 妖怪屋·灵力 | ✅ | 衍生 token：多择两用法（基础=己方 1 护甲 / methods fragile=敌方 1 破甲）；triggers on_shield_changed {reason: turn_start_clear, gained: false, card_in_hand} 双情形 → shield_boost 累加 |
 | 52 妖怪屋·灵力之泉 | ✅ | 衍生 token：全体己方 1 护甲 + 全体敌方 1 破甲；triggers 同 51 |
 | 99 妖怪屋 | ✅ | 召唤物 1/1，先天[迅捷] |

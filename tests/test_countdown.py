@@ -911,3 +911,47 @@ def test_awakened_countdown_share(db, make_game):
     play(g, 0, cid)                      # CD3 2→1 → 共享：复活倒计时 3→2
     assert s.revive_countdown == 2
     assert s.defeated
+
+
+class _ImmunitySpy(list):
+    """捕获 append 的免疫条目（next_battle 消费默认键断言用）。"""
+
+    def __init__(self, seen: list) -> None:
+        self._seen = seen
+
+    def append(self, entry) -> None:
+        self._seen.append(dict(entry))
+        super().append(entry)
+
+
+def test_next_battle_immunity_nested_default(db, make_game):
+    """next_battle 免疫消费时 nested 缺省 True（维护者答复(10) 定案：默认覆盖本战斗内
+    的嵌套战斗；挂账可显式 nested: false 收窄为仅本战斗）——grant_immunity 挂账本身
+    不写 nested 键，消费（_resolve_combat）写入缺省 True。"""
+    _attack_countdown(db, initial=2, extra_steps=[
+        F.Step(op="grant_immunity", scope="next_battle", target=T(kind="self"))])
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]
+    seen = []
+    s.immunities = _ImmunitySpy(seen)
+    pass_turns(g, 2)                     # 归零：免疫授予挂账 → 归零块攻击消费
+    consumed = [e for e in seen if e.get("battle") is not None]
+    assert consumed and all(e.get("nested") is True for e in consumed)
+    assert not s.immunities              # 战斗终止点清除（消费条目随战斗结束移除）
+
+
+def test_next_battle_lethal_battle_scoped(db, make_game):
+    """斩型"本次攻击获得[必杀]"记账（_battle_next_lethal，维护者答复(10) 定案）：
+    仅限记账的那次战斗本身——外层战斗 1 伤即令受伤者气绝；嵌套战斗（战斗栈压入
+    新 id）内同来源伤害不触发必杀（不授予关键字实例，不带入嵌套战斗）。"""
+    g, pa = _game(make_game)
+    src = Ref(player=0, shikigami=0)
+    b0 = g.state.players[1].shikigami[0]
+    b1 = g.state.players[1].shikigami[1]
+    g._battle_next_lethal[1] = [src]                 # 斩型记账：外层战斗 id=1
+    g._battle_stack.append(1)
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 1, src, kind="combat")
+    assert b0.defeated                               # 外层战斗：1 伤未致死，必杀令气绝
+    g._battle_stack.append(2)                        # 嵌套战斗
+    g.deal_to_shikigami(Ref(player=1, shikigami=1), 1, src, kind="combat")
+    assert b1.health == 5 and not b1.defeated        # 必杀不带入嵌套战斗

@@ -15,9 +15,10 @@ versions:
         steps: []
       abilities:
         # 每当你恢复生命时，吸血姬获得等量的力量和护甲（每次最大为5）——
+        # 挂 on_after_heal（治疗后延时时机，0 治疗不触发——答复(1) 定案）；
         # {event: amount, cap: 5} 按事件治疗量动态取值并封顶（觉醒·铃鹿御前 cap 先例）；
         # 力量 perm: false（一次性持续性增益、气绝清除——维护者 thoughts(4) 定案同基础能力）
-        - when: on_heal
+        - when: on_after_heal
           condition: {target_side: friendly, target_kind: player}
           steps:
             - {op: buff_power, amount: {event: amount, cap: 5}, perm: false, target: {kind: self}}

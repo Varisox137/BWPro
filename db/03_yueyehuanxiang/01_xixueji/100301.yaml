@@ -8,10 +8,11 @@ versions:
       power: 3
       health: 4
       ability:
-        # 每当你恢复生命时：on_heal payload 的 target 为 Ref——target_side（归属）+
-        # target_kind（式神/牌手）组合判"治疗目标是己方牌手"；力量为一次性赋予的
-        # 持续性增益（perm: false——非永久、跨回合保留、气绝清除，维护者 thoughts(4) 定案）
-        when: on_heal
+        # 每当你恢复生命时：挂 on_after_heal（治疗后延时时机，0 治疗不触发——答复(1)
+        # 定案）；payload 的 target 为 Ref——target_side（归属）+ target_kind（式神/牌手）
+        # 组合判"治疗目标是己方牌手"；力量为一次性赋予的持续性增益（perm: false——
+        # 非永久、跨回合保留、气绝清除，维护者 thoughts(4) 定案）
+        when: on_after_heal
         condition: {target_side: friendly, target_kind: player}
         steps:
           - {op: buff_power, amount: 1, perm: false, target: {kind: self}}

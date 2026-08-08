@@ -963,16 +963,16 @@ def test_cap_damage_fixed_value(db, make_game):
     assert s.health == 1
 
 
-# ---------- 治疗时牌手条件 / 0 治疗触发（吸血姬批次：on_heal 条件键组合） ----------
+# ---------- 治疗后牌手条件 / 0 治疗不触发（吸血姬批次：on_after_heal 条件键组合） ----------
 
-def test_on_heal_player_side_condition(db, make_game):
-    """on_heal 牌手条件组合 {target_kind: player, target_side: friendly|enemy}：
-    治疗目标是己方/敌方牌手（基础能力=+1力量+1护甲；力量为一次性持续性增益非永久，
-    护甲回合开始正常移除——均走既有通道）。"""
+def test_on_after_heal_player_side_condition(db, make_game):
+    """on_after_heal（治疗后，延时时机）牌手条件组合 {target_kind: player,
+    target_side: friendly|enemy}：治疗目标是己方/敌方牌手（基础能力=+1力量+1护甲；
+    力量为一次性持续性增益非永久，护甲回合开始正常移除——均走既有通道）。"""
     db.shikigami[SID].ability = F.block(
         F.Step(op="buff_power", amount=1, target=T(kind="self")),
         F.Step(op="gain_shield", amount=1, target=T(kind="self")),
-        when="on_heal", condition={"target_kind": "player", "target_side": "friendly"})
+        when="on_after_heal", condition={"target_kind": "player", "target_side": "friendly"})
     g, pa, pb = _game(make_game)
     s = pa.shikigami[IDX]
     pa.health = 20
@@ -989,15 +989,15 @@ def test_on_heal_player_side_condition(db, make_game):
     assert s.temp_power == 1 and s.shield == 1
 
 
-def test_on_heal_zero_amount_still_triggers(db, make_game):
-    """恢复量为 0 也触发"治疗时"（on_heal）；觉醒型等量增益 {event: amount, cap: 5}
-    按实际治疗量取、上限 5。"""
+def test_on_after_heal_zero_amount_not_triggers(db, make_game):
+    """恢复量为 0 不触发"治疗后"（on_after_heal——维护者答复(1) 定案：0 治疗不触发）；
+    觉醒型等量增益 {event: amount, cap: 5} 按实际治疗量取、上限 5。"""
     db.shikigami[SID].ability = F.block(
         F.Step(op="buff_power", amount={"event": "amount", "cap": 5},
                target=T(kind="self")),
         F.Step(op="gain_shield", amount={"event": "amount", "cap": 5},
                target=T(kind="self")),
-        when="on_heal", condition={"target_kind": "player", "target_side": "friendly"})
+        when="on_after_heal", condition={"target_kind": "player", "target_side": "friendly"})
     g, pa, pb = _game(make_game)
     s = pa.shikigami[IDX]
     pa.health = 22
@@ -1005,11 +1005,11 @@ def test_on_heal_zero_amount_still_triggers(db, make_game):
     g._drain_queue()
     assert pa.health == 30
     assert s.temp_power == 5 and s.shield == 5
-    g.heal(Ref(player=0), 3, None)                  # 满血：恢复量为 0 仍触发（+0）
+    n = g.history.count("on_after_heal")
+    g.heal(Ref(player=0), 3, None)                  # 满血：恢复量为 0 → 不触发
     g._drain_queue()
-    assert s.temp_power == 5 and s.shield == 5
-    assert "on_heal" in g.history
-    assert "on_after_heal" not in g.history[-2:]    # 0 治疗不触发"治疗后"
+    assert s.temp_power == 5 and s.shield == 5      # 增益不变
+    assert g.history.count("on_after_heal") == n    # 无新的"治疗后"事件
 
 
 # ---------- 延迟吸血授予（初拥型：可叠加、与[吸血]关键字叠加） ----------
@@ -1019,7 +1019,8 @@ def test_delayed_lifesteal_grant_stacks(db, make_game):
     scope=turn）：多次授予各触发一次、与[吸血]关键字叠加；[吸血]自身不叠加——
     两张授予 + 吸血，3 点战斗伤害依次 3 次恢复 3（维护者定案）。
     授予挂 on_damage（式神受伤）与 on_player_damaged（牌手受伤）两个事件各一层；
-    与引擎吸血通道一致不限伤害类别（效果伤害同样触发，见 test_lifesteal_heals_player_after_damage）。"""
+    kind: [combat, counter] 限战斗伤害类别（维护者答复(9) 定案）——效果伤害不触发
+    授予（仅[吸血]关键字通道照常恢复）。"""
     cid = 10010168
     grant_steps = [{"op": "heal", "amount": {"event": "amount"},
                     "target": {"kind": "all", "pool": "self_player"}}]
@@ -1027,10 +1028,12 @@ def test_delayed_lifesteal_grant_stacks(db, make_game):
         cid, shikigami=SID, level=1, token=True,
         target=T(kind="choose", pool="friendly_shikigami"),
         steps=[F.Step(op="delay_grant", bind="chosen", when="on_damage",
-                      condition={"source_shikigami": "self"}, scope="turn", uses=99,
+                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      scope="turn", uses=99,
                       steps=grant_steps),
                F.Step(op="delay_grant", bind="chosen", when="on_player_damaged",
-                      condition={"source_shikigami": "self"}, scope="turn", uses=99,
+                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      scope="turn", uses=99,
                       steps=grant_steps)])
     g, pa, pb = _game(make_game)
     pa.shikigami[1].level = 1
@@ -1044,18 +1047,55 @@ def test_delayed_lifesteal_grant_stacks(db, make_game):
     g.apply({"op": "assault", "index": 1})           # 直击 B 牌手 1 点战斗伤害
     assert pb.health == 29
     assert pa.health == 13                           # 吸血 1 次 + 初拥 2 次 = 3 次恢复 1
-    # 式神受伤分支（on_damage）：效果伤害同样触发（引擎吸血通道语义，伤害类别不限）
+    # 式神受伤分支（on_damage）：效果伤害不触发授予（kind 限战斗伤害），仅吸血通道恢复
     cid2 = 10010251
     db.cards[cid2] = F.card(cid2, shikigami=100102, level=1, token=True,
                             steps=[F.Step(op="damage", amount=2,
                                           target=T(kind="all", pool="enemy_shikigami"))])
     pb.shikigami[0].level = 1
     play(g, 0, cid2)
-    assert pa.health == 19                           # 吸血 2 + 初拥 2×2 = 3 次恢复 2
+    assert pa.health == 15                           # 仅吸血恢复 2（初拥 2 层不触发）
     pass_turns(g, 2)
     pa.health = 10
     g.apply({"op": "assault", "index": 1})           # 次回合：授予已过期，只剩吸血 1 次
     assert pa.health == 11
+
+
+def test_delayed_lifesteal_grant_combat_only(db, make_game):
+    """初拥型延迟吸血限战斗伤害类别（kind: [combat, counter]，维护者答复(9) 定案）：
+    反击（kind=counter，该式神造成的战斗伤害）触发；效果伤害（kind=effect）不触发。"""
+    cid = 10010171
+    grant_steps = [{"op": "heal", "amount": {"event": "amount"},
+                    "target": {"kind": "all", "pool": "self_player"}}]
+    db.cards[cid] = F.card(
+        cid, shikigami=SID, level=1, token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        steps=[F.Step(op="delay_grant", bind="chosen", when="on_damage",
+                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      scope="turn", uses=99,
+                      steps=grant_steps),
+               F.Step(op="delay_grant", bind="chosen", when="on_player_damaged",
+                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      scope="turn", uses=99,
+                      steps=grant_steps)])
+    g, pa, pb = _game(make_game)
+    pa.shikigami[1].level = 1
+    pb.shikigami[0].level = 1
+    play(g, 0, cid, target=Ref(player=0, shikigami=1))
+    # 效果伤害不触发（授予者造成的非战斗伤害）
+    cid2 = 10010252
+    db.cards[cid2] = F.card(cid2, shikigami=100102, level=1, token=True,
+                            steps=[F.Step(op="damage", amount=2,
+                                          target=T(kind="all", pool="enemy_shikigami"))])
+    pa.health = 10
+    play(g, 0, cid2)
+    assert pa.health == 10                           # 效果伤害：不恢复
+    # 反击触发（kind=counter）：授予者驻战斗区，敌方出击吃反击
+    move(g, 0, 1)
+    pass_turns(g, 1)
+    pb.orb = 9
+    g.apply({"op": "assault", "index": 0})           # B 出击：授予者反击 1 点（counter）
+    assert pa.health == 11                           # 反击 1 → 恢复 1
 
 
 # ---------- 法术牌吸血光环（猩红之月型：吸血判定读来源卡牌实例关键字） ----------
@@ -1117,3 +1157,53 @@ def test_damage_redirect_to_player(db, make_game):
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0))
     assert pa.health == 27 and s.health == 4         # 转移后被牌手免疫
     assert not s.ext.get("damage_redirects")         # 挂账已消耗
+
+
+def test_damage_redirect_after_armor(db, make_game):
+    """伤害转移挂点 = 护甲计算后批次优先级 2（rules.md:218②，维护者答复(5) 定案）：
+    原受伤者的护甲先参与计算、余量转移给牌手；贯通修正先于转移（护甲先在贯通修正
+    批次被吸收，再按封顶余量转移）。"""
+    cid = 10010172
+    db.cards[cid] = F.card(
+        cid, shikigami=SID, level=1, token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        steps=[F.Step(op="grant_redirect")])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    play(g, 0, cid, target=Ref(player=0, shikigami=IDX))
+    s.shield = 3
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, Ref(player=1, shikigami=0))
+    assert s.shield == 0                             # 原受伤者护甲先吸收 3
+    assert s.health == 4                             # 式神无伤
+    assert pa.health == 28                           # 余量 2 转移给牌手
+    assert not s.ext.get("damage_redirects")         # 挂账已消耗
+    # 贯通修正先于转移：护甲在贯通修正批次吸收，封顶余量转移
+    play(g, 0, cid, target=Ref(player=0, shikigami=IDX))
+    s.shield = 3
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, Ref(player=1, shikigami=0),
+                        piercing=True)
+    assert s.shield == 0                             # 贯通修正吸收 3
+    assert s.health == 4
+    assert pa.health == 26                           # 余量 2 转移给牌手
+
+
+# ---------- 作用域战斗伤害免疫的嵌套战斗覆盖（答复(10)：nested 语义） ----------
+
+def test_combat_immunity_nested_scope(db, make_game):
+    """作用域战斗伤害免疫的嵌套覆盖（维护者答复(10) 定案）：nested=True 的免疫条目
+    在所绑定战斗内的嵌套战斗中同样生效；nested=False 仅本战斗（进入嵌套战斗即失效，
+    回到本战斗恢复）。"""
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]
+    src = Ref(player=0, shikigami=0)
+    g._battle_stack.append(1)                        # 外层战斗
+    b.immunities.append({"kind": "combat_damage", "battle": 1, "nested": True})
+    g._battle_stack.append(2)                        # 嵌套战斗
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, src, kind="combat")
+    assert b.health == 4                             # nested=True：嵌套战斗内仍免疫
+    b.immunities[:] = [{"kind": "combat_damage", "battle": 1, "nested": False}]
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, src, kind="combat")
+    assert b.health == 1                             # nested=False：嵌套战斗内不免疫
+    g._battle_stack.pop()                            # 回到外层战斗
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, src, kind="combat")
+    assert b.health == 1                             # 本战斗（battle=1）：nested=False 仍免疫

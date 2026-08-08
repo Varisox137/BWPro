@@ -133,6 +133,10 @@ class Game:
         # 义道：battle id → 攻击者 Ref——仅此战斗牌发起的战斗（嵌套/插入不继承）中，
         # 攻击者本人对有破甲的式神造成的战斗伤害翻倍（[暴击]时机=扣减生命前2；终止点清除）
         self._battle_double_fragile: dict[int, Ref] = {}
+        # 斩型"本次攻击获得[必杀]"（grant_keyword scope="next_battle"）：battle id →
+        # [攻击者 Ref]——必杀仅限该次战斗本身（答复(10) 定案），不授予式神关键字实例
+        # （不带入嵌套战斗、不出现在关键字列表）；终止点清除
+        self._battle_next_lethal: dict[int, list[Ref]] = {}
         # 交战目标改换登记（声东击西 battle_retarget）：battle id -> [改换者 Ref]
         self._battle_retarget: dict[int, list[Ref]] = {}
         # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
@@ -1822,13 +1826,20 @@ class Game:
         self._battle_followups[bid] = []  # 战斗结束后的追加攻击登记（战斗结束后结算）
         # 倒计时能力等"本次战斗"类战斗外授予（grant_keyword/grant_immunity scope="next_battle"）：
         # 挂账在攻击者 ext，下一次作为攻击者的战斗开始时消费——关键字走终止点核销通道、
-        # 免疫条目绑定本战斗 id（斩"本次攻击获得[必杀]"/觉醒·山风"本次战斗免疫战斗伤害"）
+        # 免疫条目绑定本战斗 id（斩"本次攻击获得[必杀]"/觉醒·山风"本次战斗免疫战斗伤害"）。
+        # 斩型必杀（答复(10) 定案）：不授予关键字实例，改记账 _battle_next_lethal——
+        # 仅限该次战斗本身，不带入嵌套战斗；其余 next_battle 关键字维持原通道。
+        # next_battle 免疫默认覆盖本战斗内的嵌套战斗（nested 缺省 True，答复(10) 定案；
+        # 挂账可显式 nested: false 收窄为仅本战斗）
         for e in attacker.ext.pop("next_battle_keywords", []):
+            if e["keyword"] == "lethal":
+                self._battle_next_lethal.setdefault(bid, []).append(atk_ref)
+                continue
             cls = self._grant_keyword(attacker, e["keyword"])
             grants.append((atk_ref, e["keyword"], cls))
         for e in attacker.ext.pop("next_battle_immunities", []):
             attacker.immunities.append({"kind": e.get("kind", "combat_damage"),
-                                        "battle": bid, "nested": bool(e.get("nested"))})
+                                        "battle": bid, "nested": bool(e.get("nested", True))})
         # 条件授予/免疫的求值事件：被攻击者 = 战斗目标；无目标时敌方战斗区式神，
         # 无目标且攻击者持直击（确定目标前1）则为敌方牌手
         d0 = self.state.players[1 - atk_ref.player]
@@ -1881,6 +1892,7 @@ class Game:
             self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
             self._battle_double_fragile.pop(bid, None)  # 义道破甲双倍标记随战斗结束清除
+            self._battle_next_lethal.pop(bid, None)  # 斩型必杀记账随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗终止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_retarget.pop(bid, None)  # 交战目标改换登记随战斗终止清理
             self._battle_stack.pop()
@@ -3034,19 +3046,6 @@ class Game:
             return  # 气绝/离场/濒死者不受伤害
         if s is None and p.defeated:
             return  # 气绝的牌手不再受到伤害
-        # 伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"，ext["damage_redirects"]
-        # 挂账）：消耗一层挂账，以受伤者的牌手为受伤者重新结算该伤害事件（新事件
-        # 走完整时点批次——牌手的护甲/破甲/免疫照常参与；伤害类别不限；式神自身的
-        # 屏障/免疫不随转移消耗）
-        if s is not None and s.ext.get("damage_redirects"):
-            s.ext["damage_redirects"].pop(0)
-            self._log(f"{self.db.shikigami[s.id].name} 将受到的伤害改由 {p.name} 承受")
-            dq.appendleft(_DamageEvent(source=ev.source,
-                                       victim=Ref(player=ev.victim.player),
-                                       amount=ev.amount, kind=ev.kind,
-                                       spell=ev.spell, converted=ev.converted,
-                                       card=ev.card))
-            return
         # 毒蚀转化（维护者答复(5)）：伤害事件生成点全额转化为等量破甲——护甲不再
         # 先吸收，不再视为伤害（无扣减/气绝/吸血/on_damage）。converted=True 的伤害
         # （碧羽散华破甲→伤害的嵌套事件）不再转化，防止转化类效果来回循环。
@@ -3136,9 +3135,11 @@ class Game:
         if ev.card is not None and ev.card.mods.get("double_damage") and ev.amount > 0:
             ev.amount *= 2
             self._log(f"【{self.db.cards[ev.card.id].name}】的伤害翻倍至 {ev.amount} 点")
-        # 批次 3：护甲计算前（批次 3 = 关键字"屏障"）
+        # 批次 3：护甲计算前（批次 3 = 关键字"屏障"）；持伤害转移挂账（damage_redirects）
+        # 时屏障不消耗——该伤害将在护甲计算后转移给牌手（答复(5) 批次 2 挂点）
         self._emit_damage_batch("on_before_shield", ev)
-        if s is not None and ev.amount > 0 and "barrier" in s.one_shot_keywords:
+        if s is not None and ev.amount > 0 and "barrier" in s.one_shot_keywords \
+                and not s.ext.get("damage_redirects"):
             ev.amount = 0
             s.one_shot_keywords.remove("barrier")
             self._log(f"{self.db.shikigami[s.id].name} 的屏障抵消了伤害")
@@ -3161,6 +3162,21 @@ class Game:
                 return  # 护甲完全吸收：终止结算
         # 批次 5：护甲计算后（伤害转移/改为非伤害能力锚点）
         self._emit_damage_batch("on_after_shield", ev)
+        # 伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"，ext["damage_redirects"]
+        # 挂账）：挂点 = 护甲计算后批次优先级 2（rules.md:218 ②——①类监听者
+        # （on_after_shield）先结算再转移）：消耗一层挂账，以受伤者的牌手为受伤者、
+        # 护甲计算后余量为伤害值重新结算该伤害事件（新事件走完整时点批次——牌手的
+        # 护甲/破甲/免疫照常参与；伤害类别不限；原受伤者的屏障不因持挂账而消耗，
+        # 其护甲先参与计算；贯通修正已在批次 2 先吸收护甲/封顶并分流溢出）
+        if s is not None and s.ext.get("damage_redirects"):
+            s.ext["damage_redirects"].pop(0)
+            self._log(f"{self.db.shikigami[s.id].name} 将受到的伤害改由 {p.name} 承受")
+            dq.appendleft(_DamageEvent(source=ev.source,
+                                       victim=Ref(player=ev.victim.player),
+                                       amount=ev.amount, kind=ev.kind,
+                                       spell=ev.spell, converted=ev.converted,
+                                       card=ev.card))
+            return
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
         if not skip_before_health:
             self._emit_damage_batch("on_before_health", ev)
@@ -3222,14 +3238,16 @@ class Game:
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
-            # 必杀：来源式神持 lethal 且本次伤害实际造成（走到扣减生命即已造成）——
+            # 必杀：来源式神持 lethal，或斩型"本次攻击获得[必杀]"记账（_battle_next_lethal，
+            # 答复(10) 定案——仅限该次倒计时发起的战斗本身，不带入嵌套战斗；不授予关键字
+            # 实例，故不出现在关键字列表），且本次伤害实际造成（走到扣减生命即已造成）——
             # 令受伤者在该次伤害事件后延时结算气绝事件，不提前标濒死；与伤害本身
             # 导致的气绝并行结算（同入 victims 队列，check_defeated 幂等去重）
-            if (ev.source is not None and ev.source.shikigami is not None
-                    and self._has_keyword(
-                        self.state.players[ev.source.player].shikigami[ev.source.shikigami],
-                        "lethal")):
-                victims.append((ev.victim, ev.source, "必杀"))
+            if ev.source is not None and ev.source.shikigami is not None:
+                src0 = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+                if self._has_keyword(src0, "lethal") or ev.source in self._battle_next_lethal.get(
+                        self._battle_stack[-1] if self._battle_stack else -1, ()):
+                    victims.append((ev.victim, ev.source, "必杀"))
             if (self._affected_stack
                     and ev.victim.player != self._affected_stack[-1]["controller"]
                     and ev.victim not in self._affected_stack[-1]["refs"]):

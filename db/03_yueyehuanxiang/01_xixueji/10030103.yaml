@@ -9,16 +9,17 @@ versions:
       level: 1
       keywords: [fast, lifesteal]
       triggers:
-        # [增强] 每当敌方牌手获得生命时，此牌伤害+1：卡牌触发器（游离触发块，
+        # [增强] 每当敌方牌手获得生命时，此牌伤害+1：挂 on_after_heal（治疗后延时
+        # 时机，0 治疗不触发——答复(1) 定案）；卡牌触发器（游离触发块，
         # card_in_hand 门控仅手牌中触发）；add_mod to=hand 写本卡手牌实例
         # damage_boost（可叠加入口，damage 动作读取时叠加）
-        - when: on_heal
+        - when: on_after_heal
           condition: {target_side: enemy, target_kind: player, card_in_hand: true}
           steps:
             - {op: add_mod, to: hand, key: damage_boost, amount: 1}
       target: {kind: choose, pool: any_character}
       effects:
-        # 造成1点伤害（text 无目标限定——暂定可选任意角色，待确认；[吸血] 经法术
+        # 造成1点伤害（text 无目标限定——可选任意角色，答复(12) 定案；[吸血] 经法术
         # 伤害读卡牌关键字结算）
         steps:
           - {op: damage, amount: 1}
