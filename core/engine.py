@@ -2281,7 +2281,9 @@ class Game:
         （能力后进场）。B 不继承 A 的增减益；A 的完整状态快照存入 B.transform_origin，
         解除变形时原样还原（连续变形继承最初的快照）；B 保留"所属式神"= 原式神 id
         （transform_owner，变形物无法使用原式神的任何牌）。
-        B 的进场派系 = 变形效果来源式神（source）的永久派系，无来源时回退 into def faction。"""
+        B 的进场派系 = 变形效果来源式神（source）的永久派系，无来源时回退 into def faction。
+        进场顺序：变形物为再进场者，entry_order 取本队当前最大值 +1（排到本队最后——
+        维护者定案：再进场改变进场顺序为新近者，回合开始倒计时批次按进场顺序处理）。"""
         d = self.db.shikigami[into]
         if d.kind != "transform":
             raise ValueError(f"transform 的目标 {into} 不是变形物（kind=transform）")
@@ -2295,7 +2297,8 @@ class Game:
         pi = self.state.players.index(p)
         b = ShikigamiState(
             id=into, kind="transform", faction=faction, perm_faction=faction,
-            level=s.level, home_slot=s.home_slot, entry_order=s.entry_order,
+            level=s.level, home_slot=s.home_slot,
+            entry_order=max(x.entry_order for x in p.shikigami) + 1,
             base_power=d.power, base_health=d.health, health=d.health,
             transform_owner=owner_id, transform_origin=origin,
             ext={"max_power": d.power},  # 力量历史峰值初值（断臂记账）
@@ -2342,13 +2345,20 @@ class Game:
         if s.transform_origin is None:
             return
         restored = ShikigamiState.model_validate(s.transform_origin)
+        # 还原进场 = 再进场：entry_order 覆盖快照旧值，取本队当前最大值 +1
+        # （排到本队最后——维护者定案同变形进场）
+        restored.entry_order = max(x.entry_order for x in p.shikigami) + 1
         self._clear_ability_card_auras(p, pi, i)  # 变形物能力离场：其 ability 光环移除（原式神光环还原后由能力进场重新注册）
         p.shikigami[i] = restored
         self._log(f"{self.db.shikigami[s.id].name} 变回 {self.db.shikigami[restored.id].name}")
         self._settle(f"【变形】{self.db.shikigami[s.id].name} 解除变形，"
                      f"还原为 {self.db.shikigami[restored.id].name}")
         if restored.in_play:
-            self._register_ability_countdown(pi, i)  # 能力后进场（同复活/升级路径）
+            # 能力后进场（同复活/升级路径）；快照已携带倒计时（变形时的剩余值）时
+            # 不重新注册——还原按剩余倒计时继续（维护者定案："还原为倒计时1的山风"），
+            # 能力进场的重新注册会把倒计时重置为初值
+            if restored.countdown is None:
+                self._register_ability_countdown(pi, i)
 
     def _attach_form(self, p: PlayerState, i: int, card: CardInstance, cdef: CardDef) -> None:
         """为式神结附形态牌：先消灭旧形态，再用形态身材覆盖基础身材。
@@ -2726,8 +2736,12 @@ class Game:
         归零流程（先即时插入结算、再重置/移除）见 _countdown_zero，与 countdown_delta
         动作共用；灵咒倒计时随灵咒机制引入。每次减少发出 on_countdown_reduced
         （original=actual=1，非卡牌来源；势类"倒计时减少时"监听挂此事件）。
+        处理顺序 = 进场顺序（entry_order 升序——维护者定案：初始=座位顺序，再进场
+        （变形/还原）排到本队最后；批次按下标快照遍历，块内改动不影响本轮遍历）。
         """
-        for i, s in enumerate(p.shikigami):
+        for i in sorted(range(len(p.shikigami)),
+                        key=lambda j: p.shikigami[j].entry_order):
+            s = p.shikigami[i]
             if s.countdown is None or not s.in_play:
                 continue
             s.countdown -= 1

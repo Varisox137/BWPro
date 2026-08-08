@@ -10,7 +10,7 @@
 | 玩家（账号） | （Phase 2 服务端概念） | 参与对局的账号/连接，不进入 GameState | 🔧 |
 | 式神（非召唤物） | `shikigami` | `ShikigamiDef.kind = "shikigami"` | ✅ |
 | 召唤物 | `summon` | `kind = "summon"`；气绝即离场、不可升级、入场 1 级（暂定）、生成即进入战斗区 | ✅ |
-| 变形物 | `kind = "transform"` | `ShikigamiDef.kind="transform"`：视同召唤物类不入构筑池/测试卡组；由 `transform` 动作变入（继承座位/进场顺序/等级，不继承增减益），`untransform`/气绝前2 按 `transform_origin` 快照还原；保留"所属式神" `transform_owner`（无法使用原式神的牌） | ✅ |
+| 变形物 | `kind = "transform"` | `ShikigamiDef.kind="transform"`：视同召唤物类不入构筑池/测试卡组；由 `transform` 动作变入（继承座位/等级，不继承增减益；变形/还原均为再进场——进场顺序排本队最后，见「进场顺序」行），`untransform`/气绝前2 按 `transform_origin` 快照还原（快照携带的剩余倒计时优先保留、不被能力进场重置初值）；保留"所属式神" `transform_owner`（无法使用原式神的牌） | ✅ |
 | 实体 | entity / `ShikigamiState` | 局内式神或召唤物；记录 `home_slot`（准备区编号 1-4，召唤物 None） | ✅ |
 | 气绝 | `defeated` | `ShikigamiState.defeated`；倒计时后复活 | ✅ |
 | 濒死 | `dying` | 生命 ≤ 0 但气绝事件尚未结算（伤害流程扣减生命后先标记，气绝时清除）：不受伤害/治疗、不进随机与选择目标池、不能再次被消灭；能力照常（in_play 不变）、可以攻击 | ✅ |
@@ -24,6 +24,7 @@
 | 移动 | `move` | 指令；入战斗区不攻击；战斗区召唤物被移动 = 直接离场 | ✅ |
 | 战斗区 | combat zone / `combat_index` | 每方至多 1 式神驻留；己方回合开始退回准备区 | ✅ |
 | 准备区 | bench | 非战斗区式神所在；编号见 `home_slot` | ✅ |
+| 进场顺序 | `entry_order`（`ShikigamiState` 字段） | 牌手=0、初始式神从左到右 1-4；再进场（变形/还原）排本队最后 = 本队 max+1（复活不更新、召唤物沿用默认值、式神替换保留原值——关联点待确认见 questions.md）。读取点：回合开始倒计时批次（`_turn_start_countdown`）按 entry_order 升序依次处理；护甲/破甲清除、眩晕移除等按角色进场顺序的批次同序 | ✅ |
 
 ## 区域与卡牌流转
 

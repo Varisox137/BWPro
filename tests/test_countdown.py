@@ -955,3 +955,76 @@ def test_next_battle_lethal_battle_scoped(db, make_game):
     g._battle_stack.append(2)                        # 嵌套战斗
     g.deal_to_shikigami(Ref(player=1, shikigami=1), 1, src, kind="combat")
     assert b1.health == 5 and not b1.defeated        # 必杀不带入嵌套战斗
+
+
+# ==========================================================================
+# 进场顺序（entry_order）：再进场排本队最后、回合开始倒计时批次按进场顺序
+# ==========================================================================
+
+PAPER_DUMMY = 100199  # 纸人式变形物 dummy id
+
+
+def _kagura_like(db, sid=CD2):
+    """神乐歌类倒计时能力（initial=2）：归零使其他己方式神 +1/+1（永久）并倒计时 -1。"""
+    db.shikigami[sid].ability = F.EffectBlock(
+        countdown=2,
+        steps=[F.Step(op="buff_power", amount=1, perm=True,
+                      target=T(kind="all", pool="friendly_others")),
+               F.Step(op="buff_health", amount=1, perm=True,
+                      target=T(kind="all", pool="friendly_others")),
+               F.Step(op="countdown_delta", amount=-1,
+                      target=T(kind="all", pool="friendly_others"))])
+
+
+def _once_attack_countdown(g, pi=0, si=IDX):
+    """山风类"倒计时1发起一次攻击"：手动注册一次型（once 生效后移除，避免归零重置
+    后在同批次被二次处理），初值 1。"""
+    g._register_countdown(
+        g.state.players[pi].shikigami[si], initial=1, once=True, source=CD,
+        block=F.EffectBlock(steps=[F.Step(op="launch_attack")]))
+
+
+def test_turn_start_countdown_entry_order_after_transform(db, make_game):
+    """进场顺序规则（维护者定案）：再进场（变形为变形物、解除变形还原）排到本队最后，
+    回合开始倒计时批次按进场顺序处理——山风类（倒计时1，座位在前）被变形再还原后，
+    神乐歌类（倒计时2，座位在后）先归零：+1/+1 与倒计时 -1 先于山风本次攻击结算
+    （攻击按增益后力量造成 4 伤而非 3 伤）。"""
+    _kagura_like(db)
+    db.shikigami[PAPER_DUMMY] = F.shiki(PAPER_DUMMY, kind="transform",
+                                        name="纸人", power=1, health=1)
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    pa.shikigami[IDX2].level = 1
+    _register(g, 0, IDX2)                # 神乐歌类倒计时 2（未经开局批次减少）
+    _once_attack_countdown(g)            # 山风类倒计时 1（一次型）
+    g._transform_shikigami(pa, IDX, PAPER_DUMMY)   # 戏谑套索式变形
+    assert pa.shikigami[IDX].entry_order == 5      # 再进场：排本队最后（初始 1-4）
+    pass_turns(g, 2)                     # A 第 2 回合开始：山风变形中跳过；神乐歌 2→1
+    assert pa.shikigami[IDX2].countdown == 1
+    g._untransform(0, IDX)               # 回合结束还原（直接调用模拟）
+    s0 = pa.shikigami[IDX]
+    assert s0.id == CD and s0.countdown == 1       # 快照还原（倒计时保留）
+    assert s0.entry_order == 6                     # 还原进场再排最后
+    assert s0.entry_order > pa.shikigami[IDX2].entry_order
+    pass_turns(g, 2)                     # A 第 3 回合开始：神乐歌先归零 → 山风吃 +1/+1 再攻击
+    assert pb.health == 26               # 攻击 3+1=4（顺序未变则为 3 → 27）
+    assert s0.perm_power == 1            # +1/+1 已结算
+    assert s0.countdown is None          # 一次型生效后移除（未被批次二次处理）
+
+
+def test_turn_start_countdown_entry_order_seat_default(db, make_game):
+    """对照：未变形时进场顺序 = 座位顺序——山风类（座位在前）倒计时先处理：
+    本次攻击吃不到神乐歌的 +1/+1（3 伤）；神乐歌次回合才归零。"""
+    _kagura_like(db)
+    g, pa = _game(make_game)
+    pb = g.state.players[1]
+    pa.shikigami[IDX2].level = 1
+    _register(g, 0, IDX2)
+    _once_attack_countdown(g)
+    pass_turns(g, 2)                     # A 第 2 回合开始：山风（座位前）先归零攻击
+    assert pb.health == 27               # 攻击 3（无增益）
+    assert pa.shikigami[IDX].perm_power == 0
+    assert pa.shikigami[IDX2].countdown == 1
+    pass_turns(g, 2)                     # A 第 3 回合开始：神乐歌归零 → +1/+1（已无倒计时可减）
+    assert pa.shikigami[IDX].perm_power == 1
+    assert pb.health == 27               # 无第二次攻击（一次型已移除）
