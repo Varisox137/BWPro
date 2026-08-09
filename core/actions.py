@@ -1491,6 +1491,33 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
     game._change_field_intensity(ctx.controller, idx, -amt, ev.source, "改降耐久")
 
 
+@action("redirect_damage_to_self")
+def redirect_damage_to_self(game, ctx, *, targets: list[Ref]) -> None:
+    """伤害目标转移——改由本能力持有者承受（定案"转移链"；targets 忽略）：挂伤害事件
+    "护甲计算后"批次（on_after_shield，insert，优先级 2——「伤害目标转移」类，
+    EffectBlock.priority 约定见定案(7)）的式神能力块；受伤者匹配由能力 condition
+    负责（victim_side/victim_not_shikigami 等，须自行排除"自身受伤"情形）。
+    原伤害值 >0 时：原事件立即终止结算（amount 归零——归零断点使同批次其余优先级
+    ≥2 转移块不再处理，每次只单个触发），生成指向持有者的新事件（等量、同来源、
+    同原因、同属性、无[贯通]，从"护甲计算前0"开始结算——engine._spawn_redirect）。
+    转移链：本能力实例身份（ctx.ability_uid，缺省按块对象身份兜底）在同一转移链上
+    只执行一次——已在链上则空操作；新事件继承并延长链。机制先行：暂无实卡使用。"""
+    ev = (ctx.event or {}).get("damage")
+    holder = ctx.source
+    if ev is None or holder is None or holder.shikigami is None:
+        raise ValueError(
+            "redirect_damage_to_self 须挂伤害事件批次（on_after_shield）的式神能力块")
+    uid = ctx.ability_uid or f"block:{id(ctx.block)}"
+    if uid in ev.redirect_chain:
+        return  # 转移链：本能力在此链上已执行过一次，不再触发
+    if ev.amount <= 0:
+        return
+    hs = game.state.players[holder.player].shikigami[holder.shikigami]
+    game._log(f"{game.db.shikigami[hs.id].name} 代为承受本次伤害（转移链 +{uid}）")
+    game._spawn_redirect(ev, holder, uid)
+    ev.amount = 0  # 终止原伤害事件结算
+
+
 @action("boost_change")
 def boost_change(game, ctx, *, targets: list[Ref], amount: int = 2,
                  positive_only: bool = True) -> None:

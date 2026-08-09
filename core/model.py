@@ -190,6 +190,11 @@ class ExecContext:
     # 自身耐久条件等"此牌"自指语义的定位依据；非幻境能力为 None）
     block: Any = None  # 正在结算的效果块（_resolve_pending 塞入——field_rebound
     # "失去此能力"按对象身份定位触发块在 def.abilities 中的下标用；on_play 为 None）
+    ability_uid: str | None = None  # 能力实例身份（转移链记账用，定案"转移链"：
+    # 每个伤害转移能力在同一转移链上只执行一次）。收集器填：式神基础/觉醒/形态能力
+    # = "shk:{pi}:{si}:{id(block)}"；TempGrant = "grant:{seq}"；幻境能力块 =
+    # "field:{pi}:{队列下标}:{id(block)}"；其余通道（卡牌触发/光环/delayed）为 None
+    # ——redirect_damage_to_self 以 id(ctx.block) 对象身份兜底
 
 
 class FieldState(BaseModel):

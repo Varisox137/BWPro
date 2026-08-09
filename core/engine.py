@@ -74,6 +74,12 @@ class _DamageEvent:
     kind: "combat"（攻击方战斗伤害）/ "counter"（反击战斗伤害）/ "effect"（法术、能力等）。
     spell: 法术伤害标记（法术牌效果伤害；≠ 非战斗伤害——式神能力伤害不算，答复(7)）。
     skip_early: 贯通溢出产生的新事件跳过早期流程，从"护甲计算前"开始结算（rules.md:199③）。
+    start_at_shield: 伤害目标转移产生的新事件跳过更早的早期步骤，从"护甲计算前0"
+        （on_before_shield 批次）开始结算——穿刺/on_damage_start/免疫/贯通修正/翻倍修饰
+        均不判定（"无[贯通]"即贯通修正批次不执行；事件生成点的转化与气绝保护仍先行，
+        定案"转移链"）。
+    redirect_chain: 转移链——本事件已经历的伤害转移能力身份集合（能力实例身份见
+        ExecContext.ability_uid）；每个转移能力在同一链上只执行一次，新事件继承并延长链。
     时点批次监听者可通过事件 payload 中的 damage 引用直接修改 amount（扣减生命前锁定）。
     """
 
@@ -84,6 +90,8 @@ class _DamageEvent:
     spell: bool = False
     piercing: bool = False
     skip_early: bool = False
+    start_at_shield: bool = False
+    redirect_chain: frozenset = frozenset()
     converted: bool = False  # 已经历过一次转化的伤害（碧羽散华破甲→伤害）：
     # 跳过毒蚀的伤害→破甲转化，防止两个转化类效果来回循环
     fragile: int = 0  # 护甲计算批次消耗的破甲数量（破甲受伤即消耗；on_damage payload
@@ -142,6 +150,9 @@ class Game:
         self._battle_followups: dict[int, list[Ref]] = {}
         # 结算中交互选择（青灯夜谈）的挂起块续点：(block, ctx, 下一步下标)；内存态不序列化
         self._suspended: tuple | None = None
+        # 伤害转移类能力（redirect_damage_to_self）在伤害批次内生成的新事件挂起列表：
+        # op 在 emit 上下文中执行（访问不到伤害队列），由 _run_damage_queue 统一入队
+        self._redirect_spawned: list[_DamageEvent] = []
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -3206,6 +3217,12 @@ class Game:
         while dq:
             ev = dq.popleft()
             self._damage_event_flow(ev, dq, victims)
+            if self._redirect_spawned:
+                # 转移类能力（redirect_damage_to_self）在 on_after_shield 批次生成的
+                # 新事件：原事件已终止（amount 归零），新事件插入队列最前优先结算
+                for new_ev in reversed(self._redirect_spawned):
+                    dq.appendleft(new_ev)
+                self._redirect_spawned.clear()
             total_dealt += ev.dealt
             if self.state.winner is not None:
                 return total_dealt
@@ -3221,6 +3238,18 @@ class Game:
         """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。"""
         self.emit(name, damage=ev, victim=ev.victim, source=ev.source,
                   amount=ev.amount, kind=ev.kind)
+
+    def _spawn_redirect(self, ev: _DamageEvent, new_victim: Ref, uid: str) -> None:
+        """伤害目标转移（定案"转移链"；redirect_damage_to_self 动作调用）：生成等量、
+        同来源、同原因、同属性（无[贯通]）的新伤害事件，从"护甲计算前0"开始结算，
+        转移链延长 uid；新事件挂起到 _redirect_spawned，由 _run_damage_queue 统一
+        插入队列最前。原伤害事件由调用方归零终止（每次只单个触发——归零断点使同
+        批次其余优先级≥2 转移块不再处理）。新目标已标记气绝/濒死时新事件在管线
+        入口被拦截、不造成实际伤害，但原事件照常终止（定案备注）。"""
+        self._redirect_spawned.append(_DamageEvent(
+            source=ev.source, victim=new_victim, amount=ev.amount, kind=ev.kind,
+            spell=ev.spell, converted=ev.converted, start_at_shield=True,
+            redirect_chain=ev.redirect_chain | {uid}, card=ev.card))
 
     def _damage_event_flow(self, ev: _DamageEvent, dq: deque[_DamageEvent],
                            victims: list[tuple[Ref, Ref | None, str]]) -> None:
@@ -3251,8 +3280,9 @@ class Game:
                 self._change_shield(ev.victim, ev.amount, "清姬", kind="fragile")
                 self._log(f"伤害转化为 {ev.amount} 点破甲（清姬）")
                 return
-        # 批次 1：造成/受到伤害开始时（即时时机）
-        if not ev.skip_early:
+        # 批次 1：造成/受到伤害开始时（即时时机）；伤害目标转移的新事件
+        # （start_at_shield）跳过本批次——穿刺/免疫均不判定，从"护甲计算前0"开始
+        if not ev.skip_early and not ev.start_at_shield:
             # 批次 0：造成伤害前（即时时机）——穿刺（来源关键字）在此生效：移除目标
             # 的所有护甲/屏障，与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于
             # 任意来源的伤害，含非战斗伤害（terminology.md「穿刺」；贯通溢出事件跳过本批次）
@@ -3295,8 +3325,9 @@ class Game:
         skip_shield_calc = False
         skip_before_health = False
         # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
-        # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md:201）
-        if ev.piercing and s is not None and (
+        # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md:201）；
+        # 转移新事件（start_at_shield）跳过本批次——"无[贯通]"语义（贯通不随转移继承）
+        if ev.piercing and not ev.start_at_shield and s is not None and (
                 ev.kind != "counter"
                 or any(b in self._battle_counter_piercing for b in self._battle_stack)):
             skip_shield_calc = True
@@ -3317,8 +3348,10 @@ class Game:
             if ev.amount <= 0:
                 return
         # 护甲计算前1（汤盆冲撞[增强]"此牌伤害翻倍"时机锚点，terminology.md 登记）：
-        # 来源卡牌实例带 double_damage 修饰（conditional_mods 装配写入）时伤害值翻倍
-        if ev.card is not None and ev.card.mods.get("double_damage") and ev.amount > 0:
+        # 来源卡牌实例带 double_damage 修饰（conditional_mods 装配写入）时伤害值翻倍；
+        # 转移新事件（start_at_shield）跳过——从"护甲计算前0"（on_before_shield）开始
+        if not ev.start_at_shield and ev.card is not None \
+                and ev.card.mods.get("double_damage") and ev.amount > 0:
             ev.amount *= 2
             self._log(f"【{self.db.cards[ev.card.id].name}】的伤害翻倍至 {ev.amount} 点")
         # 批次 3：护甲计算前（批次 3 = 关键字"屏障"）；持伤害转移挂账（damage_redirects）
@@ -3353,9 +3386,11 @@ class Game:
         # 伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"，ext["damage_redirects"]
         # 挂账）：挂点 = 护甲计算后批次优先级 2（rules.md:218 ②——①类监听者
         # （on_after_shield）先结算再转移）：消耗一层挂账，以受伤者的牌手为受伤者、
-        # 护甲计算后余量为伤害值重新结算该伤害事件（新事件走完整时点批次——牌手的
-        # 护甲/破甲/免疫照常参与；伤害类别不限；原受伤者的屏障不因持挂账而消耗，
-        # 其护甲先参与计算；贯通修正已在批次 2 先吸收护甲/封顶并分流溢出）
+        # 护甲计算后余量为伤害值重新结算该伤害事件。新事件语义（定案"转移链"）：
+        # 等量、同来源、同原因、同属性（无[贯通]），从"护甲计算前0"（on_before_shield）
+        # 开始结算——穿刺/免疫/贯通修正/翻倍修饰均不再判定；转化与气绝保护仍先行。
+        # 挂账消耗式（pop 一层）天然有界，不占用转移链身份（链照旧继承）；伤害类别不限；
+        # 原受伤者的屏障不因持挂账而消耗，其护甲先参与计算
         if s is not None and s.ext.get("damage_redirects"):
             s.ext["damage_redirects"].pop(0)
             self._log(f"{self.db.shikigami[s.id].name} 将受到的伤害改由 {p.name} 承受")
@@ -3363,6 +3398,8 @@ class Game:
                                        victim=Ref(player=ev.victim.player),
                                        amount=ev.amount, kind=ev.kind,
                                        spell=ev.spell, converted=ev.converted,
+                                       start_at_shield=True,
+                                       redirect_chain=ev.redirect_chain,
                                        card=ev.card))
             return
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
@@ -3823,7 +3860,8 @@ class Game:
                 if self._match(cond, event, pi, holder=holder):
                     out.append(_Pending(ability, ExecContext(
                         controller=pi, source=holder, event=event,
-                        is_ability=True, field=ph)))
+                        is_ability=True, field=ph,
+                        ability_uid=f"field:{pi}:{ph_idx}:{id(ability)}")))
         return out
 
     def _set_pending_end(self, loser: int | None = None, defeat: bool = False) -> None:
@@ -4083,7 +4121,8 @@ class Game:
                 continue
             if self._match(grant.block.condition, event, grant.controller, holder=grant.holder):
                 out.append(_Pending(grant.block, ExecContext(
-                    controller=grant.controller, source=grant.holder, event=event),
+                    controller=grant.controller, source=grant.holder, event=event,
+                    ability_uid=f"grant:{grant.seq}"),
                     temp_grant=grant, seq=grant.seq))
         out.sort(key=lambda pend: pend.seq)
         return out
@@ -4137,7 +4176,8 @@ class Game:
                 if self._match(ability.condition, event, pi, holder=Ref(player=pi, shikigami=si)):
                     out.append(_Pending(ability, ExecContext(
                         controller=pi, source=Ref(player=pi, shikigami=si), event=event,
-                        is_ability=True), seq=aseq))
+                        is_ability=True, ability_uid=f"shk:{pi}:{si}:{id(ability)}"),
+                        seq=aseq))
             # 法术回响序列（spell_echo 登记于 ext）：持有者以外的式神（含敌方）从手牌
             # 使用法术牌时收集一次回响结算（同 id 法术每回合至多一次、序列游标未走完；
             # 结算处 spell_echo_recast 复查）

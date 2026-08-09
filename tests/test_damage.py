@@ -1130,8 +1130,8 @@ def test_card_aura_lifesteal_on_spell_damage(db, make_game):
 
 def test_damage_redirect_to_player(db, make_game):
     """血蝠之盾型伤害转移（grant_redirect）：下一次将受到的伤害以其牌手为受伤者重新
-    结算——牌手护甲照常吸收、牌手免疫照常生效；一次性消耗；式神自身屏障不随转移
-    消耗；伤害类别不限。"""
+    结算——牌手护甲照常吸收；一次性消耗；式神自身屏障不随转移消耗；伤害类别不限。
+    新事件从"护甲计算前0"开始（定案"转移链"）：穿刺/免疫/贯通修正不再判定。"""
     cid = 10010170
     db.cards[cid] = F.card(
         cid, shikigami=SID, level=1, token=True,
@@ -1151,11 +1151,12 @@ def test_damage_redirect_to_player(db, make_game):
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0))
     assert "barrier" not in s.one_shot_keywords      # 一次性：第二次正常结算（屏障抵消）
     assert pa.health == 27 and s.health == 4
-    # 牌手免疫照常参与转移后的结算
+    # 转移新事件从"护甲计算前0"开始：跳过"伤害开始时"批次的免疫判定（定案"转移链"
+    # ——原答复(5)"牌手免疫仍可挡"口径作废）
     play(g, 0, cid, target=Ref(player=0, shikigami=IDX))
     pa.immunities.append({"kind": "all", "turn": g.state.turn})
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0))
-    assert pa.health == 27 and s.health == 4         # 转移后被牌手免疫
+    assert pa.health == 24 and s.health == 4         # 转移后伤害不被免疫拦截
     assert not s.ext.get("damage_redirects")         # 挂账已消耗
 
 

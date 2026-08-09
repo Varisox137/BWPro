@@ -3736,3 +3736,94 @@ def test_field_summon_pick_choice(db, make_game):
     play(g2, 0, cid)
     assert g2.state.pending_choice is None
     assert [ph.card_id for ph in pa2.fields] == [10010161]
+
+
+def _redirect_block(exclude_sid: int):
+    """"每当其他己方式神受伤时改由我承受"转移能力块（定案"转移链"测试用）。"""
+    return F.block(
+        F.Step(op="redirect_damage_to_self"),
+        when="on_after_shield", priority=2,
+        condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                   "victim_not_shikigami": exclude_sid})
+
+
+def _grant_redirect(g, player: int, si: int, exclude_sid: int, uses: int = 99) -> TempGrant:
+    """给式神注册一个被赋予的转移能力实例（TempGrant，能力进场序号区分实例）。"""
+    grant = TempGrant(block=_redirect_block(exclude_sid), controller=player,
+                      holder=Ref(player=player, shikigami=si),
+                      uses=uses, seq=g.state.next_ability_seq())
+    g.state.temp_grants.append(grant)
+    return grant
+
+
+def test_damage_redirect_chain_order(db, make_game):
+    """转移链例1（定案"转移链"）：A 持形态能力"其他己方角色受伤改由我承受"，B 被
+    赋予转移能力"其他角色受伤改由 B 承受"——A 受伤的场合：B 的赋予能力先触发
+    （伤害目标改为 B），再触发 A 的形态能力（改由 A 承受），最终 A 受伤；B 的赋予
+    能力在同一转移链上已执行过一次，不再触发（防回环）。"""
+    db.shikigami[100101].ability = _redirect_block(100101)  # A（座 0）形态能力
+    g = make_game()
+    F.battle_setup(g)
+    pb = g.state.players[1]
+    _grant_redirect(g, 1, 1, 100102)                        # B（座 1）被赋予
+    a, b = pb.shikigami[0], pb.shikigami[1]
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 2, Ref(player=0, shikigami=0))
+    assert a.health == 2                # 链 B赋予→A形态，最终 A 承受（4-2）
+    assert b.health == 6                # B 无伤（其赋予能力在链上已执行，不再回环）
+
+
+def test_damage_redirect_chain_double_grant(db, make_game):
+    """转移链例2（定案"转移链"）：B 被赋予两个转移能力实例——A 受伤：第一次赋予
+    先触发（→B），A 形态能力再触发（→A），第二次赋予触发（→B），最终 B 受伤；
+    每个能力实例在同一转移链上各执行一次。"""
+    db.shikigami[100101].ability = _redirect_block(100101)  # A 形态能力
+    g = make_game()
+    F.battle_setup(g)
+    pb = g.state.players[1]
+    _grant_redirect(g, 1, 1, 100102)    # 第一次赋予（能力进场序号小）
+    _grant_redirect(g, 1, 1, 100102)    # 第二次赋予（序号大）
+    a, b = pb.shikigami[0], pb.shikigami[1]
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 2, Ref(player=0, shikigami=0))
+    assert b.health == 4                # 链 ①→A形态→②，最终 B 承受（6-2）
+    assert a.health == 4                # A 无伤
+
+
+def test_damage_redirect_chain_no_loop(db, make_game):
+    """转移链防循环（定案"转移链"）：两个"其他己方式神受伤改由我承受"同时在场——
+    对第三方 C 的伤害按能力进场顺序经 A→B 各转移一次后终止（各自在同一链上只
+    执行一次），最终 B 受伤，不再回环。"""
+    db.shikigami[100101].ability = _redirect_block(100101)  # A
+    db.shikigami[100102].ability = _redirect_block(100102)  # B
+    g = make_game()
+    F.battle_setup(g)
+    pb = g.state.players[1]
+    # 能力进场序号：A 先于 B（测试手动定级不登记序号，补登记使 A 先触发）
+    pb.shikigami[0].ability_entry["ability"] = g.state.next_ability_seq()
+    pb.shikigami[1].ability_entry["ability"] = g.state.next_ability_seq()
+    a, b, c = pb.shikigami[0], pb.shikigami[1], pb.shikigami[2]
+    g.deal_to_shikigami(Ref(player=1, shikigami=2), 2, Ref(player=0, shikigami=0))
+    assert b.health == 4                # A→B 各一次，最终 B 承受（6-2）
+    assert a.health == 4 and c.health == 6
+
+
+def test_damage_redirect_chain_dying_target(db, make_game):
+    """转移链备注（定案"转移链"）：并行伤害事件中多个转移给同一目标——目标在第一次
+    转移伤害后标记濒死（延时气绝），后续转移的新事件不再造成实际伤害（管线入口
+    拦截），但各原事件仍被终止结算（原受伤者不受伤害）。"""
+    from core.engine import _DamageEvent
+    db.shikigami[100101].ability = _redirect_block(100101)  # A
+    g = make_game()
+    F.battle_setup(g)
+    pb = g.state.players[1]
+    a = pb.shikigami[0]
+    a.health = 3
+    src = Ref(player=0, shikigami=0)
+    g._run_damage_queue([
+        _DamageEvent(source=src, victim=Ref(player=1, shikigami=1), amount=4, kind="effect"),
+        _DamageEvent(source=src, victim=Ref(player=1, shikigami=2), amount=4, kind="effect"),
+        _DamageEvent(source=src, victim=Ref(player=1, shikigami=3), amount=4, kind="effect"),
+    ])
+    assert a.health <= 0 and (a.dying or a.defeated)  # 只承受第一次转移伤害（3-4，气绝清零）
+    assert pb.shikigami[1].health == 6  # 原受伤者均不受伤害（各原事件均终止）
+    assert pb.shikigami[2].health == 6
+    assert pb.shikigami[3].health == 5
