@@ -660,7 +660,7 @@
 | 05 斩 | ✅ | 形态 3/8：on_countdown_proc → grant_keyword lethal scope=next_battle（范围=持续到该次战斗事件结束后、含期间插入的嵌套战斗——维护者改判，原"仅限该次攻击本身"答复(10) 作废，lethal 特判通道已删除、统一实例授予） |
 | 06 突 | ✅ | countdown_delta {base: 2, countdown_holders: friendly_others, negate: true}（[增强]按其他倒计时式神数叠加）；过量 {memo: countdown_overkill} → buff_power/buff_health 非永久（定案(3)） |
 | 07 岚 | ✅ | repeat {countdown_sum: true} 套 countdown_delta -1（X=全队当前倒计时总和） |
-| 08 觉醒·山风 | ✅ | +1/+1；觉醒能力①[倒计时3] grant_immunity combat_damage scope=next_battle + launch_attack（免疫持续到该次战斗事件结束后、含期间插入的嵌套战斗——与斩范围一致，维护者改判统一）；②on_countdown_reduced {by_card, shikigami_side: friendly, shikigami_not_shikigami: 100307} + trigger_when_defeated → 两步 countdown_delta {event: original, negate: true}（存活减倒计时/气绝 revive 减气绝倒计时） |
+| 08 觉醒·山风 | ✅ | +1/+1；觉醒能力①[倒计时3] grant_immunity combat_damage scope=next_battle + launch_attack（免疫持续到该次战斗事件结束后、含期间插入的嵌套战斗——与斩范围一致，维护者改判统一）；②on_countdown_reduced {natural_not, shikigami_side: friendly, shikigami_not_shikigami: 100307} + trigger_when_defeated → 两步 countdown_delta {event: original, negate: true}（存活减倒计时/气绝 revive 减气绝倒计时）。**语义偏差（2026-08 二轮定案）**：raw 为"你的牌"，实现扩为任何己方减少倒计时效果（含在场能力来源）；无倒计时能力的未气绝式神被减少也发事件（actual=0）照样复制；回合开始批次自然减少（natural）不共享；复制延时界=引起该次减少的结算单元 |
 
 ## 孟婆（100308）
 

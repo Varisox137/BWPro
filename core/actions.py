@@ -1776,10 +1776,12 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
     无倒计时能力或倒计时为 0（归零结算中）时修正为 -0（空操作，rules.md ch12
     增减流程 1）；减少后不大于 0 时走归零流程（_countdown_zero，与回合开始批次共用）。
 
-    减少（amount < 0 且实际作用于持有倒计时者）时发出 on_countdown_reduced：
-    payload 带 original（原始减少量，定案(5)：势按原始值获得力量）、actual（实际
-    减少量=修正到剩余）、by_card（ctx.card 非空=卡牌效果，觉醒·山风共享的判定依据，
-    定案(8)）。原始与实际之差（过量部分）累计写入块内暂存 ctx.memo
+    减少（amount < 0）时发出 on_countdown_reduced：持有倒计时者按实际修正结算；
+    未气绝但无倒计时能力者 actual=0 也发（不改变其状态——减少效果对其仍算"生效"，
+    2026-08 觉醒·山风定案）；倒计时为 0（归零结算中）不发。payload 带 original（原始
+    减少量，定案(5)：势按原始值获得力量）、actual（实际减少量=修正到剩余）、by_card
+    （ctx.card 非空=卡牌效果，觉醒·山风共享的判定依据，定案(8)——2026-08 起 by_card
+    门控移除，能力来源同样共享；回合开始自然减少带 natural=True 不共享）。原始与实际之差（过量部分）累计写入块内暂存 ctx.memo
     ["countdown_overkill"]，供同块后续 step 以 {"memo": "countdown_overkill"} 动态
     数值引用（突"过量效果会使其获得等量的力量和生命"，定案(3)：非永久持续性增益）。
 
@@ -1829,7 +1831,17 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
         if s.countdown is None or s.countdown <= 0 or s.countdown_block is None:
-            continue  # 修正为 -0：无倒计时能力 / 倒计时为 0（归零结算中的自身增减）
+            # 修正为 -0（空操作，rules.md ch12 增减流程 1）。例外（2026-08 觉醒·山风
+            # 定案）：减少效果作用于**未气绝且无倒计时能力**的式神也算"生效"——发出
+            # on_countdown_reduced（actual=0、original=减少量，不改变其任何状态），
+            # 供"减少倒计时效果复制"类能力监听；倒计时为 0（归零结算中的自身增减）
+            # 保持空操作不发事件（防递归语义不变）
+            if amount < 0 and s.countdown_block is None \
+                    and not s.defeated and not s.despawned:
+                game.emit("on_countdown_reduced",
+                          shikigami=ref, original=-amount, actual=0,
+                          by_card=ctx.card is not None)
+            continue
         if amount < 0:
             original = -amount
             actual = min(original, s.countdown)  # 实际减少修正到剩余（定案(5)）

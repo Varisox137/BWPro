@@ -108,6 +108,9 @@ class _Pending:
     ctx: ExecContext
     temp_grant: TempGrant | None = None  # 来自一次性临时触发的待结算项（结算后 uses-1）
     seq: int = 0  # 能力进场序号（收集排序用；0=未登记，保持原有收集顺序）
+    horizon: int = 0  # 结算单元标记（仅 on_countdown_reduced 延时项在 emit 时记
+    # _horizon_stack 栈顶单元 id；0=无标记。倒计时归零块完成后按单元 drain——
+    # 定案"复制延时界=引起该次减少的结算单元"）
 
 
 class Game:
@@ -154,6 +157,11 @@ class Game:
         # 伤害转移类能力（redirect_damage_to_self）在伤害批次内生成的新事件挂起列表：
         # op 在 emit 上下文中执行（访问不到伤害队列），由 _run_damage_queue 统一入队
         self._redirect_spawned: list[_DamageEvent] = []
+        # 结算单元栈（定案"延时界=引起该次减少的结算单元"）：每个 _resolve_block 压栈
+        # 一个唯一 id；emit 的延时 pend 记栈顶 id（horizon），倒计时归零块完成后按
+        # 单元 drain（_drain_horizon）；栈空=非块上下文（horizon=0，由外层统一结算）
+        self._horizon_seq: int = 0
+        self._horizon_stack: list[int] = []
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -2905,7 +2913,9 @@ class Game:
 
         归零流程（先即时插入结算、再重置/移除）见 _countdown_zero，与 countdown_delta
         动作共用；灵咒倒计时随灵咒机制引入。每次减少发出 on_countdown_reduced
-        （original=actual=1，非卡牌来源；势类"倒计时减少时"监听挂此事件）。
+        （original=actual=1，非卡牌来源；势类"倒计时减少时"监听挂此事件）；批次减少
+        属**自然减少**（natural=True）——非"减少倒计时效果"，觉醒·山风复制不共享
+        （2026-08 定案：仅卡牌/能力等效果来源共享）。
         处理顺序 = 进场顺序（entry_order 升序）且**动态取序**（答复(5)：批次非快照——
         每步重新取剩余未处理者中 entry_order 最小者；批次内进场顺序变化立即生效，
         批次内新进场者（如归零效果中的还原）排在后面当轮也处理。已处理按
@@ -2924,7 +2934,7 @@ class Game:
             s.countdown -= 1
             self.emit("on_countdown_reduced",
                       shikigami=Ref(player=pi, shikigami=i),
-                      original=1, actual=1, by_card=False)
+                      original=1, actual=1, by_card=False, natural=True)  # 自然减少不共享
             if s.countdown <= 0:
                 self._countdown_zero(pi, i)
 
@@ -3040,9 +3050,12 @@ class Game:
             # 增益/关键字赶上归零块发起的攻击（斩经 next_battle 通道绑定该次战斗）
             self.emit("on_countdown_proc",
                       shikigami=Ref(player=pi, shikigami=si), source=source, once=once)
-            self._resolve_block(block, ExecContext(
+            horizon = self._resolve_block(block, ExecContext(
                 controller=pi, source=Ref(player=pi, shikigami=si), card=card,
                 is_ability=True))  # 倒计时效果属式神能力（贯通继承判定）
+            # 能力块延时界（2026-08 定案）：块内减少倒计时引起的觉醒·山风复制等
+            # 延时效果在本能力块结算完成后执行（不冲刷外层卡牌级延时项）
+            self._drain_horizon(horizon)
             if source is not None:
                 p.ext.setdefault("countdown_history", []).append(source)
         if block is not None and s.countdown_block is block:
@@ -4002,6 +4015,12 @@ class Game:
             if timing == "insert":
                 insert_queue.append(pend)
             else:
+                # 延时界标记（定案"复制延时界=引起该次减少的结算单元"）：仅倒计时减少
+                # 事件的延时 pend（觉醒·山风复制等）记当前最内层单元 id；单元未完成时
+                # 不被普通 drain 冲刷（见 _drain_queue），由 _drain_horizon 按单元结算
+                pend.horizon = (self._horizon_stack[-1]
+                                if name == "on_countdown_reduced" and self._horizon_stack
+                                else 0)
                 self.queue.append(pend)
         insert_queue.sort(key=lambda pend: pend.block.priority)  # 稳定：同优先级保持收集序
         damage = event.get("damage")
@@ -4359,7 +4378,20 @@ class Game:
         self.move_card(p, ctx.card, "graveyard")
         return False
 
-    def _resolve_block(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> None:
+    def _resolve_block(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> int:
+        """结算单元入口（定案"延时界=引起该次减少的结算单元"）：压栈一个唯一单元 id，
+        结算期间 emit 的延时 pend 记为该单元（horizon）；返回单元 id 供调用方按单元
+        drain（_drain_horizon，倒计时归零块用）。实际结算见 _resolve_block_inner。"""
+        self._horizon_seq += 1
+        horizon = self._horizon_seq
+        self._horizon_stack.append(horizon)
+        try:
+            self._resolve_block_inner(block, ctx, start)
+        finally:
+            self._horizon_stack.pop()
+        return horizon
+
+    def _resolve_block_inner(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> None:
         """结算一个效果块：先处理响应牌的额外开销与限制（_settle_response_card），再依次执行 steps。
 
         按 block.steps 顺序执行动作。mode="interleaved" 时每步后清空队列，
@@ -4585,14 +4617,43 @@ class Game:
             self._op_param_cache[op] = cached
         return cached
 
+    def _drain_horizon(self, horizon: int) -> None:
+        """按结算单元 drain 效果队列（定案"复制延时界=引起该次减少的结算单元"）：只
+        结算标记为该单元的倒计时减少延时 pend（按入队顺序），其余留队由外层统一
+        结算——中途插入结算的能力块完成时不冲刷卡牌级延时项。结算中产生的新标记
+        延时项属于新单元（被结算块自身压栈），不混入本批。"""
+        guard = 0
+        while not self.state.pending_end:
+            pend = next((p for p in self.queue if p.horizon == horizon), None)
+            if pend is None:
+                return
+            guard += 1
+            if guard > MAX_QUEUE_ITERATIONS:
+                self.queue.clear()
+                raise RuntimeError("效果队列疑似死循环，已强制清空")
+            self.queue.remove(pend)
+            self._resolve_pending(pend)
+
     def _drain_queue(self) -> None:
         """循环结算效果队列，带死循环保护。
 
         若游戏已进入"待结束"状态，不再执行已入队的触发式能力；队列处理完成后，
         把 pending_end 正式转为 winner，进入游戏结束阶段。
+
+        延时界跳项（定案"复制延时界=引起该次减少的结算单元"）：带结算单元标记
+        （horizon 非 0）的倒计时减少延时 pend 只在两种时机结算——引起它的单元
+        完成时由 _drain_horizon 按单元结算；或最外层排水（_horizon_stack 为空，
+        指令/回合级）统一清尾。结算中途（能力块/战斗等嵌套排水）只排无标记项，
+        不冲刷任何单元的复制延时项（含外层卡牌级与本单元尚未完成的）。
         """
         guard = 0
-        while self.queue:
+        while True:
+            if not self._horizon_stack:
+                pend = self.queue[0] if self.queue else None  # 顶层：全量按序
+            else:
+                pend = next((p for p in self.queue if p.horizon == 0), None)
+            if pend is None:
+                break
             if self.state.pending_end:
                 self.queue.clear()
                 break
@@ -4600,7 +4661,7 @@ class Game:
             if guard > MAX_QUEUE_ITERATIONS:
                 self.queue.clear()
                 raise RuntimeError("效果队列疑似死循环，已强制清空")
-            pend = self.queue.popleft()
+            self.queue.remove(pend)
             self._resolve_pending(pend)
         # 待结束状态 → 正式结束
         if self.state.pending_end and self.state.winner is None:

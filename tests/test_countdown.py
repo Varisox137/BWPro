@@ -860,9 +860,10 @@ def test_countdown_sum_repeat(db, make_game):
 
 
 def test_awakened_countdown_share(db, make_game):
-    """觉醒·山风型共享：己方卡牌效果对山风以外未气绝己方式神的倒计时减少，
-    对山风造成等量效果——按"每次减少动作"延迟结算（源效果块完毕后，定案(8)）；
-    山风气绝时减少其气绝倒计时；非卡牌来源（式神能力）不共享。"""
+    """觉醒·山风型共享：任何己方减少倒计时效果（含在场能力来源）对山风以外
+    未气绝己方式神的倒计时减少，对山风造成等量效果——按"每次减少动作"延迟结算
+    （源效果块完毕后，定案(8)）；无倒计时能力的式神被减少也发事件（actual=0）
+    照样共享；山风气绝时减少其气绝倒计时；回合开始批次自然减少（natural）不共享。"""
     _cd_ability(db, initial=5)           # 山风位：开局后倒计时 4
     _cd_ability(db, initial=3, sid=CD3)
     AW = 10010199
@@ -873,7 +874,7 @@ def test_awakened_countdown_share(db, make_game):
                amount={"event": "original", "negate": True},
                target=T(kind="self"), condition={"holder_defeated": True}),
         when="on_countdown_reduced", trigger_when_defeated=True,
-        condition={"by_card": True, "shikigami_side": "friendly",
+        condition={"natural_not": True, "shikigami_side": "friendly",
                    "shikigami_not_shikigami": CD})])
     # 余音型减少牌（属 CD2，只减 CD3 的倒计时，避开源式神与山风）
     cid = 10010252
@@ -893,7 +894,7 @@ def test_awakened_countdown_share(db, make_game):
     play(g, 0, cid)                      # CD3 2→1 → 共享山风 3→2
     assert s.countdown == 2
     assert g.history[n:].count("on_countdown_reduced") == 4   # 余音 2 次 + 共享应用 2 次
-    # 非卡牌来源（式神能力，ctx.card 为空）：不共享
+    # 能力来源（在场块，ctx.card 为空）也共享：任何己方减少倒计时效果（定案扩域）
     from core.model import ExecContext
     blk = F.block(F.Step(op="countdown_delta", amount=-1, target=T(kind="self")))
     g._resolve_block(blk, ExecContext(controller=0, source=Ref(player=0, shikigami=IDX3),
@@ -901,7 +902,27 @@ def test_awakened_countdown_share(db, make_game):
     g._drain_queue()
     assert pa.shikigami[IDX3].countdown == 3  # 能力减少本身生效（归零：打 2 敌方牌手后重置）
     assert g.state.players[1].health == 28
-    assert s.countdown == 2                   # 山风不变（by_card=False 不共享）
+    assert s.countdown == 1                   # 山风共享 2→1
+    # 无倒计时能力的未气绝式神被减少也发事件（actual=0、original=减少量、状态不变），照样共享
+    pa.shikigami[3].level = 1
+    seen = []
+    orig_emit = g.emit
+    def _emit_spy(name, **payload):
+        if name == "on_countdown_reduced":
+            seen.append(payload)
+        return orig_emit(name, **payload)
+    g.emit = _emit_spy
+    blk2 = F.block(F.Step(op="countdown_delta", amount=-1,
+                          target=T(kind="all", pool="friendly_shikigami", shikigami=100104)))
+    g._resolve_block(blk2, ExecContext(controller=0, source=Ref(player=0, shikigami=IDX3),
+                                       is_ability=True))
+    g._drain_queue()
+    g.emit = orig_emit
+    assert pa.shikigami[3].countdown is None  # 无倒计时式神状态不变
+    ev = next(p for p in seen if p["shikigami"].shikigami == 3)
+    assert ev["original"] == 1 and ev["actual"] == 0
+    assert s.countdown == 5  # 共享 1→0 归零：山风能力生效（打 2）后重置初值 5
+    assert g.state.players[1].health == 26
     # 山风气绝时：共享减少其气绝倒计时（复活倒计时）
     s.countdown = None
     s.countdown_block = None
@@ -911,6 +932,68 @@ def test_awakened_countdown_share(db, make_game):
     play(g, 0, cid)                      # CD3 2→1 → 共享：复活倒计时 3→2
     assert s.revive_countdown == 2
     assert s.defeated
+
+
+def _kagura3_like(db, sid=CD):
+    """觉醒神乐歌类倒计时能力（initial=3）：归零使其他己方式神 +1/+1（永久）并倒计时 -1。"""
+    db.shikigami[sid].ability = F.EffectBlock(
+        countdown=3,
+        steps=[F.Step(op="buff_power", amount=1, perm=True,
+                      target=T(kind="all", pool="friendly_others")),
+               F.Step(op="buff_health", amount=1, perm=True,
+                      target=T(kind="all", pool="friendly_others")),
+               F.Step(op="countdown_delta", amount=-1,
+                      target=T(kind="all", pool="friendly_others"))])
+
+
+def test_awakened_countdown_share_delay_horizon(db, make_game):
+    """觉醒·山风复制延时界 = 引起该次减少的结算单元（定案）：在场能力块引起的减少
+    在该能力块结算完即复制；卡牌直接效果引起的减少在整张牌结算完才复制
+    （能力块 drain 不冲刷卡牌级延时项）。
+
+    验收流程（thoughts.txt）：余音型牌（妖琴师位 -3 → 归零插入觉醒神乐歌块；
+    然后其他己方 -1）。复制结算前 (山风, 大天狗) 快照应为
+    [(3,1),(2,1),(3,2),(3,2),(2,2)]——前两个大天狗=1（能力块界）、后三个=2
+    （卡牌界）；最终山风 countdown == 1。
+    """
+    YAO, DTG, REN, SF = 100101, 100102, 100103, 100104  # 座 0-3：妖琴师/大天狗/一目连位/山风
+    _kagura3_like(db, sid=YAO)                          # 觉醒神乐歌型（初值 3）
+    _cd_ability(db, initial=2, sid=DTG)                 # 大天狗位（初值 2）
+    _cd_ability(db, initial=2, sid=REN)                 # 一目连位（初值 2）
+    AW = 10010499
+    db.cards[AW] = F.card(AW, shikigami=SF, level=3, token=True, abilities=[F.block(
+        F.Step(op="countdown_delta", amount={"event": "original", "negate": True},
+               target=T(kind="self")),
+        when="on_countdown_reduced",
+        condition={"natural_not": True, "shikigami_side": "friendly",
+                   "shikigami_not_shikigami": SF})])
+    cid = 10010152  # 余音型：自身 -3，然后其他己方 -1
+    db.cards[cid] = F.card(
+        cid, shikigami=YAO, level=1, token=True,
+        steps=[F.Step(op="countdown_delta", amount=-3, target=T(kind="self")),
+               F.Step(op="countdown_delta", amount=-1,
+                      target=T(kind="all", pool="friendly_others"))])
+    g, pa = _game(make_game)
+    yao, dtg, ren, sf = (pa.shikigami[i] for i in range(4))
+    for i in (1, 2, 3):
+        pa.shikigami[i].level = 1
+    _register(g, 0, 1)                       # 大天狗倒计时 2
+    _register(g, 0, 2)                       # 一目连倒计时 2
+    g._register_countdown(sf, initial=3, once=False, source=SF,
+                          block=F.EffectBlock(steps=[F.Step(op="launch_attack")]))
+    yao.countdown, ren.countdown, sf.countdown = 1, 1, 1   # cd=1（初值 3/2/3）
+    sf.awakened = AW
+    snaps = []
+    aw_block = db.cards[AW].abilities[0]
+    orig = g._resolve_pending
+    def _spy(pend):
+        if pend.block is aw_block:
+            snaps.append((sf.countdown, dtg.countdown))
+        return orig(pend)
+    g._resolve_pending = _spy
+    play(g, 0, cid)
+    assert snaps == [(3, 1), (2, 1), (3, 2), (3, 2), (2, 2)]
+    assert sf.countdown == 1
 
 
 class _ImmunitySpy(list):

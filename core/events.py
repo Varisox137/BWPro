@@ -69,9 +69,12 @@ CORE_EVENTS: frozenset[str] = frozenset({
     #                       （即时时机：先于归零效果块结算，烈/刚/斩类"当触发[倒计时]能力时"，
     #                       其增益赶上归零块发起的攻击）
     "on_countdown_reduced", # 倒计时减少时 {shikigami: Ref, original（原始减少量）,
-    #                       actual（实际减少量=修正到剩余）, by_card（是否卡牌效果）}
-    #                       （每次减少动作发一次；延时时机——觉醒·山风共享监听按
-    #                       "源效果块结算完毕后"顺序结算，势类用 timing: insert 覆盖为即时）
+    #                       actual（实际减少量=修正到剩余）, by_card（是否卡牌效果）,
+    #                       natural（回合开始批次自然减少标记——非"效果"，山风复制不共享）}
+    #                       （每次减少动作发一次；未气绝但无倒计时能力的目标也发
+    #                       actual=0——减少效果对其仍算"生效"，2026-08 定案；延时时机——
+    #                       觉醒·山风共享监听按"引起该次减少的结算单元完毕后"结算
+    #                       （horizon 单元 drain），势类用 timing: insert 覆盖为即时）
     # ---- 运势事件时点（thoughts.txt 运势事件流程，core/engine.py 运势管线）----
     "on_luck_judge",        # 运势判定时 {luck（可变事件 dict）, judge, source, x, dice}（座敷童子重投）
     "on_luck_success",      # 运势判定后（成功）{judge, source, x, dice}（青蛙瓷器/岭上开花/觉醒妖狐）

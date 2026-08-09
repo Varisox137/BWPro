@@ -21,12 +21,14 @@ versions:
           steps:
             - {op: grant_immunity, kind: combat_damage, scope: next_battle, target: {kind: self}}
             - {op: launch_attack, shikigami: self}
-        # 觉醒能力②：你的牌对山风以外的未气绝己方式神造成的减少倒计时效果对山风
-        # 造成等量效果（山风气绝时有效）——{by_card: true} 限定卡牌效果（倒计时自然
-        # 减少不共享）；存活减倒计时（无倒计时自动空操作）+ 气绝时减气绝倒计时
+        # 觉醒能力②：**任何己方的减少倒计时效果**（含在场能力，2026-08 定案——raw
+        # 文本"你的牌"的语义扩展，见 card-status.md 山风节）对山风以外的未气绝己方
+        # 式神生效时，对山风造成等量效果（无倒计时能力者也算"生效"——countdown_delta
+        # 对其发 actual=0 事件；山风气绝时有效，减其气绝倒计时）。natural_not 排除
+        # 回合开始批次的自然减少（规则性减少非"效果"——维持原"自然减少不共享"口径）
         - when: on_countdown_reduced
           trigger_when_defeated: true
-          condition: {by_card: true, shikigami_side: friendly, shikigami_not_shikigami: 100307}
+          condition: {natural_not: true, shikigami_side: friendly, shikigami_not_shikigami: 100307}
           steps:
             - {op: countdown_delta, amount: {event: original, negate: true},
                target: {kind: self}}
