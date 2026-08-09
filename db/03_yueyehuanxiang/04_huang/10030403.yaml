@@ -7,9 +7,13 @@ versions:
       card_type: spell
       rarity: SR
       level: 2
+      play_condition: {hand_card_type: field}  # 「弃一张幻境牌」意味着手牌中有
+      # 幻境牌才能使用（定案(9)；使用合法性谓词，主动/响应/自动使用同检）
       effects:
         steps:
-          # 「弃一张幻境牌」：随机代替玩家选择（同 search_deck 惯例）
+          # 「弃一张幻境牌」（随机代替玩家选择，同 search_deck 惯例）；使用后结算前
+          # 手牌中因插入结算不再有幻境牌时弃牌步不处理（discard 空池安全空过），
+          # 「抽三张牌」仍处理——弃牌步失败不中断后续步骤（定案(9)）
           - {op: discard, shikigami: all, card_type: field, count: 1, random_pick: true}
           - {op: draw, amount: 3}
       text: "弃一张幻境牌，然后抽三张牌。"

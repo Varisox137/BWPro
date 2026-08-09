@@ -422,6 +422,17 @@ class NetClient:
                         cd = self.db.cards[cid]
                         print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
                 return
+            if kind == "field_summon_pick":
+                # 选择召唤幻境（残阳无影）：从可召唤的幻境牌中选一张直接召唤（作答键 choice）
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose",
+                                   "choice": pend["options"][int(args[0]) - 1]})
+                    return
+                print("—— 选择要召唤的幻境：输入 choose <序号> ——")
+                for i, cid in enumerate(pend["options"]):
+                    cd = self.db.cards[cid]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                return
             # 检视牌库顶（青灯夜谈/明心）
             opts = [c for u in pend["options"]
                     for c in [next((x for x in p.deck if x.uid == u), None)] if c]

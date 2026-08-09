@@ -15,12 +15,21 @@ versions:
           # 非 token 幻境牌各一）
           - {op: summon_field, shikigami: self, pick: all}
       abilities:
-        # 「泷夜叉姬的所有幻境改为对己方所有式神有效」：己方其他式神（非泷夜叉姬
-        # 本人——她的伤害由新月之哀/日轮之城自身能力块处理）受到伤害时，由首个
-        # 泷夜叉姬幻境代为承受（改降量 = min(伤害余量, 当前耐久)）
+        # 「泷夜叉姬的所有幻境改为对己方所有式神有效」（定案(10)）：己方其他式神
+        # （非泷夜叉姬本人——她的伤害由新月之哀/日轮之城自身能力块处理）受伤害时，
+        # 仍由两种幻境**分别**代受——日轮之城代受战斗伤害、新月之哀代受非战斗伤害
+        # （field_card 各指各的幻境牌；同名多个时只由队列首个同名代受）；伤害事件
+        # "护甲计算后"批次优先级 1（"伤害改为非伤害"类，定案(7)）
         - when: on_after_shield
+          priority: 1
           condition: {victim_side: friendly, victim_kind: shikigami,
-                      victim_not_shikigami: 100302}
+                      victim_not_shikigami: 100302, kind: combat}
           steps:
-            - {op: redirect_to_field, field_shikigami: self}
+            - {op: redirect_to_field, field_shikigami: self, field_card: 10030203}
+        - when: on_after_shield
+          priority: 1
+          condition: {victim_side: friendly, victim_kind: shikigami,
+                      victim_not_shikigami: 100302, kind: effect}
+          steps:
+            - {op: redirect_to_field, field_shikigami: self, field_card: 10030202}
       text: "进场时召唤泷夜叉姬的两个幻境。泷夜叉姬的所有幻境改为对己方所有式神有效。"

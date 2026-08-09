@@ -8,8 +8,9 @@ versions:
       rarity: R
       level: 1
       keywords: [trigger]
-      target: {kind: choose, pool: friendly_shikigami}  # 「己方其他式神」：choose 池
-      # 无排除持有者先例（响应路径由 victim_not_shikigami 保证——见 questions.md）
+      target: {kind: choose, pool: friendly_shikigami, exclude_shikigami: 100306}
+      # 「一个己方其他式神」（定案(12)）：主动使用的 choose 池排除久次良本人
+      # （exclude_shikigami 过滤键）；响应路径由 victim_not_shikigami 保证
       effects:
         steps:
           - {op: gain_shield, amount: 4}

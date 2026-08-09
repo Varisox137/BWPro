@@ -768,6 +768,8 @@ class Game:
           敌方式神数据 id → 转 stage="card"（该式神可构筑牌池）；stage="card" 时
           choice 给出卡牌数据 id → 对 target_player 手牌+牌库移除全部同名牌，
           续跑挂起块。
+        - kind="field_summon_pick"（残阳无影"选择召唤"）：choice 给出幻境牌数据 id
+          → 凭空直接召唤对应幻境（不经使用事件），续跑挂起块。
         """
         pending = self.state.pending_choice
         if pending is None:
@@ -780,6 +782,9 @@ class Game:
             return
         if pending.get("kind") == "card_name":
             self._cmd_card_name_choose(cmd, pending)
+            return
+        if pending.get("kind") == "field_summon_pick":
+            self._cmd_field_summon_choose(cmd, pending)
             return
         if pending.get("kind") != "deck_top_pick":
             raise IllegalAction(f"未知选择类型: {pending.get('kind')}")
@@ -847,6 +852,46 @@ class Game:
                 block, ctx, start = self._suspended
                 self._suspended = None
                 self._resolve_block(block, ctx, start)
+
+    def _open_field_summon_pick(self, pi: int, options: list[int], *,
+                                intensity: int | None = None,
+                                source: Ref | None = None) -> bool:
+        """开启"选择召唤幻境"交互（残阳无影，kind="field_summon_pick"）：选项 = 可召唤
+        幻境牌的数据 id 列表（>1 张才挂起，由 summon_field 保证）；作答键 choice
+        （数据 id，同 card_name）。intensity 覆写/来源随 pending 传递（source 序列化
+        为 [player, shikigami] 下标对）。"""
+        p = self.state.players[pi]
+        self.state.pending_choice = {
+            "kind": "field_summon_pick", "player": pi, "options": list(options),
+            "intensity": intensity,
+            "source": ([source.player, source.shikigami]
+                       if source is not None else None),
+        }
+        self._log(f"{p.name} 选择要召唤的幻境")
+        return True
+
+    def _cmd_field_summon_choose(self, cmd: dict, pending: dict) -> None:
+        """选择召唤幻境作答：choice 给出幻境牌数据 id → 凭空实例直接召唤（不经使用
+        事件、不耗火、耐久=卡牌标注值或覆写值，走 _summon_field 完整流程），
+        清 pending 并续跑挂起块（_suspended）。"""
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        choice = cmd.get("choice")
+        if choice not in pending["options"]:
+            raise IllegalAction("不在可召唤的幻境之列")
+        cdef = self.db.cards[int(choice)]
+        src = pending.get("source")
+        source = Ref(player=src[0], shikigami=src[1]) if src else None
+        inst = CardInstance(uid=self.state.next_uid, id=cdef.id)  # 凭空实例（仅载体，不进区域）
+        self.state.next_uid += 1
+        self._summon_field(pi, inst, cdef, source, reason="效果召唤",
+                           intensity_override=pending.get("intensity"))
+        self.state.pending_choice = None
+        if self._suspended is not None:
+            block, ctx, start = self._suspended
+            self._suspended = None
+            self._resolve_block(block, ctx, start)
 
     def _open_discard_pick(self, pi: int, remaining: int) -> bool:
         """开启一次交互弃牌（意外之喜）：设置 pending_choice kind="discard_pick"
@@ -3301,8 +3346,10 @@ class Game:
                 self._change_shield(ev.victim, -absorbed, "护甲计算")
             if ev.amount <= 0:
                 return  # 护甲完全吸收：终止结算
-        # 批次 5：护甲计算后（伤害转移/改为非伤害能力锚点）
+        # 批次 5：护甲计算后（伤害转移/改为非伤害能力锚点；优先级分层见 EffectBlock.priority）
         self._emit_damage_batch("on_after_shield", ev)
+        if ev.amount <= 0:
+            return  # 改非伤害类效果（优先级 1）把余量归零：原伤害事件终止，转移不再处理
         # 伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"，ext["damage_redirects"]
         # 挂账）：挂点 = 护甲计算后批次优先级 2（rules.md:218 ②——①类监听者
         # （on_after_shield）先结算再转移）：消耗一层挂账，以受伤者的牌手为受伤者、
@@ -3607,14 +3654,13 @@ class Game:
         """"召唤幻境"事件（要素：来源、原因、要召唤的幻境——规范第二条）：来源的所属
         牌手将该幻境添加至自身幻境队列末尾（field_front 标记者置于队首），发
         "召唤幻境后"（延时 on_summon_field）。
-        幻境实体耐久 = 幻境牌 intensity（正整数必填；intensity_override 覆写——
-        觉醒·辉夜姬增强"耐久都为1"）+ 召唤牌实例 mods.intensity_boost
-        （五道难题"使其获得5耐久"）。card=None 为凭空直接召唤（summon_field 动作——
-        残阳无影/竹取物语类，不经使用事件）。
-        辉夜姬基础（伪关键字 field_stack）：她的幻境同时只能存在一个——已有她的幻境
-        在场时不新建实体，耐久叠加到在场者（走 _change_field_intensity 事件流程）；
-        觉醒（伪关键字 field_ability_stack）另叠加能力块（合并实体 extra_abilities
-        重复持有同名牌能力块）。"""
+        幻境实体耐久取值链（定案(15)）：intensity_override 指定值（觉醒·辉夜姬增强
+        "耐久都为1"）> 幻境牌 intensity 标注值（正整数必填；使用事件/不指定耐久的
+        效果召唤同取牌面默认）+ 召唤牌实例 mods.intensity_boost（五道难题"使其获得
+        5耐久"）。card=None 为凭空直接召唤（summon_field 动作——残阳无影/竹取物语类，
+        不经使用事件）。
+        召唤一律新建实体：辉夜姬"同时只能存在一个"的叠加是她基础/觉醒能力的效果
+        （"召唤幻境后"延时时机经 field_merge 合并，定案(6)），不在召唤事件内联处理。"""
         if cdef.intensity is None or cdef.intensity <= 0:
             raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（intensity）")
         p = self.state.players[pi]
@@ -3624,23 +3670,6 @@ class Game:
         if cdef.id not in p.ext.setdefault("field_summon_ids", []):
             p.ext["field_summon_ids"].append(cdef.id)  # 本局召唤过的幻境牌 id 记账
             # （觉醒·辉夜姬增强"已召唤五个不同的辉夜姬幻境"读取；叠加召唤同记）
-        stacker = next((s for s in p.shikigami
-                        if s.in_play and s.id == cdef.shikigami
-                        and (self._has_keyword(s, "field_stack")
-                             or self._has_keyword(s, "field_ability_stack"))), None)
-        if stacker is not None:
-            idx = next((i for i, x in enumerate(p.fields)
-                        if x.shikigami == cdef.shikigami), None)
-            if idx is not None:
-                existing = p.fields[idx]
-                if self._has_keyword(stacker, "field_ability_stack"):
-                    existing.extra_abilities.extend(self.db.cards[cdef.id].abilities)
-                self._log(f"{p.name} 的幻境【{self.db.cards[existing.card_id].name}】"
-                          f"叠加了【{cdef.name}】（耐久 +{intensity}）")
-                self._change_field_intensity(pi, idx, intensity, source, "耐久叠加")
-                self.emit("on_summon_field", player=pi, field=idx, card_id=cdef.id,
-                          source=source, reason=reason)
-                return
         ph = FieldState(card_id=cdef.id, intensity=intensity,
                         shikigami=cdef.shikigami,
                         mods=dict(card.mods) if card is not None else {},
@@ -3655,6 +3684,44 @@ class Game:
                      f"（耐久 {ph.intensity}，队列第 {idx + 1} 位）")
         self.emit("on_summon_field", player=pi, field=idx, card_id=cdef.id,
                   source=source, reason=reason)
+
+    def _merge_same_shikigami_fields(self, pi: int, sid: int, *,
+                                     merge_abilities: bool,
+                                     source: Ref | None = None) -> None:
+        """辉夜姬基础/觉醒能力的叠加合并（定案(6)，field_merge 动作经此执行）：
+        其所属牌手幻境队列中存在多个她的幻境时——仅保留队列中**最后一个**，将其耐久
+        **设置为**所有她的幻境的耐久总和（差量走 _change_field_intensity 管线，触发
+        耐久变化事件）；merge_abilities（已觉醒）时把其他**不同名**幻境的能力块按幻境
+        牌 id 去重添加到保留幻境 extra_abilities（每种同名幻境的能力不叠加；
+        mods.merged_ability_ids 记账，此前合并携带的 id 随来源幻境传递）；
+        然后**消灭**其他她的幻境（归零走完整消灭事件流，"被消灭时"能力照常结算）。"""
+        p = self.state.players[pi]
+        idxs = [i for i, ph in enumerate(p.fields) if ph.shikigami == sid]
+        if len(idxs) < 2:
+            return
+        keep_idx = idxs[-1]
+        kept = p.fields[keep_idx]
+        total = sum(p.fields[i].intensity for i in idxs)
+        if merge_abilities:
+            have = {kept.card_id, *kept.mods.get("merged_ability_ids", ())}
+            for i in idxs[:-1]:
+                other = p.fields[i]
+                origins = ({other.card_id, *other.mods.get("merged_ability_ids", ())}
+                           - have)
+                for cid in sorted(origins):
+                    kept.extra_abilities.extend(self.db.cards[cid].abilities)
+                have |= origins
+            kept.mods["merged_ability_ids"] = sorted(have - {kept.card_id})
+        names = "、".join(f"【{self.db.cards[p.fields[i].card_id].name}】"
+                          for i in idxs[:-1])
+        self._log(f"{p.name} 的幻境【{self.db.cards[kept.card_id].name}】"
+                  f"叠加了{names}（耐久设置为 {total}）")
+        delta = total - kept.intensity
+        if delta:
+            self._change_field_intensity(pi, keep_idx, delta, source, "耐久叠加")
+        for i in idxs[:-1]:
+            ph = p.fields[i]
+            self._change_field_intensity(pi, i, -ph.intensity, source, "叠加消灭")
 
     def _field_source(self, pi: int, ph: FieldState) -> Ref | None:
         """幻境能力/伤害的来源归属（规范"零"条）：该在场幻境有所属式神且该式神在场
@@ -3890,7 +3957,14 @@ class Game:
                 insert_queue.append(pend)
             else:
                 self.queue.append(pend)
+        insert_queue.sort(key=lambda pend: pend.block.priority)  # 稳定：同优先级保持收集序
+        damage = event.get("damage")
         for pend in insert_queue:
+            if (damage is not None and getattr(damage, "amount", 1) <= 0
+                    and pend.block.priority >= 2):
+                # 定案(7)：「伤害改为非伤害」（优先级 1）结算后原伤害事件终止——同时机
+                # 已触发的「伤害目标转移」（优先级 2）失去当前伤害事件上下文，不再处理
+                continue
             self._resolve_pending(pend)
 
     def _release_lasting_stuns(self, name: str, payload: dict, seq: int) -> None:
@@ -4415,9 +4489,28 @@ class Game:
             if "condition" in self._op_params(step.op, fn):
                 # op 自身声明 condition 参数（delay_grant 的延迟块触发条件）：作为参数传递
                 params["condition"] = step.condition
-            elif not self._match(step.condition, ctx.event or {}, ctx.controller,
-                                 holder=ctx.source, chosen=ctx.chosen):
-                return  # Step 级条件不满足：跳过该步（条件迷你语言，见 targets.match_condition）
+            else:
+                cond = step.condition
+                if "field_intensity_ge" in cond:
+                    # 步级专用键（月坠"然后若耐久>=30"，定案(13)——仅在同一块的
+                    # 获得耐久结算串内判定）：触发来源幻境（ctx.field）当前耐久 ≥ n，
+                    # 不满足跳过该步；由执行器消费，不进条件迷你语言。
+                    # 同一块内多次判定共享**首次判定的快照**（ctx.memo 块级暂存）——
+                    # "若…则自毁并造成伤害"类：自毁归零后后续步仍按判定时的耐久通过
+                    if ctx.memo is None:
+                        ctx.memo = {}
+                    snap = ctx.memo.get("field_intensity_ge_snap")
+                    if snap is None:
+                        snap = (ctx.field.intensity if ctx.field is not None else 0)
+                        ctx.memo["field_intensity_ge_snap"] = snap
+                    if snap < int(cond["field_intensity_ge"]):
+                        return
+                    cond = {k: v for k, v in cond.items()
+                            if k != "field_intensity_ge"} or None
+                if cond is not None and not self._match(
+                        cond, ctx.event or {}, ctx.controller,
+                        holder=ctx.source, chosen=ctx.chosen):
+                    return  # Step 级条件不满足：跳过该步（条件迷你语言，见 targets.match_condition）
         refs = targets.resolve(self, step.target, ctx)
         for num_key in ("amount", "power"):
             if isinstance(params.get(num_key), dict):

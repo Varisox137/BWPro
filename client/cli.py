@@ -697,6 +697,21 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 except (IllegalAction, ValueError, IndexError):
                     print("参数有误，输入序号选择")
                 continue
+            if kind == "field_summon_pick":
+                # 选择召唤幻境（残阳无影）：从可召唤的幻境牌中选一张直接召唤（作答键 choice）
+                print(f"—— {p.name} 选择要召唤的幻境 ——")
+                for i, cid in enumerate(pend["options"]):
+                    cd = game.db.cards[cid]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                try:
+                    pick = int(tui.prompt("召唤哪个 > ")) - 1
+                    game.apply({"op": "choose", "choice": pend["options"][pick],
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
             # 检视牌库顶（青灯夜谈/明心）
             opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
             print(f"—— {p.name} 检视牌库顶 {len(opts)} 张牌 ——")

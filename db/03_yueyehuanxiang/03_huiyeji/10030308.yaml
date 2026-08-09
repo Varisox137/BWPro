@@ -16,10 +16,14 @@ versions:
         - when: on_turn_end
           steps:
             - {op: summon_field, shikigami: self, pick: random}
-        # 若辉夜姬的幻境耐久>=20，每当辉夜姬受到伤害时，改为扣除辉夜姬幻境等量的
-        # 耐久（最多降低5耐久——max_amount 截断，超出部分照常结算）
+        # 若辉夜姬的幻境耐久>=20（定案(14)：存在耐久>=20 的她的幻境——shikigami 限定；
+        # 代受=队列首个她的幻境，op 内建取首个），每当辉夜姬受到伤害时，改为扣除
+        # 辉夜姬幻境等量的耐久（最多降低5耐久——max_amount 截断，超出部分照常结算；
+        # 优先级 1="伤害改为非伤害"类，定案(7)）
         - when: on_after_shield
-          condition: {victim_shikigami: self, friendly_field_intensity_ge: 20}
+          priority: 1
+          condition: {victim_shikigami: self,
+                      friendly_field_intensity_ge: {ge: 20, shikigami: self}}
           steps:
             - {op: redirect_to_field, field_shikigami: self, max_amount: 5}
       text: "每个回合结束时，随机召唤一个辉夜姬的幻境。若辉夜姬的幻境耐久>=20，每当辉夜姬受到伤害时，改为扣除辉夜姬幻境等量的耐久（最多降低5耐久）。"

@@ -17,16 +17,16 @@ versions:
           condition: {field_self: true}
           steps:
             - {op: boost_change, amount: 2}
-        # 自己回合开始时获得3耐久
+        # 自己回合开始时获得3耐久，然后若耐久>=30则自毁并对所有敌方角色造成10点
+        # 伤害（定案(13)：阈值判定收窄——只在"己方回合开始时获得耐久"这一串结算内
+        # 判定，步级专用键 field_intensity_ge 读触发来源幻境当前耐久；不再挂
+        # on_field_intensity_changed 任意途径判定）
         - when: on_turn_start
           condition: {active: self}
           steps:
             - {op: field_op, pick: self_field, amount: 3}
-        # 然后若耐久>=30则自毁并对所有敌方角色造成10点伤害（任意途径获得耐久后在
-        # 变化事件判定达阈值即触发；自毁归零不再重复触发）
-        - when: on_field_intensity_changed
-          condition: {field_self: true, field_intensity_ge: 30}
-          steps:
-            - {op: field_op, pick: self_field, action: destroy}
-            - {op: damage, amount: 10, target: {kind: all, pool: enemy_character}}
+            - {op: field_op, pick: self_field, action: destroy,
+               condition: {field_intensity_ge: 30}}
+            - {op: damage, amount: 10, target: {kind: all, pool: enemy_character},
+               condition: {field_intensity_ge: 30}}
       text: "当此牌获得耐久时，效果+2。自己回合开始时获得3耐久，然后若耐久>=30则自毁并对所有敌方角色造成10点伤害。"

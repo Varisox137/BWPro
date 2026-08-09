@@ -2761,30 +2761,40 @@ def test_on_summon_field_delayed(db, make_game):
 # 秘宝钳制/己方伤害/火照之路/牌库顶出牌
 # ==========================================================================
 
-def test_field_summon_stacks_kaguya(db, make_game):
-    """辉夜姬基础/觉醒（伪关键字 field_stack/field_ability_stack）：她的幻境同时
-    只能存在一个——再召唤不新建实体、耐久叠加到在场者（走耐久变化事件流）；觉醒
-    另叠加能力块（合并实体持多块、同批触发）；召唤记账 field_summon_ids 照记。"""
-    db.shikigami[100101] = F.shiki(100101, keywords=["field_stack",
-                                                    "field_ability_stack"])
-    _field(db, 10010151, intensity=3, abilities=[F.block(when="on_draw")])
-    _field(db, 10010152, intensity=2, abilities=[F.block(
-        F.Step(op="gain_shield", amount=1, target=T(kind="all", pool="self_player")),
-        when="on_draw")])
+def _kaguya(db, sid: int = 100101, awakened: bool = False) -> None:
+    """辉夜姬型式神（定案(6)）：叠加合并能力——能力进场时（on_ability_enter 自指）
+    与"召唤幻境后"延时时机（on_summon_field）双挂点，field_merge 合并。"""
+    db.shikigami[sid] = F.shiki(sid, abilities=[
+        F.block(F.Step(op="field_merge", merge_abilities=awakened),
+                when="on_summon_field", condition={"player": "self"}),
+        F.block(F.Step(op="field_merge", merge_abilities=awakened),
+                when="on_ability_enter", condition={"target_shikigami": "self"}),
+    ])
+
+
+def test_field_merge_base_keeps_last(db, make_game):
+    """辉夜姬基础能力（定案(6)）：她的多个幻境在"召唤幻境后"延时时机合并——召唤
+    一律新建实体，合并保留队列**最后一个**、耐久**设置为**总和（走耐久变化事件
+    流）、**消灭**其余（走完整消灭事件流，"被消灭时"能力照常）；未觉醒不合并
+    能力块；召唤记账 field_summon_ids 照记。"""
+    _kaguya(db)
+    _field(db, 10010151, intensity=3, abilities=[F.block(
+        F.Step(op="gain_shield", amount=2, target=T(kind="all", pool="self_player")),
+        when="on_before_field_destroy")])
+    _field(db, 10010152, intensity=2)
     g = make_game()
     pa = g.state.players[0]
     pa.orb = 9
     play(g, 0, 10010151)
-    play(g, 0, 10010152)
-    assert len(pa.fields) == 1                      # 不新建实体
-    assert pa.fields[0].card_id == 10010151
-    assert pa.fields[0].intensity == 5              # 3 + 2 叠加
-    assert len(pa.fields[0].extra_abilities) == 1   # 觉醒：能力块叠加
-    assert pa.ext["field_summon_ids"] == [10010151, 10010152]  # 五种幻境记账（觉醒增强读）
-    g.emit("on_draw", player=0, count=1)
-    assert len(g.queue) == 2                        # 原能力 + 叠加能力同批触发
-    g._drain_queue()
-    assert pa.shield == 1                           # 叠加块已结算
+    assert len(pa.fields) == 1                      # 仅一个：不合并
+    play(g, 0, 10010152)                            # 第二个：新建实体后延时合并
+    assert len(pa.fields) == 1
+    assert pa.fields[0].card_id == 10010152         # 保留队列最后一个
+    assert pa.fields[0].intensity == 5              # 耐久设置为总和（3 + 2）
+    assert not pa.fields[0].extra_abilities         # 未觉醒：不合并能力块
+    assert pa.ext["field_summon_ids"] == [10010151, 10010152]
+    assert "on_field_destroyed" in g.history        # 其余走消灭事件流
+    assert pa.shield == 2                           # "被消灭时"能力已结算
 
 
 def test_field_intensity_boost_on_summon(db, make_game):
@@ -3210,26 +3220,36 @@ def test_awaken_swaps_ability_pseudo_keywords(db, make_game):
     assert s0.eff_power == 5                          # 换绑后：每幻境 +1（2 个），不再 +1
 
 
-def test_field_ability_stack_merges_abilities(db, make_game):
-    """觉醒·辉夜姬型（伪关键字 field_ability_stack）：叠加召唤同名牌幻境时不新建
-    实体，耐久叠加且能力块合并进在场实体 extra_abilities（重复持有同名牌能力块）。"""
+def test_field_merge_awakened_merges_abilities_dedup(db, make_game):
+    """觉醒·辉夜姬（定案(6)）：合并时把其他**不同名**幻境的能力块按幻境牌 id 去重
+    添加到保留幻境——同名幻境的能力不叠加；此前合并携带的 id 随来源幻境传递
+    （mods.merged_ability_ids）。"""
+    _kaguya(db, awakened=True)
     _field(db, 10010151, intensity=3, abilities=[F.block(
-        F.Step(op="draw", amount=1), when="on_turn_start")])
+        F.Step(op="draw", count=1), when="on_turn_start")])
     _field(db, 10010152, intensity=2, abilities=[F.block(
         F.Step(op="gain_orb", amount=1), when="on_turn_start")])
     g = make_game()
     pa = g.state.players[0]
-    pa.shikigami[0].perm_keywords.append("field_ability_stack")
     pa.orb = 9
     play(g, 0, 10010151)
-    play(g, 0, 10010152)                              # 叠加：不新建实体
+    play(g, 0, 10010151)                            # 同名再召唤
+    assert len(pa.fields) == 1
+    assert pa.fields[0].intensity == 6              # 3 + 3
+    assert not pa.fields[0].extra_abilities         # 同名能力不叠加
+    play(g, 0, 10010152)                            # 不同名：合并其能力块
     assert len(pa.fields) == 1
     ph = pa.fields[0]
-    assert ph.intensity == 5                          # 耐久叠加
-    assert len(ph.extra_abilities) == 1               # 第二张的能力块并入
+    assert ph.card_id == 10010152                   # 保留最后一个
+    assert ph.intensity == 8                        # 6 + 2
+    assert ph.mods["merged_ability_ids"] == [10010151]
+    assert len(ph.extra_abilities) == 1             # 10010151 的能力块并入
     g._drain_queue()
-    g.emit("on_turn_start", player=0)                 # 两块能力都注册
+    hand_before = len(pa.hand)
+    g.emit("on_turn_start", player=0)               # 自身 + 合并块同批注册
     assert len(g.queue) == 2
+    g._drain_queue()
+    assert len(pa.hand) == hand_before + 1          # 合并的抽牌块已结算
 
 
 def test_conditional_keywords_friendly_field(db, make_game):
@@ -3445,3 +3465,274 @@ def test_player_source_damage_is_friendly(db, make_game):
     g._drain_queue()
     assert pb.health == 29                          # 触发反打 1
     assert pa.ext["self_damage_taken"] is True
+
+
+def test_field_merge_trigger_on_ability_enter(db, make_game):
+    """辉夜姬叠加的第二触发点（定案(6)）：能力进场时（on_ability_enter 自指）——
+    队列已存在多个她的幻境时，能力进场（升级/复活/觉醒同通道）即合并。"""
+    _kaguya(db)
+    _field(db, 10010151, intensity=3)
+    _field(db, 10010152, intensity=2)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    g._register_ability_countdown(0, 0)     # 能力进场（发 on_ability_enter）
+    g._drain_queue()
+    assert len(pa.fields) == 1
+    assert pa.fields[0].card_id == 10010152
+    assert pa.fields[0].intensity == 5
+
+
+def test_kaguya_awaken_five_summons(db, make_game):
+    """觉醒·辉夜姬[增强]（定案(15)+(6) 端到端）：按幻境牌 id 升序依次执行五次
+    "召唤幻境事件"（各耐久=1——intensity 覆写）；五次召唤经觉醒能力合并为单实体：
+    保留最后召唤者（id 最大）、5 耐久、其余四种的能力块按 id 去重全部并入。"""
+    _kaguya(db, awakened=True)
+    for cid in range(10010161, 10010166):   # 五种幻境牌（非 token，id 升序）
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=4,
+                               abilities=[F.block(F.Step(op="gain_orb", amount=1),
+                                                  when="on_turn_start")])
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="summon_field", shikigami="self", pick="all", intensity=1)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, cid)
+    assert len(pa.fields) == 1                      # 合并为单实体
+    ph = pa.fields[0]
+    assert ph.card_id == 10010165                   # 保留最后召唤（id 升序最大者）
+    assert ph.intensity == 5                        # 五次各 1 耐久
+    assert ph.mods["merged_ability_ids"] == [10010161, 10010162, 10010163, 10010164]
+    assert len(ph.extra_abilities) == 4             # 其余四种能力块全部并入
+    assert pa.ext["field_summon_ids"] == list(range(10010161, 10010166))
+
+
+def test_after_shield_priority_redirect_beats_transfer(db, make_game):
+    """伤害事件"护甲计算后"批次优先级分层（定案(7)）：「伤害改为非伤害」类
+    （redirect_to_field，优先级 1）先于「伤害目标转移」类（血蝠之盾挂账 = 引擎
+    内建优先级 2 段）——全额改降后原伤害事件终止：转移不再处理（挂账不消耗、
+    牌手不受伤害）；部分改降时余量照常转移。"""
+    _field(db, 10010151, intensity=4, abilities=[F.block(
+        F.Step(op="redirect_to_field"), when="on_after_shield", priority=1,
+        condition={"victim_shikigami": "self", "kind": "effect"})])
+    g = make_game()
+    pa, pb = g.state.players
+    s0 = pa.shikigami[0]
+    pb.shield = 0
+    pa.fields.append(FieldState(card_id=10010151, intensity=4, shikigami=100101))
+    s0.ext["damage_redirects"] = [{"to": "player"}]     # 血蝠之盾挂账（优先级 2 段）
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 3, Ref(player=1, shikigami=0))
+    assert pa.fields[0].intensity == 1              # 3 点全额改降幻境耐久
+    assert s0.health == 4 and pa.health == 30       # 原事件终止：转移不处理
+    assert len(s0.ext["damage_redirects"]) == 1     # 挂账未消耗
+    # 部分改降：余量照常转移给牌手
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
+    g._drain_queue()
+    assert pa.fields == []                          # 1 耐久改降后归零消灭
+    assert pa.health == 26                          # 余量 4 转移给牌手
+    assert not s0.ext["damage_redirects"]           # 挂账已消耗
+    assert s0.health == 4                           # 式神本人未受余量
+
+
+def test_redirect_first_same_name_only(db, make_game):
+    """泷夜叉姬代受"首个同名"（定案(10)）：同名幻境存在多个时，只由幻境队列中
+    首个同名幻境代受——靠后的同名幻境能力块为空操作（基础/觉醒形态同口径）。"""
+    _field(db, 10010151, intensity=3, abilities=[F.block(
+        F.Step(op="redirect_to_field"), when="on_after_shield", priority=1,
+        condition={"victim_shikigami": "self", "kind": "effect"})])
+    g = make_game()
+    pa, pb = g.state.players
+    s0 = pa.shikigami[0]
+    pb.shield = 0
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010151, intensity=5, shikigami=100101))
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 2, Ref(player=1, shikigami=0))
+    assert [ph.intensity for ph in pa.fields] == [1, 5]     # 仅首个同名代受
+    assert s0.health == 4
+
+
+def test_redirect_split_by_damage_category(db, make_game):
+    """永劫轮回②（定案(10)）："幻境改为对己方所有式神有效"——己方其他式神受
+    伤害仍由两种幻境**分别**代受：日轮之城（field_card 指定牌）代受战斗伤害、
+    新月之哀代受非战斗伤害（各自只在自己类别上生效）。"""
+    _field(db, 10010161, intensity=5)       # 新月之哀型（非战斗）
+    _field(db, 10010162, intensity=5)       # 日轮之城型（战斗）
+    db.shikigami[100101] = F.shiki(100101, abilities=[
+        F.block(F.Step(op="redirect_to_field", field_shikigami="self",
+                       field_card=10010162),
+                when="on_after_shield", priority=1,
+                condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                           "victim_not_shikigami": 100101, "kind": "combat"}),
+        F.block(F.Step(op="redirect_to_field", field_shikigami="self",
+                       field_card=10010161),
+                when="on_after_shield", priority=1,
+                condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                           "victim_not_shikigami": 100101, "kind": "effect"}),
+    ])
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.fields.append(FieldState(card_id=10010161, intensity=5, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010162, intensity=5, shikigami=100101))
+    # 己方其他式神受非战斗伤害 → 新月之哀代受
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, Ref(player=1, shikigami=0))
+    assert [ph.intensity for ph in pa.fields] == [2, 5]
+    # 己方其他式神受战斗伤害 → 日轮之城代受
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 2, Ref(player=1, shikigami=0),
+                        kind="combat")
+    assert [ph.intensity for ph in pa.fields] == [2, 3]
+
+
+def test_field_op_enemy_targeted_excludes_veil(db, make_game):
+    """幻境[帷幕]（定案(11)）：带[帷幕]的幻境不能成为**敌方**效果的目标——
+    敌方取对象类 pick（first/max_intensity）候选池排除之；无目标效果（all）
+    与己方效果不受影响。"""
+    _field(db, 10010151)
+    _field(db, 10010152)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.fields.append(FieldState(card_id=10010151, intensity=9, shikigami=100101,
+                                keywords=["veil"]))
+    pb.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    cid = 10010153
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="field_op", side="enemy", pick="max_intensity", action="destroy")])
+    pa.orb = 9
+    play(g, 0, cid)
+    g._drain_queue()
+    # 帷幕者（耐久 9 最大）免被指：消灭的是耐久 2 的
+    assert [ph.card_id for ph in pb.fields] == [10010151]
+    cid2 = 10010154
+    db.cards[cid2] = F.card(cid2, token=True, steps=[
+        F.Step(op="field_op", side="enemy", pick="all", action="intensity",
+               amount=-1)])
+    play(g, 0, cid2)
+    assert pb.fields[0].intensity == 8              # 无目标效果不受帷幕影响
+
+
+def test_choose_pool_exclude_shikigami(db, make_game):
+    """白骨之盾"一个己方其他式神"（定案(12)）：choose 池经 exclude_shikigami
+    过滤键排除卡牌所属式神本人——主动使用不能以他为目标（响应路径由
+    victim_not_shikigami 保证，既有口径不变）。"""
+    cid = 10010151
+    db.cards[cid] = F.card(
+        cid, token=True, steps=[F.Step(op="gain_shield", amount=4)],
+        target=T(kind="choose", pool="friendly_shikigami",
+                 exclude_shikigami=100101))
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    for s in pa.shikigami:
+        s.level = 1                             # 在场才进 choose 池
+    with pytest.raises(IllegalAction):
+        play(g, 0, cid, target=Ref(player=0, shikigami=0))  # 久次良本人：不合法
+    play(g, 0, cid, target=Ref(player=0, shikigami=1))      # 其他式神：合法
+    assert pa.shikigami[1].shield == 4
+    assert pa.shikigami[0].shield == 0
+
+
+def test_field_threshold_within_turn_start_block(db, make_game):
+    """月坠阈值判定收窄（定案(13)）："然后若耐久>=30"只在"己方回合开始时获得
+    耐久"那一串结算内判定（获得耐久→然后若>=30 自毁并造成伤害）——其他途径
+    获得耐久达阈值不自毁（不再挂 on_field_intensity_changed 任意途径判定）；
+    同块多步共享首次判定快照（自毁归零后伤害步仍按判定时耐久通过）。"""
+    _field(db, 10010151, intensity=15, abilities=[
+        F.block(F.Step(op="boost_change", amount=2),
+                when="on_before_field_intensity", condition={"field_self": True}),
+        F.block(F.Step(op="field_op", pick="self_field", amount=3),
+                F.Step(op="field_op", pick="self_field", action="destroy",
+                       condition={"field_intensity_ge": 30}),
+                F.Step(op="damage", amount=10,
+                       target=T(kind="all", pool="enemy_character"),
+                       condition={"field_intensity_ge": 30}),
+                when="on_turn_start", condition={"active": "self"}),
+    ])
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.fields.append(FieldState(card_id=10010151, intensity=26, shikigami=100101))
+    # 其他途径获得耐久（26 + 10 + 2 = 38 达阈值）：不自毁、不造成伤害
+    g._change_field_intensity(0, 0, 10, None, "效果")
+    g._drain_queue()
+    assert pa.fields[0].intensity == 38
+    assert pb.health == 30
+    # 己方回合开始：获得 3+2=5（26 复位口径 → 31 达阈值）→ 自毁并造成 10 伤
+    pa.fields[0].intensity = 26
+    g.emit("on_turn_start", player=0)
+    g._drain_queue()
+    assert pa.fields == []                          # 自毁出队
+    assert pb.health == 20                          # 敌方牌手受 10
+    assert pb.shikigami[0].defeated                 # 敌方式神同受 10（3/4 气绝）
+
+
+def test_hand_card_type_play_condition(db, make_game):
+    """余辉使用前提（定案(9)）：play_condition {hand_card_type: field}——手牌中
+    有幻境牌才能使用（"弃一张幻境牌"蕴含的使用合法性谓词）；没有则不可用。"""
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(op="draw", count=1)],
+                           play_condition={"hand_card_type": "field"})
+    _field(db, 10010152)
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    with pytest.raises(IllegalAction):
+        play(g, 0, cid)                             # 手牌无幻境牌：不可用
+    give(g, 0, 10010152)                            # 入手一张幻境牌
+    play(g, 0, cid)                                 # 有了：可用
+
+
+def test_discard_field_step_empty_pool_continues(db, make_game):
+    """余辉结算容错（定案(9)）：使用后结算前手牌中已无幻境牌时，"弃一张幻境牌"
+    不处理（discard 空池安全空过）但"抽三张牌"仍处理——弃牌步失败不中断后续
+    步骤。"""
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="discard", shikigami="all", card_type="field", count=1,
+               random_pick=True),
+        F.Step(op="draw", count=3)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    before = len(pa.hand)
+    play(g, 0, cid)                                 # 手牌无幻境牌：弃牌步空过
+    assert len(pa.hand) == before + 3               # 抽三张仍处理
+
+
+def test_field_summon_pick_choice(db, make_game):
+    """残阳无影"选择召唤一个泷夜叉姬的幻境"（定案(2)）：summon_field pick=choose
+    开启 pending_choice（kind="field_summon_pick"，选项=她的非 token 幻境牌按
+    id 升序）——玩家择一直接召唤（不经使用事件、不耗火、耐久=卡牌标注值），
+    挂起块的后续步骤续跑；候选仅一张时不挂起直接召唤。"""
+    for cid, inten in ((10010161, 3), (10010162, 5)):
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field",
+                               intensity=inten)
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="summon_field", shikigami="self", pick="choose"),
+        F.Step(op="draw", count=1)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, cid)
+    pend = g.state.pending_choice
+    assert pend is not None and pend["kind"] == "field_summon_pick"
+    assert pend["options"] == [10010161, 10010162]  # 按 id 升序
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "end_turn"})                 # 挂起中拒绝 choose 以外指令
+    orb_now, hand_before = pa.orb, len(pa.hand)
+    g.apply({"op": "choose", "player": 0, "choice": 10010162})
+    assert g.state.pending_choice is None
+    assert [ph.card_id for ph in pa.fields] == [10010162]
+    assert pa.fields[0].intensity == 5              # 卡牌标注值
+    assert pa.orb == orb_now                        # 直接召唤不耗火
+    assert len(pa.hand) == hand_before + 1          # 挂起块的抽牌步续跑
+    # 候选仅一张：不挂起，直接召唤
+    del db.cards[10010162]
+    g2 = make_game()
+    pa2 = g2.state.players[0]
+    pa2.orb = 9
+    play(g2, 0, cid)
+    assert g2.state.pending_choice is None
+    assert [ph.card_id for ph in pa2.fields] == [10010161]

@@ -1314,15 +1314,18 @@ def field_op(game, ctx, *, targets: list[Ref], side: str = "self",
     pick：first=队首；all=全部；others=除触发来源幻境（ctx.field）外的全部（燕子安贝
     "所有其他己方幻境"）；random=随机一个；max_intensity=耐久最大（并列随机——
     月之奥义"消灭一个他耐久最大的幻境"）；self_field=触发来源幻境自身（星轨/星陨/
-    月坠"然后自毁"——须幻境能力块内，经 ctx.field 定位）。随机/全体不取对象
-    （[帷幕]不挡，同 targets 规则）；choose（取对象、排除敌方[帷幕]幻境）待首卡
-    落地再实现。
+    月坠"然后自毁"——须幻境能力块内，经 ctx.field 定位）。
+    幻境[帷幕]（定案(11)）：带[帷幕]的幻境不能成为**敌方**效果的目标——side=
+    "enemy" 的取对象类 pick（first/max_intensity）候选池排除带[帷幕]者；无目标
+    效果（all/random/others 随机与全体，同 targets 规则）与己方效果不受影响。
     action："intensity"=耐久 ±amount（走 _change_field_intensity 完整事件流程；
     荒基础/残阳无影"己方所有幻境获得N耐久"）；"destroy"=消灭（归零走完整消灭事件
     流程，"被消灭时"能力照常触发）；"grant_keyword"=幻境实体授予关键字（keyword
     参数；方圆之备"你的所有幻境获得[帷幕]"）。
     """
     cands = _field_candidates(game, ctx, side)
+    if side == "enemy" and pick in ("first", "max_intensity"):
+        cands = [x for x in cands if "veil" not in x[2].keywords]  # 幻境[帷幕]排除
     if pick == "self_field":
         ph = ctx.field
         if ph is None:
@@ -1365,20 +1368,38 @@ def field_op(game, ctx, *, targets: list[Ref], side: str = "self",
             raise ValueError(f"未知 field_op action: {action}")
 
 
+@action("field_merge")
+def field_merge(game, ctx, *, targets: list[Ref], merge_abilities: bool = False) -> None:
+    """辉夜姬基础/觉醒能力的幻境叠加合并（targets 忽略）：挂 on_summon_field
+    （"召唤幻境后"延时时机）与 on_ability_enter（能力进场时，condition
+    {target_shikigami: self} 自指）的能力块——结算见
+    engine._merge_same_shikigami_fields（定案(6)：保留队列最后一个她的幻境、耐久
+    设置为总和、觉醒按幻境牌 id 去重合并能力块、消灭其余）。
+    来源式神解析自 ctx.source（能力持有者）；队列中她的幻境不足两个时为空操作。"""
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("field_merge 需要来源式神（辉夜姬能力块）")
+    sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+    game._merge_same_shikigami_fields(ctx.controller, sid,
+                                      merge_abilities=bool(merge_abilities),
+                                      source=ctx.source)
+
+
 @action("summon_field")
 def summon_field(game, ctx, *, targets: list[Ref], card: int | None = None,
                  shikigami: int | str | None = None, pick: str = "first",
                  intensity: int | None = None) -> None:
     """直接召唤幻境（targets 忽略；不经使用事件、不耗鬼火——残阳无影"选择召唤"/
     竹取物语"随机召唤一个辉夜姬的幻境"类）：耐久 = 卡牌值（无实例修饰），走
-    _summon_field 完整流程（叠加/记账/on_summon_field 照常）。
+    _summon_field 完整流程（叠加能力/on_summon_field/记账照常）。
 
     card：指定幻境牌数据 id（佛前石钵"召唤石钵"类固定——石钵为召唤物时用 summon
-    动作而非本动作）。否则候选 = db 中 shikigami 所属的全部非 token 幻境牌：
+    动作而非本动作）。否则候选 = db 中 shikigami 所属的全部非 token 幻境牌（按数据
+    id 升序——觉醒·辉夜姬增强"按 id 升序依次召唤"，定案(15)）：
     pick="first" 取首个 /"random" 随机一张 /"all" 全部各召唤一次（觉醒·辉夜姬
-    增强"召唤她的五种幻境"——叠加机制下合并入同一实体）。shikigami="self" 解析为
+    增强"召唤她的五种幻境"）/"choose" 玩家选择一张（残阳无影"选择召唤一个
+    泷夜叉姬的幻境"——pending_choice kind="field_summon_pick"，作答/续块见
+    engine._cmd_choose；候选仅一张时不挂起直接召唤）。shikigami="self" 解析为
     来源式神 id。intensity：覆写召唤耐久（觉醒·辉夜姬增强"耐久都为1"；缺省按牌面）。
-    choose（残阳无影"选择召唤"的玩家二选一通道）待 pending_choice 落地后补。
     """
     from core.model import CardInstance
     if card is not None:
@@ -1392,11 +1413,18 @@ def summon_field(game, ctx, *, targets: list[Ref], card: int | None = None,
             raise ValueError("summon_field 需要 card 或 shikigami 参数")
         else:
             sid = int(shikigami)
-        pool = [c for c in game.db.cards.values()
-                if c.card_type == "field" and c.shikigami == sid and not c.token]
+        pool = sorted((c for c in game.db.cards.values()
+                       if c.card_type == "field" and c.shikigami == sid and not c.token),
+                      key=lambda c: c.id)
         if not pool:
             return  # 无可召唤候选：空过
-        if pick == "all":
+        if pick == "choose":
+            if len(pool) > 1:
+                game._open_field_summon_pick(
+                    ctx.controller, [c.id for c in pool], intensity=intensity)
+                return  # 挂起等 choose 作答（_run_block_steps 续跑后续步骤）
+            cdefs = pool  # 候选仅一张：无需选择，直接召唤
+        elif pick == "all":
             cdefs = list(pool)
         else:
             cdefs = [pool[0] if pick == "first" else game.rng.choice(pool)]
@@ -1412,16 +1440,30 @@ def summon_field(game, ctx, *, targets: list[Ref], card: int | None = None,
 @action("redirect_to_field")
 def redirect_to_field(game, ctx, *, targets: list[Ref],
                       max_amount: int | None = None,
-                      field_shikigami: int | str | None = None) -> None:
+                      field_shikigami: int | str | None = None,
+                      field_card: int | None = None) -> None:
     """伤害改降触发来源幻境的耐久（泷夜叉姬新月之哀/日轮之城、竹取物语；targets
-    忽略）：挂伤害事件"护甲计算后"批次（on_after_shield，insert）的幻境能力块——
+    忽略）：挂伤害事件"护甲计算后"批次（on_after_shield，insert，优先级 1——
+    "伤害改为非伤害"类，EffectBlock.priority 约定见定案(7)）的幻境能力块——
     受伤者/伤害类别匹配由能力 condition 负责（victim_shikigami/kind 等）。
     改降量 = min(伤害余量, 幻境当前耐久, max_amount)——耐久不足部分照常结算；
     伤害事件 amount 相应减少（走 mutable ev 通道，同屏障/转移）。
+    **首个同名代受**（定案(10)）：触发来源幻境（ctx.field）在队列中存在更靠前的
+    同名（同牌 id）幻境时本块为空操作——同名幻境只由队列首个代受。
     field_shikigami：非幻境来源（竹取物语形态能力块，ctx.field 为 None）时定位
-    控制者首个该式神所属幻境代为承受；"self" = 来源式神；该幻境不在场为空操作。"""
+    控制者**首个**该式神所属幻境代为承受（定案(14)）；"self" = 来源式神；该幻境
+    不在场为空操作。field_card：进一步限定只由队列首个**指定牌 id** 的幻境代受
+    （永劫轮回②"幻境改为对己方所有式神有效"——新月之哀代受非战斗/日轮之城代受
+    战斗，两个能力块各指各的幻境牌）。"""
     ph = ctx.field
     p = game.state.players[ctx.controller]
+    if ph is not None and field_card is None:
+        # 首个同名代受：队列中存在更靠前的同名（同牌 id）幻境时，靠后的不代受
+        for x in p.fields:
+            if x is ph:
+                break
+            if x.card_id == ph.card_id:
+                return
     if ph is None and field_shikigami is not None:
         if field_shikigami == "self":
             if ctx.source is None or ctx.source.shikigami is None:
@@ -1429,9 +1471,10 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
             sid = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
         else:
             sid = int(field_shikigami)
-        ph = next((x for x in p.fields if x.shikigami == sid), None)
+        ph = next((x for x in p.fields if x.shikigami == sid
+                   and (field_card is None or x.card_id == int(field_card))), None)
         if ph is None:
-            return  # 该式神的幻境不在场：无人代承
+            return  # 该式神（指定牌）的幻境不在场：无人代承
     ev = (ctx.event or {}).get("damage")
     if ph is None or ev is None:
         raise ValueError("redirect_to_field 须挂伤害事件批次（on_after_shield）的幻境能力块")

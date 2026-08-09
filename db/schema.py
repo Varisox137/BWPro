@@ -63,15 +63,14 @@ KEYWORDS = frozenset({
     "power_per_field",          # 你每有一个幻境 +1 力量（觉醒·泷夜叉姬）
     "power_if_shield",          # 有护甲时 +1 力量（久次良基础；白骨之盾"获得基础能力"授予通道）
     "power_equal_shield",       # 力量 = 当前护甲（觉醒·久次良；覆写口径）
-    "field_stack",              # 所属式神的幻境同时只存在一个、耐久叠加（辉夜姬基础）
-    "field_ability_stack",      # 同上且能力块也叠加（觉醒·辉夜姬）
+    # （原 field_stack/field_ability_stack 伪关键字作废：辉夜姬叠加改为能力块
+    #  field_merge 通道——定案(6)，见 rules.md 第三十一章）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 
 # 能力伪关键字集合：觉醒替换基础能力时按本集合换绑（移除基础式神的、授予觉醒牌的；
 # 气绝不清——永久类别随觉醒状态保留，读取处以 in_play 门控）。engine 觉醒点引用。
 ABILITY_PSEUDO_KEYWORDS = frozenset({
     "power_if_field", "power_per_field", "power_if_shield", "power_equal_shield",
-    "field_stack", "field_ability_stack",
 })
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
@@ -128,6 +127,10 @@ class EffectBlock(BaseModel):
     when: str = "on_play"
     mode: Literal["interleaved", "atomic"] = "interleaved"
     timing: Literal["queue", "insert"] | None = None
+    priority: int = 1  # 同事件 insert 批次的结算优先级（升序；同优先级保持收集序）。
+    # 约定（定案(7)，伤害事件"护甲计算后"批次）：1=「伤害改为非伤害」类（竹取物语/
+    # 新月之哀/日轮之城 redirect_to_field）；2=「伤害目标转移」类（血蝠之盾挂账为
+    # 引擎内建优先级 2 段）。改非伤害结算后原事件终止时，优先级≥2 的转移不再处理
     condition: dict[str, Any] | None = None
     steps: list[Step] = Field(default_factory=list)
     trigger_when_not_in_play: bool = False

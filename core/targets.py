@@ -194,7 +194,8 @@ def _spec_filtered(game, refs: list[Ref], extra: dict,
     highest_power（力量最高过滤——读 eff_power，并列全部保留交由后续 random 键均等取，
     惊鸿之舞"力量最高的式神"）；shield_nonzero（持有护甲或破甲的角色——骚声"移除一个
     角色上的护甲或破甲"，shield != 0）；strippable（醒转目标口径，需 controller：
-    己方角色须有护甲 shield > 0、敌方角色须有破甲 shield < 0）。
+    己方角色须有护甲 shield > 0、敌方角色须有破甲 shield < 0）；
+    exclude_shikigami（排除指定数据 id 的式神——白骨之盾"己方其他式神"排除久次良本人）。
     不匹配 true 语义的目标被滤除。"""
     pw = extra.get("power_le")
     if pw is not None:
@@ -253,6 +254,12 @@ def _spec_filtered(game, refs: list[Ref], extra: dict,
             holder = pl.shikigami[r.shikigami] if r.shikigami is not None else pl
             return holder.shield > 0 if r.player == controller else holder.shield < 0
         refs = [r for r in refs if _strippable(r)]
+    ex_sid = extra.get("exclude_shikigami")
+    if ex_sid is not None:
+        # 排除指定数据 id 的式神（白骨之盾"一个己方其他式神"——choose 池排除久次良
+        # 本人；spec_pool_refs 统一校验/展示）
+        refs = [r for r in refs if r.shikigami is not None
+                and game.state.players[r.player].shikigami[r.shikigami].id != int(ex_sid)]
     return refs
 
 
@@ -451,8 +458,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       conditional_mods 装配求值与步骤门控共用）
     - {friendly_armor_ge: n} ：控制者有在场式神护甲 ≥ n（焕然之音"若你有式神的
       护甲>=5"）
-    - {friendly_field_intensity_ge: n} ：控制者有任一幻境当前耐久 ≥ n（竹取物语
-      "若辉夜姬的幻境耐久>=20"；多幻境场景按"存在性"口径）
+    - {friendly_field_intensity_ge: n|{ge, shikigami}} ：控制者幻境队列存在耐久 ≥ n
+      的幻境（竹取物语"若辉夜姬的幻境耐久>=20"；shikigami 限定所属式神，"self"=
+      能力持有者——定案(14)；多幻境场景按"存在性"口径）
+    - {hand_card_type: <主类型>} ：控制者手牌中有该主类型的牌（余辉使用前提，
+      play_condition 用——定案(9)）
     - {field_summon_distinct_ge: n|{count, shikigami}} ：控制者本局召唤过的不同名
       幻境牌数 ≥ n（觉醒·辉夜姬[增强]；shikigami 限定所属式神，"self"=能力持有者）
     - 其余按键值相等比较
@@ -602,9 +612,19 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                        for s in game.state.players[controller].shikigami):
                 return False
         elif key == "friendly_field_intensity_ge":
-            # 控制者有任一幻境当前耐久 ≥ n（竹取物语"若辉夜姬的幻境耐久>=20"——
-            # 她的幻境同时只存在一个，任一即该幻境；多幻境场景按"存在性"口径）
-            if not any(x.intensity >= int(want)
+            # 控制者幻境队列中存在耐久 ≥ n 的幻境（存在性口径）。值 = n（任一幻境）
+            # 或 {ge: n, shikigami: <式神id>|"self"}（限定所属式神——竹取物语
+            # "若辉夜姬的幻境耐久>=20"，定案(14)；self=能力持有者）
+            if isinstance(want, dict):
+                n = int(want.get("ge", 1))
+                sid = want.get("shikigami")
+                if sid == "self":
+                    if holder is None or holder.shikigami is None:
+                        return False
+                    sid = game.state.players[holder.player].shikigami[holder.shikigami].id
+            else:
+                n, sid = int(want), None
+            if not any(x.intensity >= n and (sid is None or x.shikigami == int(sid))
                        for x in game.state.players[controller].fields):
                 return False
         elif key == "field_summon_distinct_ge":
@@ -628,6 +648,13 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
         elif key == "friendly_field":
             # 控制者幻境队列有幻境（泷夜叉姬/久次良"若你有幻境"系列；步级/能力条件通用）
             if bool(game.state.players[controller].fields) != bool(want):
+                return False
+        elif key == "hand_card_type":
+            # 控制者手牌中有指定主类型的牌（余辉"弃一张幻境牌"的使用前提——
+            # play_condition {hand_card_type: field}，定案(9)；无手牌谓词事件载荷，
+            # 纯控制者状态检查）
+            if not any(game.db.cards[c.id].card_type == want
+                       for c in game.state.players[controller].hand):
                 return False
         elif key == "chosen_stunned":
             # 卡牌选择目标中有眩晕角色（Step 级条件专用；崩雪"已眩晕则消灭、否则眩晕"）

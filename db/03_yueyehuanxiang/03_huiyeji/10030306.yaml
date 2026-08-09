@@ -10,12 +10,23 @@ versions:
       awaken_health: 1
       rarity: SR
       level: 3
-      keywords: [field_ability_stack]  # [觉醒]：幻境同时只存在一个但能力和耐久会叠加
-      # ——能力伪关键字（觉醒时换绑授予，替换基础 field_stack；引擎 _summon_field 通道）
+      abilities:
+        # [觉醒]：幻境同时只存在一个但能力和耐久会叠加（定案(6)：合并触发点=能力
+        # 进场时 + 能力在场时"召唤幻境后"延时时机；merge_abilities=true——其他不同名
+        # 幻境的能力块按幻境牌 id 去重合并到保留幻境，每种同名幻境的能力不叠加）
+        - when: on_summon_field
+          condition: {player: self}
+          steps:
+            - {op: field_merge, merge_abilities: true}
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: field_merge, merge_abilities: true}
       effects:
         steps:
-          # [增强]：若本局游戏已召唤五个不同的辉夜姬幻境，召唤她的五种幻境且耐久都
-          # 为1（叠加机制下五种合并入同一实体：合计 5 耐久 + 全部能力块）
+          # [增强]：若本局游戏已召唤五个不同的辉夜姬幻境，按幻境牌 id 升序依次执行
+          # 五次"召唤幻境事件"（各耐久=1——intensity 覆写，定案(15)；叠加机制下五次
+          # 召唤经能力合并为单实体：5 耐久 + 全部能力块）
           - {op: summon_field, shikigami: self, pick: all, intensity: 1,
              condition: {field_summon_distinct_ge: {count: 5, shikigami: self}}}
       text: "[觉醒]：{辉夜姬的幻境同时只能存在一个但能力和耐久会叠加}。[增强]：{若本局游戏已召唤五个不同的辉夜姬幻境，召唤她的五种幻境且耐久都为1。}"

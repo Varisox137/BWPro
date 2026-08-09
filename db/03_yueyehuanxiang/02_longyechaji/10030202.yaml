@@ -13,8 +13,10 @@ versions:
         steps: []
       abilities:
         # 泷夜叉姬受到的非战斗伤害改为降低此幻境的耐久（改降量 = min(伤害余量, 当前耐久)，
-        # 不足部分照常结算；"护甲计算后"批次 insert 挂点）
+        # 不足部分照常结算；"护甲计算后"批次 insert 挂点，优先级 1="伤害改为非伤害"类，
+        # 定案(7)；同名幻境多个时只由队列首个同名代受——定案(10)，op 内建守卫）
         - when: on_after_shield
+          priority: 1
           condition: {victim_shikigami: self, kind: effect}
           steps:
             - {op: redirect_to_field}
