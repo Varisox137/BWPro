@@ -29,3 +29,36 @@ versions:
           steps:
             - {op: grant_keyword, keyword: remote, target: {kind: self}}
       text: "当其他己方式神攻击后，本回合此牌获得[瞬发]。[觉醒]：{[远程]。}"
+    - date: 20200723
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2   # +2/+0：永久身材增益，"觉醒后"延时时机之后授予
+      rarity: SR
+      level: 3
+      effects:
+        steps: []
+      triggers:
+        # 当其他己方式神攻击后，本回合此牌获得[瞬发]（同 20191212 手牌触发式光环通道）
+        - when: on_after_assault
+          condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
+          steps:
+            - {op: card_aura, shikigami: 100106, card_id: 10010608, keywords: [fast],
+               scope: turn}
+      abilities:
+        # [觉醒]：{[远程]（同 20191212，觉醒时授予、复活重新授予）}
+        - when: on_awakened
+          condition: {target_shikigami: self}
+          steps:
+            - {op: grant_keyword, keyword: remote, target: {kind: self}}
+        - when: on_shikigami_revived
+          condition: {shikigami_shikigami: self}
+          steps:
+            - {op: grant_keyword, keyword: remote, target: {kind: self}}
+        # 新增"姑获鸟击杀敌方式神时，再发起一次攻击"：on_shikigami_defeated 击杀归属
+        # 判定（罗生门之鬼 source_shikigami 先例）；launch_attack 不耗鬼火/出击次数
+        # （协战先例），击杀连锁可再触发（与原版一致）
+        - when: on_shikigami_defeated
+          condition: {source_shikigami: self, victim_side: enemy, victim_kind: shikigami}
+          steps:
+            - {op: launch_attack, shikigami: self}
+      text: "当其他己方式神攻击后，本回合此牌获得[瞬发]。[觉醒]：{[远程]。姑获鸟击杀敌方式神时，再发起一次攻击。}"

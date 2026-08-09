@@ -2089,6 +2089,44 @@ def test_transform_inherits_source_perm_faction(db, make_game):
     assert s.faction == "红莲" and s.perm_faction == "红莲"
 
 
+def test_transform_replace_upgrade_and_level_carryback(db, make_game):
+    """变形物/替换物可在回合开始阶段正常升级（2026-08 定案）：lowest 规则把变形/替换
+    实体纳入候选与最低等级比较（与正式式神一视同仁）；0 级替换物升至 1 级能力进场
+    照常注册倒计时块；变形期间升过的级解除变形时带回原式神（覆盖快照等级，已结算
+    效果不回滚）；召唤物（kind="summon"）仍不可升级（错误文案保留）。"""
+    PAPER, TOM2, WALL = 100199, 100198, 100197
+    db.shikigami[PAPER] = F.shiki(PAPER, kind="transform", name="纸人", power=1, health=1)
+    db.shikigami[TOM2] = F.shiki(
+        TOM2, kind="transform", name="番茄·觉醒", power=2, health=2,
+        ability=F.EffectBlock(countdown=2, steps=[F.Step(op="draw", count=1)]))
+    db.shikigami[WALL] = F.shiki(WALL, kind="summon", name="墙", power=0, health=2)
+    db.cards[10010153] = F.card(10010153, token=True,
+                                steps=[F.Step(op="summon", shikigami=WALL)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.shikigami[1].level = pa.shikigami[2].level = 1   # 座 1/2 升 1；座 3 留 0
+    g._transform_shikigami(pa, 0, PAPER)                # 变形物继承等级 1
+    g._replace_shikigami(pa, 3, TOM2)                   # 替换物继承等级 0
+    paper, tom = pa.shikigami[0], pa.shikigami[3]
+    assert paper.kind == "transform" and paper.level == 1
+    assert tom.kind == "transform" and tom.level == 0
+    assert g.legal_upgrade_indices(0) == [3]            # lowest：替换实体纳入候选/比较
+    g.state.phase, pa.upgrades = "upgrade", 1
+    g.apply({"op": "upgrade", "index": 3})              # 替换物 0→1：能力进场注册倒计时
+    assert tom.level == 1 and tom.countdown == 2 and tom.countdown_block is not None
+    assert g.legal_upgrade_indices(0) == [0, 1, 2, 3]   # 全员 1 级：变形物同台可比
+    g.state.phase, pa.upgrades = "upgrade", 1
+    g.apply({"op": "upgrade", "index": 0})              # 变形物 1→2
+    assert paper.level == 2
+    g._untransform(0, 0)                                # 解除变形：等级带回原式神
+    assert pa.shikigami[0].id == 100101 and pa.shikigami[0].level == 2
+    pa.orb = 1
+    g.apply({"op": "play_card", "uid": give(g, 0, 10010153).uid})   # 召唤物进场
+    g.state.phase, pa.upgrades = "upgrade", 1
+    with pytest.raises(IllegalAction, match="召唤物不能升级"):
+        g.apply({"op": "upgrade", "index": 4})          # 召唤物仍拒绝
+
+
 # ---------- 记仇复制 × 雪球（echo_event_card × generate / auto_use from_hand） ----------
 
 def _jue_vs_xuenv(gdb):

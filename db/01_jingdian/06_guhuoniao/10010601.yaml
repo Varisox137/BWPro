@@ -19,3 +19,18 @@ versions:
             - {op: card_aura, shikigami: 100106, card_id: 10010601, keywords: [fast],
                scope: turn}
       text: 当其他己方式神攻击后，本回合此牌获得[瞬发]。
+    - date: 20200723
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+      triggers:
+        # 同 20191212（文本未变，仅战力 +1→+2）
+        - when: on_after_assault
+          condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
+          steps:
+            - {op: card_aura, shikigami: 100106, card_id: 10010601, keywords: [fast],
+               scope: turn}
+      text: 当其他己方式神攻击后，本回合此牌获得[瞬发]。

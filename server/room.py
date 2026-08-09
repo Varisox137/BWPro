@@ -136,6 +136,9 @@ class Room:
         self._sent_settle = 0
         self._sent_timeline = 0
         self._over_sent = False
+        # 最近人员变动时刻（join/reconnect/lobby_leave 刷新；纯断线 disconnect
+        # 不算人员变动、不刷新）——看门狗据此解散长期无变动的未开局房间
+        self.last_activity = time.time()
 
     # ---------- 加入 / 重连 / 断线 ----------
 
@@ -172,6 +175,7 @@ class Room:
         conn.ws = ws
         conn.deck = (ids, cards)
         self.conns[seat] = conn
+        self.last_activity = time.time()  # 人员变动：刷新看门狗计时
         return conn
 
     async def reconnect(self, token: str, ws) -> Connection | None:
@@ -180,11 +184,13 @@ class Room:
             return None
         conn = self.conns[seat]
         conn.ws = ws
+        self.last_activity = time.time()  # 重连回房也算人员变动
         return conn
 
     def disconnect(self, conn: Connection) -> None:
         if conn.ws is not None:
             conn.ws = None  # 仅标记断线；对局与计时器继续
+            # 纯断线不算人员变动：不刷新 last_activity（看门狗口径）
 
     @property
     def abandoned(self) -> bool:
@@ -321,11 +327,28 @@ class Room:
         self.conns[seat] = None
         self.ready_seats.discard(seat)
         self._cancel_lobby_timer()
+        self.last_activity = time.time()  # 人员变动：刷新看门狗计时
         self._log(f"{conn.name} 离开房间")
         peer = self.conns[1 - seat]
         if peer is not None:
             await peer.send(protocol.peer_left(conn.name))
         return True
+
+    async def dissolve(self) -> None:
+        """看门狗解散未开局房间：向所有连接发送 dissolved 通知后关闭连接。
+        仅对未开局房间调用（由 RoomManager.dissolve_idle 保证口径）。"""
+        self._cancel_lobby_timer()
+        self._log("长时间无人员变动，房间自动解散")
+        for c in self.conns:
+            if c is not None:
+                await c.send(protocol.dissolved("房间长时间无人加入或离开，已自动解散"))
+        for c in self.conns:
+            if c is not None and c.ws is not None:
+                try:
+                    await c.ws.close(code=1000)
+                except Exception:
+                    pass
+                c.ws = None
 
     # ---------- 开局 ----------
 

@@ -1193,10 +1193,10 @@ def test_haste_grant_on_ally_attack(real_game):
     assert "haste" in s.one_shot_keywords or "haste" in s.keywords
 
 
-def test_awaken_remote_no_followup(real_game):
-    """觉醒·姑获鸟：觉醒授予[远程]（不进驻战斗区、无反击）；觉醒替换基础能力，
-    开服版无"消灭再攻击"效果。"""
-    g = real_game(GH_TEAM)
+def test_awaken_remote_no_followup(gdb):
+    """觉醒·姑获鸟（20191212 版）：觉醒授予[远程]（不进驻战斗区、无反击）；觉醒替换
+    基础能力，开服版无"消灭再攻击"效果。"""
+    g = F.mk_game(gdb.at_date(20191212), team=GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 3})
     play(g, 0, 10010608)                       # 觉醒（+2/+0 → eff 5）
     move(g, 1, 0)                              # B 姑获鸟（3/4）驻守战斗区
@@ -1207,16 +1207,40 @@ def test_awaken_remote_no_followup(real_game):
     assert pa.shikigami[0].health == 4         # 远程：无反击
 
 
-def test_bench_targeted_battle(real_game):
-    """天翔鹤斩：指定 1 名敌方准备区式神（有目标战斗）；[贯通]溢出传导牌手，
-    正常受反击。"""
-    g = real_game(GH_TEAM)
+def test_awaken_kill_followup_attack(gdb):
+    """觉醒·姑获鸟 20200723 版：追加"姑获鸟击杀敌方式神时，再发起一次攻击"
+    （on_shikigami_defeated + launch_attack，不耗出击次数）。"""
+    g = F.mk_game(gdb.at_date(20200723), team=GH_TEAM)
+    pa, pb = F.battle_setup(g, {0: 3})
+    play(g, 0, 10010608)                       # 觉醒（+2/+0 → eff 5）
+    move(g, 1, 0)                              # B 姑获鸟（3/4）驻守战斗区
+    play(g, 0, 10010601)                       # 伞剑 20200723 版 +2 → 7 击杀
+    assert pb.shikigami[0].defeated
+    assert pb.health == 25                     # 追加攻击：战斗区已空，打敌方牌手 5
+
+
+def test_bench_targeted_battle(gdb):
+    """天翔鹤斩（20191212 版）：指定 1 名敌方准备区式神（有目标战斗）；[贯通]溢出
+    传导牌手，正常受反击。"""
+    g = F.mk_game(gdb.at_date(20191212), team=GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})
     c = give(g, 0, 10010606)
     g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})
     assert pb.shikigami[1].defeated            # B 妖刀姬（3/4）受 6 伤气绝
     assert pb.health == 28                     # 贯通溢出 2
     assert pa.shikigami[0].health == 1         # 无免疫：受反击 3
+
+
+def test_bench_targeted_battle_immunity(gdb):
+    """天翔鹤斩 20200723 版：追加"免疫战斗伤害"（battle_immunity 绑定本次战斗），
+    不受反击。"""
+    g = F.mk_game(gdb.at_date(20200723), team=GH_TEAM)
+    pa, pb = F.battle_setup(g, {0: 2})
+    c = give(g, 0, 10010606)
+    g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})
+    assert pb.shikigami[1].defeated            # B 妖刀姬（3/4）受 6 伤气绝
+    assert pb.health == 28                     # 贯通溢出 2
+    assert pa.shikigami[0].health == 4         # 免疫战斗伤害：不受反击
 
 
 def test_bench_targeted_battle_fallback_no_target(real_game):

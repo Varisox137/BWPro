@@ -18,3 +18,16 @@ versions:
           - {op: buff_power, amount: 1, perm: false, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
       text: "每当你恢复生命时，吸血姬获得1力量与1护甲。"
+    - date: 20200820
+      faction: 红莲
+      power: 3
+      health: 4
+      ability:
+        # 20200820：追加"每回合一次"（turn_mark/turn_mark_not 门控，雪女 snowball 先例）
+        when: on_after_heal
+        condition: {target_side: friendly, target_kind: player, turn_mark_not: heal_buff}
+        steps:
+          - {op: turn_mark, key: heal_buff}
+          - {op: buff_power, amount: 1, perm: false, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "每回合一次，当你恢复生命时，吸血姬获得1力量与1护甲。"

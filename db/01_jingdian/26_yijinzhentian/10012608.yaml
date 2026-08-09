@@ -19,3 +19,35 @@ versions:
           steps:
             - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami}}
       text: 当以津真天使用‘黄金羽’时，对所有敌方式神造成2点伤害。
+    - date: 20200820
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 同 20191212（文本未变，仅形态生命 8→6）
+        - when: on_card_played
+          condition: {player: self, golden_feather: true}
+          steps:
+            - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami}}
+      text: 当以津真天使用‘黄金羽’时，对所有敌方式神造成2点伤害。
+    - date: 20200928
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 4
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # "对随机敌方式神造成2点伤害，此效果执行2次"：两个独立 random:1 取样步
+        # （TargetSpec {"random": n} 扩展键，盛开先例；两次取样独立、可命中同一目标）
+        - when: on_card_played
+          condition: {player: self, golden_feather: true}
+          steps:
+            - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami, random: 1}}
+            - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami, random: 1}}
+      text: 当以津真天使用‘黄金羽’时，对随机敌方式神造成2点伤害，此效果执行2次。

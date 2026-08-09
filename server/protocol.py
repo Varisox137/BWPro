@@ -8,7 +8,7 @@ client 标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main
 不可更改），create 可带 env_date 指定初始环境与 mode 指定模式
 （standard=固定标准环境，默认 / free=自由环境））
 服务端 → 客户端：joined / lobby / starting / left / state / log / error / game_over /
-notice / ping
+notice / dissolved / ping
 
 所有消息均为 JSON object，必带 "type" 字段。游戏指令复用 core.engine.Game.apply
 的 cmd dict 协议（{"op": ...}），原样嵌在 {"type": "cmd", "cmd": {...}} 中。
@@ -107,3 +107,8 @@ def notice(text: str) -> dict:
 
 def game_over(winner: int | None, reason: str = "") -> dict:
     return {"type": "game_over", "winner": winner, "reason": reason}
+
+
+def dissolved(reason: str) -> dict:
+    """看门狗解散未开局房间（长时间无人员变动）：通知后服务端随即关闭连接。"""
+    return {"type": "dissolved", "reason": reason}

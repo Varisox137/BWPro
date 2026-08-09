@@ -385,6 +385,7 @@ def test_env_alias_parse_and_label():
     assert parse_env_input("经典") == 20191212
     assert parse_env_input("公测") == 20191212   # 同一日期的多个别名
     assert parse_env_input("不夜之火") == 20200327
+    assert parse_env_input("沧海刀鸣") == 20200928
     assert parse_env_input("20191212") == 20191212
     assert parse_env_input("191212") == 20191212   # 6 位日期按 20YY 展开
     assert parse_env_input("200423") == 20200423
@@ -399,4 +400,5 @@ def test_env_alias_parse_and_label():
     assert env_label(None) == "标准(最新)"
     assert env_label(20191212) == "经典(20191212)"   # 同一日期取先登记别名
     assert env_label(20200327) == "不夜之火(20200327)"
+    assert env_label(20200928) == "沧海刀鸣(20200928)"
     assert env_label(20251212) == "20251212"

@@ -11,3 +11,15 @@ versions:
         steps:
           - {op: basic_boost, power: 3, shield: 3}
       text: "[鼓舞]：{获得+3战力与+3护甲。}"
+    - date: 20200820
+      card_type: spell
+      rarity: R
+      level: 2
+      # "使一个式神"未限定己方（对比寒冰之盾"使一个己方式神"），目标池取双方在场式神
+      target: {kind: choose, pool: any_shikigami}
+      effects:
+        # 迅捷为一次性消耗关键字，按天然持久性入列（桃花灼灼选择目标授予先例）
+        steps:
+          - {op: grant_keyword, keyword: haste}
+          - {op: basic_boost, power: 2, shield: 2}
+      text: "使一个式神获得[迅捷]。[鼓舞]：{获得+2战力与+2护甲。}"

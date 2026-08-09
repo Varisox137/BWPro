@@ -2495,13 +2495,16 @@ class Game:
 
     def _untransform(self, pi: int, i: int) -> None:
         """解除座次 i 变形物的变形：按 transform_origin 快照还原原式神当时状态
-        （身材/增减益/能力；变形物在场期间的改动不保留）。无快照（非变形物；
+        （身材/增减益/能力；变形物在场期间的改动不保留）。**例外（2026-08 定案）：
+        等级继承解除变形时变形物的当前等级**（变形期间升过的级带回原式神，覆盖
+        快照等级；已结算的"升至 1 级能力进场"等效果不回滚）。无快照（非变形物；
         式神替换物 replace 不设快照，天然不还原）为空操作。"""
         p = self.state.players[pi]
         s = p.shikigami[i]
         if s.transform_origin is None:
             return
         restored = ShikigamiState.model_validate(s.transform_origin)
+        restored.level = s.level  # 等级继承变形物当前值（覆盖快照；定案见 docstring）
         # 还原进场 = 再进场：entry_order 覆盖快照旧值，取本队当前最大值 +1
         # （排到本队最后——维护者定案同变形进场）
         restored.entry_order = max(x.entry_order for x in p.shikigami) + 1
@@ -2664,7 +2667,7 @@ class Game:
         if not (0 <= i < len(p.shikigami)):
             raise IllegalAction("式神序号无效")
         s = p.shikigami[i]
-        if s.kind != "shikigami":
+        if s.kind == "summon":
             raise IllegalAction("召唤物不能升级")
         if s.level >= self.config.max_level:
             raise IllegalAction("已达最高等级")
@@ -2690,9 +2693,11 @@ class Game:
         供服务端回合超时随机升级等托管操作使用；不检查 phase/upgrades 机会数。
         """
         p = self.state.players[pi]
+        # 变形物/替换物（kind="transform"）与正式式神一视同仁可升级（2026-08 定案）；
+        # 召唤物（kind="summon"）仍不可升级
         candidates = [
             i for i, x in enumerate(p.shikigami)
-            if x.kind == "shikigami" and not x.despawned
+            if x.kind != "summon" and not x.despawned
             and x.level < self.config.max_level
         ]
         if self.config.upgrade_rule == "lowest" and candidates:
@@ -3150,7 +3155,7 @@ class Game:
         气绝或眩晕不影响升级资格（仍可升级）。
         """
         return any(
-            s.kind == "shikigami" and not s.despawned
+            s.kind != "summon" and not s.despawned
             and s.level < self.config.max_level
             for s in p.shikigami
         )

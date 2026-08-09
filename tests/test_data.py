@@ -762,14 +762,27 @@ def test_conditional_step_by_player_ext(real_game):
 
 # ---------- 08 流浪之羽：形态触发随机伤害 ----------
 
-def test_random_damage_on_tagged_play(real_game):
+def test_random_damage_on_tagged_play(gdb):
     """结附期间使用黄金羽：对所有敌方式神各造成 2 点伤害（20191212 版，合计 8）。"""
-    g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 3})
+    g = F.mk_game(gdb.at_date(20191212), team=YJZT_TEAM)
+    pa, pb = F.battle_setup(g, {IDX: 3})
     play(g, 0, LLZY)
     before = sum(s.health for s in pb.shikigami)
     play(g, 0, FEATHER)
     after = sum(s.health for s in pb.shikigami)
     assert before - after == 8
+
+
+def test_random_damage_on_tagged_play_twice(gdb):
+    """流浪之羽 20200928 版：对随机敌方式神造成 2 点伤害、执行 2 次（两次取样独立，
+    可命中同一目标，合计 4）。"""
+    g = F.mk_game(gdb.at_date(20200928), team=YJZT_TEAM)
+    pa, pb = F.battle_setup(g, {IDX: 3})
+    play(g, 0, LLZY)
+    before = sum(s.health for s in pb.shikigami)
+    play(g, 0, FEATHER)
+    after = sum(s.health for s in pb.shikigami)
+    assert before - after == 4
 
 
 # ==========================================================================
@@ -855,6 +868,32 @@ def test_battle_immunity_conditioned_on_victim_fragile(real_game):
     play(g, 0, ZY)
     assert pb.shikigami[2].health == 2        # 4 伤
     assert pa.shikigami[IDX].health == 4      # 反击 1 正常扣血
+
+
+# ---------- 血香 20200928：条件免疫（player_health_ge，同 battle_immunity Step.condition 通道） ----------
+
+XXJ_TEAM = [100301, 100101, 100116, 100123]   # 吸血姬 0 号位（红莲+苍叶，派系 ≤2）
+
+
+def test_battle_immunity_conditioned_on_player_health(gdb):
+    """血香 20200928 版[增强]（match_condition 新键 player_health_ge）：使用时牌手生命
+    ≥30 则本张战斗牌发起的战斗免疫战斗伤害（反击不扣血，护甲仍按结算次序消耗）；
+    <30 不免疫。raw"生命值为30"按 ≥30 口径（与 conditional_keywords 同族算子一致）。"""
+    g = F.mk_game(gdb.at_date(20200928), team=XXJ_TEAM)
+    pa, pb = F.battle_setup(g, {IDX: 2})
+    pb.shikigami[1].shield = 5                # 白狼吃 5 伤不倒（护甲抵消）
+    move(g, 1, 1)                             # B 白狼（3/4）驻守战斗区
+    play(g, 0, 10030106)                      # 吸血姬 3+2=5 攻；A 生命 30 ≥ 30：免疫
+    assert pb.shikigami[1].health == 4 and pb.shikigami[1].shield == 0
+    assert pa.shikigami[IDX].health == 4      # 反击 3 被免疫（护甲 1 按序消耗）
+    assert pa.shikigami[IDX].shield == 0
+    g = F.mk_game(gdb.at_date(20200928), team=XXJ_TEAM)
+    pa, pb = F.battle_setup(g, {IDX: 2})
+    pb.shikigami[1].shield = 5
+    move(g, 1, 1)
+    pa.health = 29                            # <30：增强不生效
+    play(g, 0, 10030106)
+    assert pa.shikigami[IDX].health == 2      # 反击 3：护甲 1 抵 1，扣 2
 
 
 # ---------- 04 毒蚀：伤害→破甲转化 ----------

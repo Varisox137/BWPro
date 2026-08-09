@@ -13,3 +13,16 @@ versions:
         steps:
           - {op: buff_power, amount: 3, target: {kind: self}}
       text: "[贯通]。本次战斗改为攻击一个敌方准备区式神。"
+    - date: 20200723
+      card_type: combat
+      rarity: SSR
+      level: 2
+      keywords: [piercing]
+      target: {kind: choose, pool: enemy_bench, optional: true, battle: true}
+      effects:
+        # 追加"免疫战斗伤害"：battle_immunity step 由战斗牌流程提取、绑定本次战斗
+        # （一千零一夜 10020603 先例）
+        steps:
+          - {op: buff_power, amount: 3, target: {kind: self}}
+          - {op: battle_immunity, target: {kind: self}}
+      text: "[贯通]，免疫战斗伤害。本次战斗改为攻击一个敌方准备区式神。"

@@ -17,6 +17,7 @@ import asyncio
 import json
 import threading
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
@@ -95,7 +96,16 @@ def _client_ip(ws: WebSocket) -> str:
 
 def create_app(manager: RoomManager, *, rate_limit: int = 10,
                require_client_ua: bool = True, allow_debug_rooms: bool = False) -> FastAPI:
-    app = FastAPI(title="BWPro 联机服务端")
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        # 看门狗后台任务：周期扫描解散长期无人员变动的未开局房间
+        watchdog = asyncio.create_task(manager.watchdog_loop())
+        try:
+            yield
+        finally:
+            watchdog.cancel()
+
+    app = FastAPI(title="BWPro 联机服务端", lifespan=_lifespan)
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:

@@ -146,6 +146,13 @@ class NetClient:
             self.ended_normally = True  # 主动离开房间：不当作断线
             self.over.set()
             tui.cancel_prompt()
+        elif t == "dissolved":
+            # 看门狗解散未开局房间：服务端随后关闭连接，按正常结束处理
+            # （不提示断线重连），回主菜单
+            self.ended_normally = True
+            print(f"** 房间已被解散（{msg.get('reason', '')}）")
+            tui.cancel_prompt()
+            self.over.set()
         elif t == "start":
             self.in_lobby = False
             self.lobby_ready = []

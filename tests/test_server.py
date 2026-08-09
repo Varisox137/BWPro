@@ -53,6 +53,7 @@ def test_server_message_builders():
     assert protocol.error("r") == {"type": "error", "reason": "r"}
     assert protocol.notice("t") == {"type": "notice", "text": "t"}
     assert protocol.game_over(0, "player_defeated")["winner"] == 0
+    assert protocol.dissolved("r") == {"type": "dissolved", "reason": "r"}
 
 
 # ==========================================================================
@@ -85,9 +86,13 @@ class FakeWS:
 
     def __init__(self):
         self.messages: list[dict] = []
+        self.closed = False
 
     async def send_text(self, text: str):
         self.messages.append(json.loads(text))
+
+    async def close(self, code: int = 1000):
+        self.closed = True
 
     def types(self) -> list[str]:
         return [m["type"] for m in self.messages]
@@ -616,6 +621,67 @@ def test_max_rooms_cap(db):
     mgr.create()
     with pytest.raises(ValueError, match="上限"):
         mgr.create()
+
+
+# ---------- 看门狗：未开局房间无人员变动自动解散 ----------
+
+def test_watchdog_dissolves_idle_lobby_room(db):
+    """未开局房间超过 600s（测试注入超时时间戳）无人员变动：看门狗扫描解散——
+    房内连接收到 dissolved 通知、连接关闭、房间从管理器移除。"""
+    async def go():
+        mgr = RoomManager(db)
+        room = mgr.create()
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        await room.join(1, "乙", ws1, _deck_code(db))
+        await room.on_seat_filled()
+        room.last_activity = time.time() - 700  # 注入：10 分钟无人员变动
+        doomed = await mgr.dissolve_idle()
+        assert doomed == [room.id]
+        assert mgr.get(room.id) is None
+        for ws in (ws0, ws1):
+            assert any(m["type"] == "dissolved" for m in ws.messages)
+            assert ws.closed
+    run(go())
+
+
+def test_watchdog_activity_refresh_keeps_room(db):
+    """人员变动刷新计时：join/lobby_leave 刷新 last_activity，未超时的房间不解散；
+    纯断线 disconnect 不算人员变动、不刷新。"""
+    async def go():
+        mgr = RoomManager(db)
+        room = mgr.create()
+        ws0 = FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db))
+        room.last_activity = time.time() - 700
+        await room.join(1, "乙", FakeWS(), _deck_code(db))  # 进房刷新
+        assert time.time() - room.last_activity < 5
+        assert await mgr.dissolve_idle() == []
+        assert mgr.get(room.id) is room
+        ts = room.last_activity
+        room.disconnect(room.conns[0])  # 纯断线：不刷新
+        assert room.last_activity == ts
+        room.last_activity = time.time() - 700
+        await room.lobby_leave(1)  # 退房也刷新
+        assert time.time() - room.last_activity < 5
+        assert await mgr.dissolve_idle() == []
+        assert mgr.get(room.id) is room
+    run(go())
+
+
+def test_watchdog_skips_started_room(db):
+    """已开局房间不适用看门狗（对局超 10 分钟是常态）：即使人员变动时刻超过
+    时限也不解散，其清理由 abandoned（双方断线）等既有机制负责。"""
+    async def go():
+        mgr = RoomManager(db)
+        room, ws0, _ = await _started_room(db)
+        mgr.rooms[room.id] = room
+        room.last_activity = time.time() - 700
+        assert await mgr.dissolve_idle() == []
+        assert mgr.get(room.id) is room
+        assert not any(m["type"] == "dissolved" for m in ws0.messages)
+        room._cancel_timer()  # 收尾：防计时任务悬置
+    run(go())
 
 
 # ==========================================================================

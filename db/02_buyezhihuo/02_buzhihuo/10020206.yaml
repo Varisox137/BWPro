@@ -11,3 +11,12 @@ versions:
         steps:
           - {op: summon, shikigami: 10020299}
       text: 召唤一个‘烬染不夜’。
+    - date: 20200820
+      card_type: spell
+      rarity: R
+      level: 2
+      effects:
+        # 同 20200327（文本未变，仅等级 3→2）
+        steps:
+          - {op: summon, shikigami: 10020299}
+      text: 召唤一个‘烬染不夜’。

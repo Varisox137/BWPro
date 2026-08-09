@@ -12,3 +12,14 @@ versions:
         # +0/+0 无身材增益；keywords 由战斗牌流程提取授予（文射 10010103 先例）
         steps: []
       text: "[吸血]"
+    - date: 20200820
+      card_type: combat
+      rarity: R
+      level: 1
+      keywords: [lifesteal]
+      effects:
+        # +1/+1（战斗牌数值通道：力量挂攻击后到期强化、护甲获得后保留——义道先例）
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "[吸血]"

@@ -1,8 +1,10 @@
 """RoomManager：内存房间表（创建/加入/查询/回收）。无持久化，无登录态。"""
 from __future__ import annotations
 
+import asyncio
 import random
 import re
+import time
 
 from server.room import Room, new_room_id
 
@@ -10,16 +12,21 @@ from server.room import Room, new_room_id
 # 子集，自建代码允许全字符集，大小写敏感）
 ROOM_ID_RE = re.compile(r"^[A-Za-z0-9]{6}$")
 
+LOBBY_IDLE_TIMEOUT = 600.0  # 未开局房间无人员变动（进房/重连/退房）的自动解散时限（秒）
+WATCHDOG_INTERVAL = 30.0  # 看门狗扫描间隔（秒）
+
 
 class RoomManager:
     def __init__(self, db, *, turn_timeout: float = 120.0,
                  mulligan_timeout: float = 30.0, starting_timeout: float = 3.0,
-                 max_rooms: int = 1000) -> None:
+                 max_rooms: int = 1000,
+                 lobby_idle_timeout: float = LOBBY_IDLE_TIMEOUT) -> None:
         self.db = db
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
         self.starting_timeout = starting_timeout
         self.max_rooms = max_rooms
+        self.lobby_idle_timeout = lobby_idle_timeout
         self.rooms: dict[str, Room] = {}
         self._rng = random.Random()
 
@@ -61,3 +68,24 @@ class RoomManager:
         """回收已被遗弃（双方断线）的房间。"""
         for room_id in [rid for rid, r in self.rooms.items() if r.abandoned]:
             self.remove(room_id)
+
+    async def dissolve_idle(self) -> list[str]:
+        """看门狗扫描：解散超过 lobby_idle_timeout 秒无人员变动的房间，返回被解散的
+        房间 id 列表。人员变动 = 玩家进房/重连回房/主动退房（Room.last_activity）。
+        适用范围仅限未开局房间（lobby/starting 等未进入对局的状态）：已开局对局
+        超 10 分钟是常态，不适用本规则，其清理由 abandoned（双方断线）等既有
+        机制负责。"""
+        now = time.time()
+        doomed = [rid for rid, r in self.rooms.items()
+                  if r.game is None and now - r.last_activity > self.lobby_idle_timeout]
+        for rid in doomed:
+            await self.rooms[rid].dissolve()
+            self.remove(rid)
+        return doomed
+
+    async def watchdog_loop(self, interval: float = WATCHDOG_INTERVAL) -> None:
+        """看门狗后台任务：按 interval 周期扫描解散长期无人员变动的未开局房间
+        （应用启动时挂载为 asyncio 任务，关停时取消）。"""
+        while True:
+            await asyncio.sleep(interval)
+            await self.dissolve_idle()

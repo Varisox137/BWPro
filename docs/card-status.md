@@ -644,7 +644,7 @@
 | 03 血怒 | ✅ | [瞬发][吸血] 对敌方牌手 1 伤；[增强] = CardDef.triggers 游离块 on_after_heal {target_side: enemy, target_kind: player, card_in_hand} → add_mod damage_boost 累加；吸血姬受伤 → choose any_character 补 1 伤（答复(12) 定案） |
 | 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血限战斗伤害 kind: [combat, counter]、反击也算——答复(9) 定案） |
 | 05 渴血之时 | ✅ | 形态 3/6，[吸血] |
-| 06 血香 | ✅ | 战斗 +2/+1；conditional_keywords player_health_ge 30 → [连击]（thoughts(3) 按 ≥ 判定） |
+| 06 血香 | ✅ | 战斗 +2/+1；@20200624 conditional_keywords player_health_ge 30 → [连击]（thoughts(3) 按 ≥ 判定）；@20200928 [增强]改为免疫战斗伤害——match_condition 新键 `player_health_ge` + battle_immunity step Step.condition（鸩羽条件免疫先例，raw"生命值为30"按 ≥30 口径） |
 | 07 觉醒·吸血姬 | ✅ | +1/+1；觉醒能力 on_after_heal 同条件 → buff_power（perm: false）/gain_shield {event: amount, cap: 5} |
 | 08 猩红之月 | ✅ | 形态 5/8 [吸血] + card_aura card_type=spell 授 lifesteal scope=form（法术伤害读卡牌关键字吸血） |
 

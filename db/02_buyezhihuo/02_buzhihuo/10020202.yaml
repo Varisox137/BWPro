@@ -24,3 +24,14 @@ versions:
           - {op: basic_boost, power: 1, shield: 1, condition: {assaults_left_ge: 1}}
           - {op: reset_assaults, condition: {assaults_left_le: 0}}
       text: "[瞬发]。若你出击次数大于0，[鼓舞]：{获得+1战力和+1护甲}。否则重置你的出击次数。"
+    - date: 20200820
+      card_type: spell
+      rarity: R
+      level: 1
+      keywords: [fast]
+      effects:
+        # 20200820：去掉出击次数分流，[鼓舞]与重置出击次数均无条件执行
+        steps:
+          - {op: basic_boost, power: 1, shield: 1}
+          - {op: reset_assaults}
+      text: "[瞬发]。[鼓舞]：{获得+1战力和+1护甲}。重置你的出击次数。"

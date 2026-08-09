@@ -423,6 +423,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {friendly_defeated_exists: true|false} ：控制者有气绝式神（同 friendly_defeated
       池口径：未离场、等级 ≥1；惊鸿之舞复活项前置）
     - {player_health_le: n}      ：控制者牌手当前生命 ≤ n（惊鸿之舞牌手护甲项前置）
+    - {player_health_ge: n}      ：控制者牌手当前生命 ≥ n（血香 20200928 增强
+      "若你生命值为30……免疫战斗伤害"——raw"为30"按 ≥30 口径，与 conditional_keywords
+      同族算子一致；battle_immunity step 的 Step.condition 通道使用）
     - {player_missing_health_ge: n} ：控制者牌手已损生命 ≥ n（惊鸿之舞牌手治疗项前置）
     - {shikigami_in_combat: <式神id>} ：控制者战斗区式神的数据 id（"若某式神在战斗区"）
     - {shikigami_active: <式神id>}  ：控制者的式神（按数据 id）在场——等级 ≥1、未气绝、
@@ -512,6 +515,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
         elif key == "player_health_le":
             # 控制者牌手当前生命 ≤ n（惊鸿之舞牌手护甲项前置）
             if game.state.players[controller].health > int(want):
+                return False
+        elif key == "player_health_ge":
+            # 控制者牌手当前生命 ≥ n（血香 20200928 增强条件免疫；与 le 对称）
+            if game.state.players[controller].health < int(want):
                 return False
         elif key == "player_missing_health_ge":
             # 控制者牌手已损生命 ≥ n（惊鸿之舞牌手治疗项前置）

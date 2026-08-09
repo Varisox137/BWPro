@@ -16,3 +16,17 @@ versions:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
       text: "[增强]：{若你生命值为30，此牌获得[连击]。}"
+    - date: 20200928
+      card_type: combat
+      rarity: SR
+      level: 2
+      effects:
+        # +2/+1（同 20200624 数值通道）；[增强] 若你生命值为30 → 本张战斗牌发起的
+        # 战斗免疫战斗伤害：battle_immunity step 由战斗牌流程提取绑定本次战斗，
+        # Step.condition player_health_ge（鸩羽 10012801 条件免疫先例；raw"为30"
+        # 按 ≥30 口径，与 conditional_keywords 同族算子一致）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+          - {op: battle_immunity, target: {kind: self}, condition: {player_health_ge: 30}}
+      text: "[增强]：{若你生命值为30，此牌获得免疫战斗伤害。}"

@@ -19,3 +19,18 @@ versions:
           steps:
             - {op: grant_keyword, keyword: haste, target: {kind: self}}
       text: 当其他己方式神攻击后，姑获鸟获得[迅捷]。
+    - date: 20200723
+      card_type: form
+      rarity: R
+      level: 3
+      form_power: 8
+      form_health: 6
+      effects:
+        steps: []
+      abilities:
+        # 同 20191212（文本未变，仅形态生命 4→6）
+        - when: on_after_assault
+          condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
+          steps:
+            - {op: grant_keyword, keyword: haste, target: {kind: self}}
+      text: 当其他己方式神攻击后，姑获鸟获得[迅捷]。
