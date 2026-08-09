@@ -507,6 +507,25 @@ def test_effect_immunity_not_combat(db, make_game):
     assert pa.shikigami[IDX].health == 2     # 战斗伤害照常
 
 
+# ---------- 免疫次序（修正定案"免疫只看最终受伤者"，挂点=护甲计算后优先级 3） ----------
+
+def test_immunity_after_armor_and_barrier(db, make_game):
+    """屏障/护甲计算先于免疫：免疫目标的屏障照常抵消（消耗）、护甲照常吸收，
+    余量才被免疫拦截（旧挂点"伤害开始时"下这些不消耗）。"""
+    _effect_immunity_spell(db)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010158)
+    s = pa.shikigami[IDX]
+    s.shield = 2
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, Ref(player=1, shikigami=0))
+    assert s.shield == 0                 # 护甲先吸收 2（免疫在后判定）
+    assert s.health == 4                 # 余量 3 被免疫拦截
+    s.one_shot_keywords.append("barrier")
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0))
+    assert "barrier" not in s.one_shot_keywords  # 屏障先抵消（消耗）
+    assert s.health == 4
+
+
 # ---------- 必杀 ----------
 
 def test_lethal_delayed_defeat(db, make_game):
@@ -1131,7 +1150,8 @@ def test_card_aura_lifesteal_on_spell_damage(db, make_game):
 def test_damage_redirect_to_player(db, make_game):
     """血蝠之盾型伤害转移（grant_redirect）：下一次将受到的伤害以其牌手为受伤者重新
     结算——牌手护甲照常吸收；一次性消耗；式神自身屏障不随转移消耗；伤害类别不限。
-    新事件从"护甲计算前0"开始（定案"转移链"）：穿刺/免疫/贯通修正不再判定。"""
+    新事件从"护甲计算前0"开始（定案"转移链"）：穿刺/贯通修正不再判定；免疫判定
+    后移至护甲计算后优先级 3，对最终受伤者照常判定（修正定案）。"""
     cid = 10010170
     db.cards[cid] = F.card(
         cid, shikigami=SID, level=1, token=True,
@@ -1151,12 +1171,12 @@ def test_damage_redirect_to_player(db, make_game):
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 2, Ref(player=1, shikigami=0))
     assert "barrier" not in s.one_shot_keywords      # 一次性：第二次正常结算（屏障抵消）
     assert pa.health == 27 and s.health == 4
-    # 转移新事件从"护甲计算前0"开始：跳过"伤害开始时"批次的免疫判定（定案"转移链"
-    # ——原答复(5)"牌手免疫仍可挡"口径作废）
+    # 免疫只看最终受伤者（修正定案）：转移后的伤害走到护甲计算后优先级 3 的免疫
+    # 判定——最终受伤者（牌手）持免疫则拦截
     play(g, 0, cid, target=Ref(player=0, shikigami=IDX))
     pa.immunities.append({"kind": "all", "turn": g.state.turn})
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0))
-    assert pa.health == 24 and s.health == 4         # 转移后伤害不被免疫拦截
+    assert pa.health == 27 and s.health == 4         # 转移后被牌手免疫
     assert not s.ext.get("damage_redirects")         # 挂账已消耗
 
 

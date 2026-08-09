@@ -3827,3 +3827,18 @@ def test_damage_redirect_chain_dying_target(db, make_game):
     assert pb.shikigami[1].health == 6  # 原受伤者均不受伤害（各原事件均终止）
     assert pb.shikigami[2].health == 6
     assert pb.shikigami[3].health == 5
+
+
+def test_damage_redirect_chain_immune_final_victim(db, make_game):
+    """免疫只看最终受伤者（修正定案）：转移生成的新事件在护甲计算后优先级 3 接受
+    免疫判定——代受者持"免疫敌方非战斗伤害"时，转移后的伤害被拦截（代受者与
+    原受伤者均不受伤害）。"""
+    db.shikigami[100101].ability = _redirect_block(100101)  # A 代受能力
+    g = make_game()
+    F.battle_setup(g)
+    pb = g.state.players[1]
+    a, b = pb.shikigami[0], pb.shikigami[1]
+    a.immunities.append({"kind": "effect", "from": "enemy"})
+    g.deal_to_shikigami(Ref(player=1, shikigami=1), 3, Ref(player=0, shikigami=0))
+    assert a.health == 4                # 转移给 A 后被其免疫拦截
+    assert b.health == 6                # 原受伤者无伤（原事件已终止）

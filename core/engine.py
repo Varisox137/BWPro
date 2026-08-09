@@ -75,8 +75,9 @@ class _DamageEvent:
     spell: 法术伤害标记（法术牌效果伤害；≠ 非战斗伤害——式神能力伤害不算，答复(7)）。
     skip_early: 贯通溢出产生的新事件跳过早期流程，从"护甲计算前"开始结算（rules.md:199③）。
     start_at_shield: 伤害目标转移产生的新事件跳过更早的早期步骤，从"护甲计算前0"
-        （on_before_shield 批次）开始结算——穿刺/on_damage_start/免疫/贯通修正/翻倍修饰
-        均不判定（"无[贯通]"即贯通修正批次不执行；事件生成点的转化与气绝保护仍先行，
+        （on_before_shield 批次）开始结算——穿刺/on_damage_start/贯通修正/翻倍修饰
+        均不判定（"无[贯通]"即贯通修正批次不执行；免疫判定已后移至护甲计算后
+        优先级 3，新事件对最终受伤者照常判定；事件生成点的转化与气绝保护仍先行，
         定案"转移链"）。
     redirect_chain: 转移链——本事件已经历的伤害转移能力身份集合（能力实例身份见
         ExecContext.ability_uid）；每个转移能力在同一链上只执行一次，新事件继承并延长链。
@@ -3305,23 +3306,6 @@ class Game:
             self._emit_damage_batch("on_damage_start", ev)
             if ev.amount <= 0 or (s is not None and s.defeated):
                 return
-            # 作用域战斗伤害免疫：仅免疫 combat/counter，且须命中授予时指定的作用域
-            if ev.kind in ("combat", "counter") and s is not None and self._combat_immune(s):
-                self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
-                return
-            # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）
-            if ev.kind == "effect" and s is not None and self._effect_immune(s, ev):
-                self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
-                return
-            # 破甲来源免疫（霸主；条目 {"kind": "fragile_source"}）：伤害来源为当前持有
-            # 破甲的敌方式神时免疫（伤害类别不限；来源须为式神，牌手来源/无来源不免）
-            if s is not None and self._fragile_source_immune(s, ev):
-                self._log(f"{self.db.shikigami[s.id].name} 免疫了破甲式神的伤害")
-                return
-            # 牌手级伤害免疫（舍生"本回合你免疫所有伤害"；PlayerState.immunities 按回合号过期）
-            if s is None and self._player_immune(p, ev):
-                self._log(f"{p.name} 免疫了本次伤害")
-                return
         skip_shield_calc = False
         skip_before_health = False
         # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
@@ -3388,7 +3372,8 @@ class Game:
         # （on_after_shield）先结算再转移）：消耗一层挂账，以受伤者的牌手为受伤者、
         # 护甲计算后余量为伤害值重新结算该伤害事件。新事件语义（定案"转移链"）：
         # 等量、同来源、同原因、同属性（无[贯通]），从"护甲计算前0"（on_before_shield）
-        # 开始结算——穿刺/免疫/贯通修正/翻倍修饰均不再判定；转化与气绝保护仍先行。
+        # 开始结算——穿刺/贯通修正/翻倍修饰不再判定（免疫判定后移至本批次优先级 3，
+        # 新事件对最终受伤者照常判定）；转化与气绝保护仍先行。
         # 挂账消耗式（pop 一层）天然有界，不占用转移链身份（链照旧继承）；伤害类别不限；
         # 原受伤者的屏障不因持挂账而消耗，其护甲先参与计算
         if s is not None and s.ext.get("damage_redirects"):
@@ -3401,6 +3386,29 @@ class Game:
                                        start_at_shield=True,
                                        redirect_chain=ev.redirect_chain,
                                        card=ev.card))
+            return
+        # 免疫判定（定案"免疫只看最终受伤者"：挂点 = 护甲计算后批次**优先级 3**——
+        # 改非伤害（优先级 1）/伤害转移（优先级 2，含挂账转移）全部结算完、伤害事件
+        # 未被终止/归零之后，对**最终受伤者**判定其全部免疫条目；屏障/护甲计算/
+        # 贯通修正均先于免疫参与计算。免疫则伤害归零终止。普通事件与转移新事件
+        # （start_at_shield，从护甲计算前0 进入）均走到此点——转移后的伤害可被
+        # 最终受伤者免疫拦截（血蝠之盾→牌手免疫场景适用）
+        # 作用域战斗伤害免疫：仅免疫 combat/counter，且须命中授予时指定的作用域
+        if ev.kind in ("combat", "counter") and s is not None and self._combat_immune(s):
+            self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
+            return
+        # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）
+        if ev.kind == "effect" and s is not None and self._effect_immune(s, ev):
+            self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
+            return
+        # 破甲来源免疫（霸主；条目 {"kind": "fragile_source"}）：伤害来源为当前持有
+        # 破甲的敌方式神时免疫（伤害类别不限；来源须为式神，牌手来源/无来源不免）
+        if s is not None and self._fragile_source_immune(s, ev):
+            self._log(f"{self.db.shikigami[s.id].name} 免疫了破甲式神的伤害")
+            return
+        # 牌手级伤害免疫（舍生"本回合你免疫所有伤害"；PlayerState.immunities 按回合号过期）
+        if s is None and self._player_immune(p, ev):
+            self._log(f"{p.name} 免疫了本次伤害")
             return
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
         if not skip_before_health:
