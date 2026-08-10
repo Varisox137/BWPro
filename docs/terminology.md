@@ -142,7 +142,7 @@
 
 ## 预留机制（译名确认，规则 Phase 5+）
 
-融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、灵咒 `invocation`（结附 `attach`）、幻境耐久 `intensity`、赐能 `blessing`、烹饪 `cook`、战技 `tactical`、蓄力 `charging`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；幻境/幻境耐久已于月夜幻响批次落地——card_type=field、耐久=`intensity`，见 rules.md 第三十一章与「核心概念」；蓄力英文名 `charging` 为维护者定案预留，与充能 charge 区分。）
+融合 `fusion`、昂扬 `exaltation`、坚毅 `tenacity`、占卜 `divine`、赐能 `blessing`、烹饪 `cook`、战技 `tactical`、蓄力 `charging`、起源 `origin`、戏法 `trick`、专注 `focus`、入夜 `nightfall`、剧毒 `poisonous`（剧毒伤害 poison damage / 中毒 poisoned）、连引 `link`、连锁 `chain`、替身 `substitute`、化身 `incarnate`（混沌化身 `chaos_incarnate`）、启悟 `enlightenment`、坚守 `stand_boost`、加护 `shelter`、蚀印 `etch`、羁绊 `bond`、堆叠 `stack`、商店赏金 `bounty`。（充能/爆能已于不夜之火批次落地——充能=`charge` 关键字、爆能=`PlayMethod.energy_cost`，见「核心概念」「结算与事件」；幻境/幻境耐久已于月夜幻响批次落地——card_type=field、耐久=`intensity`，见 rules.md 第三十一章与「核心概念」；灵咒 `invocation`（结附 `attach`）已于灵咒框架批次落地——框架无实卡数据，见 rules.md 第三十二章与「结算与事件」；蓄力英文名 `charging` 为维护者定案预留，与充能 charge 区分。）
 
 ## 结算与事件
 
@@ -170,6 +170,13 @@
 | 退回准备区 | `retreat`（动作） | 目标式神移回准备区（与 `enter_combat` 对称；仅战斗区式神有效，召唤物退回即离场） | ✅ |
 | 强制进场 | `force_enter_combat`（动作） | 强制目标进入其战斗区（鬼之手类"将敌方准备区式神移入战斗区"，targets 经 enemy_bench 池选择）；移动语义同 enter_combat，尘缚锁定下（移入会替换被锁战斗区式神）静默无效；`random_pick`=候选中随机取 1 名（随机不取对象、不吃帷幕）；`if_combat_empty`=目标所属玩家战斗区非空则整体跳过（鬼之手空发） | ✅ |
 | 牌手级持久监听 | `player_aura`（动作）/ `PlayerState.auras` | "本局游戏"类能力附着于牌手（豪焰）：事件触发即结算块，不限次数、跨气绝保留；`scope="game"`（默认）本局有效 / `scope="turn"` 仅本回合（己方回合开始清除，鼓舞类）；`once_key` 防重复登记、缺省可叠加；emit 时按注册顺序收集（`_collect_player_auras`，卡牌触发器之后） | ✅ |
+| 灵咒 | `invocation` / `InvocationDef` | 结附于式神或卡牌上的具名效果实体（rules.md 第三十二章；沧海刀鸣预备，框架已落地、无实卡数据）：定义注册表 `CardDatabase.invocations`（不经 yaml 加载，测试直接注入）；字段 name/unique/power/health（效果类身材增减益=结附期间计入 temp 修正、移除减回）/abilities（能力类触发块，进场序号=结附时刻 ability_seq，随 `_collect_abilities` 收集）/draw_trigger（结附卡牌的"抽到触发"块）；运行时条目 `ShikigamiState.invocations` / `CardInstance.invocations`（{"name","player"=来源所属牌手,"source"}） | ✅（框架） |
+| 结附（灵咒） | `attach_invocation`（动作）/ `Game.attach_invocation` | name 指定灵咒；targets=式神结附 / uid=卡牌结附（targets 忽略）；流程：结附→唯一性移除→`on_invocation_attached`（延时，预留）；气绝/离场经 `_detach_invocations` 移除 | ✅（框架） |
+| [唯一] / [式神唯一] | `unique` / `shikigami_unique`（InvocationDef.unique） | 灵咒唯一性（结附之后移除，新结附自身保留；同源=来源所属牌手相同）：unique=双方全场（式神+手牌/牌库中的卡牌）同源同名移除；shikigami_unique=仅该式神上同源同名移除（卡牌结附不生效）；none=不唯一 | ✅（框架） |
+| 抽到触发 | `draw_trigger`（InvocationDef）/ `_proc_invocations_on_move` | 结附卡牌的灵咒在抽牌动作入手（reason="draw"，deck→hand）时入队延时结算（控制者=来源所属牌手）并移除；非抽牌入手静默移除；爆牌先触发再转墓地；调度换出直接移除不生效 | ✅（框架） |
+| 抽牌前 | `on_before_draw`（事件） | 即时时机，每张一次，payload {player, count=剩余抽取数, reason}——"获得卡牌前"锚点（rules.md 第十九章） | ✅ |
+| 牌移动后 | `on_card_move` / `on_card_moved`（事件） | move_card 双锚点：即时 / 延时（灵咒挂点）；payload {player, uid, card, from_zone, to_zone, reason}——reason：draw/generate/search/pick/hand_cap/None（rules.md 第十八章二节） | ✅ |
+| 灵咒结附后 | `on_invocation_attached`（事件） | 延时时机（预留）；payload {player=来源所属牌手, target: Ref\|None, uid: int\|None, invocation, source} | ✅ |
 | 战斗结束追加攻击 | `followup_attack`（动作）/ `_battle_followups` | 登记战斗结束后的追加攻击（地狱之手类）：整场战斗终止点核销后先结算积累的延时能力（登记在其中），再依次结算——目标为生命最低敌方式神（平手随机、帷幕不可选；无合法目标改无目标战斗），不享受原战斗牌战力/关键字；可多次登记链式排队；按触发事件 battle payload 登记（气绝后延时能力在战斗弹栈后结算） | ✅ |
 | 倒计时增减 | `countdown_delta` / `set_countdown`（动作） | `countdown_delta`：倒计时 ±（无能力/为 0 修正 -0，≤0 走归零流程）；`set_countdown`：注册新倒计时能力（initial/steps/once，替换旧的；record=True 记录事件所用卡牌到式神 `ext["recorded_card"]`） | ✅ |
 | 凭空自动使用 | `recast_recorded` / `auto_use`（动作） | 凭空生成 `ext["recorded_card"]` 记录卡 id 的同名牌并免费自动使用（不耗鬼火、非从手牌、无主动目标；大天狗倒计时）；**auto_use{card_id}：凭空生成指定法术牌自动使用（目前仅支持法术牌），`inherit_target=True` 目标继承本效果的卡牌选择目标（流霰）**；`gain_orb`：获得鬼火 | ✅ |

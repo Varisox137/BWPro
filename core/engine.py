@@ -818,7 +818,7 @@ class Game:
         card = next((c for c in p.deck if c.uid == uid), None)
         if card is None:
             raise IllegalAction("该牌已不在牌库中")
-        self.move_card(p, card, "hand")
+        self.move_card(p, card, "hand", reason="pick")
         self._log(f"{p.name} 将检视的【{self.db.cards[card.id].name}】置入手牌")
         self.rng.shuffle(p.deck)  # 按原文"然后洗牌库"：每次选择后都洗牌
         self.state.pending_choice = None
@@ -1150,6 +1150,10 @@ class Game:
         p.hand.pop(idx)
         p.deck.insert(self.rng.randint(0, len(p.deck)), card)      # 返回牌库
         new_card = p.deck.pop(self.rng.randint(0, len(p.deck) - 1))  # 再随机抽一张
+        if new_card.invocations:
+            # 换出牌结附的灵咒直接移除而不生效（rules.md 第二十一章；调度非抽牌）
+            new_card.invocations = []
+            self._log(f"【{self.db.cards[new_card.id].name}】上结附的灵咒移除（调度换出）")
         new_card.hand_seq = old_seq                                 # 换出牌继承换回牌的顺序编号
         p.hand.insert(idx, new_card)
         if had_revealed:
@@ -1224,7 +1228,7 @@ class Game:
         # 生成子选项 token 入手，视作从手牌使用（完整使用事件流程）
         inst = CardInstance(uid=self.state.next_uid, id=sub.id)
         self.state.next_uid += 1
-        self.move_card(p, inst, "hand")
+        self.move_card(p, inst, "hand", reason="generate")
         self._log(f"{p.name} 使用【{cdef.name}】：选择子选项【{sub.name}】")
         sub_cmd: dict = {"op": "play_card", "uid": inst.uid}
         if cmd.get("target") is not None:
@@ -1835,29 +1839,144 @@ class Game:
                 return zname
         return None
 
-    def move_card(self, p: PlayerState, card: CardInstance, to_zone: str) -> None:
+    def move_card(self, p: PlayerState, card: CardInstance, to_zone: str,
+                  *, from_zone: str | None = None, reason: str | None = None) -> None:
         """把卡牌移动到指定区域；区域不存在则创建（区域系统保留扩展空间）。
 
-        Phase 1 简化：直接变更区域，不触发卡牌移动后灵咒效果，不检查区域上限。
-        完整规则见 docs/rules.md「卡牌移动事件流程」。
-        若 card 不在任何已知区域（如测试直接注入手牌），直接追加到目标区域。
-        移入手牌时（重新）分配 hand_seq；从手牌移出时压缩剩余编号。
-        手牌上限（hand_cap）：移入手牌后超出上限时，该牌转而置入墓地（爆牌——
-        抽牌与生成置入手牌共用本条路径，维护者定案）。
+        牌移动事件流程（docs/rules.md「牌移动事件流程」）：
+        移出原区域 → 置入目标区域（入手分配 hand_seq）→ 非爆牌发 on_card_enter_hand
+        → 动态身材光环刷新 → on_card_move（即时时机）→ on_card_moved（延时时机，
+        灵咒挂点）→ 入手灵咒处理（_proc_invocations_on_move）→ 手牌上限检查：
+        超出则该牌转而置入墓地（爆牌——上限检查在"牌移动后"时机之后，定案；
+        抽牌与生成置入手牌共用本条路径，爆牌不视为进入手牌）。
+        from_zone 可显式指定原区域名（缺省取 _remove_from_zone 的实检结果；
+        card 不在任何已知区域——如测试直接注入——则为 None）。
+        reason 入手路径约定：draw（抽牌）/ generate（生成）/ search（检索）/
+        pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/弹回等）。
         """
-        self._remove_from_zone(p, card)
+        removed = self._remove_from_zone(p, card)
+        src_zone = from_zone if from_zone is not None else removed
         if to_zone == "hand":
             self._assign_hand_seq(p, card)
         p.zones.setdefault(to_zone, []).append(card)
+        pi = self.state.players.index(p)
+        burst = False
         if to_zone == "hand":
-            cap = self.cfg(self.state.players.index(p), "hand_cap")
-            if cap is not None and len(p.zones["hand"]) > cap:
-                self._log(f"{p.name} 的手牌已达上限（{cap}），"
-                          f"【{self.db.cards[card.id].name}】置入墓地（爆牌）")
-                self.move_card(p, card, "graveyard")
-                return
-            self._enter_hand(p, card)  # 入手统一钩子（爆牌转墓地不视为进入手牌）
+            cap = self.cfg(pi, "hand_cap")
+            burst = cap is not None and len(p.zones["hand"]) > cap
+            if not burst:
+                self._enter_hand(p, card)  # 入手统一钩子（爆牌转墓地不视为进入手牌）
         self._refresh_stat_auras()  # 手牌数变化影响动态身材光环（闻世）
+        payload = dict(player=pi, uid=card.uid, card=card,
+                       from_zone=src_zone, to_zone=to_zone, reason=reason)
+        self.emit("on_card_move", **payload)    # 牌移动后（即时时机）
+        self.emit("on_card_moved", **payload)   # 牌移动后（延时时机；灵咒挂点）
+        if to_zone == "hand":
+            self._proc_invocations_on_move(p, card, reason, payload)
+        if burst:
+            self._log(f"{p.name} 的手牌已达上限（{cap}），"
+                      f"【{self.db.cards[card.id].name}】置入墓地（爆牌）")
+            self.move_card(p, card, "graveyard", reason="hand_cap")
+
+    def _proc_invocations_on_move(self, p: PlayerState, card: CardInstance,
+                                  reason: str | None, payload: dict) -> None:
+        """入手灵咒处理（灵咒框架，docs/rules.md「灵咒」）：结附在牌上的灵咒
+        在该牌入手时移除——抽牌动作入手（reason="draw"，deck→hand）时其"抽到触发"
+        块先入队延时结算（控制者 = 灵咒来源所属牌手）再移除；检索/生成/回手等其余
+        入手路径静默移除（不触发）。爆牌：先发 deck→hand（reason="draw"）移动事件
+        故触发并移除，再经 hand_cap 递归转墓地。"""
+        if not card.invocations:
+            return
+        invs, card.invocations = card.invocations, []
+        if reason != "draw" or payload.get("from_zone") != "deck":
+            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（入手）")
+            return
+        for inv in invs:
+            idef = self.db.invocations.get(inv["name"])
+            if idef is None or idef.draw_trigger is None:
+                continue
+            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒"
+                      f"【{idef.name}】触发（抽到）")
+            self.queue.append(_Pending(idef.draw_trigger, ExecContext(
+                controller=inv["player"], card=card, event=payload,
+                is_ability=True, ability_uid=f"inv:{card.uid}:{inv['name']}")))
+
+    # ---------- 灵咒（灵咒框架，docs/rules.md「灵咒」；沧海刀鸣预备） ----------
+
+    def attach_invocation(self, name: str, *, player: int, source: Ref | None = None,
+                          target: Ref | None = None,
+                          card: CardInstance | None = None) -> None:
+        """结附灵咒：target 为式神结附 / card 为卡牌结附（二者恰一）。
+        player = 来源所属牌手（同源判定键）。流程：结附（效果类身材增减益计入
+        临时修正、能力类记进场序号）→ 唯一性移除（新结附自身保留）→
+        emit on_invocation_attached（延时时机）。"""
+        idef = self.db.invocations.get(name)
+        if idef is None:
+            raise ValueError(f"未定义的灵咒: {name}（db.invocations 注册）")
+        entry: dict = {"name": name, "player": player, "source": source}
+        if target is not None:
+            s = self.state.players[target.player].shikigami[target.shikigami]
+            entry["ability_seq"] = self.state.next_ability_seq()  # 能力类进场序号=结附时刻
+            s.temp_power += idef.power    # 效果类：结附期间生效（临时修正通道，
+            s.temp_health += idef.health  # 移除时减回；气绝本清临时修正，等效）
+            s.invocations.append(entry)
+            holder = f"{self.db.shikigami[s.id].name}"
+        else:
+            assert card is not None
+            card.invocations.append(entry)
+            holder = f"【{self.db.cards[card.id].name}】"
+        self._log(f"灵咒【{name}】结附于{holder}")
+        self._apply_invocation_uniqueness(idef, entry, player, target)
+        self.emit("on_invocation_attached", player=player, target=target,
+                  uid=card.uid if card is not None else None,
+                  invocation=name, source=source)
+
+    def _apply_invocation_uniqueness(self, idef, new_entry: dict, player: int,
+                                     target: Ref | None) -> None:
+        """唯一性移除（结附之后；新结附自身按对象身份排除）：
+        [唯一]（unique）= 双方全场（全部式神 + 双方手牌/牌库中的卡牌）同源同名移除；
+        [式神唯一]（shikigami_unique）= 仅该式神上同源同名移除。同源 = 来源所属牌手相同。"""
+        if idef.unique == "none":
+            return
+
+        def _hit(e: dict) -> bool:
+            return e is not new_entry and e["name"] == idef.name and e["player"] == player
+
+        if idef.unique == "shikigami_unique":
+            if target is None:
+                return  # 卡牌结附无"该式神"可言（式神唯一只对式神结附生效）
+            s = self.state.players[target.player].shikigami[target.shikigami]
+            for e in list(s.invocations):
+                if _hit(e):
+                    self._remove_invocation(s, e, reason="式神唯一")
+            return
+        for pl in self.state.players:
+            for s in pl.shikigami:
+                for e in list(s.invocations):
+                    if _hit(e):
+                        self._remove_invocation(s, e, reason="唯一")
+            for zname in ("hand", "deck"):
+                for c in pl.zones.get(zname, []):
+                    for e in list(c.invocations):
+                        if _hit(e):
+                            c.invocations.remove(e)
+                            self._log(f"【{self.db.cards[c.id].name}】上结附的灵咒"
+                                      f"【{idef.name}】移除（唯一）")
+
+    def _remove_invocation(self, s: ShikigamiState, entry: dict, *, reason: str) -> None:
+        """移除式神身上的灵咒条目：效果类临时修正减回，能力类随条目移除失效。"""
+        idef = self.db.invocations.get(entry["name"])
+        if idef is not None:
+            s.temp_power -= idef.power
+            s.temp_health -= idef.health
+        s.invocations.remove(entry)
+        self._log(f"{self.db.shikigami[s.id].name} 的灵咒【{entry['name']}】移除（{reason}）")
+
+    def _detach_invocations(self, s: ShikigamiState, *, reason: str) -> None:
+        """气绝/离场时移除该式神全部灵咒（效果类临时修正减回——须在临时修正
+        清零前调用；能力类随列表清空而失效）。"""
+        for e in list(s.invocations):
+            self._remove_invocation(s, e, reason=reason)
 
     def _enter_hand(self, p: PlayerState, card: CardInstance) -> None:
         """牌进入手牌的统一钩子（"已展示"机制）：抽牌（draw_cards）/生成
@@ -2423,6 +2542,7 @@ class Game:
         s = p.shikigami[i]
         d = self.db.shikigami[s.id]
         self._clear_ability_card_auras(p, self.state.players.index(p), i)  # 能力离场：ability 光环移除
+        self._detach_invocations(s, reason="离场")  # 灵咒随离场移除
         if p.combat_index == i:
             p.combat_index = None
         s.despawned = True
@@ -3685,6 +3805,7 @@ class Game:
         s.ext.pop("next_battle_immunities", None)
         s.ext.pop("damage_redirects", None)  # 血蝠之盾类伤害转移挂账随气绝失效
         s.shield = 0
+        self._detach_invocations(s, reason="气绝")  # 灵咒随气绝移除（效果类临时修正先减回）
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
         s.temp_health = 0
         s.keywords.clear()  # 持续/一次性关键字与免疫条目气绝时清除；永久关键字保留（复活自动重新获得）
@@ -3960,16 +4081,19 @@ class Game:
                 return True
         return False
 
-    def draw_cards(self, player_index: int, count: int) -> None:
-        """效果抽牌（Phase 1 简化版）。
+    def draw_cards(self, player_index: int, count: int, *, reason: str | None = None) -> None:
+        """效果抽牌（抽牌事件流程，docs/rules.md「抽牌事件流程」）。
 
-        完整规则（docs/rules.md 抽牌事件流程）包含"获得卡牌前"时机、多张结附灵咒的
-        后发先至结算；Phase 1 最小实现直接循环从牌库顶移入手牌并 emit on_draw。
-        牌库为空时判负——觉醒·书翁（在场已觉醒且觉醒牌 tags 含 deck_out_burn）改为
-        对敌方牌手造成 10 点伤害，自己不因此落败（每张空抽各触发一次）。
+        逐张结算：每张先发 on_before_draw（即时时机，"获得卡牌前"锚点，
+        count = 剩余抽取数——"抽X张"等价于插入结算"抽X-1张"的递归语义），
+        空库走判负/觉醒·书翁 deck_out_burn 分支（每张空抽各触发一次），否则
+        move_card(deck→hand, reason="draw")（牌移动事件流程；结附灵咒"抽到触发"
+        在处理点入队，多张抽牌的后发先至由逐张入队顺序自然保证）。
+        整次动作结束后保留单次 on_draw（延时时机，{player, count}）兼容挂点。
         """
         p = self.state.players[player_index]
-        for _ in range(count):
+        for i in range(count):
+            self.emit("on_before_draw", player=player_index, count=count - i, reason=reason)
             if not p.deck:
                 burner = self._deck_out_burner(player_index)
                 if burner is not None:
@@ -3981,7 +4105,7 @@ class Game:
                     self._log(f"{p.name} 牌库抽空，判负")
                 self._set_pending_end(loser=player_index)
                 return
-            self.move_card(p, p.deck[0], "hand")
+            self.move_card(p, p.deck[0], "hand", reason="draw")
         self.emit("on_draw", player=player_index, count=count)
 
     def _deck_out_burner(self, pi: int) -> Ref | None:
@@ -4189,6 +4313,12 @@ class Game:
             if s.form is not None:
                 form_seq = s.ability_entry.get("form", 0)
                 blocks += [(b, form_seq) for b in self.db.cards[s.form.id].abilities]
+            # 灵咒能力块（灵咒框架）：结附期间作为该式神的额外能力参与收集，
+            # 进场序号 = 结附时刻（attach_invocation 记入条目）
+            for inv in s.invocations:
+                idef = self.db.invocations.get(inv["name"])
+                if idef is not None:
+                    blocks += [(b, inv.get("ability_seq", 0)) for b in idef.abilities]
             for ability, aseq in blocks:
                 if ability.countdown is not None:
                     continue  # 倒计时能力块不作事件监听（由倒计时框架归零时结算）

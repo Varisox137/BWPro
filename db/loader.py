@@ -21,6 +21,7 @@ from db.schema import (
     SUBTYPES,
     CardDef,
     EffectBlock,
+    InvocationDef,
     ShikigamiDef,
 )
 
@@ -44,6 +45,7 @@ class CardDatabase:
         custom_events: set[str],
         raw_cards: dict[int, dict] | None = None,
         raw_shikigami: dict[int, dict] | None = None,
+        invocations: dict[str, InvocationDef] | None = None,
     ) -> None:
         self.cards = cards
         self.shikigami = shikigami
@@ -52,6 +54,9 @@ class CardDatabase:
         # 测试工厂构造的库无原始 dict（at_date 退化为按 version 判可用）
         self.raw_cards = raw_cards or {}
         self.raw_shikigami = raw_shikigami or {}
+        # 灵咒定义表（灵咒框架）：机制未实现不进数据——loader 不接 yaml 加载，
+        # 测试直接 db.invocations[name] = InvocationDef(...) 注入（同 db.cards 惯例）
+        self.invocations = invocations or {}
 
     @classmethod
     def load(cls, root: Path | str | None = None, strict: bool = True) -> "CardDatabase":

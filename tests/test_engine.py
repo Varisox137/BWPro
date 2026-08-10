@@ -1,8 +1,10 @@
-"""引擎核心流程：开局结构、出击经济、升级规则、回合开始阶段、气绝/复活、护甲清除。"""
+"""引擎核心流程：开局结构、出击经济、升级规则、回合开始阶段、气绝/复活、护甲清除、
+抽牌事件管线、牌移动事件、灵咒框架。"""
 import pytest
 
 from core.engine import IllegalAction
 from core.model import Ref
+from db.schema import InvocationDef
 from tests import factories as F
 from tests.factories import give, pass_turns, play
 
@@ -416,3 +418,194 @@ def test_draw_to_pick_replaces_turn_draw(db, make_game):
     pa.deck.clear()
     pass_turns(g, 2)
     assert g.state.winner == 1
+
+
+# ==================== 抽牌事件管线 / 牌移动事件 ====================
+
+
+def test_draw_pipeline_per_card_events(make_game):
+    """抽牌管线：抽多张逐张发 on_before_draw（即时）与移动双锚点（on_card_move 即时 /
+    on_card_moved 延时），整次动作结束发单次 on_draw。"""
+    g = make_game()
+    g.history.clear()
+    g.draw_cards(0, 2)
+    per_card = ["on_before_draw", "on_card_enter_hand", "on_card_move", "on_card_moved"]
+    assert g.history == per_card * 2 + ["on_draw"]
+
+
+def test_before_draw_count_is_remaining(db, make_game):
+    """on_before_draw 的 count = 剩余抽取数（"抽X张"= 抽牌前插入结算"抽X-1张"的递归语义）。"""
+    db.shikigami[100101].abilities = [
+        F.block(F.dmg(1, F.T(kind="all", pool="enemy_player")),
+                when="on_before_draw", condition={"count": 2}),
+        F.block(F.dmg(2, F.T(kind="all", pool="enemy_player")),
+                when="on_before_draw", condition={"count": 1}),
+    ]
+    g = make_game()
+    b = g.state.players[1]
+    b.shield = 0
+    g.draw_cards(0, 2)
+    g._drain_queue()  # on_before_draw 为即时时机——其实 emit 内已结算；drain 兜底
+    assert b.health == 30 - 1 - 2          # 第 1 张 count=2、第 2 张 count=1
+
+
+def test_card_move_event_payload(db, make_game):
+    """牌移动事件载荷贯通：抽牌 = deck→hand/reason="draw"（条件匹配触发）；
+    用牌入墓地 reason=None（不匹配，不触发）。"""
+    db.shikigami[100101].ability = F.block(
+        F.dmg(1, F.T(kind="all", pool="enemy_player")),
+        when="on_card_moved",
+        condition={"from_zone": "deck", "to_zone": "hand", "reason": "draw"})
+    g = make_game()
+    b = g.state.players[1]
+    b.shield = 0
+    play(g, 0, 10010101)                   # 用牌：hand→graveyard（reason=None）→ 不触发
+    assert b.health == 30
+    g.draw_cards(0, 1)
+    assert b.health == 30                  # on_card_moved 为延时时机：尚未结算
+    g._drain_queue()
+    assert b.health == 29
+
+
+# ==================== 灵咒框架 ====================
+
+
+def test_invocation_draw_trigger_on_draw(db, make_game):
+    """卡牌灵咒"抽到触发"：抽牌入手时触发块延时结算（控制者=来源所属牌手），随后移除。"""
+    db.invocations["引魂"] = InvocationDef(
+        name="引魂",
+        draw_trigger=F.block(F.dmg(2, F.T(kind="all", pool="enemy_player"))))
+    g = make_game()
+    a, b = g.state.players
+    b.shield = 0
+    card = a.deck[0]
+    g.attach_invocation("引魂", player=0, card=card)
+    assert [e["name"] for e in card.invocations] == ["引魂"]
+    g.draw_cards(0, 1)
+    assert card.invocations == []          # 入手处理点即移除
+    assert b.health == 30                  # 触发块延时结算：未 drain 前未生效
+    g._drain_queue()
+    assert b.health == 28
+
+
+def test_invocation_removed_silently_on_non_draw_to_hand(db, make_game):
+    """卡牌灵咒：检索等非抽牌入手静默移除（不触发"抽到触发"块）。"""
+    db.invocations["引魂"] = InvocationDef(
+        name="引魂",
+        draw_trigger=F.block(F.dmg(2, F.T(kind="all", pool="enemy_player"))))
+    g = make_game()
+    a, b = g.state.players
+    b.shield = 0
+    card = a.deck[0]
+    g.attach_invocation("引魂", player=0, card=card)
+    g.move_card(a, card, "hand", reason="search")   # 检索入手
+    assert card.invocations == []
+    g._drain_queue()
+    assert b.health == 30                  # 未触发
+
+
+def test_invocation_draw_trigger_on_hand_cap_burst(db, make_game):
+    """卡牌灵咒：爆牌仍触发并移除——先发 deck→hand（reason="draw"）移动事件，
+    上限检查在"牌移动后"时机之后，再经 hand_cap 递归转墓地。"""
+    db.invocations["引魂"] = InvocationDef(
+        name="引魂",
+        draw_trigger=F.block(F.dmg(2, F.T(kind="all", pool="enemy_player"))))
+    g = make_game()
+    a, b = g.state.players
+    b.shield = 0
+    card = a.deck[0]
+    g.attach_invocation("引魂", player=0, card=card)
+    while len(a.hand) < 12:                # 填满至手牌上限（hand_cap=12）
+        give(g, 0, 10010201)
+    g.draw_cards(0, 1)
+    assert card in a.graveyard             # 爆牌：转墓地
+    assert card.invocations == []
+    g._drain_queue()
+    assert b.health == 28                  # 已触发
+
+
+def test_invocation_shikigami_buff_ability_and_defeat(db, make_game):
+    """式神灵咒：效果类增减益结附期间生效（临时修正通道）；能力类参与收集（进场序号=
+    结附时刻）；气绝时全部移除。"""
+    db.invocations["刀鸣"] = InvocationDef(
+        name="刀鸣", power=1, health=2,
+        abilities=[F.block(F.dmg(1, F.T(kind="all", pool="enemy_player")),
+                          when="on_turn_end")])
+    g = make_game()
+    a, b = g.state.players
+    b.shield = 0
+    s = a.shikigami[0]
+    base_pow, base_max = s.eff_power, s.max_health
+    g.attach_invocation("刀鸣", player=0, target=Ref(player=0, shikigami=0))
+    assert s.eff_power == base_pow + 1 and s.max_health == base_max + 2
+    assert s.invocations[0]["ability_seq"] > 0
+    g.apply({"op": "end_turn"})            # on_turn_end（即时时机）：灵咒能力触发
+    assert b.health == 29
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
+    g._drain_queue()
+    assert s.defeated
+    assert s.invocations == []             # 气绝移除（效果类临时修正气绝本清，等效减回）
+    assert s.temp_power == 0 and s.temp_health == 0
+
+
+def test_invocation_unique_removes_same_source_only(db, make_game):
+    """[唯一]：结附后移除双方全场同源同名灵咒（移除在结附之后；新结附自身保留；
+    异源同名保留）；被移除的效果类临时修正减回。"""
+    db.invocations["庇护"] = InvocationDef(name="庇护", unique="unique", power=1)
+    g = make_game()
+    a, b = g.state.players
+    g.attach_invocation("庇护", player=0, target=Ref(player=0, shikigami=0))
+    g.attach_invocation("庇护", player=1, target=Ref(player=1, shikigami=0))  # 异源同名
+    g.attach_invocation("庇护", player=0, target=Ref(player=0, shikigami=1))  # 同源新结附
+    assert a.shikigami[0].invocations == []            # 同源旧者移除
+    assert a.shikigami[0].temp_power == 0              # 临时修正已减回
+    assert len(a.shikigami[1].invocations) == 1        # 新结附保留
+    assert a.shikigami[1].temp_power == 1
+    assert len(b.shikigami[0].invocations) == 1        # 异源同名保留
+    # 卡牌上的同源同名一并移除（全场 = 式神 + 手牌/牌库中的卡牌）
+    c1, c2 = a.deck[0], a.deck[1]
+    g.attach_invocation("庇护", player=0, card=c1)
+    assert a.shikigami[1].invocations == []            # 式神上的同源同名被移除
+    assert len(c1.invocations) == 1                    # 新结附保留
+    g.attach_invocation("庇护", player=0, card=c2)
+    assert c1.invocations == []                        # 卡牌上的同源旧者移除
+    assert len(c2.invocations) == 1
+
+
+def test_invocation_shikigami_unique_per_shikigami(db, make_game):
+    """[式神唯一]：仅移除该式神上同源同名灵咒；其他式神上的同名保留。"""
+    db.invocations["影"] = InvocationDef(name="影", unique="shikigami_unique", power=1)
+    g = make_game()
+    a = g.state.players[0]
+    g.attach_invocation("影", player=0, target=Ref(player=0, shikigami=0))
+    g.attach_invocation("影", player=0, target=Ref(player=0, shikigami=1))
+    g.attach_invocation("影", player=0, target=Ref(player=0, shikigami=0))  # 再结附 shiki0
+    assert len(a.shikigami[0].invocations) == 1        # 旧的被移除，新结附保留
+    assert (a.shikigami[0].invocations[0]["ability_seq"]
+            > a.shikigami[1].invocations[0]["ability_seq"])
+    assert len(a.shikigami[1].invocations) == 1        # 其他式神同名保留
+    assert a.shikigami[0].temp_power == 1 and a.shikigami[1].temp_power == 1
+
+
+def test_attach_invocation_op_and_event(db, make_game):
+    """attach_invocation op：式神结附走 targets、卡牌结附走 uid；结附后
+    发 on_invocation_attached（延时时机）。"""
+    db.invocations["契"] = InvocationDef(name="契", power=1)
+    db.cards[10010151] = F.card(
+        10010151, token=True,
+        target=F.T(kind="choose", pool="friendly_shikigami"),
+        steps=[F.Step(op="attach_invocation", name="契")])
+    g = make_game()
+    a = g.state.players[0]
+    a.orb = 9
+    play(g, 0, 10010151, target=Ref(player=0, shikigami=0))   # 式神结附（targets）
+    assert [e["name"] for e in a.shikigami[0].invocations] == ["契"]
+    assert a.shikigami[0].temp_power == 1
+    assert "on_invocation_attached" in g.history
+    # 卡牌结附（uid 路径；targets 忽略）
+    host = give(g, 0, 10010201)
+    db.cards[10010152] = F.card(
+        10010152, token=True,
+        steps=[F.Step(op="attach_invocation", name="契", uid=host.uid)])
+    play(g, 0, 10010152)
+    assert [e["name"] for e in host.invocations] == ["契"]

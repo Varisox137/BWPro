@@ -23,7 +23,15 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_player_damaged",    # 牌手受到伤害后 {player, amount, source, kind}
     "on_shikigami_defeated",  # 式神气绝（气绝后/消灭后，延时时机）{victim: Ref, source, reason}
     "on_shikigami_revived",  # 式神复活（复活后，延时时机）{shikigami: Ref, source, reason}
-    "on_draw",              # 抽牌后 {player, count}
+    "on_draw",              # 抽牌后 {player, count}（整次抽牌动作一次，延时时机）
+    "on_before_draw",       # 抽牌前（每张一次）{player, count（剩余抽取数）, reason}
+    #                       （即时时机；"获得卡牌前"锚点——灵咒框架预留挂点）
+    "on_card_move",         # 牌移动后（即时时机）{player, uid, card,
+    #                       from_zone, to_zone, reason}（灵咒框架预留挂点）
+    "on_card_moved",        # 牌移动后（延时时机）{player, uid, card,
+    #                       from_zone, to_zone, reason}（灵咒"抽到触发"等挂点）
+    "on_invocation_attached",  # 灵咒结附后（延时时机）{player（来源所属牌手）,
+    #                       target: Ref|None, uid: int|None, invocation（灵咒名）, source}（预留）
     "on_upgrade",           # 式神升级 {player, shikigami, level}
     "on_trigger",           # 响应牌触发 {player, uid}
     "on_summon",            # 召唤物进场 {shikigami: Ref}
@@ -103,4 +111,6 @@ EVENT_TIMING: dict[str, str] = {
     "on_countdown_proc": "insert",    # 倒计时能力归零生效时：即时时机（先于归零块结算）
     "on_before_field_intensity": "insert",  # 幻境耐久变化前：即时时机（修正变化量）
     "on_luck_judge": "insert",        # 运势判定时：即时时机（重投改写骰点后再确定结果）
+    "on_before_draw": "insert",       # 抽牌前：即时时机（"获得卡牌前"锚点）
+    "on_card_move": "insert",         # 牌移动后（即时时机）
 }

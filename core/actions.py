@@ -906,7 +906,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
                     cid = game.rng.choice(rep)  # 生成替换：非战斗牌改为随机战斗牌
         inst = CardInstance(uid=game.state.next_uid, id=cid)
         game.state.next_uid += 1
-        game.move_card(p, inst, zone)
+        game.move_card(p, inst, zone, reason="generate")
         if zone == "deck" and position == "random":
             # 置入牌库 = 随机插入（同心协力 20200423 维护者定案：随机位置，不洗牌）
             p.deck.remove(inst)
@@ -1124,7 +1124,7 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
             game._emit_card_played(ctx.controller, card.uid, cdef,
                                    play_from="deck", triggered="auto")
             return
-    game.move_card(p, card, "hand")
+    game.move_card(p, card, "hand", reason="search")
     if intensity_boost:
         card.mods["intensity_boost"] = int(intensity_boost)  # 召唤时结算入耐久（五道难题）
     game._materialize(p, card, cdef)  # 生成点统一快照（置入手牌即获"本局游戏"类增强）
@@ -3561,3 +3561,26 @@ def transform_hand_card(game, ctx, *, targets: list[Ref], from_id: int,
         inst.mods.update(mods)
         game._log(f"{p.name} 的【{game.db.cards[from_id].name}】转化为"
                   f"【{game.db.cards[inst.id].name}】")
+
+
+@action("attach_invocation")
+def attach_invocation(game, ctx, *, targets: list[Ref], name: str,
+                      uid: int | None = None) -> None:
+    """结附灵咒（灵咒框架，docs/rules.md「灵咒」；沧海刀鸣预备）。
+
+    - 式神结附：targets 为式神 Ref 列表（逐目标结附）；
+    - 卡牌结附：uid 指定牌实例（按 uid 找局内卡牌，targets 忽略）。
+    灵咒本体在 db.invocations 注册（InvocationDef）；来源所属牌手 = ctx.controller。
+    效果类（power/health）结附期间生效、能力类（abilities）结附期间参与收集、
+    结附卡牌的灵咒（draw_trigger）"抽到触发"；唯一性移除与 on_invocation_attached
+    事件由 engine.attach_invocation 处理。"""
+    if uid is not None:
+        card = game._card_by_uid(int(uid))
+        if card is None:
+            raise ValueError(f"attach_invocation: 找不到 uid={uid} 的卡牌实例")
+        game.attach_invocation(name, player=ctx.controller, source=ctx.source, card=card)
+        return
+    for ref in targets:
+        if ref.shikigami is None:
+            raise ValueError("attach_invocation 的 targets 须为式神（不支持结附牌手）")
+        game.attach_invocation(name, player=ctx.controller, source=ctx.source, target=ref)

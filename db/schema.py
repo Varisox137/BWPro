@@ -143,6 +143,31 @@ class EffectBlock(BaseModel):
     # 并行入队/同步推进由引擎负责（core/engine.py 运势管线）
 
 
+class InvocationDef(BaseModel):
+    """灵咒定义（灵咒框架，docs/rules.md「灵咒」章；沧海刀鸣预备）。
+
+    灵咒是"结附于式神或卡牌上的具名效果实体"，由 attach_invocation op 结附：
+    - power/health：效果类灵咒的身材增减益——结附期间生效（引擎实现为结附时
+      计入 temp_power/temp_health，移除时减回；气绝本清临时修正，等效"结附期间生效"）。
+    - abilities：能力类灵咒的触发能力块（结附期间作为该式神的额外能力参与
+      _collect_abilities 收集；进场序号 = 结附时刻，随灵咒移除而失效）。
+    - draw_trigger：结附在卡牌上的灵咒"抽到触发"块——该牌从牌库经抽牌动作
+      入手时入队结算（来源牌手为控制者），结算后移除；检索等非抽牌入手静默移除。
+    - unique：唯一性——"unique"=[唯一]：结附后移除双方全场（式神+手牌/牌库中的
+      卡牌）同源同名灵咒；"shikigami_unique"=[式神唯一]：仅移除该式神上同源同名；
+      "none"=不唯一。同源 = 来源所属牌手相同；新结附的灵咒自身不被移除。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str  # 灵咒名（唯一性判定的同名键；展示用）
+    unique: Literal["none", "unique", "shikigami_unique"] = "none"
+    power: int = 0
+    health: int = 0
+    abilities: list[EffectBlock] = Field(default_factory=list)
+    draw_trigger: EffectBlock | None = None
+
+
 class PlayMethod(BaseModel):
     """卡牌的一种使用方式（多择子选项，保留扩展空间）。
 

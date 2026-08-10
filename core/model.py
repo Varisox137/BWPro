@@ -118,6 +118,10 @@ class ShikigamiState(BaseModel):
     # 的卡牌——出牌校验按此拒绝；万象之书类按原式神取牌的读取处预留，本批仅作字段）
     transform_origin: dict | None = None  # 变形还原式神快照（ShikigamiState dump，不含本字段）：
     # 被变形时 = 原式神快照；原式神该值非空则继承之（连续变形解除时还原到最初的原式神状态）
+    invocations: list[dict[str, Any]] = Field(default_factory=list)  # 结附的灵咒条目：
+    # {"name", "player"（来源所属牌手）, "source": Ref|None（来源式神）,
+    # "ability_seq": int（结附时刻的能力进场序号）}；效果/能力结附期间生效，
+    # 气绝/离场时移除（效果类临时修正随之减回）
 
     @property
     def is_stunned(self) -> bool:
@@ -165,6 +169,10 @@ class CardInstance(BaseModel):
     id: int  # 数据 id
     mods: dict[str, Any] = Field(default_factory=dict)  # 如 {"cost_delta": -1}
     hand_seq: int = 0  # 手牌顺序编号（加入手牌时分配；0 表示未分配）
+    invocations: list[dict[str, Any]] = Field(default_factory=list)  # 结附的灵咒条目：
+    # {"name", "player"（来源所属牌手）, "source": Ref|None（来源式神）}；
+    # 入手时处理：抽牌入手触发"抽到触发"块后移除，非抽牌入手静默移除
+    # （引擎 _proc_invocations_on_move）
 
 
 @dataclass
