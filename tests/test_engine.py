@@ -332,6 +332,7 @@ def test_hand_cap_burns_excess(db, make_game):
     assert len(pa.hand) == 12
     grave_before = len(pa.zones.get("graveyard", []))
     g.draw_cards(0, 1)                            # 抽牌爆牌：牌库顶牌转墓地
+    g._drain_queue()  # 抽牌移动按延时通道挂起（严格递归结构）——直调后手动排空
     assert len(pa.hand) == 12
     assert len(pa.zones["graveyard"]) == grave_before + 1
     # 生成置入手牌同路径：腾 1 格后打出生成 2 张 → 1 张入手、1 张爆掉
@@ -424,13 +425,16 @@ def test_draw_to_pick_replaces_turn_draw(db, make_game):
 
 
 def test_draw_pipeline_per_card_events(make_game):
-    """抽牌管线：抽多张逐张发 on_before_draw（即时）与移动双锚点（on_card_move 即时 /
-    on_card_moved 延时），整次动作结束发单次 on_draw。"""
+    """抽牌管线（严格递归结构）："抽X张"递归下降时全部 on_before_draw(X)…(1)
+    依次先发（即时），随后整次一张 on_draw 入队；X 个牌移动事件按入队序
+    （牌库顶那张最先）依次结算，各带 on_card_enter_hand → on_card_move（即时）→
+    on_card_moved（延时）。"""
     g = make_game()
     g.history.clear()
     g.draw_cards(0, 2)
-    per_card = ["on_before_draw", "on_card_enter_hand", "on_card_move", "on_card_moved"]
-    assert g.history == per_card * 2 + ["on_draw"]
+    g._drain_queue()  # 移动事件按延时通道挂起——直调后手动排空
+    per_card = ["on_card_enter_hand", "on_card_move", "on_card_moved"]
+    assert g.history == ["on_before_draw", "on_before_draw", "on_draw"] + per_card * 2
 
 
 def test_before_draw_count_is_remaining(db, make_game):
@@ -471,7 +475,9 @@ def test_card_move_event_payload(db, make_game):
 
 
 def test_invocation_draw_trigger_on_draw(db, make_game):
-    """卡牌灵咒"抽到触发"：抽牌入手时触发块延时结算（控制者=来源所属牌手），随后移除。"""
+    """卡牌灵咒"抽到触发"：抽牌入手时触发块延时结算（控制者=来源所属牌手），随后移除。
+    严格递归结构下：抽牌事件生成时牌已离库绑定（悬置态、灵咒仍在），移动事件
+    结算时移除灵咒并挂起触发块。"""
     db.invocations["引魂"] = InvocationDef(
         name="引魂",
         draw_trigger=F.block(F.dmg(2, F.T(kind="all", pool="enemy_player"))))
@@ -480,11 +486,13 @@ def test_invocation_draw_trigger_on_draw(db, make_game):
     b.shield = 0
     card = a.deck[0]
     g.attach_invocation("引魂", player=0, card=card)
+    g._drain_queue()                         # 结附事件（无监听）排空
     assert [e["name"] for e in card.invocations] == ["引魂"]
     g.draw_cards(0, 1)
-    assert card.invocations == []          # 入手处理点即移除
-    assert b.health == 30                  # 触发块延时结算：未 drain 前未生效
-    g._drain_queue()
+    assert card not in a.hand and card.invocations  # 移动事件悬置中：未入手、灵咒未移除
+    assert b.health == 30
+    g._drain_queue()                         # 移动结算 → 灵咒移除 + 触发块同轮排空
+    assert card in a.hand and card.invocations == []
     assert b.health == 28
 
 
@@ -515,13 +523,40 @@ def test_invocation_draw_trigger_on_hand_cap_burst(db, make_game):
     b.shield = 0
     card = a.deck[0]
     g.attach_invocation("引魂", player=0, card=card)
+    g._drain_queue()
     while len(a.hand) < 12:                # 填满至手牌上限（hand_cap=12）
         give(g, 0, 10010201)
     g.draw_cards(0, 1)
+    g._drain_queue()                       # 悬置的移动事件结算：先触发并移除，再爆牌转墓地
     assert card in a.graveyard             # 爆牌：转墓地
     assert card.invocations == []
-    g._drain_queue()
     assert b.health == 28                  # 已触发
+
+
+def test_invocation_draw_trigger_order_multi_draw(db, make_game):
+    """多张抽牌的灵咒触发顺序（事实口径）：移动事件按入队序（牌库顶那张最先）
+    依次结算，各移动携带的"抽到触发"随之——**牌库顶牌的灵咒先结算**（FIFO，
+    非原版"后发先至"；口径见 questions.md 待确认②、rules.md 第三十二章五节）。"""
+    db.invocations["先"] = InvocationDef(
+        name="先", draw_trigger=F.block(F.dmg(1, F.T(kind="all", pool="enemy_player"))))
+    db.invocations["后"] = InvocationDef(
+        name="后", draw_trigger=F.block(F.dmg(2, F.T(kind="all", pool="enemy_player"))))
+    g = make_game()
+    a, b = g.state.players
+    b.shield = 0
+    top, second = a.deck[0], a.deck[1]
+    g.attach_invocation("先", player=0, card=top)      # 牌库顶
+    g.attach_invocation("后", player=0, card=second)   # 第二张
+    g._drain_queue()                                   # 结附事件（无监听）排空
+    g.draw_cards(0, 2)
+    assert b.health == 30                              # 移动事件悬置中：未结算
+    g._drain_queue()                                   # 移动按入队序（牌库顶最先）结算
+    assert b.health == 27                              # 1（顶牌灵咒）+ 2（第二张灵咒）
+    # 触发顺序事实 = 牌库顶那张的灵咒先结算（FIFO，非原版"后发先至"）
+    trig = [m for m in g.state.log if "触发（抽到）" in m]
+    assert len(trig) == 2 and "【先】" in trig[0] and "【后】" in trig[1]
+    assert top in a.hand and second in a.hand
+    assert top.invocations == [] and second.invocations == []
 
 
 def test_invocation_shikigami_buff_ability_and_defeat(db, make_game):

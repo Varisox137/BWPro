@@ -125,6 +125,21 @@ def draw(game, ctx, *, targets: list[Ref], count: int | dict = 1,
     game.draw_cards(pi, n)
 
 
+@action("draw_move")
+def draw_move(game, ctx, *, targets: list[Ref]) -> None:
+    """抽牌移动待结算项（引擎内部 op，数据不直接使用；targets 忽略）。
+
+    抽牌事件流程（严格递归结构，docs/rules.md 第十九章）按延时通道挂起的
+    "牌库顶 1 张移至手牌"移动事件：牌在抽牌事件生成时已离库绑定（ctx.card，
+    移动结算前处悬置态），结算时经 move_card 完整流程入手（from_zone="deck"、
+    reason="draw"——爆牌上限检查与结附灵咒"抽到触发"同路径）。
+    """
+    if ctx.card is None:
+        return
+    game.move_card(game.state.players[ctx.controller], ctx.card, "hand",
+                   from_zone="deck", reason="draw")
+
+
 @action("buff_power")
 def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False,
                scope: str | None = None, amount_ctx: str | None = None,

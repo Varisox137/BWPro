@@ -173,8 +173,8 @@
 | 灵咒 | `invocation` / `InvocationDef` | 结附于式神或卡牌上的具名效果实体（rules.md 第三十二章；沧海刀鸣预备，框架已落地、无实卡数据）：定义注册表 `CardDatabase.invocations`（不经 yaml 加载，测试直接注入）；字段 name/unique/power/health（效果类身材增减益=结附期间计入 temp 修正、移除减回）/abilities（能力类触发块，进场序号=结附时刻 ability_seq，随 `_collect_abilities` 收集）/draw_trigger（结附卡牌的"抽到触发"块）；运行时条目 `ShikigamiState.invocations` / `CardInstance.invocations`（{"name","player"=来源所属牌手,"source"}） | ✅（框架） |
 | 结附（灵咒） | `attach_invocation`（动作）/ `Game.attach_invocation` | name 指定灵咒；targets=式神结附 / uid=卡牌结附（targets 忽略）；流程：结附→唯一性移除→`on_invocation_attached`（延时，预留）；气绝/离场经 `_detach_invocations` 移除 | ✅（框架） |
 | [唯一] / [式神唯一] | `unique` / `shikigami_unique`（InvocationDef.unique） | 灵咒唯一性（结附之后移除，新结附自身保留；同源=来源所属牌手相同）：unique=双方全场（式神+手牌/牌库中的卡牌）同源同名移除；shikigami_unique=仅该式神上同源同名移除（卡牌结附不生效）；none=不唯一 | ✅（框架） |
-| 抽到触发 | `draw_trigger`（InvocationDef）/ `_proc_invocations_on_move` | 结附卡牌的灵咒在抽牌动作入手（reason="draw"，deck→hand）时入队延时结算（控制者=来源所属牌手）并移除；非抽牌入手静默移除；爆牌先触发再转墓地；调度换出直接移除不生效 | ✅（框架） |
-| 抽牌前 | `on_before_draw`（事件） | 即时时机，每张一次，payload {player, count=剩余抽取数, reason}——"获得卡牌前"锚点（rules.md 第十九章） | ✅ |
+| 抽到触发 | `draw_trigger`（InvocationDef）/ `_proc_invocations_on_move` | 结附卡牌的灵咒在抽牌动作入手（reason="draw"，deck→hand）时入队延时结算（控制者=来源所属牌手）并移除；非抽牌入手静默移除；爆牌先触发再转墓地；调度换出直接移除不生效；多张抽牌顺序 = 牌库顶先（FIFO，严格递归结构定案口径） | ✅（框架） |
+| 抽牌前 | `on_before_draw`（事件） | 即时时机，每层抽牌事件一次，payload {player, count=当前层 X, reason}——"获得卡牌前"锚点；抽牌为严格递归结构（移动事件按延时通道挂起、递归先完成下降，rules.md 第十九章） | ✅ |
 | 牌移动后 | `on_card_move` / `on_card_moved`（事件） | move_card 双锚点：即时 / 延时（灵咒挂点）；payload {player, uid, card, from_zone, to_zone, reason}——reason：draw/generate/search/pick/hand_cap/None（rules.md 第十八章二节） | ✅ |
 | 灵咒结附后 | `on_invocation_attached`（事件） | 延时时机（预留）；payload {player=来源所属牌手, target: Ref\|None, uid: int\|None, invocation, source} | ✅ |
 | 战斗结束追加攻击 | `followup_attack`（动作）/ `_battle_followups` | 登记战斗结束后的追加攻击（地狱之手类）：整场战斗终止点核销后先结算积累的延时能力（登记在其中），再依次结算——目标为生命最低敌方式神（平手随机、帷幕不可选；无合法目标改无目标战斗），不享受原战斗牌战力/关键字；可多次登记链式排队；按触发事件 battle payload 登记（气绝后延时能力在战斗弹栈后结算） | ✅ |

@@ -58,6 +58,10 @@ CARD_LEVEL_KEYWORDS = ("fast", "trigger", "rebound")
 # 收集门在 Game._collect_abilities（持有者以外的式神从手牌使用法术牌时）
 _SPELL_ECHO_BLOCK = EffectBlock(steps=[Step(op="spell_echo_recast")])
 
+# 抽牌事件挂起的"牌库顶 1 张移至手牌"延时移动事件内部块（draw_cards 严格递归结构）：
+# 抽牌事件生成时绑定牌（ctx.card）入队，由外层 _drain_queue 统一结算（同 field_destroy 先例）
+_DRAW_MOVE_BLOCK = EffectBlock(steps=[Step(op="draw_move")])
+
 # 运势批次引擎直读的式神 id（契约 .tokensave/opmap_luck_batch.md"引擎读"语义）：
 # 青蛙瓷器——运势翻倍标记（判定者方有未气绝觉醒青蛙瓷器）与判定成功回合 +2 力量光环；
 # 妖狐——伤害流程按来源 = 妖狐时计数牌手 ext yaohu_damage_count
@@ -2979,6 +2983,7 @@ class Game:
             self._retreat(p, pending_retreat)
         self._drain_queue()
         self._turn_start_draw(p, pi)
+        self._drain_queue()  # 抽牌挂起的移动事件（draw_move 待结算项）结算完再进升级阶段
         self._upgrade_phase(p)
         self.state.phase = "battle" if p.upgrades == 0 else "upgrade"
         self._log(f"—— {p.name} 的第 {p.turn_count} 回合（鬼火 {p.orb}）——")
@@ -4082,31 +4087,50 @@ class Game:
         return False
 
     def draw_cards(self, player_index: int, count: int, *, reason: str | None = None) -> None:
-        """效果抽牌（抽牌事件流程，docs/rules.md「抽牌事件流程」）。
+        """效果抽牌（抽牌事件流程，docs/rules.md 第十九章——严格递归结构）。
 
-        逐张结算：每张先发 on_before_draw（即时时机，"获得卡牌前"锚点，
-        count = 剩余抽取数——"抽X张"等价于插入结算"抽X-1张"的递归语义），
-        空库走判负/觉醒·书翁 deck_out_burn 分支（每张空抽各触发一次），否则
-        move_card(deck→hand, reason="draw")（牌移动事件流程；结附灵咒"抽到触发"
-        在处理点入队，多张抽牌的后发先至由逐张入队顺序自然保证）。
-        整次动作结束后保留单次 on_draw（延时时机，{player, count}）兼容挂点。
+        "抽X张牌"事件（`_draw_event` 递归体）：
+        1. 发 on_before_draw（即时时机，count=X——"获得卡牌前"锚点）；
+        2. 空库分支（判定位置 = 移动事件生成点、牌库顶无牌可移时）：判负——终止
+           整个抽牌事件链（递归立即回卷，on_draw 不再发）；觉醒·书翁
+           deck_out_burn——对敌方牌手造成 10 点伤害后递归继续（每张空抽各触发一次）；
+        3. 绑定牌库顶 1 张（即刻离库，移动结算前处悬置态），其"牌移动事件"
+           （deck→hand, reason="draw"）按**延时通道**挂起（内部 op draw_move
+           待结算项，由外层 _drain_queue 统一结算）；
+        4. 若 X>1，**立即插入结算**"抽X-1张牌"事件（直接递归——在全部挂起的
+           移动事件结算前完成下降）。
+        全局次序：on_before_draw(X)…on_before_draw(1) 依次先发 → on_draw（延时，
+        整次一张）入队 → X 个移动事件按入队序（牌库顶那张最先）依次结算，各自的
+        on_card_move/on_card_moved 与结附灵咒"抽到触发"随各移动结算（灵咒触发
+        顺序 = 牌库顶先——FIFO，见 rules.md 第三十二章五节）。
         """
+        if self._draw_event(player_index, count, reason):
+            self.emit("on_draw", player=player_index, count=count)
+
+    def _draw_event(self, player_index: int, count: int, reason: str | None) -> bool:
+        """"抽X张牌"事件递归体；返回 False = 空库判负终止（后续抽取与 on_draw
+        不再进行；已挂起的移动待结算项随 pending_end 在下次 drain 时丢弃——
+        对局已结束，悬置离库牌不再归位）。"""
         p = self.state.players[player_index]
-        for i in range(count):
-            self.emit("on_before_draw", player=player_index, count=count - i, reason=reason)
-            if not p.deck:
-                burner = self._deck_out_burner(player_index)
-                if burner is not None:
-                    self._log(f"{p.name} 牌库已空，抽牌改为对敌方牌手造成 10 点伤害（觉醒·书翁）")
-                    self.deal_to_player(1 - player_index, 10, burner)
-                    continue
+        self.emit("on_before_draw", player=player_index, count=count, reason=reason)
+        if not p.deck:
+            burner = self._deck_out_burner(player_index)
+            if burner is not None:
+                self._log(f"{p.name} 牌库已空，抽牌改为对敌方牌手造成 10 点伤害（觉醒·书翁）")
+                self.deal_to_player(1 - player_index, 10, burner)
+            else:
                 # 牌库为空时执行抽牌立即落败（可能有效果改变此判定；判负非气绝）
                 if self.state.winner is None:
                     self._log(f"{p.name} 牌库抽空，判负")
                 self._set_pending_end(loser=player_index)
-                return
-            self.move_card(p, p.deck[0], "hand", reason="draw")
-        self.emit("on_draw", player=player_index, count=count)
+                return False
+        else:
+            card = p.deck.pop(0)  # 绑定牌库顶牌（即刻离库；递归下层绑定下一张）
+            self.queue.append(_Pending(_DRAW_MOVE_BLOCK, ExecContext(
+                controller=player_index, card=card)))
+        if count <= 1:
+            return True
+        return self._draw_event(player_index, count - 1, reason)
 
     def _deck_out_burner(self, pi: int) -> Ref | None:
         """觉醒·书翁：己方在场、已觉醒且觉醒牌 tags 含 deck_out_burn 的式神
