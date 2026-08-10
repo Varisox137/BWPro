@@ -1359,9 +1359,8 @@ def test_dynamic_stat_aura(db, make_game):
     assert a.eff_power == 1 + len(pa.hand)
     assert a.max_health == 1 + len(pa.hand)
     assert a.health == a.max_health              # 登记时按新上限回满
-    g.draw_cards(0, 1)
-    g._drain_queue()  # 抽牌移动按延时通道挂起——直调后手动排空（手牌数变化才反映）
-    assert a.eff_power == 1 + len(pa.hand)       # 手牌数变化即时反映
+    g.draw_cards(0, 1)                     # 抽牌事件单元完成时内联结算（手牌数变化即时反映）
+    assert a.eff_power == 1 + len(pa.hand)
     g._destroy_form(pa, 0, "effect")
     assert a.eff_power == 3                      # 形态离场：光环移除回基础值
     assert not pa.ext.get("stat_auras")

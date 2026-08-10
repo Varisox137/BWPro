@@ -1844,13 +1844,16 @@ class Game:
         return None
 
     def move_card(self, p: PlayerState, card: CardInstance, to_zone: str,
-                  *, from_zone: str | None = None, reason: str | None = None) -> None:
+                  *, from_zone: str | None = None, reason: str | None = None,
+                  invocation_horizon: int = 0) -> None:
         """把卡牌移动到指定区域；区域不存在则创建（区域系统保留扩展空间）。
 
         牌移动事件流程（docs/rules.md「牌移动事件流程」）：
         移出原区域 → 置入目标区域（入手分配 hand_seq）→ 非爆牌发 on_card_enter_hand
         → 动态身材光环刷新 → on_card_move（即时时机）→ on_card_moved（延时时机，
-        灵咒挂点）→ 入手灵咒处理（_proc_invocations_on_move）→ 手牌上限检查：
+        灵咒挂点）→ 入手灵咒处理（_proc_invocations_on_move；灵咒触发位于移动事件
+        内部的延时时机——invocation_horizon 非 0 时触发块记为该挂起单元、随单元
+        drain 在移动完成后结算，抽牌倒序用）→ 手牌上限检查：
         超出则该牌转而置入墓地（爆牌——上限检查在"牌移动后"时机之后，定案；
         抽牌与生成置入手牌共用本条路径，爆牌不视为进入手牌）。
         from_zone 可显式指定原区域名（缺省取 _remove_from_zone 的实检结果；
@@ -1876,19 +1879,24 @@ class Game:
         self.emit("on_card_move", **payload)    # 牌移动后（即时时机）
         self.emit("on_card_moved", **payload)   # 牌移动后（延时时机；灵咒挂点）
         if to_zone == "hand":
-            self._proc_invocations_on_move(p, card, reason, payload)
+            self._proc_invocations_on_move(p, card, reason, payload,
+                                           horizon=invocation_horizon)
         if burst:
             self._log(f"{p.name} 的手牌已达上限（{cap}），"
                       f"【{self.db.cards[card.id].name}】置入墓地（爆牌）")
             self.move_card(p, card, "graveyard", reason="hand_cap")
 
     def _proc_invocations_on_move(self, p: PlayerState, card: CardInstance,
-                                  reason: str | None, payload: dict) -> None:
+                                  reason: str | None, payload: dict,
+                                  *, horizon: int = 0) -> None:
         """入手灵咒处理（灵咒框架，docs/rules.md「灵咒」）：结附在牌上的灵咒
         在该牌入手时移除——抽牌动作入手（reason="draw"，deck→hand）时其"抽到触发"
-        块先入队延时结算（控制者 = 灵咒来源所属牌手）再移除；检索/生成/回手等其余
-        入手路径静默移除（不触发）。爆牌：先发 deck→hand（reason="draw"）移动事件
-        故触发并移除，再经 hand_cap 递归转墓地。"""
+        块先入队再移除；检索/生成/回手等其余入手路径静默移除（不触发）。
+        灵咒触发位于**牌移动事件内部的延时时机**（移动完成后执行）：horizon 非 0
+        时触发块记为该挂起单元（抽牌事件单元——倒序定案：内层单元的移动+灵咒
+        先于外层结算），随单元 drain 结算；否则入普通队列（控制者 = 灵咒来源所属
+        牌手）。爆牌：先发 deck→hand（reason="draw"）移动事件故触发并移除，
+        再经 hand_cap 递归转墓地。"""
         if not card.invocations:
             return
         invs, card.invocations = card.invocations, []
@@ -1903,7 +1911,8 @@ class Game:
                       f"【{idef.name}】触发（抽到）")
             self.queue.append(_Pending(idef.draw_trigger, ExecContext(
                 controller=inv["player"], card=card, event=payload,
-                is_ability=True, ability_uid=f"inv:{card.uid}:{inv['name']}")))
+                is_ability=True, ability_uid=f"inv:{card.uid}:{inv['name']}"),
+                horizon=horizon))
 
     # ---------- 灵咒（灵咒框架，docs/rules.md「灵咒」；沧海刀鸣预备） ----------
 
@@ -3261,18 +3270,12 @@ class Game:
     def _turn_start_draw(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 14：抽 1（后手第 1 回合也抽；先手从第 2 回合开始抽）。
 
-        明心（在场形态 tags 含 draw_to_pick）：回合开始的抽牌改为检视牌库顶三张牌选
-        一张置入手牌（choose 作答后按原文洗牌库）——牌库不足 3 张全部检视并选 1
-        （截断），牌库为空按空库抽牌分支处理（判负/觉醒·书翁替换）。"""
+        reason="turn_start" 贯通抽牌事件——明心（draw_to_pick，"回合开始的抽牌
+        改为检视牌库顶三张选一张置入手牌然后洗牌库"）与觉醒·书翁（deck_out_burn）
+        均为抽牌事件"抽牌前"挂点的触发+终止（答复(4)，见 `_draw_terminate`）。"""
         if not (p.turn_count > 1 or self.state.active == 1):
             return
-        if self._field_form_has_tag(pi, "draw_to_pick"):
-            if not p.deck:
-                self.draw_cards(pi, 1)  # 空库：走 draw_cards 的空库分支
-                return
-            self._open_deck_top_pick(pi, min(3, len(p.deck)), 1, False)
-            return
-        self.draw_cards(pi, self.cfg(pi, "draw_per_turn"))
+        self.draw_cards(pi, self.cfg(pi, "draw_per_turn"), reason="turn_start")
 
     def _has_upgrade_target(self, p: PlayerState) -> bool:
         """当前玩家是否还有可升级的式神（用于自动判断升级阶段是否可跳过）。
@@ -4087,32 +4090,77 @@ class Game:
         return False
 
     def draw_cards(self, player_index: int, count: int, *, reason: str | None = None) -> None:
-        """效果抽牌（抽牌事件流程，docs/rules.md 第十九章——严格递归结构）。
+        """效果抽牌（抽牌事件流程，docs/rules.md 第十九章——严格递归结构 + 终止语义）。
 
         "抽X张牌"事件（`_draw_event` 递归体）：
         1. 发 on_before_draw（即时时机，count=X——"获得卡牌前"锚点）；
-        2. 空库分支（判定位置 = 移动事件生成点、牌库顶无牌可移时）：判负——终止
-           整个抽牌事件链（递归立即回卷，on_draw 不再发）；觉醒·书翁
-           deck_out_burn——对敌方牌手造成 10 点伤害后递归继续（每张空抽各触发一次）；
+        2. **抽牌前触发的终止**（答复(4)，`_draw_terminate`）：满足条件则触发相应
+           能力并**终止该抽牌事件**（不绑定移动、不再递归——无论剩余多少张没抽都
+           只触发一次）——明心（reason="turn_start" 且在场形态 tags 含
+           draw_to_pick：改为检视牌库顶三张选一）/ 觉醒·书翁（牌库无牌：烧 10 终止）
+           / 空库判负（终止整个抽牌事件链，递归立即回卷，on_draw 不再发）；
         3. 绑定牌库顶 1 张（即刻离库，移动结算前处悬置态），其"牌移动事件"
-           （deck→hand, reason="draw"）按**延时通道**挂起（内部 op draw_move
-           待结算项，由外层 _drain_queue 统一结算）；
-        4. 若 X>1，**立即插入结算**"抽X-1张牌"事件（直接递归——在全部挂起的
-           移动事件结算前完成下降）。
-        全局次序：on_before_draw(X)…on_before_draw(1) 依次先发 → on_draw（延时，
-        整次一张）入队 → X 个移动事件按入队序（牌库顶那张最先）依次结算，各自的
-        on_card_move/on_card_moved 与结附灵咒"抽到触发"随各移动结算（灵咒触发
-        顺序 = 牌库顶先——FIFO，见 rules.md 第三十二章五节）。
+           （deck→hand, reason="draw"）按**延时通道**挂起到**本抽牌事件单元**
+           （内部 op draw_move 待结算项，horizon=单元 id——山风 horizon 机制同族）；
+        4. 若 X>1，**立即插入结算**"抽X-1张牌"事件（直接递归——内层抽牌事件先
+           完成）；
+        5. **本抽牌事件完成时** drain 本单元：结算其挂起的移动事件（灵咒触发位于
+           移动事件内部的延时时机——移动完成后同单元随后结算）。
+        全局次序（答复(3) 倒序定案）：on_before_draw(X)…(1) 依次先发；内层单元先
+        完成——**移动事件与灵咒均倒序**（抽 2 张：第 2 张的移动+灵咒先，第 1 张后；
+        后果报备：第 2 张先入手、hand_seq 更小）。整次抽牌事件未被终止时最后发
+        on_draw（延时，整次一张）。
         """
-        if self._draw_event(player_index, count, reason):
+        # atomic 契约保护（test_interleaved_vs_atomic 回归）：抽牌前已挂起的外层
+        # 无标记延时项（如 atomic 块前序步骤产生的 on_damage 等）暂存移出队列——
+        # 抽牌事件全程（递归 + 各单元 drain 中的嵌套排水）不冲刷它们，抽牌结束后
+        # 按原次序放回队首由外层统一结算；抽牌中新产生的无标记项仍照常内联结算。
+        stash = [p for p in self.queue if p.horizon == 0]
+        if stash:
+            self.queue = deque(p for p in self.queue if p.horizon != 0)
+        try:
+            ok = self._draw_event(player_index, count, reason)
+        finally:
+            if stash:
+                self.queue.extendleft(reversed(stash))
+        if ok:
             self.emit("on_draw", player=player_index, count=count)
 
     def _draw_event(self, player_index: int, count: int, reason: str | None) -> bool:
-        """"抽X张牌"事件递归体；返回 False = 空库判负终止（后续抽取与 on_draw
-        不再进行；已挂起的移动待结算项随 pending_end 在下次 drain 时丢弃——
-        对局已结束，悬置离库牌不再归位）。"""
+        """"抽X张牌"事件递归体；返回 False = 事件被终止（明心替换 / 觉醒·书翁烧血
+        / 空库判负——上层不再发 on_draw；判负时已挂起的移动随 pending_end 丢弃，
+        对局已结束、悬置离库牌不归位）。"""
         p = self.state.players[player_index]
         self.emit("on_before_draw", player=player_index, count=count, reason=reason)
+        if self._draw_terminate(player_index, reason):
+            return False
+        self._horizon_seq += 1
+        unit = self._horizon_seq  # 本抽牌事件的挂起单元（移动事件延时到单元完成时结算）
+        card = p.deck.pop(0)  # 绑定牌库顶牌（即刻离库；递归下层绑定下一张）
+        self.queue.append(_Pending(
+            _DRAW_MOVE_BLOCK,
+            ExecContext(controller=player_index, card=card,
+                        event={"name": "on_draw_move", "draw_unit": unit}),
+            horizon=unit))
+        ok = True
+        if count > 1:
+            ok = self._draw_event(player_index, count - 1, reason)  # 插入结算：内层先完成
+        self._drain_horizon(unit)  # 本抽牌事件完成：结算本单元的移动（含其灵咒）
+        return ok
+
+    def _draw_terminate(self, player_index: int, reason: str | None) -> bool:
+        """抽牌事件的"抽牌前"触发+终止（答复(4)；判定点在绑定步骤之前——此时牌库
+        已被外层事件绑定取走相应张数，计数正确）。返回 True = 终止该抽牌事件。
+        - 明心（在场形态 tags 含 draw_to_pick）：条件=回合开始的抽牌
+          （reason="turn_start"）→ 无条件触发 → 终止 → 改为检视牌库顶三张选一张
+          置入手牌（然后洗牌库）；牌库为空时落入下方空库判定（觉醒·书翁/判负）。
+        - 觉醒·书翁（deck_out_burn）：条件=牌库无牌 → 触发（对敌方牌手 10 点）→ 终止。
+        - 无书翁且牌库无牌 → 判负并终止。"""
+        p = self.state.players[player_index]
+        if reason == "turn_start" and p.deck \
+                and self._field_form_has_tag(player_index, "draw_to_pick"):
+            self._open_deck_top_pick(player_index, min(3, len(p.deck)), 1, False)
+            return True
         if not p.deck:
             burner = self._deck_out_burner(player_index)
             if burner is not None:
@@ -4123,14 +4171,8 @@ class Game:
                 if self.state.winner is None:
                     self._log(f"{p.name} 牌库抽空，判负")
                 self._set_pending_end(loser=player_index)
-                return False
-        else:
-            card = p.deck.pop(0)  # 绑定牌库顶牌（即刻离库；递归下层绑定下一张）
-            self.queue.append(_Pending(_DRAW_MOVE_BLOCK, ExecContext(
-                controller=player_index, card=card)))
-        if count <= 1:
             return True
-        return self._draw_event(player_index, count - 1, reason)
+        return False
 
     def _deck_out_burner(self, pi: int) -> Ref | None:
         """觉醒·书翁：己方在场、已觉醒且觉醒牌 tags 含 deck_out_burn 的式神

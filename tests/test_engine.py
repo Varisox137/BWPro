@@ -3,7 +3,7 @@
 import pytest
 
 from core.engine import IllegalAction
-from core.model import Ref
+from core.model import GameConfig, Ref
 from db.schema import InvocationDef
 from tests import factories as F
 from tests.factories import give, pass_turns, play
@@ -331,8 +331,7 @@ def test_hand_cap_burns_excess(db, make_game):
         give(g, 0, token_cid)
     assert len(pa.hand) == 12
     grave_before = len(pa.zones.get("graveyard", []))
-    g.draw_cards(0, 1)                            # 抽牌爆牌：牌库顶牌转墓地
-    g._drain_queue()  # 抽牌移动按延时通道挂起（严格递归结构）——直调后手动排空
+    g.draw_cards(0, 1)                            # 抽牌爆牌：牌库顶牌转墓地（抽牌事件单元完成时内联结算）
     assert len(pa.hand) == 12
     assert len(pa.zones["graveyard"]) == grave_before + 1
     # 生成置入手牌同路径：腾 1 格后打出生成 2 张 → 1 张入手、1 张爆掉
@@ -421,20 +420,78 @@ def test_draw_to_pick_replaces_turn_draw(db, make_game):
     assert g.state.winner == 1
 
 
+def test_draw_to_pick_terminates_multi_draw(db, make_game):
+    """终止语义（答复(4)）——明心型：回合开始抽 X>1 张时"抽牌前"触发替换并终止整个
+    抽牌事件（无论剩余多少张没抽都只触发一次、只检视选 1 张），整次不再发 on_draw。"""
+    cid = 10010171
+    db.cards[cid] = F.card(cid, card_type="form", form_power=4, form_health=5,
+                           tags=["draw_to_pick"], token=True)
+    g = make_game(config=GameConfig(draw_per_turn=2, auto_skip_upgrade=True))
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, cid)
+    g.history.clear()
+    hand_before = len(pa.hand)
+    pass_turns(g, 2)                          # B 回合正常抽 2；A 第 2 回合开始明心终止
+    pend = g.state.pending_choice
+    assert pend and pend["kind"] == "deck_top_pick" and len(pend["options"]) == 3
+    i_before = len(g.history) - 1 - g.history[::-1].index("on_before_draw")
+    assert "on_draw" not in g.history[i_before:]   # 终止：最后一次 on_before_draw 后无 on_draw
+    assert g.history.count("on_draw") == 1         # 仅 B 回合的整次一张
+    g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
+    assert g.state.pending_choice is None
+    assert len(pa.hand) == hand_before + 1         # 只选 1 张入手（不是 2 张）
+
+
+def test_deck_out_burn_terminates_multi_draw(db, make_game):
+    """终止语义（答复(4)）——觉醒·书翁型：多张抽牌遇到空库时烧 10 并终止整个抽牌
+    事件（只烧一次、剩余张数不再各烧、on_draw 不再发）；已绑定牌照常入手。"""
+    awaken_cid = 10010172
+    db.cards[awaken_cid] = F.card(awaken_cid, subtype="awaken",
+                                  tags=["deck_out_burn"], token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.shikigami[0].awakened = awaken_cid         # 在场（1 级）且已觉醒
+    del pa.deck[1:]                               # 牌库只剩 1 张
+    bound = pa.deck[0]
+    g.history.clear()
+    g.draw_cards(0, 3)                            # 第 1 层绑定 1 张；第 2 层空库 → 烧 10 终止
+    assert g.history.count("on_before_draw") == 2
+    assert pb.health == 20                        # 只烧一次（剩余 2 张不再各烧）
+    assert g.state.winner is None and not g.state.pending_end
+    assert bound in pa.hand and not pa.deck       # 已绑定牌单元完成时内联入手；牌库空
+    assert "on_draw" not in g.history             # 被终止：整次 on_draw 不再发
+
+
+def test_empty_deck_loss_terminates_multi_draw(make_game):
+    """终止语义（答复(4)）——空库判负：多张抽牌遇到空库（无觉醒·书翁）判负并终止
+    整个抽牌事件链（递归回卷、on_draw 不再发）；已挂起的移动随 pending_end 丢弃
+    （对局已结束，悬置离库牌不归位——端态报备）。"""
+    g = make_game()
+    pa = g.state.players[0]
+    del pa.deck[1:]                               # 牌库只剩 1 张
+    g.history.clear()
+    g.draw_cards(0, 3)                            # 第 2 层空库 → 判负终止
+    assert "on_draw" not in g.history
+    g._drain_queue()                              # pending_end → winner 落定
+    assert g.state.winner == 1
+
+
 # ==================== 抽牌事件管线 / 牌移动事件 ====================
 
 
 def test_draw_pipeline_per_card_events(make_game):
-    """抽牌管线（严格递归结构）："抽X张"递归下降时全部 on_before_draw(X)…(1)
-    依次先发（即时），随后整次一张 on_draw 入队；X 个牌移动事件按入队序
-    （牌库顶那张最先）依次结算，各带 on_card_enter_hand → on_card_move（即时）→
-    on_card_moved（延时）。"""
+    """抽牌管线（严格递归 + 倒序定案）："抽X张"递归下降时全部 on_before_draw(X)…(1)
+    依次先发（即时）；每个抽牌事件挂起的移动延时到**它所属抽牌事件完成时**结算，
+    内层先完成——移动倒序（第 2 张的移动先于第 1 张），各带 on_card_enter_hand →
+    on_card_move（即时）→ on_card_moved（延时）；未被终止时最后发整次一张 on_draw。"""
     g = make_game()
     g.history.clear()
     g.draw_cards(0, 2)
-    g._drain_queue()  # 移动事件按延时通道挂起——直调后手动排空
     per_card = ["on_card_enter_hand", "on_card_move", "on_card_moved"]
-    assert g.history == ["on_before_draw", "on_before_draw", "on_draw"] + per_card * 2
+    assert g.history == (["on_before_draw", "on_before_draw"]
+                         + per_card * 2 + ["on_draw"])
 
 
 def test_before_draw_count_is_remaining(db, make_game):
@@ -466,8 +523,8 @@ def test_card_move_event_payload(db, make_game):
     play(g, 0, 10010101)                   # 用牌：hand→graveyard（reason=None）→ 不触发
     assert b.health == 30
     g.draw_cards(0, 1)
-    assert b.health == 30                  # on_card_moved 为延时时机：尚未结算
-    g._drain_queue()
+    assert b.health == 29                  # 抽牌事件单元完成时移动+其监听均已结算
+    g._drain_queue()                       # 兜底（无残余）
     assert b.health == 29
 
 
@@ -475,9 +532,8 @@ def test_card_move_event_payload(db, make_game):
 
 
 def test_invocation_draw_trigger_on_draw(db, make_game):
-    """卡牌灵咒"抽到触发"：抽牌入手时触发块延时结算（控制者=来源所属牌手），随后移除。
-    严格递归结构下：抽牌事件生成时牌已离库绑定（悬置态、灵咒仍在），移动事件
-    结算时移除灵咒并挂起触发块。"""
+    """卡牌灵咒"抽到触发"：触发位于牌移动事件内部的延时时机——抽牌事件完成时
+    移动结算、灵咒移除并触发（控制者=来源所属牌手），抽牌调用返回前均已内联完成。"""
     db.invocations["引魂"] = InvocationDef(
         name="引魂",
         draw_trigger=F.block(F.dmg(2, F.T(kind="all", pool="enemy_player"))))
@@ -489,9 +545,6 @@ def test_invocation_draw_trigger_on_draw(db, make_game):
     g._drain_queue()                         # 结附事件（无监听）排空
     assert [e["name"] for e in card.invocations] == ["引魂"]
     g.draw_cards(0, 1)
-    assert card not in a.hand and card.invocations  # 移动事件悬置中：未入手、灵咒未移除
-    assert b.health == 30
-    g._drain_queue()                         # 移动结算 → 灵咒移除 + 触发块同轮排空
     assert card in a.hand and card.invocations == []
     assert b.health == 28
 
@@ -526,17 +579,17 @@ def test_invocation_draw_trigger_on_hand_cap_burst(db, make_game):
     g._drain_queue()
     while len(a.hand) < 12:                # 填满至手牌上限（hand_cap=12）
         give(g, 0, 10010201)
-    g.draw_cards(0, 1)
-    g._drain_queue()                       # 悬置的移动事件结算：先触发并移除，再爆牌转墓地
+    g.draw_cards(0, 1)                     # 单元完成时：先触发并移除，再爆牌转墓地
+    g._drain_queue()                       # 兜底（无残余）
     assert card in a.graveyard             # 爆牌：转墓地
     assert card.invocations == []
     assert b.health == 28                  # 已触发
 
 
 def test_invocation_draw_trigger_order_multi_draw(db, make_game):
-    """多张抽牌的灵咒触发顺序（事实口径）：移动事件按入队序（牌库顶那张最先）
-    依次结算，各移动携带的"抽到触发"随之——**牌库顶牌的灵咒先结算**（FIFO，
-    非原版"后发先至"；口径见 questions.md 待确认②、rules.md 第三十二章五节）。"""
+    """多张抽牌的移动与灵咒均为**倒序**（答复(3) 后发先至定案）：每个抽牌事件挂起的
+    移动延时到它所属抽牌事件完成时结算，内层先完成——第 2 张的移动+灵咒先于第 1 张；
+    可观察后果：第 2 张先入手（hand_seq 更小）。"""
     db.invocations["先"] = InvocationDef(
         name="先", draw_trigger=F.block(F.dmg(1, F.T(kind="all", pool="enemy_player"))))
     db.invocations["后"] = InvocationDef(
@@ -545,17 +598,17 @@ def test_invocation_draw_trigger_order_multi_draw(db, make_game):
     a, b = g.state.players
     b.shield = 0
     top, second = a.deck[0], a.deck[1]
-    g.attach_invocation("先", player=0, card=top)      # 牌库顶
-    g.attach_invocation("后", player=0, card=second)   # 第二张
+    g.attach_invocation("先", player=0, card=top)      # 牌库顶（第 1 张）
+    g.attach_invocation("后", player=0, card=second)   # 第 2 张
     g._drain_queue()                                   # 结附事件（无监听）排空
     g.draw_cards(0, 2)
-    assert b.health == 30                              # 移动事件悬置中：未结算
-    g._drain_queue()                                   # 移动按入队序（牌库顶最先）结算
-    assert b.health == 27                              # 1（顶牌灵咒）+ 2（第二张灵咒）
-    # 触发顺序事实 = 牌库顶那张的灵咒先结算（FIFO，非原版"后发先至"）
+    assert b.health == 27                              # 1（顶牌灵咒）+ 2（第 2 张灵咒）
+    # 灵咒倒序：第 2 张的灵咒先结算
     trig = [m for m in g.state.log if "触发（抽到）" in m]
-    assert len(trig) == 2 and "【先】" in trig[0] and "【后】" in trig[1]
+    assert len(trig) == 2 and "【后】" in trig[0] and "【先】" in trig[1]
+    # 移动倒序的可观察后果：第 2 张先入手、hand_seq 更小
     assert top in a.hand and second in a.hand
+    assert second.hand_seq < top.hand_seq
     assert top.invocations == [] and second.invocations == []
 
 

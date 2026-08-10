@@ -129,15 +129,17 @@ def draw(game, ctx, *, targets: list[Ref], count: int | dict = 1,
 def draw_move(game, ctx, *, targets: list[Ref]) -> None:
     """抽牌移动待结算项（引擎内部 op，数据不直接使用；targets 忽略）。
 
-    抽牌事件流程（严格递归结构，docs/rules.md 第十九章）按延时通道挂起的
-    "牌库顶 1 张移至手牌"移动事件：牌在抽牌事件生成时已离库绑定（ctx.card，
-    移动结算前处悬置态），结算时经 move_card 完整流程入手（from_zone="deck"、
-    reason="draw"——爆牌上限检查与结附灵咒"抽到触发"同路径）。
+    抽牌事件流程（严格递归结构，docs/rules.md 第十九章）按延时通道挂起到所属
+    抽牌事件单元的"牌库顶 1 张移至手牌"移动事件：牌在抽牌事件生成时已离库绑定
+    （ctx.card，移动结算前处悬置态），该抽牌事件完成时（`_drain_horizon`）经
+    move_card 完整流程入手（from_zone="deck"、reason="draw"——爆牌上限检查与
+    结附灵咒"抽到触发"同路径；灵咒触发记同单元 draw_unit，移动完成后随后结算）。
     """
     if ctx.card is None:
         return
     game.move_card(game.state.players[ctx.controller], ctx.card, "hand",
-                   from_zone="deck", reason="draw")
+                   from_zone="deck", reason="draw",
+                   invocation_horizon=int((ctx.event or {}).get("draw_unit", 0)))
 
 
 @action("buff_power")
