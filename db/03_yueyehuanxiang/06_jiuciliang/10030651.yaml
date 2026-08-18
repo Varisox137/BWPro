@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——raw 海潮深渊本体待蟹姬入库后补
+id: 10030651
+name: 鲸甲引潮
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+      card_type: field
+      rarity: SSR
+      token: true  # 协战子选项（海潮深渊 主式神侧）
+      level: 1
+      intensity: 5
+      effects:
+        steps: []
+      text: "每回合一次，你使用幻境时移动久次良到战斗区并使其获得1护甲。[羁绊]：{进场时随机复制一张你手牌中蟹姬的牌并置入手牌}。"

@@ -1,0 +1,16 @@
+# 骨架（db.scaffold），效果未实现——raw 标记未加入
+id: 10020421
+name: 日霭相织
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      shikigami2: 100205  # 协战副归属（日和坊）
+      card_type: reinforce
+      rarity: SSR
+      level: 1
+      cost: 1  # 展示用；实际费用/等级/目标按所选子选项
+      options: [10020451, 10020551]  # [0] 主式神侧：烟影 / [1] 副式神侧：煦日
+      effects:
+        steps: []
+      text: "选择使用一项：烟烟罗-烟影；日和坊-煦日"

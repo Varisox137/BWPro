@@ -1,0 +1,14 @@
+# 骨架（db.scaffold），效果未实现——raw 标记未加入
+id: 10020451
+name: 烟影
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（日霭相织 10020421 主式神侧）
+      level: 1
+      effects:
+        steps: []
+      text: "召唤一个‘烟烟罗的分身’并使其使用一张等同于烟烟罗当前等级的[爆能]法术。[羁绊]：{日和坊为己方具有[充能]式神+1能量}。"

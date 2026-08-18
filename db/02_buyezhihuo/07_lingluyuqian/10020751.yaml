@@ -1,0 +1,14 @@
+# 骨架（db.scaffold），效果未实现——raw 标记未加入
+id: 10020751
+name: 裂甲归潮
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+      card_type: combat
+      rarity: SSR
+      token: true  # 协战子选项（海国共主 主式神侧；本体待大岳丸入库后补）
+      level: 2
+      effects:
+        steps: []
+      text: "[贯通]。若攻击目标有破甲，则铃鹿御前获得等量护甲。[羁绊]：{将‘八尺琼曲玉’结附于铃鹿御前}。"

@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——raw 鸮羽共鸣本体待薰入库后补
+id: 10030751
+name: 庇羽
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+      card_type: field
+      rarity: SSR
+      token: true  # 协战子选项（鸮羽共鸣 主式神侧）
+      level: 1
+      intensity: 5
+      effects:
+        steps: []
+      text: "[唯一]。每当山风结附灵咒时，倒计时-1，获得1点护甲。[羁绊]：{进场时薰为山风结附一个‘鸮之守护’}。"

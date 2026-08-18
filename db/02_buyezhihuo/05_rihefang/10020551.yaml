@@ -1,0 +1,14 @@
+# 骨架（db.scaffold），效果未实现——raw 标记未加入
+id: 10020551
+name: 煦日
+versions:
+  best: 20200327
+  history:
+    - date: 20200327  # 发布日期
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（日霭相织 10020421 副式神侧）
+      level: 1
+      effects:
+        steps: []
+      text: "使一个其他己方式神获得2能量，结附‘晴天娃娃’。[羁绊]：{使该式神本回合免疫战斗伤害}。"
