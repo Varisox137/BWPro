@@ -613,8 +613,8 @@ def test_invocation_draw_trigger_order_multi_draw(db, make_game):
 
 
 def test_invocation_shikigami_buff_ability_and_defeat(db, make_game):
-    """式神灵咒：效果类增减益结附期间生效（临时修正通道）；能力类参与收集（进场序号=
-    结附时刻）；气绝时全部移除。"""
+    """式神灵咒：效果类增减益结附期间生效（类光环层——读取时求值，非临时修正）；
+    能力类参与收集（进场序号=结附时刻）；气绝时全部移除。"""
     db.invocations["刀鸣"] = InvocationDef(
         name="刀鸣", power=1, health=2,
         abilities=[F.block(F.dmg(1, F.T(kind="all", pool="enemy_player")),
@@ -632,13 +632,13 @@ def test_invocation_shikigami_buff_ability_and_defeat(db, make_game):
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
     g._drain_queue()
     assert s.defeated
-    assert s.invocations == []             # 气绝移除（效果类临时修正气绝本清，等效减回）
-    assert s.temp_power == 0 and s.temp_health == 0
+    assert s.invocations == []             # 气绝移除（光环层随之失效）
+    assert s.temp_power == 0 and s.temp_health == 0  # 灵咒从未借 temp 通道承载
 
 
 def test_invocation_unique_removes_same_source_only(db, make_game):
     """[唯一]：结附后移除双方全场同源同名灵咒（移除在结附之后；新结附自身保留；
-    异源同名保留）；被移除的效果类临时修正减回。"""
+    异源同名保留）；被移除者的光环层增减益随之失效（eff_power 实时合计）。"""
     db.invocations["庇护"] = InvocationDef(name="庇护", unique="unique", power=1)
     g = make_game()
     a, b = g.state.players
@@ -646,9 +646,9 @@ def test_invocation_unique_removes_same_source_only(db, make_game):
     g.attach_invocation("庇护", player=1, target=Ref(player=1, shikigami=0))  # 异源同名
     g.attach_invocation("庇护", player=0, target=Ref(player=0, shikigami=1))  # 同源新结附
     assert a.shikigami[0].invocations == []            # 同源旧者移除
-    assert a.shikigami[0].temp_power == 0              # 临时修正已减回
+    assert a.shikigami[0].eff_power == 3               # 光环层随之失效（3=基础）
     assert len(a.shikigami[1].invocations) == 1        # 新结附保留
-    assert a.shikigami[1].temp_power == 1
+    assert a.shikigami[1].eff_power == 2               # 100102 基础 1 + 光环 1
     assert len(b.shikigami[0].invocations) == 1        # 异源同名保留
     # 卡牌上的同源同名一并移除（全场 = 式神 + 手牌/牌库中的卡牌）
     c1, c2 = a.deck[0], a.deck[1]
@@ -672,7 +672,7 @@ def test_invocation_shikigami_unique_per_shikigami(db, make_game):
     assert (a.shikigami[0].invocations[0]["ability_seq"]
             > a.shikigami[1].invocations[0]["ability_seq"])
     assert len(a.shikigami[1].invocations) == 1        # 其他式神同名保留
-    assert a.shikigami[0].temp_power == 1 and a.shikigami[1].temp_power == 1
+    assert a.shikigami[0].eff_power == 4 and a.shikigami[1].eff_power == 2
 
 
 def test_attach_invocation_op_and_event(db, make_game):
@@ -688,7 +688,7 @@ def test_attach_invocation_op_and_event(db, make_game):
     a.orb = 9
     play(g, 0, 10010151, target=Ref(player=0, shikigami=0))   # 式神结附（targets）
     assert [e["name"] for e in a.shikigami[0].invocations] == ["契"]
-    assert a.shikigami[0].temp_power == 1
+    assert a.shikigami[0].eff_power == 4
     assert "on_invocation_attached" in g.history
     # 卡牌结附（uid 路径；targets 忽略）
     host = give(g, 0, 10010201)
@@ -750,3 +750,29 @@ def test_replace_engine_guard(db, make_game):
     g = make_game()
     with pytest.raises(ValueError):
         g._replace_shikigami(g.state.players[0], 0, 10010199)
+
+
+def test_invocation_stats_aura_survives_reset(db, make_game):
+    """灵咒身材增减益为类光环层（维护者定案）：reset_stats（日出有曜类）清除
+    临时修正后，灵咒增减益立即继续生效；灵咒移除时增减益随之消失（无双重扣减，
+    生命上限降低钳当前生命、不触发事件）。"""
+    db.invocations["刃"] = InvocationDef(name="刃", power=2, health=3)
+    db.cards[10010153] = F.card(
+        10010153, shikigami=100101, token=True,
+        steps=[F.Step(op="reset_stats", target=F.T(kind="self"))])  # 日出有曜式 self 目标
+    g = make_game()
+    a = g.state.players[0]
+    s = a.shikigami[0]
+    assert (s.eff_power, s.max_health) == (3, 4)     # 基础 3/4
+    g.attach_invocation("刃", player=0, target=Ref(player=0, shikigami=0))
+    assert (s.eff_power, s.max_health) == (5, 7)     # 光环层 +2/+3
+    assert s.temp_power == 0 and s.temp_health == 0  # 不经 temp 通道
+    s.temp_power = 1                                 # 模拟其它来源的临时修正
+    a.orb = 9
+    play(g, 0, 10010153)                             # reset_stats（self=所属式神）
+    assert s.temp_power == 0                         # 临时修正被清除
+    assert (s.eff_power, s.max_health) == (5, 7)     # 灵咒增减益立即继续生效
+    assert s.health == 7                             # reset_stats 置满（含灵咒上限）
+    g._remove_invocation(s, s.invocations[0], reason="唯一")
+    assert (s.eff_power, s.max_health) == (3, 4)     # 移除即失效，无双重扣减
+    assert s.health == 4                             # 上限降低钳当前生命

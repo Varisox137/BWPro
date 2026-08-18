@@ -88,10 +88,13 @@ class _DamageEvent:
 
     kind: "combat"（攻击方战斗伤害）/ "counter"（反击战斗伤害）/ "effect"（法术、能力等）。
     spell: 法术伤害标记（法术牌效果伤害；≠ 非战斗伤害——式神能力伤害不算，答复(7)）。
-    skip_early: 贯通溢出产生的新事件跳过早期流程，从"护甲计算前"开始结算（rules.md:199③）。
-    start_at_shield: 伤害目标转移产生的新事件跳过更早的早期步骤，从"护甲计算前0"
-        （on_before_shield 批次）开始结算——穿刺/on_damage_start/贯通修正/翻倍修饰
-        均不判定（"无[贯通]"即贯通修正批次不执行；免疫判定已后移至护甲计算后
+    start: 流程起点枚举（规则评审⑪泛化——"流程可从指定位置开始结算"的统一表达，
+        rules.md:20/第五章）："full"=完整流程（默认，从批次 0 伤害前开始）；
+        "pre_shield_2"=从"护甲计算前2"（贯通修正批次）开始——贯通溢出产生的新事件
+        （rules.md:199③），跳过批次 0/1（穿刺/on_damage_start）；
+        "pre_shield_0"=从"护甲计算前0"（on_before_shield 批次）开始——伤害目标转移
+        产生的新事件：穿刺/on_damage_start/贯通修正/翻倍修饰（护甲计算前1）均不判定
+        （"无[贯通]"即贯通修正批次不执行；免疫判定已后移至护甲计算后
         优先级 3，新事件对最终受伤者照常判定；事件生成点的转化与气绝保护仍先行，
         定案"转移链"）。
     redirect_chain: 转移链——本事件已经历的伤害转移能力身份集合（能力实例身份见
@@ -105,8 +108,7 @@ class _DamageEvent:
     kind: str = "effect"
     spell: bool = False
     piercing: bool = False
-    skip_early: bool = False
-    start_at_shield: bool = False
+    start: str = "full"  # 流程起点枚举："full" / "pre_shield_2" / "pre_shield_0"（见上）
     redirect_chain: frozenset = frozenset()
     converted: bool = False  # 已经历过一次转化的伤害（碧羽散华破甲→伤害）：
     # 跳过毒蚀的伤害→破甲转化，防止两个转化类效果来回循环
@@ -2030,18 +2032,18 @@ class Game:
                           target: Ref | None = None,
                           card: CardInstance | None = None) -> None:
         """结附灵咒：target 为式神结附 / card 为卡牌结附（二者恰一）。
-        player = 来源所属牌手（同源判定键）。流程：结附（效果类身材增减益计入
-        临时修正、能力类记进场序号）→ 唯一性移除（新结附自身保留）→
+        player = 来源所属牌手（同源判定键）。流程：结附（效果类身材增减益快照入
+        条目 power/health——类光环层，由 eff_power/max_health 读取时合计；
+        能力类记进场序号）→ 唯一性移除（新结附自身保留）→
         emit on_invocation_attached（延时时机）。"""
         idef = self.db.invocations.get(name)
         if idef is None:
             raise ValueError(f"未定义的灵咒: {name}（db.invocations 注册）")
-        entry: dict = {"name": name, "player": player, "source": source}
+        entry: dict = {"name": name, "player": player, "source": source,
+                       "power": idef.power, "health": idef.health}
         if target is not None:
             s = self.state.players[target.player].shikigami[target.shikigami]
             entry["ability_seq"] = self.state.next_ability_seq()  # 能力类进场序号=结附时刻
-            s.temp_power += idef.power    # 效果类：结附期间生效（临时修正通道，
-            s.temp_health += idef.health  # 移除时减回；气绝本清临时修正，等效）
             s.invocations.append(entry)
             holder = f"{self.db.shikigami[s.id].name}"
         else:
@@ -2087,17 +2089,17 @@ class Game:
                                       f"【{idef.name}】移除（唯一）")
 
     def _remove_invocation(self, s: ShikigamiState, entry: dict, *, reason: str) -> None:
-        """移除式神身上的灵咒条目：效果类临时修正减回，能力类随条目移除失效。"""
-        idef = self.db.invocations.get(entry["name"])
-        if idef is not None:
-            s.temp_power -= idef.power
-            s.temp_health -= idef.health
+        """移除式神身上的灵咒条目：身材增减益为类光环层（条目移除即失效，
+        无双重扣减）；上限降低时钳当前生命（同 buff_health/dyn 通道口径，
+        不触发事件）。能力类随条目移除失效。"""
         s.invocations.remove(entry)
+        if s.health > s.max_health:
+            s.health = s.max_health  # 灵咒生命上限增益随移除失效：钳当前生命
         self._log(f"{self.db.shikigami[s.id].name} 的灵咒【{entry['name']}】移除（{reason}）")
 
     def _detach_invocations(self, s: ShikigamiState, *, reason: str) -> None:
-        """气绝/离场时移除该式神全部灵咒（效果类临时修正减回——须在临时修正
-        清零前调用；能力类随列表清空而失效）。"""
+        """气绝/离场时移除该式神全部灵咒（身材增减益为光环层随之失效；
+        能力类随列表清空而失效）。"""
         for e in list(s.invocations):
             self._remove_invocation(s, e, reason=reason)
 
@@ -3491,7 +3493,7 @@ class Game:
         入口被拦截、不造成实际伤害，但原事件照常终止（定案备注）。"""
         self._redirect_spawned.append(_DamageEvent(
             source=ev.source, victim=new_victim, amount=ev.amount, kind=ev.kind,
-            spell=ev.spell, converted=ev.converted, start_at_shield=True,
+            spell=ev.spell, converted=ev.converted, start="pre_shield_0",
             redirect_chain=ev.redirect_chain | {uid}, card=ev.card))
 
     def _damage_event_flow(self, ev: _DamageEvent, dq: deque[_DamageEvent],
@@ -3523,9 +3525,9 @@ class Game:
                 self._change_shield(ev.victim, ev.amount, "清姬", kind="fragile")
                 self._log(f"伤害转化为 {ev.amount} 点破甲（清姬）")
                 return
-        # 批次 1：造成/受到伤害开始时（即时时机）；伤害目标转移的新事件
-        # （start_at_shield）跳过本批次——穿刺/免疫均不判定，从"护甲计算前0"开始
-        if not ev.skip_early and not ev.start_at_shield:
+        # 批次 1：造成/受到伤害开始时（即时时机）；流程起点晚于本批次的事件
+        # （start != "full"：贯通溢出/伤害目标转移的新事件）跳过批次 0/1
+        if ev.start == "full":
             # 批次 0：造成伤害前（即时时机）——穿刺（来源关键字）在此生效：移除目标
             # 的所有护甲/屏障，与本次伤害是否最终生效（免疫/归零/屏障）无关；适用于
             # 任意来源的伤害，含非战斗伤害（terminology.md「穿刺」；贯通溢出事件跳过本批次）
@@ -3552,8 +3554,8 @@ class Game:
         skip_before_health = False
         # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
         # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md:201）；
-        # 转移新事件（start_at_shield）跳过本批次——"无[贯通]"语义（贯通不随转移继承）
-        if ev.piercing and not ev.start_at_shield and s is not None and (
+        # 转移新事件（start="pre_shield_0"）跳过本批次——"无[贯通]"语义（贯通不随转移继承）
+        if ev.piercing and ev.start != "pre_shield_0" and s is not None and (
                 ev.kind != "counter"
                 or any(b in self._battle_counter_piercing for b in self._battle_stack)):
             skip_shield_calc = True
@@ -3562,12 +3564,13 @@ class Game:
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "贯通修正")
             if ev.amount > s.health:
-                # 伤害值改为当前生命，溢出量以同来源同原因新事件加入本队列（从护甲计算前开始）
+                # 伤害值改为当前生命，溢出量以同来源同原因新事件加入本队列
+                # （start="pre_shield_2"：从"护甲计算前2"贯通修正批次开始）
                 overflow = ev.amount - s.health
                 ev.amount = s.health
                 dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
                                        amount=overflow, kind=ev.kind, spell=ev.spell,
-                                       skip_early=True, card=ev.card))
+                                       start="pre_shield_2", card=ev.card))
             # 提前结算"扣减生命前"批次，后续不再结算该批次
             self._emit_damage_batch("on_before_health", ev)
             skip_before_health = True
@@ -3575,8 +3578,8 @@ class Game:
                 return
         # 护甲计算前1（汤盆冲撞[增强]"此牌伤害翻倍"时机锚点，terminology.md 登记）：
         # 来源卡牌实例带 double_damage 修饰（conditional_mods 装配写入）时伤害值翻倍；
-        # 转移新事件（start_at_shield）跳过——从"护甲计算前0"（on_before_shield）开始
-        if not ev.start_at_shield and ev.card is not None \
+        # 转移新事件（start="pre_shield_0"）跳过——从"护甲计算前0"（on_before_shield）开始
+        if ev.start != "pre_shield_0" and ev.card is not None \
                 and ev.card.mods.get("double_damage") and ev.amount > 0:
             ev.amount *= 2
             self._log(f"【{self.db.cards[ev.card.id].name}】的伤害翻倍至 {ev.amount} 点")
@@ -3625,7 +3628,7 @@ class Game:
                                        victim=Ref(player=ev.victim.player),
                                        amount=ev.amount, kind=ev.kind,
                                        spell=ev.spell, converted=ev.converted,
-                                       start_at_shield=True,
+                                       start="pre_shield_0",
                                        redirect_chain=ev.redirect_chain,
                                        card=ev.card))
             return
@@ -3633,7 +3636,7 @@ class Game:
         # 改非伤害（优先级 1）/伤害转移（优先级 2，含挂账转移）全部结算完、伤害事件
         # 未被终止/归零之后，对**最终受伤者**判定其全部免疫条目；屏障/护甲计算/
         # 贯通修正均先于免疫参与计算。免疫则伤害归零终止。普通事件与转移新事件
-        # （start_at_shield，从护甲计算前0 进入）均走到此点——转移后的伤害可被
+        # （start="pre_shield_0"，从护甲计算前0 进入）均走到此点——转移后的伤害可被
         # 最终受伤者免疫拦截（血蝠之盾→牌手免疫场景适用）
         # 作用域战斗伤害免疫：仅免疫 combat/counter，且须命中授予时指定的作用域
         if ev.kind in ("combat", "counter") and s is not None and self._combat_immune(s):
@@ -3908,7 +3911,7 @@ class Game:
         # damage_redirects 血蝠之盾类伤害转移挂账）
         self._clear_ext(s, CLEAR_ON_DEFEAT)
         s.shield = 0
-        self._detach_invocations(s, reason="气绝")  # 灵咒随气绝移除（效果类临时修正先减回）
+        self._detach_invocations(s, reason="气绝")  # 灵咒随气绝移除（身材光环层随之失效）
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
         s.temp_health = 0
         s.keywords.clear()  # 持续/一次性关键字与免疫条目气绝时清除；永久关键字保留（复活自动重新获得）

@@ -147,8 +147,10 @@ class InvocationDef(BaseModel):
     """灵咒定义（灵咒框架，docs/rules.md「灵咒」章；沧海刀鸣预备）。
 
     灵咒是"结附于式神或卡牌上的具名效果实体"，由 attach_invocation op 结附：
-    - power/health：效果类灵咒的身材增减益——结附期间生效（引擎实现为结附时
-      计入 temp_power/temp_health，移除时减回；气绝本清临时修正，等效"结附期间生效"）。
+    - power/health：效果类灵咒的身材增减益——结附期间生效（引擎实现为类光环层：
+      结附时刻快照入运行时条目，eff_power/max_health 读取时实时合计；不借
+      temp 修正承载——被"日出有曜"类清除临时修正后仍立即继续生效（维护者定案），
+      灵咒移除（气绝/离场/唯一性）即失效，无双重扣减）。
     - abilities：能力类灵咒的触发能力块（结附期间作为该式神的额外能力参与
       _collect_abilities 收集；进场序号 = 结附时刻，随灵咒移除而失效）。
     - draw_trigger：结附在卡牌上的灵咒"抽到触发"块——该牌从牌库经抽牌动作

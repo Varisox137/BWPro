@@ -55,10 +55,11 @@ class ShikigamiState(BaseModel):
     """对局中一个式神（实体）的运行时状态。
 
     身材组成（thoughts.txt）：基础值（式神基础值/当前形态基础值）
-    + 永久增减益修正 + 临时增减益修正。
+    + 永久增减益修正 + 临时增减益修正 + 灵咒类光环层（读取时实时合计）。
     临时/永久的区分标准是"气绝后复活能否保留"：临时修正在气绝时清除，
     永久修正复活后保留（光环类属临时修正的细分——连续型动态身材光环走
-    ext["dyn_power"]/["dyn_health"] 缓存通道，见 engine._refresh_stat_auras）。
+    ext["dyn_power"]/["dyn_health"] 缓存通道，见 engine._refresh_stat_auras；
+    灵咒身材增减益不借 temp 承载，见 invocations 字段注释）。
     """
 
     id: int  # 数据 id：对应 db 中式神的 id
@@ -120,8 +121,10 @@ class ShikigamiState(BaseModel):
     # 被变形时 = 原式神快照；原式神该值非空则继承之（连续变形解除时还原到最初的原式神状态）
     invocations: list[dict[str, Any]] = Field(default_factory=list)  # 结附的灵咒条目：
     # {"name", "player"（来源所属牌手）, "source": Ref|None（来源式神）,
-    # "ability_seq": int（结附时刻的能力进场序号）}；效果/能力结附期间生效，
-    # 气绝/离场时移除（效果类临时修正随之减回）
+    # "ability_seq": int（结附时刻的能力进场序号）, "power"/"health": int
+    # （效果类身材增减益的结附时刻快照——类光环层：不进 temp 修正，由
+    # eff_power/max_health 读取时实时合计，移除即消失、reset_stats 不可清）}；
+    # 能力类结附期间生效，气绝/离场时移除
 
     @property
     def is_stunned(self) -> bool:
@@ -136,16 +139,20 @@ class ShikigamiState(BaseModel):
         覆盖全部加成层；形态离场/气绝时清除）。
         ext["dyn_power"]：连续型动态身材光环的缓存通道（闻世/火吻之蛇；
         由 engine._refresh_stat_auras 在手牌数/破甲变化等读取点统一刷新）。
+        灵咒层：结附灵咒条目的 power 快照实时合计（类光环——rules.md 灵咒节
+        定案：被"日出有曜"类清除临时修正后仍立即继续生效）。
         """
         if self.ext.get("power_zero"):
             return 0
         return (self.base_power + self.perm_power + self.temp_power
-                + self.combat_power + int(self.ext.get("dyn_power", 0)))
+                + self.combat_power + int(self.ext.get("dyn_power", 0))
+                + sum(int(e.get("power", 0)) for e in self.invocations))
 
     @property
     def max_health(self) -> int:
         return (self.base_health + self.perm_health + self.temp_health
-                + int(self.ext.get("dyn_health", 0)))  # dyn 通道同 eff_power
+                + int(self.ext.get("dyn_health", 0))  # dyn 通道同 eff_power
+                + sum(int(e.get("health", 0)) for e in self.invocations))  # 灵咒层同上
 
     @property
     def in_play(self) -> bool:
