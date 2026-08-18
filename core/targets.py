@@ -437,6 +437,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {dice_six_ge: n}         ：控制者骰子投出 6 次数（ext dice_six_count）≥ n
     - {dice_distinct_ge: n}    ：控制者骰子历史（ext dice_history）去重数 ≥ n
     - {luck_success_total_ge: n} ：双方判定成功次数（ext luck_success_game）合计 ≥ n
+    - {kill_count_ge: n}       ：控制者击杀账本（PlayerState.kill_total）≥ n
+      （夺命"你消灭过13个式神"；engine.check_defeated 单点记账）
     - {dice_below_x: true}     ：运势判定时事件当前骰点 < 所需点数 X（"将失败"重投门控）
     - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
       orb_ge 为控制者鬼火的专用键，语义不同）；事件无该字段时回退读控制者
@@ -558,6 +560,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             # 双方运势判定成功合计 ≥ n（福满乾坤 [条件] 使用前提）
             total = sum(int(q.ext.get("luck_success_game", 0)) for q in game.state.players)
             if total < int(want):
+                return False
+        elif key == "kill_count_ge":
+            # 控制者击杀账本总消灭数 ≥ n（夺命"你消灭过13个式神"门控；
+            # 显式分支——否则落入通用 _ge 读事件/ext）
+            if game.state.players[controller].kill_total < int(want):
                 return False
         elif key == "dice_below_x":
             # 运势判定时"将失败"（觉醒·座敷童子重投门控）：事件当前骰点 < 所需点数 X

@@ -1,5 +1,6 @@
-"""增强装配管线测试：击杀标记（persistent store）、手牌累积（to=hand）、
-卡牌光环（card_auras）、战斗绑定一次性触发（temp_grants）、打出装配快照。
+"""增强装配管线测试：击杀账本（kill_count 动态数值）、持久修饰（persistent store）、
+手牌累积（to=hand）、卡牌光环（card_auras）、战斗绑定一次性触发（temp_grants）、
+打出装配快照。
 
 对应 docs/enhance-design.md 即时装配模型与 thoughts.txt 妖刀姬/兵俑卡面。
 测试辅助卡使用衍生号段（61+，token=True）；0 号位式神（100101）充当妖刀姬、
@@ -15,7 +16,20 @@ SELF_PLAYER = T(kind="all", pool="self_player")
 
 
 def _jingu_card(db, cid: int = 10010161, sid: int = 100101) -> int:
-    """禁锢之刀型战斗牌：enhance 战力 + 本局击杀计数触发器（persistent）。"""
+    """禁锢之刀型战斗牌：击杀账本动态战力（该式神为来源的消灭数 ×2 + base）。"""
+    db.cards[cid] = F.card(
+        cid, shikigami=sid, card_type="combat",
+        steps=[F.Step(op="buff_power",
+                      amount={"kill_count": {"shikigami": sid}, "per": 2, "base": 0},
+                      target=SELF),
+               F.Step(op="gain_shield", amount=2, target=SELF)],
+        token=True)
+    return cid
+
+
+def _persistent_enhance_card(db, cid: int = 10010161, sid: int = 100101) -> int:
+    """旧式 persistent enhance 合成卡：击杀触发器写持久 store（add_mod to=persistent
+    通道仍有其他使用方——罗生门之鬼/断罪等，此卡仅供生成点快照/打出补差测试）。"""
     db.cards[cid] = F.card(
         cid, shikigami=sid, card_type="combat",
         steps=[F.Step(op="buff_power", amount={"enhance": True, "base": 0}, target=SELF),
@@ -93,10 +107,11 @@ def _awaken_yaodao(db, cid: int = 10010166) -> int:
     return cid
 
 
-# ---------- 禁锢之刀：击杀标记 + persistent store + 打出装配 ----------
+# ---------- 禁锢之刀：击杀账本（kill_count 动态数值）+ 打出装配快照 ----------
 
 def test_jingu_kill_counter_and_snapshot(db, make_game):
-    """禁锢之刀：每次击杀 +2 累积；打出时装配快照——结算中的新击杀不回溯本次战力。"""
+    """禁锢之刀：击杀账本按来源式神分桶累计；打出时装配快照——结算中的新击杀
+    不回溯本次战力（战力 = 3 + 消灭数×2）。"""
     cid = _jingu_card(db)
     g = make_game()
     pa = g.state.players[0]
@@ -104,11 +119,11 @@ def test_jingu_kill_counter_and_snapshot(db, make_game):
     a_ref = Ref(player=0, shikigami=0)
     g.deal_to_shikigami(Ref(player=1, shikigami=0), 99, a_ref, kind="combat")
     g._drain_queue()  # 直调伤害管线后手动排空（on_shikigami_defeated 为延时时机）
-    assert pa.card_mods[cid]["enhance"] == 2
+    assert pa.kill_by[100101] == 1
     g.deal_to_shikigami(Ref(player=1, shikigami=1), 99, a_ref, kind="combat")
     g._drain_queue()
-    assert pa.card_mods[cid]["enhance"] == 4
-    # 打出：战力 = 基础 3 + 快照 4 = 7；被攻击者 8 血 → 剩 1（若回溯新击杀会是 9 伤害）
+    assert pa.kill_by[100101] == 2
+    # 打出：战力 = 基础 3 + 快照 2×2 = 7；被攻击者 8 血 → 剩 1（若回溯新击杀会是 9 伤害）
     move(g, 1, 2)
     b = g.state.players[1].shikigami[2]  # 2/6
     b.health = 8
@@ -118,18 +133,19 @@ def test_jingu_kill_counter_and_snapshot(db, make_game):
 
 def test_jingu_counter_scoping(db, make_game):
     """禁锢之刀计数归属（原版）：消灭己方式神（如伤害转移）也计数；
-    敌方同名式神的击杀只进敌方 store。"""
+    敌方同名式神的击杀只进敌方账本。"""
     cid = _jingu_card(db)
     g = make_game()
     pa = g.state.players[0]
     pb = g.state.players[1]
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, Ref(player=0, shikigami=0))
     g._drain_queue()  # 直调伤害管线后手动排空（on_shikigami_defeated 为延时时机）
-    assert pa.card_mods[cid]["enhance"] == 2  # 消灭己方式神也计数（原版）
+    assert pa.kill_by[100101] == 1  # 消灭己方式神也计数（原版）
+    assert pa.kill_total == 1
     g.deal_to_shikigami(Ref(player=0, shikigami=2), 99, Ref(player=1, shikigami=0), kind="combat")
     g._drain_queue()
-    assert pa.card_mods[cid]["enhance"] == 2   # 敌方妖刀姬的击杀不进我方 store
-    assert pb.card_mods[cid]["enhance"] == 2   # 计入敌方自己的 store
+    assert pa.kill_by[100101] == 1   # 敌方妖刀姬的击杀不进我方账本
+    assert pb.kill_by[100101] == 1   # 计入敌方自己的账本
 
 
 # ---------- 不祥之刃：战斗绑定一次性触发 ----------
@@ -502,7 +518,7 @@ def test_generate_snapshots_persistent_mods(db, make_game):
     """生成点快照：generate 置入手牌即装配持久修饰；之后计数再涨，
     打出时 _materialize 只补差值（不重复合并）。"""
     cid, gen = 10010171, 10010172
-    _jingu_card(db, cid)
+    _persistent_enhance_card(db, cid)
     db.cards[gen] = F.card(
         gen, steps=[F.Step(op="generate", card_id=cid)], token=True)
     g = make_game()

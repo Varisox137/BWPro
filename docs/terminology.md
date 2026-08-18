@@ -11,6 +11,7 @@
 | 式神（非召唤物） | `shikigami` | `ShikigamiDef.kind = "shikigami"` | ✅ |
 | 召唤物 | `summon` | `kind = "summon"`；气绝即离场、不可升级、入场 1 级（暂定）、生成即进入战斗区 | ✅ |
 | 变形物 | `kind = "transform"` | `ShikigamiDef.kind="transform"`：视同召唤物类不入构筑池/测试卡组；由 `transform` 动作变入（继承座位/等级，不继承增减益；变形/还原均为再进场——进场顺序排本队最后，见「进场顺序」行），`untransform`/气绝前2 按 `transform_origin` 快照还原（快照携带的剩余倒计时优先保留、不被能力进场重置初值）；保留"所属式神" `transform_owner`（无法使用原式神的牌） | ✅ |
+| 替换物 | `kind = "replace"` | `ShikigamiDef.kind="replace"`（规则评审⑤从 transform 拆出：替换无快照不还原，与变形语义互斥——loader 校验 transform/replace 两 op 各自只能指向对应 kind 的实体，引擎 `_replace_shikigami` 同口径守卫）：由 `replace` 动作换入（继承座次/等级；气绝即气绝、复活仍为替换物），`ext["replace_owner"]` 记原式神 id 放行其全部卡牌；派系=替换物 def faction（觉醒·番茄的"番茄"） | ✅ |
 | 实体 | entity / `ShikigamiState` | 局内式神或召唤物；记录 `home_slot`（准备区编号 1-4，召唤物 None） | ✅ |
 | 幻境 | `FieldState` / `PlayerState.fields` | 在场幻境实体（card_id/intensity/shikigami）：所属牌手拥有其能力（能力块=幻境牌 def abilities，随队列存续生效）；每方一个幻境队列，进场入队尾（`field_front` 置队首）；牌手受伤减少生命后队首幻境减等量耐久（至多降为 0），耐久 0 消灭出队；伤害来源=所属式神在场则该式神、否则无来源。机制见 rules.md 第三十一章（机制与首批实卡均已落地——03 月夜幻响第二批） | ✅ |
 | 气绝 | `defeated` | `ShikigamiState.defeated`；倒计时后复活 | ✅ |
@@ -230,6 +231,7 @@
 | 生命下限钳制 | `min_health_turn`（ext 键，bump_ext 置位） | "本回合生命不会降到 1 以下"（狂啸）：伤害批次"扣减生命"处把伤害压到至多 当前生命-1，生命已为 1 时压为 0 提前终止（同护甲完全吸收；0 伤不触发受伤能力）；半回合作用域——任一回合开始双方清除（`_start_turn`）；[响应]经 `response` 覆盖块挂 on_damage_start，先于钳制置位 | ✅ |
 | 战斗区空置条件 | `combat_empty`（条件运算符） | {combat_empty: friendly\|enemy}：指定方战斗区没有式神（friendly=控制者方 / enemy=对方——取值统一，原 self/opponent 死分支已删；偷袭 20200423"敌方回合结束时战斗区没有式神"响应、霜风"若敌方战斗区没有式神"step 条件） | ✅ |
 | 回合结束响应排序 | `_suppress_responses`（引擎标志） | 回合结束：on_turn_end 即时能力照常触发，但手牌响应收集被抑制——当前回合方的回合结束延时效果（队列）先结算完，再以合成 on_turn_end 事件收集对方手牌响应（答复3；现无实卡使用，机制保留）；延时效果改变局面（如战斗区变得非空）则响应条件复查不再满足 | ✅ |
+| 响应窗口 / 空闲点 | `_response_window` / `_response_used`（引擎字段） | 原版"每个空闲点限一张响应牌"落地（规则评审⑨）：窗口=两次玩家动作之间的完整结算（apply 的 play_card/assault/upgrade/end_turn 指令开启新窗口，end_turn 级联的对方回合开始同属本窗口；choose 续答/debug 不开）；窗口内**同一时机**（事件名）每名玩家至多成功结算一张响应牌（`_response_used` 记玩家→(窗口, 事件名) 名额，复查失败不占）；不同时机=不同空闲点可各一张；**并行事件同时机响应合并**——同名事件的多次 emit 共享名额只触发一次（rules.md 第二章） | ✅ |
 | 响应战斗牌新战斗 | （`_settle_response_card` 分支） | 无当前战斗、或**非"（被）攻击时"时机**触发的响应战斗牌（偷袭"当敌方战斗区式神气绝时"，挂 on_shikigami_defeated + in_combat payload）不插入当前战斗，按完整战斗事件流程发起一次新战斗（正常反击；战斗中触发即嵌套战斗）；攻击方按卡牌所属玩家解析（atk_ref 不取 state.active——响应方可能非当前回合方） | ✅ |
 | 有目标战斗扩展 | `target` 扩展键 `battle` / `optional` | battle=true：非追猎战斗牌的 choose 目标作为战斗目标（同追猎的有目标战斗管线、帷幕不可选——天翔鹤斩"改为攻击一个敌方准备区式神"）；optional=true：合法目标池为空时可不带目标使用（退化为无目标普通战斗） | ✅ |
 | 精确等级生成 | `level` / `max_level` / `exclude_self`（generate 参数） | level：int 或 "shikigami"：后者按 shikigami 参数所指式神当前等级精确匹配生成（醉酒当歌羁绊"获得一张茨木童子当前等级的战斗牌"；所指式神未出战/未在场空操作）；max_level="source"：生成牌等级 ≤ 来源式神当前等级（吾即正义 20200423"不大于自身等级"）；exclude_self=True：候选池排除与来源同 id 的牌（"其他法术牌"） | ✅ |
@@ -284,7 +286,11 @@
 | 己方伤害口径 | `source_side: friendly` + 自伤 source=己方牌手自身 | 火照之路/彼岸归航/觉醒·彼岸花效果等对己方牌手的自伤以己方牌手自身为伤害来源（非 None），计入"己方式神/卡牌/牌手效果造成的伤害"链；ext `self_damage_taken` 记账——conditional_mods 算子 `self_damage_taken_ge` 打出装配时求值（死亡之花[增强]）；牌手受伤挂 `on_player_damaged`（payload player=下标）与式神受伤 `on_damage`（victim=Ref）区分 | ✅ |
 | 幻境条件键 | `friendly_field` / `friendly_field_intensity_ge` / `hand_card_type` / `field_summon_distinct_ge` / `_le`（通用后缀） | {friendly_field: true}=控制者有任一在场幻境（曜断/鱼鳞之备门控、conditional_keywords 算子同名）；{friendly_field_intensity_ge: n 或 {ge, shikigami:"self"\|id}}=存在耐久 ≥n 的幻境（shikigami 限定所属式神——竹取物语"若辉夜姬的幻境耐久>=20"，定案(14)）；{hand_card_type: <主类型>}=手牌中有该主类型的牌（余辉 play_condition 使用前提，定案(9)）；{field_summon_distinct_ge: n 或 {count, shikigami:"self"\|id}}=本局召唤过的不同名幻境数（ext `field_summon_ids` 记账——觉醒·辉夜姬五幻境增强）；`_le` 后缀=事件 payload/控制者 ext 值 ≤n（黄泉花境 amount_le: -1"耐久降低时"，与既有 `_ge` 对偶）；幻境能力收集器键 `field_self`（该幻境自身）/ `field_intensity_ge`（耐久 ≥n 才生效——"若此牌耐久>=10"系）；**步级专用键 `field_intensity_ge`**（执行器消费：读触发来源幻境 ctx.field 当前耐久，同块内多次判定共享首次判定快照（ctx.memo）——月坠"然后若耐久>=30"收窄判定，定案(13)）；conditional_keywords 算子 `deck_field_distinct_ge`=牌库不同名幻境牌数 ≥n（五道难题[瞬发]） | ✅ |
 
-**ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）：
+**ext 约定键登记表**（少数卡专用数据不进 State 底层字段，统一收纳于 `ext`）。
+键的**宿主与清除时机集中登记于 `core/registry.py` `EXT_KEYS`**（唯一事实来源；
+引擎在己方/任一方回合开始、己方回合结束、气绝、形态离场等边界按登记表统一
+自动清除（`Game._clear_ext`），有副作用的键挂清除钩子 `_ext_clear_<key>`；
+新 ext 键必须先登记）：
 
 | 键 | 载体 | 说明 |
 |---|---|---|
@@ -316,7 +322,6 @@
 | `yaohu_dmg_bonus` | `ShikigamiState.ext` | 聚气：妖狐能力伤害永久 +1（bump_ext 写入，跨气绝保留、觉醒后继续累计；amount_ext + amount_ext_source="shikigami" 读取） |
 | `transform_origin` / `transform_owner` | `ShikigamiState`（字段，非 ext） | 变形还原式神快照（State dump，不含本字段；被变形时写入，原式神该值非空则继承——连续变形还原到最初；解除时按快照还原当时状态）/ 变形物"所属式神" = 原式神 id（变形物不能使用原式神的任何牌——出牌校验拒绝；万象之书类按原式神取牌的挂读处） |
 | 永久派系 | `perm_faction`（`ShikigamiState` 字段） | 式神进场时记录的永久派系（`faction` 属性=当前派系）；召唤物/变形物进场派系=来源式神 perm_faction（engine summon/_transform_shikigami） |
-| `transform_permanent` | `ShikigamiState.ext`（变形物） | 永久变形标记（transform permanent=True 写入；untransform 与气绝前2 还原跳过——变形物气绝即气绝、复活仍为变形物，觉醒·番茄） |
 | `gen_replace` | `PlayerState.ext` | 生成替换钩子（{shikigami, to_type}；gen_replace 动作登记、generate 单点读取、重复登记覆盖——觉醒·番茄"她的非战斗牌改为随机战斗牌"） |
 | `snowball_used_game` | `PlayerState.ext` | 本局从手牌使用'雪球'（tags snowball）计数（出牌统一记账 `_account_card_played`；流霰 repeat {"ext": ...} 读数） |
 | `enemy_stunned_game` | `PlayerState.ext` | 本局敌方角色被[眩晕]累计次数（stun 动作每次实际施加时按受害者对方记账，不分眩晕来源、先于 on_stun 事件；雪融之时[增强] stat_aura kind=ext_power 读数） |
@@ -379,7 +384,8 @@
 | 换牌 | `replace_cards` / `gen_replace`（动作） | replace_cards：把控制者 zones（默认手牌+牌库）中该式神的所有非 exclude_type 牌各随机替换为一张该式神的 to_type 牌（原牌入墓地、替换牌生成到原区域并统一快照，牌库有替换则洗一次牌库——觉醒·番茄③）；gen_replace：牌手永久生成替换钩子（登记 `PlayerState.ext["gen_replace"]` {shikigami, to_type}，generate 单点读取——之后生成该式神的非 to_type 牌时改为随机一张 to_type 牌，重复登记后者覆盖前者——觉醒·番茄④）；shikigami="self" 时变形物取其 transform_owner 原式神 id | ✅ |
 | 雪球记账 | `snowball`（tags）/ `snowball_used_game` | 出牌统一记账：tags 含 snowball 的牌从手牌使用时 `PlayerState.ext["snowball_used_game"]` +1（本局累计不清；流霰 repeat {"ext": ...} 读数；寒冬之心 card_aura tag 谓词同用此标记） | ✅ |
 | 变形 | `transform` / `untransform`（动作） | transform{into}：目标式神灵变为 kind=transform 变形物（原式神快照存 `transform_origin`，连续变形继承最初快照；未在场/濒死空操作）；untransform：按快照还原原式神当时状态（纸人/小纸人能力：己方回合结束变回）；`permanent`/`owner_combat` 永久变形通道已删——觉醒·番茄 10013108 迁移至「式神替换」replace（见下条） | ✅ |
-| 式神替换 | `replace`（动作）/ `replace_owner`（ext 键） | replace{into}：目标式神被替换物取代——继承座次/等级，无快照不还原（替换物气绝即气绝、复活仍为替换物）；`ext["replace_owner"]` 放行原式神全部卡牌（出牌校验）；派系=替换物 def faction；与原式神（召唤物）可同时在场（觉醒·番茄 10013108——维护者定案 4 点） | ✅ |
+| 式神替换 | `replace`（动作）/ `replace_owner`（ext 键）/ `kind="replace"` | replace{into}：目标式神被 kind=replace 替换物取代——继承座次/等级，无快照不还原（替换物气绝即气绝、复活仍为替换物）；`ext["replace_owner"]` 放行原式神全部卡牌（出牌校验）；派系=替换物 def faction；与原式神（召唤物）可同时在场（觉醒·番茄 10013108——维护者定案 4 点）。kind=replace 为评审⑤从 transform 拆出的独立实体类别（见「替换物」行） | ✅ |
+| 击杀账本 | `kill_total` / `kill_by`（`PlayerState` 字段） | 规则评审⑩落地的全局击杀计数：`Game.check_defeated` 单点记账（气绝与消灭同口径、仅统计有来源的消灭）——`kill_total`=本局以己方角色为来源消灭的式神总数（含伤害转移等消灭己方式神，计入来源方）；`kill_by`=按来源式神**当前数据 id** 分桶的消灭数。读取通道：动态数值 `{"kill_count": {"shikigami": id}\|{"scope": "player"}, "per": n, "base": m}`（打出装配快照入 `card.mods["_kill"]`，禁锢之刀"每消灭过一个…+2力量"）与条件键 `{kill_count_ge: n}`（夺命门控）；`per` = 动态项总和倍率（base 不受倍率），通用叠加于任意动态数值形式 | ✅ |
 | 使用前提 | `play_condition`（CardDef）/ [条件]（卡面） | [条件] 使用前提：不满足则任何方式都不能使用——主动（`_cmd_play_card`）、响应（收集/复查）、自动使用统一以条件迷你语言对控制者求值（事件载荷为空，用 dice_six_ge/luck_success_total_ge 等控制者 ext 算子；福满乾坤）；CLI 可用性置灰。[条件] 为卡面标记（text 内），不进 KEYWORDS 表 | ✅ |
 | 运势条件算子 | `dice_six_ge` / `dice_distinct_ge` / `luck_success_total_ge` / `dice_below_x` | {dice_six_ge: n}=控制者投出 6 次数（ext dice_six_count）≥ n（送祝福/快来保护我增强）；{dice_distinct_ge: n}=dice_history 去重数 ≥ n（九莲宝灯动态身材同读数）；{luck_success_total_ge: n}=双方 luck_success_game 合计 ≥ n（福满乾坤 play_condition）；{dice_below_x: true}=运势判定时事件当前骰点 < 所需 X（"将失败"重投门控——觉醒座敷） | ✅ |
 | 运势数值扩展 | `amount_ctx` / `amount_ext` / `amount_ext_source` / `amount_sign` | 伤害类（damage/random_damage/distribute_damage）与 buff 类（buff_power/buff_health）数值扩展：amount_ctx 累加效果上下文变量（luck_dice——骰子炸弹）；amount_ext 累加 ext 计数——默认读来源式神所属牌手 ext（谁还不听话 dice_six_count），amount_ext_source="shikigami" 改读来源式神 ext（聚气 yaohu_dmg_bonus）；amount_sign=-1 转 debuff（来打我呀减力量） | ✅ |

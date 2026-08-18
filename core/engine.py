@@ -28,6 +28,12 @@ from typing import Any
 
 from core import actions, debug, targets
 from core.events import CORE_EVENTS, EVENT_TIMING
+from core.registry import (
+    CLEAR_ANY_TURN_START,
+    CLEAR_ON_DEFEAT,
+    CLEAR_OWN_TURN_START,
+    EXT_KEYS,
+)
 from core.model import (
     CardInstance,
     ExecContext,
@@ -69,6 +75,11 @@ _QINGWA_SHIKIGAMI = 100113
 _YAOHU_SHIKIGAMI = 100130
 # 不夜之火批次引擎直读的式神 id：日和坊——能量免单（在场已觉醒）与生命代偿（在场基础能力）
 _RIHEFANG_SHIKIGAMI = 100205
+
+
+def _kill_snap_key(spec: dict) -> str:
+    """击杀账本查询 spec 的快照键（card.mods["_kill"] 的存储键，_step_amount/_materialize 共用）。"""
+    return repr(sorted(spec.items()))
 
 
 @dataclass
@@ -124,9 +135,18 @@ class Game:
         self.rng = random.Random(seed)
         self.queue: deque[_Pending] = deque()
         self.history: list[str] = []  # 事件名序列（测试/回放用）
-        # 已消耗响应名额的时机实例序号：同一时机至多成功结算一张响应牌（原版"每空闲点
-        # 限一张"已取消——不同时机可各响应一张；复查失败不占名额，同时机下一张可继续）
-        self._response_used_emit: int | None = None
+        # 响应名额（规则设计评审⑨落地——原版两条规则）：
+        # 1. 每空闲点限一张：同一响应窗口（= 每名玩家一次行动的完整结算，apply 的
+        #    玩家动作指令之间）内、同一时机（事件名）每名玩家至多成功结算一张响应牌；
+        #    多张满足时按收集顺序（所属式神从左往右）结算第一张，其余本时机不再触发；
+        #    复查失败不占名额。同一窗口内的不同时机（宣言时/受伤后……）是不同空闲点，
+        #    可各响应一张。
+        # 2. 并行事件同时机响应合并：并行事件（如并行伤害的多个受伤事件）是同名事件
+        #    的多次 emit，共享（窗口, 事件名）名额——只触发一次，不逐事件重复。
+        # _response_window：当前窗口序号（玩家动作指令开启新窗口）；
+        # _response_used：玩家 → 已消耗响应名额的 (窗口序号, 事件名)。
+        self._response_window: int = 0
+        self._response_used: dict[int, tuple[int, str]] = {}
         self._suppress_responses = False  # on_turn_end 的响应推迟到回合结束效果结算后（答复3）
         # 战斗上下文（最小版）：每次 _resolve_combat 压栈新 battle id，终止点弹栈并
         # 清理本战斗授予的关键字实例与免疫条目。为嵌套战斗/响应战斗牌（Phase 5+）打底。
@@ -201,6 +221,48 @@ class Game:
         cur = s.base_power + s.perm_power + s.temp_power
         if cur > s.ext.get("max_power", 0):
             s.ext["max_power"] = cur
+
+    # ---------- ext 半回合记账键的边界统一清除（core/registry.EXT_KEYS 登记表驱动） ----------
+
+    def _clear_ext(self, holder, timing: str) -> None:
+        """按 EXT_KEYS 登记表清除 holder.ext 中登记为该时机的键（键名→清除时机的
+        唯一事实来源在 core/registry.py；此处不再散落手写 pop）。
+        有副作用的键（扣减/级联/重置/过滤）按键名挂清除钩子 `_ext_clear_<key>`。"""
+        holder_kind = "shikigami" if isinstance(holder, ShikigamiState) else "player"
+        for key, (kind, t) in EXT_KEYS.items():
+            if kind != holder_kind or t != timing:
+                continue
+            hook = getattr(self, f"_ext_clear_{key}", None)
+            if hook is not None:
+                hook(holder)
+            else:
+                holder.ext.pop(key, None)
+
+    @staticmethod
+    def _ext_clear_turn_power(s: ShikigamiState) -> None:
+        """turn_power（"本回合额外力量"记账）：清除时从 temp_power 同步扣减。"""
+        turn_power = s.ext.pop("turn_power", 0)
+        if turn_power:
+            s.temp_power -= turn_power
+
+    @staticmethod
+    def _ext_clear_power_zero_turn(s: ShikigamiState) -> None:
+        """power_zero_turn（半回合力量覆写标记）：清除时级联解除力量覆写。"""
+        if s.ext.pop("power_zero_turn", None):
+            s.ext.pop("power_zero", None)
+
+    @staticmethod
+    def _ext_clear_energy_free_turn(p: PlayerState) -> None:
+        """energy_free_turn（觉醒·日和坊免单名额）：每半回合重置为 True（非删除）。"""
+        p.ext["energy_free_turn"] = True
+
+    def _ext_clear_cost_mods(self, p: PlayerState) -> None:
+        """cost_mods（手牌费用修正条目）：按回合号过期清理；scope="form" 条目
+        不按回合号过期（形态离场通道移除）。"""
+        if p.ext.get("cost_mods") is not None:
+            p.ext["cost_mods"] = [e for e in p.ext["cost_mods"]
+                                  if e.get("scope") == "form"
+                                  or e.get("turn", 0) >= self.state.turn]
 
     # ---------- 连续型动态身材光环（读取时求值的缓存通道） ----------
 
@@ -317,6 +379,17 @@ class Game:
         d = self.state.players[1 - pi]
         n = sum(1 for s in d.shikigami if s.in_play and s.is_stunned)
         return n + (1 if d.is_stunned else 0)
+
+    def _kill_count(self, pi: int, spec: dict) -> int:
+        """玩家 pi 的击杀账本计数（_step_amount {"kill_count": spec} 统一读取点）：
+
+        {"scope": "player"} → 本局以己方角色为来源消灭的式神总数（夺命）；
+        {"shikigami": id}（缺省口径）→ 该式神像（当前数据 id）为来源的消灭数（禁锢之刀）。
+        """
+        pl = self.state.players[pi]
+        if spec.get("scope") == "player":
+            return pl.kill_total
+        return pl.kill_by.get(int(spec.get("shikigami", 0)), 0)
 
     @staticmethod
     def _card_belongs_to(cdef: CardDef, sid: int) -> bool:
@@ -529,7 +602,8 @@ class Game:
         重复合并按实例去重（弹回后再次打出 / 生成快照后再打出）：计数型键以
         mods["_mat"] 记账上次合并值，只补差值；keywords_add/transformed 为集合/开关
         语义，天然幂等。条件实例修饰（conditional_mods，[增强]条件装配）在同一装配点
-        按条目条件写入实例 mods，不走持久 store。
+        按条目条件写入实例 mods，不走持久 store。击杀账本计数（_step_amount 的
+        kill_count 动态数值）也在此按打出点快照入 card.mods["_kill"]。
         """
         # 条件实例修饰（CardDef.conditional_mods；牙牙我们走[增强]身材、汤盆冲撞[增强]
         # 伤害翻倍）：装配点按条目条件（条件迷你语言，控制者视角、空事件求值）把 mods
@@ -541,6 +615,22 @@ class Game:
                 continue
             for k, v in (cm.get("mods") or {}).items():
                 card.mods[k] = v
+        # 击杀账本快照（禁锢之刀"每消灭过一个…"）：打出装配点把当前账本计数写入实例，
+        # 本次结算读快照（_step_amount 的 kill_count 分支）；先于持久 store 早退判定
+        specs: list[str] = []  # 已快照的 spec 键（去重）
+        blocks = ([cdef.effects, cdef.alt_effects, cdef.response]
+                  + [m.effects for m in cdef.methods])
+        for blk in blocks:
+            for step in (blk.steps if blk is not None else []):
+                extra = step.model_extra or {}
+                for num_key in ("amount", "power"):
+                    num = extra.get(num_key)
+                    if isinstance(num, dict) and num.get("kill_count"):
+                        skey = _kill_snap_key(num["kill_count"] or {})
+                        if skey not in specs:
+                            specs.append(skey)
+                            card.mods.setdefault("_kill", {})[skey] = self._kill_count(
+                                self.state.players.index(p), num["kill_count"] or {})
         store = p.card_mods.get(cdef.id)
         if not store:
             return
@@ -609,6 +699,13 @@ class Game:
           未气绝式神，此效果+1"）。
         - {"max_shield_or_fragile": true}：场上最大护甲或破甲（遮雨"为你恢复等同于
           场上最大护甲或破甲的生命"）——双方所有角色（在场式神 + 牌手）|shield| 最大值。
+        - {"kill_count": spec}：效果归属玩家的击杀账本计数（rules.md「击杀账本」）——
+          spec 为 {"shikigami": id} 时读该式神为来源的消灭数（禁锢之刀）、
+          {"scope": "player"} 时读玩家总消灭数；card 携带打出装配快照
+          （card.mods["_kill"]，见 _materialize）时优先快照，否则读活账本。
+        - "per": n：动态项总和的倍率，最终值 = base + 动态项总和 × per
+          （禁锢之刀"每消灭过一个…便获得+2力量"、棒球炸弹"2+2×幻境数"）；
+          缺省 1，静态 base 不受倍率影响。
         - "negate": true：与上述任意形式叠加，最终数值取负（觉醒·山风共享
           {event: original, negate: true}、突 {base: 2, countdown_holders, negate}）。
         key 参数：解析的数值键名（缺省 "amount"；attack_buff 的 power 动态数值经
@@ -617,70 +714,78 @@ class Game:
         """
         raw = (step.model_extra or {}).get(key, 0)
         if isinstance(raw, dict):
-            base = int(raw.get("base", 0))
+            base = int(raw.get("base", 0))  # 静态底数（不受 per 倍率影响）
+            dyn = 0  # 动态项总和（"每有一个…"类，受 per 倍率放大）
             if raw.get("hand_count_half") and game is not None and controller is not None:
-                base += len(game.state.players[controller].hand) // 2  # "一半"：向下取整
+                dyn += len(game.state.players[controller].hand) // 2  # "一半"：向下取整
             if raw.get("field_intensity") and field is not None:
-                base += int(field.intensity)  # 触发来源幻境当前耐久（星轨）
+                dyn += int(field.intensity)  # 触发来源幻境当前耐久（星轨）
             if raw.get("field_count") and game is not None and controller is not None:
-                base += len(game.state.players[controller].fields)  # 控制者幻境数（鲸骨·开）
+                dyn += len(game.state.players[controller].fields)  # 控制者幻境数（鲸骨·开）
             if raw.get("enhance") and card is not None:
-                base += int(card.mods.get("enhance", 0))
+                dyn += int(card.mods.get("enhance", 0))
             if raw.get("shield_of") and s is not None:
-                base += s.shield
+                dyn += s.shield
             if raw.get("fragile_of") and s is not None:
-                base += max(0, -s.shield)  # 破甲量（无破甲为 0；僵硬扑击）
+                dyn += max(0, -s.shield)  # 破甲量（无破甲为 0；僵硬扑击）
             if raw.get("half_shield_of") and s is not None:
-                base += max(0, s.shield) // 2  # "每有 2 护甲"：向下取整；破甲不计
+                dyn += max(0, s.shield) // 2  # "每有 2 护甲"：向下取整；破甲不计
             if raw.get("power_of") and s is not None:
-                base += s.eff_power
+                dyn += s.eff_power
             if raw.get("perm_power") and s is not None:
-                base += s.perm_power
+                dyn += s.perm_power
             if raw.get("ext") and s is not None:
-                base += int(s.ext.get(raw["ext"], 0))
+                dyn += int(s.ext.get(raw["ext"], 0))
             if raw.get("event") and event is not None:
                 val = int(event.get(raw["event"], 0))
                 if raw.get("cap") is not None:
                     val = min(val, int(raw["cap"]))  # 事件引用值上限截断（觉醒·铃鹿御前"至多3点"）
                 if raw.get("half"):
                     val //= 2  # 事件引用值减半（向下取整；光影"获得等同于一半伤害的生命"）
-                base += val
+                dyn += val
             if raw.get("memo") and memo is not None:
-                base += int(memo.get(raw["memo"], 0))  # 块内暂存（巨浪 last_damage_total）
+                dyn += int(memo.get(raw["memo"], 0))  # 块内暂存（巨浪 last_damage_total）
             if raw.get("burst_x"):
                 # 爆能 X 快照（不夜之火批次）：memo 优先，否则出牌时写入的 card.mods
                 if memo is not None and memo.get("burst_x") is not None:
-                    base += int(memo["burst_x"])
+                    dyn += int(memo["burst_x"])
                 elif card is not None:
-                    base += int(card.mods.get("burst_x", 0))
+                    dyn += int(card.mods.get("burst_x", 0))
             if raw.get("dice_distinct") and game is not None and controller is not None:
                 # 骰子历史去重种数（九莲宝灯动态身材；ext dice_history 记最终有效骰点）
-                base += len(set(game.state.players[controller].ext.get("dice_history", [])))
+                dyn += len(set(game.state.players[controller].ext.get("dice_history", [])))
             if raw.get("enemy_stunned_count") and game is not None and controller is not None:
                 # 场上眩晕的敌方角色数（霜天之织[增强]"每有一个便+1力量"；活局面量，
                 # 眩晕解除即减——统一读取点 engine._enemy_stunned_count）
-                base += game._enemy_stunned_count(controller)
+                dyn += game._enemy_stunned_count(controller)
             if raw.get("enemy_revealed_count") and game is not None and controller is not None:
                 # 敌方手牌中已展示牌计数（三口径，engine._enemy_revealed_count）
-                base += game._enemy_revealed_count(controller,
-                                                   raw["enemy_revealed_count"], chosen)
+                dyn += game._enemy_revealed_count(controller,
+                                                  raw["enemy_revealed_count"], chosen)
+            if raw.get("kill_count") and game is not None and controller is not None:
+                # 击杀账本计数（禁锢之刀/夺命）：打出装配快照优先，否则读活账本
+                spec = raw["kill_count"] or {}
+                snap = (card.mods.get("_kill", {}) if card is not None else None) or {}
+                skey = _kill_snap_key(spec)
+                dyn += (int(snap[skey]) if skey in snap
+                        else game._kill_count(controller, spec))
             if raw.get("half_health_of") and event is not None and game is not None:
                 ref = event.get(raw["half_health_of"])
                 if isinstance(ref, Ref):
                     pl = game.state.players[ref.player]
                     hp = (pl.shikigami[ref.shikigami].health
                           if ref.shikigami is not None else pl.health)
-                    base += hp // 2  # "一半生命"：向下取整
+                    dyn += hp // 2  # "一半生命"：向下取整
             if raw.get("max_power_gap") and s is not None:
-                base += max(0, int(s.ext.get("max_power", 0)) - s.eff_power)
+                dyn += max(0, int(s.ext.get("max_power", 0)) - s.eff_power)
             if raw.get("missing_health") and s is not None:
-                base += s.max_health - s.health  # "恢复所有生命"（鹤唳回风）
+                dyn += s.max_health - s.health  # "恢复所有生命"（鹤唳回风）
             if raw.get("countdown_holders") == "friendly_others" \
                     and game is not None and controller is not None:
                 # 控制者在场未气绝、当前持有倒计时能力的式神像数（排除来源；突[增强]）
                 holders = [x for x in game.state.players[controller].shikigami
                            if x.in_play and x.countdown_block is not None and x is not s]
-                base += len(holders)
+                dyn += len(holders)
             if raw.get("max_shield_or_fragile") and game is not None:
                 # 场上最大护甲或破甲（遮雨）：双方所有角色（在场式神 + 牌手）的
                 # |shield| 最大值——shield 有符号，正值护甲与负值破甲同口径比较
@@ -688,10 +793,11 @@ class Game:
                 for pl in game.state.players:
                     vals.append(abs(pl.shield))
                     vals += [abs(x.shield) for x in pl.shikigami if x.in_play]
-                base += max(vals, default=0)
+                dyn += max(vals, default=0)
+            result = base + dyn * int(raw.get("per", 1))  # 动态项总和按倍率放大（禁锢之刀）
             if raw.get("negate"):
-                base = -base  # 取负（倒计时减少量、共享效果的负向应用）
-            return base
+                result = -result  # 取负（倒计时减少量、共享效果的负向应用）
+            return result
         return int(raw)
 
     # ==================== 对局初始化 ====================
@@ -764,6 +870,10 @@ class Game:
             raise IllegalAction("升级阶段：请先完成升级")
         if self.state.phase == "battle" and op == "upgrade":
             raise IllegalAction("当前不在升级阶段")
+        if op in ("play_card", "assault", "upgrade", "end_turn"):
+            # 玩家动作开启新响应窗口（choose 为结算中挂起的续答、debug 为测试脚手架，
+            # 均不开新窗口——窗口 = 两次玩家行动之间的完整结算）
+            self._response_window += 1
         handler(cmd)
         self._drain_queue()
 
@@ -2606,13 +2716,13 @@ class Game:
         B 的派系 = B def 自身的 faction。替换视作新进场：entry_order 取本队当前
         最大值 +1（排本队最后——答复(3)）。"""
         d = self.db.shikigami[into]
-        if d.kind != "transform":
-            raise ValueError(f"replace 的目标 {into} 不是替换物定义（kind=transform）")
+        if d.kind != "replace":
+            raise ValueError(f"replace 的目标 {into} 不是替换物定义（kind=replace）")
         s = p.shikigami[i]
         owner_id = s.ext.get("replace_owner", s.id)  # 连续替换仍指向最初的原式神
         pi = self.state.players.index(p)
         b = ShikigamiState(
-            id=into, kind="transform", faction=d.faction, perm_faction=d.faction,
+            id=into, kind="replace", faction=d.faction, perm_faction=d.faction,
             level=s.level, home_slot=s.home_slot,
             entry_order=max(x.entry_order for x in p.shikigami) + 1,
             base_power=d.power, base_health=d.health, health=d.health,
@@ -2945,40 +3055,26 @@ class Game:
         # "本回合"类牌手级监听（scope="turn"，天邪鬼黄·鼓舞类）同步失效
         p.auras[:] = [a for a in p.auras if a.get("scope") != "turn"]
         # "本回合"类延迟能力（scope="turn"，魔音扰心类）在己方回合开始清除（未消耗时）；
-        # 法术回响序列（spell_echo，"本回合"）同步清除；黄金羽"本回合"计数键清除（game 级键不清）
+        # ext 半回合记账键按 core/registry.EXT_KEYS 登记表统一清除（不再散落手写 pop）：
+        # 己方回合开始清除（own_turn_start：法术回响 spell_echo、"本回合额外力量"
+        # turn_power 扣减、黄金羽 feather_used_turn——game 级键不清）
         for s in p.shikigami:
             s.delayed[:] = [e for e in s.delayed if e.get("scope") != "turn"]
-            s.ext.pop("spell_echo", None)
-            # "本回合额外获得力量"（buff_power scope="turn"，武士之笛类）到期撤销
-            turn_power = s.ext.pop("turn_power", 0)
-            if turn_power:
-                s.temp_power -= turn_power
-        p.ext.pop("feather_used_turn", None)
-        # "每回合合计一次"标记（寂寥心象类）：任一回合开始双方均清除（回合 = 半回合）；
-        # 狂啸"本回合生命不降到1以下"（min_health_turn）与百鬼夜行 X 计数
-        # （damage_taken_turn，本回合所受伤害之和）同为半回合作用域，双方清除；
+            self._clear_ext(s, CLEAR_OWN_TURN_START)
+        self._clear_ext(p, CLEAR_OWN_TURN_START)
+        # "每回合合计一次"标记（寂寥心象类 turn_marks）：任一回合开始双方均清除
+        # （回合 = 半回合）；狂啸"本回合生命不降到1以下"（min_health_turn）、百鬼夜行 X
+        # 计数（damage_taken_turn）、本回合移动次数（move_count_turn）、记仇过滤键
+        # （dealt_damage_turn）、闪烁半回合力量覆写（power_zero_turn 级联 power_zero）、
+        # 能量免单名额（energy_free_turn 重置）同为半回合作用域，双方清除；
         # scope="turn" 免疫条目（immunities {"turn": n}，不可饶恕/舍生类）按回合号比对
         # 过期——此处同步清理过期条目，避免状态残留与显示残留
         for pl in self.state.players:
-            pl.ext.pop("turn_marks", None)
-            pl.ext["energy_free_turn"] = True  # 能量免单名额（觉醒·日和坊）：每半回合重置
+            self._clear_ext(pl, CLEAR_ANY_TURN_START)
             pl.immunities[:] = [e for e in pl.immunities
                                 if "turn" not in e or e["turn"] == self.state.turn]
-            if pl.ext.get("cost_mods") is not None:
-                # 手牌费用修正（cost_delta_player scope=next_turn）按回合号过期清理；
-                # scope="form" 条目不按回合号过期（形态离场通道移除）
-                pl.ext["cost_mods"] = [e for e in pl.ext["cost_mods"]
-                                       if e.get("scope") == "form"
-                                       or e.get("turn", 0) >= self.state.turn]
             for s in pl.shikigami:
-                s.ext.pop("min_health_turn", None)
-                s.ext.pop("move_count_turn", None)  # 本回合移动次数（不夜之火批次，半回合作用域）
-                s.ext.pop("damage_taken_turn", None)
-                s.ext.pop("dealt_damage_turn", None)  # 记仇过滤键（半回合作用域）
-                # 闪烁"本回合力量变为 0"（power_override scope="turn"，半回合作用域，
-                # min_health_turn 先例）到期：连同力量覆写一并解除
-                if s.ext.pop("power_zero_turn", None):
-                    s.ext.pop("power_zero", None)
+                self._clear_ext(s, CLEAR_ANY_TURN_START)
                 s.immunities[:] = [e for e in s.immunities
                                    if "turn" not in e or e["turn"] == self.state.turn]
         self._turn_start_revive(p, pi)
@@ -3807,11 +3903,10 @@ class Game:
         s.dying = False  # 濒死标记在气绝时清除
         self._clear_countdown(s)  # 气绝清除倒计时能力（大天狗记录的法术随之丢失，复活后不再具有）
         self._clear_ability_card_auras(owner, ref.player, ref.shikigami)  # 能力离场：其授予的 ability 光环移除
-        s.ext.pop("recorded_card", None)
-        s.ext.pop("power_zero", None)  # 力量覆写随气绝清除（power_override）
-        s.ext.pop("next_battle_keywords", None)  # 战斗外挂账的"本次战斗"授予随气绝失效
-        s.ext.pop("next_battle_immunities", None)
-        s.ext.pop("damage_redirects", None)  # 血蝠之盾类伤害转移挂账随气绝失效
+        # 气绝清除的 ext 键（EXT_KEYS 登记表 on_defeat 时机：recorded_card 大天狗记录、
+        # power_zero 力量覆写、next_battle_keywords/immunities 本次战斗授予挂账、
+        # damage_redirects 血蝠之盾类伤害转移挂账）
+        self._clear_ext(s, CLEAR_ON_DEFEAT)
         s.shield = 0
         self._detach_invocations(s, reason="气绝")  # 灵咒随气绝移除（效果类临时修正先减回）
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
@@ -3834,6 +3929,15 @@ class Game:
             s.revive_countdown = self.config.revive_countdown
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
+        # 击杀账本统一记账（规则设计评审⑩，口径与原卡牌自计数触发器等价：仅统计
+        # 有来源的消灭；按来源归属牌手分桶——镜像对局敌方同名式神击杀互不计入；
+        # 伤害转移等消灭己方式神的场景按原版同样计入来源方）
+        if source is not None:
+            sp = self.state.players[source.player]
+            sp.kill_total += 1
+            if source.shikigami is not None:
+                sid = sp.shikigami[source.shikigami].id  # 来源实体的当前数据 id
+                sp.kill_by[sid] = sp.kill_by.get(sid, 0) + 1
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
                   in_combat=in_combat, summon=(s.kind == "summon"),
                   battle=self._battle_stack[-1] if self._battle_stack else None)
@@ -4292,7 +4396,8 @@ class Game:
             if pi == self.state.active:
                 out.extend(self._collect_temp_grants(event))
             if pi != self.state.active and not self._suppress_responses \
-                    and self._response_used_emit != event["_emit"]:
+                    and self._response_used.get(pi) != (self._response_window,
+                                                        event["name"]):
                 out.extend(self._collect_responses(event, pi))
         return out
 
@@ -4441,10 +4546,12 @@ class Game:
         return cdef.response if cdef.response is not None else cdef.effects
 
     def _collect_responses(self, event: dict, pi: int) -> list[_Pending]:
-        """收集玩家 pi 的响应牌（调用方需已确认其为非回合方且本时机未占用名额）。
+        """收集玩家 pi 的响应牌（调用方需已确认其为非回合方且本窗口本时机未占用名额）。
 
         响应 = 敌方回合满足条件则必定使用（引擎自动结算，不询问玩家）。
-        同一时机（一次事件生成）至多成功结算一张；式神气绝不影响其手牌中响应牌的队列位置。
+        同一响应窗口（两次玩家行动之间的完整结算）内同一时机（事件名）每名玩家
+        至多成功结算一张；不同时机是不同空闲点，可各响应一张；
+        式神气绝不影响其手牌中响应牌的队列位置。
         """
         out: list[_Pending] = []
         p = self.state.players[pi]
@@ -4497,16 +4604,16 @@ class Game:
     def _settle_response_card(self, p: PlayerState, cdef: CardDef, ctx: ExecContext) -> bool:
         """响应牌（ctx.triggered=True）的额外开销与限制：复查、支付、插入使用分派。
 
-        - 同一时机（event._emit）至多成功结算一张；
+        - 同一响应窗口内同一时机（_response_window + 事件名）每名玩家至多成功结算一张；
         - 从收集到结算之间局面可能已变化，必须复查手牌、条件、等级、鬼火；
         - 复查失败返回 True（短路），不占用本时机的响应名额；
         - 成功结算后支付费用、占用名额、emit on_trigger，然后按卡牌类型分派：
           战斗牌/形态牌走插入使用（_apply_response_combat / _play_form_card）后
           返回 True（短路），其余移入手牌到墓地后返回 False（调用方按 steps 结算）。
         """
-        emit_id = (ctx.event or {}).get("_emit")
-        if emit_id is not None and self._response_used_emit == emit_id:
-            return True  # 同一时机至多成功结算一张响应牌（复查失败不占名额）
+        if self._response_used.get(ctx.controller) == (
+                self._response_window, (ctx.event or {}).get("name")):
+            return True  # 每空闲点（窗口内同一时机）每名玩家至多一张（复查失败不占名额）
         # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（复查失败不占名额）
         if not self._play_condition_met(p, cdef):
             return True
@@ -4551,7 +4658,8 @@ class Game:
             v = ctx.event.get("victim")
             if isinstance(v, Ref) and v in targets.pool_refs(self, cdef.target.pool, ctx.controller):
                 ctx.chosen = [v]
-        self._response_used_emit = emit_id  # 成功结算才占用本时机的响应名额
+        self._response_used[ctx.controller] = (
+            self._response_window, (ctx.event or {}).get("name"))  # 成功结算才占用本时机名额
         self._log(f"{p.name} 的响应牌【{cdef.name}】触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
         if cdef.card_type == "combat" and si is not None:

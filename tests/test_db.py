@@ -402,3 +402,45 @@ def test_env_alias_parse_and_label():
     assert env_label(20200327) == "不夜之火(20200327)"
     assert env_label(20200928) == "沧海刀鸣(20200928)"
     assert env_label(20251212) == "20251212"
+
+
+def test_key_whitelist_typo_keys():
+    """键白名单校验（评审③）：condition/动态数值/target 过滤的未登记键
+    （yaml 笔误）报错并带文件路径定位；逐版本快照校验。"""
+    raw = {
+        "id": 10010101, "name": "笔误卡",
+        "versions": {"history": [
+            {"date": 20260101, "card_type": "spell", "level": 1,
+             "effects": {"when": "on_play", "steps": [
+                 {"op": "damage", "amount": {"kill_cnt": 1},
+                  "condition": {"victim_knid": "shikigami"},
+                  "target": {"kind": "all", "pool": "enemy_shikigami",
+                             "exclude_shikigam": 100101}}]}},
+        ]},
+    }
+    db = CardDatabase({}, {}, set(), {10010101: raw}, {},
+                      paths={10010101: "db/00_beginner/x.yaml"})
+    errors = db.validate()
+    assert any("victim_knid" in e and "x.yaml" in e for e in errors)   # 条件键 + 路径
+    assert any("amount.kill_cnt" in e for e in errors)                 # 动态数值键
+    assert any("exclude_shikigam" in e for e in errors)                # 目标过滤键
+
+
+def test_replace_transform_kind_guard():
+    """replace/transform 互斥守卫（评审⑤）：replace op 只能指向 kind=replace 的
+    替换物实体，transform op 只能指向 kind=transform 的变形物实体。"""
+    shiki = [F.shiki(100101),
+             F.shiki(10010199, kind="transform"),
+             F.shiki(10010198, kind="replace")]
+    bad_replace = F.card(10010151, shikigami=100101, token=True,
+                         steps=[F.Step(op="replace", into=10010199)])
+    bad_transform = F.card(10010152, shikigami=100101, token=True,
+                           steps=[F.Step(op="transform", into=10010198)])
+    ok = F.card(10010153, shikigami=100101, token=True,
+                steps=[F.Step(op="replace", into=10010198),
+                       F.Step(op="transform", into=10010199)])
+    for card, op in ((bad_replace, "replace"), (bad_transform, "transform")):
+        db = F.db_of(shiki, [card])
+        errors = db.validate()
+        assert any(f"kind={op}" in e for e in errors), errors
+    assert F.db_of(shiki, [ok]).validate() == []

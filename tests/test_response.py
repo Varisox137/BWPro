@@ -1218,3 +1218,60 @@ def test_response_on_turn_end_combat_empty(db, make_game):
     pass_turns(g, 1)                                        # B 回合结束：战斗区有人 → 不响应
     assert any(c.id == TOU_XI for c in pa.hand)
     assert not any(c.id == TOU_XI for c in pa.graveyard[1:])
+
+# ---------- 响应窗口名额（规则设计评审⑨：每空闲点限一张 / 并行事件合并） ----------
+
+def test_response_one_card_per_timing(db, make_game):
+    """每空闲点限一张（原版）：同一行动结算（窗口）内、同一时机的两张同名响应牌
+    只触发收集序第一张；新窗口（下一次行动）的另一张照常触发。"""
+    _dun(db)
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BING_IDX].level = 1
+    move(g, 0, BING_IDX)                # 兵俑 1/6 进战斗区
+    give(g, 0, DUN)
+    give(g, 0, DUN)                     # 两张同名响应牌
+    a.orb = 3                           # 留火：两张各自付得起
+    g.apply({"op": "end_turn"})
+    g.apply({"op": "assault", "index": 0})     # 窗口 1：只触发第一张
+    bing = a.shikigami[BING_IDX]
+    assert bing.shield == 2 and bing.health == 6   # 仅一张 +5 甲（5-3）
+    assert sum(1 for c in a.graveyard if c.id == DUN) == 1
+    assert sum(1 for c in a.hand if c.id == DUN) == 1      # 第二张留在手牌
+    pass_turns(g, 2)                    # 回到 B 回合（A 回合开始护甲清零、兵俑退回准备区）
+    move(g, 0, BING_IDX)                # 兵俑重新进战斗区（debug 不开新窗口）
+    g.apply({"op": "assault", "index": 0})     # 新窗口：第二张照常触发
+    assert bing.shield == 2 and bing.health == 6
+    assert sum(1 for c in a.graveyard if c.id == DUN) == 2
+
+
+def test_response_parallel_events_merged(db, make_game):
+    """并行事件同时机响应合并：一次并行伤害产生多个受伤事件（同一结算点），
+    同一响应时机合并为一次触发——两张同名响应牌只结算一张，不逐事件重复。"""
+    RESP_AOE = 10010258
+    db.cards[RESP_AOE] = F.card(
+        RESP_AOE, shikigami=BING, cost=1, level=1, keywords=["trigger"], token=True,
+        target=T(kind="choose", pool="friendly_shikigami"),
+        when="on_damage",
+        block_kw={"condition": {"victim_side": "friendly",
+                                "victim_kind": "shikigami"}},
+        steps=[F.Step(op="gain_shield", amount=2)])
+    aoe = 10010169
+    db.cards[aoe] = F.card(
+        aoe, shikigami=BAI, token=True,
+        steps=[F.Step(op="damage", amount=1,
+                      target=T(kind="all", pool="enemy_shikigami"))])
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BING_IDX].level = 1
+    a.orb = 5                           # 两张都付得起
+    give(g, 0, RESP_AOE)
+    give(g, 0, RESP_AOE)
+    g.apply({"op": "end_turn"})
+    b.orb = 5
+    play(g, 1, aoe)                     # 并行伤害两个己方式神 → 两个 on_damage 事件
+    assert sum(1 for c in a.graveyard if c.id == RESP_AOE) == 1   # 合并为一次触发
+    assert sum(1 for c in a.hand if c.id == RESP_AOE) == 1
+    hurt = [s for s in (a.shikigami[BAI_IDX], a.shikigami[BING_IDX])]
+    assert all(s.health == s.max_health - 1 for s in hurt)   # 两名受伤者各受 1 伤
+    assert sum(1 for s in hurt if s.shield == 2) == 1   # 只有一名受伤者拿到 +2 甲

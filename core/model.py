@@ -250,6 +250,10 @@ class PlayerState(BaseModel):
     mulligan_done: bool = False  # 调度阶段：该玩家已确认完成
     config: dict[str, Any] = Field(default_factory=dict)  # 对 GameConfig 的玩家级覆盖
     card_mods: dict[int, dict[str, Any]] = Field(default_factory=dict)  # 持久修饰 store：card_id → 修饰（"本局游戏每……"类，打出时装配快照）
+    # 击杀账本（引擎统一记账，规则设计评审⑩；check_defeated 单点记账——气绝与消灭同口径，
+    # 仅统计有来源的消灭并按来源归属牌手分桶，消灭己方式神如伤害转移同样计入来源方）：
+    kill_total: int = 0  # 本局以己方角色为来源消灭的式神总数（夺命"你消灭过13个式神"）
+    kill_by: dict[int, int] = Field(default_factory=dict)  # 分桶：来源式神当前数据 id → 消灭数（禁锢之刀）
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
     auras: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级持久监听（"本局游戏"类，

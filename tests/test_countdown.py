@@ -1146,7 +1146,7 @@ def test_summon_entry_order_newest(db, make_game):
 def test_replace_entry_order_newest(db, make_game):
     """答复(3)：式神替换（replace）的替换物 = 新进场者，entry_order 排本队最后。"""
     into = 100198
-    db.shikigami[into] = F.shiki(into, kind="transform", name="替身", power=2, health=2)
+    db.shikigami[into] = F.shiki(into, kind="replace", name="替身", power=2, health=2)
     cid = 10010151
     db.cards[cid] = F.card(
         cid, token=True, steps=[F.Step(op="replace", into=into, target=T(kind="self"))])

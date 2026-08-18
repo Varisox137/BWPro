@@ -4,7 +4,7 @@ versions:
   best: 20200227
   history:
     - date: 20200227
-      kind: transform  # 式神替换变入（觉醒·番茄 replace op；本体无能力；构筑排除沿用 transform 类）
+      kind: replace  # 式神替换物（觉醒·番茄 replace op；本体无能力；视同召唤物类不入构筑池/测试卡组）
       faction: 红莲
       power: 3
       health: 4

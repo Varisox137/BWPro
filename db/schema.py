@@ -281,8 +281,10 @@ class ShikigamiDef(BaseModel):
     id: int
     version: int
     name: str
-    kind: Literal["shikigami", "summon", "transform"] = "shikigami"  # 式神（非召唤物）/ 召唤物 / 变形物
-    # （变形物：视同召唤物类不入构筑池/测试卡组；由 transform 动作变入，untransform/气绝前2 还原）
+    kind: Literal["shikigami", "summon", "transform", "replace"] = "shikigami"  # 式神（非召唤物）/ 召唤物 / 变形物 / 替换物
+    # （变形物/替换物：视同召唤物类不入构筑池/测试卡组。变形物由 transform 动作变入，
+    # 带快照、untransform/气绝前2 还原；替换物由 replace 动作换入，无快照、不可还原，
+    # ext["replace_owner"] 记原式神 id、放行原式神卡牌——觉醒·番茄类）
     faction: str = "无相"  # 派系：红莲/紫岩/青岚/苍叶/无相（对战中可被效果改变）
     origin: str | None = None  # 同源标识：原形/SP 等共享 origin，不能同时出战
     power: int  # 基础力量

@@ -1376,20 +1376,13 @@ def test_dynamic_stat_aura(db, make_game):
 
 
 def test_destroy_on_combat_damage_transformed(db, make_game):
-    """夺命型"变为"：本局消灭计数 ≥2 置位 transformed（card_mods 持久 store），
-    之后该式神造成战斗伤害时消灭受伤角色——式神走 context victim、牌手走
-    on_player_damaged 的 context damaged_player（card_transformed 门控，未变前不生效）。"""
+    """夺命型[增强]：击杀账本（kill_total，check_defeated 单点记账）≥2 后，
+    该式神造成战斗伤害时消灭受伤角色——式神走 context victim、牌手走
+    on_player_damaged 的 context damaged_player（kill_count_ge 门控，未达标不生效）。"""
     cid = 10010173
-    gate = {"source_shikigami": "self", "kind": "combat", "card_transformed": cid}
+    gate = {"source_shikigami": "self", "kind": "combat", "kill_count_ge": 2}
     db.cards[cid] = F.card(
         cid, card_type="combat", steps=[],
-        triggers=[F.EffectBlock(
-            when="on_shikigami_defeated",
-            condition={"victim_kind": "shikigami", "source_side": "friendly",
-                       "source_shikigami": 100101},   # 卡牌触发器无 holder，"self" 不可用
-            steps=[F.Step(op="add_mod", to="persistent", key="kill_count"),
-                   F.Step(op="add_mod", to="persistent", key="transformed",
-                          require={"key": "kill_count", "ge": 2})])],
         temp_grants=[
             F.EffectBlock(
                 when="on_damage", condition=gate,
@@ -1403,28 +1396,27 @@ def test_destroy_on_combat_damage_transformed(db, make_game):
     pa, pb = g.state.players
     pb.shield = 0
     pa.shikigami[0].health = 99                  # 扛住两轮反击，专注验证消灭逻辑
-    # 第 1 杀：计数 1，未"变为"
+    # 第 1 杀：账本 1，门控未达标
     pa.orb = 9
     move(g, 1, 0)
     pb.shikigami[0].health = 1
     play(g, 0, cid)
     assert pb.shikigami[0].defeated
-    assert pa.card_mods[cid]["kill_count"] == 1
-    assert not pa.card_mods[cid].get("transformed")
-    # 未变前打空战斗区：牌手受伤但不被消灭（每次出击各占一个 A 回合）
+    assert pa.kill_total == 1
+    # 未达标前打空战斗区：牌手受伤但不被消灭（每次出击各占一个 A 回合）
     pass_turns(g, 2)
     pa.orb = 9
     play(g, 0, cid)
     assert pb.health == 27 and not pb.defeated
-    # 第 2 杀：计数 2 → 置位 transformed
+    # 第 2 杀：账本 2 → 门控达标
     pass_turns(g, 2)
     pa.orb = 9
     move(g, 1, 1)
     pb.shikigami[1].health = 1
     play(g, 0, cid)
     assert pb.shikigami[1].defeated
-    assert pa.card_mods[cid].get("transformed")
-    # 变后战斗伤害命中牌手 → 直接消灭牌手获胜
+    assert pa.kill_total == 2
+    # 达标后战斗伤害命中牌手 → 直接消灭牌手获胜
     pass_turns(g, 2)
     pa.orb = 9
     play(g, 0, cid)

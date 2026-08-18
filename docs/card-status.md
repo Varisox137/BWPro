@@ -85,7 +85,7 @@
 | 02 见切 | ✅ | |
 | 03 战意 | ✅ | |
 | 04 一闪 | ✅ | cost 0 |
-| 05 禁锢之刀 | ✅ | 双版本：20191212 +1/+2（best）/ 20200120 +0/+2；按原版：妖刀姬消灭任意式神均计数（含消灭己方式神）；镜像对局不计敌方同名的击杀 |
+| 05 禁锢之刀 | ✅ | 双版本：20191212 +1/+2（best）/ 20200120 +0/+2；按原版：妖刀姬消灭任意式神均计数（含消灭己方式神）；镜像对局不计敌方同名的击杀；实现通道 = 击杀账本动态数值（`{kill_count: {shikigami}, per: 2}`，打出装配快照——评审⑩迁移，triggers 自计数已删） |
 | 06 妖刀万华 | ✅ | text 按 raw"战斗时额外先击中对手一次"=[连击]（同机制） |
 | 07 杀念 | ✅ | |
 | 08 觉醒·妖刀姬 | ✅ | 按原版"造成伤害时"（任意伤害）；[迅捷] 为一次性 |
@@ -327,7 +327,7 @@
 | 03 生死无常 | ✅ | [响应] 挂"己方战斗区式神被攻击时"；两连 destroy（任一侧战斗区为空该步空操作）；text 按 raw 对齐 |
 | 04 无情 | ✅ | 形态：countdown_delta revive=True——敌方式神气绝倒计时 +1 |
 | 05 觉醒·判官 | ✅ | +1/+1；20191212 为纯觉醒替换（去 -2力量/-1生命效果步与 target）；觉醒能力"当你消灭一个式神时"= {source_side: friendly}（己方任一式神消灭即触发，不限判官本人） |
-| 06 夺命 | ✅ | [必杀]（20191212 去[穿刺]）；增强：triggers 消灭计数 kill_count ≥13 → persistent transformed；变后 = temp_grants（绑本次战斗）on_damage/on_player_damaged {source_shikigami: self, kind: combat, card_transformed: 10011006} → destroy victim / damaged_player（destroy 支持牌手目标：消灭牌手 = 直接获胜，维护者定案） |
+| 06 夺命 | ✅ | [必杀]（20191212 去[穿刺]）；增强门控 = 击杀账本 `{kill_count_ge: 13}`（评审⑩迁移：triggers 自计数 + persistent transformed 已删，门控直读 `kill_total`）；变后 = temp_grants（绑本次战斗）on_damage/on_player_damaged {source_shikigami: self, kind: combat} → destroy victim / damaged_player（destroy 支持牌手目标：消灭牌手 = 直接获胜，维护者定案） |
 | 07 死之宣告 | ✅ | destroy 任选式神（含己方） |
 | 08 断罪 | ✅ | 形态增强：triggers 消灭计数 → form_power_delta（_materialize 生成点统一快照，_mat 记账防重复合并） |
 

@@ -418,7 +418,7 @@ def test_replace_keeps_seat_level_and_original_cards(db, make_game):
     战斗牌均可，以替换物座次为来源）——与变形"不能使用原式神卡牌"相区别；
     派系 = 替换物 def 自身 faction。"""
     tom = 10010198
-    db.shikigami[tom] = F.shiki(tom, kind="transform", name="番茄", power=3, health=3,
+    db.shikigami[tom] = F.shiki(tom, kind="replace", name="番茄", power=3, health=3,
                                 faction="紫岩")
     rep = 10010165
     db.cards[rep] = F.card(rep, token=True, steps=[
@@ -431,7 +431,7 @@ def test_replace_keeps_seat_level_and_original_cards(db, make_game):
     pa.shikigami[0].level = 2                        # 原式神当前等级
     play(g, 0, rep)
     s = pa.shikigami[0]
-    assert s.id == tom and s.kind == "transform"
+    assert s.id == tom and s.kind == "replace"
     assert s.level == 2                              # 继承原式神当前等级
     assert s.transform_origin is None                # 无快照/不还原
     assert s.ext["replace_owner"] == SID
@@ -460,7 +460,7 @@ def test_replace_coexists_with_summon_and_awaken_stats(db, make_game):
     awaken_power/health 永久增益落到同座次替换物上；觉醒番茄（替换物）与召唤番茄
     （召唤物同名）可同时在场。"""
     tom_t, tom_s = 10010198, 10010199
-    db.shikigami[tom_t] = F.shiki(tom_t, kind="transform", name="番茄", power=3, health=3)
+    db.shikigami[tom_t] = F.shiki(tom_t, kind="replace", name="番茄", power=3, health=3)
     db.shikigami[tom_s] = F.shiki(tom_s, kind="summon", name="番茄", power=3, health=3)
     aw = 10010167
     db.cards[aw] = F.card(aw, token=True, subtype="awaken", level=3,

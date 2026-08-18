@@ -697,3 +697,56 @@ def test_attach_invocation_op_and_event(db, make_game):
         steps=[F.Step(op="attach_invocation", name="契", uid=host.uid)])
     play(g, 0, 10010152)
     assert [e["name"] for e in host.invocations] == ["契"]
+
+
+# ---------- ext 集中登记表（规则评审②）与 replace 守卫（评审⑤） ----------
+
+def test_ext_registry_consistency():
+    """ext 登记表一致性：登记键的宿主与清除时机均为合法常量值。"""
+    from core import registry
+    timings = {registry.CLEAR_OWN_TURN_START, registry.CLEAR_ANY_TURN_START,
+               registry.CLEAR_OWN_TURN_END, registry.CLEAR_ON_DEFEAT,
+               registry.CLEAR_FORM_LEAVE, registry.CLEAR_CONSUME,
+               registry.CLEAR_RECOMPUTE, registry.CLEAR_NEVER}
+    assert registry.EXT_KEYS, "登记表不应为空"
+    for key, (host, timing) in registry.EXT_KEYS.items():
+        assert host in ("shikigami", "player"), key
+        assert timing in timings, key
+        if timing == registry.CLEAR_ON_DEFEAT:
+            assert host == "shikigami", key  # 气绝清除仅式神宿主
+
+
+def test_ext_registry_boundary_clearing(db, make_game):
+    """登记表驱动的边界自动清除：半回合键任一回合开始清、己方回合键己方开始清、
+    气绝键随气绝清、never 键跨边界保留；turn_power 钩子同步扣 temp_power。"""
+    g = make_game()
+    pa = g.state.players[0]
+    s = pa.shikigami[0]
+    s.ext["min_health_turn"] = 1         # any_turn_start（式神）
+    s.ext["turn_power"] = 2              # own_turn_start + 钩子（扣 temp_power）
+    s.temp_power = 2
+    s.ext["damage_redirects"] = []       # 空挂账不影响伤害流向，专验气绝清除
+    s.ext["max_power"] = 9               # never
+    pa.ext["turn_marks"] = {"x": 1}      # any_turn_start（牌手）
+    pa.ext["energy_free_turn"] = False   # any_turn_start + 钩子（重置 True）
+    pass_turns(g, 1)                     # B 回合开始：任一一开始边界
+    assert "min_health_turn" not in s.ext
+    assert "turn_marks" not in pa.ext
+    assert pa.ext["energy_free_turn"] is True          # 钩子重置而非删除
+    assert s.ext["turn_power"] == 2                    # 己方开始才清
+    pass_turns(g, 1)                     # 回到 A 回合开始
+    assert "turn_power" not in s.ext and s.temp_power == 0   # 钩子同步扣减
+    assert s.ext["max_power"] == 9                       # never 键保留
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 99,
+                        Ref(player=1, shikigami=0), kind="combat")
+    g._drain_queue()
+    assert "damage_redirects" not in s.ext             # 气绝清除
+
+
+def test_replace_engine_guard(db, make_game):
+    """replace 引擎守卫（loader 校验之外的兜底）：into 非 kind=replace 定义
+    直接 ValueError。"""
+    db.shikigami[10010199] = F.shiki(10010199, kind="transform")
+    g = make_game()
+    with pytest.raises(ValueError):
+        g._replace_shikigami(g.state.players[0], 0, 10010199)

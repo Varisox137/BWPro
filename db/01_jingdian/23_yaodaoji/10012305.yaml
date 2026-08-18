@@ -9,15 +9,10 @@ versions:
       level: 2
       effects:
         steps:
-          - {op: buff_power, amount: {enhance: true, base: 1}, target: {kind: self}}
+          # 击杀账本（engine.check_defeated 记账）：妖刀姬为来源的消灭数 ×2，
+          # 打出时装配快照；口径同原版触发器（含消灭己方式神；镜像对局只计本方）
+          - {op: buff_power, amount: {kill_count: {shikigami: 100123}, per: 2, base: 1}, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
-      triggers:
-        # 按原版：妖刀姬消灭任意式神均计数（含因伤害转移等消灭己方式神）；
-        # source_side 限定己方式神为来源：镜像对局中敌方妖刀姬的击杀不计入本方计数
-        - when: on_shikigami_defeated
-          condition: {victim_kind: shikigami, source_side: friendly, source_shikigami: 100123}
-          steps:
-            - {op: add_mod, to: persistent, key: enhance, amount: 2}
       text: "[增强]：{本局游戏妖刀姬每消灭一个式神，此牌获得+2力量。}"
     - date: 20200120
       card_type: combat
@@ -25,11 +20,6 @@ versions:
       level: 2
       effects:
         steps:
-          - {op: buff_power, amount: {enhance: true, base: 0}, target: {kind: self}}
+          - {op: buff_power, amount: {kill_count: {shikigami: 100123}, per: 2, base: 0}, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
-      triggers:
-        - when: on_shikigami_defeated
-          condition: {victim_kind: shikigami, source_side: friendly, source_shikigami: 100123}
-          steps:
-            - {op: add_mod, to: persistent, key: enhance, amount: 2}
       text: "[增强]：{本局游戏妖刀姬每消灭一个式神，此牌获得+2力量。}"

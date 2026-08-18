@@ -11,9 +11,9 @@ def main() -> None:
         for e in errors:
             print(" -", e)
         raise SystemExit(1)
-    derived = sum(1 for d in db.shikigami.values() if d.kind in ("summon", "transform"))
+    derived = sum(1 for d in db.shikigami.values() if d.kind in ("summon", "transform", "replace"))
     print(f"校验通过：{len(db.shikigami) - derived} 个式神"
-          f"（另 {derived} 个召唤物/变形物实体），{len(db.cards)} 张卡牌，"
+          f"（另 {derived} 个召唤物/变形物/替换物实体），{len(db.cards)} 张卡牌，"
           f"{len(db.custom_events)} 个自定义事件")
 
 

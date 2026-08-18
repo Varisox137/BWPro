@@ -2846,7 +2846,7 @@ def transform(game, ctx, *, targets: list[Ref], into: int) -> None:
 @action("replace")
 def replace(game, ctx, *, targets: list[Ref], into: int) -> None:
     """式神替换（觉醒·番茄；非变形）：目标座次式神 A 被替换物 B 实体取代（into 须为
-    kind=transform 的式神定义——构筑排除沿用变形物通道）。未在场/濒死者为空操作。
+    kind=replace 的式神定义——构筑排除沿用衍生物通道）。未在场/濒死者为空操作。
 
     与变形的区别：无快照/不还原（不设 transform_origin，气绝前2 还原路径天然跳过，
     B 气绝复活仍为 B）；无"不能使用原式神卡牌"限制（ext["replace_owner"] 记原式神

@@ -182,7 +182,8 @@ def test_trigger_order_and_one_per_timing(db, make_game):
 
 
 def test_response_different_timings_each_one(db, make_game):
-    """每空闲点限一张已取消：同一指令内的不同时机可各响应一张。"""
+    """不同时机=不同空闲点（原版"每空闲点限一张"）：同一指令内的不同时机
+    （出击宣言时 insert / 受伤后 queue）可各响应一张。"""
     _add_guard(db, cid=10010251)                           # 出击宣言时（insert）：+2 甲
     db.cards[10010252] = F.card(                           # 受伤后（queue）：+2 甲
         10010252, shikigami=100102, cost=1, keywords=["trigger"], token=True,
@@ -2097,7 +2098,7 @@ def test_transform_replace_upgrade_and_level_carryback(db, make_game):
     PAPER, TOM2, WALL = 100199, 100198, 100197
     db.shikigami[PAPER] = F.shiki(PAPER, kind="transform", name="纸人", power=1, health=1)
     db.shikigami[TOM2] = F.shiki(
-        TOM2, kind="transform", name="番茄·觉醒", power=2, health=2,
+        TOM2, kind="replace", name="番茄·觉醒", power=2, health=2,
         ability=F.EffectBlock(countdown=2, steps=[F.Step(op="draw", count=1)]))
     db.shikigami[WALL] = F.shiki(WALL, kind="summon", name="墙", power=0, health=2)
     db.cards[10010153] = F.card(10010153, token=True,
@@ -2109,7 +2110,7 @@ def test_transform_replace_upgrade_and_level_carryback(db, make_game):
     g._replace_shikigami(pa, 3, TOM2)                   # 替换物继承等级 0
     paper, tom = pa.shikigami[0], pa.shikigami[3]
     assert paper.kind == "transform" and paper.level == 1
-    assert tom.kind == "transform" and tom.level == 0
+    assert tom.kind == "replace" and tom.level == 0
     assert g.legal_upgrade_indices(0) == [3]            # lowest：替换实体纳入候选/比较
     g.state.phase, pa.upgrades = "upgrade", 1
     g.apply({"op": "upgrade", "index": 3})              # 替换物 0→1：能力进场注册倒计时
