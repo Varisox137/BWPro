@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040464
+name: 线索·截稿日
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      rarity: R
+      token: true  # 衍生牌（委托机制未实现，骨架）
+      level: 3
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: "[条件]：{本局游戏三目使用过五张委托牌}。己方回合结束时，复活三目，随机完成一个紧急委托。"

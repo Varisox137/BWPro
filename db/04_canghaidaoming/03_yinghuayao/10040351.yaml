@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——协战子选项，卡面文本待 raw 补充
+id: 10040351
+name: 落英缤纷
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+      card_type: spell
+      rarity: SSR
+      token: true  # 协战子选项（繁花似锦 樱花妖侧；本体未入库）
+      level: 2
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: ""  # 待 raw 补充（raw 仅列卡名，标未加入）

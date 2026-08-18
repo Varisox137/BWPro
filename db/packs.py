@@ -15,7 +15,8 @@ PACKS = {
     "00": "beginner",      # 新手包
     "01": "jingdian",      # 经典包
     "02": "buyezhihuo",    # 不夜之火
-    "03": "yueyehuanxiang",  # 月夜幻响（式神已在 card_data_raw 预留，幻境机制未实现、数据未录入）
+    "03": "yueyehuanxiang",  # 月夜幻响
+    "04": "canghaidaoming",  # 沧海刀鸣（wip 骨架：仅基础数据+卡面原文，效果未实现）
 }
 
 # 版本包中文名（卡组构筑二级目录等展示用；编号与 PACKS 一致）
@@ -24,6 +25,7 @@ PACK_NAMES = {
     "01": "经典包",
     "02": "不夜之火",
     "03": "月夜幻响",
+    "04": "沧海刀鸣",
 }
 
 

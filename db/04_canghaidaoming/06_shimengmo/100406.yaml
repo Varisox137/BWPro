@@ -1,0 +1,13 @@
+# 骨架（db.scaffold），能力/效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
+id: 100406
+name: 食梦貘
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      faction: 紫岩
+      power: 2  # 占位：身材待 raw 补充
+      health: 5  # 占位：身材待 raw 补充
+      wip: true  # WIP 骨架：身材/能力/卡牌数据待 raw 补充，不进构筑池与测试卡组
+      # ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）
+      text: ""

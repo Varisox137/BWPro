@@ -1,0 +1,18 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040408
+name: 觉醒·三目
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 2
+      awaken_health: 2
+      rarity: SSR
+      level: 3
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      # abilities: 待补觉醒能力块（打出时替换式神能力）
+      text: "选择一张‘线索’置入手牌。（不可重复）[觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌。三目所有的委托牌不消耗鬼火。}"

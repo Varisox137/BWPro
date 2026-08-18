@@ -1,0 +1,14 @@
+# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
+id: 10041003
+name: 增殖
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: ""  # TODO: 待补卡面文本

@@ -86,7 +86,7 @@
 | 使用方式 | `play_method` / `PlayMethod` | 多择子选项；仅保留核心方式、参数可变（`param`，如爆能{2}）。扩展字段（不夜之火批次）：爆能英文=burst；`energy_cost`（int=爆能N 额外支付 N 能量 / "all"=爆能X 消耗全部能量、0 能量不可选；方式 `effects` 追加到基础 effects 后，多档独立支付累计）、`keywords`（以该方式使用时临时授予卡牌关键字——森之力爆能档得[瞬发]） | ✅ |
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
 | 仅气绝时可用 | `only_when_defeated` | 卡牌字段：硬门控——式神存活时主动使用报错、响应收集直接跳过（心即归处）；需搭配 `playable_when_defeated` | ✅ |
-| 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（青行灯）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
+| 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（04 沧海刀鸣包 10 个骨架式神）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
 | 实例修饰 | `mods` | CardInstance 级差异（同名卡可不同），目前认识 `cost_delta`/`revealed`（已展示，见「结算与事件」） | ✅ |
 
 ## 关键词
@@ -159,6 +159,8 @@
 | 队列结算 | `queue`（timing） | 入队延迟结算 | ✅ |
 | 可中断 | `interleaved`（mode） | 步骤间允许其它效果结算 | ✅ |
 | 不可中断 | `atomic`（mode） | 步骤连发 | ✅ |
+| 结算次序总表 | （rules.md 第一章小节） | 一个能力"何时执行"的六旋钮判定链：事件默认类别 → 单卡 timing 覆盖 → priority 分层 → 能力进场序号 → horizon 单元绑定 → 排水模式；通用次序规则的唯一出处，其余章节只写事件语义。timing 覆盖 / 非伤害管线 priority / horizon 为**特例机制**（受限使用，新卡先用先讨论并登记总表节；现状清单见该节） | ✅ |
+| 延时单元绑定 | `_Pending.horizon` / `Game._drain_horizon` / `Game._horizon_stack` | 延时待结算项 emit 时记下当前结算单元 id，只在所属单元完成后冲刷、中途排水跳过；现用于觉醒·山风复制（on_countdown_reduced）、灵咒"抽到触发"挂起、抽牌事件移动挂起（draw_move）三处 | ✅ |
 | 目标 | `target` / `Ref` | Ref(player, shikigami?) | ✅ |
 | 随机生成 | `generate`（动作） | 从 db 按谓词（所属式神/主类型）随机生成卡牌置入区域（发 uid、可重复、池内不含衍生卡；杀念/觉醒·一目连） | ✅ |
 | 直接消灭 | `destroy` / `destroy_form`（动作） | 非伤害消灭：生命归零走气绝流程 / 消灭当前结附的形态（直接消灭免疫为扩展锚点） | ✅ |

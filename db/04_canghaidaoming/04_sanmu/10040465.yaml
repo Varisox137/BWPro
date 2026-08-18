@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040465
+name: 线索·研习
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      rarity: R
+      token: true  # 衍生牌（委托机制未实现，骨架）
+      level: 3
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: "[条件]：{本局游戏三目使用过七张委托牌}。本局游戏中当己方式神使用牌时，对敌方牌手造成3点伤害。"

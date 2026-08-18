@@ -1,0 +1,17 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040103
+name: 汲取养分
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 1
+      form_power: 2
+      form_health: 6
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      # abilities: 待补形态能力块（结附期间生效）
+      text: "敌方回合结束时，你每有1点鬼火，人面树永久获得1生命。"

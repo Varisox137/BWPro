@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040461
+name: 今日委托·柒
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      rarity: R
+      token: true  # 衍生牌（委托机制未实现，骨架）
+      level: 1
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: "[条件]：{还需5回合可用}（在牌库也有效）。[瞬发]。抽一张牌。"

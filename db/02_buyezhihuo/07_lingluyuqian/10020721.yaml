@@ -1,0 +1,17 @@
+# 骨架（db.scaffold），效果未实现——协战本体（04 沧海刀鸣副侧入库后补齐）
+id: 10020721
+name: 海国共主
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+      shikigami2: 100408  # 协战副归属
+      card_type: reinforce
+      rarity: SSR
+      level: 2
+      cost: 1  # 展示用；实际费用/等级/目标按所选子选项
+      options: [10020751, 10040851]  # [0] 主式神侧：裂甲归潮 / [1] 副式神侧：琼玉镇海
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: "选择使用一项：铃鹿御前-裂甲归潮；大岳丸-琼玉镇海"

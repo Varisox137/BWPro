@@ -4326,13 +4326,17 @@ class Game:
                 self.queue.append(pend)
         insert_queue.sort(key=lambda pend: pend.block.priority)  # 稳定：同优先级保持收集序
         damage = event.get("damage")
-        for pend in insert_queue:
+        while insert_queue:
+            pend = insert_queue.pop(0)
             if (damage is not None and getattr(damage, "amount", 1) <= 0
                     and pend.block.priority >= 2):
                 # 定案(7)：「伤害改为非伤害」（优先级 1）结算后原伤害事件终止——同时机
                 # 已触发的「伤害目标转移」（优先级 2）失去当前伤害事件上下文，不再处理
                 continue
             self._resolve_pending(pend)
+        # 结算次序不变式（旋钮②）：insert 批次是同步临时队列——emit 返回前必须
+        # 全部执行完（含被定案(7)跳过的项，跳过亦已出队），无任何残留入队。
+        assert not insert_queue, f"{name} 的 insert 批次未在 emit 返回前全部执行"
 
     def _release_lasting_stuns(self, name: str, payload: dict, seq: int) -> None:
         """持续眩晕 until_event 解除（英雄无畏"直到鸦天狗用牌/攻击/气绝"类）：
@@ -4934,6 +4938,13 @@ class Game:
         结算标记为该单元的倒计时减少延时 pend（按入队顺序），其余留队由外层统一
         结算——中途插入结算的能力块完成时不冲刷卡牌级延时项。结算中产生的新标记
         延时项属于新单元（被结算块自身压栈），不混入本批。"""
+        # 结算次序不变式（旋钮⑤）：按单元冲刷延时项时该单元必须已完成——倒计时
+        # 单元经 _resolve_block 的 finally 出栈后才走到这里；抽牌/灵咒挂起单元
+        # 不压栈（_draw_event 手工分配 id），此检查对其恒过。
+        if horizon in self._horizon_stack:
+            raise RuntimeError(
+                f"结算次序不变式违反：结算单元 {horizon} 尚未完成（仍在单元栈"
+                f" {list(self._horizon_stack)} 中），不应按单元冲刷其延时项")
         guard = 0
         while not self.state.pending_end:
             pend = next((p for p in self.queue if p.horizon == horizon), None)
@@ -4975,6 +4986,16 @@ class Game:
                 raise RuntimeError("效果队列疑似死循环，已强制清空")
             self.queue.remove(pend)
             self._resolve_pending(pend)
+        # 结算次序不变式（旋钮⑤/⑥）：正常排水结束后，残留项只能是带单元标记
+        # （horizon != 0）的延时项——属尚未完成的结算单元，留待 _drain_horizon
+        # 或最外层清尾；最外层排水（无进行中单元）必须完全清空。pending_end
+        # 分支已整队清空，不在此列。
+        if any(p.horizon == 0 for p in self.queue) \
+                or (self.queue and not self._horizon_stack):
+            raise RuntimeError(
+                "结算次序不变式违反：排水结束后队列残留不该剩余的延时项 "
+                f"{[f'{p.block.when}(horizon={p.horizon})' for p in self.queue]}"
+                f"（单元栈={list(self._horizon_stack)}）")
         # 待结束状态 → 正式结束
         if self.state.pending_end and self.state.winner is None:
             if self.state.pending_loser == -1:

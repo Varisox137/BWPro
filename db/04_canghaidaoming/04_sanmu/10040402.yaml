@@ -1,0 +1,16 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040402
+name: 日常委托
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      # raw 注记：此牌在实际对局中的表现为——每当生成此牌时（包括游戏开始时的
+      # 牌库初始化），改为生成当天星期几所对应的‘今日委托’牌
+      text: "此牌的效果每天会随机改变。"

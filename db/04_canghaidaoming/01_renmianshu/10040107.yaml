@@ -1,0 +1,15 @@
+# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
+id: 10040107
+name: 凋零之森
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: field
+      rarity: SSR
+      level: 3
+      intensity: 20
+      effects:
+        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
+        steps: []
+      text: "当每个牌手的回合开始时，对他所有角色造成等同于他自身一半生命的伤害。"
