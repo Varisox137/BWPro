@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040463
 name: 线索·征询
 versions:
@@ -6,10 +5,17 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      token: true  # 衍生牌（委托机制未实现，骨架）
+      subtype: quest  # 委托牌（三目专属子类型）
+      token: true  # 衍生牌（无稀有度；'线索'——觉醒·三目生成池）
       level: 3
+      play_condition: {quest_count_ge: {kind: quest_used, count: 3}}
+      # [条件]：{本局游戏三目使用过三张委托牌}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        # 本局游戏中当三目使用委托牌时，抽两张牌（牌手持久监听 player_aura，可叠加）
+        steps:
+          - op: player_aura
+            when: on_card_played
+            condition: {player: self, subtype: quest}
+            steps:
+              - {op: draw, count: 2}
       text: "[条件]：{本局游戏三目使用过三张委托牌}。本局游戏中当三目使用委托牌时，抽两张牌。"

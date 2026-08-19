@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），能力/效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 100404
 name: 三目
 versions:
@@ -8,6 +7,17 @@ versions:
       faction: 紫岩
       power: 2
       health: 5
-      wip: true  # WIP 骨架：能力/卡牌效果未实现，不进构筑池与测试卡组
-      # ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）
+      abilities:
+        # 游戏开始时，随机将一张'紧急委托'置入手牌（0 级未在场也触发——开局必然未升级，
+        # 书翁同型）；generate card_ids 从指定 id 列表随机一张（可生成衍生牌）
+        - when: on_game_start
+          trigger_when_not_in_play: true
+          steps:
+            - {op: generate, card_ids: [10040451, 10040452, 10040453, 10040454]}
+        # 三目使用紧急委托时，随机将一张'紧急委托'置入手牌（on_card_played payload
+        # card_id 数据 id 列表等值匹配；气绝时能力不生效，与常式能力一致）
+        - when: on_card_played
+          condition: {player: self, card_id: [10040451, 10040452, 10040453, 10040454]}
+          steps:
+            - {op: generate, card_ids: [10040451, 10040452, 10040453, 10040454]}
       text: "游戏开始时或三目使用紧急委托时，随机将一张‘紧急委托’置入手牌。"

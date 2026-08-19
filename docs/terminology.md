@@ -77,7 +77,8 @@
 | 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间分标准模式（固定最新，不可更改）与自由模式（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新；环境输入/显示支持别名（经典/不夜之火/月夜幻响/沧海刀鸣等）与 8/6 位日期，解析见 db/envs.py；**客户端派系显示分界** `FACTION_DISPLAY_MIN_DATE=20210330` + `show_faction(date)`（db/envs.py——deckbuilder 与对局渲染按环境日期隐藏派系列，早于分界不显示派系；外来式神手牌按中立色） | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
 | 同源 | `origin` | 原形/SP 共享 origin，不能同时出战 | ✅ |
-| 衍生卡 | `token` | 对局中生成，不可入卡组（序号从 51 开始递增） | ✅ |
+| 衍生卡 | `token` | 对局中生成，不可入卡组（序号从 51 开始递增）；**不标稀有度**（原版衍生牌无稀有度，loader 校验 token 卡须缺省 rarity） | ✅ |
+| 委托牌 | `subtype = "quest"` | 三目专属子类型（衍生号段 51-66：紧急委托 51-54 / 今日委托 55-61 / 线索 62-66）：专属子类型登记表 `db/schema.py EXCLUSIVE_SUBTYPES`（loader 校验只能出现在所属式神的牌上）；使用数由委托账本 `quest_used` 记账；机制见 rules.md 第三十三章 | ✅ |
 | 衍生物 | （kind=summon 的衍生） | 序号从 99 开始递减；必须有从属式神 | ✅ |
 | 数据 id | `id` | db 数据与局内对象的数据标识（CardInstance.id / ShikigamiState.id） | ✅ |
 | 对象 id | `uid` | 局内对象引用标识（CardInstance.uid；生成物亦发 uid） | ✅ |
@@ -86,7 +87,7 @@
 | 使用方式 | `play_method` / `PlayMethod` | 多择子选项；仅保留核心方式、参数可变（`param`，如爆能{2}）。扩展字段（不夜之火批次）：爆能英文=burst；`energy_cost`（int=爆能N 额外支付 N 能量 / "all"=爆能X 消耗全部能量、0 能量不可选；方式 `effects` 追加到基础 effects 后，多档独立支付累计）、`keywords`（以该方式使用时临时授予卡牌关键字——森之力爆能档得[瞬发]） | ✅ |
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
 | 仅气绝时可用 | `only_when_defeated` | 卡牌字段：硬门控——式神存活时主动使用报错、响应收集直接跳过（心即归处）；需搭配 `playable_when_defeated` | ✅ |
-| 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（04 沧海刀鸣包 10 个骨架式神）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
+| 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（04 沧海刀鸣包 9 个骨架式神——三目已落地去标）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）不受限 | ✅ |
 | 实例修饰 | `mods` | CardInstance 级差异（同名卡可不同），目前认识 `cost_delta`/`revealed`（已展示，见「结算与事件」） | ✅ |
 
 ## 关键词
@@ -128,7 +129,8 @@
 | 额外鬼火（伪关键字） | `extra_orb_cost` | 引擎级伪关键字（跳跳妹妹先天，`ShikigamiDef.keywords` → perm_keywords）：该式神出击/使用其战斗牌需额外消耗 1 点鬼火（出击共 2 火）；[迅捷]出击、[瞬发]/[不消耗鬼火]用牌时全免（定案(11)） | ✅ |
 | 不能攻击 | `no_attack`（ShikigamiDef 字段） | 仅召唤物/衍生物类：不能发动攻击（冰墙）——出击校验拦截、效果发起的攻击（launch_attack）为空操作 | ✅ |
 | （引擎级） | `keep_attack_buffs` | 攻击后到期强化不因攻击移除（残心；卡面不出现此关键字） | ✅ |
-| 能力伪关键字 | `power_if_field` / `power_per_field` / `power_if_shield` / `power_equal_shield`（schema `ABILITY_PSEUDO_KEYWORDS`） | 属"式神能力"而非卡牌/实体关键字：写在式神基础能力 keywords 或觉醒牌 keywords 中，觉醒时引擎把基础式神的伪关键字移除、改为授予觉醒牌（perm 类别）——power_if_field 有幻境 +1 力量（泷夜叉姬）/ power_per_field 每幻境 +1 力量（觉醒·泷夜叉姬）/ power_if_shield 有护甲 +1 力量（久次良）/ power_equal_shield 力量=护甲（觉醒·久次良）；身材类读取时求值（stat_aura 通道，实时光环动态跟随——定案(1)）、grant_keyword scope=turn 可临时授予（白骨之盾）；原 `field_stack`/`field_ability_stack` 作废删除（辉夜姬叠加改 field_merge 动作通道，定案(6)） | ✅ |
+| 能力伪关键字 | `power_if_field` / `power_per_field` / `power_if_shield` / `power_equal_shield` / `power_eq_health` / `heal_defeated_countdown` / `damage_defeated_countdown`（schema `ABILITY_PSEUDO_KEYWORDS`） | 属"式神能力"而非卡牌/实体关键字：写在式神基础能力 keywords 或觉醒牌 keywords 中，觉醒时引擎把基础式神的伪关键字移除、改为授予觉醒牌（perm 类别）——power_if_field 有幻境 +1 力量（泷夜叉姬）/ power_per_field 每幻境 +1 力量（觉醒·泷夜叉姬）/ power_if_shield 有护甲 +1 力量（久次良）/ power_equal_shield 力量=护甲（觉醒·久次良）/ power_eq_health 力量=当前生命（觉醒·人面树，覆写口径同 power_equal_shield）/ heal_defeated_countdown 可对气绝式神恢复生命、改为气绝倒计时 -1（樱花妖基础/觉醒共用）/ damage_defeated_countdown 可对气绝式神造成伤害、改为气绝倒计时 +1（觉醒·樱花妖）；身材类读取时求值（stat_aura 通道，实时光环动态跟随——定案(1)）、grant_keyword scope=turn 可临时授予（白骨之盾）；原 `field_stack`/`field_ability_stack` 作废删除（辉夜姬叠加改 field_merge 动作通道，定案(6)） | ✅ |
+| 效果授予伪关键字 | `combat_base_health` / `assault_any_target` / `friendly_combat_heal`（schema KEYWORDS） | 引擎级伪关键字（卡面不出现），由卡牌效果授予或形态牌 keywords 携带：combat_base_health 以自身当前生命（而非力量）造成战斗伤害——攻击与反击同口径（神木庇佑）；assault_any_target 出击可指定攻击者以外任一角色（含己方式神/牌手，_cmd_assault 分支；飘零之舞）；friendly_combat_heal 攻击己方角色改为使其恢复等量于伤害的生命、且无反击（飘零之舞） | ✅ |
 | 幻境实体关键字 | `field_keywords`（CardDef 字段） | 幻境牌声明进场实体持有关键字（不经 `keywords`，loader 不校验 KEYWORDS 子集；召唤时拷贝到 FieldState，离场失效）：health_floor_one 己方生命不降到 1 以下（铃鹿山的秘宝）/ deck_top_play 牌库顶视同手牌、等级 1 不耗火、以此法使用受 2 伤（彼岸归航——出牌管线 play_from=deck 通道）/ piercing 幻境能力伤害贯通（星轨——`_ability_piercing` 并入 ctx.field.keywords）/ veil 幻境[帷幕]（方圆之备 field_op grant_keyword veil——已实现，定案(11)：不能成为**敌方**效果的目标，field_op 取对象类 pick=first/max_intensity 在 side="enemy" 时排除；无目标效果与己方效果不受影响） | ✅ |
 
 **关键字持久性三类**（每类均为可重复多重集，存于 `ShikigamiState`）：
@@ -337,6 +339,7 @@
 | `burst_x` | `CardInstance.mods` | 爆能X 能量快照（energy_cost="all" 出牌时写入当前能量；步骤数值 {"burst_x": true} 读取，memo 同名键优先；本次结算后清除，弹回回手不残留） |
 | `self_damage_taken` | `PlayerState.ext` | 本局受到过己方来源伤害标记/计数（己方来源对己方牌手造成伤害时引擎记账——含自伤 source=牌手自身；死亡之花 conditional_mods self_damage_taken_ge 读取） |
 | `field_summon_ids` | `PlayerState.ext` | 本局召唤过的幻境数据 id 列表（_summon_field 记账；条件键 field_summon_distinct_ge 按去重数/所属式神读取——觉醒·辉夜姬"召唤五个不同幻境"） |
+| `quest_clues_seen` | `PlayerState.ext` | 本局已获得过的'线索'数据 id 列表（pick_generate unique_ext 记账/剔除——觉醒·三目"（不可重复）"；CLEAR_NEVER 跨回合不清） |
 | `intensity_boost` | `CardInstance.mods` | 检索入手的幻境耐久增量（search_deck intensity_boost 写入；召唤入场时加到初始耐久——五道难题 +5） |
 | `disabled_abilities` / `extra_abilities` | `FieldState`（字段） | 幻境能力叠加合并：field_ability_stack 同名再召唤时新能力并入已有实体 extra_abilities、重复能力记入 disabled_abilities 去重（觉醒·辉夜姬"能力和耐久会叠加"；单实体结算口径暂定见 questions.md） |
 
@@ -388,6 +391,15 @@
 | 变形 | `transform` / `untransform`（动作） | transform{into}：目标式神灵变为 kind=transform 变形物（原式神快照存 `transform_origin`，连续变形继承最初快照；未在场/濒死空操作）；untransform：按快照还原原式神当时状态（纸人/小纸人能力：己方回合结束变回）；`permanent`/`owner_combat` 永久变形通道已删——觉醒·番茄 10013108 迁移至「式神替换」replace（见下条） | ✅ |
 | 式神替换 | `replace`（动作）/ `replace_owner`（ext 键）/ `kind="replace"` | replace{into}：目标式神被 kind=replace 替换物取代——继承座次/等级，无快照不还原（替换物气绝即气绝、复活仍为替换物）；`ext["replace_owner"]` 放行原式神全部卡牌（出牌校验）；派系=替换物 def faction；与原式神（召唤物）可同时在场（觉醒·番茄 10013108——维护者定案 4 点）。kind=replace 为评审⑤从 transform 拆出的独立实体类别（见「替换物」行） | ✅ |
 | 击杀账本 | `kill_total` / `kill_by`（`PlayerState` 字段） | 规则评审⑩落地的全局击杀计数：`Game.check_defeated` 单点记账（气绝与消灭同口径、仅统计有来源的消灭）——`kill_total`=本局以己方角色为来源消灭的式神总数（含伤害转移等消灭己方式神，计入来源方）；`kill_by`=按来源式神**当前数据 id** 分桶的消灭数。读取通道：动态数值 `{"kill_count": {"shikigami": id}\|{"scope": "player"}, "per": n, "base": m}`（打出装配快照入 `card.mods["_kill"]`，禁锢之刀"每消灭过一个…+2力量"）与条件键 `{kill_count_ge: n}`（夺命门控）；`per` = 动态项总和倍率（base 不受倍率），通用叠加于任意动态数值形式 | ✅ |
+| 委托条件账本 | `quest_counts`（`PlayerState` 字段）/ `quest_count_ge` / `round_ge`（条件键） | 三目委托机制（rules.md 第三十三章）：牌手级 11 种 kind 计数（assault/draw/play/damage/effect_damage/attack/form_play/offdeck_play/enemy_defeat/revive/quest_used，记账点 `Game._quest_tick`/`_account_quest_damage`，`generated=True` 实例标记"阵容套牌以外"口径），跨区域有效（"在牌库也有效"）；{quest_count_ge: {kind, count}}=控制者账本达标（play_condition/Step 级条件通用），{round_ge: n}=对局轮数 (turn+1)//2 ≥ n（双方各一回合为一轮）；CLI 手牌进度标签 `_quest_progress`；**多事多忙扩域**（tags `quest_enemy`）：行为类 kind 记账时对方在场形态含此标记则对方账本同计，归属类（enemy_defeat/revive/quest_used）不扩域 | ✅ |
+| 委托视为达成 | `quest_done`（mods 键）/ `quest_complete`（动作）/ `quest_complete_pick`（pending_choice kind） | quest_complete{mode=choose\|random}：手牌中 tags 含 `urgent_quest` 且未标记的实例置 `mods["quest_done"]`——`_play_condition_met` 读取，[条件]使用前提视为满足（委托整理 choose 多张挂起交互 uid 作答 / 截稿日 random；空候选空操作） | ✅ |
+| 线索选择生成 | `pick_generate`（动作）/ `pick_generate`（pending_choice kind）/ `quest_clues_seen`（ext 键） | pick_generate{pool, unique_ext, zone}：从牌池选一张生成入手（generated=True）；unique_ext 剔除并记账控制者 ext 已见 id（觉醒·三目"（不可重复）"，CLEAR_NEVER）；多候选挂起交互（choice 作答数据 id），单候选直接生成，空候选空操作 | ✅ |
+| 多段攻击 | `multi_strike`（动作）/ `_battle_strikes` | 二帚流"攻击5次"：战斗牌提取步 times 参数（响应插入使用路径作普通 step 登记当前战斗），交战阶段后追加 times-1 段依次单独结算（反击只一段与首段并行）；攻击者气绝/被攻击者气绝无贯通则后续段终止，贯通改打对方牌手；战斗终止点清除 | ✅ |
+| 伤害覆写 | `override_damage`（动作） | 把伤害时点批次事件的伤害值直接改写为定值 to（二帚流"伤害改为1"；区别于 cap_damage 封顶不比较原值）；须挂 on_damage_start 等含 damage payload 的时点批次（该批次 payload 带 battle 键供战斗绑定 temp_grants 过滤） | ✅ |
+| 战斗免疫全类别 | `kind`（battle_immunity 参数） | 缺省 combat_damage；kind=all = 免疫所有伤害（含效果伤害）仍限战斗作用域——`_effect_immune` 对携带 battle 键的条目按战斗 id 比对（nested 覆盖嵌套战斗），战斗外不免疫（二帚流） | ✅ |
+| 今日委托每日替换 | `gen_weekday_quest`（tags）/ `WEEKDAY_GEN_REPLACE`（db/schema.py） | 日常委托本体不进入对局：构筑进牌库（setup.build_player）与 generate 生成（_spawn 钩子）时按当日星期替换为对应今日委托牌（周一=10040455…周日=10040461），替换产物 generated=True | ✅ |
+| 气绝复活形态 | `revive_on_defeat`（tags） | 结附带此标记形态的式神气绝结算（含气绝后时机）完成后经 `_revive` 复活（平和猫又屋；形态已正常消灭） | ✅ |
+| 光环子类型限定 | `subtype`（card_aura 参数） | 光环仅命中该子类型的牌（`_match_auras` 过滤；觉醒·三目"你的委托牌不消耗鬼火"= subtype: quest + cost_zero + scope=ability） | ✅ |
 | 使用前提 | `play_condition`（CardDef）/ [条件]（卡面） | [条件] 使用前提：不满足则任何方式都不能使用——主动（`_cmd_play_card`）、响应（收集/复查）、自动使用统一以条件迷你语言对控制者求值（事件载荷为空，用 dice_six_ge/luck_success_total_ge 等控制者 ext 算子；福满乾坤）；CLI 可用性置灰。[条件] 为卡面标记（text 内），不进 KEYWORDS 表 | ✅ |
 | 运势条件算子 | `dice_six_ge` / `dice_distinct_ge` / `luck_success_total_ge` / `dice_below_x` | {dice_six_ge: n}=控制者投出 6 次数（ext dice_six_count）≥ n（送祝福/快来保护我增强）；{dice_distinct_ge: n}=dice_history 去重数 ≥ n（九莲宝灯动态身材同读数）；{luck_success_total_ge: n}=双方 luck_success_game 合计 ≥ n（福满乾坤 play_condition）；{dice_below_x: true}=运势判定时事件当前骰点 < 所需 X（"将失败"重投门控——觉醒座敷） | ✅ |
 | 运势数值扩展 | `amount_ctx` / `amount_ext` / `amount_ext_source` / `amount_sign` | 伤害类（damage/random_damage/distribute_damage）与 buff 类（buff_power/buff_health）数值扩展：amount_ctx 累加效果上下文变量（luck_dice——骰子炸弹）；amount_ext 累加 ext 计数——默认读来源式神所属牌手 ext（谁还不听话 dice_six_count），amount_ext_source="shikigami" 改读来源式神 ext（聚气 yaohu_dmg_bonus）；amount_sign=-1 转 debuff（来打我呀减力量） | ✅ |
@@ -435,7 +447,17 @@
 | 能量光环 | `energy_power` / `ids_energy_power`（stat_aura kind） | energy_power{divisor}：持有者每有 divisor 点能量 +1 力量（人多势众"镰鼬每有2能量便获得1力量"，scope=form）；ids_energy_power{ids,divisor}：ids 匹配实体每有 divisor 点能量 +1 力量（烟雾缭绕对分身，scope=form）；连续型读取时求值，同 stat_aura 既有通道 | ✅ |
 | 形态要求光环 | `require_holder_form`（card_aura 参数） | 额外要求来源式神当前结附形态光环才生效（`_match_auras` 读取时动态判定——萤草 20200327"若萤草上有形态"）；scope=form/ability 清理同路径 | ✅ |
 | 关键字目标过滤 | `keyword`（TargetSpec 过滤键） | 按是否持有指定关键字过滤式神目标（三类关键字列表多重集任一含即算——沐浴阳光/冬日暖阳"己方的[充能]式神"）；spec_pool_refs 统一校验 | ✅ |
+| 无形态目标过滤 | `no_form`（TargetSpec 过滤键） | 仅未结附形态的式神（牌手滤除——今日委托·伍"消灭一个没有形态的式神"）；`_spec_filtered` 统一应用 | ✅ |
 | 能量/形态条件键 | `holder_has_form` / `energy_ge` / `pre_play_form`（条件运算符） | {holder_has_form: bool}=能力持有者当前是否结附形态（萤草 20200327）；{energy_ge: n}=能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）；{pre_play_form: bool}=on_card_played 新 payload——该牌使用前所属式神是否已结附形态（打出前快照：形态牌先结附后发事件，收集时求值的 holder_has_form 对该牌恒真） | ✅ |
 | 出击次数条件 | `assaults_left_ge` / `assaults_left_le`（条件运算符） | {assaults_left_ge: n} / {assaults_left_le: n}：控制者剩余出击次数 ≥/≤ n（真意之歌 20200423"若你出击次数大于0……否则……"两段 step 分流门控） | ✅ |
 | 置入牌库位置 | `position`（generate 参数） | position="random"：生成牌随机插入牌库、**不洗牌**（"置入牌库"原版语义，维护者定案——同心协力"将一张此牌的复制置入你的牌库"）；缺省按 zone 既有语义（deck=库底） | ✅ |
 | 幻境消灭 | `field_destroy`（动作） | **内部 op，数据不可用**：耐久 0 消灭流的待结算项——将幻境从所属牌手队列移除（能力同时失效）并发 `on_field_destroyed`（rules.md 第三十一章第四节） | ✅ |
+| 形态切换 | `switch_form`（动作） | `into=<形态牌 id>`：目标式神旧形态走 _destroy_form 消灭流程（入墓、发离场事件），新形态凭空实例走 _attach_form 结附流程（身材覆盖、生命回满、发结附事件）——神木诅咒"使一个形态变成…"（配 TargetSpec `has_form` 过滤）与落英缤纷/晚樱之意"切换为…"（target=self）共用；目标未在场/无形态空操作 | ✅ |
+| 结附期派系覆写 | `faction_override:<派系>`（形态牌 tags） | 结附期间 `ShikigamiState.faction` 临时改写（perm_faction 不动），形态离场经 _destroy_form 还原（诅咒之木"临时变为紫岩派系"）；_attach_form/_destroy_form 单点读写 | ✅ |
+| 扎根 | `no_retreat`（形态牌 tags） | 己方回合开始时战斗区该式神不移回准备区（`_turn_start_schedule_retreat` 不登记移回；扎根） | ✅ |
+| 群体复活 | `mass_revive`（动作） | side=all/self：双方（或控制者方）全部气绝未离场式神逐个走 _revive；`countdown_damage=True`：全部复活完毕后每个被复活者对其牌手造成等同于其复活前气绝倒计时的伤害（快照在复活前取，来源=该式神——绽放） | ✅ |
+| 气绝转化参数 | `allow_defeated` / `repeat_on_kill` / `repeat_on_revive`（damage/heal 参数） | allow_defeated：气绝（未离场、等级≥1）式神目标放行并转化——heal 改为气绝倒计时 -1（减到 ≤0 立即复活）、damage 改为 +1（均不再视为治疗/伤害、不发事件；与来源伪关键字 heal_defeated_countdown/damage_defeated_countdown 为并存的授权通道）；repeat_on_kill/repeat_on_revive：本步造成新气绝/引发复活即对原目标列表整体重复（上限 10 次——樱吹雪） | ✅ |
+| 逐目标动态数值 | `{"health_of"/"half_health_of": "target"}`（amount 通道） | _run_step 不做预解析、原样传字典由 damage op 逐目标求值（`_target_amount`）：按每个目标角色自身当前生命（一半向下取整——凋零之森"对他所有角色造成等同于他自身一半生命的伤害"）；`{"health_of": "self"}` 仍走 _step_amount 以来源式神当前生命求值（灾厄之花）；`{"orb": true}` amount 通道 = 控制者当前鬼火（汲取养分，与次数通道 orb 同义） | ✅ |
+| 回合方目标池 | `active_character`（目标池） | 当前行动玩家的所有角色（在场式神+牌手）——目标侧随回合方而非效果控制者（凋零之森） | ✅ |
+| 有形态目标过滤 | `has_form`（TargetSpec 过滤键） | 仅结附着形态的式神（牌手滤除——神木诅咒取对象口径）；`prefer_wounded`：候选中存在受伤（生命<上限）或气绝式神时收窄到该子集再交 random 均等取（晚樱之意"优先受伤或气绝式神"，气绝者入池需配 include_defeated）；include_defeated 同步纳入 choose 校验池（spec_pool_refs，樱花妖牌选择气绝目标） | ✅ |
+| 事件基础力量次数 | `{"event_base_power": key}`（repeat count 通道） | 触发事件 key 所指式神的当前基础力量（落英缤纷/晚樱之意"重复该式神基础力量的次数"，"该式神"= 复活/气绝事件角色；开始时一次性取值） | ✅ |

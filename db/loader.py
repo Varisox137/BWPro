@@ -21,6 +21,7 @@ from core.registry import (
 from core.targets import POOLS
 from db.schema import (
     CARD_TYPES,
+    EXCLUSIVE_SUBTYPES,
     FACTIONS,
     KEYWORDS,
     NEUTRAL_PREFIX,
@@ -215,8 +216,16 @@ class CardDatabase:
                 errors.append(f"{where}: 仅协战牌可以有 shikigami2")
             if c.card_type not in CARD_TYPES:
                 errors.append(f"{where}: 未知主类型 {c.card_type}")
-            if c.subtype is not None and c.subtype not in SUBTYPES:
+            if c.subtype is not None and c.subtype not in SUBTYPES \
+                    and c.subtype not in EXCLUSIVE_SUBTYPES:
                 errors.append(f"{where}: 未知子类型 {c.subtype}")
+            if c.subtype in EXCLUSIVE_SUBTYPES \
+                    and c.shikigami != EXCLUSIVE_SUBTYPES[c.subtype]:
+                errors.append(
+                    f"{where}: 专属子类型 {c.subtype} 只能出现在所属式神"
+                    f" {EXCLUSIVE_SUBTYPES[c.subtype]} 的牌上")
+            if c.token and c.rarity is not None:
+                errors.append(f"{where}: 衍生牌无稀有度（token 卡须缺省 rarity）")
             if c.rarity is not None and c.rarity not in RARITIES:
                 errors.append(f"{where}: 未知稀有度 {c.rarity}（R/SR/SSR）")
             for kw in c.keywords:

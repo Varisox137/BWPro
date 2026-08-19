@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040307
 name: 樱吹雪
 versions:
@@ -9,6 +8,22 @@ versions:
       rarity: SR
       level: 3
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        # "其他所有式神"= 双方除樱花妖外的式神（含未离场气绝者：include_defeated）。
+        # resolve 的 include_defeated 仅支持 friendly/enemy_shikigami 单侧池，故伤害段
+        # 与治疗段各拆敌我两步；repeat_on_kill/repeat_on_revive 的"重复此效果"按步
+        # 各自重复（引擎上限 10 次），与整段一起重复原版语义在连环击杀/复活跨敌我
+        # 交替时有细微次序差异（待确认见 questions.md 指针）
+        steps:
+          # 对其他所有式神造成2点伤害，若击杀式神则重复此效果
+          - {op: damage, amount: 2, repeat_on_kill: true, allow_defeated: true,
+             target: {kind: all, pool: enemy_shikigami, include_defeated: true}}
+          - {op: damage, amount: 2, repeat_on_kill: true, allow_defeated: true,
+             target: {kind: all, pool: friendly_shikigami, include_defeated: true,
+                      exclude_shikigami: 100403}}
+          # 恢复其他所有式神3点生命，若复活式神则重复此效果
+          - {op: heal, amount: 3, repeat_on_revive: true, allow_defeated: true,
+             target: {kind: all, pool: enemy_shikigami, include_defeated: true}}
+          - {op: heal, amount: 3, repeat_on_revive: true, allow_defeated: true,
+             target: {kind: all, pool: friendly_shikigami, include_defeated: true,
+                      exclude_shikigami: 100403}}
       text: "对其他所有式神造成2点伤害，若击杀式神则重复此效果。恢复其他所有式神3点生命，若复活式神则重复此效果。"

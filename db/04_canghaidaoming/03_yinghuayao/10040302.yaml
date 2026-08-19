@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040302
 name: 弥生之舞
 versions:
@@ -11,7 +10,13 @@ versions:
       form_power: 2
       form_health: 6
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      # abilities: 待补形态能力块（结附期间生效）
+      abilities:
+        # 当己方式神攻击后，使其恢复3点生命（无论是否气绝：allow_defeated 转化通道，
+        # 气绝攻击者改为倒计时-1）
+        - when: on_after_assault
+          condition: {attacker_side: friendly}
+          steps:
+            - {op: heal, amount: 3, allow_defeated: true,
+               target: {kind: context, key: attacker}}
       text: "当己方式神攻击后，使其恢复3点生命。（无论是否气绝）"

@@ -1,0 +1,32 @@
+id: 10040352
+name: 晚樱之意
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+      card_type: form
+      token: true  # 协战子选项（落英缤纷切换形态；本体未入库）
+      level: 2
+      form_power: 4
+      form_health: 5
+      effects:
+        steps: []
+      abilities:
+        # 每个己方回合一次（active: self + turn_mark 门控，标记任一回合开始清除），
+        # 敌方式神气绝时：随机为一个己方式神恢复2生命（优先受伤或气绝式神：
+        # prefer_wounded + include_defeated，allow_defeated 转化通道倒序-1），重复
+        # 该式神（气绝者）基础力量的次数（repeat count event_base_power=气绝事件
+        # victim payload），然后切换为‘落英缤纷’
+        - when: on_shikigami_defeated
+          condition: {victim_side: enemy, victim_kind: shikigami, active: self,
+                      turn_mark_not: wanying}
+          steps:
+            - {op: turn_mark, key: wanying}
+            - op: repeat
+              count: {event_base_power: victim}
+              steps:
+                - {op: heal, amount: 2, allow_defeated: true,
+                   target: {kind: all, pool: friendly_shikigami, include_defeated: true,
+                            random: 1, prefer_wounded: true}}
+            - {op: switch_form, into: 10040351, target: {kind: self}}
+      text: "每个己方回合一次，敌方式神气绝时，随机为一个己方式神恢复2生命（优先受伤或气绝式神），重复该式神基础力量的次数，然后切换为‘落英缤纷’。"

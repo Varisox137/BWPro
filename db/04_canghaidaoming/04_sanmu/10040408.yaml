@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040408
 name: 觉醒·三目
 versions:
@@ -12,7 +11,22 @@ versions:
       rarity: SSR
       level: 3
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      # abilities: 待补觉醒能力块（打出时替换式神能力）
+        # 选择一张'线索'置入手牌（不可重复：quest_clues_seen 记账剔除本局已获得过
+        # 的线索；多张候选挂起交互选择，仅剩一张直接生成）
+        steps:
+          - {op: pick_generate, pool: [10040462, 10040463, 10040464, 10040465, 10040466],
+             unique_ext: quest_clues_seen}
+      abilities:
+        # [觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌}（同基础能力）
+        - when: on_card_played
+          condition: {player: self, card_id: [10040451, 10040452, 10040453, 10040454]}
+          steps:
+            - {op: generate, card_ids: [10040451, 10040452, 10040453, 10040454]}
+        # 三目所有的委托牌不消耗鬼火（绑定本能力的卡牌光环，scope=ability——
+        # 气绝/变形/觉醒替换时随能力离场移除，能力进场重新注册；萤草同型）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: card_aura, shikigami: self, subtype: quest, cost_zero: true,
+               scope: ability}
       text: "选择一张‘线索’置入手牌。（不可重复）[觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌。三目所有的委托牌不消耗鬼火。}"

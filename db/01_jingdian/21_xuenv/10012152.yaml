@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（冰霜永冻 10012121）
       level: 1
       target: {kind: choose, pool: enemy_shikigami}

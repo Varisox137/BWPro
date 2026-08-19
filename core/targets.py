@@ -63,6 +63,7 @@ POOLS = frozenset({
     "side_of_last_heal",
     "friendly_injured",
     "friendly_defeated",
+    "active_character",
     "enemy_fragile_or_combat",
 })
 
@@ -181,6 +182,11 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
             for i, s in enumerate(game.state.players[controller].shikigami)
             if s.defeated and not s.despawned and s.level >= 1
         ]
+    if pool == "active_character":
+        # 回合方（当前行动玩家）的所有角色（凋零之森"当每个牌手的回合开始时，
+        # 对他所有角色造成…"——目标侧随事件玩家而非效果控制者）
+        act = game.state.active
+        return alive_shiki(act) + [Ref(player=act)]
     raise ValueError(f"未知目标池: {pool}")
 
 
@@ -260,6 +266,24 @@ def _spec_filtered(game, refs: list[Ref], extra: dict,
         # 本人；spec_pool_refs 统一校验/展示）
         refs = [r for r in refs if r.shikigami is not None
                 and game.state.players[r.player].shikigami[r.shikigami].id != int(ex_sid)]
+    if extra.get("no_form"):
+        # 仅没有形态的式神（今日委托·伍"消灭一个没有形态的式神"；牌手目标被滤除）
+        refs = [r for r in refs if r.shikigami is not None
+                and game.state.players[r.player].shikigami[r.shikigami].form is None]
+    if extra.get("has_form"):
+        # 仅结附着形态的式神（神木诅咒"使一个形态变成…"取对象；牌手目标被滤除）
+        refs = [r for r in refs if r.shikigami is not None
+                and game.state.players[r.player].shikigami[r.shikigami].form is not None]
+    if extra.get("prefer_wounded"):
+        # 优先受伤或气绝式神（晚樱之意"优先受伤或气绝式神"）：候选中存在受伤
+        # （生命 < 上限）或气绝的式神时收窄到该子集（再交由 random 键均等取）；
+        # 气绝者入池需配合 include_defeated；牌手目标不参与优先（被子集挤出）
+        pref = [r for r in refs if r.shikigami is not None and (
+            game.state.players[r.player].shikigami[r.shikigami].defeated
+            or game.state.players[r.player].shikigami[r.shikigami].health
+            < game.state.players[r.player].shikigami[r.shikigami].max_health)]
+        if pref:
+            refs = pref
     return refs
 
 
@@ -280,9 +304,20 @@ def _ref_fragile(game, ref: Ref) -> bool:
 
 def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> list[Ref]:
     """choose 目标合法性校验用：pool_refs + TargetSpec 额外过滤键（勾诀 power_le；
-    legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。"""
+    legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。
+
+    include_defeated：对 friendly_shikigami / enemy_shikigami 池把未离场的气绝式神
+    一并纳入可选（樱花妖"可以为己方气绝式神恢复生命"类 choose 口径；与 resolve()
+    kind=all 分支同口径）。"""
     refs = pool_refs(game, spec.pool, controller, targeted=targeted)
-    return _spec_filtered(game, refs, spec.model_extra or {}, controller)
+    extra = spec.model_extra or {}
+    if extra.get("include_defeated") and spec.pool in (
+            "friendly_shikigami", "enemy_shikigami"):
+        side = controller if spec.pool == "friendly_shikigami" else 1 - controller
+        refs += [Ref(player=side, shikigami=i)
+                 for i, s in enumerate(game.state.players[side].shikigami)
+                 if s.defeated and not s.despawned and s.level >= 1]
+    return _spec_filtered(game, refs, extra, controller)
 
 
 def resolve(game, spec, ctx) -> list[Ref]:
@@ -439,6 +474,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {luck_success_total_ge: n} ：双方判定成功次数（ext luck_success_game）合计 ≥ n
     - {kill_count_ge: n}       ：控制者击杀账本（PlayerState.kill_total）≥ n
       （夺命"你消灭过13个式神"；engine.check_defeated 单点记账）
+    - {quest_count_ge: {"kind": k, "count": n}} ：控制者委托条件账本
+      （PlayerState.quest_counts）k 类计数 ≥ n（三目委托 [条件] 使用前提/步骤门控；
+      engine._quest_tick 多点记账）
+    - {round_ge: n}            ：对局回合数 ≥ n（双方各一回合为一轮，由 state.turn
+      半回合计数换算；今日委托·柒"5回合可用"）
     - {dice_below_x: true}     ：运势判定时事件当前骰点 < 所需点数 X（"将失败"重投门控）
     - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
       orb_ge 为控制者鬼火的专用键，语义不同）；事件无该字段时回退读控制者
@@ -565,6 +605,18 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             # 控制者击杀账本总消灭数 ≥ n（夺命"你消灭过13个式神"门控；
             # 显式分支——否则落入通用 _ge 读事件/ext）
             if game.state.players[controller].kill_total < int(want):
+                return False
+        elif key == "quest_count_ge":
+            # 委托条件账本（三目委托机制；play_condition/步骤门控共用）：
+            # 控制者 PlayerState.quest_counts[kind] ≥ count。值 = {"kind": 行为种类,
+            # "count": n}；行为种类见 model.PlayerState.quest_counts 注释
+            cnt = game.state.players[controller].quest_counts.get(want["kind"], 0)
+            if cnt < int(want["count"]):
+                return False
+        elif key == "round_ge":
+            # 对局回合数 ≥ n（今日委托·柒"5回合可用"）：双方各一回合为一轮，
+            # 由半回合计数换算（state.turn 1-2 = 第 1 轮，依此类推）
+            if (game.state.turn + 1) // 2 < int(want):
                 return False
         elif key == "dice_below_x":
             # 运势判定时"将失败"（觉醒·座敷童子重投门控）：事件当前骰点 < 所需点数 X

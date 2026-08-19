@@ -410,6 +410,35 @@ def render(game: Game, viewer: int | None = None,
     return "\n".join(lines)
 
 
+def _quest_progress(game: Game, p, cd) -> str | None:
+    """委托条件进度标签（三目委托机制；format_hand_lines 数据段读取）：
+    quest_count_ge → "委托:<行为><已计>/<需求>[✓]"；round_ge → 回合进度；其它条件无标签。"""
+    pc = cd.play_condition
+    if not pc:
+        return None
+    if "quest_count_ge" in pc:
+        q = pc["quest_count_ge"]
+        kind, need = q.get("kind"), int(q.get("count", 0))
+        have = p.quest_counts.get(kind, 0)
+        label = _QUEST_KIND_LABELS.get(kind, str(kind))
+        mark = " ✓" if have >= need else ""
+        return f"委托:{label}{have}/{need}{mark}"
+    if "round_ge" in pc:
+        need = int(pc["round_ge"])
+        rnd = (game.state.turn + 1) // 2  # 对局轮数（双方各一回合为一轮）
+        mark = " ✓" if rnd >= need else ""
+        return f"委托:第{need}回合可用（当前第{rnd}回合）{mark}"
+    return None
+
+
+_QUEST_KIND_LABELS = {
+    "assault": "出击", "draw": "抽牌", "play": "用牌", "damage": "伤害",
+    "effect_damage": "非战斗伤害", "attack": "攻击", "form_play": "形态牌",
+    "offdeck_play": "套牌外", "enemy_defeat": "敌式神气绝",
+    "revive": "己方复活", "quest_used": "委托使用",
+}
+
+
 def format_hand_lines(game: Game, p, hand: list) -> list[str]:
     """手牌逐行格式（render 与调度阶段共用；与卡组构筑共用 cardfmt 对齐流程）：
     [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] 数值段 {描述}"""
@@ -421,7 +450,7 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
 
     def _data_label(c) -> str:
         """数据段：关键字（引擎统一读取点 _card_keywords——含实例修饰、命中光环与
-        条件关键字，中文化）+ 增强数值。"""
+        条件关键字，中文化）+ 增强数值 + 委托条件进度。"""
         cd = game.db.cards[c.id]
         parts = []
         kws = _kw_labels(sorted(game._card_keywords(p, cd, c)))
@@ -430,6 +459,9 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
         live = _live_enhance(p, c)
         if live:
             parts.append(f"增强+{live}")
+        quest = _quest_progress(game, p, cd)
+        if quest:
+            parts.append(quest)
         return " ".join(parts)
 
     idx_w = max((_display_width(str(len(hand))), 1))
@@ -453,7 +485,7 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
         cells[1] = _colored(cells[1], _card_color(game, p, c))
         line = "    " + " ".join(cells).rstrip()
         cd = game.db.cards[c.id]
-        if cd.play_condition is not None and not game._play_condition_met(p, cd):
+        if cd.play_condition is not None and not game._play_condition_met(p, cd, c):
             line = _colored(line, 90)  # [条件] 不满足：整行置灰（不可使用）
         out.append(line)
     return out
@@ -706,6 +738,37 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 try:
                     pick = int(tui.prompt("召唤哪个 > ")) - 1
                     game.apply({"op": "choose", "choice": pend["options"][pick],
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
+            if kind == "pick_generate":
+                # 选择生成入手（觉醒·三目'线索'）：从可选卡牌数据 id 中选一张（作答键 choice）
+                print(f"—— {p.name} 选择一张牌置入手牌 ——")
+                for i, cid in enumerate(pend["options"]):
+                    cd = game.db.cards[cid]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                try:
+                    pick = int(tui.prompt("选择 > ")) - 1
+                    game.apply({"op": "choose", "choice": pend["options"][pick],
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
+            if kind == "quest_complete_pick":
+                # 委托整理：从手牌紧急委托中选一张使其委托条件视为达成（作答键 uid）
+                opts = [next(c for c in p.hand if c.uid == u) for u in pend["options"]]
+                print(f"—— {p.name} 选择一张紧急委托使其视为达成 ——")
+                for i, c in enumerate(opts):
+                    cd = game.db.cards[c.id]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                try:
+                    pick = int(tui.prompt("选择哪张 > ")) - 1
+                    game.apply({"op": "choose", "uid": opts[pick].uid,
                                 "player": pend["player"]})
                     settle_seen = _play_settle(game, settle_seen, printer)
                     show_field(game, printer)

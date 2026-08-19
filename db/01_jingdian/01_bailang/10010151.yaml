@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: combat
-      rarity: SSR
       token: true  # 协战子选项（森佑灵矢 10010121 主式神侧）
       level: 2
       effects:

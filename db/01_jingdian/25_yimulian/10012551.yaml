@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: combat
-      rarity: SSR
       token: true  # 协战子选项（风之乐章 10012421）
       level: 2
       effects:

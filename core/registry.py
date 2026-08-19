@@ -84,6 +84,7 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     "gen_replace": ("player", CLEAR_NEVER),                   # 重复登记覆盖
     "energy_assault": ("player", CLEAR_NEVER),
     "form_death_play": ("player", CLEAR_NEVER),
+    "quest_clues_seen": ("player", CLEAR_NEVER),              # 本局已获得过的线索 id（觉醒·三目"不可重复"）
 }
 
 # ---------- 条件迷你语言键白名单 ----------
@@ -105,10 +106,12 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "friendly_field_intensity_ge", "field_summon_distinct_ge", "friendly_field",
     "hand_card_type", "chosen_stunned", "chosen_has_fragile", "chosen_side",
     "combat_opponent_stunned", "kill_count_ge",
+    "quest_count_ge", "round_ge",
     # —— 收集器专用（不进 match_condition 按键循环）——
     "card_in_hand", "field_self", "field_intensity_ge",
     # —— 事件字段等值/通用后缀具名实例（现行数据全集）——
     "player", "kind", "card_type", "subtype", "reason", "shikigami",
+    "card_id",
     "dice", "judge", "gained", "old", "in_combat", "summon",
     "golden_feather", "card_revealed", "pre_play_form",
     "attacker_side", "victim_side", "source_side", "target_side", "shikigami_side",
@@ -139,6 +142,10 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
     "strippable", "exclude_shikigami", "shikigami", "exclude_victim",
     "optional",  # choose 目标可空（无合法目标则无目标结算，天翔鹤斩）
     "battle",    # 选择目标进战斗区（engine._resolve_combat_card 换目标通道）
+    "no_form",   # 仅无形态的式神（今日委托·伍"消灭一个没有形态的式神"）
+    "has_form",  # 仅有形态的式神（神木诅咒"使一个形态变成…"取对象口径）
+    "prefer_wounded",  # 候选中优先受伤（生命<上限）或气绝式神：存在则收窄到该子集
+                       # （晚樱之意"优先受伤或气绝式神"；配合 include_defeated 纳入气绝者）
 })
 
 # 步骤数值参数字典（amount/power）白名单：Game._step_amount 消费全集
@@ -146,7 +153,7 @@ DYNAMIC_VALUE_KEYS: frozenset[str] = frozenset({
     "base", "per", "negate",
     "enhance", "burst_x", "memo",
     "shield_of", "fragile_of", "half_shield_of", "power_of", "perm_power",
-    "ext", "event", "cap", "half", "half_health_of",
+    "ext", "event", "cap", "half", "half_health_of", "health_of", "orb",
     "max_power_gap", "missing_health", "countdown_holders",
     "max_shield_or_fragile", "hand_count_half",
     "field_intensity", "field_count",
@@ -159,4 +166,6 @@ DYNAMIC_VALUE_KEYS: frozenset[str] = frozenset({
 COUNT_VALUE_KEYS: frozenset[str] = frozenset({
     "base", "memo", "ext", "mod", "orb", "countdown_sum", "field_intensity",
     "hand_to",
+    "event_base_power",  # 事件 Ref 所指式神的当前基础力量（落英缤纷/晚樱之意
+                         # "重复该式神基础力量的次数"；{"event_base_power": "shikigami"}）
 })

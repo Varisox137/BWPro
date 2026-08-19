@@ -6,7 +6,6 @@ versions:
   history:
     - date: 20200327  # 发布日期
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（日霭相织 10020421 主式神侧）
       level: 1
       effects:

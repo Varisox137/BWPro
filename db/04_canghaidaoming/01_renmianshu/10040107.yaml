@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040107
 name: 凋零之森
 versions:
@@ -10,6 +9,13 @@ versions:
       level: 3
       intensity: 20
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
+      abilities:
+        # 当每个牌手的回合开始时，对他所有角色造成等同于他自身一半生命的伤害
+        # （无 active 条件 = 双方回合都触发；active_character 池随回合方取所有角色，
+        # amount {half_health_of: target} 逐目标求值，向下取整）
+        - when: on_turn_start
+          steps:
+            - {op: damage, amount: {half_health_of: target},
+               target: {kind: all, pool: active_character}}
       text: "当每个牌手的回合开始时，对他所有角色造成等同于他自身一半生命的伤害。"

@@ -6,7 +6,6 @@ versions:
   history:
     - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（海国共主 副式神侧）
       level: 2
       effects:

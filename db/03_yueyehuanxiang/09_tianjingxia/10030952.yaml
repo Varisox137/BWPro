@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20200624  # 发布日期
       card_type: spell
-      rarity: R
       token: true
       level: 1
       effects:

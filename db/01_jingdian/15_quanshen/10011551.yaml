@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20200120
       card_type: spell
-      rarity: R
       token: true
       level: 1
       tags: [lianmo]  # 出牌记账 lianmo_used_game（心技一体 20200120"本局每使用过一张'心身炼磨'"光环数值）

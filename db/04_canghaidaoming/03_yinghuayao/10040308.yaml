@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040308
 name: 飘零之舞
 versions:
@@ -10,8 +9,15 @@ versions:
       level: 3
       form_power: 3
       form_health: 7
+      # [迅捷]=haste、[远程]=remote；assault_any_target=出击可指定任何其他角色
+      # （_cmd_assault 分支）；friendly_combat_heal=攻击己方角色改为恢复等量生命
+      keywords: [haste, remote, assault_any_target, friendly_combat_heal]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      # abilities: 待补形态能力块（结附期间生效）
+      abilities:
+        # 攻击式神时获得[连击]（战斗条件授予，scope=battle 本次战斗）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self, victim_kind: shikigami}
+          steps:
+            - {op: grant_keyword, keyword: combo, scope: battle, target: {kind: self}}
       text: "[迅捷]，[远程]，攻击式神时获得[连击]。出击时可以指定攻击任何其他角色。攻击其他己方角色时改为其恢复等量于伤害的生命。"

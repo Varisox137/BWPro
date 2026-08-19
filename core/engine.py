@@ -178,6 +178,9 @@ class Game:
         # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
         # 战斗终止点清理后依次结算，不享受原战斗牌的力量/关键字加成——地狱之手）
         self._battle_followups: dict[int, list[Ref]] = {}
+        # 多段攻击登记（二帚流"攻击5次"，multi_strike 动作）：battle id → 交战阶段
+        # 攻击段数（缺省 1；反击仍只一段、与首段攻击并行；终止点清除）
+        self._battle_strikes: dict[int, int] = {}
         # 结算中交互选择（青灯夜谈）的挂起块续点：(block, ctx, 下一步下标)；内存态不序列化
         self._suspended: tuple | None = None
         # 伤害转移类能力（redirect_damage_to_self）在伤害批次内生成的新事件挂起列表：
@@ -354,6 +357,12 @@ class Game:
                 if self._has_keyword(s, "power_equal_shield"):
                     s.ext["dyn_power"] += max(0, s.shield) - (
                         s.base_power + s.perm_power + s.temp_power)
+                if self._has_keyword(s, "power_eq_health"):
+                    # 力量 = 当前生命（觉醒·人面树；覆写口径同 power_equal_shield：
+                    # 基础+永久+临时修正被覆盖，战斗战力与灵咒层仍叠加；濒死读取为负
+                    # 时钳 0——力量不为负）
+                    s.ext["dyn_power"] += max(0, s.health) - (
+                        s.base_power + s.perm_power + s.temp_power)
         for pi, pl in enumerate(self.state.players):
             # 青蛙瓷器光环（契约"引擎读"）：其控制者本回合（含敌方回合）运势判定成功过
             # （ext luck_success_turn == 当前回合号）则在场的青蛙瓷器 +2 力量——不叠加、
@@ -392,6 +401,34 @@ class Game:
         if spec.get("scope") == "player":
             return pl.kill_total
         return pl.kill_by.get(int(spec.get("shikigami", 0)), 0)
+
+    def _quest_tick(self, pi: int, kind: str, n: int = 1, *, shareable: bool = True) -> None:
+        """委托条件账本记账（三目委托机制；PlayerState.quest_counts，与击杀账本同思路——
+        牌手级、跨区域有效，天然满足"在牌库也有效"）。
+
+        shareable=True（行为类：assault/draw/play/damage/effect_damage/attack/
+        form_play/offdeck_play）：pi 的行为计入 pi 的账本；多事多忙在场（对方有在场
+        式神结附 tags 含 quest_enemy 的形态）时，pi 的行为同时计入对方账本
+        （"你的委托条件也可以由敌方完成"）。
+        shareable=False（归属类：enemy_defeat 按气绝者归属对方记账、revive 按复活者
+        归属记账、quest_used 限己方三目）天然与对方行为无关，不吃多事多忙扩域。
+        """
+        p = self.state.players[pi]
+        p.quest_counts[kind] = p.quest_counts.get(kind, 0) + n
+        if shareable:
+            other = 1 - pi
+            if self._field_form_has_tag(other, "quest_enemy"):
+                q = self.state.players[other]
+                q.quest_counts[kind] = q.quest_counts.get(kind, 0) + n
+
+    def _account_quest_damage(self, ev: "_DamageEvent") -> None:
+        """委托账本伤害记账：伤害实际造成（扣减生命批次锁定 dealt）时，来源归属方
+        damage += 实际量；非战斗伤害（kind=effect）另计 effect_damage。无来源不计。"""
+        if ev.source is None or ev.dealt <= 0:
+            return
+        self._quest_tick(ev.source.player, "damage", ev.dealt)
+        if ev.kind == "effect":
+            self._quest_tick(ev.source.player, "effect_damage", ev.dealt)
 
     @staticmethod
     def _card_belongs_to(cdef: CardDef, sid: int) -> bool:
@@ -489,6 +526,8 @@ class Game:
                 continue  # shikigami=None 为通配（"己方式神的形态牌"——觉醒·萤草/爱意绵绵）
             if a.get("card_type") is not None and a["card_type"] != cdef.card_type:
                 continue
+            if a.get("subtype") is not None and a["subtype"] != cdef.subtype:
+                continue  # 子类型限定：仅命中该子类型的牌（觉醒·三目的"委托牌"不耗火）
             if a.get("card_id") is not None and a["card_id"] != cdef.id:
                 continue  # "此牌"限定：仅命中指定数据 id
             if a.get("tag") is not None and a["tag"] not in cdef.tags:
@@ -673,7 +712,11 @@ class Game:
           可叠加 "cap": n 上限截断（觉醒·铃鹿御前"至多获得3点破甲"）与 "half": true
           减半向下取整（光影"获得等同于一半伤害的生命"；cap 先截后减）；
         - {"half_health_of": key}：事件中的 Ref 所指角色当前生命的一半（向下取整，
-          毒之华"等同于其一半生命的破甲"）。
+          毒之华"等同于其一半生命的破甲"）；值为 "target" 时是**逐目标动态数值**
+          （凋零之森）——_run_step 不做预解析，原样传字典由 op 逐目标求值。
+        - {"health_of": "self"|"source"}：来源式神当前生命（灾厄之花"对自己造成
+          等同于其生命的伤害"，经 delay_grant 绑定的延迟块内 self=持有者）；
+          值为 "target" 时同为逐目标动态数值通道。
         - {"max_power_gap": "self"}：来源式神历史峰值力量（ext["max_power"]）与当前
           eff_power 之差（断臂"力量变为本局游戏曾有的最大值"的差值补偿形式，≥0）。
         - {"missing_health": "self"}：来源式神已损失生命（鹤唳回风"恢复所有生命"）。
@@ -778,6 +821,10 @@ class Game:
                     hp = (pl.shikigami[ref.shikigami].health
                           if ref.shikigami is not None else pl.health)
                     dyn += hp // 2  # "一半生命"：向下取整
+            if raw.get("health_of") in ("self", "source") and s is not None:
+                dyn += s.health  # 来源式神当前生命（灾厄之花）
+            if raw.get("orb") and game is not None and controller is not None:
+                dyn += int(game.state.players[controller].orb)  # 控制者当前鬼火（汲取养分）
             if raw.get("max_power_gap") and s is not None:
                 dyn += max(0, int(s.ext.get("max_power", 0)) - s.eff_power)
             if raw.get("missing_health") and s is not None:
@@ -906,6 +953,10 @@ class Game:
           续跑挂起块。
         - kind="field_summon_pick"（残阳无影"选择召唤"）：choice 给出幻境牌数据 id
           → 凭空直接召唤对应幻境（不经使用事件），续跑挂起块。
+        - kind="pick_generate"（三目委托线索"选择一张置入手牌"）：choice 给出卡牌
+          数据 id → 生成（generated=True）入手，续跑挂起块。
+        - kind="quest_complete_pick"（委托整理"使一张紧急委托视为达成"）：uid 给出
+          手牌 → 该实例 mods["quest_done"] 置位，续跑挂起块。
         """
         pending = self.state.pending_choice
         if pending is None:
@@ -921,6 +972,12 @@ class Game:
             return
         if pending.get("kind") == "field_summon_pick":
             self._cmd_field_summon_choose(cmd, pending)
+            return
+        if pending.get("kind") == "pick_generate":
+            self._cmd_pick_generate_choose(cmd, pending)
+            return
+        if pending.get("kind") == "quest_complete_pick":
+            self._cmd_quest_complete_choose(cmd, pending)
             return
         if pending.get("kind") != "deck_top_pick":
             raise IllegalAction(f"未知选择类型: {pending.get('kind')}")
@@ -1023,6 +1080,77 @@ class Game:
         self.state.next_uid += 1
         self._summon_field(pi, inst, cdef, source, reason="效果召唤",
                            intensity_override=pending.get("intensity"))
+        self.state.pending_choice = None
+        if self._suspended is not None:
+            block, ctx, start = self._suspended
+            self._suspended = None
+            self._resolve_block(block, ctx, start)
+
+    def _open_pick_generate(self, pi: int, options: list[int],
+                            unique_ext: str | None = None) -> bool:
+        """开启"选择一张生成入手"交互（三目委托线索，kind="pick_generate"）：选项 =
+        可生成卡牌的数据 id 列表（>1 张才挂起，由 pick_generate 动作保证）；作答键
+        choice（数据 id，同 field_summon_pick）。unique_ext 随 pending 传递（觉醒·三目
+        "不重复"账本题 quest_clues_seen 记账）。"""
+        p = self.state.players[pi]
+        self.state.pending_choice = {
+            "kind": "pick_generate", "player": pi, "options": list(options),
+            "unique_ext": unique_ext,
+        }
+        self._log(f"{p.name} 选择一张牌置入手牌")
+        return True
+
+    def _cmd_pick_generate_choose(self, cmd: dict, pending: dict) -> None:
+        """选择生成作答：choice 给出卡牌数据 id → 新建生成实例（generated=True）入手
+        （走生成点统一快照），按 pending 的 unique_ext 记账（不重复抽取口径），
+        清 pending 并续跑挂起块（_suspended）。"""
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        choice = cmd.get("choice")
+        if choice not in pending["options"]:
+            raise IllegalAction("不在可生成的牌之列")
+        p = self.state.players[pi]
+        cdef = self.db.cards[int(choice)]
+        inst = CardInstance(uid=self.state.next_uid, id=cdef.id, generated=True)
+        self.state.next_uid += 1
+        self.move_card(p, inst, "hand", reason="generate")
+        self._materialize(p, inst, cdef)  # 生成点统一快照（断罪 form_power_delta 等）
+        self._log(f"{p.name} 将【{cdef.name}】置入手牌")
+        if pending.get("unique_ext"):
+            p.ext.setdefault(pending["unique_ext"], []).append(cdef.id)
+        self.state.pending_choice = None
+        if self._suspended is not None:
+            block, ctx, start = self._suspended
+            self._suspended = None
+            self._resolve_block(block, ctx, start)
+
+    def _open_quest_complete_pick(self, pi: int, options: list[int]) -> bool:
+        """开启"使一张紧急委托视为达成"交互（委托整理，kind="quest_complete_pick"）：
+        选项 = 手牌中可标记卡牌的 uid 列表（>1 张才挂起，由 quest_complete 动作保证）；
+        作答键 uid（同 discard_pick）。"""
+        p = self.state.players[pi]
+        self.state.pending_choice = {
+            "kind": "quest_complete_pick", "player": pi, "options": list(options),
+        }
+        self._log(f"{p.name} 选择一张紧急委托使其视为达成")
+        return True
+
+    def _cmd_quest_complete_choose(self, cmd: dict, pending: dict) -> None:
+        """委托整理作答：uid 给出手牌 → 该实例 mods["quest_done"] 置位（[条件]使用前提
+        视为满足，_play_condition_met 读取），清 pending 并续跑挂起块（_suspended）。"""
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        uid = cmd.get("uid")
+        if uid not in pending["options"]:
+            raise IllegalAction("不在可选的手牌之列")
+        p = self.state.players[pi]
+        card = next((c for c in p.hand if c.uid == uid), None)
+        if card is None:
+            raise IllegalAction("该牌已不在手牌中")
+        card.mods["quest_done"] = True
+        self._log(f"{p.name} 的【{self.db.cards[card.id].name}】委托条件视为达成")
         self.state.pending_choice = None
         if self._suspended is not None:
             block, ctx, start = self._suspended
@@ -1396,7 +1524,7 @@ class Game:
             self._cmd_play_reinforce(p, card, cdef, cmd)
             return
         # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（响应/自动使用同检）
-        if not self._play_condition_met(p, cdef):
+        if not self._play_condition_met(p, cdef, card):
             raise IllegalAction(f"【{cdef.name}】的使用条件未满足")
         # 使用方式（多择子选项，仅保留核心方式、参数可变；按 id 匹配，param 为数据预留）
         method: PlayMethod | None = None
@@ -1657,10 +1785,14 @@ class Game:
             return True
         return bool(p.card_mods.get(cdef.id, {}).get("transformed"))
 
-    def _play_condition_met(self, p: PlayerState, cdef: CardDef) -> bool:
+    def _play_condition_met(self, p: PlayerState, cdef: CardDef,
+                            card: CardInstance | None = None) -> bool:
         """[条件] 使用前提（CardDef.play_condition，福满乾坤）：以条件迷你语言对控制者求值
         （事件载荷为空——dice_six_ge 等控制者 ext 算子；主动/响应/自动使用统一校验，
-        CLI 可用性显示同读）。"""
+        CLI 可用性显示同读）。card 给出实例时：mods["quest_done"] 已置位（委托整理
+        "视为达成"）则条件视为满足。"""
+        if card is not None and card.mods.get("quest_done"):
+            return True
         if cdef.play_condition is None:
             return True
         return self._match(cdef.play_condition, {}, self.state.players.index(p))
@@ -1715,6 +1847,16 @@ class Game:
         {chosen_side: friendly} 匹配"对单个己方式神使用的法术"类触发（记仇）。
         """
         played = self._card_by_uid(uid)
+        # 委托账本（三目委托机制）：使用牌数/形态牌/阵容套牌以外（生成标记）/三目
+        # 使用委托牌。凭空自动使用的实例不在区域（played=None）——offdeck 口径只计
+        # 入过区域的生成卡（报备口径）；quest_used 只看数据侧 subtype，不限实例
+        self._quest_tick(player, "play")
+        if cdef.card_type == "form":
+            self._quest_tick(player, "form_play")
+        if played is not None and played.generated:
+            self._quest_tick(player, "offdeck_play")
+        if cdef.subtype == "quest":
+            self._quest_tick(player, "quest_used", shareable=False)
         self.emit("on_card_played", player=player, uid=uid, card_type=cdef.card_type,
                   subtype=cdef.subtype, shikigami=cdef.shikigami, card_id=cdef.id,
                   pre_play_form=pre_play_form,
@@ -1843,8 +1985,11 @@ class Game:
         grants = tuple((k, None) for k in cdef.keywords if k not in CARD_LEVEL_KEYWORDS)
         grants += tuple(((st.model_extra or {}).get("keyword"), st.condition)
                         for st in block.steps if st.op == "grant_keyword")
-        imms = tuple((bool((st.model_extra or {}).get("nested", False)), st.condition)
+        imms = tuple((bool((st.model_extra or {}).get("nested", False)), st.condition,
+                      (st.model_extra or {}).get("kind", "combat_damage"))
                      for st in block.steps if st.op == "battle_immunity")
+        strikes = next((int((st.model_extra or {}).get("times", 2))
+                        for st in block.steps if st.op == "multi_strike"), 1)
         convert = any(st.op == "convert_damage" for st in block.steps)
         counter_piercing = any(st.op == "counter_piercing" for st in block.steps)
         double_fragile = any(st.op == "double_damage_vs_fragile" for st in block.steps)
@@ -1858,7 +2003,8 @@ class Game:
                     and not (st.op == "buff_power" and (st.model_extra or {}).get("perm"))):
                 continue  # 战力/护甲已提取（永久力量增益与 no_extract 标记步属常规效果步，不提取）
             if st.op in ("grant_keyword", "battle_immunity", "convert_damage",
-                         "counter_piercing", "double_damage_vs_fragile", "attack_buff"):
+                         "counter_piercing", "double_damage_vs_fragile", "attack_buff",
+                         "multi_strike"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
             self._run_step(st, ctx)
         # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
@@ -1877,7 +2023,7 @@ class Game:
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                              temp_grants=tuple(cdef.temp_grants), convert=convert,
                              counter_piercing=counter_piercing, double_fragile=double_fragile,
-                             target=hunt_target, origin="card")
+                             target=hunt_target, origin="card", strikes=strikes)
         s.combat_power = 0
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
@@ -2202,14 +2348,16 @@ class Game:
                         counter_piercing: bool = False,
                         double_fragile: bool = False,
                         target: Ref | None = None,
-                        origin: str = "effect") -> None:
+                        origin: str = "effect",
+                        strikes: int = 1) -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
         （终止点按实例移除，不误删式神原有同名关键字），元素为 (keyword, condition)——
         condition 以 {"defender": 被攻击者} 在战斗开始时求值（"若攻击有破甲的角色"，
-        致命诱惑）；immunities 为作用域战斗伤害免疫，元素为 (nested, condition)
-        （鸩羽的条件免疫；nested = 是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
+        致命诱惑）；immunities 为作用域战斗伤害免疫，元素为 (nested, condition, kind)——
+        kind 缺省 "combat_damage"（鸩羽的条件免疫），"all" 为免疫所有伤害（二帚流）；
+        nested = 是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
         一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）；
         convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）；
         counter_piercing = 反击贯通：本战斗中被攻击方的反击伤害具有贯通（终止点清除标记）。
@@ -2218,6 +2366,8 @@ class Game:
         target = 有目标的战斗的战斗目标（追猎；None = 无目标战斗，被攻击者按敌方战斗区/直击
         决定）；origin = 发起方式（"assault" 出击 / "card" 战斗牌 / "effect" 效果发起）——
         帷幕再校验时出击取消战斗、其余改为无目标战斗（thoughts.txt 帷幕定义）。
+        strikes = 多段攻击次数（multi_strike 提取步，二帚流）：交战阶段后追加 strikes-1
+        段攻击（反击只一段、与首段并行；2-N 段依次单独结算，终止点清除登记）。
         """
         self._battle_seq += 1
         bid = self._battle_seq
@@ -2227,6 +2377,8 @@ class Game:
         self._battle_grants[bid] = grants
         self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
         self._battle_followups[bid] = []  # 战斗结束后的追加攻击登记（战斗结束后结算）
+        if strikes > 1:
+            self._battle_strikes[bid] = strikes  # 多段攻击登记（交战阶段后追加段数读取）
         # 倒计时能力等"本次战斗"类战斗外授予（grant_keyword/grant_immunity scope="next_battle"）：
         # 挂账在攻击者 ext，下一次作为攻击者的战斗开始时消费——关键字走终止点核销通道、
         # 免疫条目绑定本战斗 id（斩"本次攻击获得[必杀]"/觉醒·山风"本次战斗免疫战斗伤害"）。
@@ -2255,11 +2407,11 @@ class Game:
                 continue  # 条件不满足（如被攻击者无破甲）：不授予
             cls = self._grant_keyword(attacker, kw)
             grants.append((atk_ref, kw, cls))
-        for nested, cond in immunities:
+        for nested, cond, kind in immunities:
             if cond is not None and not self._match(cond, def_event, atk_ref.player,
                                                     holder=atk_ref):
                 continue
-            attacker.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
+            attacker.immunities.append({"kind": kind, "battle": bid, "nested": nested})
         if convert:
             self._battle_convert.add(bid)  # 毒蚀：伤害→破甲转化（伤害管线读取）
         if counter_piercing:
@@ -2292,6 +2444,7 @@ class Game:
             self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
             self._battle_double_fragile.pop(bid, None)  # 义道破甲双倍标记随战斗结束清除
+            self._battle_strikes.pop(bid, None)  # 多段攻击登记随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗终止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_retarget.pop(bid, None)  # 交战目标改换登记随战斗终止清理
             self._battle_stack.pop()
@@ -2352,16 +2505,23 @@ class Game:
         d = self.state.players[def_pi]
         # ---- 发起战斗前：有目标的战斗目标再校验（帷幕/气绝/离场）----
         if target is not None:
-            ts = (d.shikigami[target.shikigami]
-                  if target.player == def_pi and target.shikigami is not None
-                  and 0 <= target.shikigami < len(d.shikigami) else None)
-            if (ts is None or not ts.in_play or ts.dying
+            # 飘零之舞（assault_any_target）：出击目标可为任意一方的角色（含己方式神/
+            # 牌手）——目标按其实际所属侧查座次，防守方随之改为目标所属侧
+            tp = self.state.players[target.player]
+            ts = (tp.shikigami[target.shikigami]
+                  if target.shikigami is not None
+                  and 0 <= target.shikigami < len(tp.shikigami) else None)
+            if target.shikigami is not None and (
+                    ts is None or not ts.in_play or ts.dying
                     or targets.is_veiled(self, target, atk_ref.player)):
                 if origin == "assault":
                     self._log("战斗目标已不能成为攻击目标，不发起本次战斗")
                     return
                 self._log("战斗目标已不能成为攻击目标，本次战斗改为无目标战斗")
                 target = None
+            else:
+                def_pi = target.player  # 有目标战斗的防守方 = 目标所属侧
+                d = tp
         remote = self._has_keyword(attacker, "remote")
         piercing = self._has_keyword(attacker, "piercing")
         combo = self._has_keyword(attacker, "combo")
@@ -2423,8 +2583,18 @@ class Game:
                 if victim is None:
                     self._log("交战目标改换：无另一个敌方角色，攻击落空")
                     return None
+            self._quest_tick(atk_ref.player, "attack")  # 委托账本：攻击次数（每段计 1）
+            amount = (attacker.health
+                      if self._has_keyword(attacker, "combat_base_health")
+                      else attacker.eff_power)  # 神木庇佑：以自身生命造成战斗伤害
+            if (victim.player == atk_ref.player
+                    and self._has_keyword(attacker, "friendly_combat_heal")):
+                # 飘零之舞：攻击己方角色改为使其恢复等量于伤害的生命（不造成战斗伤害；
+                # 攻击己方角色无反击——下方反击生成处按防守侧排除）
+                self.heal(victim, amount, atk_ref, reason="攻击己方转化")
+                return None
             return _DamageEvent(source=atk_ref, victim=victim,
-                                amount=attacker.eff_power, kind="combat", piercing=piercing)
+                                amount=amount, kind="combat", piercing=piercing)
 
         def counter_event() -> _DamageEvent | None:
             vs = d.shikigami[vic_idx]
@@ -2437,8 +2607,11 @@ class Game:
                 if victim is None:
                     self._log("交战目标改换：无另一个敌方角色，攻击落空")
                     return None
+            amount = (vs.health
+                      if self._has_keyword(vs, "combat_base_health")
+                      else vs.eff_power)  # 神木庇佑：反击同为战斗伤害
             return _DamageEvent(source=src_ref, victim=victim,
-                                amount=vs.eff_power, kind="counter",
+                                amount=amount, kind="counter",
                                 piercing=cp)
 
         if replace_marker["active"]:
@@ -2454,7 +2627,7 @@ class Game:
         else:
             # ---- 先攻阶段：拥有连击/先攻的角色对对方造成战斗伤害，按（反击，攻击）并行 ----
             atk_first = combo or initiative
-            def_first = vic_idx is not None and (
+            def_first = vic_idx is not None and def_pi != atk_ref.player and (
                 self._has_keyword(d.shikigami[vic_idx], "combo")
                 or self._has_keyword(d.shikigami[vic_idx], "initiative"))
             if atk_first or def_first:
@@ -2483,7 +2656,8 @@ class Game:
                     return
             # ---- 交战阶段：具有先攻（非连击）的角色不再造成战斗伤害；远程不受反击 ----
             events = []
-            if vic_idx is not None and not remote:
+            if (vic_idx is not None and not remote
+                    and def_pi != atk_ref.player):  # 攻击己方角色（飘零之舞）：无反击
                 vs = d.shikigami[vic_idx]
                 def_init_only = (self._has_keyword(vs, "initiative")
                                  and not self._has_keyword(vs, "combo"))
@@ -2497,6 +2671,24 @@ class Game:
                     events.append(ev)
             if events:
                 self._run_damage_queue(events)
+            # 多段攻击（二帚流 multi_strike）：交战阶段后追加 strikes-1 段攻击——反击
+            # 只一段（与首段攻击并行），后续段依次单独结算；被攻击者气绝按贯通规则
+            # 改为对方牌手，无贯通/攻击者气绝则后续段终止
+            strike_n = self._battle_strikes.get(self._battle_stack[-1], 1)
+            for _ in range(strike_n - 1):
+                if self.state.pending_end:
+                    return
+                if attacker.defeated or attacker.despawned:
+                    break
+                if vic_idx is not None and d.shikigami[vic_idx].defeated:
+                    if piercing:
+                        vic_idx = None
+                    else:
+                        break
+                ev = attack_event()
+                if ev is None:
+                    break
+                self._run_damage_queue([ev])
         # ---- 战斗后 ----
         self.emit("on_after_assault", attacker=atk_ref, battle=self._battle_stack[-1])
         # ---- 战斗结束后：蚀刃毒羽"攻击时"登记的一次性破甲回赋（维护者答复(2)）----
@@ -2546,9 +2738,16 @@ class Game:
         want = cmd.get("target")
         if want is not None:
             want = want if isinstance(want, Ref) else Ref(**want)
-            if not self._has_keyword(s, "hunt"):
+            if self._has_keyword(s, "assault_any_target"):
+                # 飘零之舞"出击时可以指定攻击任何其他角色"：任意一方的在场式神或
+                # 牌手，仅排除攻击者本人；帷幕对敌方式神照常（targeted=True）
+                if (want == Ref(player=self.state.active, shikigami=i)
+                        or want not in targets.pool_refs(
+                            self, "any_character", self.state.active, targeted=True)):
+                    raise IllegalAction("出击目标须为攻击者以外的任一角色")
+            elif not self._has_keyword(s, "hunt"):
                 raise IllegalAction("没有追猎的式神出击不能选择目标")
-            if (want.player != 1 - self.state.active or want.shikigami is None
+            elif (want.player != 1 - self.state.active or want.shikigami is None
                     or want not in targets.pool_refs(
                         self, "enemy_shikigami", self.state.active, targeted=True)):
                 raise IllegalAction("追猎出击须以一名合法敌方式神为目标")
@@ -2571,6 +2770,7 @@ class Game:
         if not energy_assault:
             p.assaults_left -= 1
         atk_ref = Ref(player=self.state.active, shikigami=i)
+        self._quest_tick(self.state.active, "assault")  # 委托账本：出击两次类
         self._consume_assault_boosts(p, atk_ref, s)
         self._resolve_combat(atk_ref, s, target=target, origin="assault")
 
@@ -2810,6 +3010,12 @@ class Game:
         for kw in cdef.keywords:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._grant_keyword(s, kw)
+        # 结附期间临时改派系（诅咒之木"被变为此形态的式神会临时变为紫岩"，
+        # 形态 tags faction_override:<派系>；只动 faction 不动 perm_faction，
+        # 形态离场经 _destroy_form 还原）
+        for tag in cdef.tags:
+            if tag.startswith("faction_override:"):
+                s.faction = tag.split(":", 1)[1]
         self._log(f"{self.db.shikigami[s.id].name} 结附形态【{cdef.name}】")
         self._settle(f"【形态】{self.db.shikigami[s.id].name} 结附【{cdef.name}】"
                      f"（身材 {s.base_power}/{s.max_health}，生命回满）")
@@ -2865,6 +3071,7 @@ class Game:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._remove_keyword(s, kw)
         s.ext.pop("power_zero", None)  # 力量覆写随形态离场清除（power_override）
+        s.faction = s.perm_faction  # 结附期临时派系覆写（faction_override tag）随形态离场还原
         s.keep_fragile = False  # 破甲保留（肿胀体质）随形态离场解除——"形态在场时"语义
         if p.ext.get("dice_force_six_holder") == [pi, i]:
             # 萌即正义离场：其授予的判定者级必 6 修饰随形态离场通道解除
@@ -3312,6 +3519,8 @@ class Game:
         self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
         self._log(f"{self.db.shikigami[s.id].name} 复活")
         self._settle(f"【复活】{self.db.shikigami[s.id].name} 复活（生命回满 {s.max_health}）")
+        # 委托账本：己方复活计数（一切复活含倒计时自然复活都计；shareable=False）
+        self._quest_tick(pi, "revive", shareable=False)
         self.emit("on_shikigami_revived",
                   shikigami=Ref(player=pi, shikigami=i), source=source, reason=reason)
 
@@ -3351,9 +3560,16 @@ class Game:
         return False
 
     def _turn_start_schedule_retreat(self, p: PlayerState) -> int | None:
-        """回合开始阶段 step 6：登记战斗区非召唤物式神延时移回（召唤物留在战斗区）。"""
-        if p.combat_index is not None and p.shikigami[p.combat_index].kind != "summon":
-            return p.combat_index
+        """回合开始阶段 step 6：登记战斗区非召唤物式神延时移回（召唤物留在战斗区）。
+
+        扎根（结附形态的 tags 含 no_retreat）："己方回合开始时不会从战斗区移回
+        准备区"——不登记移回，该式神留在战斗区。"""
+        if p.combat_index is not None:
+            s = p.shikigami[p.combat_index]
+            if s.kind != "summon":
+                if s.form is not None and "no_retreat" in self.db.cards[s.form.id].tags:
+                    return None  # 扎根：本回合开始不移回
+                return p.combat_index
         return None
 
     def _turn_start_reset_assaults(self, p: PlayerState, pi: int) -> None:
@@ -3480,9 +3696,12 @@ class Game:
         return total_dealt
 
     def _emit_damage_batch(self, name: str, ev: _DamageEvent) -> None:
-        """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。"""
+        """伤害时点批次（即时时机）；payload 携带 damage 可变对象供监听者修改伤害值。
+        battle 键供战斗绑定的一次性临时触发（二帚流"伤害改为1"类 on_damage_start
+        挂账）按本战斗过滤。"""
         self.emit(name, damage=ev, victim=ev.victim, source=ev.source,
-                  amount=ev.amount, kind=ev.kind)
+                  amount=ev.amount, kind=ev.kind,
+                  battle=self._battle_stack[-1] if self._battle_stack else None)
 
     def _spawn_redirect(self, ev: _DamageEvent, new_victim: Ref, uid: str) -> None:
         """伤害目标转移（定案"转移链"；redirect_damage_to_self 动作调用）：生成等量、
@@ -3708,6 +3927,7 @@ class Game:
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
+            self._account_quest_damage(ev)  # 委托账本：造成伤害/非战斗伤害
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
@@ -3749,6 +3969,7 @@ class Game:
                 # 死亡之花[增强]"本局游戏你受到过一次己方伤害"读此键）
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
+            self._account_quest_damage(ev)  # 委托账本：造成伤害/非战斗伤害
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {p.health + ev.amount}→{p.health}）")
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
@@ -3857,6 +4078,13 @@ class Game:
         for e in list(s.immunities):
             if e.get("kind") not in ("effect", "all"):
                 continue
+            if "battle" in e:
+                # 战斗作用域条目（battle_immunity kind="all"，二帚流）：仅本战斗内有效
+                # （nested 覆盖本战斗内的嵌套战斗，仿 _combat_immune 的战斗比对）
+                current = self._battle_stack[-1] if self._battle_stack else None
+                if e["battle"] != current and not (
+                        e.get("nested") and e["battle"] in self._battle_stack):
+                    continue
             if e.get("from") == "enemy" and (
                     ev.source is None or ev.source.player == ev.victim.player):
                 continue  # 来源缺失或属于己方：不免疫
@@ -3900,6 +4128,9 @@ class Game:
         in_combat = owner.combat_index == ref.shikigami  # 气绝时是否在战斗区（迁怒/罗生门条件）
         # 气绝流程 step 3（rules.md 第七章）：先消灭形态牌——此时能力尚未离场（step 6），
         # 一目连类"形态离场时触发"能力仍会收集（先触发后执行，结算时不再复查持有者状态）
+        # 平和猫又屋（tags revive_on_defeat）：气绝结算完成后复活——旗标在形态消灭前捕获
+        revive_flag = (s.form is not None
+                       and "revive_on_defeat" in self.db.cards[s.form.id].tags)
         if s.form is not None:
             self._destroy_form(owner, ref.shikigami, reason="defeat")
         s.defeated = True
@@ -3941,9 +4172,17 @@ class Game:
             if source.shikigami is not None:
                 sid = sp.shikigami[source.shikigami].id  # 来源实体的当前数据 id
                 sp.kill_by[sid] = sp.kill_by.get(sid, 0) + 1
+        # 委托账本：敌方式神气绝计数（非召唤物气绝即计，不限来源；召唤物离场不计；
+        # 多事多忙不扩域——shareable=False）
+        if s.kind != "summon":
+            self._quest_tick(1 - ref.player, "enemy_defeat", shareable=False)
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
                   in_combat=in_combat, summon=(s.kind == "summon"),
                   battle=self._battle_stack[-1] if self._battle_stack else None)
+        # 平和猫又屋：气绝结算（含气绝后时机）完成后复活（形态已消灭、倒计时已重置，
+        # 复活走 _revive 完整流程——回满生命/重注册倒计时能力/发 on_shikigami_revived）
+        if revive_flag and s.defeated and not s.despawned:
+            self._revive(owner, ref.player, ref.shikigami, reason="平和猫又屋")
 
     # ==================== 幻境（card_type="field"）管线 ====================
 
@@ -4244,6 +4483,7 @@ class Game:
         self._horizon_seq += 1
         unit = self._horizon_seq  # 本抽牌事件的挂起单元（移动事件延时到单元完成时结算）
         card = p.deck.pop(0)  # 绑定牌库顶牌（即刻离库；递归下层绑定下一张）
+        self._quest_tick(player_index, "draw")  # 委托账本：抽牌张数（绑定即计一张）
         self.queue.append(_Pending(
             _DRAW_MOVE_BLOCK,
             ExecContext(controller=player_index, card=card,
@@ -4622,7 +4862,7 @@ class Game:
                 self._response_window, (ctx.event or {}).get("name")):
             return True  # 每空闲点（窗口内同一时机）每名玩家至多一张（复查失败不占名额）
         # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（复查失败不占名额）
-        if not self._play_condition_met(p, cdef):
+        if not self._play_condition_met(p, cdef, ctx.card):
             return True
         # 收集到结算之间局面可能已变化：响应牌结算时必须复查条件、鬼火、消耗、使用者
         if ctx.card not in p.hand:
@@ -4910,6 +5150,12 @@ class Game:
         refs = targets.resolve(self, step.target, ctx)
         for num_key in ("amount", "power"):
             if isinstance(params.get(num_key), dict):
+                raw_num = params[num_key]
+                if any(raw_num.get(k) == "target"
+                       for k in ("health_of", "half_health_of")):
+                    # 逐目标动态数值（凋零之森"对他所有角色造成等同于他自身一半生命
+                    # 的伤害"）：不以来源/事件预解析，原样传字典由 op 逐目标求值
+                    continue
                 # 动态数值（enhance 快照 / shield_of / power_of / ext / 事件引用等）：
                 # 以 ctx 来源式神与触发事件求值（援护/古尘之壁/鸩觉醒/毒之华）；
                 # power 键供 attack_buff 类"直到攻击后"力量走同一流水线（势）

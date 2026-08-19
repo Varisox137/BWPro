@@ -1,15 +1,35 @@
-# 骨架（db.scaffold），效果未实现——协战子选项，卡面文本待 raw 补充
 id: 10040351
 name: 落英缤纷
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
-      card_type: spell
-      rarity: SSR
+      card_type: form
       token: true  # 协战子选项（繁花似锦 樱花妖侧；本体未入库）
       level: 2
+      form_power: 4
+      form_health: 5
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # 待 raw 补充（raw 仅列卡名，标未加入）
+        # [羁绊]：{进场时桃花妖随机为一个己方受伤角色恢复3生命}——桃花妖（100119）
+        # 等级不为 0 且未气绝才触发（shikigami_active 门控，桃红簇簇 10011951 先例）。
+        # 偏差：池取"己方受伤式神"（friendly_injured），不含己方受伤牌手（无
+        # "己方受伤角色含牌手"现成池/过滤键，待确认见 questions.md 指针）
+        steps:
+          - {op: heal, amount: 3, condition: {shikigami_active: 100119},
+             target: {kind: all, pool: friendly_injured, random: 1}}
+      abilities:
+        # 每个己方回合一次（active: self + turn_mark 门控，标记任一回合开始清除），
+        # 己方式神复活时：随机对一个敌方式神造成1点伤害，重复该式神（复活者）
+        # 基础力量的次数（repeat count event_base_power=复活事件 shikigami payload），
+        # 然后切换为'晚樱之意'（switch_form：旧形态消灭、新形态凭空结附）
+        - when: on_shikigami_revived
+          condition: {shikigami_side: friendly, active: self, turn_mark_not: luoying}
+          steps:
+            - {op: turn_mark, key: luoying}
+            - op: repeat
+              count: {event_base_power: shikigami}
+              steps:
+                - {op: damage, amount: 1,
+                   target: {kind: all, pool: enemy_shikigami, random: 1}}
+            - {op: switch_form, into: 10040352, target: {kind: self}}
+      text: "每个己方回合一次，己方式神复活时，随机对一个敌方式神造成1点伤害，重复该式神基础力量的次数，然后切换为‘晚樱之意’。[羁绊]：{进场时桃花妖随机为一个己方受伤角色恢复3生命。}"

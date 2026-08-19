@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: combat
-      rarity: SSR
       token: true
       level: 1
       effects:

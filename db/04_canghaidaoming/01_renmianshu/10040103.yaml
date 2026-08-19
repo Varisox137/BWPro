@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040103
 name: 汲取养分
 versions:
@@ -11,7 +10,12 @@ versions:
       form_power: 2
       form_health: 6
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      # abilities: 待补形态能力块（结附期间生效）
+      abilities:
+        # 敌方回合结束时，你每有1点鬼火，人面树永久获得1生命（amount {orb: true}
+        # 读控制者当前鬼火；perm 永久上限修正，复活保留）
+        - when: on_turn_end
+          condition: {active: enemy}
+          steps:
+            - {op: buff_health, perm: true, amount: {orb: true}, target: {kind: self}}
       text: "敌方回合结束时，你每有1点鬼火，人面树永久获得1生命。"

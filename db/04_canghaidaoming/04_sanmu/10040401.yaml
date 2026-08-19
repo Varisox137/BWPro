@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040401
 name: 委托整理
 versions:
@@ -9,6 +8,8 @@ versions:
       rarity: R
       level: 1
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        # 完成你手牌里一张'紧急委托'：使其委托条件视为达成（quest_complete 默认
+        # choose——手牌有多张未完成紧急委托时挂起交互选择；无候选安全空过）
+        steps:
+          - {op: quest_complete}
       text: "完成你手牌里一张‘紧急委托’。"

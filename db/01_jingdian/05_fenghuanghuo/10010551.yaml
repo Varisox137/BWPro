@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（涅槃明灯 10010521；主牌待青行灯侧子选项"烛火重燃"加入）
       level: 2
       keywords: [fast]

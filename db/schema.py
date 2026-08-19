@@ -31,7 +31,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 卡牌主类型：法术 / 战斗 / 形态 / 幻境（预留） / 协战（预留）
 CARD_TYPES = frozenset({"spell", "combat", "form", "field", "reinforce"})
-SUBTYPES = frozenset({"awaken"})  # 子类型：awaken=觉醒牌；保留扩展
+SUBTYPES = frozenset({"awaken"})  # 通用子类型：awaken=觉醒牌
+# 专属子类型（维护者定案 2026-08）：子类型 → 所属式神 id；只能出现在所属式神的牌上
+# （loader 校验）。首个 = quest 委托（三目 100404 的衍生牌家族）。
+EXCLUSIVE_SUBTYPES: dict[str, int] = {"quest": 100404}
+# 生成即替换（tag gen_weekday_quest 的卡）：将要生成该 id 的牌时（含牌库初始化），
+# 改为生成当天星期几对应的牌（周一=列表[0]…周日=[6]；日常委托 → 今日委托壹-柒）。
+WEEKDAY_GEN_REPLACE: dict[int, tuple[int, ...]] = {
+    10040402: (10040455, 10040456, 10040457, 10040458, 10040459, 10040460, 10040461),
+}
 KEYWORDS = frozenset({
     "fast", "trigger",          # 瞬发 / 响应（卡牌级）
     "combo", "initiative",      # 连击 / 先攻
@@ -63,14 +71,24 @@ KEYWORDS = frozenset({
     "power_per_field",          # 你每有一个幻境 +1 力量（觉醒·泷夜叉姬）
     "power_if_shield",          # 有护甲时 +1 力量（久次良基础；白骨之盾"获得基础能力"授予通道）
     "power_equal_shield",       # 力量 = 当前护甲（觉醒·久次良；覆写口径）
+    "power_eq_health",          # 力量 = 当前生命（觉醒·人面树；覆写口径同 power_equal_shield）
+    "heal_defeated_countdown",  # 可以对气绝式神恢复生命，若如此做改为使其气绝倒计时 -1
+    #                             （樱花妖基础/觉醒共用通道；卡面不出现）
+    "damage_defeated_countdown",  # 可以对气绝式神造成伤害，若如此做改为使其气绝倒计时 +1
+    #                             （觉醒·樱花妖通道；卡面不出现）
     # （原 field_stack/field_ability_stack 伪关键字作废：辉夜姬叠加改为能力块
     #  field_merge 通道——定案(6)，见 rules.md 第三十一章）
+    # ---- 效果授予伪关键字（卡牌效果授予其他式神，引擎读取时求值；卡面不出现）----
+    "combat_base_health",       # 以其自身当前生命（而非力量）造成战斗伤害（神木庇佑授予）
+    "assault_any_target",       # 出击时可以指定攻击任何其他角色（飘零之舞；_cmd_assault 分支）
+    "friendly_combat_heal",     # 攻击己方角色时改为使其恢复等量于伤害的生命（飘零之舞）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 
 # 能力伪关键字集合：觉醒替换基础能力时按本集合换绑（移除基础式神的、授予觉醒牌的；
 # 气绝不清——永久类别随觉醒状态保留，读取处以 in_play 门控）。engine 觉醒点引用。
 ABILITY_PSEUDO_KEYWORDS = frozenset({
     "power_if_field", "power_per_field", "power_if_shield", "power_equal_shield",
+    "power_eq_health", "heal_defeated_countdown", "damage_defeated_countdown",
 })
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
@@ -208,11 +226,13 @@ class CardDef(BaseModel):
     shikigami: int | None = None  # 所属式神 id；None = 中立牌；协战牌为两位所属中较小者
     shikigami2: int | None = None  # 协战牌：另一位所属式神 id（仅 card_type=reinforce 使用）
     card_type: str
-    subtype: str | None = None  # 子类型：awaken=觉醒牌；保留扩展（如式神专属子类型）
+    subtype: str | None = None  # 子类型：awaken=觉醒牌（通用）；quest=委托（专属子类型，
+    # 仅所属式神的牌可用——登记表 db/schema.py EXCLUSIVE_SUBTYPES，loader 校验归属）
     awaken_power: int = 0  # 觉醒牌：永久身材增益（力量），"觉醒后"延时时机之后授予
     awaken_health: int = 0  # 觉醒牌：永久身材增益（生命），同上（thoughts.txt 法术觉醒流程）
     tags: list[str] = Field(default_factory=list)  # 自由标记；机制未实现前不放进数据，避免静默失效
-    rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）
+    rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）；
+    # 衍生牌（token=true）无稀有度——rarity 须缺省（维护者定案，loader 校验）
     token: bool = False  # 衍生卡：对局中由系统/效果生成，不可编入卡组
     playable_when_defeated: bool = False  # 气绝时可用（与是否响应牌无关）
     only_when_defeated: bool = False  # 仅在所属式神气绝时可用（心即归处；主动使用与响应均门控，

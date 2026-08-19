@@ -7,7 +7,6 @@ versions:
       card_type: spell
       subtype: awaken
       awaken_health: 1   # +0/+1（awaken_power 缺省 0）
-      rarity: SSR
       token: true  # 协战子选项（刃影鹤唳 10010621；主牌暂不入库）
       level: 2
       effects:

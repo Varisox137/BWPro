@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040105
 name: 灾厄之花
 versions:
@@ -8,7 +7,16 @@ versions:
       card_type: spell
       rarity: R
       level: 2
+      target: {kind: choose, pool: any_shikigami}  # 一个式神（不限敌我）
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: "使一个式神获得‘在他下个回合结束时，对自己造成等同于其生命的伤害。"
+        steps:
+          # 获得'在他下个回合结束时，对自己造成等同于其生命的伤害'（delay_grant
+          # bind=chosen 登记到被选式神，一次性 uses=1 缺省；延迟块内 self=持有者，
+          # amount {health_of: self} 读持有者当前生命；气绝时清除）
+          - op: delay_grant
+            bind: chosen
+            when: on_turn_end
+            condition: {active: self}
+            steps:
+              - {op: damage, amount: {health_of: self}, target: {kind: self}}
+      text: "使一个式神获得‘在他下个回合结束时，对自己造成等同于其生命的伤害’。"

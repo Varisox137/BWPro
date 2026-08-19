@@ -1,0 +1,17 @@
+id: 10040151
+name: 诅咒之木
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: form
+      token: true  # 衍生形态卡（非实体——神木诅咒变入；raw 号段已从 99 改为 51）
+      level: 1
+      form_power: 1
+      form_health: 6
+      # 被变为此形态的式神会临时变为"紫岩"派系（形态 tags faction_override:<派系>；
+      # 只动 faction 不动 perm_faction，形态离场经 _destroy_form 还原）
+      tags: [faction_override:紫岩]
+      effects:
+        steps: []
+      text: ""  # raw 无卡面文本

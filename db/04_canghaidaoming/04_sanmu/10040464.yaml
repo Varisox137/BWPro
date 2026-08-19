@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040464
 name: 线索·截稿日
 versions:
@@ -6,10 +5,19 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      token: true  # 衍生牌（委托机制未实现，骨架）
+      subtype: quest  # 委托牌（三目专属子类型）
+      token: true  # 衍生牌（无稀有度；'线索'——觉醒·三目生成池）
       level: 3
+      play_condition: {quest_count_ge: {kind: quest_used, count: 5}}
+      # [条件]：{本局游戏三目使用过五张委托牌}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        # 己方回合结束时，复活三目，随机完成一个紧急委托（牌手持久监听；
+        # 三目未气绝时 revive 目标池为空安全空过；quest_complete mode=random 无候选空过）
+        steps:
+          - op: player_aura
+            when: on_turn_end
+            condition: {active: self}
+            steps:
+              - {op: revive, target: {kind: all, pool: friendly_defeated, shikigami: 100404}}
+              - {op: quest_complete, mode: random}
       text: "[条件]：{本局游戏三目使用过五张委托牌}。己方回合结束时，复活三目，随机完成一个紧急委托。"

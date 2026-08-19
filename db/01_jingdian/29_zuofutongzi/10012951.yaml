@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（福星高照 10011721 副式神侧）
       level: 3
       effects:

@@ -120,11 +120,26 @@ def test_field_and_reinforce_card_types_reserved(db):
 
 
 def test_rarity_reserved(db):
-    """稀有度 R/SR/SSR 预留（抽卡/账号系统用），仅做取值校验。"""
-    db.cards[10010196] = F.card(10010196, rarity="SSR", token=True)
+    """稀有度 R/SR/SSR 预留（抽卡/账号系统用）：可构筑卡仅做取值校验；
+    衍生牌（token）无稀有度、rarity 须缺省（维护者定案 2026-08）。"""
+    db.cards[10010196] = F.card(10010196, token=True)
     assert db.validate() == []
-    db.cards[10010197] = F.card(10010197, rarity="UR", token=True)
+    db.cards[10010197] = F.card(10010197, rarity="SSR", token=True)
+    assert any("无稀有度" in e for e in db.validate())
+    db.cards[10010103] = F.card(10010103, rarity="UR")
     assert any("稀有度" in e for e in db.validate())
+
+
+def test_exclusive_subtype(db):
+    """专属子类型（EXCLUSIVE_SUBTYPES 登记表）：quest=委托，仅所属式神
+    三目（100404）的牌可携带；其它式神的牌/未知子类型均报错。"""
+    db.shikigami[100404] = F.shiki(100404)
+    db.cards[10040451] = F.card(10040451, shikigami=100404, subtype="quest", token=True)
+    assert db.validate() == []
+    db.cards[10010196] = F.card(10010196, subtype="quest", token=True)
+    assert any("专属子类型" in e for e in db.validate())
+    db.cards[10010195] = F.card(10010195, subtype="foo", token=True)
+    assert any("未知子类型" in e for e in db.validate())
 
 
 def test_reinforce_card_rules(db):

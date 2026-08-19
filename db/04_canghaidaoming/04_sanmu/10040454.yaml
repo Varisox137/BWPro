@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040454
 name: 紧急委托·肆
 versions:
@@ -6,10 +5,17 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      token: true  # 衍生牌（委托机制未实现，骨架）
+      subtype: quest  # 委托牌（三目专属子类型）
+      token: true  # 衍生牌（无稀有度）
+      tags: [urgent_quest]  # 紧急委托（委托整理/截稿日"完成紧急委托"的池判定）
       level: 1
+      keywords: [fast]
+      play_condition: {quest_count_ge: {kind: damage, count: 10}}  # [条件]：{累计造成10点伤害}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        # 使三目永久获得1力量和1生命（含气绝中的三目：永久修正气绝保留，复活后仍在）
+        steps:
+          - {op: buff_power, amount: 1, perm: true,
+             target: {kind: all, pool: friendly_shikigami, shikigami: 100404, include_defeated: true}}
+          - {op: buff_health, amount: 1, perm: true,
+             target: {kind: all, pool: friendly_shikigami, shikigami: 100404, include_defeated: true}}
       text: "[瞬发]。[条件]：{累计造成10点伤害}。使三目永久获得1力量和1生命。"

@@ -176,6 +176,8 @@ class CardInstance(BaseModel):
     id: int  # 数据 id
     mods: dict[str, Any] = Field(default_factory=dict)  # 如 {"cost_delta": -1}
     hand_seq: int = 0  # 手牌顺序编号（加入手牌时分配；0 表示未分配）
+    generated: bool = False  # 对局中生成标记（generate/pick_generate 等生成通道置 True；
+    # 初始卡组/调度牌为 False）——委托「阵容套牌以外的卡牌」口径（今日委托·肆）
     invocations: list[dict[str, Any]] = Field(default_factory=list)  # 结附的灵咒条目：
     # {"name", "player"（来源所属牌手）, "source": Ref|None（来源式神）}；
     # 入手时处理：抽牌入手触发"抽到触发"块后移除，非抽牌入手静默移除
@@ -261,6 +263,12 @@ class PlayerState(BaseModel):
     # 仅统计有来源的消灭并按来源归属牌手分桶，消灭己方式神如伤害转移同样计入来源方）：
     kill_total: int = 0  # 本局以己方角色为来源消灭的式神总数（夺命"你消灭过13个式神"）
     kill_by: dict[int, int] = Field(default_factory=dict)  # 分桶：来源式神当前数据 id → 消灭数（禁锢之刀）
+    # 委托条件账本（三目委托机制；引擎 _quest_tick 统一记账，跨区域有效——"在牌库也
+    # 有效"）：行为种类 → 累计次数。种类：assault 出击 / draw 抽牌 / play 使用牌 /
+    # damage 累计伤害 / effect_damage 非战斗伤害 / attack 攻击次数 / form_play 形态牌 /
+    # offdeck_play 阵容套牌以外卡牌 / enemy_defeat 敌方式神气绝 / revive 己方式神复活 /
+    # quest_used 三目使用委托牌。条件查询 = 条件键 quest_count_ge。
+    quest_counts: dict[str, int] = Field(default_factory=dict)
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
     auras: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级持久监听（"本局游戏"类，

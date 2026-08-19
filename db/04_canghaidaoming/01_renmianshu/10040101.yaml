@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040101
 name: 扎根
 versions:
@@ -10,8 +9,9 @@ versions:
       level: 1
       form_power: 2
       form_health: 7
+      # 己方回合开始时不会从战斗区移回准备区（形态 tags no_retreat，引擎回合开始
+      # 撤退点按结附形态 tags 跳过）
+      tags: [no_retreat]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      # abilities: 待补形态能力块（结附期间生效）
       text: "己方回合开始时不会从战斗区移回准备区。"

@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040301
 name: 樱落
 versions:
@@ -9,6 +8,22 @@ versions:
       rarity: R
       level: 1
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        steps: []  # 双择效果见 methods（萤火点点 10012703 先例：敌我分支目标池不同，
+        # 单 choose + Step 条件无"选择目标敌我归属"键——chosen_side 只读事件 payload，
+        # 卡牌自身 effects 块 ctx.event 为 None，不可用）
+      methods:
+        - id: damage
+          target: {kind: choose, pool: enemy_shikigami}
+          effects:
+            steps:
+              - {op: damage, amount: 3}
+          text: 对一个敌方式神造成3点伤害
+        - id: heal
+          # 含未离场气绝己方式神（include_defeated choose 口径，spec_pool_refs）；
+          # allow_defeated 配合基础能力转化通道（气绝→倒计时-1）
+          target: {kind: choose, pool: friendly_shikigami, include_defeated: true}
+          effects:
+            steps:
+              - {op: heal, amount: 6, allow_defeated: true}
+          text: 对一个己方式神恢复6点生命
       text: "对一个敌方式神造成3点伤害，或对一个己方式神恢复6点生命。"

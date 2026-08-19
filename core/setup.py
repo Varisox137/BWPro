@@ -37,7 +37,17 @@ def build_player(
     uid = uid_start
     deck = []
     for cid in card_ids:
-        deck.append(CardInstance(uid=uid, id=cid))
+        cdef = db.cards[cid]
+        if "gen_weekday_quest" in cdef.tags:
+            # 今日委托每日替换（日常委托本体不进入对局）：构筑进牌库时按当日星期
+            # 替换为对应今日委托牌（周一=55…周日=61），实例按"生成"口径标记
+            from datetime import date
+
+            from db.schema import WEEKDAY_GEN_REPLACE
+            cid = WEEKDAY_GEN_REPLACE[cid][date.today().weekday()]
+            deck.append(CardInstance(uid=uid, id=cid, generated=True))
+        else:
+            deck.append(CardInstance(uid=uid, id=cid))
         uid += 1
     p = PlayerState(
         name=name,

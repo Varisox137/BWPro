@@ -623,9 +623,9 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - **协战牌 reinforce**：双式神从属；id 前六位 = 两位所属式神中较小者，后两位从 21 递增；数据库以 `shikigami` + `shikigami2` 记录两位所属（组卡规则见「组卡规则」节）。
 - **命名**：数据 id 叫 `id`；局内对象 id 叫 `uid`（CardInstance.uid；召唤物/衍生卡生成时既需数据 id 初始化也需 uid 引用）。
 - **卡牌主类型**：spell / combat / form / field（幻境，见第三十一章）/ reinforce（协战，双式神从属，见「组卡规则」节）。**觉醒牌不是主类型**，而是子类型（`subtype=awaken`）；任意主类型的牌都可以是觉醒牌。
-- **子类型 `subtype`**：引擎可见的分类，会影响效果结算与目标选择（例如“从牌库获取一张非觉醒牌”）。当前仅 `awaken`（觉醒牌），保留给未来式神专属子类型扩展。
-- **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、heal_reversal 治疗反转等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
-- **稀有度 rarity**：R/SR/SSR（良/优/极）预留，供抽卡/账号系统。
+- **子类型 `subtype`**：引擎可见的分类，会影响效果结算与目标选择（例如“从牌库获取一张非觉醒牌”）。当前有 `awaken`（觉醒牌）与专属子类型 `quest`（委托牌，三目专属——`db/schema.py EXCLUSIVE_SUBTYPES` 登记所属式神，loader 校验只能出现在所属式神的牌上）。
+- **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、heal_reversal 治疗反转、quest_enemy 多事多忙、gen_weekday_quest 今日委托每日替换、revive_on_defeat 平和猫又屋、urgent_quest 紧急委托池等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
+- **稀有度 rarity**：R/SR/SSR（良/优/极）预留，供抽卡/账号系统。**衍生牌（token）不标稀有度**（原版衍生牌无稀有度；loader 校验 token 卡须缺省 rarity）。
 - **关键词**：数据侧接受的关键字见 db/schema.py `KEYWORDS`（含 fast/trigger/combo/initiative/piercing/pierce/pierce_armor/remote/unyielding/haste/barrier/enraged/lifesteal/hunt/direct/veil/lethal/inspire 等；定义见术语表）。机制未实现的关键词不放进数据，避免静默失效。
 - **区域 zones**：deck/hand/graveyard/exiled 为标准区域，可扩展；墓地仅 UI 层隐藏（引擎可查看并保留对象引用，区域移动需要）；同名卡靠 uid 区分，实例差异放 mods（目前认识 cost_delta/revealed；对局中动态赋予卡牌效果为预留能力）。
 - **使用位置 play_from / 使用方式 play_method**：均可扩展；多择牌仅保留核心方式、参数可变（PlayMethod.param，如爆能 burst + 参数，参数可被效果增减）。
@@ -951,3 +951,184 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   严格递归结构 + 单元 drain 下，内层抽牌事件先完成——**第 2 张（后抽）的移动
   与灵咒先结算**（倒序，与第十九章原文"后发先至"方向一致）；可观察后果：后抽
   的牌先入手、hand_seq 更小（报备）。
+
+## 三十三、委托机制（三目专属，已实现）
+
+> 规范来源：card_data_raw.md 三目节 + thoughts.txt 委托定案（2026-08）。
+> 委托牌 = subtype `quest` 的三目专属衍生牌（衍生号段 51-66：紧急委托 51-54 /
+> 今日委托 55-61 / 线索 62-66），无稀有度、不可入卡组。
+
+### 一、委托条件账本（quest_counts）
+
+- `PlayerState.quest_counts: dict[str, int]`——牌手级计数账本（与击杀账本同思路），
+  跨区域有效，天然满足"[条件]（在牌库也有效）"（条件按控制者账本求值，与牌所在
+  区域无关）。11 种 kind 及记账点（`Game._quest_tick`）：
+  - `assault` 出击次数（出击指令支付后）；`attack` 攻击次数（攻击伤害事件生成点，
+    多段攻击每段计 1）；`draw` 抽牌张数（抽牌事件绑定即计一张）；
+  - `play` 使用牌数 / `form_play` 使用形态牌数 / `quest_used` 使用委托牌数
+    （subtype=quest；委托整理只影响手牌主动/响应使用门控）——统一在使用后1发点
+    （`_emit_card_played`）记账；
+  - `damage` 造成伤害总量 / `effect_damage` 其中非战斗伤害量——伤害实际造成
+    （扣减生命批次锁定 dealt）时按来源归属方记账（`_account_quest_damage`）；
+  - `offdeck_play` 使用"阵容套牌以外的卡牌"数——口径 = 使用过区域的**生成牌**
+    （`CardInstance.generated=True`：generate/pick_generate/今日委托替换产物），
+    凭空自动使用（不入区域的复制/回响）不计；
+  - `enemy_defeat` 敌方式神气绝数（不限来源、不含召唤物离场）；
+  - `revive` 己方式神复活数（一切复活含倒计时自然复活，统一在 `_revive` 记账）。
+- **多事多忙扩域**（tags `quest_enemy`）：行为类 kind（assault/draw/play/damage/
+  effect_damage/attack/form_play/offdeck_play）记账时，若**对方**有在场式神结附
+  该标记形态，对方账本同计（"你的委托条件也可以由敌方完成"）；归属类
+  （enemy_defeat/revive/quest_used）天然与对方行为无关，不扩域。
+
+### 二、条件键与门控
+
+- `quest_count_ge: {kind: k, count: n}`（条件迷你语言）：控制者账本 [k] ≥ n。
+- `round_ge: n`：对局轮数 ≥ n——轮数 = `(state.turn + 1) // 2`（双方各一回合为一轮；
+  今日委托·柒"还需5回合可用"）。
+- 两者均可作 `play_condition`（[条件]使用前提，主动/响应/自动使用同检）与
+  Step 级条件（蜃楼观光[增强]步）。CLI 手牌对委托条件牌显示进度标签
+  （`client/cli.py _quest_progress`），不满足置灰同 [条件] 惯例。
+- **`quest_done` 视为达成**：实例 `mods["quest_done"]` 置位后 `_play_condition_met`
+  视为满足（委托整理"完成紧急委托"——使手牌一张紧急委托的条件视为达成；
+  截稿日"随机完成"）。
+
+### 三、专属 op 与交互
+
+- `quest_complete(mode=choose|random)`：候选 = 控制者手牌中 tags 含 `urgent_quest`
+  且未标记的实例；choose 多张时挂起 `pending_choice kind="quest_complete_pick"`
+  （uid 作答）；random 随机一张；空候选空操作。
+- `pick_generate(pool, unique_ext=None, zone="hand")`：从牌池选一张生成入手；
+  `unique_ext` 给出时剔除控制者 ext 已记录 id（觉醒·三目"（不可重复）"账本
+  `quest_clues_seen`，CLEAR_NEVER），选中后记入；多候选挂起
+  `pending_choice kind="pick_generate"`（choice 作答卡牌数据 id）。
+- `multi_strike(times)`：多段攻击（二帚流"攻击5次"）——战斗牌提取步（响应插入
+  使用路径作为普通 step 登记当前战斗），交战阶段后追加 times-1 段：反击只一段
+  与首段并行，后续段依次单独结算；攻击者气绝/被攻击者气绝无贯通则后续段终止，
+  有贯通被攻击者改为对方牌手。登记 `_battle_strikes`（战斗终止点清除）。
+- `override_damage(to)`：伤害覆写（"伤害改为1"）——把伤害时点批次事件的伤害值
+  直接改写为定值（区别于 cap_damage 封顶，不比较原值）。
+- `battle_immunity` 增 `kind` 参数（缺省 `combat_damage`）：`kind=all` = 免疫所有
+  伤害（战斗/反击/效果）——仍限战斗作用域，`_effect_immune` 按战斗 id 比对
+  （战斗外不免疫）。
+- `generate` 增 `card_ids` 参数（从 id 列表随机一张生成，可生成衍生牌；三目
+  基础/觉醒能力"随机将一张紧急委托置入手牌"）。
+- `card_aura` 增 `subtype` 参数（光环仅命中该子类型的牌；觉醒·三目"你的委托牌
+  不消耗鬼火"= subtype: quest + cost_zero + scope=ability）。
+
+### 四、今日委托每日替换（gen_weekday_quest）
+
+- 日常委托（10040402，tags `gen_weekday_quest`）本体不进入对局：**构筑进牌库时**
+  （`core/setup.py build_player`）与**对局中经 generate 生成时**（`_spawn` 单点钩子）
+  按当日星期替换为对应"今日委托"牌——`db/schema.py WEEKDAY_GEN_REPLACE`
+  （周一=10040455 … 周日=10040461）；替换产物按生成口径 `generated=True`。
+
+### 五、平和猫又屋（revive_on_defeat）
+
+- 形态 tags 含 `revive_on_defeat` 的式神气绝时：气绝完整流程（形态消灭/非永久
+  修正清除/复活倒计时/气绝后时机）结算完成后，经 `_revive` 复活（回满生命、
+  重注册倒计时能力、发 on_shikigami_revived，reason="平和猫又屋"）。
+
+### 六、报备口径（简化/解读）
+
+- 紧急委托 51-54"使三目永久获得1力量和1生命"：含气绝中的三目（永久修正气绝
+  保留，include_defeated 目标）；今日叁/蜃楼观光无"永久"字样 → 非永久修正。
+- 今日肆"造成6点伤害"/线索·判明"造成30点伤害"：默认目标 = 敌方牌手（同白板
+  伤害法术口径）。
+- 线索 aura（休憩/征询/研习）在使用后1时机收集——线索牌自身的使用也在其
+  生效后，会触发一次自身（如研习自身打出即对敌方牌手造成 3 点）。
+
+## 三十四、人面树/樱花妖机制（04 沧海刀鸣批次引擎侧，已实现；卡牌数据未落地）
+
+> 规范来源：card_data_raw.md 04 包人面树/樱花妖节（20200928）。
+> 本章只落地引擎机制与 op；两式神的卡牌 yaml 由后续数据批次按本章口径填写。
+
+### 一、形态类机制
+
+- **扎根**（形态 tags `no_retreat`）：己方回合开始阶段，战斗区式神的当前形态
+  带该标记时不登记移回（`_turn_start_schedule_retreat`），留在战斗区。
+- **形态切换**（`switch_form(into)` op）：目标式神旧形态走 `_destroy_form`
+  消灭流程（入墓地、发 on_form_destroyed），新形态以凭空实例走 `_attach_form`
+  结附流程（身材覆盖、生命回满、发 on_form_attached、形态关键字授予同通道）。
+  神木诅咒"使一个形态变成'诅咒之木'"= 对结附着形态的式神使用（TargetSpec
+  `has_form: true` 过滤取对象）；落英缤纷/晚樱之意"切换为…"= target=self。
+  目标未在场/无形态时为空操作。
+- **结附期临时派系**（形态 tags `faction_override:<派系>`）：结附期间
+  `ShikigamiState.faction` 改写（`perm_faction` 不动），形态离场经
+  `_destroy_form` 还原为永久派系（诅咒之木"被变为此形态的式神会临时变为
+  紫岩派系"）。
+
+### 二、身材/战斗伤害覆写
+
+- **力量等于生命**（能力伪关键字 `power_eq_health`，觉醒·人面树）：覆写口径
+  同 `power_equal_shield`——基础/永久/临时修正不计，战斗战力与灵咒层仍叠加；
+  stat_aura 通道读取时求值，随当前生命浮动；濒死读取为负时钳 0。
+- **以生命造成战斗伤害**（伪关键字 `combat_base_health`，神木庇佑授予）：
+  持有者造成的战斗伤害以其当前生命（而非力量）为基数——攻击与反击同口径
+  （`_battle_flow` 的 attack_event/counter_event 两读取点）。授予走
+  grant_keyword 常规通道（持续性类别，气绝清除）。
+
+### 三、动态数值与目标扩展
+
+- amount 通道新增：`{"health_of": "self"}` 来源式神当前生命（灾厄之花，经
+  delay_grant bind=chosen 延迟块内 self=持有者）；`{"orb": true}` 控制者当前
+  鬼火（汲取养分）。
+- **逐目标动态数值**：amount 字典中 `health_of`/`half_health_of` 值为
+  `"target"` 时，`_run_step` 不预解析、原样传字典由 damage op 逐目标求值
+  （`_target_amount`，"一半"向下取整；此通道不叠加 damage_boost 等平坦加成）
+  ——凋零之森"对他所有角色造成等同于他自身一半生命的伤害"。
+- 目标池 `active_character`：当前行动玩家（回合方）的所有角色（在场式神+
+  牌手）——目标侧随事件玩家而非效果控制者。
+- TargetSpec 过滤键：`has_form`（仅结附形态的式神）；`prefer_wounded`
+  （候选中存在受伤或气绝式神时收窄到该子集再交 random 均等取——晚樱之意
+  "优先受伤或气绝式神"）；`include_defeated` 同步纳入 choose 校验池
+  （spec_pool_refs，樱花妖牌选择气绝目标的合法性）。
+- repeat count 通道新增 `{"event_base_power": key}`：触发事件 key 所指式神的
+  当前基础力量（落英缤纷/晚樱之意"重复该式神基础力量的次数"，"该式神"=
+  复活/气绝事件角色；开始时一次性取值）。
+
+### 四、气绝式神的恢复/伤害转化（樱花妖）
+
+- 能力伪关键字 `heal_defeated_countdown`（樱花妖基础/觉醒共用，觉醒换绑通道）
+  与 `damage_defeated_countdown`（觉醒·樱花妖）。
+- heal/damage op 增 `allow_defeated` 参数：气绝（未离场、等级 ≥1）式神目标
+  放行并转化——恢复改为气绝倒计时 **-1**（减到 ≤0 立即经 `_revive` 复活，
+  reason="effect"）；伤害改为气绝倒计时 **+1**。转化不再视为治疗/伤害：
+  无扣减、不发治疗/伤害事件、无气绝判定。op 参数与来源伪关键字是并存的两个
+  授权通道（弥生之舞/绚烂之舞"（无论是否气绝）"用 op 参数；樱花妖基础/觉醒
+  能力覆盖其一切恢复/伤害来源用伪关键字）。
+- heal/damage op 增 `repeat_on_revive`/`repeat_on_kill`：本步结算后有目标因
+  本步转化复活/因本步伤害新气绝，则对原目标列表整体重复（樱吹雪"若复活/
+  击杀式神则重复此效果"；上限 10 次防死循环——已气绝者被管线拦截或经转化
+  通道，天然收敛）。
+- `mass_revive(side=all|self, countdown_damage=False)` op（绽放"复活所有式神，
+  每个式神对其牌手造成等同于其气绝倒计时的伤害"）：指定方全部气绝未离场
+  式神按牌手 0→1、座次顺序逐个复活；countdown_damage=True 时全部复活完毕后，
+  每个被复活者对其牌手造成等同于其**复活前**气绝倒计时的伤害（快照在复活
+  前取，伤害来源=该式神）；无气绝者空过。
+
+### 五、飘零之舞（出击任意目标 + 己方攻击转化）
+
+- 伪关键字 `assault_any_target`：出击可指定攻击者以外的任一角色（双方在场
+  式神与牌手；`_cmd_assault` 新分支，帷幕对敌方式神照常）。有目标的战斗
+  防守方按目标所属侧确定（`_battle_flow` 的 def_pi 不再恒为敌方）。
+- 伪关键字 `friendly_combat_heal`：攻击己方角色时改为使其恢复等量于伤害的
+  生命（攻击事件生成点转化，不造成战斗伤害）；攻击己方角色无反击（反击
+  生成处按防守侧排除，先攻/交战两阶段同）。
+- "攻击式神时获得[连击]"为纯数据路径：形态能力挂 on_before_assault +
+  条件 `{attacker_shikigami: self, victim_kind: shikigami}` + grant_keyword
+  combo scope=battle（觉醒·雪童子先例），无新增引擎机制。
+
+### 六、报备口径（简化/解读）
+
+- 灾厄之花"在他下个回合结束时"：经 delay_grant（when=on_turn_end、条件
+  active=self、uses=1）落地——对己方式神于己方回合内使用时，**本回合**结束
+  即触发（无"跳过当回合"机制；待确认）。
+- 神木诅咒/落英缤纷的"变成/切换为"按结附流程处理：新形态结附**生命回满**
+  （_attach_form 通道语义；待确认）。
+- 凋零之森"他自身一半生命"解读为**每个目标角色各自**当前生命的一半。
+- 落英缤纷/晚樱之意"每个己方回合一次"：数据侧用既有 turn_mark/turn_mark_not
+  通道（任一回合开始双方清除，半回合粒度；与"己方回合"粒度有出入，待确认）。
+- 绽放复活与造伤顺序：全部复活完成后统一造伤（文本"复活所有式神，每个…"
+  按两阶段读；待确认）。
+- 神木庇佑授予按持续性关键字类别（气绝清除；是否永久待确认）。
+

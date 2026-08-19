@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: form
-      rarity: SSR
       token: true
       level: 2
       form_power: 3

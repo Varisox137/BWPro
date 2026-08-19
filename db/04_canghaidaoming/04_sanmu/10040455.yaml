@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040455
 name: 今日委托·壹
 versions:
@@ -6,10 +5,13 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      token: true  # 衍生牌（委托机制未实现，骨架）
+      subtype: quest  # 委托牌（三目专属子类型）
+      token: true  # 衍生牌（无稀有度；周一'今日委托'）
       level: 1
+      play_condition: {quest_count_ge: {kind: effect_damage, count: 25}}
+      # [条件]：{己方还需造成了25点非战斗伤害}（在牌库也有效——条件按牌手账本求值，
+      # 与所在区域无关）
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        steps:
+          - {op: damage, amount: 3, target: {kind: all, pool: enemy_character}}
       text: "[条件]：{己方还需造成了25点非战斗伤害}（在牌库也有效）。对所有敌方角色造成3点伤害。"

@@ -6,7 +6,6 @@ versions:
   history:
     - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（跳跳兄弟 跳跳哥哥侧；本体未入库）
       level: 2
       effects:

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.model import ExecContext, PlayerState, Ref, ShikigamiState
+from core.model import CardInstance, ExecContext, PlayerState, Ref, ShikigamiState
 
 ACTIONS: dict[str, Callable] = {}
 
@@ -49,10 +49,27 @@ def _luck_amount(game, ctx, amount: int, amount_ctx: str | None,
     return amount
 
 
+def _target_amount(game, raw: dict, ref: Ref) -> int:
+    """逐目标动态数值求值（amount={"health_of"/"half_health_of": "target"}）：
+    按目标角色（式神或牌手）当前生命求值——"一半"向下取整；静态 base 不受 per
+    倍率影响（口径同 Game._step_amount；凋零之森"对他所有角色造成等同于他自身
+    一半生命的伤害"）。"""
+    pl = game.state.players[ref.player]
+    holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+    dyn = 0
+    if raw.get("health_of") == "target":
+        dyn += holder.health
+    if raw.get("half_health_of") == "target":
+        dyn += holder.health // 2
+    return int(raw.get("base", 0)) + dyn * int(raw.get("per", 1))
+
+
 @action("damage")
-def damage(game, ctx, *, targets: list[Ref], amount: int = 0,
+
+def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
            piercing: bool | None = None, amount_ctx: str | None = None,
-           amount_ext: str | None = None, amount_ext_source: str | None = None) -> None:
+           amount_ext: str | None = None, amount_ext_source: str | None = None,
+           allow_defeated: bool = False, repeat_on_kill: bool = False) -> None:
     """对目标（式神或牌手）造成 amount 点伤害；护甲优先吸收。
 
     实例修饰 damage_boost（鎏金幻羽给手牌黄金羽的"伤害+1"）在卡牌效果伤害上累加。
@@ -60,9 +77,19 @@ def damage(game, ctx, *, targets: list[Ref], amount: int = 0,
     来自式神能力且来源式神具有贯通才继承——卡牌效果伤害不因式神持有贯通而贯通
     （terminology.md「贯通」）。
     amount_ctx / amount_ext / amount_ext_source：数值扩展（契约 §3.4，见 _luck_amount）。
+    amount 为字典（{"health_of"/"half_health_of": "target"}）时是逐目标动态数值
+    （_run_step 直通，见 _target_amount；此通道不叠加 damage_boost/光环平坦加成）。
+    allow_defeated=True（或来源式神持伪关键字 damage_defeated_countdown——觉醒·
+    樱花妖通道）：气绝（未离场、等级 ≥1）的式神目标不再被伤害管线拦截，改为使其
+    气绝倒计时 +1——不再视为伤害（无扣减/事件/气绝判定）；绚烂之舞"无论是否气绝"。
+    repeat_on_kill=True：本步结算后若有目标因本步伤害新气绝，则对原目标列表整体
+    重复（樱吹雪"若击杀式神则重复此效果"；上限 10 次防死循环——已气绝者被管线
+    拦截或经转化通道，天然收敛）。
     """
-    amount = _luck_amount(game, ctx, amount, amount_ctx, amount_ext, amount_ext_source)
-    if ctx.card is not None:
+    static = not isinstance(amount, dict)
+    if static:
+        amount = _luck_amount(game, ctx, amount, amount_ctx, amount_ext, amount_ext_source)
+    if ctx.card is not None and static:
         amount += int(ctx.card.mods.get("damage_boost", 0))
         # 卡牌光环伤害加成（寒冬之心"本局游戏你所有'雪球'的伤害+1"；可叠加）
         cdef = game.db.cards[ctx.card.id]
@@ -70,14 +97,32 @@ def damage(game, ctx, *, targets: list[Ref], amount: int = 0,
                       for a in game._match_auras(game.state.players[ctx.controller], cdef))
     pierce = piercing if piercing is not None else game._ability_piercing(ctx)
     spell = game._spell_damage(ctx)  # 法术伤害标记（庇佑判定用，答复(7)）
+    src = (game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+           if ctx.source is not None and ctx.source.shikigami is not None else None)
+    defeated_ok = allow_defeated or (
+        src is not None and game._has_keyword(src, "damage_defeated_countdown"))
     total = 0
-    for ref in targets:
-        if ref.shikigami is None:
-            total += game.deal_to_player(ref.player, amount, ctx.source, spell=spell,
-                                         card=ctx.card)
-        else:
-            total += game.deal_to_shikigami(ref, amount, ctx.source, piercing=pierce,
+    for _pass in range(10 if repeat_on_kill else 1):  # repeat_on_kill 上限 10 次
+        killed = False
+        for ref in targets:
+            amt = amount if static else _target_amount(game, amount, ref)
+            if ref.shikigami is None:
+                total += game.deal_to_player(ref.player, amt, ctx.source, spell=spell,
+                                             card=ctx.card)
+                continue
+            s = game.state.players[ref.player].shikigami[ref.shikigami]
+            if s.defeated and not s.despawned and s.level >= 1 and defeated_ok:
+                # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖；不再视为伤害）
+                s.revive_countdown += 1
+                game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
+                             f"（现 {s.revive_countdown}，伤害转化）")
+                continue
+            total += game.deal_to_shikigami(ref, amt, ctx.source, piercing=pierce,
                                             spell=spell, card=ctx.card)
+            if repeat_on_kill and s.defeated:
+                killed = True  # 本步造成新气绝（deal 内同队列已结算气绝事件）
+        if not killed:
+            break
     if ctx.memo is not None:
         # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用（风神一扇）
         ctx.memo["last_damage_victims"] = [r for r in targets if r.shikigami is not None]
@@ -87,19 +132,50 @@ def damage(game, ctx, *, targets: list[Ref], amount: int = 0,
 
 
 @action("heal")
-def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False) -> None:
+
+def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
+         allow_defeated: bool = False, repeat_on_revive: bool = False) -> None:
     """恢复生命（走 Game.heal 治疗事件流程）：治疗量 = min(amount, 已损失生命)，
     0 终止；濒死/气绝（未在场）式神与气绝牌手不受治疗。
     结算后把本步治疗目标写入块内暂存 ctx.memo["last_heal_targets"]（供佛光
-    "为其操控者的所有角色"以 side_of_last_heal 池引用）。"""
-    for ref in targets:
-        amt = amount
-        if full:
-            # 恢复至满：逐目标按其缺失生命（沐浴阳光"恢复所有生命"）
-            pl = game.state.players[ref.player]
-            holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
-            amt = holder.max_health - holder.health
-        game.heal(ref, amt, ctx.source, reason="heal")
+    "为其操控者的所有角色"以 side_of_last_heal 池引用）。
+
+    allow_defeated=True（或来源式神持伪关键字 heal_defeated_countdown——樱花妖
+    基础/觉醒共用通道）：气绝（未离场、等级 ≥1）的式神目标不再被治疗管线拦截，
+    改为使其气绝倒计时 -1；减到 ≤0 立即复活（走 _revive 复活流程，reason=
+    "effect"）——弥生之舞/樱吹雪"（无论是否气绝）"。
+    repeat_on_revive=True：本步结算后若有目标因本步转化而复活，则对原目标列表
+    整体重复（樱吹雪"若复活式神则重复此效果"；上限 10 次防死循环）。"""
+    src = (game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+           if ctx.source is not None and ctx.source.shikigami is not None else None)
+    defeated_ok = allow_defeated or (
+        src is not None and game._has_keyword(src, "heal_defeated_countdown"))
+    for _pass in range(10 if repeat_on_revive else 1):  # repeat_on_revive 上限 10 次
+        revived = False
+        for ref in targets:
+            if ref.shikigami is not None:
+                pl = game.state.players[ref.player]
+                s = pl.shikigami[ref.shikigami]
+                if s.defeated and not s.despawned and s.level >= 1 and defeated_ok:
+                    # 对气绝式神的恢复转化：气绝倒计时 -1（樱花妖；不再视为治疗，
+                    # 不发出治疗事件）；减到 ≤0 立即复活
+                    s.revive_countdown -= 1
+                    game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 -1"
+                                 f"（现 {s.revive_countdown}，恢复转化）")
+                    if s.revive_countdown <= 0:
+                        game._revive(pl, ref.player, ref.shikigami,
+                                     source=ctx.source, reason="effect")
+                        revived = True
+                    continue
+            amt = amount
+            if full:
+                # 恢复至满：逐目标按其缺失生命（沐浴阳光"恢复所有生命"）
+                pl = game.state.players[ref.player]
+                holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+                amt = holder.max_health - holder.health
+            game.heal(ref, amt, ctx.source, reason="heal")
+        if not revived:
+            break
     if ctx.memo is not None:
         ctx.memo["last_heal_targets"] = list(targets)
 
@@ -454,6 +530,7 @@ def mod_hand(game, ctx, *, targets: list[Ref], tag: str | None = None,
 def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
               card_type: str | None = None, card_id: int | None = None,
               tag: str | None = None, level: int | None = None,
+              subtype: str | None = None,
               keywords: list[str] | None = None,
               cost_zero: bool = False, power: int = 0, shield: int = 0,
               power_ext: str | None = None, shield_ext: str | None = None,
@@ -466,6 +543,7 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     card_id：仅命中该数据 id 的牌（"此牌"类自指光环，伺机）。
     tag：仅命中 tags 含该标记的牌（寒冬之心"你所有'雪球'"）。
     level：仅命中该使用等级的牌（火照之路"你手牌中的等级为1的牌"）。
+    subtype：仅命中该子类型的牌（觉醒·三目"你的委托牌不消耗鬼火"）。
     power/shield 为战斗牌数值通道（combat_card_stats 读取时叠加到战力/一次性护甲）：
     可叠加——多次授予数值累加（与 keywords 的集合语义不同）。
     power_ext/shield_ext：数值改从控制者 PlayerState.ext[key] 读取（心技一体"本局
@@ -514,6 +592,8 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         aura["damage_boost"] = int(damage_boost)  # 卡牌效果伤害加成（寒冬之心的雪球）
     if level is not None:
         aura["level"] = int(level)  # 使用等级限定（火照之路"等级为1的牌"）
+    if subtype is not None:
+        aura["subtype"] = subtype  # 子类型限定（觉醒·三目的"委托牌"）
     if self_damage_on_play:
         aura["self_damage_on_play"] = int(self_damage_on_play)  # 使用时自伤（火照之路）
     if require_holder_form:
@@ -778,6 +858,30 @@ def destroy_form(game, ctx, *, targets: list[Ref]) -> None:
             continue
         game._destroy_form(game.state.players[ref.player], ref.shikigami, reason="effect")
 
+@action("switch_form")
+def switch_form(game, ctx, *, targets: list[Ref], into: int) -> None:
+    """把目标式神的当前形态切换为形态牌 into（凭空实例结附，非使用牌）：
+    旧形态走 _destroy_form 消灭流程（入墓地、发形态离场事件），新形态走
+    _attach_form 结附流程（身材覆盖、生命回满、发结附事件、结附期临时派系
+    覆写等同通道）。
+
+    神木诅咒"使一个形态变成'诅咒之木'"（目标取结附着形态的式神，配 TargetSpec
+    has_form 过滤）与落英缤纷/晚樱之意"切换为…"（target=self）共用。
+    目标未在场/已离场或无形态时为空操作。
+    """
+    cdef = game.db.cards[int(into)]
+    for ref in targets:
+        if ref.shikigami is None:
+            continue
+        pl = game.state.players[ref.player]
+        s = pl.shikigami[ref.shikigami]
+        if not s.in_play or s.form is None:
+            continue
+        inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空实例（仅载体）
+        game.state.next_uid += 1
+        game._attach_form(pl, ref.shikigami, inst, cdef)
+        game._settle(f"【形态】{game.db.shikigami[s.id].name} 的形态切换为【{cdef.name}】")
+
 
 @action("destroy")
 def destroy(game, ctx, *, targets: list[Ref]) -> None:
@@ -879,11 +983,14 @@ def consume_assault_boosts(game, ctx, *, targets: list[Ref]) -> None:
 def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
              card_type: str | None = None, count: int | dict = 1, zone: str = "hand",
              max_level: int | str | None = None, exclude_self: bool = False,
-             card_id: int | None = None, subtype: str | None = None,
+             card_id: int | None = None, card_ids: list[int] | None = None,
+             subtype: str | None = None,
              level: int | str | None = None, position: str = "bottom") -> None:
     """随机生成符合谓词的卡牌并置入区域（targets 忽略；可重复，杀念/觉醒·一目连）。
 
     card_id 指定时直接生成该 id 的牌（可生成 token；黄金羽/金风流羽），绕开随机池。
+    card_ids 指定时从该 id 列表随机一张生成（可生成 token；三目基础能力"随机一张
+    今日委托"——每日替换钩子在 _spawn 内单点生效）。
     subtype：限定子类型（"随机获得一张妖琴师觉醒牌"= spell + awaken）。
     max_level="source"：卡牌等级 ≤ 来源式神当前等级（吾即正义"小于等于自身等级"）；
     exclude_self=True：排除来源卡牌同 id（"其他法术牌"）。
@@ -912,6 +1019,12 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         n = int(count)
 
     def _spawn(cid: int) -> None:
+        # 今日委托每日替换钩子（tags gen_weekday_quest；db/schema.WEEKDAY_GEN_REPLACE）：
+        # 生成的牌是"日常委托"本体时按当日星期替换为对应今日委托牌（周一=55…周日=61）
+        if "gen_weekday_quest" in game.db.cards[cid].tags:
+            from db.schema import WEEKDAY_GEN_REPLACE
+            from datetime import date
+            cid = WEEKDAY_GEN_REPLACE[cid][date.today().weekday()]
         hook = p.ext.get("gen_replace")
         if hook is not None:
             cd = game.db.cards[cid]
@@ -921,7 +1034,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
                        and c.card_type == hook["to_type"]]
                 if rep:
                     cid = game.rng.choice(rep)  # 生成替换：非战斗牌改为随机战斗牌
-        inst = CardInstance(uid=game.state.next_uid, id=cid)
+        inst = CardInstance(uid=game.state.next_uid, id=cid, generated=True)
         game.state.next_uid += 1
         game.move_card(p, inst, zone, reason="generate")
         if zone == "deck" and position == "random":
@@ -934,6 +1047,10 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     if card_id is not None:
         for _ in range(n):
             _spawn(int(card_id))
+        return
+    if card_ids is not None:
+        for _ in range(n):
+            _spawn(game.rng.choice([int(c) for c in card_ids]))
         return
     if shikigami == "friendly_others":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -1243,9 +1360,12 @@ def distribute_damage(game, ctx, *, targets: list[Ref], amount: int = 0, pool: s
 
 
 @action("battle_immunity")
-def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> None:
+def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False,
+                    kind: str = "combat_damage") -> None:
     """作用域战斗伤害免疫：免疫 kind ∈ (combat, counter) 的伤害（法术/能力等 effect 伤害不免疫）。
 
+    kind="all"（二帚流）：扩展为免疫所有伤害（战斗/反击/效果）——条目携带战斗作用域
+    键，战斗外伤害不免疫（_effect_immune 按战斗 id 比对）。
     作用域由授予效果指定：nested=False = 仅本张战斗牌发起的战斗；nested=True = 该战斗
     及其内的嵌套战斗。战斗牌流程会提取本步并绑定该次战斗上下文；作为普通动作执行时
     登记到当前战斗（无战斗上下文则不生效）。
@@ -1257,7 +1377,7 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False) -> N
         if ref.shikigami is None:
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
-        s.immunities.append({"kind": "combat_damage", "battle": bid, "nested": nested})
+        s.immunities.append({"kind": kind, "battle": bid, "nested": nested})
 
 
 @action("delay_grant")
@@ -2630,13 +2750,22 @@ def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
     """重复执行一组子步骤（吸魂灯"你每有 1 点鬼火便重复一次"；targets 忽略）。
 
     count 为整数或 {"orb": true}（解析见 _orb_count）；{"field_intensity": "self"}
-    = 触发来源幻境当前耐久（星陨"重复耐久次"——幻境能力块专用，开始时一次性取值）。
+    = 触发来源幻境当前耐久（星陨"重复耐久次"——幻境能力块专用，开始时一次性取值）；
+    {"event_base_power": key} = 触发事件 key 所指式神的当前基础力量（落英缤纷类，
+    开始时一次性取值）。
     子步骤在同一块上下文（共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复
     结束后一次性清空控制者鬼火（2→0 不经过 1）。
     """
     from db.schema import Step
     p = game.state.players[ctx.controller]
-    if isinstance(count, dict) and count.get("field_intensity"):
+    if isinstance(count, dict) and count.get("event_base_power"):
+        # 事件 Ref 所指式神的当前基础力量（落英缤纷/晚樱之意"重复该式神基础力量
+        # 的次数"——"该式神"= 触发事件角色，复活/气绝事件的 shikigami payload）
+        ref = (ctx.event or {}).get(count["event_base_power"])
+        rs = (game.state.players[ref.player].shikigami[ref.shikigami]
+              if isinstance(ref, Ref) and ref.shikigami is not None else None)
+        n = rs.base_power if rs is not None else 0
+    elif isinstance(count, dict) and count.get("field_intensity"):
         if ctx.field is None:
             raise ValueError("repeat(count={field_intensity}) 需要幻境能力来源（ctx.field）")
         n = int(ctx.field.intensity)
@@ -2743,6 +2872,30 @@ def revive(game, ctx, *, targets: list[Ref]) -> None:
         if not s.defeated or s.despawned:
             continue
         game._revive(p, ref.player, ref.shikigami, source=ctx.source, reason="effect")
+
+@action("mass_revive")
+def mass_revive(game, ctx, *, targets: list[Ref], side: str = "all",
+                countdown_damage: bool = False) -> None:
+    """复活全部（或指定方）已气绝式神（绽放"复活所有式神"；targets 忽略）。
+
+    side="all"（缺省，双方）/ "self"（控制者方）。按牌手 0→1、座次顺序逐个走
+    _revive 复活流程（未离场、等级 ≥1 的气绝式神；无气绝者空过）。
+    countdown_damage=True：全部复活完毕后，每个被复活者对其牌手造成等同于其
+    复活前气绝倒计时的伤害（快照在复活前取；来源 = 该式神）——绽放"每个式神
+    对其牌手造成等同于其气绝倒计时的伤害"。
+    """
+    sides = (0, 1) if side == "all" else (ctx.controller,)
+    revived: list[tuple[int, int, int]] = []  # (牌手, 座次, 复活前气绝倒计时)
+    for pi in sides:
+        p = game.state.players[pi]
+        for i, s in enumerate(p.shikigami):
+            if s.defeated and not s.despawned and s.level >= 1:
+                revived.append((pi, i, s.revive_countdown))
+                game._revive(p, pi, i, source=ctx.source, reason="effect")
+    if countdown_damage:
+        for pi, i, cd in revived:
+            if cd > 0:
+                game.deal_to_player(pi, cd, Ref(player=pi, shikigami=i))
 
 
 @action("reattach_form")
@@ -3602,3 +3755,92 @@ def attach_invocation(game, ctx, *, targets: list[Ref], name: str,
         if ref.shikigami is None:
             raise ValueError("attach_invocation 的 targets 须为式神（不支持结附牌手）")
         game.attach_invocation(name, player=ctx.controller, source=ctx.source, target=ref)
+
+
+
+@action("pick_generate")
+def pick_generate(game, ctx, *, targets: list[Ref], pool: list[int],
+                  unique_ext: str | None = None, zone: str = "hand") -> None:
+    """从指定牌池选择一张生成入手（三目委托线索，targets 忽略）。
+
+    pool 为卡牌数据 id 列表；unique_ext 给出时剔除控制者 PlayerState.ext[unique_ext]
+    已记录的 id（觉醒·三目"不可重复"——本局已获得过的线索不再入选），选中后记入。
+    候选为空 → 空操作；1 张 → 直接生成；>1 张 → 挂起交互（pending_choice
+    kind="pick_generate"，作答由 Game._cmd_pick_generate_choose 处理）。
+    """
+    from core.model import CardInstance
+    p = game.state.players[ctx.controller]
+    seen = set(p.ext.get(unique_ext, [])) if unique_ext else set()
+    options = [int(cid) for cid in pool if int(cid) not in seen]
+    if not options:
+        game._log("没有可生成的牌（线索已全部获得过）")
+        return
+    if len(options) > 1 and zone == "hand":
+        game._open_pick_generate(ctx.controller, options, unique_ext)
+        return
+    cid = options[0]
+    cdef = game.db.cards[cid]
+    inst = CardInstance(uid=game.state.next_uid, id=cid, generated=True)
+    game.state.next_uid += 1
+    game._materialize(p, inst, cdef)  # 生成点统一快照
+    game.move_card(p, inst, zone, reason="generate")
+    if unique_ext:
+        p.ext.setdefault(unique_ext, []).append(cid)
+    game._log(f"生成了【{cdef.name}】")
+
+
+@action("quest_complete")
+def quest_complete(game, ctx, *, targets: list[Ref], mode: str = "choose") -> None:
+    """使一张紧急委托的委托条件视为达成（委托整理/截稿日，targets 忽略）。
+
+    候选 = 控制者手牌中 tags 含 "urgent_quest" 且尚未标记的实例；选中实例
+    mods["quest_done"] 置位（_play_condition_met 读取——[条件]使用前提视为满足）。
+    mode="random"（截稿日"随机"）：rng 随机一张；mode="choose"（委托整理）：
+    1 张直接标记，多张挂起交互（pending_choice kind="quest_complete_pick"）。
+    无候选 → 空操作。
+    """
+    if mode not in ("choose", "random"):
+        raise ValueError(f"未知 quest_complete 模式: {mode}")
+    p = game.state.players[ctx.controller]
+    options = [c for c in p.hand
+               if "urgent_quest" in game.db.cards[c.id].tags
+               and not c.mods.get("quest_done")]
+    if not options:
+        game._log("手牌中没有未完成的紧急委托")
+        return
+    if mode == "random":
+        card = game.rng.choice(options)
+        card.mods["quest_done"] = True
+        game._log(f"{p.name} 的【{game.db.cards[card.id].name}】委托条件视为达成")
+        return
+    if len(options) > 1:
+        game._open_quest_complete_pick(ctx.controller, [c.uid for c in options])
+        return
+    card = options[0]
+    card.mods["quest_done"] = True
+    game._log(f"{p.name} 的【{game.db.cards[card.id].name}】委托条件视为达成")
+
+
+@action("override_damage")
+def override_damage(game, ctx, *, targets: list[Ref], to: int) -> None:
+    """伤害覆写（二帚流"伤害改为1"；targets 忽略）：把事件中可变伤害对象的数值
+    直接改写为定值（区别于 cap_damage 的封顶——不比较原值大小）。
+    须挂在伤害时点批次（on_damage_start 等 payload 含 damage 的事件）上。"""
+    ev = (ctx.event or {}).get("damage")
+    if ev is None:
+        return
+    ev.amount = int(to)
+
+
+@action("multi_strike")
+def multi_strike(game, ctx, *, targets: list[Ref], times: int = 2) -> None:
+    """多段攻击（二帚流"额外攻击4次"；targets 忽略）：本战斗交战阶段后追加
+    times-1 段攻击（反击只一段、与首段并行；后续段依次单独结算，被攻击者气绝
+    按贯通规则处理）。
+
+    战斗牌流程会提取本步（times 参数）并绑定该次战斗上下文（_battle_strikes）；
+    作为普通 step 执行时（响应战斗牌插入使用路径不提取）登记到当前战斗，
+    无战斗上下文则不生效。
+    """
+    if game._battle_stack:
+        game._battle_strikes[game._battle_stack[-1]] = int(times)

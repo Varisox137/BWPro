@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040102
 name: 神木诅咒
 versions:
@@ -8,7 +7,10 @@ versions:
       card_type: spell
       rarity: SR
       level: 1
+      target: {kind: choose, pool: any_shikigami, has_form: true}  # 一个结附着形态的式神
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
+        steps:
+          # 使一个形态变成'诅咒之木'（旧形态走消灭流程，新形态凭空实例结附，
+          # 身材覆盖、生命回满、结附期派系覆写同通道）
+          - {op: switch_form, into: 10040151}
       text: "使一个形态变成‘诅咒之木’。"

@@ -8,7 +8,6 @@ versions:
       subtype: awaken
       awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
       awaken_health: 1
-      rarity: SSR
       token: true
       level: 2
       effects:

@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: spell
-      rarity: SSR
       token: true
       level: 2
       target: {kind: choose, pool: friendly_shikigami}

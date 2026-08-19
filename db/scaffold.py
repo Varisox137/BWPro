@@ -163,7 +163,8 @@ def scaffold_card(
     lines.append(f"      card_type: {card_type}\n")
     if awaken:
         lines.append("      subtype: awaken\n")
-    lines.append(f"      rarity: {rarity}\n")
+    if not token:
+        lines.append(f"      rarity: {rarity}\n")  # 衍生牌无稀有度（维护者定案）
     if token:
         lines.append("      token: true\n")
     lines.append(f"      level: {level}\n")

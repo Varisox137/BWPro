@@ -5,7 +5,6 @@ versions:
   history:
     - date: 20251212
       card_type: spell
-      rarity: SSR
       token: true  # 协战子选项（致命之羽 10012621）
       level: 2
       cost: 0  # 不消耗鬼火

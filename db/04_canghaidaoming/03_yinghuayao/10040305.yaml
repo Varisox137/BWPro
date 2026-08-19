@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——仅基础数据+卡面原文（04 沧海刀鸣 wip）
 id: 10040305
 name: 觉醒·樱花妖
 versions:
@@ -11,8 +10,9 @@ versions:
       awaken_health: 1
       rarity: SR
       level: 2
+      # 觉醒换绑能力伪关键字：移除基础 heal_defeated_countdown，授予双通道
+      # （engine 觉醒点按 ABILITY_PSEUDO_KEYWORDS 换绑；heal/damage op 转化通道读取）
+      keywords: [heal_defeated_countdown, damage_defeated_countdown]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      # abilities: 待补觉醒能力块（打出时替换式神能力）
       text: "[觉醒]：{樱花妖可以为己方气绝式神恢复生命，若如此做，改为使其[倒计时]-1；可以对敌方气绝式神造成伤害，若如此做，改为使其[倒计时]+1。}"
