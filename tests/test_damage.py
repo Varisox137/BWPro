@@ -260,6 +260,23 @@ def test_lifesteal_heals_player_after_damage(db, make_game):
     assert pa.health == 25           # 再恢复 2
 
 
+def test_lifesteal_ability_damage(db, make_game):
+    """吸血传导（灵视形态 [吸血]）：能力伤害（on_card_played → damage 敌方牌手）
+    经统一伤害队列结算，伤害来源式神持 lifesteal 时治疗其牌手（伤害后延时）。"""
+    db.shikigami[100101].keywords = ["lifesteal"]  # 形态授予同通道（进场入永久类别）
+    db.shikigami[100101].ability = F.EffectBlock(
+        when="on_card_played", condition={"player": "opponent"},
+        steps=[F.dmg(2, T(kind="all", pool="enemy_player"))])
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    pa.health = 25
+    pb.orb = 9
+    pass_turns(g, 1)                             # 换 B 行动
+    play(g, 1, 10010201)                         # 触发 A0 能力伤害 2 → 吸血治疗 2
+    assert pb.health == 28
+    assert pa.health == 27
+
+
 # ---------- 濒死（thoughts.txt 濒死定义）与气绝前 1 ----------
 
 def test_dying_marked_before_defeat_event(db, make_game):
@@ -636,7 +653,8 @@ def test_heal_reversal_to_enemy(db, make_game):
 def test_heal_trigger_abilities_once_per_turn(db, make_game):
     """恢复触发型能力（青坊主/禅心）：挂治疗后 on_after_heal——己方任意角色实际恢复
     即触发（含式神与牌手），0 量治疗（on_heal 触发但 after 不触发）不触发；
-    turn_mark 门控每回合合计一次、任一回合开始清除；觉醒版无门控每次触发。"""
+    turn_mark 门控每回合合计一次、任一回合开始清除；觉醒版无门控每次触发；
+    恢复抽牌分支（禅心 draw）同受门控、每回合一次抽 1。"""
     db.shikigami[100102].ability = F.block(
         F.Step(op="turn_mark", key="qfz"),
         F.Step(op="random_damage", amount=1, pool="enemy_character", count=2),
@@ -681,26 +699,20 @@ def test_heal_trigger_abilities_once_per_turn(db, make_game):
     play(g2, 0, 10010155)
     assert pb2.health == 30 - 2      # 两次恢复各 1
     assert pb2.shikigami[0].health == pb2.shikigami[0].max_health - 2
-
-
-def test_heal_trigger_draw_once_per_turn(db, make_game):
-    """恢复抽牌（禅心）：每回合一次，恢复时抽 1。"""
+    # 恢复抽牌分支（禅心 draw 型）：同样受 turn_mark 门控，每回合一次抽 1
     db.shikigami[100102].ability = F.block(
         F.Step(op="turn_mark", key="zx"),
         F.Step(op="draw", count=1),
         when="on_after_heal",
         condition={"target_side": "friendly", "turn_mark_not": "zx"})
-    db.cards[10010155] = F.card(
-        10010155, shikigami=SID, level=1, token=True,
-        steps=[F.Step(op="heal", amount=2, target=T(kind="self"))])
-    g, pa, pb = _game(make_game)
-    pa.shikigami[IDX].health = 1
-    pa.shikigami[1].level = 1
-    n0 = len(pa.hand)
-    play(g, 0, 10010155)
-    assert len(pa.hand) == n0 + 1    # 抽 1
-    play(g, 0, 10010155)
-    assert len(pa.hand) == n0 + 1    # 本回合不再触发
+    g3, pa3, _ = _game(make_game)
+    pa3.shikigami[IDX].health = 1
+    pa3.shikigami[1].level = 1
+    n0 = len(pa3.hand)
+    play(g3, 0, 10010155)
+    assert len(pa3.hand) == n0 + 1    # 抽 1
+    play(g3, 0, 10010155)
+    assert len(pa3.hand) == n0 + 1    # 本回合不再触发
 
 
 def test_damage_total_memo_heal(db, make_game):

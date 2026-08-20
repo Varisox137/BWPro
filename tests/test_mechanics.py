@@ -151,36 +151,6 @@ def test_trigger_requires_shikigami_level(db, make_game):
     assert "on_trigger" not in g.history
 
 
-def test_trigger_order_and_one_per_timing(db, make_game):
-    """响应牌按所属式神从左往右触发；同一时机至多成功结算一张（复查失败不占名额）。"""
-    _add_guard(db, cid=10010251)                           # 右侧式神 100102 的响应（2 甲）
-    db.cards[10010152] = F.card(                           # 左侧式神 100101 的响应（3 甲）
-        10010152, shikigami=100101, cost=1, keywords=["trigger"], token=True,
-        when="on_before_assault",
-        block_kw={"timing": "insert",
-                  "condition": {"victim_side": "friendly", "victim_kind": "shikigami"},
-                  "mode": "atomic"},
-        steps=[F.Step(op="gain_shield", amount=3, target=T(kind="context", key="victim"))])
-    g = make_game()
-    for p in g.state.players:
-        p.hand.clear()
-    a = g.state.players[0]
-    a.shikigami[1].level = 1
-    g.apply({"op": "debug_move", "args": {"player": 0, "index": 0}})
-    give(g, 0, 10010251)                                   # 手牌顺序：右侧的先入手
-    left_card = give(g, 0, 10010152)
-    g.apply({"op": "end_turn"})
-    a.orb = 2                                              # 两张都付得起——隔离"同时机限一张"
-    g.apply({"op": "assault", "index": 0})
-    a0 = a.shikigami[0]
-    assert a0.health == 4 and a0.shield == 0               # 3 甲挡住 3 攻 → 左侧先触发
-    assert left_card not in a.hand
-    assert any(c.id == 10010251 for c in a.hand)           # 第二张未触发（同一时机限一张）
-    assert a.orb == 1                                      # 未触发的那张没有支付鬼火
-    assert g.history.count("on_trigger") == 1
-    assert g.history.count("on_card_played") == 1          # 响应使用同样生成"卡牌的使用事件"
-
-
 def test_response_different_timings_each_one(db, make_game):
     """不同时机=不同空闲点（原版"每空闲点限一张"）：同一指令内的不同时机
     （出击宣言时 insert / 受伤后 queue）可各响应一张。"""
@@ -658,8 +628,9 @@ def test_power_override_zeroes_attack(db, make_game):
     assert s.health == 1                  # 反击照常（4-3）
 
 
-def test_power_override_off_and_defeat_clear(db, make_game):
-    """power_override(on=False) 解除；气绝时自动清除。"""
+def test_power_override_clear_conditions(db, make_game):
+    """power_override 的清除条件：on=False 主动解除；气绝时自动清除；
+    形态离场时随形态清除（基础身材恢复）。"""
     db.cards[10010161] = F.card(10010161, token=True, steps=[
         F.Step(op="power_override", target=T(kind="self"))])
     db.cards[10010162] = F.card(10010162, token=True, steps=[
@@ -678,11 +649,7 @@ def test_power_override_off_and_defeat_clear(db, make_game):
     assert s.defeated
     assert not s.ext.get("power_zero")    # 气绝时清除
 
-
-def test_power_override_cleared_on_form_destroy(db, make_game):
-    """形态离场时力量覆写自动清除（基础身材恢复）。"""
-    db.cards[10010161] = F.card(10010161, token=True, steps=[
-        F.Step(op="power_override", target=T(kind="self"))])
+    # 形态离场时覆写自动清除（基础身材恢复）
     db.cards[10010163] = F.card(10010163, card_type="form", form_power=5,
                                 form_health=6, token=True)
     db.cards[10010164] = F.card(10010164, token=True, steps=[
@@ -3523,8 +3490,8 @@ def test_field_merge_trigger_on_ability_enter(db, make_game):
     assert pa.fields[0].intensity == 5
 
 
-def test_kaguya_awaken_five_summons(db, make_game):
-    """觉醒·辉夜姬[增强]（定案(15)+(6) 端到端）：按幻境牌 id 升序依次执行五次
+def test_field_merge_awaken_pick_all(db, make_game):
+    """幻境觉醒 pick=all 多次召唤合并（原型：觉醒·辉夜姬[增强]，定案(15)+(6) 端到端）：按幻境牌 id 升序依次执行五次
     "召唤幻境事件"（各耐久=1——intensity 覆写）；五次召唤经觉醒能力合并为单实体：
     保留最后召唤者（id 最大）、5 耐久、其余四种的能力块按 id 去重全部并入。"""
     _kaguya(db, awakened=True)

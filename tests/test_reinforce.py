@@ -429,58 +429,22 @@ FM_E, YR_E = 10010501, 10010503   # 回响序列前两张：凤鸣/引燃（第�
 NPYH_TEAM = [100105, 100116, 100101, 100123]
 
 
-def _echo(pa):
-    return pa.shikigami[0].ext.get("spell_echo")
-
-
-def test_spell_echo_sequence_single_trigger(make_game):
-    """回响序列：怒吼触发凤鸣（墓地次序可验证）、同式神法术不重复触发、
-    起弓触发引燃；自动使用的回响牌触发凤凰火基础投射。"""
+def test_spell_echo_base_projection_and_graveyard_order(make_game):
+    """涅槃业火真卡回归（spell_echo op 语义见 test_response.py）：回响序列牌按
+    墓地次序插入（插在用牌之后）、自动使用的回响牌照常触发凤凰火基础投射、
+    青行灯不在队时[羁绊]不生成明灯。"""
     g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
     play(g, 0, NPYH)
     assert pb.health == 29                    # 涅槃业火本身触发基础投射 1
-    assert not any(c.id == MD for c in pa.hand)  # 青行灯不在队：羁绊不触发
-    assert _echo(pa)["cursor"] == 0
+    assert not any(c.id == MD for c in pa.hand)  # 青行灯不在队：羁绊不生成明灯
     play(g, 0, NH)                            # 山童怒吼 → 回响凤鸣
-    assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E]
+    assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E]   # 回响牌插在用牌之后
     assert pb.health == 26                    # 凤鸣 2 + 基础投射 1（默认环境 20200227）
-    assert _echo(pa)["cursor"] == 1           # 自动使用不自连锁（只推进一次）
     play(g, 0, NH)                            # 同式神法术：不重复触发
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH]
-    assert pb.health == 26
-    assert _echo(pa)["cursor"] == 1
     play(g, 0, QG)                            # 白狼起弓 → 回响引燃
     assert [c.id for c in pa.graveyard] == [NPYH, NH, FM_E, NH, QG, YR_E]
-    assert _echo(pa)["cursor"] == 2
     assert pb.health == 25                    # 引燃随机打式神（打不死），基础投射 1 必中
-
-
-   # 羁绊触发：明灯入手
-
-
-def test_spell_echo_enemy_spell_triggers(make_game):
-    """敌方式神在敌方回合从手牌使用法术同样触发（回响存活到己方下回合开始）。"""
-    g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
-    play(g, 0, NPYH)
-    play(g, 0, NH)                            # A 怒吼 → 回响凤鸣（cursor 1）
-    pass_turns(g, 1)                          # B 回合（回响仍在）
-    play(g, 1, QG)                            # B 白狼起弓 → A 凤凰火回响引燃
-    assert _echo(pa)["cursor"] == 2
-    assert any(c.id == YR_E for c in pa.graveyard)
-    # 引燃随机打式神（全员 ≥3 血打不死）；回响牌均触发基础投射（必中牌手）
-    assert pb.health == 30 - 1 - 2 - 1 - 1    # 涅槃投射 + 凤鸣 + 两次投射
-
-
-def test_spell_echo_once_key_not_stackable(make_game):
-    """不可叠加：已登记同键回响时第二次涅槃业火不重置序列（游标/已触发保留）。"""
-    g, pa, pb = _game(make_game, levels={0: 2, 1: 1, 2: 1}, team=NPYH_TEAM)
-    play(g, 0, NPYH)
-    play(g, 0, NH)                            # 推进回响：cursor 1、triggered [100116]
-    play(g, 0, NPYH)                          # 第二次：once_key 命中 → 跳过登记
-    assert _echo(pa)["cursor"] == 1
-    assert _echo(pa)["triggered"] == [100116]
-    pass_turns(g, 2)                          # 己方回合开始：回响清除
-    assert _echo(pa) is None
 
 
 # ==========================================================================
@@ -537,8 +501,9 @@ ZJDG = 10010951   # 醉酒当歌（酒吞侧子卡）
 KG_TEAM = [100103, 100109, 100001, 100002]  # 茨木/酒吞/纸人武士/天邪鬼军团
 
 
-def test_reinforce_main_cards_dual_ownership(gdb):
-    """刃影鹤唳/狂歌豪情：options 登记与构筑池双归属（同时列入两位所属式神）。"""
+def test_reinforce_main_dual_ownership(gdb):
+    """协战主牌双归属（刃影鹤唳/狂歌豪情/森佑灵矢）：options 登记两侧子卡，
+    构筑池同时列入两位所属式神（两侧均可编入）。"""
     from client.deckbuilder import buildable_cards
     assert gdb.cards[RYHL].options == [HHHF, 10012351]
     assert gdb.cards[KGHQ].options == [10010351, ZJDG]
@@ -546,6 +511,9 @@ def test_reinforce_main_cards_dual_ownership(gdb):
     assert RYHL in {c.id for c in buildable_cards(gdb, 100123)}
     assert KGHQ in {c.id for c in buildable_cards(gdb, 100103)}
     assert KGHQ in {c.id for c in buildable_cards(gdb, 100109)}
+    assert gdb.cards[SYLS].options == [LSGH, SYLY]
+    assert SYLS in {c.id for c in buildable_cards(gdb, 100101)}
+    assert SYLS in {c.id for c in buildable_cards(gdb, 100127)}
 
 
 def test_play_sub_side_bond_generate(make_game):
@@ -573,14 +541,6 @@ def test_play_sub_side_bond_generate(make_game):
 
 SYLS = 10010121   # 森佑灵矢
 SYLY = 10012751   # 森佑灵引（萤草侧子卡）
-
-
-def test_reinforce_main_dual_ownership(gdb):
-    """森佑灵矢：options 登记与构筑池双归属（白狼/萤草两侧均可编入）。"""
-    from client.deckbuilder import buildable_cards
-    assert gdb.cards[SYLS].options == [LSGH, SYLY]
-    assert SYLS in {c.id for c in buildable_cards(gdb, 100101)}
-    assert SYLS in {c.id for c in buildable_cards(gdb, 100127)}
 
 
 def test_search_deck_form_filtered_by_target_level(make_game):

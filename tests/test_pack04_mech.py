@@ -348,6 +348,66 @@ def test_repeat_on_revive(db, make_game):
     assert pa.shikigami[0].health == 4   # 存活目标正常受治疗
 
 
+def test_defeated_convert_keyword_scope(db, make_game):
+    """气绝转化伪关键字通道的侧向与在场判定（维护者答复(3)）：
+    heal_defeated_countdown 仅转化己方气绝目标（气绝敌方不转）、
+    damage_defeated_countdown 仅转化敌方气绝目标（气绝己方不转）；
+    结算时来源式神气绝则伪关键字通道不转化（allow_defeated 参数通道不受限）。"""
+    from core.model import ExecContext
+    db.shikigami[100101] = F.shiki(  # 持有者双通道（3/4）
+        100101, power=3, health=4,
+        keywords=["heal_defeated_countdown", "damage_defeated_countdown"])
+    db.cards[10010151] = F.card(  # 双侧波治疗（无 allow_defeated——纯能力通道）
+        10010151, token=True,
+        steps=[F.Step(op="heal", amount=3,
+                      target=T(kind="all", pool="any_shikigami",
+                               include_defeated=True))])
+    db.cards[10010152] = F.card(  # 双侧波伤害
+        10010152, token=True,
+        steps=[F.Step(op="damage", amount=3,
+                      target=T(kind="all", pool="any_shikigami",
+                               include_defeated=True))])
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
+    _kill(g, 0, 1)  # 己方气绝 cd3
+    _kill(g, 1, 1)  # 敌方气绝 cd3
+    F.play(g, 0, 10010151)
+    assert pa.shikigami[1].revive_countdown == 2  # 己方转化 -1
+    assert pb.shikigami[1].revive_countdown == 3  # 气绝敌方不受治疗转化
+    F.play(g, 0, 10010152)
+    assert pb.shikigami[1].revive_countdown == 4  # 敌方转化 +1
+    assert pa.shikigami[1].revive_countdown == 2  # 气绝己方不受伤害转化
+    # 在场判定：来源气绝后伪关键字通道失效（_resolve_block 直调绕过出牌在场校验，
+    # 模拟"确定使用此牌后、结算前能力离场"——test_countdown.py 直调先例）
+    _kill(g, 0, 0)
+    g._resolve_block(db.cards[10010151].effects,
+                     ExecContext(controller=0, source=Ref(player=0, shikigami=0)))
+    assert pa.shikigami[1].revive_countdown == 2  # 能力离场：不转化
+    g._drain_queue()  # 直调结算后兜底排空
+
+
+def test_pool_include_extensions(db, make_game):
+    """目标池扩展键：include_defeated 扩 any_shikigami 池（双侧未离场气绝者入池）；
+    include_player（friendly_injured 池追加受伤的己方牌手——"己方受伤角色"含牌手，
+    维护者答复(4)）。"""
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1, 2: 1})
+    _kill(g, 0, 2)
+    _kill(g, 1, 2)
+    spec = T(kind="choose", pool="any_shikigami", include_defeated=True)
+    refs = targets_mod.spec_pool_refs(g, spec, 0, targeted=True)
+    assert Ref(player=0, shikigami=2) in refs  # 己方气绝者入池
+    assert Ref(player=1, shikigami=2) in refs  # 敌方气绝者入池
+    spec = T(kind="choose", pool="friendly_injured", include_player=True)
+    pa.shikigami[0].health = 1  # 受伤式神对照
+    refs = targets_mod.spec_pool_refs(g, spec, 0, targeted=True)
+    assert Ref(player=0) not in refs  # 牌手满血不入池
+    assert Ref(player=0, shikigami=0) in refs
+    pa.health = 27  # 牌手受伤
+    refs = targets_mod.spec_pool_refs(g, spec, 0, targeted=True)
+    assert Ref(player=0) in refs  # 受伤牌手入池
+
+
 # ---------- 飘零之舞：assault_any_target / friendly_combat_heal / 攻击式神连击 ----------
 
 def test_assault_any_target(db, make_game):
@@ -637,17 +697,31 @@ def test_real_mass_revive(real_game):
     assert pb.health == 27  # 白狼倒计时 3 → 敌方牌手 3
 
 
-def test_real_repeat_on_kill(real_game):
-    """樱吹雪（10040307）敌我四段（伤害→伤害→治疗→治疗）：击杀触发伤害段重复，
-    气绝目标伤害 +1/治疗 -1 抵消，无新击杀/复活即收束。"""
-    g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 3, 1: 1})  # 己方白狼 lv1 在场
-    pb.shikigami[1].health = 2  # 敌方白狼 2 血（两段伤害致死）
+def test_real_wave_repeat(real_game):
+    """樱吹雪（10040307，thoughts 答复(2)(3) 定案）：伤害/治疗各为敌我同池的单一
+    并行波次（any_shikigami + include_defeated + 按 id 排除樱花妖），击杀→伤害整波
+    重复、复活→治疗整波重复，伤害段全部重复完才进治疗段；气绝目标按结算时能力
+    转化——未觉醒气绝敌方不受伤害转化、气绝己方治疗 -1（复活触发治疗整波重复）、
+    气绝敌方不受治疗转化；觉醒后气绝敌方伤害转化 +1。"""
+    # 局 1（未觉醒）：伤害波击杀敌方白狼 → 整波重复；治疗波复活己方兵俑 → 整波重复
+    g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 3, 2: 1})
+    pb.shikigami[1].health = 2  # 敌方白狼 2 血（首波致死）
+    _kill(g, 0, 2, countdown=1)  # 己方兵俑气绝 cd1（治疗波转化复活）
     F.play(g, 0, 10040307)
     w = pb.shikigami[1]
-    assert w.defeated and w.revive_countdown == 3  # 死 cd3 → 重复段 +1 → 治疗段 -1
-    assert pb.shikigami[0].health == 4  # 敌方樱花妖 5→3→1，治疗段 +3
-    assert pb.shikigami[2].health == 5  # 敌方兵俑 6→4→2，治疗段 +3
-    assert pa.shikigami[1].health == 4  # 己方白狼 4→2（己方段无击杀不重复），治疗封顶
+    assert w.defeated and w.revive_countdown == 3  # 未觉醒：气绝敌方伤害拦截（cd 不变）
+    assert pb.shikigami[2].health == 6  # 敌方兵俑 6→4→2（伤害两波），治疗两波 2→5→6
+    assert pb.shikigami[3].health == 6  # 敌方一目连同理
+    assert not pa.shikigami[2].defeated and pa.shikigami[2].health == 6  # 治疗波复活满血
+    # 局 2（觉醒）：气绝敌方目标伤害转化 +1；无复活则治疗波不重复
+    g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 3})
+    F.play(g, 0, 10040305)  # 觉醒·樱花妖（换绑双通道）
+    pb.shikigami[1].health = 2
+    F.play(g, 0, 10040307)
+    w = pb.shikigami[1]
+    assert w.defeated and w.revive_countdown == 4  # 波1 击杀 cd3 → 波2 转化 +1
+    assert pb.shikigami[2].health == 5  # 敌方兵俑 6→4→2，治疗单波 2→5（无复活不重复）
+    assert pb.shikigami[0].health == 5  # 镜像同名樱花妖按数据 id 排除，不受波及
 
 
 def test_real_switch_form_chain(real_game):
@@ -674,3 +748,13 @@ def test_real_switch_form_chain(real_game):
     g._drain_queue()  # 直调 check_defeated 后手动排空（on_shikigami_defeated 为延时时机）
     assert pa.shikigami[2].health == 6  # 樱花妖基础力量 2 → 奶 2×2 全落兵俑
     assert s.form.id == 10040351  # 切回落英缤纷
+
+
+def test_real_bond_include_player(real_game):
+    """落英缤纷（10040351）羁绊"己方受伤角色"含牌手（thoughts 答复(4)）：
+    仅己方牌手受伤时必奶牌手。"""
+    team = [100403, 100119, 100102, 100103]  # 樱花妖/桃花妖/兵俑/茨木
+    g, pa, pb = _rg(real_game, team, levels={0: 2, 1: 1})
+    pa.health = 27  # 己方牌手受伤（式神全满血，池内唯一目标）
+    F.play(g, 0, 10040351)  # 结附落英缤纷 → 羁绊：桃花妖奶己方受伤角色 3
+    assert pa.health == 30

@@ -31,9 +31,12 @@ TargetSpec 额外键：
 - {"memo": key}（须与 random 同用）：块内随机目标复用——首次解析把取样结果存入
   ctx.memo[key]，同块后续同 key 的解析直接复用该 refs（不再取样、不再重新过滤；
   惊鸿之舞"同一随机目标获得2力量与[贯通]"/"随机两名己方式神各永久+1/+1"）
-- {"include_defeated": true}：对 friendly_shikigami / enemy_shikigami 池，把未离场的
+- {"include_defeated": true}：对 friendly_shikigami / enemy_shikigami / any_shikigami
+  池，把未离场的
   气绝式神也纳入（口径同 friendly_defeated 池：defeated 且 not despawned 且 level>=1；
-  惊鸿之舞"随机两名己方式神（无论是否气绝）"）
+  惊鸿之舞"随机两名己方式神（无论是否气绝）"、樱吹雪"其他所有式神"双侧口径）
+- {"include_player": true}：对 friendly_injured 池，追加受伤的己方牌手
+  （生命 < 上限；落英缤纷羁绊"己方受伤角色"——"角色"含牌手，维护者答复(4)）
 - {"power_le": n}：按 eff_power ≤ n 过滤式神目标（勾诀"力量<=2的敌方式神"；choose
   合法性校验经 spec_pool_refs、kind=all 解析经 resolve 应用）
 - {"has_fragile": true|false}：按是否持有破甲过滤角色目标（焚身之火"所有有破甲的
@@ -306,17 +309,26 @@ def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> li
     """choose 目标合法性校验用：pool_refs + TargetSpec 额外过滤键（勾诀 power_le；
     legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。
 
-    include_defeated：对 friendly_shikigami / enemy_shikigami 池把未离场的气绝式神
-    一并纳入可选（樱花妖"可以为己方气绝式神恢复生命"类 choose 口径；与 resolve()
-    kind=all 分支同口径）。"""
+    include_defeated：对 friendly_shikigami / enemy_shikigami / any_shikigami 池把
+    未离场的气绝式神一并纳入可选（樱花妖"可以为己方气绝式神恢复生命"类 choose 口径；
+    与 resolve() kind=all 分支同口径）。include_player：friendly_injured 池追加
+    受伤的己方牌手（"己方受伤角色"含牌手口径）。"""
     refs = pool_refs(game, spec.pool, controller, targeted=targeted)
     extra = spec.model_extra or {}
     if extra.get("include_defeated") and spec.pool in (
-            "friendly_shikigami", "enemy_shikigami"):
-        side = controller if spec.pool == "friendly_shikigami" else 1 - controller
+            "friendly_shikigami", "enemy_shikigami", "any_shikigami"):
+        sides = (controller,) if spec.pool == "friendly_shikigami" else (
+            (1 - controller,) if spec.pool == "enemy_shikigami"
+            else (controller, 1 - controller))
         refs += [Ref(player=side, shikigami=i)
+                 for side in sides
                  for i, s in enumerate(game.state.players[side].shikigami)
                  if s.defeated and not s.despawned and s.level >= 1]
+    if extra.get("include_player") and spec.pool == "friendly_injured":
+        # 己方受伤角色含牌手（维护者答复(4)"角色都包含牌手"）：牌手受伤即入池
+        cp = game.state.players[controller]
+        if cp.health < cp.max_health:
+            refs.append(Ref(player=controller))
     return _spec_filtered(game, refs, extra, controller)
 
 
@@ -360,13 +372,20 @@ def resolve(game, spec, ctx) -> list[Ref]:
         else:
             refs = pool_refs(game, spec.pool, ctx.controller)
         if extra.get("include_defeated") and spec.pool in (
-                "friendly_shikigami", "enemy_shikigami"):
+                "friendly_shikigami", "enemy_shikigami", "any_shikigami"):
             # 含气绝过滤键：把未离场的气绝式神也纳入池（口径同 friendly_defeated 池）
-            side = ctx.controller if spec.pool == "friendly_shikigami" \
-                else 1 - ctx.controller
+            sides = (ctx.controller,) if spec.pool == "friendly_shikigami" else (
+                (1 - ctx.controller,) if spec.pool == "enemy_shikigami"
+                else (ctx.controller, 1 - ctx.controller))
             refs += [Ref(player=side, shikigami=i)
+                     for side in sides
                      for i, s in enumerate(game.state.players[side].shikigami)
                      if s.defeated and not s.despawned and s.level >= 1]
+        if extra.get("include_player") and spec.pool == "friendly_injured":
+            # 己方受伤角色含牌手（同 spec_pool_refs 口径）
+            cp = game.state.players[ctx.controller]
+            if cp.health < cp.max_health:
+                refs.append(Ref(player=ctx.controller))
         sid = extra.get("shikigami")
         if sid is not None:
             # 按数据 id 过滤式神（豪焰固定项 buff 茨木、羁绊伤酒吞类"指定式神"）

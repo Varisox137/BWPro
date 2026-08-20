@@ -79,9 +79,12 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
     amount_ctx / amount_ext / amount_ext_source：数值扩展（契约 §3.4，见 _luck_amount）。
     amount 为字典（{"health_of"/"half_health_of": "target"}）时是逐目标动态数值
     （_run_step 直通，见 _target_amount；此通道不叠加 damage_boost/光环平坦加成）。
-    allow_defeated=True（或来源式神持伪关键字 damage_defeated_countdown——觉醒·
-    樱花妖通道）：气绝（未离场、等级 ≥1）的式神目标不再被伤害管线拦截，改为使其
-    气绝倒计时 +1——不再视为伤害（无扣减/事件/气绝判定）；绚烂之舞"无论是否气绝"。
+    allow_defeated=True（卡牌文本自带的"无论是否气绝"授权——绚烂之舞类）：气绝
+    （未离场、等级 ≥1）的式神目标不再被伤害管线拦截，改为使其气绝倒计时 +1——
+    不再视为伤害（无扣减/事件/气绝判定）。
+    伪关键字通道（来源式神持 damage_defeated_countdown——觉醒·樱花妖）：按**结算时**
+    能力在场判定（来源气绝/离场即不转化——维护者答复(3)），且仅对**敌方**气绝
+    式神转化（"可以对敌方气绝式神造成伤害"）。
     repeat_on_kill=True：本步结算后若有目标因本步伤害新气绝，则对原目标列表整体
     重复（樱吹雪"若击杀式神则重复此效果"；上限 10 次防死循环——已气绝者被管线
     拦截或经转化通道，天然收敛）。
@@ -99,8 +102,8 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
     spell = game._spell_damage(ctx)  # 法术伤害标记（庇佑判定用，答复(7)）
     src = (game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
            if ctx.source is not None and ctx.source.shikigami is not None else None)
-    defeated_ok = allow_defeated or (
-        src is not None and game._has_keyword(src, "damage_defeated_countdown"))
+    kw_convert = src is not None and src.in_play and (
+        game._has_keyword(src, "damage_defeated_countdown"))
     total = 0
     for _pass in range(10 if repeat_on_kill else 1):  # repeat_on_kill 上限 10 次
         killed = False
@@ -111,12 +114,16 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
                                              card=ctx.card)
                 continue
             s = game.state.players[ref.player].shikigami[ref.shikigami]
-            if s.defeated and not s.despawned and s.level >= 1 and defeated_ok:
-                # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖；不再视为伤害）
-                s.revive_countdown += 1
-                game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
-                             f"（现 {s.revive_countdown}，伤害转化）")
-                continue
+            if s.defeated:
+                if not s.despawned and s.level >= 1 and (
+                        allow_defeated
+                        or (kw_convert and ref.player != ctx.controller)):
+                    # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖，仅敌方目标；
+                    # 不再视为伤害）
+                    s.revive_countdown += 1
+                    game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
+                                 f"（现 {s.revive_countdown}，伤害转化）")
+                continue  # 气绝目标不进伤害管线（未授权时拦截空过），也不计新击杀
             total += game.deal_to_shikigami(ref, amt, ctx.source, piercing=pierce,
                                             spell=spell, card=ctx.card)
             if repeat_on_kill and s.defeated:
@@ -140,25 +147,30 @@ def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
     结算后把本步治疗目标写入块内暂存 ctx.memo["last_heal_targets"]（供佛光
     "为其操控者的所有角色"以 side_of_last_heal 池引用）。
 
-    allow_defeated=True（或来源式神持伪关键字 heal_defeated_countdown——樱花妖
-    基础/觉醒共用通道）：气绝（未离场、等级 ≥1）的式神目标不再被治疗管线拦截，
-    改为使其气绝倒计时 -1；减到 ≤0 立即复活（走 _revive 复活流程，reason=
-    "effect"）——弥生之舞/樱吹雪"（无论是否气绝）"。
+    allow_defeated=True（卡牌文本自带的"无论是否气绝"授权——弥生之舞类）：气绝
+    （未离场、等级 ≥1）的式神目标不再被治疗管线拦截，改为使其气绝倒计时 -1；
+    减到 ≤0 立即复活（走 _revive 复活流程，reason="effect"）。
+    伪关键字通道（来源式神持 heal_defeated_countdown——樱花妖基础/觉醒共用）：
+    按**结算时**能力在场判定（来源气绝/离场即不转化——维护者答复(3)"若樱花妖
+    能力离场，则无法对己方气绝式神造成恢复并改为减少倒计时"），且仅对**己方**
+    气绝式神转化（"可以为己方气绝式神恢复生命"）。
     repeat_on_revive=True：本步结算后若有目标因本步转化而复活，则对原目标列表
     整体重复（樱吹雪"若复活式神则重复此效果"；上限 10 次防死循环）。"""
     src = (game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
            if ctx.source is not None and ctx.source.shikigami is not None else None)
-    defeated_ok = allow_defeated or (
-        src is not None and game._has_keyword(src, "heal_defeated_countdown"))
+    kw_convert = src is not None and src.in_play and (
+        game._has_keyword(src, "heal_defeated_countdown"))
     for _pass in range(10 if repeat_on_revive else 1):  # repeat_on_revive 上限 10 次
         revived = False
         for ref in targets:
             if ref.shikigami is not None:
                 pl = game.state.players[ref.player]
                 s = pl.shikigami[ref.shikigami]
-                if s.defeated and not s.despawned and s.level >= 1 and defeated_ok:
-                    # 对气绝式神的恢复转化：气绝倒计时 -1（樱花妖；不再视为治疗，
-                    # 不发出治疗事件）；减到 ≤0 立即复活
+                if s.defeated and not s.despawned and s.level >= 1 and (
+                        allow_defeated
+                        or (kw_convert and ref.player == ctx.controller)):
+                    # 对气绝式神的恢复转化：气绝倒计时 -1（樱花妖，仅己方目标；
+                    # 不再视为治疗，不发出治疗事件）；减到 ≤0 立即复活
                     s.revive_countdown -= 1
                     game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 -1"
                                  f"（现 {s.revive_countdown}，恢复转化）")

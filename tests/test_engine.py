@@ -420,9 +420,12 @@ def test_draw_to_pick_replaces_turn_draw(db, make_game):
     assert g.state.winner == 1
 
 
-def test_draw_to_pick_terminates_multi_draw(db, make_game):
-    """终止语义（答复(4)）——明心型：回合开始抽 X>1 张时"抽牌前"触发替换并终止整个
-    抽牌事件（无论剩余多少张没抽都只触发一次、只检视选 1 张），整次不再发 on_draw。"""
+def test_termination_sources_terminate_multi_draw(db, make_game):
+    """多张抽牌事件的终止语义（答复(4)）：三类终止源——draw_to_pick（明心型"抽牌前"
+    触发替换）、deck_out_burn（觉醒·书翁型空库烧 10）、空库判负——各自终止整个
+    抽牌事件（剩余张数不再结算、整次不再发 on_draw）。"""
+    # 终止源① draw_to_pick：回合开始抽 X>1 张时"抽牌前"触发替换并终止——
+    # 无论剩余多少张没抽都只触发一次、只检视选 1 张
     cid = 10010171
     db.cards[cid] = F.card(cid, card_type="form", form_power=4, form_health=5,
                            tags=["draw_to_pick"], token=True)
@@ -442,10 +445,8 @@ def test_draw_to_pick_terminates_multi_draw(db, make_game):
     assert g.state.pending_choice is None
     assert len(pa.hand) == hand_before + 1         # 只选 1 张入手（不是 2 张）
 
-
-def test_deck_out_burn_terminates_multi_draw(db, make_game):
-    """终止语义（答复(4)）——觉醒·书翁型：多张抽牌遇到空库时烧 10 并终止整个抽牌
-    事件（只烧一次、剩余张数不再各烧、on_draw 不再发）；已绑定牌照常入手。"""
+    # 终止源② deck_out_burn：多张抽牌遇到空库时烧 10 并终止——只烧一次、
+    # 剩余张数不再各烧；已绑定牌照常入手
     awaken_cid = 10010172
     db.cards[awaken_cid] = F.card(awaken_cid, subtype="awaken",
                                   tags=["deck_out_burn"], token=True)
@@ -463,11 +464,9 @@ def test_deck_out_burn_terminates_multi_draw(db, make_game):
     assert bound in pa.hand and not pa.deck       # 已绑定牌单元完成时内联入手；牌库空
     assert "on_draw" not in g.history             # 被终止：整次 on_draw 不再发
 
-
-def test_empty_deck_loss_terminates_multi_draw(make_game):
-    """终止语义（答复(4)）——空库判负：多张抽牌遇到空库（无觉醒·书翁）判负并终止
-    整个抽牌事件链（递归回卷、on_draw 不再发）；已挂起的移动随 pending_end 丢弃
-    （对局已结束，悬置离库牌不归位——端态报备）。"""
+    # 终止源③ 空库判负（无 deck_out_burn）：判负并终止整个抽牌事件链
+    # （递归回卷）；已挂起的移动随 pending_end 丢弃（对局已结束，悬置离库牌
+    # 不归位——端态报备）
     g = make_game()
     pa = g.state.players[0]
     del pa.deck[1:]                               # 牌库只剩 1 张

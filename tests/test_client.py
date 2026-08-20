@@ -380,64 +380,46 @@ def _clean_status():
 
 # ---------- 状态栏渲染（两段） ----------
 
-def test_toolbar_left_right_aligned():
+def test_toolbar_two_segments():
+    """两段状态栏：左右对齐、CJK 字符按显示宽度 2 计算；超宽时截断左段、右段
+    优先完整保留；无状态回调时为空串。"""
     tui.set_status(lambda: ("左", "右"))
     bar = tui.render_toolbar(width=20)
     assert bar == "左" + " " * 16 + "右"
     assert display_width(bar) == 20
-
-
-def test_toolbar_cjk_width():
-    """CJK 字符按显示宽度 2 计算对齐。"""
     tui.set_status(lambda: ("甲乙丙", "回合"))
     bar = tui.render_toolbar(width=20)
-    assert bar == "甲乙丙" + " " * 10 + "回合"
+    assert bar == "甲乙丙" + " " * 10 + "回合"      # CJK 按显示宽度 2
     assert display_width(bar) == 20
-
-
-def test_toolbar_truncates_left_keeps_right():
-    """超宽时截断左段，右段优先完整保留。"""
     tui.set_status(lambda: ("一二三四五六七八九十", "右"))
     bar = tui.render_toolbar(width=10)
-    assert bar.endswith("右")
+    assert bar.endswith("右")                       # 截断左段，右段完整保留
     assert display_width(bar) <= 10
     assert "十" not in bar
-
-
-def test_toolbar_empty_without_status():
+    tui.set_status(None)
     assert tui.render_toolbar(width=20) == ""
 
 
 # ---------- 状态栏渲染（三段） ----------
 
-def test_toolbar_three_segments_centered():
-    """三段：左左对齐、中居中、右右对齐。"""
+def test_toolbar_three_segments():
+    """三段状态栏：左左对齐、中居中（CJK 按宽度 2 计算）、右右对齐；超宽时优先
+    保中段与右段、截断左段；回调返回纯文本时不含未解析的 ANSI 转义。"""
     tui.set_status(lambda: ("AA", "MM", "RR"))
     bar = tui.render_toolbar(width=30)
     assert bar == "AA" + " " * 12 + "MM" + " " * 12 + "RR"
     assert display_width(bar) == 30
-    assert bar.index("MM") == (30 - 2) // 2  # 中段居中
-
-
-def test_toolbar_three_segments_cjk_mid():
+    assert bar.index("MM") == (30 - 2) // 2         # 中段居中
     tui.set_status(lambda: ("左", "回合", "右"))
     bar = tui.render_toolbar(width=30)
     assert bar.startswith("左") and bar.endswith("右")
     assert display_width(bar) == 30
     assert display_width(bar[:bar.index("回合")]) == (30 - 4) // 2  # CJK 按宽度 2 居中
-
-
-def test_toolbar_three_segments_truncates_left_keeps_mid_right():
-    """超宽时优先保中段与右段、截断左段。"""
     tui.set_status(lambda: ("一二三四五六七八九十", "中", "右"))
     bar = tui.render_toolbar(width=20)
-    assert bar.endswith("右") and "中" in bar
+    assert bar.endswith("右") and "中" in bar       # 优先保中段与右段、截断左段
     assert display_width(bar) <= 20
     assert "九十" not in bar
-
-
-def test_toolbar_no_raw_ansi():
-    """状态栏纯文本不含未解析的 ANSI 转义（回调返回纯文本时）。"""
     tui.set_status(lambda: ("左", "中", "右"))
     assert "\x1b" not in tui.render_toolbar(width=30)
 
@@ -535,47 +517,35 @@ def test_probe_connection_retries(monkeypatch):
 # 调试指令（原 test_debug.py）
 # ==========================================================================
 
-def test_debug_give_card_to_hand(db, make_game):
+def test_debug_give_card_zones(db, make_game):
+    """debug_give_card：默认入手牌（count 多张），zone 指定进墓地。"""
     g = make_game()
     a = g.state.players[0]
     before = len(a.hand)
     g.apply({"op": "debug_give_card", "args": {"player": 0, "card_id": 10010101, "count": 2}})
     assert len(a.hand) == before + 2
     assert all(c.id == 10010101 for c in a.hand[-2:])
-
-
-def test_debug_give_card_to_graveyard(db, make_game):
-    g = make_game()
-    a = g.state.players[0]
     g.apply({"op": "debug_give_card", "args": {"player": 0, "card_id": 10010101, "zone": "graveyard"}})
     assert a.graveyard[-1].id == 10010101
 
 
-def test_debug_set_stat_shikigami(db, make_game):
+def test_debug_set_stat(db, make_game):
+    """debug_set_stat：式神 health/level/defeated（布尔值）与牌手 orb 直接改写。"""
     g = make_game()
-    s = g.state.players[0].shikigami[0]
+    a = g.state.players[0]
+    s = a.shikigami[0]
     g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "health", "value": 1}})
     assert s.health == 1
     g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "level", "value": 3}})
     assert s.level == 3
-
-
-def test_debug_set_stat_player(db, make_game):
-    g = make_game()
-    a = g.state.players[0]
+    g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "defeated", "value": True}})
+    assert s.defeated is True
     g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0}, "key": "orb", "value": 9}})
     assert a.orb == 9
 
 
-def test_debug_set_stat_bool(db, make_game):
-    g = make_game()
-    s = g.state.players[0].shikigami[0]
-    g.apply({"op": "debug_set_stat", "args": {"target": {"player": 0, "shikigami": 0}, "key": "defeated", "value": True}})
-    assert s.defeated is True
-
-
-def test_debug_play_card_bypass_cost_and_level(db, make_game):
-    """debug_play_card 跳过费用、等级、目标合法性检查。"""
+def test_debug_play_and_assault_bypass_checks(db, make_game):
+    """debug_play_card / debug_assault：跳过费用、等级、目标合法性与出击次数检查。"""
     cid = 10010152
     db.cards[cid] = F.card(cid, steps=[F.dmg(5)], target=F.T(kind="choose", pool="enemy_shikigami"), token=True)
     g = make_game()
@@ -590,22 +560,18 @@ def test_debug_play_card_bypass_cost_and_level(db, make_game):
     assert g.state.players[1].shikigami[0].defeated is True  # 5 点伤害超过 4 血
     assert g.state.players[1].shikigami[0].health == 0       # 气绝后 health 被置 0
     assert c in a.graveyard
-
-
-def test_debug_assault_bypass_checks(db, make_game):
-    g = make_game()
-    a = g.state.players[0]
+    # 正常出击因 0 火/0 次数失败；调试强制出击打脸
     a.orb = 0
     a.assaults_left = 0
-    # 正常出击因 0 火/0 次数失败
     with pytest.raises(IllegalAction):
         g.apply({"op": "assault", "index": 0})
-    # 调试强制出击打脸
     g.apply({"op": "debug_assault", "args": {"player": 0, "index": 0}})
     assert g.state.players[1].shield == 2  # 5 - 3
 
 
-def test_debug_draw(db, make_game):
+def test_debug_draw_set_turn_and_guards(db, make_game):
+    """debug_draw 从牌库抽 N；debug_set_turn 改写行动方与回合数；未知指令与
+    未启用调试（enable_debug_commands=False）均抛 IllegalAction。"""
     g = make_game()
     a = g.state.players[0]
     before = len(a.hand)
@@ -613,23 +579,11 @@ def test_debug_draw(db, make_game):
     g.apply({"op": "debug_draw", "args": {"player": 0, "count": 2}})
     assert len(a.hand) == before + 2
     assert len(a.deck) == deck_before - 2
-
-
-def test_debug_set_turn(db, make_game):
-    g = make_game()
     g.apply({"op": "debug_set_turn", "args": {"active": 1, "turn": 10}})
     assert g.state.active == 1
     assert g.state.turn == 10
-
-
-def test_debug_unknown_command(db, make_game):
-    g = make_game()
     with pytest.raises(IllegalAction):
         g.apply({"op": "debug_foobar", "args": {}})
-
-
-def test_debug_disabled(db, make_game):
-    g = make_game()
     g.state.config.enable_debug_commands = False
     with pytest.raises(IllegalAction):
         g.apply({"op": "debug_draw", "args": {"player": 0, "count": 1}})

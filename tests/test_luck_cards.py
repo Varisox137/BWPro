@@ -420,7 +420,7 @@ def test_form_leave_orb_only_on_replace(gdb):
     assert pa.orb == 8 and pb.orb == 2
 
 
-def test_play_condition_gates_fumanqiankun(gdb):
+def test_play_condition_luck_total_gate(gdb):
     """福满乾坤[增强]（20191212 版：等级 1、无 play_condition，各 step 以
     luck_success_total_ge:15 门控）：条件不满足时可使用但无效果；满足（双方合计
     15 次）后依次双方生命变 30、抽手牌至 10 张、各 +3 鬼火。"""
@@ -481,7 +481,7 @@ def test_spell_play_luck_random_damage(gdb, monkeypatch):
     assert pa.ext["yaohu_damage_count"] == 2   # 两次伤害事件（来源=妖狐）
 
 
-def test_juqi_perm_bonus_via_shikigami_ext(gdb, monkeypatch):
+def test_bump_ext_perm_bonus_via_shikigami_ext(gdb, monkeypatch):
     """聚气（bump_ext yaohu_dmg_bonus，式神 ext 通道）：基础能力伤害永久 +1，
     跨气绝保留、可累计。"""
     g, pa, pb = _game(gdb, YH_TEAM)

@@ -146,6 +146,8 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
     "has_form",  # 仅有形态的式神（神木诅咒"使一个形态变成…"取对象口径）
     "prefer_wounded",  # 候选中优先受伤（生命<上限）或气绝式神：存在则收窄到该子集
                        # （晚樱之意"优先受伤或气绝式神"；配合 include_defeated 纳入气绝者）
+    "include_player",  # friendly_injured 池追加受伤的己方牌手（"己方受伤角色"含牌手，
+                       # 维护者答复(4)；落英缤纷羁绊）
 })
 
 # 步骤数值参数字典（amount/power）白名单：Game._step_amount 消费全集

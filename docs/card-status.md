@@ -315,7 +315,8 @@
 | 06 盛开 | ✅ | 形态 4/9：进场与 on_turn_start → repeat 3 × heal 2（friendly_injured + random 1） |
 | 07 桃华灼灼 | ✅ | 20191212 回退去"全员[迅捷]"：conditional_keywords {keyword: fast, if_alive: true}（未气绝得[瞬发]）+ playable_when_defeated；revive friendly_defeated 全体 |
 | 08 觉醒·桃花妖 | ✅ | 20191212 回退去使用效果（原"为一个角色恢复5生命"）：+2/+1；同基础两 trigger 改 perm +2/+2 |
-| 51 桃红簇簇 | ✅ | 协战子选项（桃花妖侧形态 3/6；21 繁花似锦主牌待樱花妖 100403）：on_enter_combat/on_leave_combat 新事件 {player: self} → heal 2 context shikigami（治疗来源=桃花妖→连锁基础赋益）；on_damage_start {victim_side: friendly, victim_kind: shikigami, victim_lethal: true, victim_in_combat: false} → grant_immunity kind=all scope=once 新作用域（消耗式，_combat_immune/_effect_immune 命中即移除）→ destroy_form self；羁绊 step 级 condition {shikigami_active: 100403} 门控恒 False（樱花妖未加入） |
+| 21 繁花似锦 | ✅ | 协战本体（桃花妖&樱花妖，options=[10011951, 10040351]），随 raw 补文本入库 |
+| 51 桃红簇簇 | ✅ | 协战子选项（桃花妖侧形态 3/6）：on_enter_combat/on_leave_combat 新事件 {player: self} → heal 2 context shikigami（治疗来源=桃花妖→连锁基础赋益）；on_damage_start {victim_side: friendly, victim_kind: shikigami, victim_lethal: true, victim_in_combat: false} → grant_immunity kind=all scope=once 新作用域（消耗式，_combat_immune/_effect_immune 命中即移除）→ destroy_form self；羁绊 step 级 condition {shikigami_active: 100403} 门控（樱花妖等级不为 0 且未气绝才触发） |
 
 ## 判官（100110）
 
@@ -778,7 +779,7 @@
 |------|------|----------|------|
 | 01 人面树（100401） | 紫岩 | 完整 | **已落地**（rules.md 第三十四章）：8 卡全效果 + 51 诅咒之木——扎根 tags no_retreat（形态不移回）、神木诅咒 switch_form 形态切换 + 结附期派系临时覆写（faction_override）、神木庇佑 combat_base_health（以生命造战斗伤害）、灾厄之花 delay_grant bind=chosen + {health_of: self}、凋零之森幻境 active_character 池 + {half_health_of: target} 逐目标、觉醒 power_eq_health（力量=生命覆写） |
 | 02 跳跳哥哥（100402） | 红莲 | 仅卡名 | 8 卡默认骨架（spell/1级/R，text 空）+ 51 棺葬协战子卡骨架 |
-| 03 樱花妖（100403） | 紫岩 | 完整 | **已落地**（rules.md 第三十四章）：8 卡全效果 + 51 落英缤纷/52 晚樱之意协战子卡——气绝转化伪关键字 heal/damage_defeated_countdown（觉醒换绑双通道）、绽放 mass_revive（复活+倒计时造伤）、樱吹雪四段 repeat_on_kill/repeat_on_revive + allow_defeated、落英缤纷⇄晚樱之意 event_base_power 次数 + turn_mark 门控 + switch_form 互切 + 羁绊、飘零之舞 assault_any_target/friendly_combat_heal |
+| 03 樱花妖（100403） | 紫岩 | 完整 | **已落地**（rules.md 第三十四章）：8 卡全效果 + 51 落英缤纷/52 晚樱之意协战子卡——气绝转化伪关键字 heal/damage_defeated_countdown（觉醒换绑双通道，按结算时能力在场判定且分侧向）、绽放 mass_revive（复活+倒计时造伤）、樱吹雪敌我同池单波 any_shikigami+include_defeated + repeat_on_kill/repeat_on_revive 整波重复（伤害波全部重复完才进治疗波）、落英缤纷⇄晚樱之意 event_base_power 次数 + turn_mark 门控 + switch_form 互切 + 羁绊（friendly_injured+include_player 含牌手）、飘零之舞 assault_any_target/friendly_combat_heal |
 | 04 三目（100404） | 紫岩 | 完整 | **已落地**（委托机制，rules.md 第三十三章）：基础能力（开局/使用紧急委托随机生成）+ 8 卡全效果 + 衍生牌 51-66（紧急委托×4 条件增益/今日委托×7 每日替换/线索×5 觉醒选择生成不可重复） |
 | 05 薰（100405） | 紫岩 | 仅卡名 | 8 卡默认骨架 + 51 鸮鸣协战子卡骨架 |
 | 06 食梦貘（100406） | 紫岩 | 仅卡名 | 8 卡默认骨架 |
@@ -788,8 +789,8 @@
 | 10 巫蛊师（100410） | 紫岩 | 仅卡名 | 8 卡默认骨架 |
 
 - 仅卡名式神身材占位 2/5（yaml 注释标明待 raw 补充）。
-- 协战牌补齐：海国共主 10020721 本体与鸮羽共鸣 10030721 本体入库（副侧到位）；落英缤纷 10040351（+晚樱之意 10040352）已随樱花妖落地（raw 补文本后按确认语义实现）；子选项 琼玉镇海 10040851 / 鸮鸣 10040551 / 棺葬 10040251 仍为骨架——三者 raw 均无文本（标未加入），text 留空待补；花骸缚骨/海潮深渊本体仍不建（raw 无荒骷髅/蟹姬条目）；繁花似锦（桃花妖&樱花妖）本体 raw 仅一行注记、无子卡定义，未建。
-- raw 疑点（灾厄之花文本内层引号不闭合、诅咒之木注记"毁临"疑似笔误等）待确认见 questions.md；委托牌无稀有度与衍生牌 16 张/诅咒之木号段已定案（衍生牌不标稀有度、51-66 十六张、诅咒之木 99→51）。
+- 协战牌补齐：海国共主 10020721 / 鸮羽共鸣 10030721 / 繁花似锦 10011921 三本体现均已入库；落英缤纷 10040351（+晚樱之意 10040352）已随樱花妖落地；子选项 琼玉镇海 10040851 / 鸮鸣 10040551 / 棺葬 10040251 仍为骨架——三者 raw 均无文本（标未加入），text 留空待补；花骸缚骨/海潮深渊本体仍不建（raw 无荒骷髅/蟹姬条目）。
+- 委托牌无稀有度与衍生牌 16 张/诅咒之木号段已定案（衍生牌不标稀有度、51-66 十六张、诅咒之木 99→51）。
 
 ## 与原版描述的出入（已决议，2026-07）
 
@@ -873,6 +874,6 @@
   - 花骸缚骨 = 10030521（彼岸花 100305 < 荒骷髅——raw 未见其条目，id 未定）；子选项 黄泉永劫 = 10030551 已建骨架
   - 海潮深渊 = 10030621（久次良 100306 < 蟹姬——raw 未见其条目，id 未定）；子选项 鲸甲引潮 = 10030651 已建骨架
   - 鸮羽共鸣 = 10030721（山风 100307 < 薰 100405）；主牌与子选项 庇羽 = 10030751、鸮鸣 = 10040551 均已建骨架（空效果；鸮鸣 text 待 raw）
-  - 繁花似锦（桃花妖 100119 & 樱花妖 100403）：raw 仅一行注记（无选择项文本/子卡名），主牌未建；樱花妖侧子卡 落英缤纷 = 10040351 与切换形态 晚樱之意 = 10040352 已随樱花妖落地（raw 补文本后按确认语义实现）
+  - 繁花似锦 = 10011921（桃花妖 100119 < 樱花妖 100403）；主牌已入库，子选项 桃红簇簇 = 10011951、落英缤纷 = 10040351（与切换形态 晚樱之意 = 10040352 互切）均已落地
 - 主牌均须等两位所属式神都已引入才能进 db（loader 校验 shikigami2 存在）；
   剩余主牌待子选项机制：涅槃明灯（烛火重燃）、冰霜永冻（雪刃）、跳跳兄弟（主牌/尸瘴未录入）；森佑灵矢已齐备。

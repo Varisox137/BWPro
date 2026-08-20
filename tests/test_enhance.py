@@ -109,9 +109,10 @@ def _awaken_yaodao(db, cid: int = 10010166) -> int:
 
 # ---------- 禁锢之刀：击杀账本（kill_count 动态数值）+ 打出装配快照 ----------
 
-def test_jingu_kill_counter_and_snapshot(db, make_game):
-    """禁锢之刀：击杀账本按来源式神分桶累计；打出时装配快照——结算中的新击杀
-    不回溯本次战力（战力 = 3 + 消灭数×2）。"""
+def test_kill_ledger_and_play_snapshot(db, make_game):
+    """击杀账本（原型：禁锢之刀 kill_count 动态数值）：按来源式神分桶累计——消灭己方
+    式神（如伤害转移）也计数、敌方同名式神的击杀只进敌方账本；打出时装配快照——
+    结算中的新击杀不回溯本次战力（战力 = 3 + 消灭数×2）。"""
     cid = _jingu_card(db)
     g = make_game()
     pa = g.state.players[0]
@@ -130,11 +131,7 @@ def test_jingu_kill_counter_and_snapshot(db, make_game):
     g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
     assert b.health == 1
 
-
-def test_jingu_counter_scoping(db, make_game):
-    """禁锢之刀计数归属（原版）：消灭己方式神（如伤害转移）也计数；
-    敌方同名式神的击杀只进敌方账本。"""
-    cid = _jingu_card(db)
+    # 计数归属（原版）：消灭己方式神也计数；敌方同名式神的击杀只进敌方账本
     g = make_game()
     pa = g.state.players[0]
     pb = g.state.players[1]
@@ -150,8 +147,9 @@ def test_jingu_counter_scoping(db, make_game):
 
 # ---------- 不祥之刃：战斗绑定一次性触发 ----------
 
-def test_buxiang_kill_draw(db, make_game):
-    """不祥之刃：此战斗中消灭敌方式神 → 抽 1；触发后注册表清空。"""
+def test_combat_kill_temp_grant_draw(db, make_game):
+    """战斗绑定一次性触发（原型：不祥之刃 temp_grants）：此战斗中消灭敌方式神 →
+    抽 1，触发后注册表清空；未消灭则不抽，战斗终止点移除未使用的临时触发。"""
     cid = _buxiang_card(db)
     g = make_game()
     move(g, 1, 0)
@@ -164,10 +162,7 @@ def test_buxiang_kill_draw(db, make_game):
     assert len(pa.hand) == n0 + 1  # give+1、play-1、draw+1
     assert g.state.temp_grants == []
 
-
-def test_buxiang_no_kill_grant_expires(db, make_game):
-    """不祥之刃：未消灭则不抽；战斗终止点移除未使用的临时触发。"""
-    cid = _buxiang_card(db)
+    # 未消灭：不抽；战斗终止点移除未使用的临时触发
     g = make_game()
     move(g, 1, 0)
     b = g.state.players[1].shikigami[0]  # 3/4，攻击 3 杀不死
@@ -399,8 +394,8 @@ def _rashomon_kill(g, bench_index: int) -> None:
     g.apply({"op": "assault", "index": 0})
 
 
-def test_rashomon_random_enhance_tiers(real_game):
-    """罗生门之鬼：茨木童子击杀式神时手牌中同名卡各随机强化一次——仅手牌实例
+def test_hand_instance_random_enhance_tiers(real_game):
+    """随机强化分层（原型：罗生门之鬼）：茨木童子击杀式神时手牌中同名卡各随机强化一次——仅手牌实例
     （在场形态不强化）、每实例最多 3 次、按实例 enhance_got 去重（不会出现已有的强化）。"""
     g = real_game(CM_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})

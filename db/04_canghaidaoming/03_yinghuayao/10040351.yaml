@@ -12,11 +12,11 @@ versions:
       effects:
         # [羁绊]：{进场时桃花妖随机为一个己方受伤角色恢复3生命}——桃花妖（100119）
         # 等级不为 0 且未气绝才触发（shikigami_active 门控，桃红簇簇 10011951 先例）。
-        # 偏差：池取"己方受伤式神"（friendly_injured），不含己方受伤牌手（无
-        # "己方受伤角色含牌手"现成池/过滤键，待确认见 questions.md 指针）
+        # "己方受伤角色"含己方牌手（维护者答复(4)"角色都包含牌手"：friendly_injured
+        # + include_player 过滤键）
         steps:
           - {op: heal, amount: 3, condition: {shikigami_active: 100119},
-             target: {kind: all, pool: friendly_injured, random: 1}}
+             target: {kind: all, pool: friendly_injured, include_player: true, random: 1}}
       abilities:
         # 每个己方回合一次（active: self + turn_mark 门控，标记任一回合开始清除），
         # 己方式神复活时：随机对一个敌方式神造成1点伤害，重复该式神（复活者）

@@ -271,15 +271,13 @@ def test_amount_ext_sources(db, make_game):
     assert b.health == hp - 7
 
 
-def test_repeat_random_damage_stop_on_defeat(db, make_game):
-    """无羁风弹：逐次插入结算（每次重新求值目标池）；stop_on_defeat 时任一
-    式神气绝即停；否则满 max 次即停。"""
+def test_repeat_random_damage_stop_on_defeat_synthetic(db, make_game):
+    """repeat_random_damage 合成卡（无羁风弹原型）：逐次插入结算（每次重新求值
+    目标池）；stop_on_defeat 时任一式神气绝即停（满 max 次分支由
+    test_luck_cards.py 真卡版覆盖）。"""
     db.cards[10010151] = F.card(10010151, token=True, steps=[
         Step(op="repeat_random_damage", amount=1, pool="all_other_shikigami",
              max=10, stop_on_defeat=True)])
-    db.cards[10010152] = F.card(10010152, token=True, steps=[
-        Step(op="repeat_random_damage", amount=1, pool="all_other_shikigami",
-             max=5)])
     g = make_game()
     g.rng = StubRng()               # choice 恒取首元素（来源除外的 1 号位）
     a, b = g.state.players
@@ -291,15 +289,6 @@ def test_repeat_random_damage_stop_on_defeat(db, make_game):
     play(g, 0, 10010151)
     assert own.defeated             # 首次命中即气绝 → 停止
     assert b.shikigami[0].health == hp_enemy  # 未继续结算
-    g2 = make_game()                # 无 stop_on_defeat：满 max 次
-    g2.rng = StubRng()
-    a2 = g2.state.players[0]
-    a2.orb = 9
-    own2 = a2.shikigami[1]
-    own2.level = 1
-    own2.health = 50
-    play(g2, 0, 10010152)
-    assert own2.health == 45        # 恰好 5 次（每次均命中序列首位）
 
 
 def test_reuse_card_spell_twice(db, make_game):

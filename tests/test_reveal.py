@@ -277,23 +277,6 @@ def test_enter_hand_reveal_passive(db, make_game):
     assert not any(c.mods.get("revealed") for c in pb.hand)
 
 
-def test_lifesteal_ability_damage(db, make_game):
-    """吸血传导（灵视形态 [吸血]）：能力伤害（on_card_played → damage 敌方牌手）
-    经统一伤害队列结算，伤害来源式神持 lifesteal 时治疗其牌手（伤害后延时）。"""
-    db.shikigami[100101].keywords = ["lifesteal"]  # 形态授予同通道（进场入永久类别）
-    db.shikigami[100101].ability = F.EffectBlock(
-        when="on_card_played", condition={"player": "opponent"},
-        steps=[F.dmg(2, T(kind="all", pool="enemy_player"))])
-    g = make_game()
-    pa, pb = F.battle_setup(g, {0: 1})
-    pa.health = 25
-    pb.orb = 9
-    pass_turns(g, 1)                             # 换 B 行动
-    play(g, 1, 10010201)                         # 触发 A0 能力伤害 2 → 吸血治疗 2
-    assert pb.health == 28
-    assert pa.health == 27
-
-
 def test_cost_delta_form_scope(db, make_game):
     """cost_delta_player(scope="form")：形态结附期间持续（不按回合号过期），
     形态离场移除（心灵迷宫"敌方使用已展示的手牌时需额外消耗一点鬼火"）。"""

@@ -1,0 +1,15 @@
+id: 10011921
+name: 繁花似锦
+versions:
+  best: 20251212
+  history:
+    - date: 20251212
+      shikigami2: 100403  # 协战副归属
+      card_type: reinforce
+      rarity: SSR
+      level: 2
+      cost: 1  # 展示用；实际费用/等级/目标按所选子选项
+      options: [10011951, 10040351]  # [0] 主式神侧：桃红簇簇 / [1] 副式神侧：落英缤纷
+      effects:
+        steps: []
+      text: "选择使用一项：桃花妖-桃红簇簇；樱花妖-落英缤纷"

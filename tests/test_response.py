@@ -1223,7 +1223,9 @@ def test_response_on_turn_end_combat_empty(db, make_game):
 
 def test_response_one_card_per_timing(db, make_game):
     """每空闲点限一张（原版）：同一行动结算（窗口）内、同一时机的两张同名响应牌
-    只触发收集序第一张；新窗口（下一次行动）的另一张照常触发。"""
+    只触发收集序第一张——未触发的那张不付鬼火、history 仅计一次 on_trigger 与
+    on_card_played（响应使用同样生成"卡牌的使用事件"）；新窗口（下一次行动）的
+    另一张照常触发。"""
     _dun(db)
     g = make_game()
     a, b = g.state.players
@@ -1238,6 +1240,9 @@ def test_response_one_card_per_timing(db, make_game):
     assert bing.shield == 2 and bing.health == 6   # 仅一张 +5 甲（5-3）
     assert sum(1 for c in a.graveyard if c.id == DUN) == 1
     assert sum(1 for c in a.hand if c.id == DUN) == 1      # 第二张留在手牌
+    assert a.orb == 2                                     # 未触发的那张不付鬼火
+    assert g.history.count("on_trigger") == 1
+    assert g.history.count("on_card_played") == 1         # 响应使用生成"卡牌的使用事件"
     pass_turns(g, 2)                    # 回到 B 回合（A 回合开始护甲清零、兵俑退回准备区）
     move(g, 0, BING_IDX)                # 兵俑重新进战斗区（debug 不开新窗口）
     g.apply({"op": "assault", "index": 0})     # 新窗口：第二张照常触发
