@@ -119,11 +119,20 @@ class ShikigamiState(BaseModel):
     # 的卡牌——出牌校验按此拒绝；万象之书类按原式神取牌的读取处预留，本批仅作字段）
     transform_origin: dict | None = None  # 变形还原式神快照（ShikigamiState dump，不含本字段）：
     # 被变形时 = 原式神快照；原式神该值非空则继承之（连续变形解除时还原到最初的原式神状态）
+    coffin_origin: dict | None = None  # 棺材占位实体的原式神快照（气绝结算完成后的
+    # ShikigamiState dump，不含 transform_origin/coffin_origin——非变形快照还原语义：
+    # 倒计时归零 = 移除棺材并按正常复活进场；棺材被击杀 = 原式神保持气绝、
+    # 按正常气绝倒计时复活。engine._to_coffin / coffin_revive 通道，04 沧海刀鸣）
     invocations: list[dict[str, Any]] = Field(default_factory=list)  # 结附的灵咒条目：
     # {"name", "player"（来源所属牌手）, "source": Ref|None（来源式神）,
+    # "uid": int（条目身份，on_invocation_attached 载荷）,
     # "ability_seq": int（结附时刻的能力进场序号）, "power"/"health": int
     # （效果类身材增减益的结附时刻快照——类光环层：不进 temp 修正，由
-    # eff_power/max_health 读取时实时合计，移除即消失、reset_stats 不可清）}；
+    # eff_power/max_health 读取时实时合计，移除即消失、reset_stats 不可清）,
+    # "bonus": int（数值增强层"效果+1"，同源同名再结附继承、气绝/离场重置）,
+    # "mod_power"/"mod_health": int（持有方牌手 ext["inv_mod"] 修饰层，
+    # engine._refresh_invocation_mods 重算）, "keywords": [(kw, cls)]（结附授予的
+    # 关键字，移除时按实例撤销）, "cd_block": EffectBlock（灵咒倒计时块标记）}；
     # 能力类结附期间生效，气绝/离场时移除
 
     @property
@@ -146,13 +155,15 @@ class ShikigamiState(BaseModel):
             return 0
         return (self.base_power + self.perm_power + self.temp_power
                 + self.combat_power + int(self.ext.get("dyn_power", 0))
-                + sum(int(e.get("power", 0)) for e in self.invocations))
+                + sum(int(e.get("power", 0)) + int(e.get("bonus", 0))
+                      + int(e.get("mod_power", 0)) for e in self.invocations))
 
     @property
     def max_health(self) -> int:
         return (self.base_health + self.perm_health + self.temp_health
                 + int(self.ext.get("dyn_health", 0))  # dyn 通道同 eff_power
-                + sum(int(e.get("health", 0)) for e in self.invocations))  # 灵咒层同上
+                + sum(int(e.get("health", 0)) + int(e.get("bonus", 0))
+                      + int(e.get("mod_health", 0)) for e in self.invocations))  # 灵咒层同上
 
     @property
     def in_play(self) -> bool:

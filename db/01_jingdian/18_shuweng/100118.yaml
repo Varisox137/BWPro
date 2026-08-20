@@ -1,9 +1,9 @@
 id: 100118
 name: 书翁
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       faction: 青岚
       power: 1
       health: 5

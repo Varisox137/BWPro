@@ -147,7 +147,7 @@
 6. 己方战斗区的非召唤物式神：触发（延时）移至准备区。
 7. **回合开始时**（延时时机）：各能力触发。
 8. 己方式神按角色入场顺序依次进行：若未气绝，立即执行“非灵咒的倒计时 -1”事件（已实现为通用式神级倒计时框架：`Game._turn_start_countdown`——按进场顺序 `entry_order` 升序依次处理，归零流程见 ch12；增减事件暂不拆）。
-9. 己方式神按角色入场顺序依次进行：若未气绝，立即执行“灵咒效果的倒计时 -1”事件（Phase 5+）。
+9. 己方式神按角色入场顺序依次进行：若未气绝，立即执行“灵咒效果的倒计时 -1”事件（**已实现**：灵咒倒计时块结附时经式神级倒计时框架注册为持有者唯一倒计时（attach_invocation，source=None 不进 countdown_history），复用步骤 8 的归零通道；一次型（once）归零生效后连同灵咒本体一并移除——迟钝型，见第三十二章）。
 10. 己方剩余出击次数重置为 1。
     - **出击次数变化时**（即时时机）：各能力触发。
 11. 能力结束生效：上个回合的“直到回合结束时”效果（Phase 5+）。
@@ -885,11 +885,11 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - 伤害管线接入点：`Game._run_damage_queue` 扣减生命步之后、受伤后延时之前。
 - 术语定名：幻境英文键 = `field`（card_type / `FieldState` / `PlayerState.fields` / 事件名前缀 / 内部 op `field_destroy` / payload 键 field——原 phantom 命名作废）；耐久英文键 = `intensity`（CardDef 字段/FieldState 字段/事件名同；原 durability 命名作废）；队首旗标 = `field_front`。
 
-## 三十二、灵咒（框架已落地，无实卡数据）
+## 三十二、灵咒（04 沧海刀鸣批次落地）
 
-> 规范来源：维护者三机制规范（沧海刀鸣准备，2026-08）。本批落地**纯框架 +
-> dummy 测试**——灵咒定义不经 yaml 加载（机制未实现不进数据），测试直接
-> `db.invocations[name] = InvocationDef(...)` 注入（同 `db.cards` 惯例）。
+> 规范来源：维护者三机制规范（thoughts.txt 灵咒节）+ 2026-08 灵咒批次维护者
+> 定案（数值增强继承/唯一分侧/inv_mod 修饰/inv_override 覆写，均已落实）。
+> 实卡数据：迟钝（跳跳哥哥）/鸮之守护（薰）/八尺琼曲玉（大岳丸）。
 
 ### 一、灵咒是什么
 
@@ -903,23 +903,46 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
     钳当前生命到新上限，同 buff_health/dyn 通道口径、不触发事件）；
   - `abilities`：**能力类**灵咒的触发能力块，结附期间作为该式神的额外能力参与
     `_collect_abilities` 收集（in_play 门控复用式神能力分支；进场序号 = 结附时刻，
-    记入条目 `ability_seq`），随灵咒移除而失效；
+    记入条目 `ability_seq`），随灵咒移除而失效。能力块含倒计时块（`countdown`
+    非 None）时**不作事件监听**，结附即注册为持有者唯一倒计时（式神级倒计时框架，
+    `source=None` 不进 countdown_history；占用倒计时槽、替换当前倒计时）；
+    `once=true` 的倒计时块归零生效后**连同灵咒本体一并移除**（`_countdown_zero`
+    once 通道——迟钝"[倒计时2]：{发起一次攻击}。生效后移除。"）；
+  - `keywords`：结附期间授予持有者的关键字（移除时按实例撤销）；`"stun"` 特判为
+    眩晕条目（`stuns` 挂 `kind="invocation"`，不参与回合批次过期清理——
+    `_stun_expired` 特判，随灵咒移除解除；validate 白名单 = KEYWORDS ∪ {stun}）；
   - `draw_trigger`：结附在**卡牌**上的灵咒"抽到触发"块（见第三节）；
-  - `unique`：唯一性（见第四节）。
+  - `unique`：唯一性（见第四节）；
+  - `text`：卡面原文（逐字 = card_data_raw.md 对应灵咒条目引号内文本）。
+- **yaml 化（2026-08 批次落地）**：定义存于来源式神目录的 `invocations.yaml`
+  （loader 特判收集：`{"invocations": [{name, versions}, ...]}`；versions 快照与
+  卡牌同管线——resolve_latest/at_date 按日期解析，灵咒顶层无 id（仅 name），
+  `version` = 快照日期）；**name 全局唯一**（loader 重名报错）。测试亦可直接
+  `db.invocations[name] = InvocationDef(...)` 注入（同 `db.cards` 惯例；直注入
+  条目 version=0，at_date 视为任意日期可用）。
 - 运行时条目：`ShikigamiState.invocations` / `CardInstance.invocations`
   （`list[dict]`：{"name", "player"（来源所属牌手）, "source"（来源式神 Ref|None）,
-  "power"/"health"（效果类身材快照）, 式神灵咒另含 "ability_seq"}）。
+  "uid"（条目身份，state.next_uid 递增——on_invocation_attached 载荷）,
+  "power"/"health"（效果类身材快照）, "bonus"（数值增强层，见第五节）,
+  "mod_power"/"mod_health"（inv_mod 修饰层，见第五节）, 式神灵咒另含
+  "ability_seq"、"keywords"（结附授予记录，移除时按实例撤销）、"cd_block"
+  （灵咒倒计时块标记，once 归零/灵咒移除时联动清除）}）。
 
 ### 二、结附
 
 - op `attach_invocation`（core/actions.py）：`name` 指定灵咒；`targets` 为式神结附
-  （逐目标）、`uid` 为卡牌结附（按 uid 找局内卡牌实例，targets 忽略）。
-- 流程（`Game.attach_invocation`）：结附（效果类身材快照入条目、能力类记进场序号）
-  → **唯一性移除**（新结附自身保留）→ **`on_invocation_attached`**（延时时机，
-  payload {player=来源所属牌手, target: Ref|None, uid: int|None, invocation, source}，
-  预留挂点）。
-- 式神气绝/离场时其全部灵咒移除（`_detach_invocations`；光环层增减益随之失效）。
-  变形快照（`transform_origin`）携带灵咒条目，还原时一并带回。
+  （逐目标）、`uid` 为卡牌结附（按 uid 找局内卡牌实例，targets 忽略）；
+  `grant_keywords` 参数对该结附条目追加关键字（无尽剑狱"并于结附期间使其持续
+  [眩晕]"——stun 同走灵咒眩晕条目）。
+- 流程（`Game.attach_invocation`）：结附（效果类身材快照入条目、能力类记进场
+  序号、keywords 授予、倒计时块注册）→ **唯一性移除**（新结附自身保留；旧条目
+  bonus 由新条目继承，见第四节）→ **inv_mod 修饰层重算**（`_refresh_invocation_
+  mods`，见第五节）→ **`on_invocation_attached`**（延时时机，payload
+  {player=来源所属牌手, target: Ref|None, **uid=灵咒条目 uid**（2026-08 语义
+  变化点：原为卡牌 uid/None）, invocation, source}）。
+- 式神气绝/离场时其全部灵咒移除（`_detach_invocations`；光环层增减益与授予的
+  关键字/眩晕随之失效，bonus 重置）。变形快照（`transform_origin`）携带灵咒
+  条目，还原时一并带回。
 
 ### 三、结附卡牌的灵咒与"抽到触发"
 
@@ -933,24 +956,55 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
     递归转墓地（上限检查在"牌移动后"时机之后，第十八章二节）；
   - 移到其他区域（墓地/放逐等）：灵咒保留不动。
 
-### 四、唯一性
+### 四、唯一性（分侧定案）
 
-- `unique="unique"`（**[唯一]**）：结附后移除**双方全场**（双方全部式神 + 双方
-  手牌/牌库中的卡牌）**同源同名**灵咒；`unique="shikigami_unique"`（**[式神唯一]**）：
-  仅移除该式神上同源同名（卡牌结附无"该式神"可言，不生效）；`"none"` = 不唯一。
-- **同源 = 来源所属牌手相同**（条目 `player` 键）；移除在结附**之后**，新结附的
-  灵咒自身不被移除（按对象身份排除）；被移除者的光环层增减益随之失效。
+- `unique="unique"`（**[唯一]**）：结附后移除**一方全场**（全部式神 + 手牌/牌库中
+  的卡牌）**同源同名**灵咒；`unique="shikigami_unique"`（**[式神唯一]**）：仅移除
+  该式神上同源同名（卡牌结附无"该式神"可言，不生效）；`"none"` = 不唯一。
+- **同源 = 来源所属牌手相同**（条目 `player` 键）。**分侧定案（2026-08 维护者
+  裁决）**：[唯一]/[式神唯一] 均相对**一方牌手**——双方各自结附的同名灵咒互不
+  影响，可共存（含共存于同一式神）。
+- 移除在结附**之后**，新结附的灵咒自身不被移除（按对象身份排除）；被移除者的
+  光环层增减益随之失效。**bonus 继承**：同源同名再结附时新条目继承旧条目的
+  数值增强 bonus（取较大者——"效果+1"不因再结附丢失）；气绝/离场移除即重置。
 
-### 五、遗留与简化（报备项）
+### 五、数值增强与修饰（大岳丸/薰通道）
 
-- 灵咒的倒计时挂钩（回合开始阶段步骤 9"灵咒效果的倒计时 -1"）未实现；
-  灵咒能力块的 `countdown` 字段不作倒计时注册。
-- "缘结/梦魇/诅咒"等原版具名灵咒效果待沧海刀鸣实卡批次录入数据后生效；
-  伤害事件批次 0 的灵咒"蜘蛛印记"挂点同理（第五章步骤 7）。
+- **bonus（数值增强层）**："效果+1"类增强挂在灵咒实体条目（`entry["bonus"]`），
+  灵咒层数值 = 快照 + bonus + mod（`eff_power`/`max_health` 读取时合计）。
+  写入点 = 击杀加成规则（下）；继承/重置语义见第四节。
+- **inv_bonus_on_kill（结附灵咒击杀加成）**：op `inv_bonus_on_kill(inv, add)`
+  登记牌手级规则（ext["inv_bonus_on_kill"] 条目 {"inv","add"}，可叠加、不随
+  来源式神气绝失效——觉醒·大岳丸"当结附'八尺琼曲玉'的己方式神击杀敌方式神时，
+  '八尺琼曲玉'效果+1"）。触发钩子在 check_defeated 击杀账本段：来源式神结附
+  该灵咒且击杀敌方非召唤物式神时，其身上该灵咒条目 bonus += add 并重算修饰层。
+- **inv_mod（持有方修饰层）**：持有方牌手 ext["inv_mod"] 条目
+  {"name", "shikigami"?（持有者式神数据 id 限定）, "add", "mult"}——对该方全部
+  式神的同名灵咒条目（**不限结附来源敌我**）重算：eff = (快照+bonus)×mult+add
+  （多条目 mult 连乘、add 连加），条目存 mod_power/mod_health = eff - base。
+  op `inv_mod(name, shikigami=None, add, mult)` 登记（大岳丸基础/觉醒能力——
+  条目带 holder/scope="ability"：**随能力离场**（气绝/变形/觉醒换绑）经
+  `_clear_ability_card_auras` 清除，能力进场经 on_ability_enter 块重新登记）；
+  重算时机 = 结附后（attach 末）与登记/清除点（`_refresh_invocation_mods`）。
+- **inv_override（玩家级结附覆写，祈愿之翼）**：持有方牌手 ext["inv_override"]
+  = {灵咒名： {...}}，attach_invocation 与唯一性判定读取：
+  - `"unique"`：覆写唯一性级别（"失去[唯一]但效果不能叠加" → shikigami_unique）；
+  - `"attach_all_friendly": true`：结附改为**己方全体在场式神**各结附一个
+    （"当己方式神结附'鸮之守护'时，改为使己方全体式神结附"；内部递归不再读
+    覆写防循环，未在场者不结附）。
+
+### 六、遗留与简化（报备项）
+
+- 伤害事件批次 0 的灵咒"蜘蛛印记"挂点（第五章步骤 7）待实卡引入时补齐；
+  庇佑的灵咒抵消半侧见 questions.md Phase 5+ 预留。
 - 多张抽牌触发多个"抽到触发"灵咒的结算顺序（2026-08 答复(3) 后发先至定案）：
   严格递归结构 + 单元 drain 下，内层抽牌事件先完成——**第 2 张（后抽）的移动
   与灵咒先结算**（倒序，与第十九章原文"后发先至"方向一致）；可观察后果：后抽
   的牌先入手、hand_seq 更小（报备）。
+- 灵咒眩晕按名撤销：移除灵咒时撤掉该名全部眩晕条目（现数据无同名多条目场景，
+  报备）；灵咒倒计时占用式神唯一倒计时槽（结附迟钝会替换持有者当前倒计时，
+  与原版互动语义待首个冲突场景确认）。迟钝无唯一性：同源重复结附条目并存
+  （光环层叠加），倒计时槽由后者替换（报备 D1）。
 
 ## 三十三、委托机制（三目专属，已实现）
 
@@ -1037,10 +1091,10 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - 线索 aura（休憩/征询/研习）在使用后1时机收集——线索牌自身的使用也在其
   生效后，会触发一次自身（如研习自身打出即对敌方牌手造成 3 点）。
 
-## 三十四、人面树/樱花妖机制（04 沧海刀鸣批次引擎侧，已实现；卡牌数据未落地）
+## 三十四、人面树/樱花妖机制（04 沧海刀鸣批次，已实现）
 
 > 规范来源：card_data_raw.md 04 包人面树/樱花妖节（20200928）。
-> 本章只落地引擎机制与 op；两式神的卡牌 yaml 由后续数据批次按本章口径填写。
+> 引擎机制与两式神卡牌数据均已按本章口径落地。
 
 ### 一、形态类机制
 
@@ -1142,3 +1196,101 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   按两阶段读；待确认）。
 - 神木庇佑授予按持续性关键字类别（气绝清除；是否永久待确认）。
 
+## 三十五、跳跳哥哥/薰/大岳丸机制（04 沧海刀鸣批次，已实现）
+
+> 规范来源：card_data_raw.md 04 包三节（20200928）+ thoughts.txt 本轮 4 条裁决
+> （灵咒数值增强挂条目并继承/唯一分侧/棺材=占位+普通复活/replace_action 改为
+> 结附——均已落实，归档于本章与第三十二章）。灵咒本体机制见第三十二章。
+
+### 一、replace_action（"改为结附"，跳跳哥哥）
+
+- 伪关键字 `replace_action:<灵咒名>`（基础能力/觉醒牌 keywords 携带，带冒号参数
+  按前缀归入能力伪关键字集合——觉醒替换换绑通道同其他能力伪关键字）：携带者
+  **出击或使用战斗牌时改为结附**指定灵咒——动作分派处短路（不发起攻击/不进战斗
+  流程），鬼火/瞬发/出击次数照常消耗（`engine._replace_action_invocation`；
+  出击点 `_cmd_assault` 与战斗牌打出点两读取处，能力在场判定由读取处 in_play
+  门控）。
+- 迟钝自带眩晕：眩晕期间出击/战斗牌本就不可用，故替换只在无迟钝时实际发生
+  （觉醒·跳跳哥哥"不能在跳跳哥哥有[倒计时]时使用"另由 play_condition
+  `shikigami_countdown_free` 门控）。
+
+### 二、棺材占位实体（to_coffin / coffin_revive）
+
+- 棺材 = `kind="transform"` 的占位实体定义（10040299；与变形框架隔离：
+  不设 transform_origin，另存 **coffin_origin** 快照 = 原式神"气绝结算完成后"
+  状态，即正常复活 baseline——等级/永久修正保留，形态/临时修正/灵咒已在气绝
+  流程清除）。**语义 = 占位 + 普通复活，非快照还原**（维护者裁决）。
+- 两条进入通道：
+  - op `to_coffin(into, keep_combat=False)`（死而复生"将所有己方气绝的式神替换
+    为'棺材'" / 棺封"消灭一个式神。若该式神不是召唤物，将其替换为'棺材'"——
+    消灭步之后对本 op 取同一目标）：目标须已气绝、未离场、非召唤物；
+  - 气绝流程旗标（check_defeated 末尾消费）：式神 ext["coffin_on_defeat"]
+    （不弃响应"本回合气绝时替换为'棺材'"，值 = 棺材实体 id，on_before_defeat
+    即时批次写入）/ 形态 tags `coffin_on_defeat:<实体id>`（罡身阵）。气绝事件与
+    击杀账本按原式神照常结算过一次，替换不重复发。
+- 棺材落**准备区**（战斗区在气绝流程已让出）；keep_combat 且原式神气绝时在
+  战斗区（ext["defeated_in_combat"] 记账，消费即取）则棺材进其战斗区（棺封
+  对战斗区敌方式神）。替换期间原式神的牌不可用（transform_owner 口径同变形物）。
+- **复活**：棺材自身倒计时能力块（倒计时 1）归零 → `coffin_revive` step：移除
+  棺材（不占坑位、不进离场流程），原式神走 `_revive` 正常复活（reason="棺材"）；
+  原式神属跳跳家族（棺材 def 扩展字段 `coffin_assault` 的 id 列表：跳跳哥哥/
+  跳跳妹妹/跳跳弟弟）则**立刻发动攻击**，本次战斗获得[不屈]（next_battle_keywords
+  挂账通道）。
+- **棺材被击杀口径**：check_defeated 拦截（coffin_origin 非 None）——还原原式神
+  保持气绝、复活倒计时重置为配置值；**不再发气绝事件、不记击杀账本**（原式神的
+  气绝在替换进棺材时已结算过一次，此处只是占位实体移除）。
+
+### 三、薰：行动账本与灵咒联动
+
+- **行动账本**：牌手 ext["last_acted"]（CLEAR_OWN_TURN_START）= 本回合最后一个
+  **行动**的己方式神座次；记账点 = 主动出击（`_cmd_assault` 支付后）与使用
+  专属牌（`_cmd_play_card` 使用后1 发点；**协战牌该式神侧子选项也算**——偏差
+  D3 按字面放宽）。行动后该式神才气绝的账本仍保留（D7；context 读取处
+  in_play 门控）。context 目标专用 key `last_acted` 读取（账本空/已不在场为
+  空）——棺击"己方回合结束时，使你本回合最后一个行动的式神结附'鸮之守护'"
+  （觉醒·薰"当你的式神行动时"用牌侧同样取账本而非事件字段，语义等价——D 偏差
+  报备）。
+- **stat_aura kind="friendly_invocation"**：己方在场且结附指定灵咒（`name`
+  参数，不限结附来源）的式神 +power/+health（鸮之利爪"结附'鸮之守护'的己方
+  式神获得2力量"）；`keywords` 参数部分经 `_reconcile_invocation_aura_keywords`
+  读取时求值持续授予（鸮之警惕[帷幕]/鸮之庇佑[不屈]；与式神 ext["inv_aura_kw"]
+  已授记录比对多退少补，以 continuous 类授予——不屈不被消耗移除）。
+- **no_damage_vs_inv 禁伤**（干扰投掷）：式神 ext["no_damage_vs_inv"] = 灵咒名
+  （本回合作用域，bump_ext 写入）——持有者对结附该灵咒的式神造成的伤害无效
+  （伤害管线早期终止，**一切伤害类型**——D2 按字面；不限灵咒来源；响应挂
+  on_before_assault + 条件 `victim_has_invocation`）。
+
+### 四、大岳丸：灵咒数值通道
+
+- 基础/觉醒能力"结附于大岳丸时效果+1"= `inv_mod` op 登记持有方修饰
+  （shikigami=大岳丸 限定持有者；scope="ability" 随能力离场清除、进场经
+  on_ability_enter 块重新登记）；觉醒·大岳丸"击杀时效果+1"= `inv_bonus_on_kill`
+  op 登记牌手级规则。机制细节见第三十二章第五节。
+
+### 五、双选择目标与战斗牌选择目标传递
+
+- **CardDef.target2**：第二 choose 目标（麓鸣·灭"使结附'八尺琼曲玉'的己方式神
+  获得2护甲并攻击一个敌方式神"）——出牌指令 `cmd["target2"]` 经 spec_pool_refs
+  校验（optional 同主目标口径）后 `ctx.chosen = [主目标, 第二目标]`；step 目标
+  `{kind: choose, chosen_index: n}` 按序取（targets.resolve）；`launch_attack`
+  增 `at_index` 参数（at=chosen 时按序取攻击目标）。主目标过滤用
+  `has_invocation` 目标过滤键（值 = 灵咒名，或 {"name", "same_source": true}
+  同源限定——决意"你结附'鸮之守护'的式神"）。热坐/联机 CLI 依次提示两个目标
+  （`client/cli.py prompt_target` 共用助手；联机协议 dict 透传 target2，服务端
+  校验不变）。
+- **战斗牌效果 ctx 携带 chosen**（`_resolve_combat_card`）——麓鸣·轰"选择一个
+  己方式神，本次攻击后…"的 delay_grant bind=chosen 通道（偏差报备：delay_grant
+  无 scope 时限，本次攻击被替换的理论路径下会留到下次攻击后）。
+
+### 六、条件键（本轮新增，registry 登记）
+
+- `invocation_on_field: <灵咒名>`：场上有己方式神结附该灵咒（存在性，不限结附
+  来源；麓鸣·穿/麓鸣·袭[增强]）。conditional_keywords 同名算子同语义（麓鸣·穿
+  条件[瞬发]）。
+- `holder_countdown: bool`：能力持有者当前有/无[倒计时]（释煞阵形态能力门控）。
+- `holder_has_invocation: <灵咒名>`：能力持有者结附该灵咒（棺击降级口径"持有
+  '迟钝'期间"门控——D5 偏差：非 uid 绑定）。
+- `victim_has_invocation` 等 `_has_invocation` 通用后缀：事件中该前缀 Ref 所指
+  式神结附指定灵咒（干扰投掷响应）。
+- `shikigami_countdown_free: <式神id>`：控制者的式神当前没有[倒计时]（觉醒·
+  跳跳哥哥 play_condition；未出战/气绝/未在场视为无倒计时，可用）。

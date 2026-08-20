@@ -1,0 +1,23 @@
+# 棺材占位实体（倒计时归零=移除并普通复活原式神，非快照还原；
+# 引擎通道：to_coffin 替换入场 / coffin_revive 归零复活 / check_defeated 击杀拦截）
+id: 10040299
+name: 棺材
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
+      kind: transform  # 变形物（占位实体；loader 视同 summon 不入构筑池/测试卡组。
+      # 不设 transform_origin 快照——coffin_origin 独立通道，气绝前2/untransform 不触及）
+      faction: 红莲
+      power: 0
+      health: 3
+      no_attack: true  # 不能攻击（出击校验与 launch_attack 同拦截）
+      coffin_assault: [100402, 100131, 100120]  # 归零复活时跳跳家族（跳跳哥哥/
+      # 跳跳妹妹/跳跳弟弟）立刻发动攻击且本次战斗获得[不屈]（coffin_revive 读取）
+      abilities:
+        - countdown: 1  # [倒计时1]：移除此牌，复活原式神（所属方回合开始 -1）
+          once: true
+          steps:
+            - op: coffin_revive
+              target: {kind: self}
+      text: "不能攻击。[倒计时1]：{移除此牌，复活原式神。若该式神是跳跳哥哥、跳跳妹妹或跳跳弟弟，使其立刻发动攻击，本次战斗获得[不屈]。}"

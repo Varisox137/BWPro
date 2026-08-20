@@ -1,14 +1,24 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040502
 name: 决意
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: form
       rarity: R
       level: 1
+      form_power: 2
+      form_health: 4
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      abilities:
+        # 敌方回合开始时，使你结附'鸮之守护'的式神获得1生命（has_invocation
+        # same_source 同源限定 = 结附来源所属牌手为控制者；buff_health perm 永久
+        # 上限修正——"获得生命"非治疗，古尘之壁口径）
+        - when: on_turn_start
+          condition: {active: opponent}
+          steps:
+            - {op: buff_health, perm: true, amount: 1,
+               target: {kind: all, pool: friendly_shikigami,
+                        has_invocation: {name: 鸮之守护, same_source: true}}}
+      text: "敌方回合开始时，使你结附‘鸮之守护’的式神获得1生命。"

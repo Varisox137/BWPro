@@ -1,0 +1,15 @@
+# 灵咒定义（loader 特判收集；text 逐字 = card_data_raw.md 引号内原文）
+invocations:
+  - name: 鸮之守护
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
+          unique: unique  # [唯一]
+          abilities:
+            - when: on_damage_start  # 受到伤害时减少1点（伤害时点批次，改伤害数值）
+              condition: {victim_shikigami: self}
+              steps:
+                - op: reduce_damage
+                  amount: 1
+          text: "[唯一]。受到伤害时减少1点。"

@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040503
 name: 干扰投掷
 versions:
@@ -8,7 +7,21 @@ versions:
       card_type: spell
       rarity: R
       level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: any_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 造成1点伤害并使其本回合不能对结附'鸮之守护'的式神造成伤害（式神 ext
+        # no_damage_vs_inv=灵咒名，本回合作用域，伤害管线早期终止）
+        steps:
+          - {op: damage, amount: 1}
+          - {op: bump_ext, key: no_damage_vs_inv, value: 鸮之守护}
+      response:
+        # 响应：当敌方式神攻击你结附'鸮之守护'的式神时，自动对其使用（目标=事件
+        # attacker，非响应默认的 victim）
+        when: on_before_assault
+        condition: {attacker_side: enemy, victim_has_invocation: 鸮之守护}
+        steps:
+          - {op: damage, amount: 1, target: {kind: context, key: attacker}}
+          - {op: bump_ext, key: no_damage_vs_inv, value: 鸮之守护,
+             target: {kind: context, key: attacker}}
+      text: "对一个式神造成1点伤害并使其本回合不能对结附‘鸮之守护’的式神造成伤害。[响应]：{当敌方式神攻击你结附‘鸮之守护’的式神时，自动对其使用。}"

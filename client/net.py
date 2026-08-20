@@ -473,15 +473,13 @@ class NetClient:
                 cmd_dict["choice"] = pick
                 eff = options[pick]
             if eff.target.kind == "choose":
-                from core import targets as _targets
-                legal = _targets.pool_refs(game, eff.target.pool, self.me)
-                if rest:
-                    code = rest.pop(0)
-                else:
-                    print("可选目标: " + " ".join(
-                        cli.ref_code(r, self.me) for r in legal))
-                    code = tui.prompt("目标 > ")
-                cmd_dict["target"] = cli.parse_ref(code, self.me).model_dump()
+                ref = cli.prompt_target(game, eff.target, self.me, rest)
+                cmd_dict["target"] = ref.model_dump()
+            t2 = cdef.target2
+            if t2 is not None and t2.kind == "choose":
+                # 第二选择目标（麓鸣·灭型双 choose 卡）：本地提示，服务端校验
+                ref2 = cli.prompt_target(game, t2, self.me, rest, label="第二目标")
+                cmd_dict["target2"] = ref2.model_dump()
             if rest:
                 cmd_dict["play_method"] = rest.pop(0)
             self.send_cmd(cmd_dict)

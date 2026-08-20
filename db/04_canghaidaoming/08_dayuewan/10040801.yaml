@@ -1,14 +1,18 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040801
 name: 麓鸣·穿
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: combat
       rarity: R
       level: 1
+      conditional_keywords:
+        # [增强]条件瞬发：场上有己方式神结附'八尺琼曲玉'（不限结附来源）时
+        # 此牌获得[瞬发]（读取点 engine._card_keywords，出牌合法性/付费时点生效）
+        - {invocation_on_field: 八尺琼曲玉, keyword: fast}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 将八尺琼曲玉结附于大岳丸（战斗牌效果步 target self = 攻击者本体）
+          - {op: attach_invocation, name: 八尺琼曲玉, target: {kind: self}}
+      text: "将八尺琼曲玉结附于大岳丸。[增强]：{若场上已有己方的‘八尺琼曲玉’，此牌获得[瞬发]。}"

@@ -57,6 +57,12 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     "energy_life_substitute": ("shikigami", CLEAR_NEVER),     # 能量生命代偿标记
     "fragile_to_damage": ("shikigami", CLEAR_NEVER),          # 破甲转化标记（bump_ext）
     "fragile_to_damage_if": ("shikigami", CLEAR_NEVER),
+    "coffin_on_defeat": ("shikigami", CLEAR_ANY_TURN_START),  # 不弃旗标："本回合气绝时
+    # 替换为棺材"（值 = 棺材实体数据 id，bump_ext 写入；气绝流程末尾消费）
+    "defeated_in_combat": ("shikigami", CLEAR_ON_DEFEAT),     # 本次气绝时是否在战斗区
+    # （check_defeated 重写；to_coffin keep_combat 消费——棺封对战斗区式神=棺材进战斗区）
+    "no_damage_vs_inv": ("shikigami", CLEAR_ANY_TURN_START),  # 干扰投掷禁伤：本回合
+    # 持有者对结附指定灵咒（值 = 灵咒名）的式神造成的伤害无效（伤害管线早期终止）
     # ---- 牌手宿主 ----
     "feather_used_turn": ("player", CLEAR_OWN_TURN_START),    # 黄金羽本回合计数
     "turn_marks": ("player", CLEAR_ANY_TURN_START),           # 每回合合计一次标记表
@@ -85,6 +91,18 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     "energy_assault": ("player", CLEAR_NEVER),
     "form_death_play": ("player", CLEAR_NEVER),
     "quest_clues_seen": ("player", CLEAR_NEVER),              # 本局已获得过的线索 id（觉醒·三目"不可重复"）
+    "last_acted": ("player", CLEAR_OWN_TURN_START),           # 薰行动账本：本回合最后一个
+    # 行动（主动出击/使用专属牌）的己方式神座次；己方回合结束由能力读取（context 目标
+    # 键 last_acted），账本空则无事
+    "inv_mod": ("player", CLEAR_NEVER),                       # 灵咒数值修饰表（八尺琼曲玉；
+    # 条目 {"name","shikigami"?,"add","mult"}，engine._refresh_invocation_mods 重算条目 mod 层；
+    # scope="ability" 条目随来源式神能力离场经 _clear_ability_card_auras 清除——大岳丸
+    # 基础/觉醒能力，进场经 on_ability_enter 块登记）
+    "inv_bonus_on_kill": ("player", CLEAR_NEVER),             # 结附灵咒击杀加成规则表
+    # （觉醒·大岳丸使用时赋予牌手：条目 {"inv","add"}，可叠加；触发钩子在
+    # check_defeated 击杀账本段——击杀者身上该灵咒条目 bonus += add）
+    "inv_override": ("player", CLEAR_NEVER),                  # 灵咒结附覆写表（祈愿之翼；
+    # {灵咒名: {"unique": 覆写级别, "attach_all_friendly": bool}}，attach/唯一性判定读取）
 }
 
 # ---------- 条件迷你语言键白名单 ----------
@@ -107,6 +125,10 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "hand_card_type", "chosen_stunned", "chosen_has_fragile", "chosen_side",
     "combat_opponent_stunned", "kill_count_ge",
     "quest_count_ge", "round_ge",
+    "invocation_on_field", "shikigami_countdown_free", "holder_countdown",
+    "holder_has_invocation",  # 能力持有者结附指定灵咒（棺击"持有'迟钝'期间"门控）
+    "victim_has_invocation",  # 事件 victim 结附指定灵咒（干扰投掷响应条件；
+                              # _has_invocation 通用后缀的具名实例）
     # —— 收集器专用（不进 match_condition 按键循环）——
     "card_in_hand", "field_self", "field_intensity_ge",
     # —— 事件字段等值/通用后缀具名实例（现行数据全集）——
@@ -132,6 +154,7 @@ CONDITIONAL_KEYWORD_KEYS: frozenset[str] = frozenset({
     "enemy_hand_all_revealed", "enemy_fragile_ge2", "player_health_ge",
     "enemy_deck_le", "shikigami_has_form", "friendly_field",
     "deck_field_distinct_ge", "dice_six_ge",
+    "invocation_on_field",  # 场上有己方式神结附指定灵咒（麓鸣·穿条件[瞬发]）
 })
 
 # TargetSpec model_extra 键白名单（targets._spec_filtered / resolve /
@@ -148,6 +171,11 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
                        # （晚樱之意"优先受伤或气绝式神"；配合 include_defeated 纳入气绝者）
     "include_player",  # friendly_injured 池追加受伤的己方牌手（"己方受伤角色"含牌手，
                        # 维护者答复(4)；落英缤纷羁绊）
+    "has_invocation",  # 结附指定灵咒的式神（值 = 灵咒名，或 {"name": 灵咒名,
+                       # "same_source": true} 同源限定 = 结附来源所属牌手为控制者；
+                       # 决意"你结附'鸮之守护'的式神"用同源限定；牌手目标被滤除）
+    "chosen_index",    # step 目标 {kind: choose, chosen_index: n}：多选择目标卡牌
+                       # （CardDef.target2）按序取第 n 个选择目标（麓鸣·灭双 choose）
 })
 
 # 步骤数值参数字典（amount/power）白名单：Game._step_amount 消费全集

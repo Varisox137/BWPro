@@ -1,14 +1,17 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040504
 name: 鸮之利爪
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
-      level: 1
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 3
+      form_health: 6
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 结附'鸮之守护'的己方式神获得2力量（stat_aura friendly_invocation 动态
+        # 光环，不限结附来源；scope=form 默认绑定来源形态，形态离场移除）
+        steps:
+          - {op: stat_aura, kind: friendly_invocation, name: 鸮之守护, power: 2}
+      text: "结附‘鸮之守护’的己方式神获得2力量。"

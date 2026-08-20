@@ -1,14 +1,19 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040803
 name: 麓鸣·袭
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
-      level: 1
+      card_type: combat
+      rarity: SR
+      level: 2
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          - {op: attach_invocation, name: 八尺琼曲玉, target: {kind: self}}
+          # [增强]本次战斗获得免疫战斗伤害：battle_immunity step 由战斗牌流程提取、
+          # 绑定本次战斗（缺省 kind=combat_damage）；Step.condition 按攻击方视角在
+          # 战斗上下文求值（鸩羽 10012801 条件免疫先例）
+          - {op: battle_immunity, target: {kind: self},
+             condition: {invocation_on_field: 八尺琼曲玉}}
+      text: "将‘八尺琼曲玉’结附于大岳丸。[增强]：{若场上已有己方的‘八尺琼曲玉’，本次战斗获得免疫战斗伤害。}"

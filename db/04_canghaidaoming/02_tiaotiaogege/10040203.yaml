@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040203
 name: 不弃
 versions:
@@ -8,7 +7,20 @@ versions:
       card_type: spell
       rarity: R
       level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: any_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 非召唤物口径：无排除召唤物的目标过滤键——coffin_on_defeat 旗标消费点
+        # （气绝流程末尾 _to_coffin）对召唤物天然跳过（召唤物气绝即离场），
+        # 故目标池取任意式神；旗标值 = 棺材实体数据 id，任一回合开始清除
+        steps:
+          - {op: bump_ext, key: coffin_on_defeat, value: 10040299}
+      response:
+        # 响应：当跳跳哥哥将气绝时自动对其使用（on_before_defeat 即时批次写入旗标，
+        # 同次气绝流程末尾消费；响应目标 = 事件 victim）
+        when: on_before_defeat
+        condition: {victim_shikigami: 100402}
+        steps:
+          - {op: bump_ext, key: coffin_on_defeat, value: 10040299,
+             target: {kind: context, key: victim}}
+      text: "使一个非召唤物式神获得‘本回合气绝时，替换为“棺材”’。[响应]：{当跳跳哥哥将气绝时，自动对其使用。}"

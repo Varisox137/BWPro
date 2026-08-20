@@ -27,8 +27,8 @@ from db.envs import show_faction as _show_faction
 from db.loader import CardDatabase
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
-  play (p)   <手牌序号> [子选项] [目标] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
-                                               （协战牌先给子选项序号 0/1，如 p 3 0）
+  play (p)   <手牌序号> [子选项] [目标] [目标2] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
+                                               （协战牌先给子选项序号 0/1，如 p 3 0；双目标牌依次给两个目标，如 p 2 s1 e1）
   assault (a) <式神序号> [目标]          式神出击（耗 1 鬼火 + 每回合 1 次次数；追猎可指定敌方式神目标，如 a 1 e2）
   upgrade (u) <式神序号>               升级式神（只能升己方当前最低级）
   end (e)                              结束回合
@@ -158,6 +158,19 @@ def ref_code(ref: Ref, active: int) -> str:
     座次式神 1 基。"""
     side = "s" if ref.player == active else "e"
     return f"{side}0" if ref.shikigami is None else f"{side}{ref.shikigami + 1}"
+
+
+def prompt_target(game: Game, spec, active: int, rest: list[str],
+                  label: str = "目标") -> Ref:
+    """一个 choose 目标的出牌选择流程（热坐/联机出牌共用）：rest 有参直接取，
+    否则列出合法目标（TargetSpec 过滤键经 spec_pool_refs 生效，如 has_invocation）
+    并提示输入。"""
+    from core import targets as _targets
+    if rest:
+        return parse_ref(rest.pop(0), active)
+    legal = _targets.spec_pool_refs(game, spec, active, targeted=True)
+    print(f"可选{label}: " + " ".join(ref_code(r, active) for r in legal))
+    return parse_ref(tui.prompt(f"{label} > "), active)
 
 
 # ---------- 座次配色 ----------
@@ -837,16 +850,13 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                     cmd_dict["choice"] = pick
                     eff = options[pick]
                 if eff.target.kind == "choose":
-                    from core import targets as _targets
-                    legal = _targets.pool_refs(game, eff.target.pool, game.state.active,
-                                               targeted=True)
-                    if rest:
-                        code = rest.pop(0)
-                    else:
-                        print("可选目标: " + " ".join(
-                            ref_code(r, game.state.active) for r in legal))
-                        code = tui.prompt("目标 > ")
-                    cmd_dict["target"] = parse_ref(code, game.state.active)
+                    cmd_dict["target"] = prompt_target(game, eff.target,
+                                                       game.state.active, rest)
+                t2 = cdef.target2
+                if t2 is not None and t2.kind == "choose":
+                    # 第二选择目标（麓鸣·灭型双 choose 卡）：同流程依次提示
+                    cmd_dict["target2"] = prompt_target(game, t2, game.state.active,
+                                                        rest, label="第二目标")
                 if rest:
                     cmd_dict["play_method"] = rest.pop(0)  # 使用方式，如 burst
                 game.apply(cmd_dict)

@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040208
 name: 觉醒·跳跳哥哥
 versions:
@@ -6,9 +5,17 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      subtype: awaken
+      awaken_power: 10
+      awaken_health: 10
+      rarity: SSR
+      level: 3
+      # 不能在跳跳哥哥有[倒计时]时使用（shikigami_countdown_free 按数据 id 读控制者
+      # 式神倒计时；未出战/气绝视为无倒计时，可用）
+      play_condition: {shikigami_countdown_free: 100402}
+      # 觉醒换绑能力伪关键字：按冒号前缀匹配移除基础 replace_action:迟钝 再授予
+      # 同名（不重复；觉醒·樱花妖 heal_defeated_countdown 先例）
+      keywords: ["replace_action:迟钝"]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      text: "不能在跳跳哥哥有[倒计时]时使用。[觉醒]：{跳跳哥哥出击或使用战斗牌时改为结附‘迟钝’。}"

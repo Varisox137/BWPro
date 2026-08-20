@@ -54,6 +54,7 @@ class CardDatabase:
         raw_cards: dict[int, dict] | None = None,
         raw_shikigami: dict[int, dict] | None = None,
         invocations: dict[str, InvocationDef] | None = None,
+        raw_invocations: dict[str, dict] | None = None,
         paths: dict[int, str] | None = None,
     ) -> None:
         self.cards = cards
@@ -63,9 +64,11 @@ class CardDatabase:
         # 测试工厂构造的库无原始 dict（at_date 退化为按 version 判可用）
         self.raw_cards = raw_cards or {}
         self.raw_shikigami = raw_shikigami or {}
-        # 灵咒定义表（灵咒框架）：机制未实现不进数据——loader 不接 yaml 加载，
-        # 测试直接 db.invocations[name] = InvocationDef(...) 注入（同 db.cards 惯例）
+        # 灵咒定义表（灵咒框架）：load() 收集各式神目录的 invocations.yaml；
+        # 测试亦可直接 db.invocations[name] = InvocationDef(...) 注入（同 db.cards 惯例，
+        # 直注入条目无 raw，at_date 按 version 判可用）
         self.invocations = invocations or {}
+        self.raw_invocations = raw_invocations or {}
         # id → 来源 yaml 路径（白名单校验报错定位用；测试工厂构造的库为空）
         self.paths = paths or {}
 
@@ -76,6 +79,8 @@ class CardDatabase:
         shikigami: dict[int, ShikigamiDef] = {}
         raw_cards: dict[int, dict] = {}
         raw_shikigami: dict[int, dict] = {}
+        invocations: dict[str, InvocationDef] = {}
+        raw_invocations: dict[str, dict] = {}
         paths: dict[int, str] = {}
         custom_events: set[str] = set()
         from db.versioning import resolve_latest
@@ -85,6 +90,20 @@ class CardDatabase:
             if f.name == "events.yaml":
                 for entry in yaml.safe_load(f.read_text(encoding="utf-8")) or []:
                     custom_events.add(entry["name"])
+                continue
+            if f.name == "invocations.yaml":
+                # 灵咒定义表：{"invocations": [{name, versions}, ...]}，灵咒顶层无 id
+                data = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+                for entry in data.get("invocations") or []:
+                    resolved = resolve_latest(entry)
+                    if resolved is None:
+                        raise RuntimeError(f"{f.name}: 灵咒《{entry.get('name')}》"
+                                           f" versions.history 无可用快照")
+                    idef = InvocationDef.model_validate(resolved)
+                    if idef.name in invocations:
+                        raise RuntimeError(f"灵咒名重复: {idef.name}（{f.name}）")
+                    invocations[idef.name] = idef
+                    raw_invocations[idef.name] = entry
                 continue
             data = yaml.safe_load(f.read_text(encoding="utf-8"))
             resolved = resolve_latest(data)
@@ -100,6 +119,7 @@ class CardDatabase:
             raw_out[obj.id] = data
             paths[obj.id] = str(f)
         db = cls(cards, shikigami, custom_events, raw_cards, raw_shikigami,
+                 invocations=invocations, raw_invocations=raw_invocations,
                  paths=paths)
         errors = db.validate()
         if errors and strict:
@@ -132,8 +152,20 @@ class CardDatabase:
             r = resolve_at_date(raw, date)
             if r is not None:
                 shikigami[i] = ShikigamiDef.model_validate(r)
+        invocations: dict[str, InvocationDef] = {}
+        for n, inv in self.invocations.items():
+            raw = self.raw_invocations.get(n)
+            if raw is None:  # 无原始 dict（测试直注入）：version=0 视为任意日期可用
+                if inv.version <= date:
+                    invocations[n] = inv
+                continue
+            r = resolve_at_date(raw, date)
+            if r is not None:
+                invocations[n] = InvocationDef.model_validate(r)
         db = CardDatabase(cards, shikigami, set(self.custom_events),
                           dict(self.raw_cards), dict(self.raw_shikigami),
+                          invocations=invocations,
+                          raw_invocations=dict(self.raw_invocations),
                           paths=dict(self.paths))
         errors = db.validate()
         if errors:
@@ -148,6 +180,8 @@ class CardDatabase:
             errors += [f"卡牌 {i}: {e}" for e in validate_versions(raw)]
         for i, raw in self.raw_shikigami.items():
             errors += [f"式神 {i}: {e}" for e in validate_versions(raw)]
+        for n, raw in self.raw_invocations.items():
+            errors += [f"灵咒《{n}》: {e}" for e in validate_versions(raw)]
         # 白名单校验（规则设计评审③）：条件键 / 目标过滤键 / 动态数值键须在
         # core/registry.py 登记，未登记直接报错（杜绝 yaml 笔误静默恒假）；
         # 逐版本快照校验（旧快照中的键同样受校验）
@@ -155,6 +189,8 @@ class CardDatabase:
             errors += self._check_key_whitelists(raw, f"卡牌 {i}《{raw.get('name')}》")
         for i, raw in self.raw_shikigami.items():
             errors += self._check_key_whitelists(raw, f"式神 {i}《{raw.get('name')}》")
+        for n, raw in self.raw_invocations.items():
+            errors += self._check_key_whitelists(raw, f"灵咒《{n}》")
         known_events = CORE_EVENTS | self.custom_events | {"on_play"}
         for s in self.shikigami.values():
             where = f"式神 {s.id}《{s.name}》"
@@ -229,7 +265,7 @@ class CardDatabase:
             if c.rarity is not None and c.rarity not in RARITIES:
                 errors.append(f"{where}: 未知稀有度 {c.rarity}（R/SR/SSR）")
             for kw in c.keywords:
-                if kw not in KEYWORDS:
+                if kw.split(":", 1)[0] not in KEYWORDS:  # 冒号参数伪关键字按前缀校验
                     errors.append(f"{where}: 未知关键词 {kw}")
             errors += self._check_target(c.target, where)
             resp = c.response if c.response is not None else c.effects
@@ -251,6 +287,18 @@ class CardDatabase:
             for m in c.methods:
                 if m.effects is not None:
                     errors += self._check_block(m.effects, known_events, f"{where}的使用方式[{m.id}]")
+        for n, idef in self.invocations.items():
+            where = f"灵咒《{n}》"
+            if idef.name != n:
+                errors.append(f"{where}: 定义名 {idef.name} 与表键不一致")
+            for kw in idef.keywords:
+                if kw not in KEYWORDS and kw != "stun":
+                    errors.append(f"{where}: 未知关键词 {kw}（灵咒 keywords 另允许 stun=眩晕）")
+            for ab in idef.abilities:
+                errors += self._check_block(ab, known_events - {"on_play"}, f"{where}的能力")
+            if idef.draw_trigger is not None:
+                errors += self._check_block(idef.draw_trigger, known_events - {"on_play"},
+                                            f"{where}的抽到触发")
         return errors
 
     def _check_target(self, t: TargetSpec | None, where: str) -> list[str]:
@@ -259,7 +307,10 @@ class CardDatabase:
         if t is None:
             return errors
         if t.kind in ("all", "choose") and t.pool not in POOLS:
-            errors.append(f"{where}: 未知目标池 {t.pool}")
+            # step 级 {kind: choose, chosen_index: n} 为已选目标按序取用器，无 pool
+            if not (t.kind == "choose"
+                    and (t.model_extra or {}).get("chosen_index") is not None):
+                errors.append(f"{where}: 未知目标池 {t.pool}")
         if t.kind == "context" and not t.key:
             errors.append(f"{where}: context 目标缺少 key")
         return errors
@@ -326,6 +377,7 @@ class CardDatabase:
                                 f"{at}的 conditional_keywords: 未登记的条件关键字算子 {k}"
                                 f"（core/registry.py CONDITIONAL_KEYWORD_KEYS）")
             errors += self._check_target_keys(snap.get("target"), f"{at}的 target")
+            errors += self._check_target_keys(snap.get("target2"), f"{at}的 target2")
             for m in snap.get("methods") or []:
                 if isinstance(m, dict):
                     errors += self._check_target_keys(
@@ -336,7 +388,7 @@ class CardDatabase:
     def _iter_raw_blocks(snap: dict):
         """产出一个版本快照中的全部效果块（字段名, 块 dict）。"""
         for field in ("effects", "response", "alt_effects", "countdown_effects",
-                      "ability"):
+                      "ability", "draw_trigger"):
             blk = snap.get(field)
             if isinstance(blk, dict):
                 yield field, blk

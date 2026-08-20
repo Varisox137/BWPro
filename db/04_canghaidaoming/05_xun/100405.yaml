@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），能力/效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 100405
 name: 薰
 versions:
@@ -6,8 +5,15 @@ versions:
   history:
     - date: 20200928  # 发布日期
       faction: 紫岩
-      power: 2  # 占位：身材待 raw 补充
-      health: 5  # 占位：身材待 raw 补充
-      wip: true  # WIP 骨架：身材/能力/卡牌数据待 raw 补充，不进构筑池与测试卡组
-      # ability: 待补被动（when 为事件名，不可用 on_play；倒计时能力用 countdown: n）
-      text: ""
+      power: 2
+      health: 4
+      abilities:
+        # 己方回合结束时，使你本回合最后一个行动的式神结附'鸮之守护'
+        # （行动账本 player ext["last_acted"]：本回合最后一个主动出击/使用专属牌的
+        # 己方式神座次；账本空或该式神已不在场则 context 目标为空即无事）
+        - when: on_turn_end
+          condition: {active: self}
+          steps:
+            - {op: attach_invocation, name: 鸮之守护,
+               target: {kind: context, key: last_acted}}
+      text: "己方回合结束时，使你本回合最后一个行动的式神结附‘鸮之守护’。"

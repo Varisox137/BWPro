@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040507
 name: 祈愿之翼
 versions:
@@ -6,9 +5,16 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      rarity: SSR
+      level: 3
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # '鸮之守护'失去[唯一]但效果不能叠加（唯一性降级为式神唯一），且结附改为
+        # 己方全体式神：牌手 ext inv_override 覆写表（CLEAR_NEVER 本局保留，
+        # bump_ext value 直写；engine.attach_invocation 重定向与
+        # _apply_invocation_uniqueness 唯一性覆写读取）
+        steps:
+          - op: bump_ext
+            key: inv_override
+            value: {鸮之守护: {unique: shikigami_unique, attach_all_friendly: true}}
+            target: {kind: all, pool: self_player}
+      text: "‘鸮之守护’失去[唯一]但效果不能叠加。本局游戏中当己方式神结附‘鸮之守护’时，改为使己方全体式神结附。"

@@ -1,9 +1,9 @@
 id: 10011799
 name: 纸人
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       kind: transform  # 变形物（契约 §2；loader 视同 summon 不入构筑池/测试卡组）
       faction: 苍叶
       power: 3

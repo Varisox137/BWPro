@@ -91,7 +91,7 @@ def resolve_at_date(raw: dict, date: int) -> dict | None:
             chosen = entry
     if chosen is None:
         return None
-    out = {"id": raw["id"], "name": raw["name"]}
+    out = {k: raw[k] for k in ("id", "name") if k in raw}  # 灵咒顶层无 id（仅 name）
     out.update({k: v for k, v in chosen.items() if k != "date"})
     out["version"] = chosen["date"]
     return out

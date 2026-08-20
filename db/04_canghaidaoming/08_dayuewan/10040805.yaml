@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040805
 name: 觉醒·大岳丸
 versions:
@@ -6,9 +5,23 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      subtype: awaken
+      awaken_power: 0
+      awaken_health: 1
+      rarity: SSR
+      level: 2
+      target: {kind: choose, pool: friendly_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 牌手级持续规则（使用时赋予、可叠加、不随来源式神气绝失效）：
+          # 结附'八尺琼曲玉'的己方式神击杀敌方式神时，其身上该灵咒 bonus+1
+          - {op: inv_bonus_on_kill, inv: 八尺琼曲玉, add: 1}
+          - {op: attach_invocation, name: 八尺琼曲玉}
+      abilities:
+        # [觉醒]能力换绑：基础能力的 inv_mod add 条目随旧能力离场自动清除，
+        # 本块于觉醒能力进场时登记 mult=2（结附于大岳丸时效果翻倍）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: inv_mod, name: 八尺琼曲玉, shikigami: 100408, mult: 2}
+      text: "当结附‘八尺琼曲玉’的己方式神击杀敌方式神时，‘八尺琼曲玉’效果+1。将‘八尺琼曲玉’结附于一个己方式神。[觉醒]：{‘八尺琼曲玉’结附于大岳丸时效果翻倍。}"

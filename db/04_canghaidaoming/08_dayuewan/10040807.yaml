@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040807
 name: 无尽剑狱
 versions:
@@ -6,9 +5,12 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      rarity: SR
+      level: 3
+      target: {kind: choose, pool: enemy_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # grant_keywords [stun]：对该结附条目按实例持续眩晕（挂 stuns 的
+          # invocation 条目，不参与回合批次过期清理，该灵咒移除即解除）
+          - {op: attach_invocation, name: 八尺琼曲玉, grant_keywords: [stun]}
+      text: "将‘八尺琼曲玉’结附于一个敌方式神，并于结附期间使其持续[眩晕]。"

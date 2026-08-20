@@ -1,14 +1,22 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040207
 name: 释煞阵
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: form
       rarity: R
-      level: 1
+      level: 3
+      form_power: 7
+      form_health: 9
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      abilities:
+        # 每个回合开始时（无 active 条件 = 双方回合都触发，凋零之森先例），若跳跳哥哥
+        # 有[倒计时]（holder_countdown 门控），对敌方所有其他角色造成1点伤害
+        #（enemy_character 池 = 敌方全部式神 + 敌方牌手；跳跳哥哥是己方式神，不涉及排除）
+        - when: on_turn_start
+          condition: {holder_countdown: true}
+          steps:
+            - {op: damage, amount: 1, target: {kind: all, pool: enemy_character}}
+      text: "每个回合开始时，若跳跳哥哥有[倒计时]，对敌方所有其他角色造成1点伤害。"

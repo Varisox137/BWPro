@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040804
 name: 麓鸣·灭
 versions:
@@ -7,8 +6,16 @@ versions:
     - date: 20200928  # 发布日期
       card_type: spell
       rarity: R
-      level: 1
+      level: 2
+      # 双选择目标（CardDef.target2 通道）：主目标=结附'八尺琼曲玉'的己方式神
+      # （has_invocation 目标过滤键），第二目标=被攻击的敌方式神
+      target: {kind: choose, pool: friendly_shikigami, has_invocation: 八尺琼曲玉}
+      target2: {kind: choose, pool: enemy_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: choose, chosen_index: 0}}
+          # "并攻击一个敌方式神"：主目标式神发起一次额外攻击（来打我呀 10011707
+          # 先例 shikigami=target），战斗目标取第二选择目标（at=chosen+at_index=1）
+          - {op: launch_attack, shikigami: target, at: chosen, at_index: 1,
+             target: {kind: choose, chosen_index: 0}}
+      text: "使结附‘八尺琼曲玉’的己方式神获得2护甲并攻击一个敌方式神。"

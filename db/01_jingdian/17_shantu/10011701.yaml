@@ -1,9 +1,9 @@
 id: 10011701
 name: 谁还不听话
 versions:
-  best: 20251212
+  best: 20191212
   history:
-    - date: 20251212
+    - date: 20191212
       card_type: spell
       rarity: R
       level: 1

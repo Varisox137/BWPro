@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040204
 name: 死而复生
 versions:
@@ -6,9 +5,11 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      rarity: SR
+      level: 2
+      playable_when_defeated: true  # 气绝时可用（跳跳哥哥气绝时可用，桃华灼灼先例）
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 将所有己方气绝的式神替换为‘棺材’（to_coffin 对未气绝/已离场/召唤物空操作）
+        steps:
+          - {op: to_coffin, into: 10040299, target: {kind: all, pool: friendly_defeated}}
+      text: "气绝时可用。将所有己方气绝的式神替换为‘棺材’。"

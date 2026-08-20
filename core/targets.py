@@ -41,6 +41,11 @@ TargetSpec 额外键：
   合法性校验经 spec_pool_refs、kind=all 解析经 resolve 应用）
 - {"has_fragile": true|false}：按是否持有破甲过滤角色目标（焚身之火"所有有破甲的
   敌方角色"，kind=all 解析时应用）
+- {"has_invocation": <灵咒名> | {"name": 灵咒名, "same_source": true}}：结附指定
+  灵咒的式神（same_source = 同源限定，结附来源所属牌手须为控制者——决意"你结附
+  '鸮之守护'的式神"；牌手目标被滤除）
+- context 目标专用 key "last_acted"：控制者本回合最后一个行动的己方式神
+  （薰行动账本，player ext["last_acted"]；账本空/已不在场为空）
 """
 from __future__ import annotations
 
@@ -277,6 +282,24 @@ def _spec_filtered(game, refs: list[Ref], extra: dict,
         # 仅结附着形态的式神（神木诅咒"使一个形态变成…"取对象；牌手目标被滤除）
         refs = [r for r in refs if r.shikigami is not None
                 and game.state.players[r.player].shikigami[r.shikigami].form is not None]
+    inv = extra.get("has_invocation")
+    if inv is not None:
+        # 结附指定灵咒的式神（牌手目标被滤除）。值 = 灵咒名（str），或
+        # {"name": 灵咒名, "same_source": true}——同源限定 = 结附来源所属牌手
+        # 为控制者（决意"你结附'鸮之守护'的式神"）
+        if isinstance(inv, dict):
+            inv_name, same_src = inv.get("name"), bool(inv.get("same_source"))
+        else:
+            inv_name, same_src = inv, False
+
+        def _has_inv(r: Ref) -> bool:
+            if r.shikigami is None:
+                return False
+            s = game.state.players[r.player].shikigami[r.shikigami]
+            return any(e["name"] == inv_name
+                       and (not same_src or e["player"] == controller)
+                       for e in s.invocations)
+        refs = [r for r in refs if _has_inv(r)]
     if extra.get("prefer_wounded"):
         # 优先受伤或气绝式神（晚樱之意"优先受伤或气绝式神"）：候选中存在受伤
         # （生命 < 上限）或气绝的式神时收窄到该子集（再交由 random 键均等取）；
@@ -407,8 +430,22 @@ def resolve(game, spec, ctx) -> list[Ref]:
             ctx.memo[memo_key] = list(refs)
         return refs
     if spec.kind == "choose":
-        return _chosen(game, ctx)
+        refs = _chosen(game, ctx)
+        idx = (spec.model_extra or {}).get("chosen_index")
+        if idx is not None:
+            # 多选择目标卡牌按序取第 n 个选择目标（麓鸣·灭双 choose：
+            # 0=结附灵咒的己方式神、1=攻击目标敌方式神）
+            refs = refs[int(idx):int(idx) + 1]
+        return refs
     if spec.kind == "context":
+        if spec.key == "last_acted":
+            # 薰行动账本：控制者本回合最后一个行动的己方式神（player ext["last_acted"]
+            # 座次；账本空/该式神已不在场为空——"使你本回合最后一个行动的式神结附…"）
+            idx = game.state.players[ctx.controller].ext.get("last_acted")
+            if idx is None:
+                return []
+            s = game.state.players[ctx.controller].shikigami[int(idx)]
+            return [Ref(player=ctx.controller, shikigami=int(idx))] if s.in_play else []
         if spec.key == "victim_player":
             # 事件中 victim 式神所属的牌手（引燃"若消灭则对它的牌手造成2伤"——
             # 消灭己方式神则打己方牌手；delay_grant 触发块内可用）
@@ -496,6 +533,15 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {quest_count_ge: {"kind": k, "count": n}} ：控制者委托条件账本
       （PlayerState.quest_counts）k 类计数 ≥ n（三目委托 [条件] 使用前提/步骤门控；
       engine._quest_tick 多点记账）
+    - {invocation_on_field: <灵咒名>} ：场上已有己方式神结附该灵咒（存在性，
+      不限结附来源；麓鸣·穿/麓鸣·袭[增强]"若场上已有己方的'八尺琼曲玉'"）
+    - {holder_has_invocation: <灵咒名>} ：能力持有者结附该灵咒（存在性；棺击
+      降级口径"持有'迟钝'期间"——delay_grant 触发块 holder 基准）
+    - {victim_has_invocation: <灵咒名>} 等 `_has_invocation` 通用后缀：事件中
+      该前缀 Ref 所指式神结附指定灵咒（干扰投掷响应"攻击你结附'鸮之守护'的
+      式神时"——on_before_assault 的 victim 基准）
+    - {shikigami_countdown_free: <式神id>} ：控制者的式神（按数据 id）当前没有
+      [倒计时]（觉醒·跳跳哥哥"不能在跳跳哥哥有[倒计时]时使用"play_condition）
     - {round_ge: n}            ：对局回合数 ≥ n（双方各一回合为一轮，由 state.turn
       半回合计数换算；今日委托·柒"5回合可用"）
     - {dice_below_x: true}     ：运势判定时事件当前骰点 < 所需点数 X（"将失败"重投门控）
@@ -637,6 +683,27 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             # 由半回合计数换算（state.turn 1-2 = 第 1 轮，依此类推）
             if (game.state.turn + 1) // 2 < int(want):
                 return False
+        elif key == "holder_countdown":
+            # 能力持有者当前有[倒计时]（释煞阵"若跳跳哥哥有[倒计时]"形态能力门控）
+            if holder is None or holder.shikigami is None:
+                return False
+            hs = game.state.players[holder.player].shikigami[holder.shikigami]
+            if (hs.countdown is None) == bool(want):
+                return False
+        elif key == "invocation_on_field":
+            # 场上已有己方式神结附指定灵咒（存在性；麓鸣·穿/麓鸣·袭[增强]
+            # "若场上已有己方的'八尺琼曲玉'"——持有方为己方、不限结附来源）
+            if not any(s.in_play and any(e["name"] == want for e in s.invocations)
+                       for s in game.state.players[controller].shikigami):
+                return False
+        elif key == "shikigami_countdown_free":
+            # 控制者的式神（按数据 id）当前没有[倒计时]（觉醒·跳跳哥哥
+            # "不能在跳跳哥哥有[倒计时]时使用"——play_condition；未出战/气绝/
+            # 未在场同样视为无倒计时，可用）
+            ap = game.state.players[controller]
+            ai = next((i for i, s in enumerate(ap.shikigami) if s.id == int(want)), None)
+            if ai is not None and ap.shikigami[ai].countdown is not None:
+                return False
         elif key == "dice_below_x":
             # 运势判定时"将失败"（觉醒·座敷童子重投门控）：事件当前骰点 < 所需点数 X
             if (int(event.get("dice", 0)) < int(event.get("x", 0))) != bool(want):
@@ -672,6 +739,14 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
             has_form = game.state.players[holder.player].shikigami[holder.shikigami].form is not None
             if has_form != bool(want):
+                return False
+        elif key == "holder_has_invocation":
+            # 能力持有者结附指定灵咒（值 = 灵咒名，存在性；棺击降级口径"持有
+            # '迟钝'期间"门控——delay_grant 触发块内 holder 基准）
+            if holder is None or holder.shikigami is None:
+                return False
+            hs = game.state.players[holder.player].shikigami[holder.shikigami]
+            if not any(e["name"] == want for e in hs.invocations):
                 return False
         elif key == "energy_ge":
             # 能力持有者当前能量 ≥ n（"额外消耗3能量"类响应/触发门控）
@@ -811,6 +886,16 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             hp = game.state.players[ref.player]
             holder = hp.shikigami[ref.shikigami] if ref.shikigami is not None else hp
             if (holder.shield < 0) != bool(want):
+                return False
+        elif key.endswith("_has_invocation"):
+            # 事件中的 Ref 所指式神是否结附指定灵咒（值 = 灵咒名，存在性，
+            # 不限结附来源；干扰投掷响应"当敌方式神攻击你结附'鸮之守护'的式神时"
+            # ——victim_has_invocation: 鸮之守护）
+            ref = event.get(key[:-15])
+            if not isinstance(ref, Ref) or ref.shikigami is None:
+                return False
+            vs = game.state.players[ref.player].shikigami[ref.shikigami]
+            if not any(e["name"] == want for e in vs.invocations):
                 return False
         elif key.endswith("_stunned"):
             # 事件中的 Ref 所指角色（式神或牌手）是否眩晕（defender_stunned 类）

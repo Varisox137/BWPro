@@ -1,14 +1,22 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040201
 name: 棺击
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: combat
       rarity: R
       level: 1
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # +0/+0 无身材步。登记延迟能力（uses=99 持有期间不限次，无 scope 跨回合留存、
+        # 气绝清除）：结附‘迟钝’期间每有一个其他式神气绝（victim_not_shikigami 排除
+        # 持有者自身），持有者永久获得1力量和1生命（perm 增益不提取为战力，正常结算）
+        steps:
+          - op: delay_grant
+            uses: 99
+            when: on_shikigami_defeated
+            condition: {victim_not_shikigami: 100402, holder_has_invocation: 迟钝}
+            steps:
+              - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+              - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+      text: "跳跳哥哥使用此牌结附‘迟钝’期间每有一个其他式神气绝，跳跳哥哥便获得1力量和1生命。"

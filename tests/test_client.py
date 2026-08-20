@@ -368,6 +368,51 @@ def test_run_battle_shows_result_and_waits(db, make_game, monkeypatch, capsys):
     assert prompts == ["按 Enter 返回主菜单 > "]  # 战后恰好一次确认，随后返回
 
 
+def test_battle_loop_play_dual_target(db, make_game, monkeypatch, capsys):
+    """双选择目标（CardDef.target2，麓鸣·灭型）：热坐出牌依次选择两个目标——
+    行内参数式（play 1 s1 e1）与交互提示式（依次问"目标/第二目标"）均接通，
+    cmd["target2"] 进入引擎 chosen=[主目标, 第二目标]。"""
+    from client.settle import SettlePrinter
+    cid = 10010152
+    db.cards[cid] = F.card(
+        cid, token=True,
+        target=F.T(kind="choose", pool="friendly_shikigami"),
+        target2=F.T(kind="choose", pool="enemy_shikigami"),
+        steps=[F.Step(op="gain_shield", amount=2,
+                      target=F.T(kind="choose", chosen_index=0)),
+               F.dmg(2, F.T(kind="choose", chosen_index=1)),
+               F.dmg(30, F.T(kind="all", pool="enemy_player"))])  # 制胜：对局结束退出循环
+
+    def _game():
+        g = make_game()
+        pa, pb = F.battle_setup(g)
+        pa.hand.clear()
+        F.give(g, 0, cid)
+        return g, pa, pb
+
+    # 行内参数式
+    g, pa, pb = _game()
+    feed(monkeypatch, ["play 1 s1 e1", ""])
+    printer = SettlePrinter(interval=0)
+    printer.start()
+    cli._battle_loop(g, printer)
+    printer.stop(flush=True)
+    assert pa.shikigami[0].shield == 2          # 主目标 +2 护甲
+    assert pb.shikigami[0].health == 2          # 第二目标受 2 伤（4→2）
+
+    # 交互提示式
+    g, pa, pb = _game()
+    feed(monkeypatch, ["play 1", "s1", "e1", ""])
+    printer = SettlePrinter(interval=0)
+    printer.start()
+    cli._battle_loop(g, printer)
+    printer.stop(flush=True)
+    out = capsys.readouterr().out
+    assert "可选目标: s1" in out and "可选第二目标: e1" in out
+    assert pa.shikigami[0].shield == 2
+    assert pb.shikigami[0].health == 2
+
+
 # ==========================================================================
 # TUI 基座（client/tui.py）与状态栏文本（原 test_tui.py）
 # ==========================================================================

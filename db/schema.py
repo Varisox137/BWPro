@@ -76,6 +76,11 @@ KEYWORDS = frozenset({
     #                             （樱花妖基础/觉醒共用通道；卡面不出现）
     "damage_defeated_countdown",  # 可以对气绝式神造成伤害，若如此做改为使其气绝倒计时 +1
     #                             （觉醒·樱花妖通道；卡面不出现）
+    "replace_action",           # 引擎级能力伪关键字（带 `:灵咒名` 参数，如
+    #                             replace_action:迟钝）：该式神出击或使用其战斗牌时改为
+    # 结附指定灵咒——完全替换动作（不发起攻击/不进战斗流程），鬼火/瞬发/出击次数
+    # 照常消耗；战斗牌其余文本效果照常结算、仅战斗本身跳过（跳跳哥哥基础/觉醒
+    # 共用通道；卡面不出现）。loader 关键字校验按冒号前缀匹配
     # （原 field_stack/field_ability_stack 伪关键字作废：辉夜姬叠加改为能力块
     #  field_merge 通道——定案(6)，见 rules.md 第三十一章）
     # ---- 效果授予伪关键字（卡牌效果授予其他式神，引擎读取时求值；卡面不出现）----
@@ -89,7 +94,8 @@ KEYWORDS = frozenset({
 ABILITY_PSEUDO_KEYWORDS = frozenset({
     "power_if_field", "power_per_field", "power_if_shield", "power_equal_shield",
     "power_eq_health", "heal_defeated_countdown", "damage_defeated_countdown",
-})
+    "replace_action",
+})  # replace_action 带 `:灵咒名` 参数（replace_action:迟钝），换绑按冒号前缀匹配
 # 语义约定：战斗牌 keywords（fast/trigger 除外）= 本次战斗中授予攻击者；
 # 形态牌 keywords（fast/trigger 除外）= 结附期间授予式神。授予均按关键字的
 # 天然持久性类别入列（见 core.model.ShikigamiState 与 docs/terminology.md）。
@@ -155,6 +161,8 @@ class EffectBlock(BaseModel):
     trigger_when_defeated: bool = False
     countdown: int | None = None  # 非 None = 倒计时能力块（不作事件监听）：初值=countdown，
     # 归零时执行 steps（式神级倒计时框架，core/engine.py；形态牌倒计时仍用 CardDef.countdown）
+    once: bool = False  # 仅倒计时块有意义：一次型——归零生效后不重置；灵咒倒计时块
+    # （InvocationDef.abilities 内）生效后连同灵咒本体一并移除（迟钝"生效后移除"）
     luck: int | dict[str, Any] | None = None  # 运势门控：触发后对控制者做
     # 运势判定，按结果决定是否结算 steps。int = 成功所需点数 X（成功才结算）；
     # {"x": X, "on": "fail"} = 判定失败才结算（家内安全/和气满满）。判定者默认控制者；
@@ -176,6 +184,15 @@ class InvocationDef(BaseModel):
     - unique：唯一性——"unique"=[唯一]：结附后移除双方全场（式神+手牌/牌库中的
       卡牌）同源同名灵咒；"shikigami_unique"=[式神唯一]：仅移除该式神上同源同名；
       "none"=不唯一。同源 = 来源所属牌手相同；新结附的灵咒自身不被移除。
+      可被持有方 PlayerState.ext["inv_override"][灵咒名]["unique"] 覆写（祈愿之翼
+      "失去[唯一]但效果不能叠加" → shikigami_unique）。
+    - keywords：结附期间授予持有者的关键字（移除即失效按实例撤销）；"stun" 特判为
+      眩晕（挂 stuns 的 kind="invocation" 条目，不参与回合批次过期清理，随灵咒移除解除）。
+    - 运行时条目附加键（engine.attach_invocation 维护，见 ShikigamiState.invocations）：
+      uid/bonus（数值增强，同源同名再结附继承、气绝离场重置）/mod_power/mod_health
+      （持有方 ext["inv_mod"] 修饰层）。
+    - version：快照日期（resolve_latest/at_date 注入；测试直接注入时缺省 0，
+      at_date 判定视为任意日期可用）。
     """
 
     model_config = ConfigDict(extra="allow")
@@ -184,8 +201,11 @@ class InvocationDef(BaseModel):
     unique: Literal["none", "unique", "shikigami_unique"] = "none"
     power: int = 0
     health: int = 0
+    keywords: list[str] = Field(default_factory=list)
     abilities: list[EffectBlock] = Field(default_factory=list)
     draw_trigger: EffectBlock | None = None
+    text: str = ""  # 卡面原文（逐字，card_data_raw.md 对应条目引号内文本）
+    version: int = 0  # 版本快照日期（loader 注入；0 = 测试直注入，at_date 恒可用）
 
 
 class PlayMethod(BaseModel):
@@ -248,6 +268,9 @@ class CardDef(BaseModel):
     # 时召唤拷贝到 FieldState.keywords——贯通/帷幕等幻境语义；与卡牌自身的使用关键字分离）
     keywords: list[str] = Field(default_factory=list)
     target: TargetSpec = Field(default_factory=TargetSpec)
+    target2: TargetSpec | None = None  # 第二选择目标（麓鸣·灭型双 choose 卡：
+    # 出牌指令 cmd["target2"] 校验/传入，ctx.chosen = [主目标, 第二目标]；step 目标
+    # 用 {kind: choose, chosen_index: n} 按序取——见 core.targets.resolve）
     effects: EffectBlock  # 主效果块；空白占位卡可用空 steps，但不能省略该字段。
     # 形态牌的 effects 块 = 进场时效果（打出结附时结算，可用卡牌的 choose 目标）
     alt_effects: EffectBlock | None = None  # "变为"（吾即正义）：持久 store 置位

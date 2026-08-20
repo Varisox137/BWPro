@@ -1,14 +1,22 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040806
 name: 铃鹿山之志
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
-      level: 1
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 4
+      form_health: 6
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 形态牌 effects 块 = 进场时效果：进场将一张'挪移'置入手牌
+        steps:
+          - {op: generate, card_id: 10040851}
+      abilities:
+        # 己方回合开始时将一张'挪移'置入手牌（token 生成，冰封 10012152 先例）
+        - when: on_turn_start
+          condition: {active: self}
+          steps:
+            - {op: generate, card_id: 10040851}
+      text: "进场和己方回合开始时，将一张‘挪移’置入手牌。"

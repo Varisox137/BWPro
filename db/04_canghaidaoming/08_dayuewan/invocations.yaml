@@ -1,0 +1,10 @@
+# 灵咒定义（loader 特判收集；text 逐字 = card_data_raw.md 引号内原文）
+invocations:
+  - name: 八尺琼曲玉
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
+          unique: unique  # [唯一]
+          power: 1  # 结附的式神获得1力量
+          text: "[唯一]。结附的式神获得1力量。"

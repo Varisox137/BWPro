@@ -1,14 +1,27 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040808
 name: 麓鸣·轰
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: combat
       rarity: R
-      level: 1
+      level: 3
+      target: {kind: choose, pool: friendly_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+          # "选择一个己方式神，本次攻击后将'八尺琼曲玉'结附于该式神并使其发起攻击"：
+          # 战斗牌效果步 ctx 携带选择目标（engine._resolve_combat_card），
+          # delay_grant bind=chosen 登记到该式神；本次攻击后（on_after_assault，
+          # 攻击者=大岳丸）结附灵咒并令其发起一次无指定目标的额外攻击
+          # （正常战斗目标规则：打敌方战斗区驻留者/牌手）
+          - op: delay_grant
+            when: on_after_assault
+            condition: {attacker_shikigami: 100408}
+            bind: chosen
+            steps:
+              - {op: attach_invocation, name: 八尺琼曲玉}
+              - {op: launch_attack, shikigami: target}
+      text: "选择一个己方式神，本次攻击后将‘八尺琼曲玉’结附于该式神并使其发起攻击。"

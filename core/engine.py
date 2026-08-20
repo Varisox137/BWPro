@@ -199,6 +199,20 @@ class Game:
         return (keyword in s.keywords or keyword in s.one_shot_keywords
                 or keyword in s.perm_keywords)
 
+    @staticmethod
+    def _replace_action_invocation(s: ShikigamiState) -> str | None:
+        """replace_action 伪关键字（`replace_action:<灵咒名>`，跳跳哥哥"出击或使用
+        战斗牌时改为结附'迟钝'"）：返回要结附的灵咒名；未携带返回 None。
+
+        出击/战斗牌的替换在动作分派处短路（不发起攻击/不进战斗流程），鬼火/瞬发/
+        出击次数照常消耗。迟钝带眩晕：眩晕期间出击/战斗牌本就不可用，故替换只在
+        无迟钝时实际发生（能力在场判定由读取处 in_play 门控）。"""
+        for lst in (s.perm_keywords, s.keywords, s.one_shot_keywords):
+            for k in lst:
+                if k.startswith("replace_action:"):
+                    return k.split(":", 1)[1]
+        return None
+
     def _grant_keyword(self, s: ShikigamiState, keyword: str, cls: str | None = None) -> str:
         """授予一个关键字实例，返回实际入列的类别（one_shot/continuous/perm）。
 
@@ -339,6 +353,15 @@ class Game:
                     n = len(pl.fields)
                     src.ext["dyn_power"] += n * int(aura.get("power", 1))
                     src.ext["dyn_health"] += n * int(aura.get("health", 1))
+                elif kind == "friendly_invocation":
+                    # 薰形态系列（鸮之利爪/警惕/庇佑）：己方在场且结附指定灵咒
+                    # （aura["name"]，不限结附来源）的式神 +power/+health（读取时求值；
+                    # 关键字部分见下方 reconcile 段）
+                    for s in pl.shikigami:
+                        if s.in_play and any(e["name"] == aura.get("name")
+                                             for e in s.invocations):
+                            s.ext["dyn_power"] += int(aura.get("power", 0))
+                            s.ext["dyn_health"] += int(aura.get("health", 0))
         for pi, pl in enumerate(self.state.players):
             # 幻境/护甲关联的连续条件力量修饰（伪关键字，先天关键字按永久类别入列——
             # 泷夜叉姬基础 power_if_field"若你有幻境+1力量"/觉醒 power_per_field"每有
@@ -376,6 +399,46 @@ class Game:
             # 上限的当前生命，如测试/调试直改的健康值）
             if s.ext["dyn_health"] < old_dyn[id(s)] and s.health > s.max_health:
                 s.health = s.max_health
+        self._reconcile_invocation_aura_keywords()
+
+    def _reconcile_invocation_aura_keywords(self) -> None:
+        """friendly_invocation 身材光环的关键字部分（薰 鸮之警惕[帷幕]/鸮之庇佑
+        [不屈]）：读取时求值的持续授予——全量重算期望集合（光环持有者在场 + 目标
+        为己方在场且结附指定灵咒的式神），与式神 ext["inv_aura_kw"] 已授记录比对
+        多退少补。形态离场/灵咒移除/持有者气绝后条目在下一次刷新自动撤销
+        （本方法挂 _refresh_stat_auras 尾部，refresh 挂在 emit/手牌数/能量变化/
+        战斗快照等读取点）。以 continuous 类授予：不屈不被消耗移除（光环持续期间
+        回血后可再次触发），与形态牌 keywords 授予类别一致。"""
+        desired: dict[int, set[str]] = {}  # id(式神状态) -> 应持关键字集合
+        for pi, pl in enumerate(self.state.players):
+            for aura in pl.ext.get("stat_auras", []):
+                if aura.get("kind") != "friendly_invocation" or not aura.get("keywords"):
+                    continue
+                hp, hs = aura.get("holder", [None, None])
+                if hp is None:
+                    continue
+                src = self.state.players[hp].shikigami[hs]
+                if not src.in_play:
+                    continue  # 持有者未在场：光环不生效
+                for s in pl.shikigami:
+                    if s.in_play and any(e["name"] == aura.get("name")
+                                         for e in s.invocations):
+                        desired.setdefault(id(s), set()).update(aura["keywords"])
+        for pl in self.state.players:
+            for s in pl.shikigami:
+                cur: list[str] = s.ext.get("inv_aura_kw", [])
+                want = desired.get(id(s), set())
+                for kw in [k for k in cur if k not in want]:
+                    self._remove_keyword(s, kw, "continuous")
+                    cur.remove(kw)
+                for kw in sorted(want):
+                    if kw not in cur:
+                        self._grant_keyword(s, kw, "continuous")
+                        cur.append(kw)
+                if cur:
+                    s.ext["inv_aura_kw"] = cur
+                else:
+                    s.ext.pop("inv_aura_kw", None)
 
     @property
     def current(self) -> PlayerState:
@@ -572,7 +635,8 @@ class Game:
         敌方有手牌且全部已展示——读心型条件；enemy_fragile_ge2 = 敌方场上存在
         破甲 ≧2 的角色——铃鹿御前型条件瞬发；player_health_ge = 己方牌手当前生命
         下限——血香型条件[连击]；enemy_deck_le = 敌方牌库张数上限——意外之喜型
-        条件[瞬发]）；式神未出战时条件不满足。"""
+        条件[瞬发]）；invocation_on_field = 场上有己方式神结附指定灵咒——麓鸣·穿型
+        条件[瞬发]，与 targets.match_condition 同名算子同语义）；式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
@@ -611,6 +675,13 @@ class Game:
                 # 敌方牌库张数 ≤ n（月夜幻响包条件[增强]/条件[瞬发]：意外之喜）
                 ep = self.state.players[1 - self.state.players.index(p)]
                 if len(ep.deck) > int(ck["enemy_deck_le"]):
+                    continue
+            if ck.get("invocation_on_field") is not None:
+                # 场上有己方式神结附指定灵咒（麓鸣·穿型条件[瞬发]；与
+                # targets.match_condition 同名算子同语义：在场、不限结附来源）
+                if not any(s.in_play and any(e["name"] == ck["invocation_on_field"]
+                                             for e in s.invocations)
+                           for s in p.shikigami):
                     continue
             if ck.get("shikigami_has_form") is not None:
                 # 控制者的式神（按数据 id）结附着形态（福寿双全条件瞬发；
@@ -1616,6 +1687,22 @@ class Game:
                                                       targeted=True):
                     raise IllegalAction("目标不合法")
                 chosen = [want]
+        # 第二选择目标（CardDef.target2，麓鸣·灭型双 choose 卡）：校验后追加进
+        # chosen（[主目标, 第二目标]，step 侧用 chosen_index 按序取）
+        t2 = cdef.target2
+        if t2 is not None and t2.kind == "choose":
+            want2 = cmd.get("target2")
+            if want2 is None:
+                pool2 = targets.spec_pool_refs(self, t2, self.state.active,
+                                               targeted=True)
+                if not ((t2.model_extra or {}).get("optional") and not pool2):
+                    raise IllegalAction("该牌需要选择第二目标")
+            else:
+                want2 = want2 if isinstance(want2, Ref) else Ref(**want2)
+                if want2 not in targets.spec_pool_refs(self, t2, self.state.active,
+                                                       targeted=True):
+                    raise IllegalAction("第二目标不合法")
+                chosen.append(want2)
         if self._fast_applies(p, cdef, card):
             p.fast_used = True
         self._pay_orb(p, self.state.active, cost, reason="使用卡牌")
@@ -1697,15 +1784,17 @@ class Game:
                     p.shikigami[awaken_si].awakened = cdef.id
                     # 能力伪关键字换绑（觉醒替换基础能力）：移除基础式神 def 携带的
                     # 伪关键字（如 power_if_field）、授予觉醒牌 keywords 携带的（如
-                    # power_per_field）——永久类别，气绝/复活随觉醒状态保留
+                    # power_per_field）——永久类别，气绝/复活随觉醒状态保留；
+                    # 带冒号参数的伪关键字（replace_action:迟钝）按前缀归入本集合
                     st_aw = p.shikigami[awaken_si]
-                    base_pseudo = (set(self.db.shikigami[st_aw.id].keywords)
-                                   & ABILITY_PSEUDO_KEYWORDS)
+                    base_pseudo = {k for k in self.db.shikigami[st_aw.id].keywords
+                                   if k.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS}
                     if base_pseudo:
                         st_aw.perm_keywords = [k for k in st_aw.perm_keywords
                                                if k not in base_pseudo]
                     for kw in cdef.keywords:
-                        if kw in ABILITY_PSEUDO_KEYWORDS and kw not in st_aw.perm_keywords:
+                        if (kw.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS
+                                and kw not in st_aw.perm_keywords):
                             st_aw.perm_keywords.append(kw)
                     self._register_ability_countdown(self.state.active, awaken_si, awaken=True)
                     self._log(f"{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒")
@@ -1728,6 +1817,8 @@ class Game:
                 card.mods["keywords_add"] = old_kw_add
         if si is not None:
             self._clear_play_delayed(p.shikigami[si])  # "本次使用期间"延迟能力窗口结束
+            p.ext["last_acted"] = si  # 薰行动账本：使用专属牌 = 行动（协战牌按
+            # 递归使用的子选项 shikigami 归属记账——_cmd_play_reinforce 生成子卡递归到此）
         self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
         self._apply_revive_haste(p, card)  # 实例修饰"使用后…气绝倒计时-1"（鎏金幻羽）
         self._emit_card_played(self.state.active, uid, cdef, affected,
@@ -1995,7 +2086,9 @@ class Game:
         double_fragile = any(st.op == "double_damage_vs_fragile" for st in block.steps)
         # 其它效果步（千羽风之舞的"生成金风流羽"为首个）：战力/护甲与上述专用提取步
         # 跳过不重复执行；attack_buff（起弓/离）挂账时机另有一套，同样跳过以保持既有行为
-        ctx = ExecContext(controller=self.state.players.index(p), source=atk_ref, card=card)
+        ctx = ExecContext(controller=self.state.players.index(p), source=atk_ref,
+                          card=card, chosen=list(chosen or []))  # 效果步可读选择目标
+        # （麓鸣·轰"选择一个己方式神，本次攻击后…"的 delay_grant bind=chosen 通道）
         for st in block.steps:
             if (st.op in ("buff_power", "gain_shield")
                     and (st.target is None or st.target.kind == "self")
@@ -2020,6 +2113,18 @@ class Game:
         # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗
         if any(f.get("kind") == "combat_card" for f in p.ext.get("boost_flags", [])):
             self._consume_assault_boosts(p, atk_ref, s)
+        rep_inv = self._replace_action_invocation(s)
+        if rep_inv is not None:
+            # 跳跳哥哥"使用战斗牌时改为结附'迟钝'"：卡面战力/护甲与其余文本效果
+            # （steps）照常结算（上方已完成），仅战斗本身替换为对自身结附灵咒
+            self._log(f"{self.db.shikigami[s.id].name} 使用【{cdef.name}】改为"
+                      f"结附灵咒【{rep_inv}】")
+            self._settle(f"【替换】{self.db.shikigami[s.id].name} 的战斗牌改为结附"
+                         f"灵咒【{rep_inv}】")
+            self.attach_invocation(rep_inv, player=self.state.players.index(p),
+                                   source=atk_ref, target=atk_ref)
+            s.combat_power = 0
+            return
         self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                              temp_grants=tuple(cdef.temp_grants), convert=convert,
                              counter_piercing=counter_piercing, double_fragile=double_fragile,
@@ -2176,44 +2281,101 @@ class Game:
 
     def attach_invocation(self, name: str, *, player: int, source: Ref | None = None,
                           target: Ref | None = None,
-                          card: CardInstance | None = None) -> None:
+                          card: CardInstance | None = None,
+                          grant_keywords: tuple = (),
+                          _no_override: bool = False) -> None:
         """结附灵咒：target 为式神结附 / card 为卡牌结附（二者恰一）。
         player = 来源所属牌手（同源判定键）。流程：结附（效果类身材增减益快照入
         条目 power/health——类光环层，由 eff_power/max_health 读取时合计；
-        能力类记进场序号）→ 唯一性移除（新结附自身保留）→
-        emit on_invocation_attached（延时时机）。"""
+        能力类记进场序号；keywords 授予持有者；倒计时块注册式神级倒计时）→
+        唯一性移除（新结附自身保留；同源同名旧条目的 bonus 由新条目继承）→
+        inv_mod 修饰层重算 → emit on_invocation_attached（延时时机，uid=条目 uid）。
+
+        grant_keywords：本次结附对该条目追加的关键字（无尽剑狱"并于结附期间使其
+        持续[眩晕]"——stun 走灵咒眩晕条目通道：不参与回合批次过期、移除即解；
+        数据侧经 attach_invocation op 的 grant_keywords 参数传入）。
+        覆写通道（持有方牌手 ext["inv_override"][灵咒名]，祈愿之翼）：
+        attach_all_friendly=true 时改为己方全体在场式神结附（递归结附不再读覆写）。
+        """
         idef = self.db.invocations.get(name)
         if idef is None:
             raise ValueError(f"未定义的灵咒: {name}（db.invocations 注册）")
+        if target is not None and not _no_override:
+            ov = self.state.players[target.player].ext.get(
+                "inv_override", {}).get(name) or {}
+            if ov.get("attach_all_friendly"):
+                for si, fs in enumerate(self.state.players[target.player].shikigami):
+                    if fs.in_play:
+                        self.attach_invocation(
+                            name, player=player, source=source,
+                            target=Ref(player=target.player, shikigami=si),
+                            _no_override=True)
+                return
         entry: dict = {"name": name, "player": player, "source": source,
+                       "uid": self.state.next_uid, "bonus": 0,
                        "power": idef.power, "health": idef.health}
+        self.state.next_uid += 1
         if target is not None:
             s = self.state.players[target.player].shikigami[target.shikigami]
             entry["ability_seq"] = self.state.next_ability_seq()  # 能力类进场序号=结附时刻
             s.invocations.append(entry)
             holder = f"{self.db.shikigami[s.id].name}"
+            # keywords：结附期间授予持有者（移除时按实例撤销）；"stun" 特判为眩晕条目
+            # （kind="invocation"，不参与回合批次过期清理——_stun_expired 特判）
+            granted: list[tuple[str, str]] = []
+            for kw in tuple(idef.keywords) + tuple(grant_keywords):
+                if kw == "stun":
+                    s.stuns.append({"kind": "invocation", "inv": name})
+                    self._log(f"{holder} 被眩晕（灵咒【{name}】）")
+                else:
+                    granted.append((kw, self._grant_keyword(s, kw)))
+            if granted:
+                entry["keywords"] = granted
+            # 倒计时能力块（迟钝类）：注册式神级倒计时；once 块归零生效后随
+            # _countdown_zero 的 once 通道移除灵咒本体。注意会替换式神当前倒计时
+            # （一名式神至多 1 个——与原版互动的语义待数据批次确认）
+            cd = next((b for b in idef.abilities if b.countdown is not None), None)
+            if cd is not None:
+                self._register_countdown(s, initial=cd.countdown, block=cd,
+                                         once=cd.once, source=None)
+                entry["cd_block"] = cd
         else:
             assert card is not None
             card.invocations.append(entry)
             holder = f"【{self.db.cards[card.id].name}】"
         self._log(f"灵咒【{name}】结附于{holder}")
         self._apply_invocation_uniqueness(idef, entry, player, target)
+        if target is not None:
+            self._refresh_invocation_mods(target.player)
         self.emit("on_invocation_attached", player=player, target=target,
-                  uid=card.uid if card is not None else None,
+                  uid=entry["uid"],
                   invocation=name, source=source)
 
     def _apply_invocation_uniqueness(self, idef, new_entry: dict, player: int,
                                      target: Ref | None) -> None:
         """唯一性移除（结附之后；新结附自身按对象身份排除）：
         [唯一]（unique）= 双方全场（全部式神 + 双方手牌/牌库中的卡牌）同源同名移除；
-        [式神唯一]（shikigami_unique）= 仅该式神上同源同名移除。同源 = 来源所属牌手相同。"""
-        if idef.unique == "none":
+        [式神唯一]（shikigami_unique）= 仅该式神上同源同名移除。同源 = 来源所属牌手相同。
+        持有方牌手 ext["inv_override"][灵咒名]["unique"] 可覆写唯一性级别（祈愿之翼
+        "失去[唯一]但效果不能叠加"）；移除旧条目前新条目继承其 bonus（取较大者，
+        "效果+1"数值增强不因再结附丢失；气绝/离场移除才重置）。"""
+        unique = idef.unique
+        if target is not None:
+            ov = self.state.players[target.player].ext.get(
+                "inv_override", {}).get(idef.name) or {}
+            unique = ov.get("unique", unique)
+        if unique == "none":
             return
 
         def _hit(e: dict) -> bool:
-            return e is not new_entry and e["name"] == idef.name and e["player"] == player
+            if e is new_entry or e["name"] != idef.name or e["player"] != player:
+                return False
+            # 同源同名旧条目的数值增强由新条目继承
+            new_entry["bonus"] = max(int(new_entry.get("bonus", 0)),
+                                     int(e.get("bonus", 0)))
+            return True
 
-        if idef.unique == "shikigami_unique":
+        if unique == "shikigami_unique":
             if target is None:
                 return  # 卡牌结附无"该式神"可言（式神唯一只对式神结附生效）
             s = self.state.players[target.player].shikigami[target.shikigami]
@@ -2237,11 +2399,48 @@ class Game:
     def _remove_invocation(self, s: ShikigamiState, entry: dict, *, reason: str) -> None:
         """移除式神身上的灵咒条目：身材增减益为类光环层（条目移除即失效，
         无双重扣减）；上限降低时钳当前生命（同 buff_health/dyn 通道口径，
-        不触发事件）。能力类随条目移除失效。"""
+        不触发事件）。能力类随条目移除失效；结附授予的关键字按实例撤销、
+        灵咒眩晕条目（kind="invocation"）随之解除；灵咒倒计时块仍注册在式神上时
+        一并清除。"""
         s.invocations.remove(entry)
+        for kw, cls in entry.get("keywords") or []:
+            self._remove_keyword(s, kw, cls)
+        kept = [e for e in s.stuns
+                if not (e.get("kind") == "invocation" and e.get("inv") == entry["name"])]
+        if len(kept) != len(s.stuns):
+            s.stuns[:] = kept
+            self._log(f"{self.db.shikigami[s.id].name} 的眩晕解除（灵咒移除）")
+        if entry.get("cd_block") is not None and s.countdown_block is entry["cd_block"]:
+            self._clear_countdown(s)
         if s.health > s.max_health:
             s.health = s.max_health  # 灵咒生命上限增益随移除失效：钳当前生命
         self._log(f"{self.db.shikigami[s.id].name} 的灵咒【{entry['name']}】移除（{reason}）")
+
+    def _refresh_invocation_mods(self, pi: int) -> None:
+        """重算 pi 方全部式神灵咒条目的 inv_mod 修饰层（mod_power/mod_health）。
+
+        数据源 = 该方牌手 ext["inv_mod"] 条目列表：{"name": 灵咒名,
+        "shikigami": 持有者式神数据 id（可省 = 不限持有者）, "add": int, "mult": int}；
+        命中多条时 mult 连乘、add 连加，eff = base*mult + add，条目存
+        mod = eff - base（base = 快照 power/health + bonus）。只看持有者方、不限灵咒
+        来源敌我（八尺琼曲玉"结附的式神获得1力量"经持有方修饰——大岳丸能力用）。
+        调用时机：灵咒结附后（attach_invocation 末）；能力进场/离场/觉醒换绑等
+        inv_mod 维护点由数据批次接线后调用本方法。
+        """
+        mods = self.state.players[pi].ext.get("inv_mod") or []
+        for s in self.state.players[pi].shikigami:
+            for e in s.invocations:
+                add, mult = 0, 1
+                for m in mods:
+                    if m.get("name") != e["name"]:
+                        continue
+                    if m.get("shikigami") is not None and m["shikigami"] != s.id:
+                        continue
+                    add += int(m.get("add", 0))
+                    mult *= int(m.get("mult", 1))
+                for stat, mod_key in (("power", "mod_power"), ("health", "mod_health")):
+                    base = int(e.get(stat, 0)) + int(e.get("bonus", 0))
+                    e[mod_key] = base * mult + add - base
 
     def _detach_invocations(self, s: ShikigamiState, *, reason: str) -> None:
         """气绝/离场时移除该式神全部灵咒（身材增减益为光环层随之失效；
@@ -2770,8 +2969,19 @@ class Game:
         if not energy_assault:
             p.assaults_left -= 1
         atk_ref = Ref(player=self.state.active, shikigami=i)
+        p.ext["last_acted"] = i  # 薰行动账本：主动出击 = 行动
         self._quest_tick(self.state.active, "assault")  # 委托账本：出击两次类
         self._consume_assault_boosts(p, atk_ref, s)
+        rep_inv = self._replace_action_invocation(s)
+        if rep_inv is not None:
+            # 跳跳哥哥"出击时改为结附'迟钝'"：完全替换动作——不发起攻击/不进战斗
+            # 流程（鬼火/瞬发/出击次数照常消耗，上方已结算），改为对自身结附灵咒
+            self._log(f"{self.db.shikigami[s.id].name} 的出击改为结附灵咒【{rep_inv}】")
+            self._settle(f"【替换】{self.db.shikigami[s.id].name} 出击改为结附"
+                         f"灵咒【{rep_inv}】")
+            self.attach_invocation(rep_inv, player=self.state.active,
+                                   source=atk_ref, target=atk_ref)
+            return
         self._resolve_combat(atk_ref, s, target=target, origin="assault")
 
     def _consume_assault_boosts(self, p: PlayerState, atk_ref: Ref, s: ShikigamiState) -> None:
@@ -2937,6 +3147,49 @@ class Game:
         self._settle(f"【替换】{self.db.shikigami[s.id].name} 替换为 {d.name}"
                      f"（身材 {b.base_power}/{b.max_health}）")
         self._register_ability_countdown(pi, i)  # 能力后进场（替换物无能力块时为空操作）
+
+    def _to_coffin(self, p: PlayerState, pi: int, i: int, into: int,
+                   *, keep_combat: bool = False) -> None:
+        """把座次 i 已气绝的非召唤物式神替换为棺材占位实体（04 沧海刀鸣，跳跳哥哥
+        家族；to_coffin 动作与 check_defeated 的 coffin_on_defeat 旗标共用）。
+
+        语义 = 占位 + 普通复活，非快照还原（与 transform 框架隔离：不设
+        transform_origin，气绝前2/解除变形路径天然不触及）：
+        - 原式神的"气绝结算完成后"状态快照存入棺材 coffin_origin（等级/永久修正
+        保留，形态/临时修正/灵咒已在气绝流程清除——即正常复活baseline）；
+        - 棺材留原座次、属原牌手；keep_combat 且原式神气绝时在战斗区
+        （ext["defeated_in_combat"] 记账，消费即取）则棺材进其战斗区，
+        否则落准备区（战斗区在气绝流程已让出）；
+        - transform_owner = 原式神 id：替换期间原式神的牌不可使用
+        （出牌校验按 transform_owner 拒绝，同变形物口径）；
+        - 倒计时归零复活见 coffin_revive 动作；棺材被击杀见 check_defeated 拦截。
+        """
+        d = self.db.shikigami[into]
+        if d.kind != "transform":
+            raise ValueError(f"棺材实体 {into} 须登记为 kind=transform（占位实体）")
+        s = p.shikigami[i]
+        if not s.defeated or s.despawned or s.level < 1 or s.kind == "summon":
+            raise ValueError("to_coffin 的目标须为已气绝的非召唤物式神")
+        owner_id = s.ext.get("replace_owner", s.id)  # 连续替换仍指向最初的原式神
+        was_in_combat = bool(s.ext.pop("defeated_in_combat", False))
+        snapshot = s.model_dump(exclude={"transform_origin", "coffin_origin"})
+        snapshot["ext"].pop("coffin_on_defeat", None)  # 棺材通道旗标不带入快照
+        snapshot["ext"].pop("defeated_in_combat", None)
+        b = ShikigamiState(
+            id=into, kind="transform", faction=d.faction, perm_faction=d.faction,
+            level=s.level, home_slot=s.home_slot,
+            entry_order=max(x.entry_order for x in p.shikigami) + 1,  # 再进场排本队最后
+            base_power=d.power, base_health=d.health, health=d.health,
+            transform_owner=owner_id, coffin_origin=snapshot,
+            ext={"max_power": d.power},  # 力量历史峰值初值（断臂记账）
+            perm_keywords=list(d.keywords))  # 先天关键字按永久类别入列
+        p.shikigami[i] = b
+        if keep_combat and was_in_combat and p.combat_index is None:
+            p.combat_index = i  # 棺封对战斗区式神：棺材进其战斗区
+        self._log(f"气绝的{self.db.shikigami[owner_id].name} 替换为 {d.name}")
+        self._settle(f"【替换】气绝的{self.db.shikigami[owner_id].name} 替换为 "
+                     f"{d.name}（身材 {b.base_power}/{b.max_health}，倒计时 1）")
+        self._register_ability_countdown(pi, i)  # 能力后进场：注册棺材的倒计时能力块
 
     def _untransform(self, pi: int, i: int) -> None:
         """解除座次 i 变形物的变形：按 transform_origin 快照还原原式神当时状态
@@ -3221,6 +3474,8 @@ class Game:
 
     @staticmethod
     def _stun_expired(e: dict, p: PlayerState) -> bool:
+        if e.get("kind") == "invocation":
+            return False  # 灵咒眩晕（迟钝）：不参与回合批次过期，随灵咒移除解除
         if e.get("kind") == "lasting":
             until = e.get("until")  # 持续眩晕（预留）：until 回合号到达即解除
             return until is not None and p.turn_count >= int(until)
@@ -3438,7 +3693,8 @@ class Game:
         if found is not None:
             if s.form is None or s.countdown_source != s.form.id:
                 self._clear_countdown(s)
-            self._register_countdown(s, initial=found.countdown, block=found, source=source)
+            self._register_countdown(s, initial=found.countdown, block=found,
+                                     once=found.once, source=source)
         elif awaken and s.countdown_block is not None and s.countdown_source == s.id:
             # 继承动态倒计时并变为倒计时 1
             s.countdown = min(s.countdown, 1) if s.countdown is not None else 1
@@ -3454,9 +3710,18 @@ class Game:
 
     def _clear_ability_card_auras(self, p: PlayerState, pi: int, si: int) -> None:
         """能力离场（气绝/变形/离场/觉醒替换旧能力）：移除该座次能力授予的
-        scope="ability" 卡牌光环（萤草基础/觉醒的形态牌[瞬发]光环）。"""
+        scope="ability" 卡牌光环（萤草基础/觉醒的形态牌[瞬发]光环）与
+        scope="ability" 灵咒修饰条目（inv_mod，大岳丸"八尺琼曲玉结附于大岳丸时
+        效果+1/翻倍"——能力进场经 on_ability_enter 注册，本通道统一离场清除）。"""
         p.card_auras[:] = [a for a in p.card_auras
                            if not (a.get("scope") == "ability" and a.get("holder") == [pi, si])]
+        mods = p.ext.get("inv_mod")
+        if mods:
+            kept = [m for m in mods
+                    if not (m.get("scope") == "ability" and m.get("holder") == [pi, si])]
+            if len(kept) != len(mods):
+                p.ext["inv_mod"] = kept
+                self._refresh_invocation_mods(pi)
 
     def _countdown_block_for(self, source: int) -> EffectBlock | None:
         """按倒计时来源 id 找回对应的倒计时能力块（countdown_history 重放用，大合奏）。
@@ -3506,6 +3771,10 @@ class Game:
             # 结算期间未被替换/清除：循环型重置为初始值；一次型（once）移除
             if once:
                 self._clear_countdown(s)
+                # 灵咒一次型倒计时（迟钝"生效后移除"）：连同灵咒本体一并移除
+                for e in list(s.invocations):
+                    if e.get("cd_block") is block:
+                        self._remove_invocation(s, e, reason="倒计时生效")
             else:
                 s.countdown = initial
 
@@ -3725,6 +3994,16 @@ class Game:
             return  # 气绝/离场/濒死者不受伤害
         if s is None and p.defeated:
             return  # 气绝的牌手不再受到伤害
+        # 干扰投掷禁伤（ext["no_damage_vs_inv"] = 灵咒名，本回合作用域）：来源式神
+        # 持标记时，其对结附了该灵咒的式神造成的伤害无效——早期终止（一切伤害类型；
+        # "结附'鸮之守护'的式神"不限灵咒来源，维护者定案按字面）
+        if ev.source is not None and ev.source.shikigami is not None and s is not None:
+            src0 = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+            blocked_inv = src0.ext.get("no_damage_vs_inv")
+            if blocked_inv and any(e["name"] == blocked_inv for e in s.invocations):
+                self._log(f"{self.db.shikigami[src0.id].name} 不能对结附"
+                          f"【{blocked_inv}】的式神造成伤害，本次伤害无效")
+                return
         # 毒蚀转化（维护者答复(5)）：伤害事件生成点全额转化为等量破甲——护甲不再
         # 先吸收，不再视为伤害（无扣减/气绝/吸血/on_damage）。converted=True 的伤害
         # （碧羽散华破甲→伤害的嵌套事件）不再转化，防止转化类效果来回循环。
@@ -4113,6 +4392,22 @@ class Game:
                   battle=self._battle_stack[-1] if self._battle_stack else None)
         if s.defeated:
             return  # 气绝前 1 的插入结算中已被其它事件标记气绝
+        if s.coffin_origin is not None:
+            # 棺材被击杀（04 沧海刀鸣，棺材占位实体）：原式神保持气绝、按正常气绝
+            # 倒计时复活（棺材移除本身不复活、不再发气绝事件/击杀账本——原式神的
+            # 气绝在其被替换进棺材时已结算过一次，此处只是占位实体移除）
+            owner0 = self.state.players[ref.player]
+            if owner0.combat_index == ref.shikigami:
+                owner0.combat_index = None  # 棺材移除：战斗区让出
+            original = ShikigamiState.model_validate(s.coffin_origin)
+            original.revive_countdown = self.config.revive_countdown
+            owner0.shikigami[ref.shikigami] = original
+            self._settle(f"【气绝】{self.db.shikigami[s.id].name} 被击破（棺材）："
+                         f"{self.db.shikigami[original.id].name} 保持气绝"
+                         f"（复活倒计时 {original.revive_countdown}）")
+            self._log(f"{self.db.shikigami[s.id].name} 被击破，"
+                      f"{self.db.shikigami[original.id].name} 保持气绝")
+            return
         if s.transform_origin is not None:
             # 变形物"气绝前2"（契约 §2）：解除变形、原式神以已气绝状态进场——快照还原
             # 到原座次后继续正常气绝流程（形态消灭/非永久修正清除/复活倒计时/气绝事件）；
@@ -4131,6 +4426,16 @@ class Game:
         # 平和猫又屋（tags revive_on_defeat）：气绝结算完成后复活——旗标在形态消灭前捕获
         revive_flag = (s.form is not None
                        and "revive_on_defeat" in self.db.cards[s.form.id].tags)
+        # 棺材替换旗标（04 沧海刀鸣）同样在形态消灭前捕获：
+        # - ext["coffin_on_defeat"]（不弃"本回合气绝时替换为'棺材'"，值 = 棺材实体 id；
+        #   响应"当跳跳哥哥将气绝时自动对其使用"在上方 on_before_defeat 即时批次写入）
+        # - 形态 tags `coffin_on_defeat:<实体id>`（罡身阵"跳跳哥哥气绝时改为替换为'棺材'"）
+        coffin_into = s.ext.get("coffin_on_defeat")
+        if coffin_into is None and s.form is not None:
+            for tag in self.db.cards[s.form.id].tags:
+                if tag.startswith("coffin_on_defeat:"):
+                    coffin_into = int(tag.split(":", 1)[1])
+                    break
         if s.form is not None:
             self._destroy_form(owner, ref.shikigami, reason="defeat")
         s.defeated = True
@@ -4161,6 +4466,9 @@ class Game:
             if owner.combat_index == ref.shikigami:
                 owner.combat_index = None  # 气绝者移动至准备区
             s.revive_countdown = self.config.revive_countdown
+            s.ext["defeated_in_combat"] = in_combat  # 本次气绝位置记账
+            # （to_coffin keep_combat 消费：棺封对战斗区式神 = 棺材进其战斗区；
+            # 气绝替换路径不读——棺材落准备区）
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
         # 击杀账本统一记账（规则设计评审⑩，口径与原卡牌自计数触发器等价：仅统计
@@ -4172,6 +4480,21 @@ class Game:
             if source.shikigami is not None:
                 sid = sp.shikigami[source.shikigami].id  # 来源实体的当前数据 id
                 sp.kill_by[sid] = sp.kill_by.get(sid, 0) + 1
+                # 牌手级"结附灵咒击杀加成"规则（觉醒·大岳丸使用时赋予，ext
+                # inv_bonus_on_kill 条目 {"inv": 灵咒名, "add": n}，可叠加、不随
+                # 大岳丸气绝失效）：来源式神结附该灵咒且击杀敌方式神时，其身上
+                # 该灵咒条目的 bonus += add（同源唯一性替换时 bonus 由新条目继承、
+                # 气绝移除即重置——继承/重置语义在 attach/detach 通道自然成立）
+                rules = sp.ext.get("inv_bonus_on_kill")
+                if rules and ref.player != source.player and s.kind != "summon":
+                    killer = sp.shikigami[source.shikigami]
+                    for e in killer.invocations:
+                        for r in rules:
+                            if e["name"] == r["inv"]:
+                                e["bonus"] = int(e.get("bonus", 0)) + int(r["add"])
+                                self._log(f"灵咒【{e['name']}】效果 +{int(r['add'])}"
+                                          f"（击杀加成，现 bonus={e['bonus']}）")
+                    self._refresh_invocation_mods(source.player)
         # 委托账本：敌方式神气绝计数（非召唤物气绝即计，不限来源；召唤物离场不计；
         # 多事多忙不扩域——shareable=False）
         if s.kind != "summon":
@@ -4183,6 +4506,11 @@ class Game:
         # 复活走 _revive 完整流程——回满生命/重注册倒计时能力/发 on_shikigami_revived）
         if revive_flag and s.defeated and not s.despawned:
             self._revive(owner, ref.player, ref.shikigami, reason="平和猫又屋")
+        # 棺材替换（不弃 ext 旗标 / 罡身阵形态 tag）：气绝结算完成后，把已气绝的
+        # 原式神替换为棺材占位实体（落准备区——战斗区已在上方让出；召唤物已离场
+        # 天然跳过）。气绝事件/击杀账本按原式神照常结算过，替换不重复发
+        if coffin_into is not None and s.defeated and not s.despawned:
+            self._to_coffin(owner, ref.player, ref.shikigami, int(coffin_into))
 
     # ==================== 幻境（card_type="field"）管线 ====================
 

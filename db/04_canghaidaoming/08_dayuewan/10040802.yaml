@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040802
 name: 覆土之术
 versions:
@@ -8,7 +7,21 @@ versions:
       card_type: spell
       rarity: R
       level: 1
+      keywords: [trigger]
+      target: {kind: choose, pool: friendly_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 结附'八尺琼曲玉' + 免疫下一次伤害（grant_immunity scope=once 消耗式，
+          # 桃红簇簇 10011951 同型）
+          - {op: attach_invocation, name: 八尺琼曲玉}
+          - {op: grant_immunity, kind: all, scope: once}
+      response:
+        # [响应]：当己方式神被攻击时自动对其使用此牌——响应目标 = 事件 victim
+        # （主动/响应效果同构，响应走覆盖块挂响应时机，扑朔迷离 10020402 先例）
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: shikigami}
+        steps:
+          - {op: attach_invocation, name: 八尺琼曲玉, target: {kind: context, key: victim}}
+          - {op: grant_immunity, kind: all, scope: once,
+             target: {kind: context, key: victim}}
+      text: "将‘八尺琼曲玉’结附于一个己方式神，并使其免疫下一次伤害。[响应]：{当己方式神被攻击时，自动对其使用此牌。}"
