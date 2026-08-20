@@ -13,18 +13,20 @@ versions:
       effects:
         steps: []
       abilities:
-        # 当你的式神行动时，结附'鸮之守护'（"行动"=主动出击或使用专属牌，双块）：
-        # 出击侧挂 on_after_assault 结附事件攻击者；用牌侧挂 on_card_played
-        # （shikigami_not: null 排除中立牌），目标走行动账本 last_acted——出牌
-        # 流程先记账再 emit on_card_played，故即本牌所属式神
-        - when: on_after_assault
+        # 当你的式神行动时，结附'鸮之守护'（维护者定案(11)：触发时机 = 主动使用牌
+        # 流程的"行动前"即时时机 + 出击事件流程的"出击前"（优先级 1））：
+        # 出击侧挂 on_before_assault priority 1 结附事件攻击者；用牌侧挂
+        # on_before_card_played（鬼火消耗后、使用事件结算前，仅主动使用发），
+        # 目标 = 事件 actor（本牌所属式神；shikigami_not: null 排除中立牌）
+        - when: on_before_assault
+          priority: 1
           condition: {attacker_side: friendly}
           steps:
             - {op: attach_invocation, name: 鸮之守护,
                target: {kind: context, key: attacker}}
-        - when: on_card_played
+        - when: on_before_card_played
           condition: {player: self, shikigami_not: null}
           steps:
             - {op: attach_invocation, name: 鸮之守护,
-               target: {kind: context, key: last_acted}}
+               target: {kind: context, key: actor}}
       text: "[觉醒]：{当你的式神行动时，结附‘鸮之守护’。}"

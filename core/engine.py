@@ -1718,6 +1718,17 @@ class Game:
         self._materialize(p, card, cdef)  # 打出装配：付费后、效果结算前快照持久修饰
         how = f"（{method.text or method.id}）" if method else ""
         self._log(f"{p.name} 使用了【{cdef.name}】{how}")
+        # "行动前"（即时时机；主动使用牌流程，维护者定案(11)）：确定牌/方式/目标与
+        # 鬼火消耗之后、使用事件结算之前。载荷同 on_card_played 核心字段，另带
+        # actor = 本牌所属式神 Ref（中立牌为 None）——觉醒·薰"当你的式神行动时"
+        # 用牌侧挂点（目标走 context key=actor）
+        self.emit("on_before_card_played", player=self.state.active, uid=uid,
+                  card_type=cdef.card_type, subtype=cdef.subtype,
+                  shikigami=cdef.shikigami, card_id=cdef.id,
+                  play_from=play_from, play_method=method_id, triggered="active",
+                  chosen=list(chosen),
+                  actor=Ref(player=self.state.active, shikigami=si)
+                  if si is not None else None)
         # 使用手牌前（即时时机）：合法性检查与支付之后、效果结算之前。payload 的
         # nullified 为可变标记（参照伤害管线的可变 payload 模式）——监听者（魔音扰心）
         # 置位后本次使用终止结算：跳过效果块，牌照常离手进墓地（费用/瞬发名额已付不退）
@@ -3607,35 +3618,47 @@ class Game:
                 return True
         return False
 
+    @staticmethod
+    def _is_invocation_countdown(s: ShikigamiState) -> bool:
+        """当前倒计时是否为灵咒倒计时块（attach_invocation 注册，条目 cd_block
+        指向同一 EffectBlock）——回合开始批次双车道分流用（维护者定案(6)）。"""
+        return s.countdown_block is not None and any(
+            e.get("cd_block") is s.countdown_block for e in s.invocations)
+
     def _turn_start_countdown(self, p: PlayerState, pi: int) -> None:
-        """回合开始阶段 step 8-9：己方式神非灵咒倒计时 -1（rules.md ch12）。
+        """回合开始阶段 step 8-9：己方式神倒计时 -1（rules.md ch12），**双车道**——
+        先扣非灵咒倒计时（step 8，妖琴师/山风类），再扣灵咒倒计时（step 9
+        "式神灵咒倒计时"批次，维护者定案(6)：灵咒倒计时晚于非灵咒倒计时扣减）。
 
         归零流程（先即时插入结算、再重置/移除）见 _countdown_zero，与 countdown_delta
-        动作共用；灵咒倒计时随灵咒机制引入。每次减少发出 on_countdown_reduced
+        动作共用。每次减少发出 on_countdown_reduced
         （original=actual=1，非卡牌来源；势类"倒计时减少时"监听挂此事件）；批次减少
         属**自然减少**（natural=True）——非"减少倒计时效果"，觉醒·山风复制不共享
         （2026-08 定案：仅卡牌/能力等效果来源共享）。
         处理顺序 = 进场顺序（entry_order 升序）且**动态取序**（答复(5)：批次非快照——
         每步重新取剩余未处理者中 entry_order 最小者；批次内进场顺序变化立即生效，
-        批次内新进场者（如归零效果中的还原）排在后面当轮也处理。已处理按
+        批次内新进场者（如归零效果中的还原/结附迟钝）排在后面当轮也处理。已处理按
         （座次, 实体 id）记账：归零重置/循环型不被二次处理，同座次新实体可处理）。
         """
         processed: set[tuple[int, int]] = set()
-        while True:
-            rest = [i for i in range(len(p.shikigami))
-                    if (i, p.shikigami[i].id) not in processed
-                    and p.shikigami[i].countdown is not None and p.shikigami[i].in_play]
-            if not rest:
-                break
-            i = min(rest, key=lambda j: p.shikigami[j].entry_order)
-            s = p.shikigami[i]
-            processed.add((i, s.id))
-            s.countdown -= 1
-            self.emit("on_countdown_reduced",
-                      shikigami=Ref(player=pi, shikigami=i),
-                      original=1, actual=1, by_card=False, natural=True)  # 自然减少不共享
-            if s.countdown <= 0:
-                self._countdown_zero(pi, i)
+        for inv_lane in (False, True):  # 先非灵咒车道、后灵咒车道
+            while True:
+                rest = [i for i in range(len(p.shikigami))
+                        if (i, p.shikigami[i].id) not in processed
+                        and p.shikigami[i].countdown is not None
+                        and p.shikigami[i].in_play
+                        and self._is_invocation_countdown(p.shikigami[i]) == inv_lane]
+                if not rest:
+                    break
+                i = min(rest, key=lambda j: p.shikigami[j].entry_order)
+                s = p.shikigami[i]
+                processed.add((i, s.id))
+                s.countdown -= 1
+                self.emit("on_countdown_reduced",
+                          shikigami=Ref(player=pi, shikigami=i),
+                          original=1, actual=1, by_card=False, natural=True)  # 自然减少不共享
+                if s.countdown <= 0:
+                    self._countdown_zero(pi, i)
 
     def _turn_start_charge(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段：[充能]式神获得 1 点能量（不夜之火批次）。
@@ -3742,7 +3765,10 @@ class Game:
         """倒计时归零流程（rules.md ch12 流程 4 修订版；回合开始批次与 countdown_delta 共用）。
 
         1. 倒计时 ≤ 0 → 先即时插入结算 countdown_block.steps（此时倒计时仍为 0，
-           块内对自身 countdown_delta 修正为 -0 空操作）；
+           块内对自身 countdown_delta 修正为 -0 空操作）；**例外：灵咒一次型
+           （once）倒计时在归零块之前先移除灵咒本体**（定案(1)：移除眩晕早于
+           发起攻击；定案(9)：移除全部同名条目——移除经 _remove_invocation
+           一并清除倒计时注册，故其归零块结算时倒计时已为 None）；
         2. 生效后向 p.ext["countdown_history"] 追加来源 id（基础=式神 id /
            觉醒=觉醒牌 id / 形态=形态牌 id；大合奏、风韵雅乐用）；
         3. 结算后若仍持有该能力（未被替换/清除）：循环型重置为初值、一次型（once）移除。
@@ -3759,6 +3785,16 @@ class Game:
             # 增益/关键字赶上归零块发起的攻击（斩经 next_battle 通道绑定该次战斗）
             self.emit("on_countdown_proc",
                       shikigami=Ref(player=pi, shikigami=si), source=source, once=once)
+            if once:
+                # 灵咒一次型倒计时（迟钝"生效后移除"）：**先移除灵咒再结算归零块**
+                # （维护者定案(1)："移除眩晕应早于发起攻击"——移除含解除灵咒眩晕、
+                # 经 _remove_invocation 一并清除倒计时注册）；多条同名灵咒并存时
+                # 移除该式神上全部同名条目（定案(9)："倒计时生效时会移除全部迟钝"）
+                names = {e["name"] for e in s.invocations
+                         if e.get("cd_block") is block}
+                for e in list(s.invocations):
+                    if e["name"] in names:
+                        self._remove_invocation(s, e, reason="倒计时生效")
             horizon = self._resolve_block(block, ExecContext(
                 controller=pi, source=Ref(player=pi, shikigami=si), card=card,
                 is_ability=True))  # 倒计时效果属式神能力（贯通继承判定）
@@ -3769,12 +3805,9 @@ class Game:
                 p.ext.setdefault("countdown_history", []).append(source)
         if block is not None and s.countdown_block is block:
             # 结算期间未被替换/清除：循环型重置为初始值；一次型（once）移除
+            # （灵咒一次型已在归零块结算前随灵咒移除清除，此处不命中）
             if once:
                 self._clear_countdown(s)
-                # 灵咒一次型倒计时（迟钝"生效后移除"）：连同灵咒本体一并移除
-                for e in list(s.invocations):
-                    if e.get("cd_block") is block:
-                        self._remove_invocation(s, e, reason="倒计时生效")
             else:
                 s.countdown = initial
 
@@ -4372,6 +4405,38 @@ class Game:
             return True
         return False
 
+    def _account_kill(self, source: Ref | None, ref: Ref, s: ShikigamiState) -> None:
+        """击杀账本统一记账 + 委托 enemy_defeat 计数（check_defeated 正常流程与
+        棺材被击破还原路径共用；s = 气绝者当前状态）。
+
+        击杀账本（规则设计评审⑩，口径与原卡牌自计数触发器等价：仅统计有来源的
+        消灭；按来源归属牌手分桶——镜像对局敌方同名式神击杀互不计入；伤害转移等
+        消灭己方式神的场景按原版同样计入来源方）；牌手级"结附灵咒击杀加成"规则
+        （觉醒·大岳丸使用时赋予，ext inv_bonus_on_kill 条目 {"inv": 灵咒名,
+        "add": n}，可叠加、不随大岳丸气绝失效）：来源式神结附该灵咒且击杀敌方
+        式神时，其身上该灵咒条目的 bonus += add（同源唯一性替换时 bonus 由新条目
+        继承、气绝移除即重置——继承/重置语义在 attach/detach 通道自然成立）。
+        委托账本：敌方式神气绝计数（非召唤物气绝即计，不限来源；召唤物离场不计；
+        多事多忙不扩域——shareable=False）。"""
+        if source is not None:
+            sp = self.state.players[source.player]
+            sp.kill_total += 1
+            if source.shikigami is not None:
+                sid = sp.shikigami[source.shikigami].id  # 来源实体的当前数据 id
+                sp.kill_by[sid] = sp.kill_by.get(sid, 0) + 1
+                rules = sp.ext.get("inv_bonus_on_kill")
+                if rules and ref.player != source.player and s.kind != "summon":
+                    killer = sp.shikigami[source.shikigami]
+                    for e in killer.invocations:
+                        for r in rules:
+                            if e["name"] == r["inv"]:
+                                e["bonus"] = int(e.get("bonus", 0)) + int(r["add"])
+                                self._log(f"灵咒【{e['name']}】效果 +{int(r['add'])}"
+                                          f"（击杀加成，现 bonus={e['bonus']}）")
+                    self._refresh_invocation_mods(source.player)
+        if s.kind != "summon":
+            self._quest_tick(1 - ref.player, "enemy_defeat", shareable=False)
+
     def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:
         """生成并结算式神气绝事件（要素：来源、气绝者、原因）。
 
@@ -4393,11 +4458,14 @@ class Game:
         if s.defeated:
             return  # 气绝前 1 的插入结算中已被其它事件标记气绝
         if s.coffin_origin is not None:
-            # 棺材被击杀（04 沧海刀鸣，棺材占位实体）：原式神保持气绝、按正常气绝
-            # 倒计时复活（棺材移除本身不复活、不再发气绝事件/击杀账本——原式神的
-            # 气绝在其被替换进棺材时已结算过一次，此处只是占位实体移除）
+            # 棺材被击杀（04 沧海刀鸣，维护者定案(8)）：还原为气绝的原式神
+            # （coffin_origin 快照本就是"气绝结算完成后"baseline——原式神变形前的
+            # 临时数据不带回，现状口径保持），**会有气绝事件、计入击杀账本**；
+            # 棺材移除本身不复活。"气绝时变成棺材"的入口路径（to_coffin）维持
+            # 原口径——其气绝事件/账本已在入棺时按原式神结算过一次。
             owner0 = self.state.players[ref.player]
-            if owner0.combat_index == ref.shikigami:
+            was_in_combat = owner0.combat_index == ref.shikigami
+            if was_in_combat:
                 owner0.combat_index = None  # 棺材移除：战斗区让出
             original = ShikigamiState.model_validate(s.coffin_origin)
             original.revive_countdown = self.config.revive_countdown
@@ -4407,6 +4475,10 @@ class Game:
                          f"（复活倒计时 {original.revive_countdown}）")
             self._log(f"{self.db.shikigami[s.id].name} 被击破，"
                       f"{self.db.shikigami[original.id].name} 保持气绝")
+            self._account_kill(source, ref, original)
+            self.emit("on_shikigami_defeated", victim=ref, source=source,
+                      reason=reason, in_combat=was_in_combat, summon=False,
+                      battle=self._battle_stack[-1] if self._battle_stack else None)
             return
         if s.transform_origin is not None:
             # 变形物"气绝前2"（契约 §2）：解除变形、原式神以已气绝状态进场——快照还原
@@ -4471,34 +4543,8 @@ class Game:
             # 气绝替换路径不读——棺材落准备区）
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
-        # 击杀账本统一记账（规则设计评审⑩，口径与原卡牌自计数触发器等价：仅统计
-        # 有来源的消灭；按来源归属牌手分桶——镜像对局敌方同名式神击杀互不计入；
-        # 伤害转移等消灭己方式神的场景按原版同样计入来源方）
-        if source is not None:
-            sp = self.state.players[source.player]
-            sp.kill_total += 1
-            if source.shikigami is not None:
-                sid = sp.shikigami[source.shikigami].id  # 来源实体的当前数据 id
-                sp.kill_by[sid] = sp.kill_by.get(sid, 0) + 1
-                # 牌手级"结附灵咒击杀加成"规则（觉醒·大岳丸使用时赋予，ext
-                # inv_bonus_on_kill 条目 {"inv": 灵咒名, "add": n}，可叠加、不随
-                # 大岳丸气绝失效）：来源式神结附该灵咒且击杀敌方式神时，其身上
-                # 该灵咒条目的 bonus += add（同源唯一性替换时 bonus 由新条目继承、
-                # 气绝移除即重置——继承/重置语义在 attach/detach 通道自然成立）
-                rules = sp.ext.get("inv_bonus_on_kill")
-                if rules and ref.player != source.player and s.kind != "summon":
-                    killer = sp.shikigami[source.shikigami]
-                    for e in killer.invocations:
-                        for r in rules:
-                            if e["name"] == r["inv"]:
-                                e["bonus"] = int(e.get("bonus", 0)) + int(r["add"])
-                                self._log(f"灵咒【{e['name']}】效果 +{int(r['add'])}"
-                                          f"（击杀加成，现 bonus={e['bonus']}）")
-                    self._refresh_invocation_mods(source.player)
-        # 委托账本：敌方式神气绝计数（非召唤物气绝即计，不限来源；召唤物离场不计；
-        # 多事多忙不扩域——shareable=False）
-        if s.kind != "summon":
-            self._quest_tick(1 - ref.player, "enemy_defeat", shareable=False)
+        # 击杀账本与委托计数（含牌手级 inv_bonus_on_kill 结算；棺材被击破路径共用）
+        self._account_kill(source, ref, s)
         self.emit("on_shikigami_defeated", victim=ref, source=source, reason=reason,
                   in_combat=in_combat, summon=(s.kind == "summon"),
                   battle=self._battle_stack[-1] if self._battle_stack else None)

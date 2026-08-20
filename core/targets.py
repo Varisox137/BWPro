@@ -274,6 +274,11 @@ def _spec_filtered(game, refs: list[Ref], extra: dict,
         # 本人；spec_pool_refs 统一校验/展示）
         refs = [r for r in refs if r.shikigami is not None
                 and game.state.players[r.player].shikigami[r.shikigami].id != int(ex_sid)]
+    if extra.get("not_summon"):
+        # 仅非召唤物式神（维护者定案(12)：选择目标合法性即排除召唤物——不弃
+        # "使一个非召唤物式神"；牌手目标被滤除）
+        refs = [r for r in refs if r.shikigami is not None
+                and game.state.players[r.player].shikigami[r.shikigami].kind != "summon"]
     if extra.get("no_form"):
         # 仅没有形态的式神（今日委托·伍"消灭一个没有形态的式神"；牌手目标被滤除）
         refs = [r for r in refs if r.shikigami is not None
@@ -415,6 +420,10 @@ def resolve(game, spec, ctx) -> list[Ref]:
             refs = [r for r in refs if r.shikigami is not None
                     and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
         refs = _spec_filtered(game, refs, extra, ctx.controller)
+        if extra.get("exclude_self") and ctx.source is not None:
+            # 排除效果来源个体（维护者定案(0)："其他式神"= 除效果来源式神个体外的
+            # 所有双方式神——镜像对局含敌方同名；樱吹雪"其他所有式神"）
+            refs = [r for r in refs if r != ctx.source]
         if extra.get("exclude_victim"):
             # 排除触发事件的 victim（胧月雪华斩"对所有其他[眩晕]的敌方角色"——
             # 与 random_damage 的 exclude_victim 参数同语义）

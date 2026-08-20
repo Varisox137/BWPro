@@ -8,9 +8,10 @@ versions:
       rarity: SR
       level: 3
       effects:
-        # "其他所有式神"= 双方除樱花妖外的式神（any_shikigami + exclude_shikigami
-        # 按数据 id 排除——镜像对局敌我同名樱花妖均被排除），含未离场气绝者
-        # （include_defeated，any_shikigami 池扩展）。维护者定案（thoughts 答复(2)）：
+        # "其他所有式神"= 双方除效果来源个体（本牌的樱花妖）外的式神
+        # （any_shikigami + exclude_self 按来源实体排除——镜像对局不误伤敌方同名
+        # 樱花妖，维护者定案(0)），含未离场气绝者（include_defeated，any_shikigami
+        # 池扩展）。维护者定案（thoughts 答复(2)）：
         # 伤害/治疗均不区分敌我，结算为"并行伤害，若击杀则再来一次并行伤害；然后
         # 并行治疗，若复活则再来一次"——单一并行波次 + repeat_on_kill/repeat_on_revive
         # 整波重复（引擎上限 10 次），伤害段全部重复完才进治疗段。
@@ -23,9 +24,9 @@ versions:
           # 对其他所有式神造成2点伤害，若击杀式神则重复此效果
           - {op: damage, amount: 2, repeat_on_kill: true,
              target: {kind: all, pool: any_shikigami, include_defeated: true,
-                      exclude_shikigami: 100403}}
+                      exclude_self: true}}
           # 恢复其他所有式神3点生命，若复活式神则重复此效果
           - {op: heal, amount: 3, repeat_on_revive: true,
              target: {kind: all, pool: any_shikigami, include_defeated: true,
-                      exclude_shikigami: 100403}}
+                      exclude_self: true}}
       text: "对其他所有式神造成2点伤害，若击杀式神则重复此效果。恢复其他所有式神3点生命，若复活式神则重复此效果。"

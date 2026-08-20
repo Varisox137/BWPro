@@ -8,11 +8,11 @@ versions:
       rarity: R
       level: 1
       keywords: [trigger]
-      target: {kind: choose, pool: any_shikigami}
+      target: {kind: choose, pool: any_shikigami, not_summon: true}
       effects:
-        # 非召唤物口径：无排除召唤物的目标过滤键——coffin_on_defeat 旗标消费点
-        # （气绝流程末尾 _to_coffin）对召唤物天然跳过（召唤物气绝即离场），
-        # 故目标池取任意式神；旗标值 = 棺材实体数据 id，任一回合开始清除
+        # 维护者定案(12)：选择目标合法性即要求非召唤物（not_summon 过滤键），可选
+        # 敌我任一未气绝式神（any_shikigami 池默认不含气绝者）；旗标值 = 棺材实体
+        # 数据 id，任一回合开始清除
         steps:
           - {op: bump_ext, key: coffin_on_defeat, value: 10040299}
       response:

@@ -17,6 +17,11 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_turn_start",        # 任一玩家回合开始 {player}
     "on_turn_end",          # 任一玩家回合结束 {player}
     "on_card_played",       # 卡牌使用后 {player, uid}
+    "on_before_card_played",  # "行动前"（主动使用牌流程：确定牌/方式/目标与鬼火消耗
+    #                       之后、使用事件结算前）{player, uid, card_type, subtype,
+    #                       shikigami（数据 id）, card_id, play_from, play_method,
+    #                       triggered, chosen, actor: Ref|None（本牌所属式神）}
+    #                       （即时时机；觉醒·薰"当你的式神行动时"用牌侧挂点）
     "on_before_assault",    # 出击宣言后、伤害结算前 {attacker: Ref, victim: Ref}
     "on_after_assault",     # 出击结算完毕 {attacker: Ref}
     "on_damage",            # 式神受到伤害后 {victim: Ref, amount, source, kind}
@@ -107,6 +112,7 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_heal": "insert",      # 治疗前：即时时机
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
+    "on_before_card_played": "insert",  # "行动前"：即时时机（主动使用牌流程，定案(11)）
     "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程，thoughts.txt）
     "on_countdown_proc": "insert",    # 倒计时能力归零生效时：即时时机（先于归零块结算）
     "on_before_field_intensity": "insert",  # 幻境耐久变化前：即时时机（修正变化量）

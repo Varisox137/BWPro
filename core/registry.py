@@ -176,6 +176,10 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
                        # 决意"你结附'鸮之守护'的式神"用同源限定；牌手目标被滤除）
     "chosen_index",    # step 目标 {kind: choose, chosen_index: n}：多选择目标卡牌
                        # （CardDef.target2）按序取第 n 个选择目标（麓鸣·灭双 choose）
+    "exclude_self",    # 排除效果来源个体（resolve 时按 ctx.source 排除，镜像对局
+                       # 不误伤敌方同名——樱吹雪"其他所有式神"维护者定案(0)）
+    "not_summon",      # 仅非召唤物式神（选择目标合法性即排除召唤物——不弃
+                       # "使一个非召唤物式神"，维护者定案(12)；牌手目标被滤除）
 })
 
 # 步骤数值参数字典（amount/power）白名单：Game._step_amount 消费全集

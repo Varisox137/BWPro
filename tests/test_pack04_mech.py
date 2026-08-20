@@ -833,8 +833,9 @@ def test_coffin_family_assault_unyielding(db, make_game):
 
 
 def test_coffin_destroyed_keeps_original_defeated(db, make_game):
-    """棺材被击杀：原式神保持气绝、按正常气绝倒计时复活（棺材移除不复活，
-    不重复发气绝事件/击杀账本）。"""
+    """棺材被击杀（定案(8)）：原式神保持气绝、按正常气绝倒计时复活（棺材移除
+    不复活），**会有气绝事件、计入击杀账本**（入棺时按原式神已结算过一次，
+    击破棺材再结算一次）。"""
     _coffin_def(db)
     g = make_game()
     pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
@@ -842,13 +843,24 @@ def test_coffin_destroyed_keeps_original_defeated(db, make_game):
     kills0 = pb.kill_total
     _kill(g, 0, 1)
     assert pb.kill_total == kills0  # 无来源气绝不记击杀（对照）
+    seen: list[dict] = []
+    orig_emit = g.emit
+
+    def spy(name, **kw):
+        if name == "on_shikigami_defeated":
+            seen.append(kw)
+        return orig_emit(name, **kw)
+
+    g.emit = spy
     c = pa.shikigami[1]
     c.health = 0
     g.check_defeated(Ref(player=0, shikigami=1), source=Ref(player=1, shikigami=0))
     r = pa.shikigami[1]
     assert r.id == 100102 and r.defeated  # 原式神保持气绝
     assert r.revive_countdown == g.config.revive_countdown  # 倒计时重置为正常值
-    assert pb.kill_total == kills0  # 击破棺材不重复记击杀账本
+    assert pb.kill_total == kills0 + 1  # 击破棺材计入击杀账本
+    assert pb.kill_by.get(100101) == 1  # 按来源实体数据 id 分桶
+    assert seen and seen[0]["victim"] == Ref(player=0, shikigami=1)  # 气绝事件照发
     g._drain_queue()
 
 
@@ -945,28 +957,43 @@ def test_last_acted_clear_and_revive_gate(db, make_game):
     assert all(not s.invocations for s in pa.shikigami)
 
 
-def test_act_trigger_attach(db, make_game):
-    """觉醒·薰"当你的式神行动时，结附'鸮之守护'"的触发支撑：on_after_assault
-    （attacker_side）与 on_card_played（player=self + 非中立）双块 + context
-    last_acted 目标（账本先于事件发点更新）。"""
-    _guardian_inv(db)
-    blk_assault = F.block(
-        F.Step(op="attach_invocation", name="鸮之守护",
-               target=T(kind="context", key="last_acted")),
-        when="on_after_assault", condition={"attacker_side": "friendly"})
-    blk_play = F.block(
-        F.Step(op="attach_invocation", name="鸮之守护",
-               target=T(kind="context", key="last_acted")),
-        when="on_card_played", condition={"player": "self", "shikigami_not": None})
-    db.shikigami[100102] = F.shiki(100102, power=2, health=4, faction="紫岩",
-                                   abilities=[blk_assault, blk_play])
+def test_act_trigger_before_action(db, make_game):
+    """觉醒·薰"当你的式神行动时，结附'鸮之守护'"（定案(11)）：触发时机 =
+    出击事件流程"出击前"（on_before_assault，优先级 1——结附先于战斗伤害，
+    守护减伤赶上本次交战反击）与主动使用牌流程"行动前"（on_before_card_played
+    ——结附先于使用事件效果，本牌自伤即被减）。"""
+    db.invocations["鸮之守护"] = InvocationDef(
+        name="鸮之守护", unique="unique",
+        abilities=[F.block(F.Step(op="reduce_damage", amount=1,
+                                  condition={"victim_shikigami": "self"}),
+                           when="on_damage_start")])
+    db.shikigami[100102] = F.shiki(
+        100102, power=1, health=6, faction="紫岩",
+        abilities=[F.block(
+            F.Step(op="attach_invocation", name="鸮之守护",
+                   target=T(kind="context", key="attacker")),
+            when="on_before_assault", priority=1,
+            condition={"attacker_side": "friendly"}), F.block(
+            F.Step(op="attach_invocation", name="鸮之守护",
+                   target=T(kind="context", key="actor")),
+            when="on_before_card_played",
+            condition={"player": "self", "shikigami_not": None})])
+    db.cards[10010151] = F.card(  # 自伤牌：对来源自身 2 伤（验"行动前"结附先于效果）
+        10010151, token=True,
+        steps=[F.Step(op="damage", amount=2, target=T(kind="self"))])
     g = make_game()
     pa, pb = F.battle_setup(g, levels={0: 1, 1: 1, 2: 1})
-    F.play(g, 0, 10010101)  # 座次0 用牌 → 行动时结附
-    assert [e["name"] for e in pa.shikigami[0].invocations] == ["鸮之守护"]
-    assert pa.shikigami[2].invocations == []
-    g.apply({"op": "assault", "index": 2})  # 座次2 出击 → 行动时结附
-    assert [e["name"] for e in pa.shikigami[2].invocations] == ["鸮之守护"]
+    # 用牌侧：行动前结附 → 本牌对自身 2 伤被守护减为 1
+    s0 = pa.shikigami[0]  # 100101 3/4
+    F.play(g, 0, 10010151)
+    assert [e["name"] for e in s0.invocations] == ["鸮之守护"]
+    assert s0.health == 3  # 4 - (2-1)——结附先于本牌效果
+    # 出击侧：出击前结附 → 敌方 3 力量反击被守护减为 2
+    F.move(g, 1, 0)  # 敌方 100101（3/4）入战斗区
+    s2 = pa.shikigami[2]  # 100103 2/6
+    g.apply({"op": "assault", "index": 2})
+    assert [e["name"] for e in s2.invocations] == ["鸮之守护"]
+    assert s2.health == 4  # 6 - (3-1)——结附先于战斗伤害
 
 
 # ---------- 干扰投掷禁伤（ext no_damage_vs_inv）与灵咒过滤/条件键 ----------
@@ -1315,6 +1342,111 @@ def test_combat_card_effect_chosen(db, make_game):
     assert pa.combat_index == 1  # 额外攻击者进入战斗区
 
 
+# ---------- 来源个体排除（exclude_self，樱吹雪"其他所有式神"定案(0)） ----------
+
+def test_exclude_self_source_entity(db, make_game):
+    """目标键 exclude_self："其他所有式神"= 除效果来源个体外的双方式神——镜像
+    对局敌方同名式神照常入池（按来源实体排除，非数据 id）。"""
+    db.cards[10010151] = F.card(
+        10010151, token=True,
+        steps=[F.Step(op="damage", amount=1,
+                      target=T(kind="all", pool="any_shikigami",
+                               exclude_self=True))])
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
+    F.play(g, 0, 10010151)  # 来源 = 己方座次0（100101）
+    assert pa.shikigami[0].health == 4  # 来源个体被排除
+    assert pb.shikigami[0].health == 3  # 敌方同名（100101）照常受伤
+    assert pa.shikigami[1].health == 5  # 其余在场双方各 -1
+    assert pb.shikigami[1].health == 5
+
+
+# ---------- 迟钝归零结算次序与灵咒倒计时批次（定案(1)(6)(9)） ----------
+
+def test_invocation_proc_removes_before_attack(db, make_game):
+    """迟钝归零：先移除灵咒（含解除眩晕）再发起攻击；多条同名迟钝并存时移除
+    全部同名条目（倒计时槽唯一、由后者覆盖——现状保持）。"""
+    db.invocations["迟钝"] = InvocationDef(
+        name="迟钝", keywords=["stun"],
+        abilities=[F.block(F.Step(op="launch_attack"), countdown=2, once=True)])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]
+    g.attach_invocation("迟钝", player=0, target=Ref(player=0, shikigami=0))
+    g.attach_invocation("迟钝", player=0, target=Ref(player=0, shikigami=0))  # 同名并存
+    assert len(s.invocations) == 2 and s.is_stunned and s.countdown == 2
+    calls: list[str] = []
+    orig_rm = g._remove_invocation
+    orig_cb = g._resolve_combat
+
+    def spy_rm(*a, **kw):
+        calls.append("remove")
+        return orig_rm(*a, **kw)
+
+    def spy_cb(*a, **kw):
+        calls.append("combat")
+        return orig_cb(*a, **kw)
+
+    g._remove_invocation = spy_rm
+    g._resolve_combat = spy_cb
+    F.pass_turns(g, 2)  # 回到己方回合开始：2→1
+    F.pass_turns(g, 2)  # 归零生效
+    assert calls[:2] == ["remove", "remove"]  # 两条同名均移除
+    assert "combat" in calls and calls.index("combat") > 1  # 移除早于攻击
+    assert s.invocations == [] and not s.is_stunned  # 眩晕随灵咒解除
+    assert s.countdown is None
+    assert pb.health == 27  # 攻击照常发起（3 力量打空战斗区牌手）
+
+
+def test_invocation_countdown_lane_after_normal(db, make_game):
+    """灵咒倒计时归入"式神灵咒倒计时"批次、晚于非灵咒倒计时扣减：非灵咒车道
+    归零效果先击杀灵咒持有者，则同回合灵咒车道不再处理（持有者已气绝）——
+    灵咒持有者进场顺序更靠前也不提前（单车道旧口径下会先归零发起攻击）。"""
+    db.invocations["迟钝"] = InvocationDef(
+        name="迟钝", keywords=["stun"],
+        abilities=[F.block(F.Step(op="launch_attack"), countdown=2, once=True)])
+    db.shikigami[100102] = F.shiki(  # 座次1：非灵咒倒计时1 一次型，归零点杀迟钝持有者
+        100102, abilities=[F.block(
+            F.Step(op="damage", amount=30,
+                   target=T(kind="all", pool="friendly_shikigami",
+                            has_invocation="迟钝")),
+            countdown=1, once=True)])
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
+    g._register_ability_countdown(0, 1)  # battle_setup 直设等级不走能力进场，补注册
+    assert pa.shikigami[1].countdown == 1
+    s0 = pa.shikigami[0]
+    g.attach_invocation("迟钝", player=0, target=Ref(player=0, shikigami=0))
+    s0.countdown = 1  # 测试注入：本回合开始即归零
+    F.pass_turns(g, 2)  # 回到己方回合开始：非灵咒车道先结算
+    assert s0.defeated and s0.invocations == []  # 先被点杀（灵咒随气绝移除）
+    assert pb.health == 30  # 灵咒车道不再处理：迟钝未发起攻击
+
+
+# ---------- 非召唤物目标过滤（not_summon，不弃定案(12)） ----------
+
+def test_not_summon_target_filter(db, make_game):
+    """目标过滤键 not_summon（不弃"使一个非召唤物式神"）：选择目标合法性即排除
+    召唤物；any_shikigami 池默认不含气绝者，敌我未气绝的非召唤物式神均可选。"""
+    db.shikigami[10010199] = F.shiki(10010199, kind="summon", power=0, health=3)
+    db.cards[10010152] = F.card(  # 召唤墙（生成即进战斗区，落座次4）
+        10010152, token=True, steps=[F.Step(op="summon", shikigami=10010199)])
+    db.cards[10010151] = F.card(  # 不弃位：旗标授予（消费端语义已由棺材节覆盖）
+        10010151, token=True,
+        target=T(kind="choose", pool="any_shikigami", not_summon=True),
+        steps=[F.Step(op="bump_ext", key="coffin_on_defeat", value=10010199)])
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
+    F.play(g, 0, 10010152)
+    assert pa.shikigami[4].kind == "summon"
+    with pytest.raises(IllegalAction):  # 召唤物不是合法目标
+        F.play(g, 0, 10010151, target=Ref(player=0, shikigami=4))
+    F.play(g, 0, 10010151, target=Ref(player=1, shikigami=0))  # 敌方式神可选
+    assert pb.shikigami[0].ext.get("coffin_on_defeat") == 10010199
+    F.play(g, 0, 10010151, target=Ref(player=0, shikigami=1))  # 己方式神可选
+    assert pa.shikigami[1].ext.get("coffin_on_defeat") == 10010199
+
+
 # ==========================================================================
 # 真实数据端到端（人面树 100401 / 樱花妖 100403，db/04_canghaidaoming）
 #
@@ -1503,7 +1635,8 @@ def test_real_wave_repeat(real_game):
     w = pb.shikigami[1]
     assert w.defeated and w.revive_countdown == 4  # 波1 击杀 cd3 → 波2 转化 +1
     assert pb.shikigami[2].health == 5  # 敌方兵俑 6→4→2，治疗单波 2→5（无复活不重复）
-    assert pb.shikigami[0].health == 5  # 镜像同名樱花妖按数据 id 排除，不受波及
+    assert pb.shikigami[0].health == 4  # 镜像同名樱花妖照常受波及（定案(0)：仅排除
+    # 效果来源个体）——伤害两波 5→1，治疗单波 1→4
 
 
 def test_real_switch_form_chain(real_game):
@@ -1550,7 +1683,7 @@ def test_real_invocations_loaded(gdb):
     d = gdb.invocations["迟钝"]
     assert d.keywords == ["stun"]
     assert d.abilities[0].countdown == 2 and d.abilities[0].once
-    assert d.text == "[眩晕]。[倒计时2]：{发起一次攻击}。生效后移除。"
+    assert d.text == "[倒计时2]：{发起一次攻击}。生效后移除。[眩晕]。"
     x = gdb.invocations["鸮之守护"]
     assert x.unique == "unique" and x.abilities[0].when == "on_damage_start"
     assert x.text == "[唯一]。受到伤害时减少1点。"
