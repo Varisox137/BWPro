@@ -1496,6 +1496,24 @@ def test_double_damage_vs_fragile(db, make_game):
     assert a3.health == 94                   # 反击 3 + 2 破甲（无翻倍）
 
 
+def test_critical_keyword_not_stacking(db, make_game):
+    """裁决(3)：[暴击] 不叠加生效（可临时共存多个来源）——式神已持 critical 时
+    再使用同样带 critical 的战斗牌（渴血之时-血袭型），伤害只翻倍一次。"""
+    cid = 10010178
+    db.cards[cid] = F.card(cid, card_type="combat", keywords=["critical"],
+                           steps=[], token=True)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    move(g, 1, 0)
+    s = pa.shikigami[0]                        # 3/4
+    s.keywords.append("critical")
+    es = pb.shikigami[0]
+    es.health = 30
+    play(g, 0, cid)
+    assert es.health == 24                     # 3 ×2（多来源共存仍只翻倍一次，非 ×4）
+
+
 def _yako_combat_card(db, cid, keywords=()):
     """光影型战斗牌（+3 战力）：铃鹿御前造成战斗伤害时，若该次伤害 >=6——
     抽 1 并给己方牌手回该次伤害一半的血（on_damage/on_player_damaged 双块，

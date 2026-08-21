@@ -11,9 +11,10 @@ versions:
       target: {kind: choose, pool: enemy_shikigami}
       effects:
         # 使一个敌方式神本回合获得'对其造成伤害的式神或卡牌获得[暴击]和[贯通]'
-        # （crit_pierce_mark 旗标：实际为"对其攻击的式神在该次战斗中获得暴击
-        # 贯通"，不可叠加，任一回合开始清除——裁决(11)；
-        # tests/test_pack04_mech.py test_crit_pierce_mark_battle_scoped 同型）
+        # （crit_pierce_mark 旗标，式神宿主半回合清除、再贴幂等：伤害事件
+        # "造成/受到伤害开始时"按受伤者标记置位事件[暴击][贯通]属性——反击伤害
+        # 受伤者是攻击方而天然不生效；效果伤害命中带标记者同样获得——裁决(4)；
+        # tests/test_pack04_mech.py test_crit_pierce_mark_damage_start 同型）
         steps:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}
       text: "使一个敌方式神本回合获得‘对其造成伤害的式神或卡牌获得[暴击]和[贯通]’。"

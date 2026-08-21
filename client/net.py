@@ -238,7 +238,7 @@ class NetClient:
                     self._seats_shown = True
                 print(f"\n—— 调度阶段（剩 {p.mulligans_left} 次）："
                       "输入手牌序号调度，done 结束 ——")
-                for line in cli.format_hand_lines(game, p, p.hand):
+                for line in cli.format_hand_lines(game, p, p.hand, with_usage=False):
                     print(line)
             return
         if self.printer is not None:

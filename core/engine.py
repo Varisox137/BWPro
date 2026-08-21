@@ -117,6 +117,10 @@ class _DamageEvent:
     dealt: int = 0  # 实际造成伤害值（走到扣减生命批次即视为造成；巨浪"每造成 1 点伤害"统计）
     card: Any = None  # 来源卡牌实例（卡牌效果伤害；猩红之月"你的法术牌获得[吸血]"
     # ——吸血判定除来源式神关键字外也读来源卡牌实例关键字，见 _queue_lifesteal）
+    crit_pierce: bool = False  # 本事件获得[暴击][贯通]属性（破魔符/破魔箭通道，
+    # 裁决(4)）：受伤者式神带 crit_pierce_mark 时于"造成/受到伤害开始时"置位——
+    # [暴击]按关键字语义（攻击事件 kind=combat 翻倍、反击不翻倍）；[贯通]置
+    # ev.piercing 并放行反击事件的贯通修正批次
 
 
 @dataclass
@@ -1629,6 +1633,115 @@ class Game:
             return f"鬼火不足（需要 {cost}，现有 {p.orb}）"
         return None
 
+    def _usage_method_error(self, p: PlayerState, card: CardInstance, cdef: CardDef,
+                            method: PlayMethod | None) -> str | None:
+        """单个使用方式合法性预检（usage_options 手牌展示用，裁决(2)）：与
+        _cmd_play_card 的出牌校验同口径（目标合法性除外——出牌时另行校验），
+        返回不合法原因文本，None = 可用。不变异任何状态（方式授予关键字瞬时
+        装配求值后即还原）。"""
+        if not self._play_condition_met(p, cdef, card):
+            return "使用条件未满足"
+        eff_level = method.level if (method and method.level is not None) else cdef.level
+        eff_type = method.card_type if (method and method.card_type) else cdef.card_type
+        si: int | None = None
+        if cdef.shikigami is not None:
+            si = self._find_card_owner(p, cdef.shikigami)
+            sdef = self.db.shikigami.get(cdef.shikigami)  # 外来式神的牌（记仇复制
+            sname = sdef.name if sdef is not None else str(cdef.shikigami)  # 等）可能不在本局 db
+            if si is None:
+                if any(st.transform_owner == cdef.shikigami for st in p.shikigami):
+                    return f"{sname} 被变形中"
+                return f"{sname} 未出战"
+            s = p.shikigami[si]
+            if s.stuns:
+                return f"{sname} 眩晕中"
+            if s.defeated and not self._playable_when_defeated(cdef, card):
+                fdp_cost = self._form_death_play_cost(p, si, cdef)
+                if fdp_cost is None or not self._can_pay_energy(p, si, fdp_cost):
+                    return f"{sname} 气绝中"
+            if not s.defeated and cdef.only_when_defeated:
+                return f"仅在{sname}气绝时可用"
+            if s.level < eff_level:
+                return f"需要 {sname} 达到 {eff_level} 级"
+        if method is not None and (method.model_extra or {}).get("requires_awaken"):
+            gate = p.shikigami[si] if si is not None else None
+            if gate is None or not gate.awakened or gate.defeated or gate.despawned:
+                return "需要所属式神已觉醒且在场上"
+        if (eff_type == "combat" and si is not None
+                and p.combat_index != si
+                and not self._has_keyword(p.shikigami[si], "remote")
+                and self._combat_zone_locked(self.state.active)):
+            return "尘缚之阵：准备区式神不能发起不具有远程的战斗"
+        if method is not None and method.keywords:
+            # 方式授予关键字（爆能获瞬发型）影响费用求值：瞬时装配后还原
+            old = card.mods.get("keywords_add")
+            card.mods["keywords_add"] = list(old or []) + list(method.keywords)
+            try:
+                cost = self._effective_cost(p, cdef, card=card, method=method)
+            finally:
+                if old is None:
+                    card.mods.pop("keywords_add", None)
+                else:
+                    card.mods["keywords_add"] = old
+        else:
+            cost = self._effective_cost(p, cdef, card=card, method=method)
+        if p.orb < cost:
+            return f"鬼火不足（需要 {cost}，现有 {p.orb}）"
+        if method is not None and method.energy_cost is not None:
+            if si is None:
+                return "爆能方式需要所属式神在场"
+            if method.energy_cost == "all":
+                if p.shikigami[si].energy < 1:
+                    return "爆能 X 需要至少 1 点能量"
+            else:
+                discount = sum(1 for f in p.fields if "burst_discount" in f.keywords)
+                need = max(0, int(method.energy_cost) - discount)
+                if not self._can_pay_energy(p, si, need):
+                    return f"能量不足（爆能需要 {need}，现有 {p.shikigami[si].energy}）"
+        return None
+
+    def usage_options(self, pi: int, card: CardInstance) -> list[dict]:
+        """一张手牌当前所有可能的使用方式枚举（裁决(2)，手牌展示统一读取点——
+        CLI 热坐/联机渲染层只管展示）。返回条目列表：
+          id     方式 id（常规 = None；协战子选项 = "choice:<i>"）
+          label  显示名（"常规" / 方式 text / 子选项卡名）
+          cost   当前鬼火消耗（含方式覆盖与实例修饰求值）
+          energy 能量消耗（int 或 "X"；无 = 0；已扣爆能折扣）
+          ok     当前是否合法；reason = 不合法原因（ok 时为 None）
+          effect 转化后效果概要（方式自带 text；无则 ""）
+        扩展点：未来的蓄力/赐能/起源等使用方式在此追加条目即可（PlayMethod
+        通道天然承接——见 schema PlayMethod docstring）。"""
+        p = self.state.players[pi]
+        cdef = self.db.cards[card.id]
+        out: list[dict] = []
+        if cdef.card_type == "reinforce":
+            for i, cid in enumerate(cdef.options or []):
+                sub = self.db.cards[cid]
+                err = self.reinforce_sub_option_error(pi, cdef, i)
+                out.append({"id": f"choice:{i}", "label": sub.name,
+                            "cost": self._effective_cost(p, sub), "energy": 0,
+                            "ok": err is None, "reason": err,
+                            "effect": sub.text or ""})
+            return out
+        err = self._usage_method_error(p, card, cdef, None)
+        out.append({"id": None, "label": "常规",
+                    "cost": self._effective_cost(p, cdef, card=card),
+                    "energy": 0, "ok": err is None, "reason": err, "effect": ""})
+        for m in self._card_methods(p, cdef):
+            err = self._usage_method_error(p, card, cdef, m)
+            if m.energy_cost == "all":
+                energy: int | str = "X"
+            elif m.energy_cost is not None:
+                discount = sum(1 for f in p.fields if "burst_discount" in f.keywords)
+                energy = max(0, int(m.energy_cost) - discount)
+            else:
+                energy = 0
+            out.append({"id": m.id, "label": m.text or m.id,
+                        "cost": self._effective_cost(p, cdef, card=card, method=m),
+                        "energy": energy, "ok": err is None, "reason": err,
+                        "effect": m.text or ""})
+        return out
+
     def _cmd_play_reinforce(self, p: PlayerState, card: CardInstance,
                             cdef: CardDef, cmd: dict) -> None:
         """协战牌打出（维护者答复 10）：选择子选项 → 生成对应 token 子卡入手并
@@ -1743,7 +1856,8 @@ class Game:
         fdp_cost: int | None = None  # 气绝形态使用（form_death_play 旗标）的能量消耗
         if cdef.shikigami is not None:
             si = self._find_card_owner(p, cdef.shikigami)
-            sname = self.db.shikigami[cdef.shikigami].name
+            sdef = self.db.shikigami.get(cdef.shikigami)  # 外来式神的牌（记仇复制
+            sname = sdef.name if sdef is not None else str(cdef.shikigami)  # 等）可能不在本局 db
             if si is None:
                 if any(st.transform_owner == cdef.shikigami for st in p.shikigami):
                     # 变形物保留"所属式神"= 原式神 id：原式神被变形中，其牌不能使用
@@ -2829,15 +2943,6 @@ class Game:
         else:
             vic0 = d0.combat_index
         def_event = {"defender": Ref(player=1 - atk_ref.player, shikigami=vic0)}
-        # 破魔符标记（ext["crit_pierce_mark"]，半回合作用域"对其攻击的式神在该次
-        # 战斗中获得[暴击][贯通]"——裁决11：不可叠加，再贴幂等；按当前战斗的
-        # 被攻击者判定，战斗作用域授予、终止点随 grants 移除）
-        if vic0 is not None:
-            vic_s = self.state.players[1 - atk_ref.player].shikigami[vic0]
-            if vic_s.ext.get("crit_pierce_mark"):
-                for kw in ("critical", "piercing"):
-                    cls = self._grant_keyword(attacker, kw)
-                    grants.append((atk_ref, kw, cls))
         for kw, cond in grant_keywords:
             if cond is not None and not self._match(cond, def_event, atk_ref.player,
                                                     holder=atk_ref):
@@ -4290,6 +4395,37 @@ class Game:
                   amount=ev.amount, kind=ev.kind,
                   battle=self._battle_stack[-1] if self._battle_stack else None)
 
+    def _damage_double_modifiers(self, ev: _DamageEvent,
+                                 s: ShikigamiState | None) -> None:
+        """"扣减生命前2"伤害翻倍修饰（[暴击] 时机锚点，裁决(3)；terminology.md 登记）。
+
+        两个修饰同挂点叠乘：
+        - 义道——本战斗牌发起的战斗中，攻击者本人（ev.source == 登记攻击者）对具有
+          破甲的式神造成的战斗伤害翻倍（kind=combat 限攻击事件，反击不翻倍；嵌套/
+          插入战斗按战斗 id 精确匹配不继承；贯通路径破甲未被消耗按当前 shield<0
+          判定，非贯通按本事件已消耗的 ev.fragile 判定）；
+        - [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
+          裁决(4)）：攻击事件（kind=combat；反击不翻倍）战斗伤害 ×2——
+          多来源共存不叠加（布尔判定，裁决(3)）。
+
+        贯通路径在贯通修正批次提前执行本系列（贯通分配按翻倍后口径）；限原始事件
+        （start="full"——贯通溢出/转移衍生的新事件不再二次翻倍）。
+        """
+        if (s is not None and ev.kind == "combat" and self._battle_stack
+                and (s.shield < 0 or ev.fragile > 0)):
+            atk = self._battle_double_fragile.get(self._battle_stack[-1])
+            if atk is not None and ev.source == atk:
+                ev.amount *= 2
+                self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
+        if ev.kind == "combat" and ev.start == "full":
+            has_crit = ev.crit_pierce
+            if not has_crit and ev.source is not None and ev.source.shikigami is not None:
+                src_s = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
+                has_crit = self._has_keyword(src_s, "critical")
+            if has_crit:
+                ev.amount *= 2
+                self._log(f"暴击：本次伤害翻倍至 {ev.amount} 点")
+
     def _spawn_redirect(self, ev: _DamageEvent, new_victim: Ref, uid: str) -> None:
         """伤害目标转移（定案"转移链"；redirect_damage_to_self 动作调用）：生成等量、
         同来源、同原因、同属性（无[贯通]）的新伤害事件，从"护甲计算前0"开始结算，
@@ -4382,38 +4518,51 @@ class Game:
                     if holder.shield > 0:
                         self._change_shield(ev.victim, -holder.shield, "穿刺（仅护甲）")
             self._emit_damage_batch("on_damage_start", ev)
+            # 破魔符/破魔箭（裁决(4)）：伤害事件"造成/受到伤害开始时"——受伤者式神
+            # 上有 crit_pierce_mark（半回合旗标）时，本次伤害获得[暴击][贯通]属性。
+            # 天然对防守侧不生效：被贴标记者的反击伤害受伤者是攻击方（无标记）。
+            # 贯通修正批次在其后，置位 ev.piercing 天然生效
+            if s is not None and s.ext.get("crit_pierce_mark"):
+                ev.crit_pierce = True
+                ev.piercing = True
             if ev.amount <= 0 or (s is not None and s.defeated):
                 return
         skip_shield_calc = False
         skip_before_health = False
         # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
         # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md:201）；
-        # 转移新事件（start="pre_shield_0"）跳过本批次——"无[贯通]"语义（贯通不随转移继承）
+        # 转移新事件（start="pre_shield_0"）跳过本批次——"无[贯通]"语义（贯通不随转移继承）。
+        # 裁决(3) 次序：先额外一次护甲计算 → 提前执行"扣减生命前"系列时机（含扣减
+        # 生命前2 的[暴击]/义道翻倍，后续不再重复）→ 贯通伤害分配（翻倍后口径）
         if ev.piercing and ev.start != "pre_shield_0" and s is not None and (
-                ev.kind != "counter"
+                ev.kind != "counter" or ev.crit_pierce
                 or any(b in self._battle_counter_piercing for b in self._battle_stack)):
             skip_shield_calc = True
             if s.shield > 0:
                 absorbed = min(s.shield, ev.amount)
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "贯通修正")
+            # 提前结算"扣减生命前"批次，后续不再结算该批次
+            self._emit_damage_batch("on_before_health", ev)
+            self._damage_double_modifiers(ev, s)
+            skip_before_health = True
+            if ev.amount <= 0:
+                return
             if ev.amount > s.health:
-                # 伤害值改为当前生命，溢出量以同来源同原因新事件加入本队列
-                # （start="pre_shield_2"：从"护甲计算前2"贯通修正批次开始）
+                # 贯通分配（翻倍后口径）：伤害值改为当前生命，溢出量以同来源同原因
+                # 新事件加入本队列（start="pre_shield_2"：从"护甲计算前2"开始——
+                # 跳过伤害开始时/贯通修正/翻倍修饰，扣减生命前系列亦不重复执行，
+                # 因此溢出伤害不会再次因[暴击]翻倍，裁决(3)）
                 overflow = ev.amount - s.health
                 ev.amount = s.health
                 dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
                                        amount=overflow, kind=ev.kind, spell=ev.spell,
                                        start="pre_shield_2", card=ev.card))
-            # 提前结算"扣减生命前"批次，后续不再结算该批次
-            self._emit_damage_batch("on_before_health", ev)
-            skip_before_health = True
-            if ev.amount <= 0:
-                return
         # 护甲计算前1（汤盆冲撞[增强]"此牌伤害翻倍"时机锚点，terminology.md 登记）：
         # 来源卡牌实例带 double_damage 修饰（conditional_mods 装配写入）时伤害值翻倍；
-        # 转移新事件（start="pre_shield_0"）跳过——从"护甲计算前0"（on_before_shield）开始
-        if ev.start != "pre_shield_0" and ev.card is not None \
+        # 限原始事件（start="full"）——转移新事件从"护甲计算前0"开始、贯通溢出从
+        # "护甲计算前2"开始，均晚于本锚点（裁决(3)），不再判定
+        if ev.start == "full" and ev.card is not None \
                 and ev.card.mods.get("double_damage") and ev.amount > 0:
             ev.amount *= 2
             self._log(f"【{self.db.cards[ev.card.id].name}】的伤害翻倍至 {ev.amount} 点")
@@ -4492,29 +4641,9 @@ class Game:
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
         if not skip_before_health:
             self._emit_damage_batch("on_before_health", ev)
+            self._damage_double_modifiers(ev, s)
         if ev.amount <= 0:
             return
-        # [暴击] 时机锚点（扣减生命前2；terminology.md 登记）：义道——本战斗牌发起的
-        # 战斗中，攻击者本人（ev.source == 登记攻击者）对具有破甲的式神造成的战斗伤害
-        # 翻倍（kind=combat 限攻击事件，反击不翻倍；嵌套/插入战斗按战斗 id 精确匹配
-        # 不继承；贯通路径破甲未被消耗按当前 shield<0 判定，非贯通按本事件已消耗的
-        # ev.fragile 判定；贯通修正提前结算批次 6 的路径同样走到此点）
-        if (s is not None and ev.kind == "combat" and self._battle_stack
-                and (s.shield < 0 or ev.fragile > 0)):
-            atk = self._battle_double_fragile.get(self._battle_stack[-1])
-            if atk is not None and ev.source == atk:
-                ev.amount *= 2
-                self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
-        # [暴击] 关键字本体（critical，破魔符"对其攻击的式神获得[暴击]"通道授予）：
-        # 攻击事件（kind=combat；反击不翻倍）来源式神持有时战斗伤害 ×2，与义道
-        # 破甲双倍同挂点叠乘；限原始事件（start="full"——贯通溢出/转移衍生的新事件
-        # 不再二次翻倍，溢出量按翻倍前口径随义道锚点一致）
-        if (ev.kind == "combat" and ev.start == "full" and ev.source is not None
-                and ev.source.shikigami is not None):
-            src_s = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
-            if self._has_keyword(src_s, "critical"):
-                ev.amount *= 2
-                self._log(f"暴击：本次伤害翻倍至 {ev.amount} 点")
         # 批次 7：合并——队列中 (来源, 受伤者, 原因) 均相同的伤害事件合并进最前者
         for other in list(dq):
             if other.source == ev.source and other.victim == ev.victim \
@@ -4761,8 +4890,10 @@ class Game:
         on_before_defeat——大部分能力/响应挂此时机：射怪鸟事/破碎之音/不灭之火/
         不祥之刃/判官能力等）→ 气绝前/消灭前2（仅解除变形 + 替身[未引入]）→
         消灭形态牌 → 移除所有非永久 buff（临时修正/护甲）→ 非召唤物获得倒计时 3：
-        复活并移动至准备区（召唤物直接离场）→ 气绝后/消灭后（延时时机，不再细分
-        优先级；跳跳哥哥"将气绝时变为棺材"的变形事件与棺击增益挂此时机）。
+        复活并移动至准备区（召唤物直接离场）→ **计入击杀**（`_account_kill` 账本+
+        灵咒击杀加成+委托计数——裁决(1)：位于气绝前1 与气绝后延时时机之间）→
+        气绝后/消灭后（延时时机，不再细分优先级；跳跳哥哥"将气绝时变为棺材"的
+        变形事件与棺击增益挂此时机）。
         击杀标记等时点批次待相应机制引入（见 docs/rules.md）。
         """
         s = self.state.players[ref.player].shikigami[ref.shikigami]

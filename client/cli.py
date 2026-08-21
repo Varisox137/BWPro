@@ -10,7 +10,9 @@ db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwp.decks.j
 db/deckstore.py）选择卡组，本地无可用卡组或取消选择时不开局、回主菜单。
 
 显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
-倒计时/战力/保甲/免疫/延迟能力/鼓舞/手牌修饰（增强/费用修正）均在场况中显示。
+倒计时/战力/保甲/免疫/延迟能力/鼓舞/手牌修饰（增强/费用修正）均在场况中显示；
+手牌带"使用方式"列（裁决(2)——引擎统一枚举 `Game.usage_options`：常规/爆能等
+多择方式/协战子选项各自的合法性、原因与鬼火/能量消耗）。
 颜色仅在 TTY 下启用（管道输出或 NO_COLOR 环境变量时自动关闭）。
 """
 from __future__ import annotations
@@ -412,7 +414,7 @@ def render(game: Game, viewer: int | None = None,
         # 敌方已展示手牌（"已展示"机制）：按入手顺序（hand_seq）公开牌面，
         # 沿用己方手牌同一格式化（关键字/增强/数值段；热坐与联机共用本函数）
         lines.append(f"{enemy.name} 已展示手牌{len(revealed)}（按入手顺序）：")
-        lines.extend(format_hand_lines(game, enemy, revealed))
+        lines.extend(format_hand_lines(game, enemy, revealed, with_usage=False))
         lines.append("")
     p = st.players[view]
     lines.append(f"{p.name}（你）手牌{len(p.hand)}（剩余鬼火{p.orb} 出击次数{p.assaults_left}）："
@@ -447,9 +449,33 @@ _QUEST_KIND_LABELS = {
 }
 
 
-def format_hand_lines(game: Game, p, hand: list) -> list[str]:
+def format_hand_lines(game: Game, p, hand: list, with_usage: bool = True) -> list[str]:
     """手牌逐行格式（render 与调度阶段共用；与卡组构筑共用 cardfmt 对齐流程）：
-    [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] 数值段 {描述}"""
+    [1-based] 【卡牌名】 #uid 类型[子类型] 等级N 费用N [关键字/增强] 数值段 [使用方式] {描述}
+
+    with_usage=False（调度阶段/敌方已展示手牌）不渲染使用方式列。使用方式列 =
+    引擎统一枚举 game.usage_options 的渲染（裁决(2)：常规/爆能等多择方式/协战
+    子选项各自的合法性与消耗；未来的蓄力/赐能/起源等扩展方式由引擎枚举侧追加）。"""
+
+    def _usage_label(c) -> str:
+        """使用方式段：常规仅在不可用时显示原因；多择方式/协战子选项逐条列出
+        （✓/✗原因、能量消耗；爆能转化后概要即方式 text 本身）。"""
+        pi = game.state.players.index(p)
+        opts = game.usage_options(pi, c)
+        parts = []
+        for u in opts:
+            mark = "✓" if u["ok"] else f"✗{u['reason']}"
+            energy = f"耗能{u['energy']}" if u["energy"] else ""
+            if u["id"] is None:
+                # 常规：唯一方式且可用时不占版面（默认情形）；其余如实标注
+                if len(opts) == 1 and u["ok"]:
+                    continue
+                parts.append(f"常规{energy}{mark}")
+            elif str(u["id"]).startswith("choice:"):
+                parts.append(f"子选项【{u['label']}】{mark}")
+            else:
+                parts.append(f"「{u['label']}」{energy}{mark}")
+        return " ".join(parts)
 
     def _cost_label(c) -> str:
         """费用显示（含实例修饰 cost_delta）。"""
@@ -485,6 +511,7 @@ def format_hand_lines(game: Game, p, hand: list) -> list[str]:
             _cost_label(c),
             _data_label(c),
             _stats_label(game, p, c),
+            _usage_label(c) if with_usage else "",
             f"{{{cd.text}}}" if cd.text else "",
         ))
     out = []
@@ -521,7 +548,7 @@ def run_mulligan(game: Game) -> None:
             print("")
             print(f"{p.name} 手牌{len(p.hand)}：")
             # 与回合内手牌同一格式；顺序保持手牌实际顺序（调度替换逻辑），不按式神/cid 排序
-            for line in format_hand_lines(game, p, p.hand):
+            for line in format_hand_lines(game, p, p.hand, with_usage=False):
                 print(line)
             print("")
             try:

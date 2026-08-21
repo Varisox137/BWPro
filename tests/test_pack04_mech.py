@@ -857,6 +857,31 @@ def test_coffin_replace_on_defeat_flag(db, make_game):
         F.play(g, 0, 10010201)
 
 
+def test_coffin_delayed_transform_after_kill_ledger(db, make_game):
+    """裁决(1) 气绝时序核验：跳跳哥哥"将气绝时变棺材" = 气绝前1 赋予
+    "'气绝后/消灭后'延时触发：变形为棺材"，两时机之间为"计入击杀"——
+    气绝后延时能力执行时击杀账本已记账（kill_count_ge 门控通过、增益生效），
+    且此时受害者尚未变形（延时能力写在受害者身上的 ext 被随后的 to_coffin
+    状态替换抹掉，最终棺材不携带该探针）。"""
+    _coffin_def(db)
+    db.shikigami[100101].ability = F.block(  # 击杀者侧"气绝后"延时能力
+        F.Step(op="bump_ext", key="probe", value=1,
+               target=T(kind="context", key="victim")),
+        F.Step(op="attack_buff", power=5, target=T(kind="self")),
+        when="on_shikigami_defeated", condition={"kill_count_ge": 1})
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
+    pa.shikigami[1].ext["coffin_on_defeat"] = 10010199
+    pa.shikigami[1].health = 0
+    g.check_defeated(Ref(player=0, shikigami=1), source=Ref(player=1, shikigami=0))
+    g._drain_queue()
+    assert pb.kill_total == 1
+    assert pb.shikigami[0].temp_power == 5  # 延时能力执行时账本已计入击杀
+    c = pa.shikigami[1]
+    assert c.id == 10010199 and not c.defeated  # 延时变形最终生成棺材
+    assert "probe" not in c.ext  # 延时能力先于变形执行：探针随状态替换被抹掉
+
+
 def test_coffin_form_tag(db, make_game):
     """罡身阵"跳跳哥哥气绝时，改为将其替换为'棺材'"：形态 tags
     `coffin_on_defeat:<实体id>` 通道（旗标在形态消灭前捕获）。"""
@@ -1806,13 +1831,19 @@ def test_talisman_ledger_and_cast_ledger(db, make_game):
     assert pb.health == hp - 3  # 被攻击者为牌手：不触发凭空使用
 
 
-def test_crit_pierce_mark_battle_scoped(db, make_game):
-    """破魔符（crit_pierce_mark 旗标 + critical 关键字）：本回合"对其攻击的式神
-    在该次战斗中获得[暴击][贯通]"——攻击事件伤害翻倍、反击不翻倍、溢出贯通牌手；
-    战斗终止点移除授予；再贴幂等。"""
+def test_crit_pierce_mark_damage_start(db, make_game):
+    """破魔符（crit_pierce_mark 旗标，裁决(4)）：本回合"对其造成伤害的式神或卡牌
+    获得[暴击][贯通]"——伤害事件"造成/受到伤害开始时"按受伤者标记置位事件属性：
+    攻击事件翻倍+贯通溢出（裁决(3) 翻倍后口径）；被贴标记者的反击伤害
+    （受伤者=攻击方，无标记）天然不生效；效果伤害命中带标记者同样获得[贯通]；
+    带标记者主动攻击时吃反击（其受伤者=带标记者）亦获得[贯通]（[暴击]按关键字
+    语义反击不翻倍）；不可叠加、再贴幂等、半回合清除。"""
     db.cards[10010151] = F.card(  # 破魔符位
         10010151, subtype="talisman", token=True, target=F.CHOOSE_ENEMY,
         steps=[F.Step(op="bump_ext", key="crit_pierce_mark", value=1)])
+    db.cards[10010152] = F.card(  # 效果伤害位（5 点选择敌方式神）
+        10010152, token=True, target=F.CHOOSE_ENEMY,
+        steps=[F.dmg(5, T(kind="choose"))])
     g = make_game()
     pa, pb = F.battle_setup(g)
     F.play(g, 0, 10010151, target=Ref(player=1, shikigami=0))
@@ -1824,18 +1855,30 @@ def test_crit_pierce_mark_battle_scoped(db, make_game):
     s = pa.shikigami[0]  # 3/4
     g.apply({"op": "assault", "index": 0})
     assert es.health == 4   # [暴击]：攻击事件 3→6
-    assert s.health == 1    # 反击不翻倍：3
+    assert s.health == 1    # 防守侧（反击伤害受伤者=攻击方）：不增强，3
     assert pb.health == 30  # 无溢出
-    assert "critical" not in s.keywords and "piercing" not in s.keywords  # 战斗后移除
-    F.pass_turns(g, 2)      # 旗标半回合清除，重新贴
-    F.play(g, 0, 10010151, target=Ref(player=1, shikigami=0))
-    es.health = 2
-    F.move(g, 1, 0)
+    # 效果伤害命中带标记者：获得[贯通]（[暴击]限攻击事件不翻倍）
+    F.play(g, 0, 10010152, target=Ref(player=1, shikigami=0))
+    assert es.defeated and pb.health == 29  # 5-4=1 溢出牌手
+    F.pass_turns(g, 2)      # 旗标半回合清除，重新贴（换一个未气绝的敌方式神）
+    F.play(g, 0, 10010151, target=Ref(player=1, shikigami=1))
+    es2 = pb.shikigami[1]   # 3/4
+    es2.health = 2
+    F.move(g, 1, 1)
     g.apply({"op": "assault", "index": 0})
-    assert es.defeated
-    # [贯通]：溢出按翻倍前伤害结算（3 - 2 = 1；翻倍挂点在贯通修正之后，
-    # 同义道/伤害翻倍锚点口径），主事件 2→4 击杀
-    assert pb.health == 29
+    assert es2.defeated
+    # 裁决(3)：先额外护甲计算→提前"扣减生命前"系列（[暴击] 3→6）→贯通分配
+    # 按翻倍后口径（6-2=4 溢出）；溢出事件从"护甲计算前2"起不再二次翻倍
+    assert pb.health == 25
+    # 带标记者主动攻击：吃反击时反击方"对其造成伤害"亦获得[贯通]（受伤者带标记）
+    g2 = make_game()
+    pa2, pb2 = F.battle_setup(g2)
+    a2 = pa2.shikigami[0]
+    a2.ext["crit_pierce_mark"] = 1
+    a2.health = 2
+    F.move(g2, 1, 0)        # 敌方 3/4 守战斗区
+    g2.apply({"op": "assault", "index": 0})
+    assert a2.defeated and pa2.health == 29  # 反击 3：2 击杀 + 1 贯通溢出
 
 
 def test_defeat_on_damage_mark(db, make_game):

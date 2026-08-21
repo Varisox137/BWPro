@@ -48,7 +48,9 @@ def test_seat_colors_active_player_only(db, make_game, color_on):
     g = make_game()
     out = cli.render(g)
     for i, code in enumerate(cli.SEAT_COLORS):
-        lines = [l for l in out.splitlines() if f"式神{100101 + i}" in l]
+        lines = [l for l in out.splitlines()
+                 if f"式神{100101 + i}" in l and "Lv" in l]  # 只取座次行（手牌使用
+        # 方式列的原因文本可能含式神名，不算座次行）
         assert len(lines) == 2                       # 双方各一行（同 db）
         colored = [l for l in lines if "\033[" in l]
         assert len(colored) == 1                     # 仅己方（active=0）行着色
@@ -441,6 +443,46 @@ def test_battle_loop_reinforce_sub_option_repick(db, make_game, monkeypatch, cap
     assert pb.health == 0  # 重选 0 号子卡后正常结算（制胜）
     assert any(c.id == 10010161 for c in pa.ext.get("exiled", [])) or \
         all(c.id != 10010161 for c in pa.hand)  # 主牌已离手（未回退）
+
+
+def test_hand_usage_options_display(db, make_game):
+    """裁决(2) 手牌使用方式列（引擎统一枚举 usage_options，热坐/联机共用渲染）：
+    爆能方式显示消耗与转化后概要（合法性随能量实时）；协战子选项列出全部
+    （含不合法与原因）；常规方式不可用时标注原因；枚举与实际出牌同口径。"""
+    db.cards[10010151] = F.card(  # 爆能法术（1 级 1 火；[爆能2] 追加伤害）
+        10010151, token=True,
+        steps=[F.dmg(2, T(kind="all", pool="projectile"))],
+        methods=[F.method("burst", energy_cost=2, text="[爆能2]：追加伤害",
+                          effects=F.block(F.dmg(3, T(kind="all", pool="projectile"))))])
+    db.cards[10010171] = F.card(10010171, token=True,
+                                steps=[F.Step(op="draw", count=1)])
+    db.cards[10010251] = F.card(  # 不合法子卡：所属 100102 需 3 级
+        10010251, shikigami=100102, level=3, token=True,
+        steps=[F.Step(op="draw", count=1)])
+    db.cards[10010161] = F.card(  # 协战主牌
+        10010161, card_type="reinforce", shikigami=100101, shikigami2=100102,
+        options=[10010171, 10010251], token=True)
+    db.cards[10010162] = F.card(  # 常规不可用（需 2 级）
+        10010162, level=2, token=True, steps=[F.Step(op="draw", count=1)])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]
+    burst = F.give(g, 0, 10010151)
+    F.give(g, 0, 10010161)
+    F.give(g, 0, 10010162)
+    s.energy = 1  # 爆能 2 不可付
+    out = cli.render(g)
+    assert "「[爆能2]：追加伤害」耗能2✗能量不足" in out
+    assert "子选项【卡10010171】✓" in out and "✗需要" in out  # 全部子选项含原因
+    assert "常规✗需要 式神100101 达到 2 级" in out
+    s.energy = 5
+    out = cli.render(g)
+    assert "「[爆能2]：追加伤害」耗能2✓" in out
+    # 枚举与实际出牌同口径：爆能方式可正常结算
+    opts = g.usage_options(0, burst)
+    assert [(u["id"], u["ok"]) for u in opts] == [(None, True), ("burst", True)]
+    g.apply({"op": "play_card", "uid": burst.uid, "play_method": "burst"})
+    assert s.energy == 3
 
 
 # ==========================================================================
