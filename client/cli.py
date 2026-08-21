@@ -425,7 +425,7 @@ def render(game: Game, viewer: int | None = None,
 
 def _quest_progress(game: Game, p, cd) -> str | None:
     """委托条件进度标签（三目委托机制；format_hand_lines 数据段读取）：
-    quest_count_ge → "委托:<行为><已计>/<需求>[✓]"；round_ge → 回合进度；其它条件无标签。"""
+    quest_count_ge → "委托:<行为><已计>/<需求>[✓]"；其它条件无标签。"""
     pc = cd.play_condition
     if not pc:
         return None
@@ -436,11 +436,6 @@ def _quest_progress(game: Game, p, cd) -> str | None:
         label = _QUEST_KIND_LABELS.get(kind, str(kind))
         mark = " ✓" if have >= need else ""
         return f"委托:{label}{have}/{need}{mark}"
-    if "round_ge" in pc:
-        need = int(pc["round_ge"])
-        rnd = (game.state.turn + 1) // 2  # 对局轮数（双方各一回合为一轮）
-        mark = " ✓" if rnd >= need else ""
-        return f"委托:第{need}回合可用（当前第{rnd}回合）{mark}"
     return None
 
 
@@ -448,7 +443,7 @@ _QUEST_KIND_LABELS = {
     "assault": "出击", "draw": "抽牌", "play": "用牌", "damage": "伤害",
     "effect_damage": "非战斗伤害", "attack": "攻击", "form_play": "形态牌",
     "offdeck_play": "套牌外", "enemy_defeat": "敌式神气绝",
-    "revive": "己方复活", "quest_used": "委托使用",
+    "revive": "己方复活", "quest_used": "委托使用", "round": "回合",
 }
 
 

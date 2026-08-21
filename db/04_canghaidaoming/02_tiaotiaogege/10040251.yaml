@@ -1,14 +1,36 @@
-# 骨架（db.scaffold），效果未实现——协战子选项，卡面文本待 raw 补充
 id: 10040251
 name: 棺葬
 versions:
   best: 20200928
   history:
-    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
-      card_type: spell
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入；raw 标未加入=不进历史环境）
+      card_type: field
       token: true  # 协战子选项（跳跳兄弟 跳跳哥哥侧；本体未入库）
       level: 2
+      intensity: 5
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # 待 raw 补充（raw 仅列卡名，标未加入）
+        # [羁绊]：进场时跳跳弟弟将自身破甲转移到敌方战斗区式神（shikigami_active
+        # 门控，桃红簇簇 10011951 先例）。偏离：transfer_fragile op 固定以出牌来源
+        # （=跳跳哥哥）为破甲来源，无法指定跳跳弟弟；敌方战斗区为空时来源破甲仍清零
+        steps:
+          - {op: transfer_fragile, target: {kind: all, pool: enemy_combat},
+             condition: {shikigami_active: 100120}}
+      abilities:
+        # 每回合一次己方基础式神气绝时变为'棺材'，然后降低2耐久；跳跳家族（跳跳哥哥
+        # 100402/跳跳弟弟 100120/跳跳妹妹 100131）还使其永久获得1生命且不降低耐久
+        # （turn_mark 门控=每回合一次；summon: false=基础式神口径；家族永久增益与
+        # 耐久对冲须在变棺前判定——变棺后座次 id 已为棺材；耐久"不降低"用 +2/-2
+        # 对冲以避免低耐久误毁；from_coffin_not=棺材被击破的气绝事件不再触发变棺）
+        - when: on_shikigami_defeated
+          condition: {victim_side: friendly, summon: false, from_coffin_not: true,
+                      turn_mark_not: guanzang}
+          steps:
+            - {op: turn_mark, key: guanzang}
+            - {op: buff_health, amount: 1, perm: true,
+               target: {kind: context, key: victim},
+               condition: {victim_shikigami: [100402, 100120, 100131]}}
+            - {op: field_op, pick: self_field, amount: 2,
+               condition: {victim_shikigami: [100402, 100120, 100131]}}
+            - {op: field_op, pick: self_field, amount: -2}
+            - {op: to_coffin, into: 10040299, target: {kind: context, key: victim}}
+      text: "每回合一次己方基础式神气绝时变为‘棺材’，然后降低2耐久。若是跳跳哥哥、跳跳弟弟、跳跳妹妹还使其永久获得1生命且不降低耐久。[羁绊]：{进场时跳跳弟弟将自身破甲转移到敌方战斗区式神。}"

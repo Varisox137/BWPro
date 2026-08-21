@@ -11,6 +11,7 @@ versions:
       level: 1
       keywords: [fast]
       play_condition: {quest_count_ge: {kind: play, count: 4}}  # [条件]：{使用了四张牌}
+      # （定案(3)：不限主动使用——响应/自动使用同计 play 账本）
       effects:
         # 使三目永久获得1力量和1生命（含气绝中的三目：永久修正气绝保留，复活后仍在）
         steps:

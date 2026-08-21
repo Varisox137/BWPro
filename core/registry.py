@@ -61,8 +61,9 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     # 替换为棺材"（值 = 棺材实体数据 id，bump_ext 写入；气绝流程末尾消费）
     "defeated_in_combat": ("shikigami", CLEAR_ON_DEFEAT),     # 本次气绝时是否在战斗区
     # （check_defeated 重写；to_coffin keep_combat 消费——棺封对战斗区式神=棺材进战斗区）
-    "no_damage_vs_inv": ("shikigami", CLEAR_ANY_TURN_START),  # 干扰投掷禁伤：本回合
-    # 持有者对结附指定灵咒（值 = 灵咒名）的式神造成的伤害无效（伤害管线早期终止）
+    "no_damage_vs_inv": ("player", CLEAR_ANY_TURN_START),     # 干扰投掷禁伤（定案(7)
+    # 结附己方牌手的一回合效果）：append 列表条目 {"value": 灵咒名, "ref": [pi, 座次]}，
+    # 该式神（气绝/复活不丢失）对结附指定灵咒的式神造成的伤害无效（伤害管线早期终止）
     # ---- 牌手宿主 ----
     "feather_used_turn": ("player", CLEAR_OWN_TURN_START),    # 黄金羽本回合计数
     "turn_marks": ("player", CLEAR_ANY_TURN_START),           # 每回合合计一次标记表
@@ -91,9 +92,9 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     "energy_assault": ("player", CLEAR_NEVER),
     "form_death_play": ("player", CLEAR_NEVER),
     "quest_clues_seen": ("player", CLEAR_NEVER),              # 本局已获得过的线索 id（觉醒·三目"不可重复"）
-    "last_acted": ("player", CLEAR_OWN_TURN_START),           # 薰行动账本：本回合最后一个
-    # 行动（主动出击/使用专属牌）的己方式神座次；己方回合结束由能力读取（context 目标
-    # 键 last_acted），账本空则无事
+    "last_attacker": ("player", CLEAR_OWN_TURN_START),        # 薰攻击账本：本回合最后一个
+    # 攻击（主动出击/战斗牌）的己方式神座次；己方回合结束由能力读取（context 目标
+    # 键 last_attacker），账本空则无事
     "inv_mod": ("player", CLEAR_NEVER),                       # 灵咒数值修饰表（八尺琼曲玉；
     # 条目 {"name","shikigami"?,"add","mult"}，engine._refresh_invocation_mods 重算条目 mod 层；
     # scope="ability" 条目随来源式神能力离场经 _clear_ability_card_auras 清除——大岳丸
@@ -103,6 +104,20 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     # check_defeated 击杀账本段——击杀者身上该灵咒条目 bonus += add）
     "inv_override": ("player", CLEAR_NEVER),                  # 灵咒结附覆写表（祈愿之翼；
     # {灵咒名: {"unique": 覆写级别, "attach_all_friendly": bool}}，attach/唯一性判定读取）
+    "talisman_ledger": ("player", CLEAR_NEVER),               # 奉祝之愿账本（裁决10）：
+    # 本局使用过的符咒类型 id 列表（按使用顺序、去重、至多 3 种；_account_card_played
+    # 记账，cast_ledger op 读取）
+    "inv_attach_bonus": ("player", CLEAR_NEVER),              # 结附灵咒数量增幅规则表
+    # （觉醒·巫蛊师使用时赋予牌手：条目 {"name","add"}，可叠加；engine.attach_invocation
+    # 按来源牌手读取叠加——裁决13 仅'结附'动作触发）
+    "inv_transfer_on_defeat": ("player", CLEAR_ANY_TURN_START),  # 魔蛊毒爆转移
+    # （牌手级半回合能力：{"victim": [pi, si], "inv": 灵咒名}；消耗点 =
+    # check_defeated 气绝事件后一次性等量转移，裁决14）
+    "crit_pierce_mark": ("shikigami", CLEAR_ANY_TURN_START),  # 破魔符标记（本回合
+    # "对其攻击的式神在该次战斗中获得[暴击][贯通]"——不可叠加幂等；_resolve_combat
+    # 战斗开始按被攻击者判定、战斗作用域授予）
+    "defeat_on_damage": ("shikigami", CLEAR_ANY_TURN_START),  # 驱魔符标记（本回合
+    # "受到伤害时使其气绝"；伤害管线扣减生命后入气绝队列，同必杀通道）
 }
 
 # ---------- 条件迷你语言键白名单 ----------
@@ -112,7 +127,7 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
 # _side/_kind/_shikigami/_not_shikigami/_not/_has_fragile/_stunned/_ge/_le）。
 CONDITION_KEYS: frozenset[str] = frozenset({
     # —— 显式算子（match_condition 具名分支）——
-    "active", "player_ext", "turn_mark_not", "orb_ge",
+    "active", "player_ext", "turn_mark_not", "turn_count_eq", "orb_ge",
     "assaults_left_ge", "assaults_left_le",
     "combat_empty", "combat_occupied", "friendly_defeated_exists",
     "player_health_le", "player_health_ge", "player_missing_health_ge",
@@ -124,11 +139,17 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "friendly_field_intensity_ge", "field_summon_distinct_ge", "friendly_field",
     "hand_card_type", "chosen_stunned", "chosen_has_fragile", "chosen_side",
     "combat_opponent_stunned", "kill_count_ge",
-    "quest_count_ge", "round_ge",
-    "invocation_on_field", "shikigami_countdown_free", "holder_countdown",
+    "quest_count_ge",
+    "invocation_on_field", "shikigami_countdown_free",
     "holder_has_invocation",  # 能力持有者结附指定灵咒（棺击"持有'迟钝'期间"门控）
     "victim_has_invocation",  # 事件 victim 结附指定灵咒（干扰投掷响应条件；
                               # _has_invocation 通用后缀的具名实例）
+    "attacker_has_invocation",  # 事件 attacker 结附指定灵咒（鸮鸣"己方具'鸮之守护'
+                                # 的式神发起攻击"=攻击者本人结附；通用后缀具名实例）
+    "from_coffin_not",  # 气绝事件非棺材击破来源（棺葬门控——棺材被击破的气绝
+                        # 事件携带 from_coffin=True，不再触发变棺；_not 通用后缀）
+    "victim_invocation",  # 事件 victim_invocations 快照含指定灵咒（无尽蛊/食魂蛊
+                          # "结附'蛊蚀'的敌方式神气绝时"；_invocation 通用后缀实例）
     # —— 收集器专用（不进 match_condition 按键循环）——
     "card_in_hand", "field_self", "field_intensity_ge",
     # —— 事件字段等值/通用后缀具名实例（现行数据全集）——
@@ -178,8 +199,15 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
                        # （CardDef.target2）按序取第 n 个选择目标（麓鸣·灭双 choose）
     "exclude_self",    # 排除效果来源个体（resolve 时按 ctx.source 排除，镜像对局
                        # 不误伤敌方同名——樱吹雪"其他所有式神"维护者定案(0)）
+    "exclude_chosen",  # 排除卡牌选择目标（增殖"使其他结附'蛊蚀'的敌方式神"——
+                       # 主目标不重复结算）
+    "include_defeated_kw",  # 气绝入池门控（樱花妖定案(2)）：己方气绝入池 iff 在场
+                       # heal_defeated_countdown、敌方气绝入池 iff 在场
+                       # damage_defeated_countdown；spec_pool_refs/resolve 同口径
     "not_summon",      # 仅非召唤物式神（选择目标合法性即排除召唤物——不弃
                        # "使一个非召唤物式神"，维护者定案(12)；牌手目标被滤除）
+    "power_eq",        # 力量恰等于 n（缚蝶蛊狱"消灭所有力量为0的式神"；
+                       # 牌手目标被滤除）
 })
 
 # 步骤数值参数字典（amount/power）白名单：Game._step_amount 消费全集
@@ -193,6 +221,8 @@ DYNAMIC_VALUE_KEYS: frozenset[str] = frozenset({
     "field_intensity", "field_count",
     "dice_distinct", "enemy_stunned_count", "enemy_revealed_count",
     "kill_count",  # 击杀账本查询（{kill_count: {shikigami: id}|{scope: player}}）
+    "victim_invocation_count",  # 事件 victim_invocations 快照中指定灵咒条目数
+                                # （食魂蛊"其上每有一个'蛊蚀'"，配 per 倍率）
 })
 
 # 次数参数字典（count/times）白名单：draw/generate/repeat/deck_top_pick/

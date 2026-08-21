@@ -1,14 +1,21 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10041002
 name: 无尽蛊
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: form
       rarity: R
       level: 1
+      form_power: 1
+      form_health: 6
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      abilities:
+        # 当一个结附‘蛊蚀’的敌方式神气绝时，你抽一张牌
+        # （victim_invocation = 气绝移除前灵咒快照含‘蛊蚀’，不论结附来源敌我）
+        - when: on_shikigami_defeated
+          condition: {victim_side: enemy, victim_invocation: 蛊蚀}
+          steps:
+            - {op: draw, count: 1}
+      text: "当一个结附‘蛊蚀’的敌方式神气绝时，你抽一张牌。"

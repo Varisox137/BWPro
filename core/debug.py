@@ -99,7 +99,8 @@ def cmd_play_card(game, ctx, *, player: int, uid: int, target: dict | None = Non
     cdef = game.db.cards[card.id]
     method = None
     if play_method is not None:
-        method = next((m for m in cdef.methods if m.id == play_method), None)
+        method = next((m for m in game._card_methods(p, cdef) if m.id == play_method),
+                      None)  # 含光环授予方式（御馔津符咒爆能）
         if method is None:
             raise ValueError(f"卡牌 {cdef.name} 没有使用方式 {play_method}")
 

@@ -7,7 +7,7 @@ versions:
       card_type: form
       rarity: R
       level: 2
-      form_power: 3
+      form_power: 4
       form_health: 5
       effects:
         # 结附'鸮之守护'的己方式神获得[帷幕]（stat_aura friendly_invocation

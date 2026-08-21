@@ -5,18 +5,22 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: form
-      rarity: R
+      rarity: SR
       level: 3
       form_power: 7
       form_health: 9
       effects:
         steps: []
       abilities:
-        # 每个回合开始时（无 active 条件 = 双方回合都触发，凋零之森先例），若跳跳哥哥
-        # 有[倒计时]（holder_countdown 门控），对敌方所有其他角色造成1点伤害
-        #（enemy_character 池 = 敌方全部式神 + 敌方牌手；跳跳哥哥是己方式神，不涉及排除）
+        # 每个回合开始时（无 active 条件 = 双方回合都触发，凋零之森先例），对敌方
+        # 所有角色造成1点伤害（enemy_character 池 = 敌方全部式神 + 敌方牌手）
         - when: on_turn_start
-          condition: {holder_countdown: true}
           steps:
             - {op: damage, amount: 1, target: {kind: all, pool: enemy_character}}
-      text: "每个回合开始时，若跳跳哥哥有[倒计时]，对敌方所有其他角色造成1点伤害。"
+        # 跳跳哥哥每消灭一个式神，他的[倒计时]-1（source_shikigami: self = 击杀者
+        # 为持有者本人；无倒计时/归零结算中为空操作，同集煞阵）
+        - when: on_shikigami_defeated
+          condition: {source_shikigami: self}
+          steps:
+            - {op: countdown_delta, amount: -1, target: {kind: self}}
+      text: "每个回合开始时，对敌方所有角色造成1点伤害。跳跳哥哥每消灭一个式神，他的[倒计时]-1。"

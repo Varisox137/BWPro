@@ -10,8 +10,10 @@ versions:
       level: 3
       play_condition: {quest_count_ge: {kind: quest_used, count: 10}}
       # [条件]：{本局游戏三目使用过十张委托牌}
+      target: {kind: choose, pool: any_character}  # 定案(6)：主动使用时选择合法目标
+      # （双方任一角色——在场式神或牌手）
       effects:
-        # 造成30点伤害（默认目标 = 敌方牌手，同白板伤害法术口径）
+        # 对选择目标造成30点伤害（无 target 步回退卡牌选择目标）
         steps:
-          - {op: damage, amount: 30, target: {kind: all, pool: enemy_player}}
+          - {op: damage, amount: 30}
       text: "[条件]：{本局游戏三目使用过十张委托牌}。造成30点伤害。"

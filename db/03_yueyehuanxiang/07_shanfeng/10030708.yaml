@@ -25,8 +25,12 @@ versions:
         # 文本"你的牌"的语义扩展，见 card-status.md 山风节）对山风以外的未气绝己方
         # 式神生效时，对山风造成等量效果（无倒计时能力者也算"生效"——countdown_delta
         # 对其发 actual=0 事件；山风气绝时有效，减其气绝倒计时）。natural_not 排除
-        # 回合开始批次的自然减少（规则性减少非"效果"——维持原"自然减少不共享"口径）
+        # 回合开始批次的自然减少（规则性减少非"效果"——维持原"自然减少不共享"口径）。
+        # timing=queue：复制是 on_countdown_reduced 即时默认的特例（定案"倒计时减少
+        # 触发效果都是即时时机，觉醒山风的复制倒计时减少是特例（延时执行）"），延时界=
+        # 引起该次减少的结算单元（engine horizon 机制）
         - when: on_countdown_reduced
+          timing: queue
           trigger_when_defeated: true
           condition: {natural_not: true, shikigami_side: friendly, shikigami_not_shikigami: 100307}
           steps:

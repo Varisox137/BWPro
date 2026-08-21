@@ -580,20 +580,21 @@ def test_edit_cards_strict_input(db, tmp_path, monkeypatch, capsys):
 
 
 def test_available_shikigami_excludes_wip(gdb):
-    """构筑可选池：wip=true 的半成品式神不可选（当前 wip = 04 沧海刀鸣包 4 个
-    骨架式神：仅基础数据+卡面原文、效果未实现；三目/人面树/樱花妖/跳跳哥哥/薰/
-    大岳丸已落地去标）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团，各 4 卡）可选。"""
+    """构筑可选池：wip=true 的半成品式神不可选（当前 wip = 04 沧海刀鸣包 2 个
+    骨架式神：食梦貘/鬼切，仅基础数据+卡面原文、效果未实现；其余 8 个已落地
+    去标）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团，各 4 卡）可选。"""
     ids = [d.id for d in deckbuilder.available_shikigami(gdb)]
     wip_ids = {d.id for d in gdb.shikigami.values() if d.wip}
-    assert wip_ids == {100406, 100407,
-                       100409, 100410}  # 04 包 4 个 wip 骨架
+    assert wip_ids == {100406, 100409}  # 04 包剩余 2 个 wip 骨架
     assert not (wip_ids & set(ids))  # wip 全部排除在构筑可选池外
     assert 100401 in ids                 # 人面树（已落地去 wip）可选
     assert 100402 in ids                 # 跳跳哥哥（已落地去 wip）可选
     assert 100403 in ids                 # 樱花妖（已落地去 wip）可选
     assert 100404 in ids                 # 三目（委托机制落地，已去 wip）可选
     assert 100405 in ids                 # 薰（已落地去 wip）可选
+    assert 100407 in ids                 # 御馔津（已落地去 wip）可选
     assert 100408 in ids                 # 大岳丸（已落地去 wip）可选
+    assert 100410 in ids                 # 巫蛊师（已落地去 wip）可选
     assert 100112 in ids                 # 青行灯（8 卡齐，已去 wip）可选
     assert 100106 in ids and 100109 in ids   # 姑获鸟/酒吞童子（8 卡齐，已去 wip）可选
     assert 100001 in ids and 100002 in ids   # 纸人武士/天邪鬼军团（4 卡成品）可选

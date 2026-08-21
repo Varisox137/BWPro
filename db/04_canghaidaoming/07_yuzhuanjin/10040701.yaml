@@ -1,0 +1,18 @@
+id: 10040701
+name: 驱魔符
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      subtype: talisman
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: enemy_shikigami, has_form: true}
+      effects:
+        # 使一个有形态的敌方式神获得'本回合受到伤害时使其气绝'（defeat_on_damage
+        # 旗标，任一回合开始清除；tests/test_pack04_mech.py
+        # test_defeat_on_damage_mark 同型）
+        steps:
+          - {op: bump_ext, key: defeat_on_damage, value: 1}
+      text: "使一个有形态的敌方式神获得‘本回合受到伤害时使其气绝’。"

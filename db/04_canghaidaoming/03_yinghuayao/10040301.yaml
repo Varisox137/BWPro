@@ -19,9 +19,9 @@ versions:
               - {op: damage, amount: 3}
           text: 对一个敌方式神造成3点伤害
         - id: heal
-          # 含未离场气绝己方式神（include_defeated choose 口径，spec_pool_refs）；
-          # allow_defeated 配合基础能力转化通道（气绝→倒计时-1）
-          target: {kind: choose, pool: friendly_shikigami, include_defeated: true}
+          # 气绝己方式神入池按樱花妖门控（定案(2)：include_defeated_kw——己方气绝入池
+          # iff heal_defeated_countdown 在场）；转化通道结算时能力在场判定不变
+          target: {kind: choose, pool: friendly_shikigami, include_defeated_kw: true}
           effects:
             steps:
               - {op: heal, amount: 6, allow_defeated: true}

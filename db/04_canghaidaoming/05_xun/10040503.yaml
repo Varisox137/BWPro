@@ -10,18 +10,21 @@ versions:
       keywords: [trigger]
       target: {kind: choose, pool: any_shikigami}
       effects:
-        # 造成1点伤害并使其本回合不能对结附'鸮之守护'的式神造成伤害（式神 ext
-        # no_damage_vs_inv=灵咒名，本回合作用域，伤害管线早期终止）
+        # 造成1点伤害并使其本回合不能对结附'鸮之守护'的式神造成伤害（定案(7)：结附
+        # 己方牌手的一回合效果——bump_ext host=controller 写入控制者牌手 ext append
+        # 列表，with_ref 记录该目标式神身份，气绝/复活不丢失；伤害管线早期终止）
         steps:
           - {op: damage, amount: 1}
-          - {op: bump_ext, key: no_damage_vs_inv, value: 鸮之守护}
+          - {op: bump_ext, key: no_damage_vs_inv, value: 鸮之守护,
+             host: controller, append: true, with_ref: true}
       response:
         # 响应：当敌方式神攻击你结附'鸮之守护'的式神时，自动对其使用（目标=事件
-        # attacker，非响应默认的 victim）
+        # attacker，非响应默认的 victim；禁伤条目同样结附己方牌手、记录攻击者身份）
         when: on_before_assault
         condition: {attacker_side: enemy, victim_has_invocation: 鸮之守护}
         steps:
           - {op: damage, amount: 1, target: {kind: context, key: attacker}}
           - {op: bump_ext, key: no_damage_vs_inv, value: 鸮之守护,
+             host: controller, append: true, with_ref: true,
              target: {kind: context, key: attacker}}
       text: "对一个式神造成1点伤害并使其本回合不能对结附‘鸮之守护’的式神造成伤害。[响应]：{当敌方式神攻击你结附‘鸮之守护’的式神时，自动对其使用。}"

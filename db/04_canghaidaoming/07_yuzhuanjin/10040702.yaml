@@ -1,0 +1,16 @@
+id: 10040702
+name: 丰穗
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      rarity: R
+      level: 1
+      effects:
+        # 选择一张御馔津的符咒牌置入手上（pick_generate 三选一挂起交互——觉醒·三目
+        # 线索同型，无"不可重复"限制），御馔津获得3能量
+        steps:
+          - {op: pick_generate, pool: [10040701, 10040705, 10040708]}
+          - {op: gain_energy, amount: 3, target: {kind: self}}
+      text: "选择一张御馔津的符咒牌置入手上，御馔津获得3能量。"

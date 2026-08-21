@@ -1,14 +1,29 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10041008
 name: 缚蝶蛊狱
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
-      level: 1
+      card_type: field
+      rarity: SSR
+      level: 3
+      intensity: 10
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 进场时对敌方所有结附‘蛊蚀’的式神造成1点伤害
+          - {op: damage, amount: 1,
+             target: {kind: all, pool: enemy_shikigami, has_invocation: 蛊蚀}}
+      abilities:
+        # 所有式神受到的伤害都改为结附等量的‘蛊蚀’（伤害事件"护甲计算后"批次，
+        # 优先级 1="伤害改为非伤害"类，redirect_to_field 同挂点；双方式神受影响、
+        # 终止伤害事件——裁决15；首个同名幻境生效）
+        - when: on_after_shield
+          priority: 1
+          condition: {victim_kind: shikigami}
+          steps:
+            - {op: redirect_to_invocation, name: 蛊蚀}
+        # 每个回合结束时（双方——裁决15），消灭所有力量为0的式神
+        - when: on_turn_end
+          steps:
+            - {op: destroy, target: {kind: all, pool: any_shikigami, power_eq: 0}}
+      text: "进场时对敌方所有结附‘蛊蚀’的式神造成1点伤害。所有式神受到的伤害都改为结附等量的‘蛊蚀’。每个回合结束时，消灭所有力量为0的式神。"

@@ -56,6 +56,9 @@ def build_player(
         shikigami=shikigami,
     )
     p.deck.extend(deck)
+    # 本局卡组名单（今日委托替换后按牌名捕获；委托账本 offdeck_play"阵容套牌以外"
+    # 口径判定用，定案(5)）
+    p.deck_names = {db.cards[c.id].name for c in deck}
     return p, uid
 
 

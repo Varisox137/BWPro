@@ -8,12 +8,12 @@ versions:
       power: 2
       health: 4
       abilities:
-        # 己方回合结束时，使你本回合最后一个行动的式神结附'鸮之守护'
-        # （行动账本 player ext["last_acted"]：本回合最后一个主动出击/使用专属牌的
-        # 己方式神座次；账本空或该式神已不在场则 context 目标为空即无事）
+        # 己方回合结束时，使你本回合最后一个攻击的式神结附'鸮之守护'
+        # （攻击账本 player ext["last_attacker"]：本回合最后一个攻击（主动出击/
+        # 战斗牌）的己方式神座次；账本空或该式神已不在场则 context 目标为空即无事）
         - when: on_turn_end
           condition: {active: self}
           steps:
             - {op: attach_invocation, name: 鸮之守护,
-               target: {kind: context, key: last_acted}}
-      text: "己方回合结束时，使你本回合最后一个行动的式神结附‘鸮之守护’。"
+               target: {kind: context, key: last_attacker}}
+      text: "己方回合结束时，使你本回合最后一个攻击的式神结附‘鸮之守护’。"

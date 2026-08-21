@@ -1,0 +1,24 @@
+id: 10040703
+name: 奉祝之愿
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: form
+      rarity: SSR
+      level: 1
+      form_power: 3
+      form_health: 6
+      keywords: [assault_any_target]  # 出击时可以指定攻击任一敌方式神
+      effects:
+        steps: []
+      abilities:
+        # 出击时对被攻击的式神使用每种本局游戏御馔津使用过的符咒牌
+        # （talisman_ledger 账本 + cast_ledger op——凭空使用不耗火/不重复记账；
+        # 被攻击者为牌手时不触发；tests/test_pack04_mech.py
+        # test_talisman_ledger_and_cast_ledger 同型）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self, victim_kind: shikigami}
+          steps:
+            - {op: cast_ledger, target: {kind: context, key: victim}}
+      text: "出击时可以指定攻击任一敌方式神。出击时对被攻击的式神使用每种本局游戏御馔津使用过的符咒牌。"

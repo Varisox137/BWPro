@@ -19,4 +19,4 @@ versions:
             steps:
               - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
               - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
-      text: "跳跳哥哥使用此牌结附‘迟钝’期间每有一个其他式神气绝，跳跳哥哥便获得1力量和1生命。"
+      text: "于跳跳哥哥使用此牌，结附‘迟钝’期间每有一个其他式神气绝，跳跳哥哥便获得1力量和1生命。"

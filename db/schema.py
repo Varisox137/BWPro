@@ -34,7 +34,9 @@ CARD_TYPES = frozenset({"spell", "combat", "form", "field", "reinforce"})
 SUBTYPES = frozenset({"awaken"})  # 通用子类型：awaken=觉醒牌
 # 专属子类型（维护者定案 2026-08）：子类型 → 所属式神 id；只能出现在所属式神的牌上
 # （loader 校验）。首个 = quest 委托（三目 100404 的衍生牌家族）。
-EXCLUSIVE_SUBTYPES: dict[str, int] = {"quest": 100404}
+EXCLUSIVE_SUBTYPES: dict[str, int] = {"quest": 100404, "talisman": 100407}
+# talisman=符咒（御馔津 100407 的法术牌家族：驱魔符/封魔符/破魔符——爆能3转化
+# 战斗牌、奉祝之愿账本、狐狩界瞬发光环均按本子类型过滤）
 # 生成即替换（tag gen_weekday_quest 的卡）：将要生成该 id 的牌时（含牌库初始化），
 # 改为生成当天星期几对应的牌（周一=列表[0]…周日=[6]；日常委托 → 今日委托壹-柒）。
 WEEKDAY_GEN_REPLACE: dict[int, tuple[int, ...]] = {
@@ -52,6 +54,8 @@ KEYWORDS = frozenset({
     "enraged",                  # 激怒（状态：出击锁定 + 发起战斗时移除）
     "keep_attack_buffs",        # 引擎级：攻击后到期强化不因攻击移除（残心；卡面不出现）
     "lifesteal",                # 吸血（机制见 docs/rules.md 伤害流程；造成伤害后为牌手恢复等量生命）
+    "critical",                 # 暴击（攻击造成的战斗伤害翻倍——kind=combat 攻击事件
+    #                             ×2，反击不翻倍；伤害管线[暴击]时机=扣减生命前2读取，破魔符授予）
     "hunt",                     # 追猎（有目标的战斗：出击/战斗牌可任选合法敌方式神为被攻击者）
     "direct",                   # 直击（确定目标前1：无目标的战斗被攻击者改为敌方牌手）
     "veil",                     # 帷幕（不能成为敌方出击/用牌的合法目标）
@@ -224,7 +228,12 @@ class PlayMethod(BaseModel):
     cost: int | None = None  # 费用绝对覆盖（缺省用卡牌基础费用）
     cost_delta: int = 0  # 在（覆盖后）费用上的增减
     level: int | None = None  # 等级要求覆盖
-    card_type: str | None = None  # 卡牌类型覆盖（多择各选项可不同类型；Phase 5 战斗牌/形态牌落地前引擎不读取）
+    card_type: str | None = None  # 卡牌类型覆盖（多择各选项可不同类型；爆能转化战斗牌
+    # = combat——御馔津符咒牌[爆能3]通道，engine._cmd_play_card 按生效类型路由结算；
+    # 类型转化时方式 effects 语义改为"整体替换"基础 effects（缺省 None = 空块——
+    # 转化后不再结算原法术效果），不再走爆能"追加"语义）
+    power: int = 0  # 战斗牌身材参数：转化为战斗牌时的战力（combat_card_stats 叠加）
+    shield: int = 0  # 同上：一次性护甲
     target: TargetSpec | None = None  # 目标覆盖
     effects: EffectBlock | None = None  # 缺省 = 使用卡牌基础 effects
     # 爆能（不夜之火包）：energy_cost = 该方式的能量消耗——int 为定值爆能（爆能2/3/4…），

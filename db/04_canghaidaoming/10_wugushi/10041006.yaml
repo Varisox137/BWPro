@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10041006
 name: 觉醒·巫蛊师
 versions:
@@ -6,9 +5,19 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      subtype: awaken
+      rarity: SR
+      level: 2
+      # raw 无 +X/+Y 身材——按原文不加（awaken_power/awaken_health 缺省 0）
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 使用时赋予牌手（牌手级规则、可叠加、不随式神气绝失效）：
+          # 当结附‘蛊蚀’时，数量额外+1（仅‘结附’动作触发，存量增减不吃——裁决13）
+          - {op: inv_attach_bonus, name: 蛊蚀, add: 1}
+      abilities:
+        # [觉醒]能力换绑：保留基础能力的战斗伤害结附块（同 100410 基础能力）
+        - when: on_damage
+          condition: {source_shikigami: self, kind: combat, victim_kind: shikigami}
+          steps:
+            - {op: attach_invocation, name: 蛊蚀, target: {kind: context, key: victim}}
+      text: "[觉醒]：{当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个‘蛊蚀’。当结附‘蛊蚀’时，数量额外+1。}"

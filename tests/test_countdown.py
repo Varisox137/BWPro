@@ -964,7 +964,7 @@ def test_awakened_countdown_share_delay_horizon(db, make_game):
     db.cards[AW] = F.card(AW, shikigami=SF, level=3, token=True, abilities=[F.block(
         F.Step(op="countdown_delta", amount={"event": "original", "negate": True},
                target=T(kind="self")),
-        when="on_countdown_reduced",
+        when="on_countdown_reduced", timing="queue",
         condition={"natural_not": True, "shikigami_side": "friendly",
                    "shikigami_not_shikigami": SF})])
     cid = 10010152  # 余音型：自身 -3，然后其他己方 -1

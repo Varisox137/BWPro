@@ -15,8 +15,11 @@ versions:
           steps:
             - {op: generate, card_ids: [10040451, 10040452, 10040453, 10040454]}
         # 三目使用紧急委托时，随机将一张'紧急委托'置入手牌（on_card_played payload
-        # card_id 数据 id 列表等值匹配；气绝时能力不生效，与常式能力一致）
+        # card_id 数据 id 列表等值匹配；定案：基础/觉醒能力具'气绝时有效'——避免
+        # 紧急委托使用事件中插入结算伤害使三目气绝而无法获得新委托；on_card_played
+        # 延时时机，置入在该使用事件完成后执行）
         - when: on_card_played
+          trigger_when_defeated: true
           condition: {player: self, card_id: [10040451, 10040452, 10040453, 10040454]}
           steps:
             - {op: generate, card_ids: [10040451, 10040452, 10040453, 10040454]}

@@ -1,14 +1,36 @@
-# 骨架（db.scaffold），效果未实现——协战子选项，卡面文本待 raw 补充
 id: 10040852
 name: 琼玉镇海
 versions:
   best: 20200928
   history:
-    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入）
+    - date: 20200928  # 发布日期（协战牌，随 04 沧海刀鸣引入；raw 标未加入=不进历史环境）
       card_type: spell
-      token: true  # 协战子选项（海国共主 副式神侧）
+      token: true  # 协战子选项（海国共主 大岳丸侧；本体未入库）
       level: 2
+      target: {kind: choose, pool: friendly_shikigami}  # 一个己方式神
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # 待 raw 补充（raw 大岳丸节仅列卡名，标未加入）
+        steps:
+          # 将'八尺琼曲玉'结附于一个己方式神，并使其获得[迅捷]（一次性关键字
+          # 天然持久性入列，姑获鸟/山童先例）
+          - {op: attach_invocation, name: 八尺琼曲玉}
+          - {op: grant_keyword, keyword: haste}
+          # 本局游戏结附'八尺琼曲玉'式神攻击时使攻击目标获得2破甲（不可叠加，每个
+          # 式神每回合一次）——牌手级"本局游戏"通道（player_aura 先例：豪焰/线索；
+          # 跨气绝保留、覆盖后续其他来源的结附；attacker_has_invocation=攻击者本人
+          # 结附；once_key 防重复登记）。偏离：①"不可叠加"以 victim_has_fragile:
+          # false 近似（目标已有破甲不再叠加）；②"每个式神每回合一次"无分目标
+          # 每回合门控通道——破甲被消耗后本回合可再次获得
+          - op: player_aura
+            once_key: qiongyu
+            when: on_before_assault
+            condition: {attacker_side: friendly,
+                        attacker_has_invocation: 八尺琼曲玉,
+                        victim_has_fragile: false}
+            steps:
+              - {op: gain_shield, amount: 2, kind: fragile,
+                 target: {kind: context, key: victim}}
+          # [羁绊]：铃鹿御前[投射]：{造成1点伤害}（投射池先例：谁还不听话 10011701/
+          # 归乡 10020707；shikigami_active 门控）
+          - {op: damage, amount: 1, target: {kind: all, pool: projectile},
+             condition: {shikigami_active: 100207}}
+      text: "将‘八尺琼曲玉’结附于一个己方式神，并使其获得[迅捷]。本局游戏结附‘八尺琼曲玉’式神攻击时使攻击目标获得2破甲（不可叠加，每个式神每回合一次）。[羁绊]：{铃鹿御前[投射]：{造成1点伤害}。}"

@@ -1,0 +1,44 @@
+id: 10040706
+name: 觉醒·御馔津
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: spell
+      subtype: awaken
+      awaken_power: 1
+      awaken_health: 1
+      rarity: SR
+      level: 2
+      effects:
+        steps: []
+      abilities:
+        # [觉醒]：基础能力升级版——符咒牌[爆能3]转化战斗牌追加"本次战斗获得
+        # 免疫战斗伤害"（方式 effects 整体替换语义下的 battle_immunity 步由
+        # 战斗牌流程提取绑定本次战斗，鹿角冲撞 10020307 爆能档同型；觉醒换绑
+        # 光环同 id 覆盖基础赋予，引擎已处理）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: card_aura, shikigami: self, card_id: 10040701, scope: ability,
+               grant_method: {id: burst, energy_cost: 3, card_type: combat,
+                              target: {kind: choose, pool: enemy_shikigami,
+                                       battle: true},
+                              power: 1, shield: 1,
+                              effects: {steps: [{op: battle_immunity}]},
+                              text: "爆能使用时变为战斗牌‘驱魔箭’：+1/+1，本次战斗获得免疫战斗伤害"}}
+            - {op: card_aura, shikigami: self, card_id: 10040705, scope: ability,
+               grant_method: {id: burst, energy_cost: 3, card_type: combat,
+                              target: {kind: choose, pool: enemy_shikigami,
+                                       battle: true},
+                              power: 1, shield: 1,
+                              effects: {steps: [{op: battle_immunity}]},
+                              text: "爆能使用时变为战斗牌‘封魔箭’：+1/+1，本次战斗获得免疫战斗伤害"}}
+            - {op: card_aura, shikigami: self, card_id: 10040708, scope: ability,
+               grant_method: {id: burst, energy_cost: 3, card_type: combat,
+                              target: {kind: choose, pool: enemy_shikigami,
+                                       battle: true},
+                              power: 3, shield: 1,
+                              effects: {steps: [{op: battle_immunity}]},
+                              text: "爆能使用时变为战斗牌‘破魔箭’：+3/+1，本次战斗获得免疫战斗伤害"}}
+      text: "[觉醒]：{[充能]。御馔津的符咒牌都具有‘[爆能3]：{转化为战斗牌且改为攻击任一敌方式神，本次战斗获得免疫战斗伤害}’。}"

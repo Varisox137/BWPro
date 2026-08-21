@@ -14,10 +14,9 @@ versions:
         steps: []
       abilities:
         # 当山风[倒计时]减少时，获得等量的力量直到下次攻击后：on_countdown_reduced
-        # 按原始减少量取值（定案(5)）；timing=insert 立即插入结算；attack_buff=
-        # 攻击后到期临时强化（起弓/离先例）
+        # 按原始减少量取值（定案(5)）；on_countdown_reduced 默认即时时机（定案翻转，
+        # 原单卡 timing=insert 覆盖已冗余移除）；attack_buff=攻击后到期临时强化（起弓/离先例）
         - when: on_countdown_reduced
-          timing: insert
           condition: {shikigami_shikigami: self}
           steps:
             - {op: attack_buff, power: {event: original}, target: {kind: self}}

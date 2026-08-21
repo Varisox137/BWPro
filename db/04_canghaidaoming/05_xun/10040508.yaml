@@ -7,12 +7,15 @@ versions:
       card_type: form
       rarity: SR
       level: 3
-      form_power: 4
-      form_health: 7
+      form_power: 5
+      form_health: 8
+      target: {kind: choose, pool: friendly_shikigami}
       effects:
-        # 结附'鸮之守护'的己方式神获得[不屈]（stat_aura friendly_invocation
-        # 关键字部分：continuous 类授予，不屈不被消耗移除）
+        # 使一个己方式神结附'鸮之守护'（选择目标，同温柔的守护）；结附'鸮之守护'
+        # 的己方式神获得[不屈]（stat_aura friendly_invocation 关键字部分：
+        # continuous 类授予，不屈不被消耗移除）
         steps:
+          - {op: attach_invocation, name: 鸮之守护}
           - {op: stat_aura, kind: friendly_invocation, name: 鸮之守护,
              keywords: [unyielding]}
-      text: "结附‘鸮之守护’的己方式神获得[不屈]。"
+      text: "使一个己方式神结附‘鸮之守护’。结附‘鸮之守护’的己方式神获得[不屈]。"

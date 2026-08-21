@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10041007
 name: 魔蛊毒爆
 versions:
@@ -6,9 +5,14 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      rarity: SR
+      level: 3
+      target: {kind: choose, pool: enemy_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 使一个敌方式神结附三个‘蛊蚀’
+          - {op: attach_invocation, name: 蛊蚀, count: 3}
+          # 若本回合该式神气绝，将其上所有‘蛊蚀’随机转移到一个其他敌方式神上
+          # （牌手级半回合能力；不论结附来源敌我，帷幕可、气绝不可——裁决14）
+          - {op: inv_transfer_on_defeat, name: 蛊蚀}
+      text: "使一个敌方式神结附三个‘蛊蚀’，若本回合该式神气绝，将其上所有‘蛊蚀’随机转移到一个其他敌方式神上。"

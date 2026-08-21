@@ -1,14 +1,21 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10041004
-name: 食魂蛊
+name: 增殖
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
       card_type: spell
       rarity: R
-      level: 1
+      level: 2
+      target: {kind: choose, pool: enemy_shikigami}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 使一个敌方式神结附两个‘蛊蚀’（结附动作，吃觉醒结附增幅——裁决13）
+          - {op: attach_invocation, name: 蛊蚀, count: 2}
+          # 然后使其他结附‘蛊蚀’敌方式神上的‘蛊蚀’数量+1
+          # （inv_count_mod 存量增减：不发结附事件、不吃增幅——裁决13；
+          # exclude_chosen=排除选择目标，"其他"口径）
+          - {op: inv_count_mod, name: 蛊蚀, add: 1,
+             target: {kind: all, pool: enemy_shikigami, has_invocation: 蛊蚀,
+                      exclude_chosen: true}}
+      text: "使一个敌方式神结附两个‘蛊蚀’，然后使其他结附‘蛊蚀’敌方式神上的‘蛊蚀’数量+1。"

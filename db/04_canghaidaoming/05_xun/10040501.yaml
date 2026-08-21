@@ -13,4 +13,4 @@ versions:
         steps:
           - {op: attach_invocation, name: 鸮之守护}
           - {op: draw, count: 1, target: {kind: all, pool: self_player}}
-      text: "[瞬发]。使一个己方式神结附‘鸮之守护’，抽一张牌。"
+      text: "[瞬发]。使一个己方式神结附‘鸮之守护’。抽一张牌。"

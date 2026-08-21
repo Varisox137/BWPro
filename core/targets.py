@@ -34,7 +34,12 @@ TargetSpec 额外键：
 - {"include_defeated": true}：对 friendly_shikigami / enemy_shikigami / any_shikigami
   池，把未离场的
   气绝式神也纳入（口径同 friendly_defeated 池：defeated 且 not despawned 且 level>=1；
-  惊鸿之舞"随机两名己方式神（无论是否气绝）"、樱吹雪"其他所有式神"双侧口径）
+  惊鸿之舞"随机两名己方式神（无论是否气绝）"等无条件双侧口径）
+- {"include_defeated_kw": true}：气绝入池门控（樱花妖定案(2)）——己方气绝入池
+  当且仅当控制者在场式神持 heal_defeated_countdown（基础/觉醒能力在场），敌方
+  气绝入池当且仅当持 damage_defeated_countdown（觉醒能力在场）；适用池同上另加
+  friendly_character / enemy_character；随机池每次重新求值（每次重算合法目标池，
+  天狗风乱/冥弓惯例）
 - {"include_player": true}：对 friendly_injured 池，追加受伤的己方牌手
   （生命 < 上限；落英缤纷羁绊"己方受伤角色"——"角色"含牌手，维护者答复(4)）
 - {"power_le": n}：按 eff_power ≤ n 过滤式神目标（勾诀"力量<=2的敌方式神"；choose
@@ -44,8 +49,8 @@ TargetSpec 额外键：
 - {"has_invocation": <灵咒名> | {"name": 灵咒名, "same_source": true}}：结附指定
   灵咒的式神（same_source = 同源限定，结附来源所属牌手须为控制者——决意"你结附
   '鸮之守护'的式神"；牌手目标被滤除）
-- context 目标专用 key "last_acted"：控制者本回合最后一个行动的己方式神
-  （薰行动账本，player ext["last_acted"]；账本空/已不在场为空）
+- context 目标专用 key "last_attacker"：控制者本回合最后一个攻击的己方式神
+  （薰攻击账本，player ext["last_attacker"]；账本空/已不在场为空）
 """
 from __future__ import annotations
 
@@ -215,6 +220,12 @@ def _spec_filtered(game, refs: list[Ref], extra: dict,
     if pw is not None:
         refs = [r for r in refs if r.shikigami is not None
                 and game.state.players[r.player].shikigami[r.shikigami].eff_power <= int(pw)]
+    pe = extra.get("power_eq")
+    if pe is not None:
+        # 力量恰等于 n（缚蝶蛊狱"消灭所有力量为0的式神"——读 eff_power 覆写层，
+        # 牌手目标无力量被滤除）
+        refs = [r for r in refs if r.shikigami is not None
+                and game.state.players[r.player].shikigami[r.shikigami].eff_power == int(pe)]
     hf = extra.get("has_fragile")
     if hf is not None:
         def _fragile(r: Ref) -> bool:
@@ -333,6 +344,33 @@ def _ref_fragile(game, ref: Ref) -> bool:
     return holder.shield < 0
 
 
+def gated_defeated_refs(game, pool: str, controller: int) -> list[Ref]:
+    """樱花妖气绝入池门控（定案(2)）：扫描控制者在场式神的能力伪关键字——
+    heal_defeated_countdown 在场（基础/觉醒能力在场）→ 己方气绝入池；
+    damage_defeated_countdown 在场（觉醒能力在场）→ 敌方气绝入池。
+    适用池：friendly_shikigami / enemy_shikigami / any_shikigami /
+    friendly_character / enemy_character；其余池返回空。"""
+    friendly = enemy = False
+    for s in game.state.players[controller].shikigami:
+        if not s.in_play:
+            continue
+        if game._has_keyword(s, "heal_defeated_countdown"):
+            friendly = True
+        if game._has_keyword(s, "damage_defeated_countdown"):
+            enemy = True
+    sides = []
+    if friendly and pool in ("friendly_shikigami", "friendly_character",
+                             "any_shikigami", "any_character"):
+        sides.append(controller)
+    if enemy and pool in ("enemy_shikigami", "enemy_character",
+                          "any_shikigami", "any_character"):
+        sides.append(1 - controller)
+    return [Ref(player=side, shikigami=i)
+            for side in sides
+            for i, s in enumerate(game.state.players[side].shikigami)
+            if s.defeated and not s.despawned and s.level >= 1]
+
+
 def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> list[Ref]:
     """choose 目标合法性校验用：pool_refs + TargetSpec 额外过滤键（勾诀 power_le；
     legal_targets 与出牌/协战校验共用，保持"能选什么"与"展示什么"一致）。
@@ -352,6 +390,9 @@ def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> li
                  for side in sides
                  for i, s in enumerate(game.state.players[side].shikigami)
                  if s.defeated and not s.despawned and s.level >= 1]
+    if extra.get("include_defeated_kw"):
+        # 气绝入池门控（樱花妖定案(2)）：按控制者在场能力伪关键字分侧放行
+        refs += gated_defeated_refs(game, spec.pool, controller)
     if extra.get("include_player") and spec.pool == "friendly_injured":
         # 己方受伤角色含牌手（维护者答复(4)"角色都包含牌手"）：牌手受伤即入池
         cp = game.state.players[controller]
@@ -409,6 +450,10 @@ def resolve(game, spec, ctx) -> list[Ref]:
                      for side in sides
                      for i, s in enumerate(game.state.players[side].shikigami)
                      if s.defeated and not s.despawned and s.level >= 1]
+        if extra.get("include_defeated_kw"):
+            # 气绝入池门控（樱花妖定案(2)，与 spec_pool_refs 同口径；随机池每次
+            # 重新解析即每次重算合法目标池）
+            refs += gated_defeated_refs(game, spec.pool, ctx.controller)
         if extra.get("include_player") and spec.pool == "friendly_injured":
             # 己方受伤角色含牌手（同 spec_pool_refs 口径）
             cp = game.state.players[ctx.controller]
@@ -422,13 +467,17 @@ def resolve(game, spec, ctx) -> list[Ref]:
         refs = _spec_filtered(game, refs, extra, ctx.controller)
         if extra.get("exclude_self") and ctx.source is not None:
             # 排除效果来源个体（维护者定案(0)："其他式神"= 除效果来源式神个体外的
-            # 所有双方式神——镜像对局含敌方同名；樱吹雪"其他所有式神"）
+            # 所有双方式神——镜像对局含敌方同名）
             refs = [r for r in refs if r != ctx.source]
         if extra.get("exclude_victim"):
             # 排除触发事件的 victim（胧月雪华斩"对所有其他[眩晕]的敌方角色"——
             # 与 random_damage 的 exclude_victim 参数同语义）
             vic = (ctx.event or {}).get("victim")
             refs = [r for r in refs if r != vic]
+        if extra.get("exclude_chosen"):
+            # 排除卡牌选择目标（增殖"使其他结附'蛊蚀'的敌方式神……"——
+            # 主目标不重复结算）
+            refs = [r for r in refs if r not in (ctx.chosen or [])]
         if rnd is not None and len(refs) > int(rnd):
             # 随机取 n 个（盛开"随机一个受伤己方式神"；repeat 每轮重新解析重新随机）
             refs = game.rng.sample(refs, int(rnd))
@@ -447,10 +496,10 @@ def resolve(game, spec, ctx) -> list[Ref]:
             refs = refs[int(idx):int(idx) + 1]
         return refs
     if spec.kind == "context":
-        if spec.key == "last_acted":
-            # 薰行动账本：控制者本回合最后一个行动的己方式神（player ext["last_acted"]
-            # 座次；账本空/该式神已不在场为空——"使你本回合最后一个行动的式神结附…"）
-            idx = game.state.players[ctx.controller].ext.get("last_acted")
+        if spec.key == "last_attacker":
+            # 薰攻击账本：控制者本回合最后一个攻击的己方式神（player ext["last_attacker"]
+            # 座次；账本空/该式神已不在场为空——"使你本回合最后一个攻击的式神结附…"）
+            idx = game.state.players[ctx.controller].ext.get("last_attacker")
             if idx is None:
                 return []
             s = game.state.players[ctx.controller].shikigami[int(idx)]
@@ -509,6 +558,9 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       雪童子"与眩晕的敌方角色交战时"类，挂 on_before_assault
     - {active: self|opponent}  ：当前回合方是否为能力控制者（"己方回合"限定）
     - {turn_mark_not: <key>}   ：控制者本回合未被 turn_mark 标记 key（"每回合合计一次"）
+    - {turn_count_eq: {"key": k, "count": n}} ：控制者本回合 turn_mark count=True
+      通道累计次数 == n（"若是本回合第 N 次触发"，鸮鸣；收集阶段求值——同事件
+      先结算的计数步对同批后匹配块不可见）
     - {orb_ge: n}              ：控制者当前鬼火 ≥ n（"若你有 2 点鬼火"类）
     - {assaults_left_ge|le: n} ：控制者剩余出击次数 ≥/≤ n（真意之歌 20200423
       "若你出击次数大于0……否则……"两段 steps 门控）
@@ -549,10 +601,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {victim_has_invocation: <灵咒名>} 等 `_has_invocation` 通用后缀：事件中
       该前缀 Ref 所指式神结附指定灵咒（干扰投掷响应"攻击你结附'鸮之守护'的
       式神时"——on_before_assault 的 victim 基准）
+    - {victim_invocation: <灵咒名>} 等 `_invocation` 通用后缀：事件 payload 的
+      `<前缀>_invocations` 灵咒名快照列表包含指定灵咒（on_shikigami_defeated
+      的 victim_invocations = 气绝移除前快照；无尽蛊/食魂蛊"结附'蛊蚀'的敌方
+      式神气绝时"——灵咒随气绝先移除，活体过滤读不到，须读快照）
     - {shikigami_countdown_free: <式神id>} ：控制者的式神（按数据 id）当前没有
       [倒计时]（觉醒·跳跳哥哥"不能在跳跳哥哥有[倒计时]时使用"play_condition）
-    - {round_ge: n}            ：对局回合数 ≥ n（双方各一回合为一轮，由 state.turn
-      半回合计数换算；今日委托·柒"5回合可用"）
     - {dice_below_x: true}     ：运势判定时事件当前骰点 < 所需点数 X（"将失败"重投门控）
     - {字段_ge: n}             ：事件数值字段 ≥ n（overheal_ge 过量治疗 ≥1 触发转化；
       orb_ge 为控制者鬼火的专用键，语义不同）；事件无该字段时回退读控制者
@@ -597,6 +651,13 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
         elif key == "turn_mark_not":
             if want in game.state.players[controller].ext.get("turn_marks", {}):
+                return False
+        elif key == "turn_count_eq":
+            # 每回合计数恰等门控（turn_mark count=True 通道；鸮鸣"若是本回合
+            # 第二次触发"——第 N 次触发语义）：控制者本回合该键累计次数 == count。
+            # 收集阶段求值——同事件内先结算的计数步对同批后匹配的块不可见
+            marks = game.state.players[controller].ext.get("turn_marks", {})
+            if int(marks.get(want["key"]) or 0) != int(want["count"]):
                 return False
         elif key == "orb_ge":
             if game.state.players[controller].orb < want:
@@ -687,18 +748,6 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             cnt = game.state.players[controller].quest_counts.get(want["kind"], 0)
             if cnt < int(want["count"]):
                 return False
-        elif key == "round_ge":
-            # 对局回合数 ≥ n（今日委托·柒"5回合可用"）：双方各一回合为一轮，
-            # 由半回合计数换算（state.turn 1-2 = 第 1 轮，依此类推）
-            if (game.state.turn + 1) // 2 < int(want):
-                return False
-        elif key == "holder_countdown":
-            # 能力持有者当前有[倒计时]（释煞阵"若跳跳哥哥有[倒计时]"形态能力门控）
-            if holder is None or holder.shikigami is None:
-                return False
-            hs = game.state.players[holder.player].shikigami[holder.shikigami]
-            if (hs.countdown is None) == bool(want):
-                return False
         elif key == "invocation_on_field":
             # 场上已有己方式神结附指定灵咒（存在性；麓鸣·穿/麓鸣·袭[增强]
             # "若场上已有己方的'八尺琼曲玉'"——持有方为己方、不限结附来源）
@@ -748,6 +797,13 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
             has_form = game.state.players[holder.player].shikigami[holder.shikigami].form is not None
             if has_form != bool(want):
+                return False
+        elif key == "victim_invocation":
+            # 事件 payload 的灵咒快照包含指定灵咒（值 = 灵咒名，存在性）——
+            # on_shikigami_defeated 的 victim_invocations（气绝移除前快照；
+            # 无尽蛊/食魂蛊"当一个结附'蛊蚀'的敌方式神气绝时"——灵咒随气绝先移除，
+            # 活体 victim_has_invocation 读不到，须读快照）
+            if want not in (event.get(key[:-11] + "_invocations") or []):
                 return False
         elif key == "holder_has_invocation":
             # 能力持有者结附指定灵咒（值 = 灵咒名，存在性；棺击降级口径"持有

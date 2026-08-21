@@ -17,8 +17,10 @@ versions:
           - {op: pick_generate, pool: [10040462, 10040463, 10040464, 10040465, 10040466],
              unique_ext: quest_clues_seen}
       abilities:
-        # [觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌}（同基础能力）
+        # [觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌}（同基础能力，
+        # 含'气绝时有效'定案——trigger_when_defeated）
         - when: on_card_played
+          trigger_when_defeated: true
           condition: {player: self, card_id: [10040451, 10040452, 10040453, 10040454]}
           steps:
             - {op: generate, card_ids: [10040451, 10040452, 10040453, 10040454]}

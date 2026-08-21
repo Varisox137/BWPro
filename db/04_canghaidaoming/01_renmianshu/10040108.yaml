@@ -16,9 +16,8 @@ versions:
       effects:
         steps: []
       abilities:
-        # 敌方回合开始时，恢复全部生命（同基础能力；觉醒替换能力块整体换绑）
+        # 每个回合开始时，恢复全部生命（0928 起不限敌方回合；觉醒替换能力块整体换绑）
         - when: on_turn_start
-          condition: {active: enemy}
           steps:
             - {op: heal, full: true, target: {kind: self}}
-      text: "[觉醒]：{人面树的力量等于其生命。敌方回合开始时，恢复全部生命。}"
+      text: "[觉醒]：{每个回合开始时，恢复全部生命。人面树的力量等于其生命。}"

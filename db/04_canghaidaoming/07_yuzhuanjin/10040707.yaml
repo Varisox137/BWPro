@@ -1,0 +1,24 @@
+id: 10040707
+name: 狐狩界
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: field
+      rarity: R
+      level: 2
+      intensity: 8
+      # 你的所有[爆能]消耗-1（幻境实体关键字 burst_discount：可叠加，同名幻境
+      # 各算一个，至少 0——tests/test_pack04_mech.py
+      # test_burst_discount_field_keyword 同型）
+      field_keywords: [burst_discount]
+      effects:
+        steps: []
+      abilities:
+        # 你的所有符咒牌都获得[瞬发]（卡牌光环绑定来源幻境实体：幻境离场光环
+        # 失效；火照之路 10030502 同型，subtype=talisman 限定符咒牌）
+        - when: on_summon_field
+          condition: {field_self: true}
+          steps:
+            - {op: card_aura, subtype: talisman, keywords: [fast], scope: field}
+      text: "你的所有[爆能]消耗-1。你的所有符咒牌都获得[瞬发]。"

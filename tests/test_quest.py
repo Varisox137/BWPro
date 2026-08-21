@@ -1,7 +1,7 @@
 """委托机制主题测试（三目委托，docs/rules.md 委托机制章）。
 
-覆盖：委托条件账本（PlayerState.quest_counts 11 种 kind 的记账点与口径）、
-quest_count_ge/round_ge 条件键与 [条件] 门控、多事多忙扩域（quest_enemy）、
+覆盖：委托条件账本（PlayerState.quest_counts 12 种 kind 的记账点与口径）、
+quest_count_ge 条件键与 [条件] 门控（round 账本回合计数；round_ge 键已删除）、多事多忙扩域（quest_enemy）、
 委托整理/截稿日（quest_complete/quest_done）、增强步级条件（蜃楼观光）、
 多段攻击（multi_strike）与伤害覆写（override_damage）/战斗免疫全类别
 （battle_immunity kind=all，二帚流）、今日委托每日替换（gen_weekday_quest）、
@@ -73,18 +73,21 @@ def test_quest_ledger_counts(db, make_game):
 
 
 def test_quest_ledger_offdeck_play(db, make_game):
-    """阵容套牌以外口径：使用过区域的生成牌（generated=True）才计 offdeck_play。"""
-    db.cards[10010154] = F.card(10010154, token=True,
+    """阵容套牌以外口径（定案(5)）：同名牌不在本局卡组（deck_names）的使用才计
+    offdeck_play——衍生牌/能力给与牌等同计；多择子选项按原牌名检测（实例即原牌）。"""
+    db.cards[10010154] = F.card(10010154, name="卡10010101", token=True,
                                 steps=[F.Step(op="generate", card_id=10010155)])
     db.cards[10010155] = F.card(10010155, token=True)
     g = make_game()
     pa, _ = battle_setup(g)
-    play(g, 0, 10010154)  # 普通手牌：不计
+    play(g, 0, 10010101)  # 卡组内同名牌：不计
+    assert pa.quest_counts.get("offdeck_play", 0) == 0
+    play(g, 0, 10010154)  # 同名牌在卡组（实例来源无关）：不计
     assert pa.quest_counts.get("offdeck_play", 0) == 0
     gen = pa.hand[-1]
     assert gen.generated
     g.apply({"op": "play_card", "uid": gen.uid})
-    assert pa.quest_counts["offdeck_play"] == 1
+    assert pa.quest_counts["offdeck_play"] == 1  # 衍生牌同名不在卡组：计
 
 
 def test_quest_ledger_enemy_defeat_and_revive(db, make_game):
@@ -126,10 +129,52 @@ def test_quest_ledger_shared_by_quest_enemy_form(db, make_game):
     play(g, 0, 10010101)
     assert pa.quest_counts["play"] == 2
     assert pb.quest_counts["play"] == 1
+    # 我方持形态时敌方行为计入我方账本（定案(4)：出击/伤害/用牌等同理）
+    pa.shikigami[1].level = 1  # 在场才读形态标记
+    pa.shikigami[1].form = CardInstance(uid=st.next_uid, id=10010252)
+    st.next_uid += 1
+    pass_turns(g, 1)  # 敌方回合
+    g.apply({"op": "assault", "index": 0})  # 敌方出击
+    assert pb.quest_counts["assault"] == 1
+    assert pa.quest_counts["assault"] == 1  # 多事多忙：敌方出击同计我方
+
+
+def test_quest_play_counts_response(db, make_game):
+    """'使用了四张牌'类 play 账本不限主动使用（定案(3)）：响应使用同计。"""
+    db.cards[10010165] = F.card(  # 响应牌：敌方式神攻击时自动使用
+        10010165, cost=1, keywords=["trigger"], token=True,
+        when="on_before_assault",
+        block_kw={"condition": {"attacker_side": "enemy"}},
+        steps=[F.dmg(1, T(kind="context", key="attacker"))])
+    g = make_game()
+    pa, pb = battle_setup(g, levels={0: 1})
+    give(g, 0, 10010165)
+    pass_turns(g, 1)  # 进敌方回合
+    g.apply({"op": "assault", "index": 0})
+    assert any(c.id == 10010165 for c in pa.graveyard)  # 响应已使用
+    assert pa.quest_counts["play"] == 1  # 响应使用同计 play
+
+
+def test_quest_regen_when_sanmu_defeated(db, make_game):
+    """三目基础/觉醒能力'气绝时有效'（定案(3)）：紧急委托使用事件中插入结算伤害
+    使三目气绝，使用事件完成后仍随机置入一张新紧急委托（on_card_played 延时时机
+    + trigger_when_defeated）。"""
+    db.shikigami[100101] = F.shiki(100101, ability=F.block(
+        F.Step(op="generate", card_ids=[10010166]),
+        when="on_card_played", trigger_when_defeated=True,
+        condition={"player": "self", "card_id": [10010160]}))
+    db.cards[10010166] = F.card(10010166, token=True)  # 生成物（伪新委托）
+    _quest(db, 10010160, cond={"quest_count_ge": {"kind": "play", "count": 0}},
+           steps=[F.dmg(99, SELF)])  # 使用事件自伤气绝
+    g = make_game()
+    pa, _ = battle_setup(g, levels={0: 1})
+    play(g, 0, 10010160)
+    assert pa.shikigami[0].defeated  # 使用事件中三目位气绝
+    assert any(c.id == 10010166 and c.generated for c in pa.hand)  # 仍置入新委托
 
 
 # ==========================================================================
-# [条件] 门控（quest_count_ge / round_ge / quest_done）
+# [条件] 门控（quest_count_ge / quest_done）
 # ==========================================================================
 
 def test_quest_play_condition_gate(db, make_game):
@@ -153,18 +198,36 @@ def test_quest_play_condition_gate(db, make_game):
     assert q2 not in pa.hand
 
 
-def test_quest_round_ge_gate(db, make_game):
-    """round_ge：对局轮数 (turn+1)//2 ≥ n（双方各一回合为一轮）。"""
-    _quest(db, 10010158, cond={"round_ge": 5}, steps=[F.Step(op="draw", count=1)])
+def test_quest_round_count_gate(db, make_game):
+    """round 账本（今日委托·柒"还需N回合可用"，定案(5)）：己方回合开始 +1；
+    多事多忙在场时敌方回合开始也 +1。"""
+    _quest(db, 10010158, cond={"quest_count_ge": {"kind": "round", "count": 2}},
+           steps=[F.Step(op="draw", count=1)])
+    db.cards[10010252] = F.card(10010252, shikigami=100102, token=True,
+                                card_type="form", form_power=1, form_health=1,
+                                tags=["quest_enemy"])
     g = make_game()
-    pa, _ = battle_setup(g)
+    pa, pb = battle_setup(g)
     q = give(g, 0, 10010158)
-    g.state.turn = 8  # 第 4 轮：不可用
-    with pytest.raises(IllegalAction):
-        g.apply({"op": "play_card", "uid": q.uid})
-    g.state.turn = 9  # 第 5 轮：可用
+    assert pa.quest_counts["round"] == 1  # 开局己方第 1 回合开始已计
+    pass_turns(g, 1)  # 敌方回合开始（无形态，不扩域）
+    assert pa.quest_counts["round"] == 1
+    pass_turns(g, 1)  # 己方第 2 回合开始
+    assert pa.quest_counts["round"] == 2
     g.apply({"op": "play_card", "uid": q.uid})
     assert q not in pa.hand
+    # 多事多忙在场：敌方回合开始也 +1（定案(5)）
+    g2 = make_game()
+    pa2, pb2 = battle_setup(g2)
+    pa2.shikigami[1].level = 1
+    pa2.shikigami[1].form = CardInstance(uid=g2.state.next_uid, id=10010252)
+    g2.state.next_uid += 1
+    q2 = give(g2, 0, 10010158)
+    pass_turns(g2, 1)  # 敌方回合开始：多事多忙扩域 → 我方 round 同计
+    assert pa2.quest_counts["round"] == 2
+    pass_turns(g2, 1)  # 回到己方回合（第 2 回合）
+    g2.apply({"op": "play_card", "uid": q2.uid})
+    assert q2 not in pa2.hand
 
 
 def test_quest_step_condition(db, make_game):
@@ -333,6 +396,15 @@ def test_weekday_quest_replaced_on_generate(gdb):
     assert pa.hand[-1].generated
 
 
+def test_sanmu_game_start_urgent_quest(gdb):
+    """三目基础能力'游戏开始时'（定案(3)）：0 级未入场也触发，且早于先手首个回合
+    开始——开局手牌已随机置入一张'紧急委托'。"""
+    team = [100404, 100101, 100102, 100103]
+    g = F.mk_game(gdb, team=team, check_deck=False)
+    assert any(c.id in (10040451, 10040452, 10040453, 10040454)
+               and c.generated for c in g.state.players[0].hand)  # 早于首回合结算完毕
+
+
 # ==========================================================================
 # 线索（pick_generate 不可重复 / player_aura）
 # ==========================================================================
@@ -365,9 +437,11 @@ def test_pick_generate_unique(db, make_game):
 
 
 def test_quest_clue_player_aura(db, make_game):
-    """线索·休憩口径：本局游戏中当控制者使用委托牌时触发（player_aura，可叠加）。"""
+    """线索·休憩口径：本局游戏中当控制者使用委托牌时触发（player_aura，可叠加）。
+    线索牌也是委托牌（subtype=quest，定案(6)）；"使用牌时"晚于法术牌本身生效带来
+    的能力进场——线索牌自身使用即触发回血/抽牌/直伤。"""
     _quest(db, 10010167, cond={"quest_count_ge": {"kind": "play", "count": 0}})
-    db.cards[10010168] = F.card(10010168, token=True, steps=[
+    db.cards[10010168] = F.card(10010168, subtype="quest", token=True, steps=[
         F.Step(op="player_aura", when="on_card_played",
                condition={"player": "self", "subtype": "quest"},
                steps=[F.Step(op="heal", amount=3,
@@ -375,12 +449,12 @@ def test_quest_clue_player_aura(db, make_game):
     g = make_game()
     pa, _ = battle_setup(g)
     pa.health = 10
-    play(g, 0, 10010168)  # 登记监听（非委托牌，自身不触发）
-    assert pa.health == 10
+    play(g, 0, 10010168)  # 线索自身使用：能力进场后 on_card_played 触发（定案(6)）
+    assert pa.health == 13
     play(g, 0, 10010167)  # 委托牌使用触发
-    assert pa.health == 13
+    assert pa.health == 16
     play(g, 0, 10010101)  # 非委托牌不触发
-    assert pa.health == 13
+    assert pa.health == 16
 
 
 # ==========================================================================

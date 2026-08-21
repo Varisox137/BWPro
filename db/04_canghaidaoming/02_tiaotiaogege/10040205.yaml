@@ -5,13 +5,13 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: form
-      rarity: SR
+      rarity: R
       level: 2
       form_power: 7
       form_health: 6
-      # 跳跳哥哥气绝时改为将其替换为‘棺材’（形态 tags coffin_on_defeat:<实体id>，
+      # 跳跳哥哥将气绝时改为将其替换为‘棺材’（形态 tags coffin_on_defeat:<实体id>，
       # 气绝流程在形态消灭前捕获旗标；扎根 tags no_retreat 先例）
       tags: [coffin_on_defeat:10040299]
       effects:
         steps: []
-      text: "跳跳哥哥气绝时，改为将其替换为‘棺材’。"
+      text: "跳跳哥哥将气绝时，改为将其替换为‘棺材’。"

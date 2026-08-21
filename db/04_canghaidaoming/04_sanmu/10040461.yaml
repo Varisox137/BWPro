@@ -9,9 +9,9 @@ versions:
       token: true  # 衍生牌（无稀有度；周日'今日委托'）
       level: 1
       keywords: [fast]
-      play_condition: {round_ge: 5}
-      # [条件]：{还需5回合可用}（在牌库也有效；口径 = 对局轮数 (turn+1)//2 ≥ 5，
-      # 双方各一回合为一轮）
+      play_condition: {quest_count_ge: {kind: round, count: 5}}
+      # [条件]：{还需5回合可用}（在牌库也有效；口径（定案(5)）= 己方回合开始计数
+      # +1（round 账本），多事多忙在场时敌方回合开始也 +1）
       effects:
         steps:
           - {op: draw, count: 1}

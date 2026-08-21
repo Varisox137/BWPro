@@ -29,7 +29,10 @@ versions:
             - op: repeat
               count: {event_base_power: shikigami}
               steps:
+                # 气绝敌方式神入池按樱花妖门控（定案(2) include_defeated_kw：
+                # iff 觉醒能力在场），每次重算合法目标池
                 - {op: damage, amount: 1,
-                   target: {kind: all, pool: enemy_shikigami, random: 1}}
+                   target: {kind: all, pool: enemy_shikigami, random: 1,
+                            include_defeated_kw: true}}
             - {op: switch_form, into: 10040352, target: {kind: self}}
       text: "每个己方回合一次，己方式神复活时，随机对一个敌方式神造成1点伤害，重复该式神基础力量的次数，然后切换为‘晚樱之意’。[羁绊]：{进场时桃花妖随机为一个己方受伤角色恢复3生命。}"

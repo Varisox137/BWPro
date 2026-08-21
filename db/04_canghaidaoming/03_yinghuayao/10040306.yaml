@@ -10,7 +10,9 @@ versions:
       effects:
         steps:
           # 随机一项、重复6次（repeat 包裹 random_branch，惊鸿之舞 10020208 先例；
-          # 每轮重新随机分支与目标）
+          # 每轮重新随机分支与目标）。目标池含气绝者按樱花妖门控（定案(2)
+          # include_defeated_kw，每次重算合法目标池）：治疗支己方气绝入池 iff
+          # heal_defeated_countdown 在场；伤害支敌方气绝入池 iff 觉醒在场
           - op: repeat
             count: 6
             steps:
@@ -20,10 +22,12 @@ versions:
                   - condition: null
                     steps:
                       - {op: heal, amount: 2,
-                         target: {kind: all, pool: friendly_character, random: 1}}
+                         target: {kind: all, pool: friendly_character, random: 1,
+                                  include_defeated_kw: true}}
                   # 对一个敌方角色造成1点伤害
                   - condition: null
                     steps:
                       - {op: damage, amount: 1,
-                         target: {kind: all, pool: enemy_character, random: 1}}
+                         target: {kind: all, pool: enemy_character, random: 1,
+                                  include_defeated_kw: true}}
       text: "随机一项：为一个己方角色恢复2点生命；或对一个敌方角色造成1点伤害。重复6次。"

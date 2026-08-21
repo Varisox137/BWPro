@@ -1,0 +1,11 @@
+# 灵咒定义（loader 特判收集；text 逐字 = card_data_raw.md 引号内原文）
+invocations:
+  - name: 蛊蚀
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
+          unique: none  # 不唯一、可叠加（裁决12：结附/存量增减改变生命上限，<=0 即气绝）
+          power: -1  # 结附的式神降低1力量
+          health: -1  # 结附的式神降低1生命
+          text: "使结附的式神降低1力量和1生命。"

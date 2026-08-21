@@ -1,0 +1,24 @@
+id: 10040704
+name: 御狩之愿
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 发布日期
+      card_type: form
+      rarity: SR
+      level: 2
+      form_power: 3
+      form_health: 7
+      effects:
+        steps: []
+      abilities:
+        # 攻击敌方式神时获得[连击]（战斗条件授予，scope=battle 本次战斗；
+        # 飘零之舞 10040308"攻击式神时获得[连击]"同型，加 victim_side=enemy
+        # 限定敌方）
+        - when: on_before_assault
+          condition: {attacker_shikigami: self, victim_side: enemy,
+                      victim_kind: shikigami}
+          steps:
+            - {op: grant_keyword, keyword: combo, scope: battle,
+               target: {kind: self}}
+      text: "攻击敌方式神时获得[连击]。"
