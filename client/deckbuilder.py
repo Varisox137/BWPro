@@ -54,7 +54,7 @@ def _ask_env() -> int | None:
 def available_shikigami(db: CardDatabase) -> list:
     """全部可构筑式神（kind=shikigami 且非 WIP，按 id 排序）。
 
-    WIP 式神（wip=true，如姑获鸟/青行灯/酒吞童子——仅基础数据或卡牌未齐）
+    WIP 式神（wip=true 标记的半成品式神——仅基础数据或卡牌未齐）
     不进构筑可选池；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）可选。
     """
     return sorted((d for d in db.shikigami.values()

@@ -1,14 +1,24 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040901
 name: 鬼刃·两断
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: combat
       rarity: R
       level: 1
+      keywords: [trigger]  # [响应]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 主动使用 = 普通战斗牌 +2/+1（combat_card_stats 从 effects 块提取战力/护甲）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      response:
+        # [响应]：当鬼切触发‘髭切’时自动使用（rules.md 第三十七章三：响应战斗牌
+        # 不走战斗分派，覆盖块手动表达 +2/+1 与[必杀]——attack_buff 攻击后到期）
+        when: on_invocation_trigger
+        condition: {invocation: 髭切, player: self}
+        steps:
+          - {op: attack_buff, power: 2, keywords: [lethal], target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      text: "[响应]：{当鬼切触发‘髭切’时，自动使用并使鬼切本次战斗获得[必杀]。}"

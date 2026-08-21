@@ -191,6 +191,13 @@ class Game:
         # 单元 drain（_drain_horizon）；栈空=非块上下文（horizon=0，由外层统一结算）
         self._horizon_seq: int = 0
         self._horizon_stack: list[int] = []
+        # 反制挂账（罗城门 counter_on_kill）：条目 {"attacker": Ref}——该攻击者击杀
+        # 式神且存在进行中的出牌（_active_play_marker）时无效化该次使用并消耗条目；
+        # 战斗终止点清除该攻击者的残留条目
+        self._counter_watches: list[dict] = []
+        # 进行中的出牌 nullified 标记（_cmd_play_card 的 on_before_card_play marker；
+        # 反制钩子经此置位——同魔音扰心通道），非出牌结算期间为 None
+        self._active_play_marker: dict | None = None
 
     # ---------- 关键字（多重集；一次性/持续/永久三类，见 docs/terminology.md） ----------
 
@@ -353,6 +360,13 @@ class Game:
                     n = len(pl.fields)
                     src.ext["dyn_power"] += n * int(aura.get("power", 1))
                     src.ext["dyn_health"] += n * int(aura.get("health", 1))
+                elif kind == "enemy_deck_invocation":
+                    # 支配者：敌方牌库中每有一张结附指定灵咒（aura["name"]）的牌，
+                    # 持有者 +1/+1（读取时求值；牌离库移除灵咒后自动减）
+                    n = sum(1 for c in self.state.players[1 - pi].deck
+                            if any(e["name"] == aura.get("name") for e in c.invocations))
+                    src.ext["dyn_power"] += n
+                    src.ext["dyn_health"] += n
                 elif kind == "friendly_invocation":
                     # 薰形态系列（鸮之利爪/警惕/庇佑）：己方在场且结附指定灵咒
                     # （aura["name"]，不限结附来源）的式神 +power/+health（读取时求值；
@@ -386,6 +400,12 @@ class Game:
                     # 时钳 0——力量不为负）
                     s.ext["dyn_power"] += max(0, s.health) - (
                         s.base_power + s.perm_power + s.temp_power)
+                if self.state.active != pi:
+                    # 敌方回合 +N 力量（散华之刃 power_on_enemy_turn:3，冒号参数
+                    # 伪关键字——前缀扫描取值）
+                    for kw in s.keywords:
+                        if kw.startswith("power_on_enemy_turn:"):
+                            s.ext["dyn_power"] += int(kw.split(":", 1)[1])
         for pi, pl in enumerate(self.state.players):
             # 青蛙瓷器光环（契约"引擎读"）：其控制者本回合（含敌方回合）运势判定成功过
             # （ext luck_success_turn == 当前回合号）则在场的青蛙瓷器 +2 力量——不叠加、
@@ -657,7 +677,8 @@ class Game:
         破甲 ≧2 的角色——铃鹿御前型条件瞬发；player_health_ge = 己方牌手当前生命
         下限——血香型条件[连击]；enemy_deck_le = 敌方牌库张数上限——意外之喜型
         条件[瞬发]）；invocation_on_field = 场上有己方式神结附指定灵咒——麓鸣·穿型
-        条件[瞬发]，与 targets.match_condition 同名算子同语义）；式神未出战时条件不满足。"""
+        条件[瞬发]，与 targets.match_condition 同名算子同语义）；enemy_drew_invocation =
+        对方牌手本回合抽到过结附指定灵咒的牌——惊梦型条件[瞬发]）；式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
@@ -703,6 +724,13 @@ class Game:
                 if not any(s.in_play and any(e["name"] == ck["invocation_on_field"]
                                              for e in s.invocations)
                            for s in p.shikigami):
+                    continue
+            if ck.get("enemy_drew_invocation") is not None:
+                # 对方牌手本回合抽到过结附指定灵咒的牌（惊梦型条件[瞬发]；
+                # 读对方 ext["drew_invocation_turn"] 账本）
+                ledger = self.state.players[
+                    1 - self.state.players.index(p)].ext.get("drew_invocation_turn") or []
+                if ck["enemy_drew_invocation"] not in ledger:
                     continue
             if ck.get("shikigami_has_form") is not None:
                 # 控制者的式神（按数据 id）结附着形态（福寿双全条件瞬发；
@@ -842,6 +870,8 @@ class Game:
           （card.mods["_kill"]，见 _materialize）时优先快照，否则读活账本。
         - {"victim_invocation_count": 灵咒名}：事件 victim_invocations 快照中该
           灵咒的条目数（食魂蛊"其上每有一个'蛊蚀'"——气绝移除前快照，配 per 倍率）。
+        - {"deck_invocation_count": {"name": 灵咒名, "side": self|enemy}}：指定侧
+          牌库中结附该灵咒的牌数（食梦貘"敌方牌库中每有一张'梦魇'"，缺省 enemy）。
         - "per": n：动态项总和的倍率，最终值 = base + 动态项总和 × per
           （禁锢之刀"每消灭过一个…便获得+2力量"、棒球炸弹"2+2×幻境数"）；
           缺省 1，静态 base 不受倍率影响。
@@ -889,6 +919,14 @@ class Game:
                 # 条目数（食魂蛊"其上每有一个'蛊蚀'，为你恢复2点生命"——配 per 倍率）
                 dyn += (event.get("victim_invocations") or []).count(
                     raw["victim_invocation_count"])
+            if raw.get("deck_invocation_count") and game is not None and controller is not None:
+                # 指定侧牌库中结附指定灵咒的牌数（食梦貘"敌方牌库中每有一张'梦魇'"）
+                spec = raw["deck_invocation_count"] or {}
+                name = spec.get("name")
+                side = spec.get("side", "enemy")
+                pi = controller if side == "self" else 1 - controller
+                dyn += sum(1 for c in game.state.players[pi].deck
+                           if any(e["name"] == name for e in c.invocations))
             if raw.get("burst_x"):
                 # 爆能 X 快照（不夜之火批次）：memo 优先，否则出牌时写入的 card.mods
                 if memo is not None and memo.get("burst_x") is not None:
@@ -1056,6 +1094,10 @@ class Game:
           数据 id → 生成（generated=True）入手，续跑挂起块。
         - kind="quest_complete_pick"（委托整理"使一张紧急委托视为达成"）：uid 给出
           手牌 → 该实例 mods["quest_done"] 置位，续跑挂起块。
+        - kind="invocation_pick"（鬼切"选择一张鬼斩结附"）：choice 给出灵咒名
+          → 对 pending 目标结附，续跑挂起块。
+        - kind="search_pick"（觉醒·鬼切检索"选择一张置入手牌"）：uid 给出牌库
+          命中牌 → 置入手牌并洗牌库，续跑挂起块。
         """
         pending = self.state.pending_choice
         if pending is None:
@@ -1074,6 +1116,12 @@ class Game:
             return
         if pending.get("kind") == "pick_generate":
             self._cmd_pick_generate_choose(cmd, pending)
+            return
+        if pending.get("kind") == "invocation_pick":
+            self._cmd_invocation_pick_choose(cmd, pending)
+            return
+        if pending.get("kind") == "search_pick":
+            self._cmd_search_pick_choose(cmd, pending)
             return
         if pending.get("kind") == "quest_complete_pick":
             self._cmd_quest_complete_choose(cmd, pending)
@@ -1218,6 +1266,82 @@ class Game:
         self._log(f"{p.name} 将【{cdef.name}】置入手牌")
         if pending.get("unique_ext"):
             p.ext.setdefault(pending["unique_ext"], []).append(cdef.id)
+        self.state.pending_choice = None
+        if self._suspended is not None:
+            block, ctx, start = self._suspended
+            self._suspended = None
+            self._resolve_block(block, ctx, start)
+
+    def _open_invocation_pick(self, pi: int, options: list[str],
+                              target: Ref | None, source: Ref | None) -> bool:
+        """开启"选择灵咒结附"交互（鬼切"选择一张鬼斩结附"，kind="invocation_pick"）：
+        选项 = 灵咒名列表（>1 个才挂起，由 choose_invocation 动作保证）；作答键
+        choice（灵咒名，同 pick_generate）。结附目标/来源随 pending 传递（Ref 序列化
+        为 [player, shikigami] 下标对）。"""
+        p = self.state.players[pi]
+        self.state.pending_choice = {
+            "kind": "invocation_pick", "player": pi, "options": list(options),
+            "target": ([target.player, target.shikigami]
+                       if target is not None else None),
+            "source": ([source.player, source.shikigami]
+                       if source is not None else None),
+        }
+        self._log(f"{p.name} 选择一张灵咒牌结附")
+        return True
+
+    def _cmd_invocation_pick_choose(self, cmd: dict, pending: dict) -> None:
+        """选择灵咒作答：choice 给出灵咒名 → 对 pending 的目标结附该灵咒（来源所属
+        牌手 = 作答方；走 attach_invocation 完整流程——唯一性/事件照常），
+        清 pending 并续跑挂起块（_suspended）。"""
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        choice = cmd.get("choice")
+        if choice not in pending["options"]:
+            raise IllegalAction("不在可选的灵咒之列")
+        tref = pending.get("target")
+        if tref is None:
+            raise IllegalAction("灵咒结附缺少目标")
+        sref = pending.get("source")
+        self.attach_invocation(
+            str(choice), player=pi,
+            source=Ref(player=sref[0], shikigami=sref[1]) if sref else None,
+            target=Ref(player=tref[0], shikigami=tref[1]))
+        self.state.pending_choice = None
+        if self._suspended is not None:
+            block, ctx, start = self._suspended
+            self._suspended = None
+            self._resolve_block(block, ctx, start)
+
+    def _open_search_pick(self, pi: int, options: list[int]) -> bool:
+        """开启"检索选择置入手牌"交互（觉醒·鬼切，kind="search_pick"）：选项 =
+        牌库命中卡牌的 uid 列表（>1 张才挂起，由 search_deck(choose=True) 保证）；
+        作答键 uid（同 discard_pick）。命中即洗牌在作答侧执行。"""
+        p = self.state.players[pi]
+        self.state.pending_choice = {
+            "kind": "search_pick", "player": pi, "options": list(options),
+        }
+        self._log(f"{p.name} 选择牌库中一张牌置入手牌")
+        return True
+
+    def _cmd_search_pick_choose(self, cmd: dict, pending: dict) -> None:
+        """检索选择作答：uid 给出牌库命中牌 → 置入手牌（reason="search"）并洗牌库，
+        清 pending 并续跑挂起块（_suspended）。"""
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        uid = cmd.get("uid")
+        if uid not in pending["options"]:
+            raise IllegalAction("不在检索命中的牌之列")
+        p = self.state.players[pi]
+        card = next((c for c in p.deck if c.uid == uid), None)
+        if card is None:
+            raise IllegalAction("该牌已不在牌库中")
+        self.move_card(p, card, "hand", reason="search")
+        self._materialize(p, card, self.db.cards[card.id])  # 生成点统一快照（同 search_deck）
+        self._log(f"{p.name} 将【{self.db.cards[card.id].name}】置入手牌")
+        self.rng.shuffle(p.deck)
+        self._log(f"{p.name} 洗了牌库")
         self.state.pending_choice = None
         if self._suspended is not None:
             block, ctx, start = self._suspended
@@ -1757,8 +1881,13 @@ class Game:
         # nullified 为可变标记（参照伤害管线的可变 payload 模式）——监听者（魔音扰心）
         # 置位后本次使用终止结算：跳过效果块，牌照常离手进墓地（费用/瞬发名额已付不退）
         marker = {"nullified": False}
-        self.emit("on_before_card_play", player=self.state.active, uid=uid, card=card,
-                  nullified=marker)
+        self._active_play_marker = marker  # 反制钩子读取点（check_defeated）
+        try:
+            self.emit("on_before_card_play", player=self.state.active, uid=uid, card=card,
+                      card_type=eff_type, shikigami=cdef.shikigami,
+                      nullified=marker)
+        finally:
+            self._active_play_marker = None
         if marker["nullified"]:
             self.move_card(p, card, "graveyard")
             self._log(f"【{cdef.name}】的使用被无效化")
@@ -2285,6 +2414,12 @@ class Game:
         """
         removed = self._remove_from_zone(p, card)
         src_zone = from_zone if from_zone is not None else removed
+        if (src_zone == "deck" and to_zone not in ("deck", "hand")
+                and card.invocations):
+            # 牌级灵咒离库清除（梦魇）：移出牌库且非入手（入手走 _proc_invocations_on_move
+            # 触发/移除通道）时静默移除——回库/洗牌保留
+            card.invocations = []
+            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（离开牌库）")
         if to_zone == "hand":
             self._assign_hand_seq(p, card)
         p.zones.setdefault(to_zone, []).append(card)
@@ -2331,6 +2466,12 @@ class Game:
                 continue
             self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒"
                       f"【{idef.name}】触发（抽到）")
+            # 惊梦账本：抽牌者本回合抽到过结附该灵咒的牌（enemy_drew_invocation 读取）
+            pi = self.state.players.index(p)
+            ledger = self.state.players[pi].ext.setdefault("drew_invocation_turn", [])
+            ledger.append(inv["name"])
+            self.emit("on_invocation_drawn", player=pi, card=card,
+                      invocation=inv["name"], source_player=inv["player"])
             self.queue.append(_Pending(idef.draw_trigger, ExecContext(
                 controller=inv["player"], card=card, event=payload,
                 is_ability=True, ability_uid=f"inv:{card.uid}:{inv['name']}"),
@@ -2749,6 +2890,9 @@ class Game:
             self._battle_strikes.pop(bid, None)  # 多段攻击登记随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗终止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_retarget.pop(bid, None)  # 交战目标改换登记随战斗终止清理
+            # 反制挂账随战斗终止清除该攻击者的残留条目（罗城门：未击杀即过期）
+            self._counter_watches[:] = [w for w in self._counter_watches
+                                        if w["attacker"] != atk_ref]
             self._battle_stack.pop()
             self._settle("—— 战斗结束 ——")
             # 攻击者"直到攻击后"的临时强化在此结束；keep_attack_buffs（残心）跳过核销
@@ -4606,6 +4750,18 @@ class Game:
             self._log(f"{self.db.shikigami[s.id].name} 因【{reason}】而气绝")
         if s.defeated or s.health > 0:
             return
+        if (source is not None and source.shikigami is not None
+                and self._active_play_marker is not None
+                and not self._active_play_marker.get("nullified")):
+            # 反制钩子（罗城门"若击杀式神，则无效化其使用的牌"）：击杀者匹配挂账
+            # watch 且有进行中的出牌 → 置 nullified（同魔音扰心通道），条目消耗
+            for w in list(self._counter_watches):
+                if w["attacker"] == source:
+                    self._counter_watches.remove(w)
+                    self._active_play_marker["nullified"] = True
+                    self._log(f"反制触发：{self.db.shikigami[self.state.players[source.player].shikigami[source.shikigami].id].name}"
+                              f" 击杀了 {self.db.shikigami[s.id].name}")
+                    break
         # 气绝前/消灭前 1（rules.md 第七章 step 1，即时时机；射怪鸟事类响应挂此时机）
         self.emit("on_before_defeat", victim=ref, source=source, reason=reason,
                   battle=self._battle_stack[-1] if self._battle_stack else None)
@@ -5294,6 +5450,11 @@ class Game:
                 idef = self.db.invocations.get(inv["name"])
                 if idef is not None:
                     blocks += [(b, inv.get("ability_seq", 0)) for b in idef.abilities]
+                    if self._has_keyword(s, "inv_trigger_echo"):
+                        # 刀鸣之刃（伪关键字 inv_trigger_echo）：该式神的灵咒能力
+                        # 触发两次——能力块收集两份（鬼斩响应名额按（窗口, 事件名）
+                        # 去重，announce 双发但响应不双触发）
+                        blocks += [(b, inv.get("ability_seq", 0)) for b in idef.abilities]
             for ability, aseq in blocks:
                 if ability.countdown is not None:
                     continue  # 倒计时能力块不作事件监听（由倒计时框架归零时结算）
@@ -5466,6 +5627,14 @@ class Game:
             self._response_window, (ctx.event or {}).get("name"))  # 成功结算才占用本时机名额
         self._log(f"{p.name} 的响应牌【{cdef.name}】触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
+        if cdef.response is not None:
+            # 带 response 覆盖块的响应牌（魔音扰心型 + 鬼斩响应三连——两断/罗城门/影杀）：
+            # 按覆盖块效果结算（落墓地走 steps），不走战斗/形态分派——响应战斗牌
+            # 不发起战斗，其"攻击"语义由覆盖块内的显式动作（attack_buff/launch_attack）
+            # 组合表达。现有 19 张覆盖块全是法术，本分派对存量数据无影响。
+            # 使用后事件/弹回由调用方（_resolve_block_inner 尾部）统一处理。
+            self.move_card(p, ctx.card, "graveyard")
+            return False
         if cdef.card_type == "combat" and si is not None:
             # 仅"（被）攻击时"时机触发的响应战斗牌插入当前战斗（rules.md:52）；
             # 其余时机（偷袭"敌方战斗区式神气绝时"等）即使战斗中触发，也不插入——

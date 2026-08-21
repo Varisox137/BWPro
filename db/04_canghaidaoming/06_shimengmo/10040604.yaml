@@ -1,4 +1,3 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040604
 name: 觉醒·食梦貘
 versions:
@@ -6,9 +5,24 @@ versions:
   history:
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      subtype: awaken
+      awaken_power: 1   # +1/+1：永久身材增益，"觉醒后"延时时机之后授予
+      awaken_health: 1
+      rarity: SR
+      level: 2
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      abilities:
+        # [觉醒]：[贯通]（觉醒时永久授予，气绝清除、复活重获——觉醒·山童
+        # 10011606 同例）
+        - when: on_awakened
+          condition: {target_shikigami: self}
+          steps:
+            - {op: grant_keyword, keyword: piercing, target: {kind: self}}
+        # 基础能力升级：对敌方牌手造成战斗伤害时结附三张'梦魇'（觉醒换绑
+        # 替换基础能力，引擎已处理）
+        - when: on_player_damaged
+          condition: {source_shikigami: self, kind: combat, player: opponent}
+          steps:
+            - {op: attach_deck_invocation, name: 梦魇, count: 3}
+      text: "[觉醒]：{[贯通]。当食梦貘对敌方牌手造成战斗伤害时，随机使敌方牌库里三张牌结附‘梦魇’。}"

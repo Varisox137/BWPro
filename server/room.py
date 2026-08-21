@@ -532,17 +532,18 @@ class Room:
                         self.game.apply({"op": "ready", "player": pi})
             else:  # 回合超时：先收尾结算中交互选择，升级阶段先随机升级，再结束回合
                 if st.pending_choice is not None:
-                    # 结算中交互选择（检视选牌/交互弃牌/忘忧牌名/选择召唤幻境）挂起时
-                    # 随机作答到底——否则 apply 拒绝 choose 以外的指令，回合无法超时
-                    # 收尾、计时器 key 不变也不会重启（死局）。card_name 与
-                    # field_summon_pick 的作答键为 choice（数据 id），其余 kind 为
-                    # uid（实例 uid）。回合内主动选择超时 → 系统自动随机选择并结束
-                    # 回合（定案(2)）
+                    # 结算中交互选择（检视选牌/交互弃牌/忘忧牌名/选择召唤幻境/生成入手/
+                    # 灵咒结附/检索入手）挂起时随机作答到底——否则 apply 拒绝 choose
+                    # 以外的指令，回合无法超时收尾、计时器 key 不变也不会重启（死局）。
+                    # card_name / field_summon_pick / pick_generate / invocation_pick
+                    # 的作答键为 choice（数据 id 或灵咒名），其余 kind 为 uid（实例 uid）。
+                    # 回合内主动选择超时 → 系统自动随机选择并结束回合（定案(2)）
                     chooser = st.players[st.pending_choice["player"]].name
                     while st.pending_choice is not None:
                         pend = st.pending_choice
                         cmd = {"op": "choose", "player": pend["player"]}
-                        if pend.get("kind") in ("card_name", "field_summon_pick"):
+                        if pend.get("kind") in ("card_name", "field_summon_pick",
+                                                "pick_generate", "invocation_pick"):
                             cmd["choice"] = self.rng.choice(pend["options"])
                         else:
                             cmd["uid"] = self.rng.choice(pend["options"])

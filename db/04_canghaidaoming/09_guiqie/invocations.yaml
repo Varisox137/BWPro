@@ -1,0 +1,54 @@
+# 灵咒定义（loader 特判收集；text 逐字 = card_data_raw.md 引号内原文）
+# 鬼斩三灵咒：各自独立唯一（同名再结附替换、不同名共存——鬼切"选择一个未结附的
+# 鬼斩"由 choose_invocation 的已结附过滤保证）；能力块首步 announce_invocation
+# 发 on_invocation_trigger（响应挂点），holder_in_combat 门控含复仇之刃视同
+# （virtual_combat 伪关键字）。
+invocations:
+  - name: 髭切
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
+          unique: shikigami_unique
+          abilities:
+            - when: on_enter_combat  # 当敌方式神进入战斗区时
+              timing: insert  # "额外先攻击一次"：即时时机——在敌方战斗交战阶段前插入
+              condition: {player: opponent, holder_in_combat: true}  # 若鬼切在战斗区
+              steps:
+                - {op: announce_invocation, name: 髭切, target_from: shikigami}
+                # 本次战斗获得免疫（战斗伤害）
+                - {op: grant_immunity, scope: next_battle, target: {kind: self}}
+                - {op: launch_attack, at: event}  # 攻击进入战斗区的该式神
+          text: "当敌方式神进入战斗区时若鬼切在战斗区，额外先攻击一次该式神且本次战斗获得免疫。"
+  - name: 友切
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928
+          unique: shikigami_unique
+          abilities:
+            - when: on_before_card_play  # 当敌方式神使用法术牌时（使用手牌前，即时时机）
+              condition: {player: opponent, card_type: spell, holder_in_combat: true}
+              steps:
+                - {op: announce_invocation, name: 友切}
+                - {op: grant_immunity, scope: next_battle, target: {kind: self}}
+                # 攻击使用法术牌的该式神（context 键 card_shikigami：被使用牌所属式神
+                # 在事件 player 方的在场座次；未出战/气绝/中立牌为空操作）
+                - {op: launch_attack, at: targets,
+                   target: {kind: context, key: card_shikigami}}
+          text: "当敌方式神使用法术牌时若鬼切在战斗区，额外先攻击一次该式神且本次战斗获得免疫。"
+  - name: 狮子之子
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928
+          unique: shikigami_unique
+          abilities:
+            - when: on_turn_end  # 当敌方回合结束时
+              condition: {player: opponent, holder_in_combat: true, combat_empty: enemy}
+              steps:
+                - {op: announce_invocation, name: 狮子之子}
+                # 本次战斗得+2力量（攻击后到期，attack_buff 通道）
+                - {op: attack_buff, power: 2, target: {kind: self}}
+                - {op: launch_attack}  # 无目标：敌方战斗区空，直击敌方牌手
+          text: "当敌方回合结束时若鬼切在战斗区且敌方战斗区没有式神，额外先攻击一次敌方牌手，本次战斗得+2力量。"

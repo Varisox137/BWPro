@@ -118,6 +118,9 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     # 战斗开始按被攻击者判定、战斗作用域授予）
     "defeat_on_damage": ("shikigami", CLEAR_ANY_TURN_START),  # 驱魔符标记（本回合
     # "受到伤害时使其气绝"；伤害管线扣减生命后入气绝队列，同必杀通道）
+    "drew_invocation_turn": ("player", CLEAR_ANY_TURN_START),  # 惊梦账本（本回合
+    # 该牌手抽到过结附灵咒的牌）：灵咒名列表，_proc_invocations_on_move 触发时记账；
+    # enemy_drew_invocation 条件键读取
 }
 
 # ---------- 条件迷你语言键白名单 ----------
@@ -150,11 +153,16 @@ CONDITION_KEYS: frozenset[str] = frozenset({
                         # 事件携带 from_coffin=True，不再触发变棺；_not 通用后缀）
     "victim_invocation",  # 事件 victim_invocations 快照含指定灵咒（无尽蛊/食魂蛊
                           # "结附'蛊蚀'的敌方式神气绝时"；_invocation 通用后缀实例）
+    "holder_in_combat",  # 能力持有者视同处于战斗区（鬼斩"处于战斗区时"门控）：
+                         # 持有者方战斗区座次==持有者，或持有者持 virtual_combat
+                         # 伪关键字（复仇之刃视同）
+    "enemy_drew_invocation",  # 对方牌手本回合抽到过结附指定灵咒的牌（惊梦瞬发条件）；
+                              # 读取对方 ext["drew_invocation_turn"] 账本
     # —— 收集器专用（不进 match_condition 按键循环）——
     "card_in_hand", "field_self", "field_intensity_ge",
     # —— 事件字段等值/通用后缀具名实例（现行数据全集）——
     "player", "kind", "card_type", "subtype", "reason", "shikigami",
-    "card_id",
+    "card_id", "invocation",
     "dice", "judge", "gained", "old", "in_combat", "summon",
     "golden_feather", "card_revealed", "pre_play_form",
     "attacker_side", "victim_side", "source_side", "target_side", "shikigami_side",
@@ -176,6 +184,7 @@ CONDITIONAL_KEYWORD_KEYS: frozenset[str] = frozenset({
     "enemy_deck_le", "shikigami_has_form", "friendly_field",
     "deck_field_distinct_ge", "dice_six_ge",
     "invocation_on_field",  # 场上有己方式神结附指定灵咒（麓鸣·穿条件[瞬发]）
+    "enemy_drew_invocation",  # 对方牌手本回合抽到过结附指定灵咒的牌（惊梦[瞬发]）
 })
 
 # TargetSpec model_extra 键白名单（targets._spec_filtered / resolve /
@@ -197,8 +206,6 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
                        # 决意"你结附'鸮之守护'的式神"用同源限定；牌手目标被滤除）
     "chosen_index",    # step 目标 {kind: choose, chosen_index: n}：多选择目标卡牌
                        # （CardDef.target2）按序取第 n 个选择目标（麓鸣·灭双 choose）
-    "exclude_self",    # 排除效果来源个体（resolve 时按 ctx.source 排除，镜像对局
-                       # 不误伤敌方同名——樱吹雪"其他所有式神"维护者定案(0)）
     "exclude_chosen",  # 排除卡牌选择目标（增殖"使其他结附'蛊蚀'的敌方式神"——
                        # 主目标不重复结算）
     "include_defeated_kw",  # 气绝入池门控（樱花妖定案(2)）：己方气绝入池 iff 在场
@@ -223,6 +230,9 @@ DYNAMIC_VALUE_KEYS: frozenset[str] = frozenset({
     "kill_count",  # 击杀账本查询（{kill_count: {shikigami: id}|{scope: player}}）
     "victim_invocation_count",  # 事件 victim_invocations 快照中指定灵咒条目数
                                 # （食魂蛊"其上每有一个'蛊蚀'"，配 per 倍率）
+    "deck_invocation_count",  # 指定侧牌库中结附指定灵咒的牌数（食梦貘"牌库中
+                              # 每有一张'梦魇'"）：{"deck_invocation_count": {"name": 灵咒名,
+                              # "side": "self"|"enemy"}}
 })
 
 # 次数参数字典（count/times）白名单：draw/generate/repeat/deck_top_pick/

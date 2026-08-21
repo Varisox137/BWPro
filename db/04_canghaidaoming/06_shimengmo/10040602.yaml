@@ -1,14 +1,29 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040602
 name: 梦中低语
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: field
       rarity: R
       level: 1
+      intensity: 4
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      abilities:
+        # 己方回合结束时，随机使敌方牌库里一张牌结附'梦魇'（佛前石钵 10030304
+        # 幻境"己方回合结束时"同型：on_turn_end + active=self）
+        - when: on_turn_end
+          condition: {active: self}
+          steps:
+            - {op: attach_deck_invocation, name: 梦魇, count: 1}
+        # 当敌方抽到结附'梦魇'的牌时，此牌对应的式神本回合得-2力量
+        # （on_invocation_drawn payload {player=抽牌者, card, invocation}；
+        # context 键 card_shikigami = 所抽牌所属式神在抽牌者方的在场座次，
+        # 未出战/气绝/中立牌为空——targets.resolve）
+        - when: on_invocation_drawn
+          condition: {player: opponent, invocation: 梦魇}
+          steps:
+            - {op: buff_power, amount: -2, scope: turn,
+               target: {kind: context, key: card_shikigami}}
+      text: "己方回合结束时，随机使敌方牌库里一张牌结附‘梦魇’。当敌方抽到结附‘梦魇’的牌时，此牌对应的式神本回合得-2力量。"

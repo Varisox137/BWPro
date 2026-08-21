@@ -1,14 +1,25 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040606
 name: 永眠之梦
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
-      level: 1
+      card_type: field
+      rarity: SR
+      level: 2
+      intensity: 8
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      abilities:
+        # 己方回合结束时，随机使敌方牌库里一张牌结附'梦魇'（梦中低语同型）
+        - when: on_turn_end
+          condition: {active: self}
+          steps:
+            - {op: attach_deck_invocation, name: 梦魇, count: 1}
+        # 当敌方抽到结附'梦魇'的牌时，消灭此牌对应的式神（context 键
+        # card_shikigami；未出战/气绝/中立牌为空操作）
+        - when: on_invocation_drawn
+          condition: {player: opponent, invocation: 梦魇}
+          steps:
+            - {op: destroy, target: {kind: context, key: card_shikigami}}
+      text: "己方回合结束时，随机使敌方牌库里一张牌结附‘梦魇’。当敌方抽到结附‘梦魇’的牌时，消灭此牌对应的式神。"

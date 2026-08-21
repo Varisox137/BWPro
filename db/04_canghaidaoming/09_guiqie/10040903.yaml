@@ -1,14 +1,17 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040903
 name: 复仇之刃
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
+      card_type: form
+      rarity: SR
       level: 1
+      form_power: 2
+      form_health: 6
+      # 结附期间授予鬼切视同战斗区伪关键字（holder_in_combat 条件读取——
+      # 鬼斩三灵咒"若鬼切在战斗区"门控在准备区也视为满足）
+      keywords: [virtual_combat]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      text: "鬼切在准备区时视同在战斗区一样触发鬼斩。"

@@ -1,14 +1,25 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040603
 name: 惊梦
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
+      card_type: combat
+      rarity: SR
       level: 1
+      conditional_mods:
+        # [增强]：本回合若敌方抽到过结附'梦魇'的牌（enemy_drew_invocation 读
+        # 对方 ext["drew_invocation_turn"] 账本——抽到触发点记账），enhance+3
+        # 装配进实例（汤盆冲撞 10030805 条件修饰同型）
+        - {enemy_drew_invocation: 梦魇, mods: {enhance: 3}}
+      conditional_keywords:
+        # 同条件获得[瞬发]（读取点 _card_keywords，与条件算子同语义）
+        - {keyword: fast, enemy_drew_invocation: 梦魇}
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # +2/+0（战斗牌数值通道）；[增强]+3护甲经 enhance 动态数值
+        #（{enhance: true, base: 0} = 装配的 enhance 修饰值，禁锢之刀同型）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: {enhance: true, base: 0},
+             target: {kind: self}}
+      text: "[增强]：{本回合若敌方抽到过结附‘梦魇’的牌，此牌获得+3护甲并获得[瞬发]。}"

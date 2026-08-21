@@ -1453,3 +1453,98 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   （裁决(15)，双方式神受影响）；每**双方**回合结束时 `destroy` 目标池
   any_shikigami + 过滤键 **`power_eq`**（力量恰等于 n）消灭所有力量为 0 的
   式神。
+
+## 三十七、食梦貘/鬼切机制（04 沧海刀鸣批次，已实现）
+
+> 食梦貘 = 牌库灵咒（'梦魇'结附于敌方牌库中的牌）；鬼切 = 鬼斩灵咒三形态
+> （髭切/友切/狮子之子）的选择结附、视同战斗区、触发复制与响应联动。
+> 新事件与键位登记见 docs/terminology.md；语义存疑点见 questions.md。
+
+### 一、牌库灵咒（梦魇）
+
+- **结附**：`attach_deck_invocation` op（`name`/`count`/`side`，缺省 enemy）——
+  随机选指定侧牌库中 N 张**未结附该灵咒**的牌各结附一个（走
+  `engine.attach_invocation` 的 card 通道，发 on_invocation_attached）；
+  未标记牌不足 N 张按实际张数结附。梦魇 unique=none（多张牌各结附共存）。
+- **抽到触发**：复用 InvocationDef.draw_trigger（来源牌手为控制者；梦魇 =
+  对敌方牌手 3 伤）。触发点 `_proc_invocations_on_move` 追加两件套：
+  ① 惊梦账本——抽牌者 ext["drew_invocation_turn"]（牌手宿主、
+  CLEAR_ANY_TURN_START）记灵咒名，条件键/conditional_keywords 算子
+  `enemy_drew_invocation`（惊梦[瞬发]）读取；② 发 `on_invocation_drawn`
+  （延时时机；payload {player=抽牌者, card, invocation, source_player}——
+  梦中低语/永眠之梦监听挂点）。draw_trigger 块的 when 字段仅为过校验
+  （引擎手动入队，不经事件匹配），取语义最近的 on_invocation_drawn。
+- **离库移除**：move_card 中 src_zone=="deck" 且目标区域非 deck/hand 时
+  静默清除牌上全部灵咒（"当结附'梦魇'的牌离开牌库时移除"）；入手路径
+  走既有 _proc_invocations_on_move（抽牌触发后移除/其余入手静默移除），
+  回库/洗牌保留。
+- **计数**：动态数值键 `{"deck_invocation_count": {"name": 灵咒名,
+  "side": "self"|"enemy"}}`（_step_amount；安魂"恢复等同于其牌库中'梦魇'
+  总数量的生命"）；stat_aura kind="enemy_deck_invocation"（支配者
+  "敌方牌库中每有一张结附'梦魇'的牌，此牌便获得1力量和1生命"——读取时
+  求值，标记牌离库移除即减）。
+- **支配者受伤替换**：`redirect_deck_invocation` op（name/cap=3）——挂
+  on_after_shield priority 1 形态能力块（condition {victim_shikigami: self}）：
+  **敌方**牌库有结附该灵咒的牌时当前伤害值归零终止，并移除其中
+  min(伤害值, cap) 张入放逐区（exiled）；无标记牌空操作伤害照常。
+
+### 二、鬼斩（髭切/友切/狮子之子）
+
+- **定义**：`db/04_canghaidaoming/09_guiqie/invocations.yaml`——式神级灵咒，
+  unique=shikigami_unique（同名再结附替换、不同名共存）；能力块首步
+  `announce_invocation`（新 op）发 `on_invocation_trigger`（**即时**时机，
+  EVENT_TIMING 登记 insert；payload {player=持有者方, invocation, holder: Ref,
+  target: Ref|None}）——鬼斩响应牌的响应挂点。
+- **选择结附**：`choose_invocation` op（names 列表，target=self/chosen）——
+  剔除目标已结附的同名候选；0 个空操作 / 1 个直接结附 / >1 个挂起
+  pending kind="invocation_pick"（作答键 choice=灵咒名，
+  `_cmd_invocation_pick_choose` 走 attach_invocation 完整流程后续跑挂起块）。
+  **敌方回合结束移除**：`detach_invocation` op（names 列表）逐条
+  _remove_invocation。鬼切基础/觉醒能力 = on_turn_start 己方 choose 块 +
+  on_turn_end 敌方 detach 块（数据侧组合）。
+- **三触发**（能力块 condition 均含新条件键 `holder_in_combat`——持有者方
+  战斗区座次==持有者，或持有者持 `virtual_combat` 伪关键字（复仇之刃
+  "在准备区时视同在战斗区一样触发鬼斩"））：
+  - 髭切：when=on_enter_combat + **timing: insert**（"额外先攻击一次"——
+    在敌方交战阶段前插入）+ {player: opponent}；steps = announce →
+    grant_immunity(scope=next_battle) → launch_attack(at="event")（新参数：
+    战斗目标取事件 payload "shikigami" 字段，Ref/int 座次兼容）。
+  - 友切：when=on_before_card_play（payload 新增 card_type/shikigami 字段）
+    + {player: opponent, card_type: spell}；launch_attack(at="targets") 配合
+    step target 新 context 键 **`card_shikigami`**（被使用牌所属式神在事件
+    player 方的在场座次；未出战/气绝/中立牌为空操作）。
+  - 狮子之子：when=on_turn_end + {player: opponent, combat_empty: enemy}；
+    attack_buff(+2) → launch_attack 无目标直击敌方牌手。
+- **刀鸣之刃复制**：伪关键字 `inv_trigger_echo`——_collect_abilities 的
+  灵咒能力块收集两份（announce 双发；响应名额按（窗口, 事件名）去重，
+  不双响应）。
+- **散华之刃**：伪关键字 `power_on_enemy_turn:N`（冒号参数）——
+  _refresh_stat_auras 伪关键字段在非己方回合前缀扫描 +N 力量。
+
+### 三、鬼斩响应三连（两断/罗城门/影杀）
+
+- **响应分派改动**：`_settle_response_card` 置顶上分支——cdef.response 非
+  None 的响应牌一律落墓地走覆盖块 steps，**不走战斗/形态分派**（响应战斗牌
+  不发起战斗；攻击语义由覆盖块内 attack_buff/launch_attack 组合表达）。
+  存量 19 张带覆盖块的响应牌全是法术，后向兼容。
+- 三张响应块统一 when=on_invocation_trigger、condition {invocation: X,
+  player: self}：两断=attack_buff(+2, [必杀])+gain_shield(1)；罗城门=
+  attack_buff(+2)+gain_shield(1)+counter_on_kill；影杀=attack_buff(+2)+
+  gain_shield(1)+launch_attack(keywords=[直击])×3。
+- **反制**：`counter_on_kill` op 登记 `Game._counter_watches`
+  （{"attacker": Ref}）；check_defeated 早期 return 之后钩——击杀者匹配
+  watch 且存在进行中的出牌（`Game._active_play_marker`，_cmd_play_card 的
+  on_before_card_play marker 在 emit 期间压栈）→ 置 nullified（同魔音扰心
+  通道，牌照常进墓地、效果不结算），条目消耗；战斗终止点清除该攻击者
+  残留条目。语义：击杀者须为登记来源（鬼切）、被击杀者不限定为施法者
+  （原文"若击杀式神"——见 questions.md）。
+
+### 四、觉醒·鬼切检索
+
+- `search_deck` 新参数 `choose: bool`——命中 >1 张时不随机，挂起 pending
+  kind="search_pick"（options=候选 uid 列表，`_cmd_search_pick_choose` 作答
+  置入手牌 reason="search" + 洗牌 + 续跑挂起块）；0/1 张不挂起（未命中
+  不洗牌，花信风先例）。"选择一张鬼切的战斗牌置入手牌"= shikigami=鬼切 +
+  card_type=combat + choose。
+- 觉醒·鬼切的"鬼切的战斗牌获得[瞬发]"= card_aura(keywords=[fast],
+  card_type=combat, shikigami=self, scope=ability)（既有通道，无引擎改动）。

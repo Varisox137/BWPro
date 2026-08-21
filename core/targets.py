@@ -465,10 +465,6 @@ def resolve(game, spec, ctx) -> list[Ref]:
             refs = [r for r in refs if r.shikigami is not None
                     and game.state.players[r.player].shikigami[r.shikigami].id == int(sid)]
         refs = _spec_filtered(game, refs, extra, ctx.controller)
-        if extra.get("exclude_self") and ctx.source is not None:
-            # 排除效果来源个体（维护者定案(0)："其他式神"= 除效果来源式神个体外的
-            # 所有双方式神——镜像对局含敌方同名）
-            refs = [r for r in refs if r != ctx.source]
         if extra.get("exclude_victim"):
             # 排除触发事件的 victim（胧月雪华斩"对所有其他[眩晕]的敌方角色"——
             # 与 random_damage 的 exclude_victim 参数同语义）
@@ -517,6 +513,22 @@ def resolve(game, spec, ctx) -> list[Ref]:
         val = (ctx.event or {}).get(spec.key)
         if val is None and getattr(ctx, "memo", None):
             val = ctx.memo.get(spec.key)  # 块内暂存（last_damage_victims）
+        if spec.key == "card_shikigami":
+            # 事件所携牌（payload "card"：数据 id 或 CardInstance）→ 该牌所属式神
+            # 在事件 player 方的在场座次（鬼斩响应"目标=被使用牌的式神"；
+            # 未出战/气绝/非式神牌为空）
+            cval = (ctx.event or {}).get("card")
+            cid = cval if isinstance(cval, int) else getattr(cval, "id", None)
+            if cid is None:
+                return []
+            sid = game.db.cards[cid].shikigami
+            pl = (ctx.event or {}).get("player")
+            if sid is None or not isinstance(pl, int):
+                return []
+            for i, s in enumerate(game.state.players[pl].shikigami):
+                if s.id == sid and s.in_play:
+                    return [Ref(player=pl, shikigami=i)]
+            return []
         if isinstance(val, Ref):
             return [val]
         if isinstance(val, list):  # 列表 payload（affected_refs）/ 块内暂存
@@ -812,6 +824,22 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
                 return False
             hs = game.state.players[holder.player].shikigami[holder.shikigami]
             if not any(e["name"] == want for e in hs.invocations):
+                return False
+        elif key == "holder_in_combat":
+            # 能力持有者视同处于战斗区（鬼斩"处于战斗区时"门控）：持有者方战斗区
+            # 座次 == 持有者，或持有者持 virtual_combat 伪关键字（复仇之刃视同）
+            if holder is None or holder.shikigami is None:
+                return False
+            if bool(want):
+                hs = game.state.players[holder.player].shikigami[holder.shikigami]
+                if game.state.players[holder.player].combat_index != holder.shikigami:
+                    if not any(kw == "virtual_combat" for kw in hs.keywords):
+                        return False
+        elif key == "enemy_drew_invocation":
+            # 对方牌手本回合抽到过结附指定灵咒的牌（惊梦"敌方抽到'梦魇'后[瞬发]"）；
+            # 读对方 ext["drew_invocation_turn"] 账本（_proc_invocations_on_move 记账）
+            ledger = game.state.players[1 - controller].ext.get("drew_invocation_turn") or []
+            if want not in ledger:
                 return False
         elif key == "energy_ge":
             # 能力持有者当前能量 ≥ n（"额外消耗3能量"类响应/触发门控）

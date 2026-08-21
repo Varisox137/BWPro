@@ -440,6 +440,30 @@ class NetClient:
                     cd = self.db.cards[cid]
                     print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
                 return
+            if kind == "invocation_pick":
+                # 选择灵咒结附（鬼切"选择一张鬼斩结附"）：作答键 choice（灵咒名）
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose",
+                                   "choice": pend["options"][int(args[0]) - 1]})
+                    return
+                print("—— 选择一张灵咒牌结附：输入 choose <序号> ——")
+                for i, name in enumerate(pend["options"]):
+                    idef = self.db.invocations.get(name)
+                    text = f" {idef.text}" if idef is not None and idef.text else ""
+                    print(f"  [{i + 1}]【{name}】{text}")
+                return
+            if kind == "search_pick":
+                # 检索选择置入手牌（觉醒·鬼切）：从牌库命中牌中选一张（作答键 uid）
+                opts = [c for u in pend["options"]
+                        for c in [next((x for x in p.deck if x.uid == u), None)] if c]
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose", "uid": opts[int(args[0]) - 1].uid})
+                    return
+                print("—— 检索：输入 choose <序号> 选择一张置入手牌 ——")
+                for i, c in enumerate(opts):
+                    cd = self.db.cards[c.id]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                return
             # 检视牌库顶（青灯夜谈/明心）
             opts = [c for u in pend["options"]
                     for c in [next((x for x in p.deck if x.uid == u), None)] if c]

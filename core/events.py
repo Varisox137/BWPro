@@ -32,6 +32,10 @@ CORE_EVENTS: frozenset[str] = frozenset({
     #                       from_zone, to_zone, reason}（灵咒"抽到触发"等挂点）
     "on_invocation_attached",  # 灵咒结附后（延时时机）{player（来源所属牌手）,
     #                       target: Ref|None, uid: int|None, invocation（灵咒名）, source}（预留）
+    "on_invocation_drawn",  # 抽到结附灵咒的牌后 {player（抽牌者）, card, invocation（灵咒名）,
+    #                       source_player（灵咒来源牌手）}（延时时机；梦魇三监听挂点）
+    "on_invocation_trigger",  # 灵咒能力触发宣告 {player（持有者方）, invocation（灵咒名）,
+    #                       holder: Ref, target: Ref|None}（即时时机；鬼斩响应挂点）
     "on_upgrade",           # 式神升级 {player, shikigami, level}
     "on_trigger",           # 响应牌触发 {player, uid}
     "on_summon",            # 召唤物进场 {shikigami: Ref}
@@ -53,7 +57,8 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_heal",              # 治疗时 {target: Ref, amount（实际治疗量）, source, reason}
     "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
     "on_before_defeat",     # 气绝前/消灭前 1 {victim: Ref, source, reason, battle}
-    "on_before_card_play",  # 使用手牌前 {player, uid, card, nullified（可变标记 dict）}
+    "on_before_card_play",  # 使用手牌前 {player, uid, card, card_type, shikigami,
+    #                       nullified（可变标记 dict）}
     "on_card_enter_hand",   # 一张牌进入手牌 {player, uid, card}（"已展示"机制入手统一钩子）
     "on_enter_combat",      # 式神进入战斗区 {player, shikigami: Ref}（延时时机）
     "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
@@ -115,4 +120,6 @@ EVENT_TIMING: dict[str, str] = {
     "on_luck_judge": "insert",        # 运势判定时：即时时机（重投改写骰点后再确定结果）
     "on_before_draw": "insert",       # 抽牌前：即时时机（"获得卡牌前"锚点）
     "on_card_move": "insert",         # 牌移动后（即时时机）
+    "on_invocation_trigger": "insert",  # 灵咒能力触发宣告：即时时机（响应窗在该灵咒能力
+    #                                 结算前打开；鬼斩响应与刀鸣之刃复制挂点）
 }

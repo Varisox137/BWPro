@@ -1,14 +1,16 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040904
 name: 散华之刃
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: form
       rarity: R
-      level: 1
+      level: 2
+      form_power: 2
+      form_health: 6
+      # 敌方回合鬼切获得3力量（冒号参数伪关键字，_refresh_stat_auras 动态读取）
+      keywords: ["power_on_enemy_turn:3"]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
         steps: []
-      text: ""  # TODO: 待补卡面文本
+      text: "敌方回合鬼切获得3力量。"

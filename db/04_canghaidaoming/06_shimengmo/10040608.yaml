@@ -1,14 +1,27 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040608
 name: 梦境中的支配者
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
-      rarity: R
-      level: 1
+      card_type: form
+      rarity: SSR
+      level: 3
+      form_power: 0
+      form_health: 0
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 敌方牌库中每有一张结附'梦魇'的牌，此牌便获得1力量与1生命
+        # （stat_aura kind=enemy_deck_invocation 读取时求值，scope=form 绑定
+        # 来源形态，形态离场移除）
+        steps:
+          - {op: stat_aura, kind: enemy_deck_invocation, name: 梦魇}
+      abilities:
+        # 当食梦貘受到伤害时，改为从敌方牌库移除等量结附'梦魇'的牌（最大为3）
+        # （redirect_deck_invocation：挂伤害事件"护甲计算后"批次、优先级 1
+        # "伤害改为非伤害"类；敌方牌库无标记牌时空操作伤害照常；cap 缺省 3）
+        - when: on_after_shield
+          priority: 1
+          condition: {victim_shikigami: self}
+          steps:
+            - {op: redirect_deck_invocation, name: 梦魇}
+      text: "敌方牌库中每有一张结附‘梦魇’的牌，此牌便获得1力量与1生命。当食梦貘受到伤害时，改为从敌方牌库移除等量结附‘梦魇’的牌。（最大为3）"

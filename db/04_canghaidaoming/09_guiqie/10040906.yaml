@@ -1,14 +1,31 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040906
 name: 觉醒·鬼切
 versions:
   best: 20200928
   history:
+    # raw 未标等级数字；按 8 卡等级构成（3×1/3×2/2×3）与觉醒 SSR 惯例取 2 级
     - date: 20200928  # 发布日期
       card_type: spell
-      rarity: R
-      level: 1
+      subtype: awaken
+      awaken_power: 1
+      awaken_health: 1
+      rarity: SSR
+      level: 2
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        steps:
+          # 选择一张鬼切的战斗牌置入手牌（choose=true：>1 张挂起 search_pick 交互）
+          - {op: search_deck, shikigami: self, card_type: combat, choose: true}
+      abilities:
+        # [觉醒]：己方回合开始时，选择一个未结附的鬼斩结附于鬼切上
+        # （换绑后不再含基础能力的"敌方回合结束移除鬼斩"块——觉醒原文无此句）
+        - when: on_turn_start
+          condition: {player: self}
+          steps:
+            - {op: choose_invocation, names: [髭切, 友切, 狮子之子]}
+        # 鬼切的战斗牌获得[瞬发]（卡牌光环 scope=ability，随能力离场清除）
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: card_aura, shikigami: self, card_type: combat, keywords: [fast],
+               scope: ability}
+      text: "选择一张鬼切的战斗牌置入手牌。[觉醒]：{己方回合开始时，选择一个未结附的鬼斩结附于鬼切上。鬼切的战斗牌获得[瞬发]。}"

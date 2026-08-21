@@ -1,14 +1,27 @@
-# 骨架（db.scaffold），效果未实现——类型/等级/稀有度/卡面文本待 raw 补充（04 沧海刀鸣 wip）
 id: 10040908
 name: 鬼刃·影杀
 versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: spell
+      card_type: combat
       rarity: R
-      level: 1
+      level: 3
+      keywords: [direct, trigger]  # [直击] + [响应]
       effects:
-        # TODO: 补效果 steps（空 steps 可过校验，但打出无任何效果）
-        steps: []
-      text: ""  # TODO: 待补卡面文本
+        # 主动使用 = 普通战斗牌 +2/+1（raw 标注 +2/+1）
+        steps:
+          - {op: buff_power, amount: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      response:
+        # [响应]：当鬼切触发‘狮子之子’时自动使用并复制两次（使用 1 次+复制 2 次
+        # = 三次带[直击]的额外攻击——rules.md 第三十七章三）
+        when: on_invocation_trigger
+        condition: {invocation: 狮子之子, player: self}
+        steps:
+          - {op: attack_buff, power: 2, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+          - {op: launch_attack, keywords: [direct]}
+          - {op: launch_attack, keywords: [direct]}
+          - {op: launch_attack, keywords: [direct]}
+      text: "[直击]。[响应]：{当鬼切触发‘狮子之子’时，自动使用并复制两次。}"

@@ -783,6 +783,38 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 except (IllegalAction, ValueError, IndexError):
                     print("参数有误，输入序号选择")
                 continue
+            if kind == "invocation_pick":
+                # 选择灵咒结附（鬼切"选择一张鬼斩结附"）：从可选灵咒名中选一个（作答键 choice）
+                print(f"—— {p.name} 选择一张灵咒牌结附 ——")
+                for i, name in enumerate(pend["options"]):
+                    idef = game.db.invocations.get(name)
+                    text = f" {idef.text}" if idef is not None and idef.text else ""
+                    print(f"  [{i + 1}]【{name}】{text}")
+                try:
+                    pick = int(tui.prompt("选择 > ")) - 1
+                    game.apply({"op": "choose", "choice": pend["options"][pick],
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
+            if kind == "search_pick":
+                # 检索选择置入手牌（觉醒·鬼切）：从牌库命中牌中选一张（作答键 uid）
+                opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
+                print(f"—— {p.name} 选择牌库中一张牌置入手牌 ——")
+                for i, c in enumerate(opts):
+                    cd = game.db.cards[c.id]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                try:
+                    pick = int(tui.prompt("选择一张置入手牌 > ")) - 1
+                    game.apply({"op": "choose", "uid": opts[pick].uid,
+                                "player": pend["player"]})
+                    settle_seen = _play_settle(game, settle_seen, printer)
+                    show_field(game, printer)
+                except (IllegalAction, ValueError, IndexError):
+                    print("参数有误，输入序号选择")
+                continue
             # 检视牌库顶（青灯夜谈/明心）
             opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
             print(f"—— {p.name} 检视牌库顶 {len(opts)} 张牌 ——")

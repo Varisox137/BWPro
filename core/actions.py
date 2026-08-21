@@ -661,6 +661,8 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
     '鸮之守护'的己方式神获得2力量"/鸮之警惕[帷幕]/鸮之庇佑[不屈]——身材进
     dyn 缓存通道；关键字由 _reconcile_invocation_aura_keywords 读取时差额
     授予/撤销，continuous 类：不屈不被消耗移除）。scope=form 绑定来源形态。
+    kind="enemy_deck_invocation"：敌方牌库中每有一张结附指定灵咒（name 参数）
+    的牌，持有者 +1/+1（支配者"'梦魇'……此牌便获得1力量和1生命"——读取时求值）。
     scope="form"（缺省）：绑定来源式神当前形态，形态离场时移除（气绝经
     _destroy_form 同路径）。登记时持有者当前生命按新上限回满（形态结附生命回满
     在光环登记之前，此处补齐动态上限部分）。
@@ -670,7 +672,7 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
     """
     if kind not in ("self_hand_count", "enemy_fragile_power", "enemy_stunned_exists",
                     "ext_power", "ids_power", "energy_power", "ids_energy_power",
-                    "field_count_stats", "friendly_invocation"):
+                    "field_count_stats", "friendly_invocation", "enemy_deck_invocation"):
         raise ValueError(f"未知 stat_aura 类型: {kind}")
     if kind in ("ids_power", "ids_energy_power"):
         if scope not in ("game", "form"):
@@ -697,6 +699,8 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
         raise ValueError("stat_aura(kind=ext_power) 需要 ext（控制者 ext 计数键）")
     if kind == "friendly_invocation" and not name:
         raise ValueError("stat_aura(kind=friendly_invocation) 需要 name（灵咒名）")
+    if kind == "enemy_deck_invocation" and not name:
+        raise ValueError("stat_aura(kind=enemy_deck_invocation) 需要 name（灵咒名）")
     if ctx.source is None or ctx.source.shikigami is None:
         raise ValueError("stat_aura 需要来源式神")
     p = game.state.players[ctx.controller]
@@ -1233,6 +1237,7 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
                 card_type: str | None = None, max_level: int | str | None = None,
                 direct_play_power_ge: int | None = None,
                 card_id: int | None = None,
+                choose: bool = False,
                 intensity_boost: int = 0) -> None:
     """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
@@ -1246,6 +1251,8 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
     "若该式神力量>=4且存活，改为直接使用"——不耗鬼火、play_from=deck、triggered=auto；
     目前仅支持形态牌直接结附给选择目标）。置入手牌/直接使用前按生成点统一做
     持久修饰快照（_materialize）。
+    choose=True：命中 >1 张时不随机，改为挂起交互由控制者选择一张（觉醒·鬼切
+    "检索一张鬼切的牌"——pending kind="search_pick"）；0/1 张不挂起。
     intensity_boost：检索入手的牌实例获得该耐久加成修饰（五道难题"使其获得5耐久"
     ——mods.intensity_boost，召唤幻境时结算入耐久）。
     """
@@ -1276,6 +1283,10 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
             and (lv is None or game.db.cards[c.id].level <= lv)]
     if not pool:
         return  # 未命中：不洗牌
+    if choose and len(pool) > 1:
+        # 交互检索（觉醒·鬼切）：挂起 pending kind="search_pick"，作答侧置入手牌+洗牌
+        game._open_search_pick(ctx.controller, [c.uid for c in pool])
+        return
     card = game.rng.choice(pool)
     cdef = game.db.cards[card.id]
     if direct_play_power_ge is not None and ref is not None and ref.shikigami is not None:
@@ -2701,7 +2712,8 @@ def double_damage_vs_fragile(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("launch_attack")
 def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
-                  at: str | None = None, at_index: int = 0) -> None:
+                  at: str | None = None, at_index: int = 0,
+                  keywords: list[str] | None = None) -> None:
     """令指定式神发起一次额外攻击（协战/崩山/来打我呀类；除 "target" 外 targets 忽略）。
 
     不耗鬼火、不耗出击次数；在准备区则自动进战斗区（沿用 _battle_flow 现有行为）；
@@ -2712,7 +2724,12 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
     定位控制者式神。
     at="chosen"：战斗目标取本效果的卡牌选择目标（冰封[羁绊]"雪童子对其发动一次
     攻击"——有目标的战斗）；多选择目标卡牌用 at_index 按序取（麓鸣·灭：
-    at=chosen + at_index=1 取第二目标）；缺省为无目标战斗。
+    at=chosen + at_index=1 取第二目标）；at="event"：战斗目标取触发事件
+    payload 的 "shikigami" 字段（鬼斩"反击该式神"——Ref 直接用，int 座次按事件
+    player 方解析）；at="targets"：战斗目标取本步已解析目标（配合 step target 的
+    context 键）；缺省为无目标战斗（敌战斗区空则直击牌手）。
+    keywords：本次攻击的战斗关键字（影杀三连 [直击]）——发起前经
+    ext["next_battle_keywords"] 挂账，战斗开始消费（同 next_battle 通道）。
     """
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -2738,6 +2755,26 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
         i = int(at_index)
         if 0 <= i < len(ctx.chosen):
             combat_target = ctx.chosen[i]
+    elif at == "event":
+        val = (ctx.event or {}).get("shikigami")
+        if isinstance(val, Ref):
+            combat_target = val
+        elif isinstance(val, int):
+            epl = (ctx.event or {}).get("player")
+            if isinstance(epl, int):
+                combat_target = Ref(player=epl, shikigami=val)
+        if combat_target is None:
+            return  # 事件无目标信息：空操作
+    elif at == "targets":
+        # 战斗目标取本步已解析目标（友切"攻击该式神"——目标经 step target 的
+        # context 键 card_shikigami 解析：被使用牌所属式神的在场座次）
+        if targets and targets[0].shikigami is not None:
+            combat_target = targets[0]
+        else:
+            return  # 无可攻击目标（未出战/气绝/中立牌）：空操作
+    if keywords:
+        s.ext.setdefault("next_battle_keywords", []).extend(
+            {"keyword": str(k)} for k in keywords)
     game._log(f"{game.db.shikigami[s.id].name} 发起了一次额外攻击")
     game._resolve_combat(Ref(player=pi, shikigami=idx), s, target=combat_target)
 
@@ -4084,6 +4121,149 @@ def redirect_to_invocation(game, ctx, *, targets: list[Ref], name: str) -> None:
               f"{amt} 个灵咒【{name}】（{game.db.shikigami[vs.id].name}）")
     game.attach_invocation(str(name), player=ctx.controller, source=ctx.source,
                            target=vic, count=amt)
+
+
+@action("attach_deck_invocation")
+def attach_deck_invocation(game, ctx, *, targets: list[Ref], name: str,
+                           count: int = 1, side: str = "enemy") -> None:
+    """牌库结附灵咒（食梦貘"将一张'梦魇'置入敌方牌库"；targets 忽略）：随机选
+    指定侧牌库中 N 张**未结附该灵咒**的牌各结附一个（牌级灵咒，"抽到触发"走
+    InvocationDef.draw_trigger；牌离库非入手时由 move_card 静默移除）。
+    side="enemy"（缺省）= 敌方牌库；"self"= 己方牌库。未标记牌不足 N 张时按实际
+    张数结附；来源所属牌手 = ctx.controller（惊梦账本/结算控制者口径）。"""
+    pi = ctx.controller if side == "self" else 1 - ctx.controller
+    p = game.state.players[pi]
+    pool = [c for c in p.deck
+            if not any(e["name"] == name for e in c.invocations)]
+    if not pool:
+        game._log(f"{p.name} 的牌库中没有可结附【{name}】的牌")
+        return
+    game.rng.shuffle(pool)
+    for card in pool[:max(0, int(count))]:
+        game.attach_invocation(str(name), player=ctx.controller, source=ctx.source,
+                               card=card)
+
+
+@action("choose_invocation")
+def choose_invocation(game, ctx, *, targets: list[Ref], names: list[str],
+                      target: str = "self") -> None:
+    """选择结附灵咒（鬼切"选择一张'鬼斩'牌结附"；targets 忽略）：从 names 中剔除
+    目标已结附的同名灵咒——0 个候选空操作、1 个直接结附、>1 个挂起交互
+    （pending kind="invocation_pick"，作答由 Game._cmd_invocation_pick_choose 处理）。
+    target="self"（缺省）= 来源式神；"chosen"= 卡牌选择目标。结附来源所属牌手 =
+    ctx.controller。"""
+    if target == "self":
+        ref = ctx.source
+    elif target == "chosen":
+        ref = (ctx.chosen or [None])[0]
+    else:
+        raise ValueError(f"未知 choose_invocation 目标: {target}")
+    if ref is None or ref.shikigami is None:
+        raise ValueError("choose_invocation 需要来源/选择目标式神")
+    s = game.state.players[ref.player].shikigami[ref.shikigami]
+    held = {e["name"] for e in s.invocations}
+    options = [str(n) for n in names if str(n) not in held]
+    if not options:
+        game._log(f"{game.db.shikigami[s.id].name} 的候选灵咒均已结附")
+        return
+    if len(options) == 1:
+        game.attach_invocation(options[0], player=ctx.controller, source=ctx.source,
+                               target=ref)
+        return
+    game._open_invocation_pick(ctx.controller, options, ref, ctx.source)
+
+
+@action("detach_invocation")
+def detach_invocation(game, ctx, *, targets: list[Ref], names: list[str],
+                      target: str = "self") -> None:
+    """移除目标式神身上 names 列出的灵咒条目（鬼切"敌方回合结束时移除其结附的
+    '鬼斩'"；targets 忽略）：逐条经 _remove_invocation 移除（关键字/眩晕/倒计时
+    随通道撤销）。target 取值同 choose_invocation。"""
+    if target == "self":
+        ref = ctx.source
+    elif target == "chosen":
+        ref = (ctx.chosen or [None])[0]
+    else:
+        raise ValueError(f"未知 detach_invocation 目标: {target}")
+    if ref is None or ref.shikigami is None:
+        return
+    s = game.state.players[ref.player].shikigami[ref.shikigami]
+    wanted = {str(n) for n in names}
+    for e in list(s.invocations):
+        if e["name"] in wanted:
+            game._remove_invocation(s, e, reason="效果移除")
+
+
+@action("announce_invocation")
+def announce_invocation(game, ctx, *, targets: list[Ref], name: str | None = None,
+                        target_from: str | None = None) -> None:
+    """灵咒能力触发宣告（鬼斩三形态能力块首步；targets 忽略）：发
+    on_invocation_trigger（即时时机——响应窗在该灵咒能力后续步骤前打开）。
+    payload：player=持有者方、invocation=灵咒名（缺省取 ctx.source 式神该能力
+    所属灵咒名，须显式给出）、holder=来源式神 Ref、target=target_from 指定的
+    事件字段（Ref/int 座次经 launch_attack 同口径解析；缺省 None）。
+    """
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("announce_invocation 需要来源式神（灵咒持有者）")
+    inv = str(name) if name else None
+    if inv is None:
+        s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+        held = [e["name"] for e in s.invocations]
+        if len(held) != 1:
+            raise ValueError("announce_invocation 缺省 name 要求持有者恰结附一个灵咒")
+        inv = held[0]
+    tgt: Ref | None = None
+    if target_from:
+        val = (ctx.event or {}).get(target_from)
+        if isinstance(val, Ref):
+            tgt = val
+        elif isinstance(val, int):
+            epl = (ctx.event or {}).get("player")
+            if isinstance(epl, int):
+                tgt = Ref(player=epl, shikigami=val)
+    game.emit("on_invocation_trigger", player=ctx.source.player, invocation=inv,
+              holder=ctx.source, target=tgt)
+
+
+@action("counter_on_kill")
+def counter_on_kill(game, ctx, *, targets: list[Ref]) -> None:
+    """反制登记（罗城门"若击杀式神，则无效化其使用的牌"；targets 忽略）：挂账
+    game._counter_watches {"attacker": 来源式神 Ref}——本次响应结算后，若来源式神
+    击杀任一式神（check_defeated 同步钩子）且存在进行中的出牌
+    （_active_play_marker 非空），则该次使用无效化（nullified 置位，同魔音扰心
+    通道），条目消耗；战斗终止点清除该攻击者的残留条目。"""
+    if ctx.source is None or ctx.source.shikigami is None:
+        raise ValueError("counter_on_kill 需要来源式神")
+    game._counter_watches.append({"attacker": ctx.source})
+    game._log(f"{game.db.shikigami[game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id].name} 的反制已就绪")
+
+
+@action("redirect_deck_invocation")
+def redirect_deck_invocation(game, ctx, *, targets: list[Ref], name: str,
+                             cap: int = 3) -> None:
+    """受伤改为移除牌库标记牌（支配者"受到伤害时……改为移除至多3张'梦魇'"；
+    targets 忽略）：挂伤害事件"护甲计算后"批次（on_after_shield，insert，
+    优先级 1，redirect_to_invocation 同挂点）的形态能力块；**敌方**牌库中存在
+    结附该灵咒的牌时，当前伤害值归零终止（ev.amount=0），并移除其中
+    min(伤害值, cap) 张入放逐区（exiled——入墓地还是放逐待确认，见 questions.md）；
+    无标记牌时空操作（伤害照常）。
+    """
+    ev = (ctx.event or {}).get("damage")
+    if ev is None:
+        raise ValueError("redirect_deck_invocation 须挂伤害事件批次的能力块")
+    amt = int(ev.amount)
+    if amt <= 0:
+        return
+    p = game.state.players[1 - ctx.controller]
+    marked = [c for c in p.deck
+              if any(e["name"] == name for e in c.invocations)]
+    if not marked:
+        return  # 敌方牌库无标记牌：空操作
+    ev.amount = 0  # 终止伤害
+    n = min(amt, int(cap), len(marked))
+    game._log(f"{amt} 点伤害改为移除 {n} 张结附【{name}】的牌")
+    for card in marked[:n]:
+        game.move_card(p, card, "exiled", reason="梦魇移除")
 
 
 

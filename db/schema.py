@@ -91,6 +91,14 @@ KEYWORDS = frozenset({
     "combat_base_health",       # 以其自身当前生命（而非力量）造成战斗伤害（神木庇佑授予）
     "assault_any_target",       # 出击时可以指定攻击任何其他角色（飘零之舞；_cmd_assault 分支）
     "friendly_combat_heal",     # 攻击己方角色时改为使其恢复等量于伤害的生命（飘零之舞）
+    "virtual_combat",           # 鬼斩触发判定时视同处于战斗区（复仇之刃形态授予鬼切
+    #                             ——holder_in_combat 条件读取；卡面不出现）
+    "inv_trigger_echo",         # 持有者触发灵咒能力时额外复制一次该能力块（刀鸣之刃
+    #                             形态授予鬼切——_collect_abilities 灵咒能力块收集处双发；
+    #                             卡面不出现）
+    "power_on_enemy_turn",      # 引擎级伪关键字（带 `:N` 参数，如 power_on_enemy_turn:3）：
+    #                             敌方回合期间该式神 +N 力量（散华之刃；_refresh_stat_auras
+    #                             动态读取，按冒号前缀匹配；卡面不出现）
 })  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
 
 # 能力伪关键字集合：觉醒替换基础能力时按本集合换绑（移除基础式神的、授予觉醒牌的；

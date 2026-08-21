@@ -484,6 +484,41 @@ def test_turn_timeout_field_summon_pick_random_choose(db):
     run(go())
 
 
+def test_turn_timeout_invocation_pick_random_choose(db):
+    """回合内主动选择（选择灵咒结附，kind="invocation_pick"，鬼切选鬼斩）超时：
+    系统自动随机选择（作答键 choice=灵咒名）并对目标结附，再结束回合（同定案(2)）。"""
+    async def go():
+        room, ws0, _ = await _started_room(db, turn_timeout=0.05)
+        g = room.game
+        for pi in (0, 1):
+            g.apply({"op": "ready", "player": pi})
+        while g.state.phase == "upgrade":
+            idx = g.legal_upgrade_indices(0)[0]
+            g.apply({"op": "upgrade", "player": 0, "index": idx})
+        # 鬼切式挂起（无续块）：选项 = 两个 dummy 灵咒名
+        from db.schema import InvocationDef
+        from core.model import Ref
+        for name in ("髭切", "友切"):
+            db.invocations[name] = InvocationDef(name=name)
+        assert g._open_invocation_pick(
+            0, ["髭切", "友切"], Ref(player=0, shikigami=0), None)
+        assert g.state.pending_choice is not None
+        turn = g.state.turn
+        room.reschedule_timer()  # 刷新计时 key，走真实超时路径
+        for _ in range(50):  # 等首次超时完整收尾（换手即回调结束）
+            if g.state.active == 1:
+                break
+            await asyncio.sleep(0.02)
+        room._cancel_timer()  # 防 0.05s 计时器二次超时循环干扰断言
+        assert g.state.pending_choice is None
+        names = [e["name"] for e in g.state.players[0].shikigami[0].invocations]
+        assert len(names) == 1 and names[0] in ("髭切", "友切")  # 随机结附其一
+        assert g.state.active == 1 and g.state.turn > turn  # 常规超时收尾完成
+        assert any(m.get("type") == "notice" and "随机选择" in m.get("text", "")
+                   for m in ws0.messages)
+    run(go())
+
+
 def test_reconnect_resync_pending_choice(db):
     """结算中交互选择期间断线重连：resync 全量 state 的 pending_choice 对选择方
     保留真实 options（客户端据此提示作答），并附带当前计时器。"""

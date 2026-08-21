@@ -1,0 +1,17 @@
+# 灵咒定义（loader 特判收集；text 逐字 = card_data_raw.md 引号内原文）
+invocations:
+  - name: 梦魇
+    versions:
+      best: 20200928
+      history:
+        - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
+          unique: none  # 可叠加：牌库中多张牌各结附（attach_deck_invocation 不重复标记同一张）
+          draw_trigger:  # "抽到触发"：对抽牌者（= 来源牌手的敌方）造成3点伤害
+            # when 仅为过校验（抽到触发块由引擎手动入队，不经事件匹配）；
+            # 取语义最近的事件名 on_invocation_drawn
+            when: on_invocation_drawn
+            steps:
+              - {op: damage, amount: 3, target: {kind: all, pool: enemy_player}}
+          # "当结附'梦魇'的牌离开牌库时，移除结附于其上的'梦魇'"——引擎 move_card
+          # 离库清除通道（入手走 _proc_invocations_on_move 触发/移除，其余离库静默移除）
+          text: "当敌方抽到结附‘梦魇’的牌时，对敌方牌手造成3点伤害。当结附‘梦魇’的牌离开牌库时，移除结附于其上的‘梦魇’。"
