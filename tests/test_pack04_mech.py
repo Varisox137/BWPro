@@ -16,10 +16,12 @@ T = F.T
 
 
 def _kill(game, pi: int, i: int, countdown: int | None = None) -> None:
-    """测试辅助：令式神气绝（走 check_defeated 流程），可覆写气绝倒计时。"""
+    """测试辅助：令式神气绝（走 check_defeated 流程 + 冲刷延时队列——裁决(9) 后
+    棺材替换等"气绝后"变形事件在队列结算点生成），可覆写气绝倒计时。"""
     s = game.state.players[pi].shikigami[i]
     s.health = 0
     game.check_defeated(Ref(player=pi, shikigami=i))
+    game._drain_queue()
     assert s.defeated
     if countdown is not None:
         s.revive_countdown = countdown
@@ -1524,15 +1526,15 @@ def test_dual_choose_target(db, make_game):
 def test_combat_card_effect_chosen(db, make_game):
     """麓鸣·轰"选择一个己方式神，本次攻击后将'八尺琼曲玉'结附于该式神并使其发起
     攻击"：战斗牌效果步的 ctx 携带 chosen——delay_grant bind=chosen 登记到所选
-    式神，本次攻击后（on_after_assault）对其结附灵咒并令其发起一次无指定目标
-    的额外攻击。"""
+    式神，本次攻击后=战斗结束后（on_battle_end，裁决(10)）对其结附灵咒并令其
+    发起一次无指定目标的额外攻击；战斗被取消（鸦羽疾走）则不发事件、不执行。"""
     db.invocations["八尺琼曲玉"] = InvocationDef(name="八尺琼曲玉", unique="unique",
                                                  power=1)
     db.cards[10010151] = F.card(  # 麓鸣·轰同构合成卡（所属 100101）
         10010151, card_type="combat", token=True,
         target=T(kind="choose", pool="friendly_shikigami"),
         steps=[
-            F.Step(op="delay_grant", when="on_after_assault",
+            F.Step(op="delay_grant", when="on_battle_end", scope="battle",
                    condition={"attacker_shikigami": 100101}, bind="chosen",
                    steps=[{"op": "attach_invocation", "name": "八尺琼曲玉"},
                           {"op": "launch_attack", "shikigami": "target"}]),
@@ -1545,6 +1547,20 @@ def test_combat_card_effect_chosen(db, make_game):
     assert pb.health == 25
     assert [e["name"] for e in s1.invocations] == ["八尺琼曲玉"]  # 攻击后结附
     assert pa.combat_index == 1  # 额外攻击者进入战斗区
+    # 战斗被取消（鸦羽疾走响应）：不发"战斗结束后"，延时效果不执行（裁决(10)）
+    db.cards[10010251] = F.card(
+        10010251, shikigami=100102, token=True, keywords=["trigger"],
+        when="on_before_assault", steps=[F.Step(op="cancel_attack")])
+    g2 = make_game()
+    pa2, pb2 = F.battle_setup(g2, levels={0: 1, 1: 1})
+    F.give(g2, 1, 10010251)
+    pb2.orb = 2
+    F.play(g2, 0, 10010151, target=Ref(player=0, shikigami=1))
+    assert pb2.health == 30  # 攻击被取消：无伤害
+    assert pa2.shikigami[1].invocations == []  # 未结附
+    assert pa2.shikigami[1].delayed == []  # scope=battle：随本次战斗终止过期
+    assert pa2.combat_index == 0  # 无额外攻击（攻击者仍驻留战斗区）
+    assert "on_battle_end" not in g2.history
 
 
 # ---------- 迟钝归零结算次序与灵咒倒计时批次（定案(1)(6)(9)） ----------
@@ -1578,8 +1594,7 @@ def test_invocation_proc_removes_before_attack(db, make_game):
     F.pass_turns(g, 2)  # 回到己方回合开始：2→1
     F.pass_turns(g, 2)  # 归零生效
     assert calls[:2] == ["remove", "remove"]  # 两条同名均移除
-    assert "combat" in calls and calls.index("combat") > 1  # 移除早于攻击
-    assert s.invocations == [] and not s.is_stunned  # 眩晕随灵咒解除
+    assert "combat" in calls and calls.index("combat") > 1  # 移除早于攻击    assert s.invocations == [] and not s.is_stunned  # 眩晕随灵咒解除
     assert s.countdown is None
     assert pb.health == 27  # 攻击照常发起（3 力量打空战斗区牌手）
 
@@ -1919,9 +1934,10 @@ def test_inv_count_mod_exclude_chosen(db, make_game):
 
 
 def test_inv_transfer_on_defeat(db, make_game):
-    """魔蛊毒爆（inv_transfer_on_defeat）：登记的敌方式神本回合气绝时，其上所有
-    '蛊蚀'（移除前快照计数，不论来源敌我）由登记方一次性等量结附于随机另一名
-    在场敌方式神；登记一次性消耗、半回合边界清除。"""
+    """魔蛊毒爆（inv_transfer_on_defeat）：视作赋予登记目标敌方式神的一次性能力
+    （裁决13）——其本回合气绝时由该敌方式神侧触发，其上所有'蛊蚀'（移除前
+    快照计数，不论来源敌我）严格等量结附于随机另一名在场敌方式神，不吃登记方
+    inv_attach_bonus 增幅；登记一次性消耗、半回合边界清除。"""
     _gushi_inv(db)
     db.cards[10010151] = F.card(
         10010151, token=True, target=F.CHOOSE_ENEMY,
@@ -1935,8 +1951,23 @@ def test_inv_transfer_on_defeat(db, make_game):
     moved = [sum(1 for e in pb.shikigami[i].invocations if e["name"] == "蛊蚀")
              for i in (1, 2, 3)]
     assert sorted(moved) == [0, 0, 2]  # 等量 2 个转移到随机另一名
+    dst_i = 1 + moved.index(2)
+    assert all(e["player"] == 1 for e in pb.shikigami[dst_i].invocations
+               if e["name"] == "蛊蚀")  # 触发者=该敌方式神侧（来源=气绝者方）
     assert "inv_transfer_on_defeat" not in pa.ext  # 一次性消耗
-    F.play(g, 0, 10010151, target=Ref(player=1, shikigami=1))
+    # 裁决13：登记方持结附增幅（觉醒·巫蛊师）时转移仍严格等量（新局隔离随机落点）
+    g2 = make_game()
+    pa2, pb2 = F.battle_setup(g2)
+    pa2.ext["inv_attach_bonus"] = [{"name": "蛊蚀", "add": 1}]
+    g2.attach_invocation("蛊蚀", player=0, target=Ref(player=1, shikigami=0),
+                         count=1)  # 增幅生效：结附 2 个
+    assert sum(1 for e in pb2.shikigami[0].invocations if e["name"] == "蛊蚀") == 2
+    F.play(g2, 0, 10010151, target=Ref(player=1, shikigami=0))
+    _kill(g2, 1, 0)
+    dst2 = sum(sum(1 for e in pb2.shikigami[i].invocations if e["name"] == "蛊蚀")
+               for i in (1, 2, 3))
+    assert dst2 == 2  # 严格等量 2（吃增幅则为 3）
+    F.play(g, 0, 10010151, target=Ref(player=1, shikigami=2))
     assert pa.ext.get("inv_transfer_on_defeat") is not None
     F.pass_turns(g, 1)
     assert "inv_transfer_on_defeat" not in pa.ext  # 半回合清除
@@ -2096,8 +2127,8 @@ def test_enemy_deck_invocation_aura(db, make_game):
 
 def test_redirect_deck_invocation(db, make_game):
     """支配者受伤替换（redirect_deck_invocation，on_after_shield priority=1 形态
-    能力块）：敌方牌库有结附'梦魇'的牌时伤害归零终止、移除 min(伤害,3) 张入
-    放逐区；无标记牌时伤害照常。"""
+    能力块）：敌方牌库有结附'梦魇'的牌时伤害归零终止、随机移除 min(伤害,3) 张
+    入**墓地**（thoughts(1)）；无标记牌时伤害照常。"""
     _mengyan_inv(db)
     db.cards[10010151] = F.card(
         10010151, card_type="form", form_power=0, form_health=7, token=True,
@@ -2114,7 +2145,7 @@ def test_redirect_deck_invocation(db, make_game):
     src = Ref(player=1, shikigami=0)
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 3, src)
     assert s.health == s.max_health  # 伤害终止
-    assert len(pb.zones.get("exiled", [])) == 2  # 至多3张，实际2张标记全移除
+    assert len(pb.zones["graveyard"]) == 2  # 至多3张，实际2张标记全移除入墓地
     assert not any(c.invocations for c in pb.deck)
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 2, src)
     assert s.health == s.max_health - 2  # 无标记牌：伤害照常
@@ -2124,6 +2155,48 @@ def test_redirect_deck_invocation(db, make_game):
         g.attach_invocation("梦魇", player=0, card=c)
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 2, src)
     assert other.health == other.max_health - 2
+
+
+def test_redirect_deck_invocation_lethal(db, make_game):
+    """支配者替换致死（thoughts(1) 例）：形态 0/0 + 敌方牌库每张'梦魇'+1/+1——
+    5 伤改 3、标记不足全移除（2 张入墓地），光环归零形态 0 生命即气绝；
+    觉醒永久 +1/+1 情形下保留 1 生命不气绝（再受伤害照常扣减）。"""
+    _mengyan_inv(db)
+    db.cards[10010151] = F.card(
+        10010151, card_type="form", form_power=0, form_health=0, token=True,
+        steps=[F.Step(op="stat_aura", kind="enemy_deck_invocation", name="梦魇")],
+        abilities=[F.block(
+            F.Step(op="redirect_deck_invocation", name="梦魇"),
+            when="on_after_shield", priority=1,
+            condition={"victim_shikigami": "self"})])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    F.play(g, 0, 10010151)
+    s = pa.shikigami[0]
+    for c in pb.deck[:2]:
+        g.attach_invocation("梦魇", player=0, card=c)
+    g._refresh_stat_auras()
+    assert (s.eff_power, s.max_health) == (2, 2)
+    src = Ref(player=1, shikigami=0)
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, src)
+    assert len(pb.zones["graveyard"]) == 2  # 5 伤改 3、不足 3 全移除 2 张
+    assert s.defeated  # 光环归零：形态 0 生命气绝
+    # 已觉醒（永久 +1/+1）：同样 5 伤移除 2 张后保留永久身材，不气绝
+    g2 = make_game()
+    qa, qb = F.battle_setup(g2)
+    F.play(g2, 0, 10010151)
+    t = qa.shikigami[0]
+    t.perm_power += 1
+    t.perm_health += 1  # 觉醒永久身材
+    for c in qb.deck[:2]:
+        g2.attach_invocation("梦魇", player=0, card=c)
+    g2._refresh_stat_auras()
+    assert (t.eff_power, t.max_health) == (3, 3)
+    t.health = t.max_health  # 上限后涨不自动回血，补到满血模拟常态
+    g2.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
+    assert not t.defeated and t.max_health == 1 and t.health == 1  # 保留永久身材
+    g2.deal_to_shikigami(Ref(player=0, shikigami=0), 1, Ref(player=1, shikigami=0))
+    assert t.defeated  # 再受伤害照常扣减致死
 
 
 # ---------- 鬼斩（选择结附 / 敌方回合结束移除 / 三触发 / 视同与复制） ----------
@@ -2143,7 +2216,7 @@ def _guizhan_invs(db):
         abilities=[F.block(
             F.Step(op="announce_invocation", name="友切"),
             F.Step(op="grant_immunity", scope="next_battle", target=T(kind="self")),
-            F.Step(op="launch_attack", at="targets",
+            F.Step(op="launch_attack", at="targets", ignore_veil=True,
                    target=T(kind="context", key="card_shikigami")),
             when="on_before_card_play",
             condition={"player": "opponent", "card_type": "spell",
@@ -2239,7 +2312,60 @@ def test_onimusha_trigger_spell_play(db, make_game):
     assert not pb.shikigami[1].defeated
 
 
+def test_onimusha_trigger_any_play_way(db, make_game):
+    """友切放宽（定案(4)）：响应使用/自动使用的敌方法术专属牌同样触发（统一
+    "使用前"发点 _emit_before_card_play）；友切攻击可对帷幕式神发起
+    （ignore_veil——灵咒效果不受帷幕限制）。"""
+    _guizhan_invs(db)
+    db.cards[10010251] = F.card(  # B 响应法术（被攻击时响应，空白效果）
+        10010251, shikigami=100102, keywords=["trigger"], token=True,
+        steps=[F.Step(op="draw", count=1)],
+        response=F.block(F.Step(op="draw", count=1),
+                         when="on_before_assault",
+                         condition={"player": "opponent"}))
+    db.cards[10010351] = F.card(  # B 自动使用链：01 使用效果自动使用 02
+        10010351, shikigami=100103, token=True,
+        steps=[F.Step(op="auto_use", card_id=10010352)])
+    db.cards[10010352] = F.card(10010352, shikigami=100103, token=True,
+                                steps=[F.Step(op="draw", count=1)])
+    # 响应使用触发：A 出击 → B 响应使用法术 → 友切攻击其所属式神 B1
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]
+    g.attach_invocation("友切", player=0, target=Ref(player=0, shikigami=0))
+    F.move(g, 0, 0)
+    F.give(g, 1, 10010251)
+    pb.orb = 9
+    g.apply({"op": "assault", "index": 0})
+    assert any(c.id == 10010251 for c in pb.graveyard)  # 响应法术已使用
+    assert pb.shikigami[1].health == 3  # B1(1/6) 被友切攻击 3
+    assert s.health == 4  # 反击被免疫
+    # 自动使用触发：B 使用 01（主动使用先触发一次攻击 B2）→ 自动使用 02 再触发
+    g2 = make_game()
+    pa2, pb2 = F.battle_setup(g2)
+    s2 = pa2.shikigami[0]
+    g2.attach_invocation("友切", player=0, target=Ref(player=0, shikigami=0))
+    F.move(g2, 0, 0)
+    F.pass_turns(g2, 1)
+    pb2.orb = 9
+    F.play(g2, 1, 10010351)
+    assert pb2.shikigami[2].health == 6 - 3 - 3  # B2 被攻击两次（主动+自动各一）
+    assert s2.health == 4  # 反击均被免疫
+    # 帷幕放行：B0 持帷幕，友切照常对其发起战斗
+    g3 = make_game()
+    pa3, pb3 = F.battle_setup(g3)
+    g3.attach_invocation("友切", player=0, target=Ref(player=0, shikigami=0))
+    F.move(g3, 0, 0)
+    F.pass_turns(g3, 1)
+    pb3.orb = 9
+    pb3.shikigami[0].keywords.append("veil")
+    F.play(g3, 1, 10010101)  # B0(3/4) 使用法术
+    assert pb3.shikigami[0].health == 1  # 帷幕式神仍被友切攻击 3
+    assert pb3.health == 30  # 未退化为无目标直击牌手
+
+
 def test_onimusha_trigger_turn_end(db, make_game):
+
     """狮子之子：敌方回合结束时鬼切在战斗区且敌方战斗区空——+2力量直击
     敌方牌手（attack_buff 攻击后核销）。"""
     _guizhan_invs(db)
@@ -2284,6 +2410,69 @@ def test_inv_trigger_echo(db, make_game):
     F.pass_turns(g, 2)
     assert pb.health == 20  # 两次 (3+2) 直击
     assert g.history.count("on_invocation_trigger") == 2
+
+
+def test_shadow_kill_delayed_strikes_order(db, make_game):
+    """影杀延时打击次序（裁决(2)，鬼刃·影杀+狮子之子+刀鸣之刃）：敌方回合结束
+    狮子触发——响应本身不产新战斗仅 +2（狮子1 = 3+灵咒2+影杀2 = 7）；两次复制
+    打击延时到"战斗结束后"（on_battle_end，狮子1 的 attack_buffs 已在终止点
+    核销）各带战斗牌 +2（3+2=5）依次发起；刀鸣复制的狮子2 最后（仅灵咒 +2=5）。"""
+    _guizhan_invs(db)
+    db.cards[10010151] = F.card(  # 鬼刃·影杀同构（响应覆盖块 = 正式数据结构）
+        10010151, card_type="combat", keywords=["trigger"], token=True,
+        response=F.block(
+            F.Step(op="attack_buff", power=2, target=T(kind="self")),
+            F.Step(op="gain_shield", amount=1, target=T(kind="self")),
+            F.Step(op="delay_grant", when="on_battle_end",
+                   condition={"attacker_shikigami": 100101},
+                   steps=[{"op": "attack_buff", "power": 2,
+                           "target": {"kind": "self"}},
+                          {"op": "launch_attack", "keywords": ["direct"]},
+                          {"op": "attack_buff", "power": 2,
+                           "target": {"kind": "self"}},
+                          {"op": "launch_attack", "keywords": ["direct"]}]),
+            when="on_invocation_trigger",
+            condition={"invocation": "狮子之子", "player": "self"}))
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]  # 3/4 鬼切位
+    g.attach_invocation("狮子之子", player=0, target=Ref(player=0, shikigami=0))
+    s.keywords.append("inv_trigger_echo")
+    F.move(g, 0, 0)
+    F.give(g, 0, 10010151)
+    powers: list[int] = []
+    orig_cb = g._resolve_combat
+
+    def spy_cb(ref, attacker, **kw):
+        powers.append(attacker.eff_power)
+        return orig_cb(ref, attacker, **kw)
+
+    g._resolve_combat = spy_cb
+    F.pass_turns(g, 2)  # B 回合结束触发
+    assert powers == [7, 5, 5, 5]  # 狮子1 → 影杀2 → 影杀3 → 狮子2
+    assert pb.health == 30 - (7 + 5 + 5 + 5)  # 四次攻击全部直击牌手
+    assert any(c.id == 10010151 for c in pa.graveyard)  # 影杀已使用
+    assert s.temp_power == 0  # 全部 attack_buff 已核销
+
+
+def test_higekiri_nested_kill_aborts_outer_battle(db, make_game):
+    """髭切插入击杀原攻击者（裁决(3)）：髭切在战斗准备步骤"攻击者移入战斗区"
+    （on_enter_combat）时插入；原攻击者因此气绝则原战斗终止——无交战伤害、
+    鬼切不受反击、牌手不掉血；"战斗结束后"（on_battle_end）仅嵌套战斗发一次。"""
+    _guizhan_invs(db)
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]  # 鬼切位
+    s.perm_power += 5  # 8/4：嵌套攻击直接击杀 3/4
+    g.attach_invocation("髭切", player=0, target=Ref(player=0, shikigami=0))
+    F.move(g, 0, 0)
+    F.pass_turns(g, 1)
+    n = len(g.history)
+    g.apply({"op": "assault", "index": 0})  # B0 3/4 出击 → 准备阶段被髭切击杀
+    assert pb.shikigami[0].defeated
+    assert s.health == 4  # 外层战斗终止：无交战反击（嵌套反击本被免疫）
+    assert pa.health == 30 and pb.health == 30  # 双方牌手无伤害
+    assert g.history[n:].count("on_battle_end") == 1  # 仅髭切嵌套战斗正常完成
 
 
 # ---------- 鬼斩响应（on_invocation_trigger 响应 + response 覆盖块分派） ----------
@@ -2367,40 +2556,92 @@ def test_response_counter_on_kill(db, make_game):
     assert g2._counter_watches == []  # 战斗终止点清除残留
 
 
-# ---------- 交互检索（search_deck choose=True，觉醒·鬼切） ----------
-
-def test_search_deck_choose(db, make_game):
-    """交互检索：>1 命中挂起 search_pick 由控制者选 uid 入手并洗牌；
-    恰 1 命中直接入手不挂起；0 命中不挂起不洗牌。"""
-    db.cards[10010151] = F.card(
-        10010151, token=True,
-        steps=[F.Step(op="search_deck", shikigami=100102, choose=True)])
+def test_response_counter_any_victim_and_echo(db, make_game):
+    """罗城门反制定案（thoughts(5)）：① 本次友切战斗中鬼切击杀**双方任一**式神
+    即反制（被击杀者不限定为施法者——友切嵌套战斗中鬼切能力击杀另一敌方式神，
+    进行中的法术同样无效化）；② 刀鸣之刃复制的第二次友切不携带罗城门效果
+    （响应名额=窗口+事件名：同事件第二次触发时名额已占，第二张罗城门留在手牌）。"""
+    _guizhan_invs(db)
+    # 鬼切斩杀灵咒：友切嵌套战斗的被攻击时击杀 B1（1 力量座次，非施法者）
+    db.invocations["测试斩杀"] = InvocationDef(
+        name="测试斩杀", unique="none",
+        abilities=[F.block(
+            F.Step(op="damage", amount=6,
+                   target=T(kind="all", pool="enemy_shikigami", power_eq=1)),
+            when="on_before_assault")])
+    db.cards[10010151] = F.card(  # 罗城门位（同 test_response_counter_on_kill）
+        10010151, card_type="combat", keywords=["trigger"], token=True,
+        response=F.block(
+            F.Step(op="attack_buff", power=2, target=T(kind="self")),
+            F.Step(op="counter_on_kill"),
+            when="on_invocation_trigger",
+            condition={"invocation": "友切", "player": "self"}))
+    db.cards[10010155] = F.card(  # 敌方法术：对敌方牌手 2 伤（无效化则不结算）
+        10010155, token=True,
+        steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="enemy_player"))])
     g = make_game()
     pa, pb = F.battle_setup(g)
-    F.play(g, 0, 10010151)
-    pend = g.state.pending_choice
-    assert pend["kind"] == "search_pick" and len(pend["options"]) > 1
-    uid = pend["options"][0]
-    g.apply({"op": "choose", "uid": uid, "player": 0})
-    assert g.state.pending_choice is None
-    assert any(c.uid == uid for c in pa.hand)
-    # 恰 1 命中：直接入手不挂起
+    s = pa.shikigami[0]  # 3/4 鬼切位
+    g.attach_invocation("友切", player=0, target=Ref(player=0, shikigami=0))
+    g.attach_invocation("测试斩杀", player=0, target=Ref(player=0, shikigami=0))
+    F.move(g, 0, 0)
+    F.give(g, 0, 10010151)
+    F.pass_turns(g, 1)
+    pb.orb = 4
+    F.play(g, 1, 10010155)  # B0 使用法术 → 友切战斗中鬼切斩杀 B1（非施法者）
+    assert pb.shikigami[1].defeated  # B1 被鬼切能力击杀
+    assert pa.health == 30  # 反制成立：法术效果未结算（击杀者不限定为施法者）
+    assert g._counter_watches == []
+    # echo：第二张罗城门不因复制的第二次友切触发
     g2 = make_game()
     pa2, pb2 = F.battle_setup(g2)
-    pa2.deck[:] = [c for c in pa2.deck if c.id == 10010201][:1]
-    n_hand = len(pa2.hand)
-    F.play(g2, 0, 10010151)
+    t = pa2.shikigami[0]
+    g2.attach_invocation("友切", player=0, target=Ref(player=0, shikigami=0))
+    t.keywords.append("inv_trigger_echo")
+    F.move(g2, 0, 0)
+    F.give(g2, 0, 10010151)
+    F.give(g2, 0, 10010151)
+    F.pass_turns(g2, 1)
+    pb2.orb = 9
+    F.play(g2, 1, 10010155)  # 第一次友切：罗城门#1 反制；第二次名额已占
+    assert sum(1 for c in pa2.graveyard if c.id == 10010151) == 1
+    assert any(c.id == 10010151 for c in pa2.hand)  # 第二张留在手牌
+    assert pa2.health == 30  # 法术被反制
+
+
+# ---------- 选择生成入手（pick_generate，觉醒·鬼切"选择并凭空生成"） ----------
+
+def test_pick_generate_guqie(db, make_game):
+    """觉醒·鬼切通道（thoughts(6)）：选择并**凭空生成**一张战斗牌置入手牌——
+    不检索牌库、不洗牌（牌库构成与顺序不变）；>1 候选挂起 pick_generate 交互，
+    作答 choice=数据 id；生成的牌 generated 标记。"""
+    dummy = [10010161, 10010162, 10010163]
+    for cid in dummy:
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="combat",
+                               token=True)
+    db.cards[10010151] = F.card(
+        10010151, token=True,
+        steps=[F.Step(op="pick_generate", pool=dummy)])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    deck_before = [c.uid for c in pa.deck]
+    F.play(g, 0, 10010151)
+    pend = g.state.pending_choice
+    assert pend["kind"] == "pick_generate"
+    assert pend["options"] == dummy
+    g.apply({"op": "choose", "choice": 10010162, "player": 0})
+    assert g.state.pending_choice is None
+    assert pa.hand[-1].id == 10010162 and pa.hand[-1].generated
+    assert [c.uid for c in pa.deck] == deck_before  # 不动牌库不洗牌
+    # 单候选直接生成不挂起
+    db.cards[10010152] = F.card(
+        10010152, token=True,
+        steps=[F.Step(op="pick_generate", pool=[10010163])])
+    g2 = make_game()
+    pa2, _ = F.battle_setup(g2)
+    F.play(g2, 0, 10010152)
     assert g2.state.pending_choice is None
-    assert len(pa2.hand) == n_hand + 1
-    assert pa2.hand[-1].id == 10010201
-    # 0 命中：不挂起不洗牌（牌库顺序不变）
-    g3 = make_game()
-    pa3, pb3 = F.battle_setup(g3)
-    pa3.deck[:] = [c for c in pa3.deck if c.id // 100 != 100102]
-    before = [c.uid for c in pa3.deck]
-    F.play(g3, 0, 10010151)
-    assert g3.state.pending_choice is None
-    assert [c.uid for c in pa3.deck] == before
+    assert pa2.hand[-1].id == 10010163
 
 
 # ==========================================================================

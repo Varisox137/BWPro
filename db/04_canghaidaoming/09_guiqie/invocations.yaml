@@ -27,14 +27,17 @@ invocations:
         - date: 20200928
           unique: shikigami_unique
           abilities:
-            - when: on_before_card_play  # 当敌方式神使用法术牌时（使用手牌前，即时时机）
+            # 定案(4)：任意方式任意位置的使用均触发（主动/响应/自动统一发
+            # on_before_card_play），只要求是法术专属牌；时机=使用前即时时机
+            - when: on_before_card_play  # 当敌方式神使用法术牌时（使用前，即时时机）
               condition: {player: opponent, card_type: spell, holder_in_combat: true}
               steps:
                 - {op: announce_invocation, name: 友切}
                 - {op: grant_immunity, scope: next_battle, target: {kind: self}}
                 # 攻击使用法术牌的该式神（context 键 card_shikigami：被使用牌所属式神
-                # 在事件 player 方的在场座次；未出战/气绝/中立牌为空操作）
-                - {op: launch_attack, at: targets,
+                # 在事件 player 方的在场座次；未出战/气绝/中立牌为空操作）；
+                # ignore_veil：灵咒效果不受帷幕限制（定案(4)），可对帷幕式神发起战斗
+                - {op: launch_attack, at: targets, ignore_veil: true,
                    target: {kind: context, key: card_shikigami}}
           text: "当敌方式神使用法术牌时若鬼切在战斗区，额外先攻击一次该式神且本次战斗获得免疫。"
   - name: 狮子之子

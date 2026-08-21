@@ -2,7 +2,7 @@
 
 覆盖：委托条件账本（PlayerState.quest_counts 12 种 kind 的记账点与口径）、
 quest_count_ge 条件键与 [条件] 门控（round 账本回合计数；round_ge 键已删除）、多事多忙扩域（quest_enemy）、
-委托整理/截稿日（quest_complete/quest_done）、增强步级条件（蜃楼观光）、
+委托整理/休暇（quest_complete/quest_done）、增强步级条件（蜃楼观光）、
 多段攻击（multi_strike）与伤害覆写（override_damage）/战斗免疫全类别
 （battle_immunity kind=all，二帚流）、今日委托每日替换（gen_weekday_quest）、
 线索选择生成（pick_generate 不可重复）与线索牌手监听（player_aura）、
@@ -156,12 +156,12 @@ def test_quest_play_counts_response(db, make_game):
 
 
 def test_quest_regen_when_sanmu_defeated(db, make_game):
-    """三目基础/觉醒能力'气绝时有效'（定案(3)）：紧急委托使用事件中插入结算伤害
-    使三目气绝，使用事件完成后仍随机置入一张新紧急委托（on_card_played 延时时机
-    + trigger_when_defeated）。"""
+    """三目基础/觉醒能力气绝时整体失效（裁决(11)，推翻早先定案(3)）：紧急委托
+    使用事件中插入结算伤害使三目气绝，使用事件完成后**不再**置入新紧急委托
+    （能力随气绝失效；trigger_when_defeated 机制本身的覆盖见犬神/倒计时用例）。"""
     db.shikigami[100101] = F.shiki(100101, ability=F.block(
         F.Step(op="generate", card_ids=[10010166]),
-        when="on_card_played", trigger_when_defeated=True,
+        when="on_card_played",
         condition={"player": "self", "card_id": [10010160]}))
     db.cards[10010166] = F.card(10010166, token=True)  # 生成物（伪新委托）
     _quest(db, 10010160, cond={"quest_count_ge": {"kind": "play", "count": 0}},
@@ -170,7 +170,7 @@ def test_quest_regen_when_sanmu_defeated(db, make_game):
     pa, _ = battle_setup(g, levels={0: 1})
     play(g, 0, 10010160)
     assert pa.shikigami[0].defeated  # 使用事件中三目位气绝
-    assert any(c.id == 10010166 and c.generated for c in pa.hand)  # 仍置入新委托
+    assert not any(c.id == 10010166 for c in pa.hand)  # 能力失效：不再置入新委托
 
 
 # ==========================================================================
@@ -248,7 +248,7 @@ def test_quest_step_condition(db, make_game):
 
 
 # ==========================================================================
-# 委托整理 / 截稿日（quest_complete）
+# 委托整理 / 休暇（quest_complete）
 # ==========================================================================
 
 def test_quest_complete_single_marks_directly(db, make_game):
@@ -286,7 +286,7 @@ def test_quest_complete_pick_choice(db, make_game):
 
 
 def test_quest_deadline_aura(db, make_game):
-    """截稿日口径：己方回合结束时复活（friendly_defeated 限定式神）+ 随机完成紧急委托。"""
+    """休暇口径：己方回合结束时复活（friendly_defeated 限定式神）+ 随机完成紧急委托。"""
     _quest(db, 10010160, steps=[F.Step(op="draw", count=1)])
     db.cards[10010162] = F.card(10010162, shikigami=100102, token=True, steps=[
         F.Step(op="player_aura", when="on_turn_end", condition={"active": "self"},

@@ -533,7 +533,7 @@ class Room:
             else:  # 回合超时：先收尾结算中交互选择，升级阶段先随机升级，再结束回合
                 if st.pending_choice is not None:
                     # 结算中交互选择（检视选牌/交互弃牌/忘忧牌名/选择召唤幻境/生成入手/
-                    # 灵咒结附/检索入手）挂起时随机作答到底——否则 apply 拒绝 choose
+                    # 灵咒结附）挂起时随机作答到底——否则 apply 拒绝 choose
                     # 以外的指令，回合无法超时收尾、计时器 key 不变也不会重启（死局）。
                     # card_name / field_summon_pick / pick_generate / invocation_pick
                     # 的作答键为 choice（数据 id 或灵咒名），其余 kind 为 uid（实例 uid）。

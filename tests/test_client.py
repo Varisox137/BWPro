@@ -413,6 +413,36 @@ def test_battle_loop_play_dual_target(db, make_game, monkeypatch, capsys):
     assert pb.shikigami[0].health == 2
 
 
+def test_battle_loop_reinforce_sub_option_repick(db, make_game, monkeypatch, capsys):
+    """协战牌多择子选项引导（裁决(16)）：列出全部子选项（含当前不合法者并标注
+    原因）；选不合法则提示原因并要求重选（不能回退不使用该牌），重选合法后
+    正常结算。"""
+    from client.settle import SettlePrinter
+    db.cards[10010151] = F.card(  # 合法子卡（1 级 1 火，制胜退出循环）
+        10010151, token=True,
+        steps=[F.dmg(30, F.T(kind="all", pool="enemy_player"))])
+    db.cards[10010251] = F.card(  # 不合法子卡：所属 100102 需 3 级
+        10010251, shikigami=100102, level=3, token=True,
+        steps=[F.Step(op="draw", count=1)])
+    db.cards[10010161] = F.card(  # 协战主牌
+        10010161, card_type="reinforce", shikigami=100101, shikigami2=100102,
+        options=[10010151, 10010251], token=True)
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    pa.hand.clear()
+    F.give(g, 0, 10010161)
+    feed(monkeypatch, ["play 1", "1", "0", ""])  # 先选不合法的 1 → 要求重选 → 0
+    printer = SettlePrinter(interval=0)
+    printer.start()
+    cli._battle_loop(g, printer)
+    printer.stop(flush=True)
+    out = capsys.readouterr().out
+    assert "不可选" in out and "请重选" in out  # 引导列出并拦截不合法子选项
+    assert pb.health == 0  # 重选 0 号子卡后正常结算（制胜）
+    assert any(c.id == 10010161 for c in pa.ext.get("exiled", [])) or \
+        all(c.id != 10010161 for c in pa.hand)  # 主牌已离手（未回退）
+
+
 # ==========================================================================
 # TUI 基座（client/tui.py）与状态栏文本（原 test_tui.py）
 # ==========================================================================

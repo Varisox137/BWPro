@@ -799,22 +799,6 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 except (IllegalAction, ValueError, IndexError):
                     print("参数有误，输入序号选择")
                 continue
-            if kind == "search_pick":
-                # 检索选择置入手牌（觉醒·鬼切）：从牌库命中牌中选一张（作答键 uid）
-                opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
-                print(f"—— {p.name} 选择牌库中一张牌置入手牌 ——")
-                for i, c in enumerate(opts):
-                    cd = game.db.cards[c.id]
-                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
-                try:
-                    pick = int(tui.prompt("选择一张置入手牌 > ")) - 1
-                    game.apply({"op": "choose", "uid": opts[pick].uid,
-                                "player": pend["player"]})
-                    settle_seen = _play_settle(game, settle_seen, printer)
-                    show_field(game, printer)
-                except (IllegalAction, ValueError, IndexError):
-                    print("参数有误，输入序号选择")
-                continue
             # 检视牌库顶（青灯夜谈/明心）
             opts = [next(c for c in p.deck if c.uid == u) for u in pend["options"]]
             print(f"—— {p.name} 检视牌库顶 {len(opts)} 张牌 ——")
@@ -866,14 +850,24 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
                 rest = args[1:]
                 eff = cdef
                 if cdef.card_type == "reinforce":
-                    # 协战牌：先选择子选项（显示两选项卡名与文本），目标/等级按子卡
+                    # 协战牌子选项（裁决(16) 多择引导）：列出全部子选项（含当前不
+                    # 合法者，标注原因）；选不合法要求重选，不能回退不使用该牌
                     options = [game.db.cards[o] for o in cdef.options]
-                    if rest:
-                        pick = int(rest.pop(0))
-                    else:
-                        for i, o in enumerate(options):
-                            print(f"  [{i}]【{o.name}】 {o.text}")
-                        pick = int(tui.prompt("子选项 > "))
+                    while True:
+                        if rest:
+                            pick = int(rest.pop(0))
+                        else:
+                            for i, o in enumerate(options):
+                                err = game.reinforce_sub_option_error(
+                                    game.state.active, cdef, i)
+                                mark = f"（不可选：{err}）" if err else ""
+                                print(f"  [{i}]【{o.name}】 {o.text}{mark}")
+                            pick = int(tui.prompt("子选项 > "))
+                        err = game.reinforce_sub_option_error(
+                            game.state.active, cdef, pick)
+                        if err is None:
+                            break
+                        print(f"  子选项不可选：{err}——请重选（不能取消使用）")
                     cmd_dict["choice"] = pick
                     eff = options[pick]
                 if eff.target.kind == "choose":

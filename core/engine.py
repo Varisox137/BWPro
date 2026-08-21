@@ -149,7 +149,8 @@ class Game:
         # _response_used：玩家 → 已消耗响应名额的 (窗口序号, 事件名)。
         self._response_window: int = 0
         self._response_used: dict[int, tuple[int, str]] = {}
-        self._suppress_responses = False  # on_turn_end 的响应推迟到回合结束效果结算后（答复3）
+        self._suppress_responses = False  # on_turn_end 的响应推迟到回合结束效果结算后（答复3）；
+        # 例外：on_invocation_trigger 宣告的响应窗即时打开（_collect 处豁免，裁决(2)）
         # 战斗上下文（最小版）：每次 _resolve_combat 压栈新 battle id，终止点弹栈并
         # 清理本战斗授予的关键字实例与免疫条目。为嵌套战斗/响应战斗牌（Phase 5+）打底。
         self._battle_seq: int = 0
@@ -1096,8 +1097,6 @@ class Game:
           手牌 → 该实例 mods["quest_done"] 置位，续跑挂起块。
         - kind="invocation_pick"（鬼切"选择一张鬼斩结附"）：choice 给出灵咒名
           → 对 pending 目标结附，续跑挂起块。
-        - kind="search_pick"（觉醒·鬼切检索"选择一张置入手牌"）：uid 给出牌库
-          命中牌 → 置入手牌并洗牌库，续跑挂起块。
         """
         pending = self.state.pending_choice
         if pending is None:
@@ -1119,9 +1118,6 @@ class Game:
             return
         if pending.get("kind") == "invocation_pick":
             self._cmd_invocation_pick_choose(cmd, pending)
-            return
-        if pending.get("kind") == "search_pick":
-            self._cmd_search_pick_choose(cmd, pending)
             return
         if pending.get("kind") == "quest_complete_pick":
             self._cmd_quest_complete_choose(cmd, pending)
@@ -1307,41 +1303,6 @@ class Game:
             str(choice), player=pi,
             source=Ref(player=sref[0], shikigami=sref[1]) if sref else None,
             target=Ref(player=tref[0], shikigami=tref[1]))
-        self.state.pending_choice = None
-        if self._suspended is not None:
-            block, ctx, start = self._suspended
-            self._suspended = None
-            self._resolve_block(block, ctx, start)
-
-    def _open_search_pick(self, pi: int, options: list[int]) -> bool:
-        """开启"检索选择置入手牌"交互（觉醒·鬼切，kind="search_pick"）：选项 =
-        牌库命中卡牌的 uid 列表（>1 张才挂起，由 search_deck(choose=True) 保证）；
-        作答键 uid（同 discard_pick）。命中即洗牌在作答侧执行。"""
-        p = self.state.players[pi]
-        self.state.pending_choice = {
-            "kind": "search_pick", "player": pi, "options": list(options),
-        }
-        self._log(f"{p.name} 选择牌库中一张牌置入手牌")
-        return True
-
-    def _cmd_search_pick_choose(self, cmd: dict, pending: dict) -> None:
-        """检索选择作答：uid 给出牌库命中牌 → 置入手牌（reason="search"）并洗牌库，
-        清 pending 并续跑挂起块（_suspended）。"""
-        pi = cmd.get("player", self.state.active)
-        if pi != pending["player"]:
-            raise IllegalAction("不是你的选择（等待对应玩家作答）")
-        uid = cmd.get("uid")
-        if uid not in pending["options"]:
-            raise IllegalAction("不在检索命中的牌之列")
-        p = self.state.players[pi]
-        card = next((c for c in p.deck if c.uid == uid), None)
-        if card is None:
-            raise IllegalAction("该牌已不在牌库中")
-        self.move_card(p, card, "hand", reason="search")
-        self._materialize(p, card, self.db.cards[card.id])  # 生成点统一快照（同 search_deck）
-        self._log(f"{p.name} 将【{self.db.cards[card.id].name}】置入手牌")
-        self.rng.shuffle(p.deck)
-        self._log(f"{p.name} 洗了牌库")
         self.state.pending_choice = None
         if self._suspended is not None:
             block, ctx, start = self._suspended
@@ -1643,6 +1604,31 @@ class Game:
             raise IllegalAction("调度指令需要 player（0/1）")
         return pi
 
+    def reinforce_sub_option_error(self, pi: int, cdef: CardDef,
+                                   choice: int) -> str | None:
+        """协战牌子选项合法性预检（裁决(16) CLI 多择引导：列出全部子选项<含不合法>，
+        选不合法要求重选）：返回不合法原因文本，None = 可选。仅校验子选项本身
+        （所属式神出战/气绝/等级、鬼火）；目标合法性在出牌时另行校验。"""
+        options = list(cdef.options or [])
+        if choice not in range(len(options)):
+            return "无效的子选项序号"
+        sub = self.db.cards[options[choice]]
+        p = self.state.players[pi]
+        if sub.shikigami is not None:
+            si = self._find_shikigami(p, sub.shikigami)
+            sname = self.db.shikigami[sub.shikigami].name
+            if si is None:
+                return f"所属式神{sname}未出战"
+            s = p.shikigami[si]
+            if s.defeated and not sub.playable_when_defeated:
+                return f"{sname} 气绝中"
+            if s.level < sub.level:
+                return f"需要 {sname} 达到 {sub.level} 级（当前 {s.level} 级）"
+        cost = self._effective_cost(p, sub)
+        if p.orb < cost:
+            return f"鬼火不足（需要 {cost}，现有 {p.orb}）"
+        return None
+
     def _cmd_play_reinforce(self, p: PlayerState, card: CardInstance,
                             cdef: CardDef, cmd: dict) -> None:
         """协战牌打出（维护者答复 10）：选择子选项 → 生成对应 token 子卡入手并
@@ -1664,22 +1650,12 @@ class Game:
             names = " / ".join(f"[{i}]【{self.db.cards[o].name}】"
                                for i, o in enumerate(options))
             raise IllegalAction(f"协战牌需要选择子选项（choice 0/1）：{names}")
+        err = self.reinforce_sub_option_error(self.state.active, cdef, choice)
+        if err is not None:
+            raise IllegalAction(f"【{cdef.name}】的子选项当前不可选：{err}")
         sub = self.db.cards[options[choice]]
-        si: int | None = None
-        if sub.shikigami is not None:
-            si = self._find_shikigami(p, sub.shikigami)
-            sname = self.db.shikigami[sub.shikigami].name
-            if si is None:
-                raise IllegalAction(f"子选项【{sub.name}】的所属式神{sname}未出战")
-            s = p.shikigami[si]
-            if s.defeated and not sub.playable_when_defeated:
-                raise IllegalAction(f"{sname} 气绝中，无法使用【{sub.name}】")
-            if s.level < sub.level:
-                raise IllegalAction(f"【{sub.name}】需要 {sname} 达到 {sub.level} 级"
-                                    f"（当前 {s.level} 级）")
-        cost = self._effective_cost(p, sub)
-        if p.orb < cost:
-            raise IllegalAction(f"鬼火不足（需要 {cost}，现有 {p.orb}）")
+        si: int | None = (self._find_shikigami(p, sub.shikigami)
+                          if sub.shikigami is not None else None)
         if sub.target.kind == "choose":
             want = cmd.get("target")
             if want is None:
@@ -1878,16 +1854,10 @@ class Game:
         how = f"（{method.text or method.id}）" if method else ""
         self._log(f"{p.name} 使用了【{cdef.name}】{how}")
         # 使用手牌前（即时时机）：合法性检查与支付之后、效果结算之前。payload 的
-        # nullified 为可变标记（参照伤害管线的可变 payload 模式）——监听者（魔音扰心）
-        # 置位后本次使用终止结算：跳过效果块，牌照常离手进墓地（费用/瞬发名额已付不退）
-        marker = {"nullified": False}
-        self._active_play_marker = marker  # 反制钩子读取点（check_defeated）
-        try:
-            self.emit("on_before_card_play", player=self.state.active, uid=uid, card=card,
-                      card_type=eff_type, shikigami=cdef.shikigami,
-                      nullified=marker)
-        finally:
-            self._active_play_marker = None
+        # nullified 为可变标记（参照伤害管线的可变 payload 模式）——监听者（魔音扰心/
+        # 反制）置位后本次使用终止结算：跳过效果块，牌照常离手进墓地（费用/瞬发名额
+        # 已付不退）。统一发点 _emit_before_card_play（定案(4)：任意方式使用同发）。
+        marker = self._emit_before_card_play(self.state.active, card, cdef, eff_type)
         if marker["nullified"]:
             self.move_card(p, card, "graveyard")
             self._log(f"【{cdef.name}】的使用被无效化")
@@ -2092,6 +2062,27 @@ class Game:
             ledger = p.ext.setdefault("talisman_ledger", [])
             if cdef.id not in ledger and len(ledger) < 3:
                 ledger.append(cdef.id)
+
+    def _emit_before_card_play(self, player: int, card: CardInstance,
+                               cdef: CardDef, card_type: str) -> dict:
+        """"使用前"即时时机（on_before_card_play）统一发点（定案(4)：任意方式/任意
+        位置的使用均发——主动/响应/自动使用同一事件）。
+
+        返回可变 marker（{"nullified": bool}）：监听者置位 = 本次使用被无效化
+        （魔音扰心/反制），调用方跳过效果结算、牌照常离手入墓地、不发 on_card_played。
+        marker 同步登记 _active_play_marker（反制钩子读取点，check_defeated）；
+        嵌套使用（自动使用内再触发使用）保存/恢复外层 marker。
+        """
+        marker = {"nullified": False}
+        prev = self._active_play_marker
+        self._active_play_marker = marker
+        try:
+            self.emit("on_before_card_play", player=player, uid=card.uid, card=card,
+                      card_type=card_type, shikigami=cdef.shikigami,
+                      nullified=marker)
+        finally:
+            self._active_play_marker = prev
+        return marker
 
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
                           affected: list[Ref] | None = None, *,
@@ -2778,7 +2769,8 @@ class Game:
                         double_fragile: bool = False,
                         target: Ref | None = None,
                         origin: str = "effect",
-                        strikes: int = 1) -> None:
+                        strikes: int = 1,
+                        ignore_veil: bool = False) -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
@@ -2797,6 +2789,8 @@ class Game:
         帷幕再校验时出击取消战斗、其余改为无目标战斗（thoughts.txt 帷幕定义）；
         "assault"/"card" 两种攻击发起记入薰攻击账本（player ext["last_attacker"]，
         效果发起的攻击不算）。
+        ignore_veil = 目标帷幕再校验放行（定案(4)：灵咒效果发起的战斗不受帷幕限制，
+        友切"对使用法术牌的敌方式神发起战斗"——帷幕只挡出击/卡牌的指定）。
         strikes = 多段攻击次数（multi_strike 提取步，二帚流）：交战阶段后追加 strikes-1
         段攻击（反击只一段、与首段并行；2-N 段依次单独结算，终止点清除登记）。
         """
@@ -2868,7 +2862,8 @@ class Game:
                 uses=int((block.model_extra or {}).get("uses", 1)),
                 seq=self.state.next_ability_seq()))
         try:
-            self._battle_flow(atk_ref, attacker, move=move, target=target, origin=origin)
+            completed = self._battle_flow(atk_ref, attacker, move=move, target=target,
+                                          origin=origin, ignore_veil=ignore_veil)
         finally:
             # 终止点（rules.md:174）：移除本战斗授予的关键字实例与免疫条目
             for ref, kw, cls in grants:
@@ -2906,7 +2901,22 @@ class Game:
         # 再依次结算本战斗登记的追加攻击（战斗绑定的力量/关键字/临时触发已在上方
         # 终止点核销，追加战斗不享受原战斗牌加成——答复(7)）
         attacker.combat_power = 0  # 本次战斗战力于战斗结束时清除（追加攻击不继承）
+        if completed:
+            # 战斗结束后（裁决(10)，麓鸣·轰/影杀延时打击层）：战斗被取消或过早终止
+            # （攻击者气绝/鸦羽疾走/攻击替换）则 _battle_flow 返回 falsy，不发事件；
+            # 事件入延时队列，随即被下方 _drain_queue 冲刷（此时 attack_buffs 已核销，
+            # 延时发起的打击不继承本次攻击增益——裁决(2) 影杀次序）
+            self.emit("on_battle_end", attacker=atk_ref, battle=bid)
         self._drain_queue()
+        # scope="battle" 延迟能力过期（麓鸣·轰"本次攻击后"，裁决(10)）：本次战斗
+        # 结束（含被取消/过早终止——completed 为假、未发 on_battle_end）即清除该
+        # 攻击者名下的残留条目，不带到其后的战斗
+        for pl in self.state.players:
+            for st_ in pl.shikigami:
+                st_.delayed[:] = [e for e in st_.delayed
+                                  if not (e.get("scope") == "battle"
+                                          and e.get("watch") == [atk_ref.player,
+                                                                 atk_ref.shikigami])]
         self._resolve_followup_attacks(bid)
 
     def _resolve_followup_attacks(self, bid: int) -> None:
@@ -2934,12 +2944,18 @@ class Game:
             self._resolve_combat(ref, st, target=target, origin="effect")
 
     def _battle_flow(self, atk_ref: Ref, attacker: ShikigamiState, *, move: bool,
-                     target: Ref | None = None, origin: str = "effect") -> None:
+                     target: Ref | None = None, origin: str = "effect",
+                     ignore_veil: bool = False) -> bool:
         """战斗步骤：战斗准备前 → 战斗准备（移动/确定目标）→（被）攻击时 → 先攻阶段 → 交战阶段 → 战斗后。
+
+        返回值：完整走完"战斗后"时机且攻击未被替换（烬染不夜）则 True——裁决(10)
+        "战斗结束后"（on_battle_end，麓鸣·轰层）仅在战斗正常完成时发出；中途取消/
+        过早终止（攻击者气绝/鸦羽疾走/先攻阶段终止等）返回 None（ falsy ），不发事件。
 
         target = 有目标的战斗的战斗目标（追猎）；origin 区分发起方式——目标在发起战斗前
         获得帷幕（或已不可指定）时：有目标的出击不发起战斗，其余改为无目标战斗
-        （thoughts.txt 帷幕定义）。确定目标（战斗准备步骤）：有目标用目标；无目标且
+        （thoughts.txt 帷幕定义）；ignore_veil=True（灵咒效果发起的战斗，定案(4)）
+        跳过帷幕再校验（气绝/离场校验照常）。确定目标（战斗准备步骤）：有目标用目标；无目标且
         攻击者持直击（确定目标前1）则被攻击者改为敌方牌手；否则敌方战斗区式神。
         先攻阶段击杀被攻击者（定案(6)）：攻击者有贯通则被攻击者改为对方牌手，否则
         终止本次战斗流程（后续时机不结算）——连击无贯通同样终止；被攻击者在求值点
@@ -2964,7 +2980,8 @@ class Game:
             if target.shikigami is not None and (
                     ts is None or ts.dying
                     or (not ts.in_play and not defeated_ok)
-                    or targets.is_veiled(self, target, atk_ref.player)):
+                    or (not ignore_veil
+                        and targets.is_veiled(self, target, atk_ref.player))):
                 if origin == "assault":
                     self._log("战斗目标已不能成为攻击目标，不发起本次战斗")
                     return
@@ -3163,6 +3180,8 @@ class Game:
         # ---- 战斗结束后：蚀刃毒羽"攻击时"登记的一次性破甲回赋（维护者答复(2)）----
         for echo_ref, echo_amount in self._battle_echo.pop(self._battle_stack[-1], []):
             self._change_shield(echo_ref, echo_amount, "蚀刃毒羽", kind="fragile")
+        # 攻击替换（烬染不夜）视为本次攻击未正常完成：不发 on_battle_end（裁决(10)）
+        return not replace_marker["active"]
 
     def _cmd_assault(self, cmd: dict) -> None:
         """出击指令：耗 1 鬼火 + 消耗出击次数，将攻击者移入战斗区并发起战斗。
@@ -4738,10 +4757,13 @@ class Game:
     def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:
         """生成并结算式神气绝事件（要素：来源、气绝者、原因）。
 
-        当前机制范围内的流程：气绝前/消灭前 1（即时 on_before_defeat）→ 消灭形态牌 →
-        移除所有非永久 buff（临时修正/护甲）→ 非召唤物获得倒计时 3：复活并移动至准备区
-        （召唤物直接离场）→ 气绝后（延时时机）。气绝前 2/3、替身、击杀标记等时点批次
-        待相应机制引入（见 docs/rules.md）。
+        时机分层（裁决(9)，docs/rules.md 第七章）：气绝前/消灭前1（即时
+        on_before_defeat——大部分能力/响应挂此时机：射怪鸟事/破碎之音/不灭之火/
+        不祥之刃/判官能力等）→ 气绝前/消灭前2（仅解除变形 + 替身[未引入]）→
+        消灭形态牌 → 移除所有非永久 buff（临时修正/护甲）→ 非召唤物获得倒计时 3：
+        复活并移动至准备区（召唤物直接离场）→ 气绝后/消灭后（延时时机，不再细分
+        优先级；跳跳哥哥"将气绝时变为棺材"的变形事件与棺击增益挂此时机）。
+        击杀标记等时点批次待相应机制引入（见 docs/rules.md）。
         """
         s = self.state.players[ref.player].shikigami[ref.shikigami]
         if reason in ("必杀", "驱魔符") and not s.defeated and s.health > 0:
@@ -4864,10 +4886,12 @@ class Game:
                   in_combat=in_combat, summon=(s.kind == "summon"),
                   victim_invocations=inv_snapshot,
                   battle=self._battle_stack[-1] if self._battle_stack else None)
-        # 魔蛊毒爆转移（牌手级半回合能力 ext["inv_transfer_on_defeat"]，裁决14）：
-        # 登记目标本回合气绝时，由登记方将其上等量（移除前快照计数，不论来源敌我）
-        # 灵咒一次性结附于另一名合法敌方式神（非选择目标：随机取；帷幕可结附、
-        # 气绝/未在场不可；无合法目标则不转移）
+        # 魔蛊毒爆转移（牌手级半回合登记 ext["inv_transfer_on_defeat"]，裁决13/14）：
+        # 视作赋予登记目标（敌方式神）的一次性能力——其本回合气绝时触发（触发者=
+        # 该敌方式神，来源侧取气绝者所属牌手：不吃登记方 inv_attach_bonus 增幅、
+        # 严格等量），将移除前快照计数（不论结附来源敌我）的同名灵咒一次性结附于
+        # 随机另一名合法敌方式神（非选择目标：随机取；帷幕可结附、气绝/未在场不可；
+        # 无合法目标则不转移）
         for tpi, tpl in enumerate(self.state.players):
             tr = tpl.ext.get("inv_transfer_on_defeat")
             if not tr or tr.get("victim") != [ref.player, ref.shikigami]:
@@ -4885,17 +4909,26 @@ class Game:
             dst_name = self.db.shikigami[
                 self.state.players[dst.player].shikigami[dst.shikigami].id].name
             self._log(f"灵咒【{tr['inv']}】转移（{n} 个 → {dst_name}）")
-            self.attach_invocation(tr["inv"], player=tpi, source=None,
+            self.attach_invocation(tr["inv"], player=ref.player, source=ref,
                                    target=dst, count=n)
         # 平和猫又屋：气绝结算（含气绝后时机）完成后复活（形态已消灭、倒计时已重置，
         # 复活走 _revive 完整流程——回满生命/重注册倒计时能力/发 on_shikigami_revived）
         if revive_flag and s.defeated and not s.despawned:
             self._revive(owner, ref.player, ref.shikigami, reason="平和猫又屋")
-        # 棺材替换（不弃 ext 旗标 / 罡身阵形态 tag）：气绝结算完成后，把已气绝的
-        # 原式神替换为棺材占位实体（落准备区——战斗区已在上方让出；召唤物已离场
-        # 天然跳过）。气绝事件/击杀账本按原式神照常结算过，替换不重复发
+        # 棺材替换（不弃 ext 旗标 / 罡身阵形态 tag）——裁决(9)：跳跳哥哥各"将气绝时
+        # 变为棺材"效果 = 气绝前1 触发（旗标/形态 tag 在上方气绝结算前捕获），在该
+        # 气绝事件的"气绝后/消灭后"延时时机生成变形事件——不入队内联替换，改为把
+        # to_coffin 追加为本气绝事件队列的收尾待结算项（与棺葬 on_shikigami_defeated
+        # 能力块同层；若其间被气绝后能力复活，to_coffin 对未气绝目标天然空操作）
         if coffin_into is not None and s.defeated and not s.despawned:
-            self._to_coffin(owner, ref.player, ref.shikigami, int(coffin_into))
+            from db.schema import EffectBlock as _EB, Step as _St
+            blk = _EB(when="on_shikigami_defeated", steps=[_St.model_validate(
+                {"op": "to_coffin", "into": int(coffin_into),
+                 "target": {"kind": "context", "key": "victim"}})])
+            self.queue.append(_Pending(blk, ExecContext(
+                controller=ref.player, source=ref,
+                event={"name": "on_shikigami_defeated", "victim": ref,
+                       "player": ref.player})))
 
     # ==================== 幻境（card_type="field"）管线 ====================
 
@@ -5355,7 +5388,13 @@ class Game:
             out.extend(self._collect_player_auras(event, pi))
             if pi == self.state.active:
                 out.extend(self._collect_temp_grants(event))
-            if pi != self.state.active and not self._suppress_responses \
+            # on_invocation_trigger（灵咒能力触发宣告）豁免回合结束响应抑制：
+            # 宣告的响应窗必须在该灵咒能力后续步骤前即时打开（狮子之子在敌方回合
+            # 结束触发 + 鬼刃·影杀响应——裁决(2) 次序），其余事件名维持抑制（偷袭
+            # 答复3：回合结束效果的响应推迟到回合结束效果结算完后统一收集）
+            if pi != self.state.active \
+                    and (not self._suppress_responses
+                         or event["name"] == "on_invocation_trigger") \
                     and self._response_used.get(pi) != (self._response_window,
                                                         event["name"]):
                 out.extend(self._collect_responses(event, pi))
@@ -5627,6 +5666,15 @@ class Game:
             self._response_window, (ctx.event or {}).get("name"))  # 成功结算才占用本时机名额
         self._log(f"{p.name} 的响应牌【{cdef.name}】触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
+        if cdef.card_type == "spell":
+            # 响应使用的法术牌同发"使用前"即时时机（定案(4)：任意方式任意位置的
+            # 使用均触发——友切类监听）；被无效化（反制等）：跳过效果、照常离手入
+            # 墓地、不发 on_card_played（同主动使用无效化口径）
+            marker = self._emit_before_card_play(ctx.controller, ctx.card, cdef, "spell")
+            if marker["nullified"]:
+                self.move_card(p, ctx.card, "graveyard")
+                self._log(f"【{cdef.name}】的使用被无效化")
+                return True
         if cdef.response is not None:
             # 带 response 覆盖块的响应牌（魔音扰心型 + 鬼斩响应三连——两断/罗城门/影杀）：
             # 按覆盖块效果结算（落墓地走 steps），不走战斗/形态分派——响应战斗牌

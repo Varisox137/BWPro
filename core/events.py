@@ -19,6 +19,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_card_played",       # 卡牌使用后 {player, uid}
     "on_before_assault",    # 出击宣言后、伤害结算前 {attacker: Ref, victim: Ref}
     "on_after_assault",     # 出击结算完毕 {attacker: Ref}
+    "on_battle_end",        # 战斗结束后 {attacker: Ref, battle}（裁决(10)：战斗被取消/过早终止则不发；不入 EVENT_TIMING = 延时队列时机）
     "on_damage",            # 式神受到伤害后 {victim: Ref, amount, source, kind}
     "on_player_damaged",    # 牌手受到伤害后 {player, amount, source, kind}
     "on_shikigami_defeated",  # 式神气绝（气绝后/消灭后，延时时机）{victim: Ref, source, reason}

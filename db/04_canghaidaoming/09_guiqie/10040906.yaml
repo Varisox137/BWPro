@@ -13,8 +13,9 @@ versions:
       level: 2
       effects:
         steps:
-          # 选择一张鬼切的战斗牌置入手牌（choose=true：>1 张挂起 search_pick 交互）
-          - {op: search_deck, shikigami: self, card_type: combat, choose: true}
+          # 选择一张鬼切的战斗牌置入手牌（thoughts(6) 定案：选择并**凭空生成**，
+          # 不检索牌库、不洗牌——pick_generate 通道，>1 候选挂起 pick_generate 交互）
+          - {op: pick_generate, pool: [10040901, 10040905, 10040908]}
       abilities:
         # [觉醒]：己方回合开始时，选择一个未结附的鬼斩结附于鬼切上
         # （换绑后不再含基础能力的"敌方回合结束移除鬼斩"块——觉醒原文无此句）

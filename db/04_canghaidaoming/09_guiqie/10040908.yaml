@@ -14,14 +14,21 @@ versions:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
       response:
-        # [响应]：当鬼切触发‘狮子之子’时自动使用并复制两次（使用 1 次+复制 2 次
-        # = 三次带[直击]的额外攻击——rules.md 第三十七章三）
+        # [响应]：当鬼切触发‘狮子之子’时自动使用并复制两次——裁决(2) 次序定案：
+        # 本响应本身不产新战斗，仅给即将发起的狮子战斗 +2（与灵咒 +2 合计 +4）；
+        # 两次复制打击延时到“战斗结束后”（on_battle_end，狮子1 的 attack_buffs 已
+        # 核销）各带战斗牌 +2 依次发起；刀鸣复制的狮子2 最后（仅灵咒 +2）。
         when: on_invocation_trigger
         condition: {invocation: 狮子之子, player: self}
         steps:
           - {op: attack_buff, power: 2, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
-          - {op: launch_attack, keywords: [direct]}
-          - {op: launch_attack, keywords: [direct]}
-          - {op: launch_attack, keywords: [direct]}
+          - op: delay_grant
+            when: on_battle_end
+            condition: {attacker_shikigami: 100409}
+            steps:
+              - {op: attack_buff, power: 2, target: {kind: self}}
+              - {op: launch_attack, keywords: [direct]}
+              - {op: attack_buff, power: 2, target: {kind: self}}
+              - {op: launch_attack, keywords: [direct]}
       text: "[直击]。[响应]：{当鬼切触发‘狮子之子’时，自动使用并复制两次。}"

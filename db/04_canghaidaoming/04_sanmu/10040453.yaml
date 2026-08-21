@@ -7,7 +7,7 @@ versions:
       card_type: spell
       subtype: quest  # 委托牌（三目专属子类型）
       token: true  # 衍生牌（无稀有度）
-      tags: [urgent_quest]  # 紧急委托（委托整理/截稿日"完成紧急委托"的池判定）
+      tags: [urgent_quest]  # 紧急委托（委托整理/休暇"完成紧急委托"的池判定）
       level: 1
       keywords: [fast]
       play_condition: {quest_count_ge: {kind: play, count: 4}}  # [条件]：{使用了四张牌}

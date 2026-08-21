@@ -1237,7 +1237,6 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
                 card_type: str | None = None, max_level: int | str | None = None,
                 direct_play_power_ge: int | None = None,
                 card_id: int | None = None,
-                choose: bool = False,
                 intensity_boost: int = 0) -> None:
     """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
@@ -1251,8 +1250,6 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
     "若该式神力量>=4且存活，改为直接使用"——不耗鬼火、play_from=deck、triggered=auto；
     目前仅支持形态牌直接结附给选择目标）。置入手牌/直接使用前按生成点统一做
     持久修饰快照（_materialize）。
-    choose=True：命中 >1 张时不随机，改为挂起交互由控制者选择一张（觉醒·鬼切
-    "检索一张鬼切的牌"——pending kind="search_pick"）；0/1 张不挂起。
     intensity_boost：检索入手的牌实例获得该耐久加成修饰（五道难题"使其获得5耐久"
     ——mods.intensity_boost，召唤幻境时结算入耐久）。
     """
@@ -1283,10 +1280,6 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
             and (lv is None or game.db.cards[c.id].level <= lv)]
     if not pool:
         return  # 未命中：不洗牌
-    if choose and len(pool) > 1:
-        # 交互检索（觉醒·鬼切）：挂起 pending kind="search_pick"，作答侧置入手牌+洗牌
-        game._open_search_pick(ctx.controller, [c.uid for c in pool])
-        return
     card = game.rng.choice(pool)
     cdef = game.db.cards[card.id]
     if direct_play_power_ge is not None and ref is not None and ref.shikigami is not None:
@@ -1437,6 +1430,9 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     uses=99 表示回合内不限次）。
     scope="turn"："本回合"类（魔音扰心主动使用）——己方回合开始清除（未消耗时）。
     scope="play"："本次使用期间"类（黑羽之刃的消灭抽牌）——该次出牌结算结束时清除。
+    scope="battle"："本次攻击后"类（麓鸣·轰，裁决(10)）——登记时记来源式神为
+    watch，该来源下一次作为攻击者的战斗结束（含被取消/过早终止而未发出
+    on_battle_end 的情形）即过期清除，不带到后来战斗。
     secret=True 时选择目标对敌方保密（会：所选目标仅己方可见）——联机状态脱敏
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     bind="chosen"：改登记到选择目标式神上（沧海之盾"使一个己方式神获得……当他造成
@@ -1460,6 +1456,11 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         "uses": int(uses),
         "secret": secret,
         "scope": scope,
+        # scope="battle"：来源式神（攻击者）座次——该来源下次作为攻击者的战斗
+        # 结束时过期清除（engine._resolve_combat 收尾；裁决(10)）
+        "watch": ([ctx.source.player, ctx.source.shikigami]
+                  if scope == "battle" and ctx.source is not None
+                  and ctx.source.shikigami is not None else None),
         "seq": game.state.next_ability_seq(),  # 能力进场序号（卡牌赋予的能力进场点，答复(4)）
     })
     game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
@@ -2130,6 +2131,10 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
+        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+        if marker["nullified"]:  # 被无效化：跳过效果、不发 on_card_played
+            game._log(f"【{cdef.name}】的使用被无效化")
+            return
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
             controller=ctx.controller, source=ctx.source, card=inst, is_ability=True))
     finally:
@@ -2180,6 +2185,11 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
             game._log(f"自动使用了手牌的【{cdef.name}】")
             game._affected_stack.append({"controller": ctx.controller, "refs": []})
             try:
+                marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+                if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
+                    game._log(f"【{cdef.name}】的使用被无效化")
+                    game.move_card(p, inst, "graveyard")
+                    continue
                 game._resolve_block(game._played_block(p, cdef, inst, None),
                                     ExecContext(controller=ctx.controller,
                                                 source=ctx.source, card=inst,
@@ -2200,6 +2210,11 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
     game._log(f"凭空自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
+        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+        if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
+            game._log(f"【{cdef.name}】的使用被无效化")
+            game.move_card(p, inst, "graveyard")
+            return
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
             controller=ctx.controller, source=ctx.source, card=inst, chosen=chosen))
     finally:
@@ -2264,6 +2279,11 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
             chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选
     game._affected_stack.append({"controller": controller, "refs": []})
     try:
+        marker = game._emit_before_card_play(controller, inst, cdef, "spell")
+        if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发 on_card_played
+            game._log(f"【{cdef.name}】的使用被无效化")
+            game.move_card(p, inst, "graveyard")
+            return True
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
             controller=controller, source=source, card=inst,
             chosen=chosen, is_ability=True))
@@ -2713,7 +2733,8 @@ def double_damage_vs_fragile(game, ctx, *, targets: list[Ref]) -> None:
 @action("launch_attack")
 def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
                   at: str | None = None, at_index: int = 0,
-                  keywords: list[str] | None = None) -> None:
+                  keywords: list[str] | None = None,
+                  ignore_veil: bool = False) -> None:
     """令指定式神发起一次额外攻击（协战/崩山/来打我呀类；除 "target" 外 targets 忽略）。
 
     不耗鬼火、不耗出击次数；在准备区则自动进战斗区（沿用 _battle_flow 现有行为）；
@@ -2730,6 +2751,8 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
     context 键）；缺省为无目标战斗（敌战斗区空则直击牌手）。
     keywords：本次攻击的战斗关键字（影杀三连 [直击]）——发起前经
     ext["next_battle_keywords"] 挂账，战斗开始消费（同 next_battle 通道）。
+    ignore_veil=True：战斗目标持帷幕也照常发起（灵咒效果不受帷幕限制，定案(4)，
+    友切）；缺省 False 走 _battle_flow 帷幕再校验。
     """
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -2776,7 +2799,8 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
         s.ext.setdefault("next_battle_keywords", []).extend(
             {"keyword": str(k)} for k in keywords)
     game._log(f"{game.db.shikigami[s.id].name} 发起了一次额外攻击")
-    game._resolve_combat(Ref(player=pi, shikigami=idx), s, target=combat_target)
+    game._resolve_combat(Ref(player=pi, shikigami=idx), s, target=combat_target,
+                         ignore_veil=ignore_veil)
 
 
 @action("counter_piercing")
@@ -3340,6 +3364,10 @@ def reuse_card(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"【{cdef.name}】再次使用（不耗鬼火）")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
+        marker = game._emit_before_card_play(ctx.controller, ctx.card, cdef, "spell")
+        if marker["nullified"]:  # 被无效化：跳过效果、不发使用事件（牌已在墓地）
+            game._log(f"【{cdef.name}】的使用被无效化")
+            return
         game._resolve_block(game._played_block(p, cdef, ctx.card, None), ExecContext(
             controller=ctx.controller, source=ctx.source, card=ctx.card,
             chosen=ctx.chosen))
@@ -3385,6 +3413,11 @@ def echo_event_card(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"凭空复制使用了【{cdef.name}】（目标为其施法者）")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
+        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+        if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
+            game._log(f"【{cdef.name}】的使用被无效化")
+            game.move_card(p, inst, "graveyard")
+            return
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
             controller=ctx.controller, source=ctx.source, card=inst, chosen=chosen))
     finally:
@@ -4052,9 +4085,11 @@ def inv_transfer_on_defeat(game, ctx, *, targets: list[Ref], name: str) -> None:
     """魔蛊毒爆"若本回合该式神气绝，将其上所有'蛊蚀'随机转移到其他敌方式神上"
     （targets = 选择的敌方式神，恰一个）：登记控制者牌手级半回合能力
     ext["inv_transfer_on_defeat"] = {"victim": [pi, si], "inv": 灵咒名}——
-    消耗点 = engine.check_defeated 气绝事件发出后：移除前快照计数（不论来源
-    敌我），由登记方一次性结附等量于随机合法敌方式神（帷幕可、气绝不可、
-    无合法目标不转移；裁决14）。半回合边界随 EXT_KEYS 登记清除。"""
+    视作赋予目标式神的一次性能力（裁决13）：消耗点 = engine.check_defeated
+    气绝事件发出后，由该敌方式神侧触发（来源牌手=气绝者所属方——不吃登记方
+    inv_attach_bonus 增幅、严格等量），移除前快照计数（不论来源敌我）一次性
+    结附等量于随机合法敌方式神（帷幕可、气绝不可、无合法目标不转移）。
+    半回合边界随 EXT_KEYS 登记清除。"""
     ref = next((r for r in targets if r.shikigami is not None), None)
     if ref is None:
         raise ValueError("inv_transfer_on_defeat 需要式神目标")
@@ -4244,9 +4279,11 @@ def redirect_deck_invocation(game, ctx, *, targets: list[Ref], name: str,
     """受伤改为移除牌库标记牌（支配者"受到伤害时……改为移除至多3张'梦魇'"；
     targets 忽略）：挂伤害事件"护甲计算后"批次（on_after_shield，insert，
     优先级 1，redirect_to_invocation 同挂点）的形态能力块；**敌方**牌库中存在
-    结附该灵咒的牌时，当前伤害值归零终止（ev.amount=0），并移除其中
-    min(伤害值, cap) 张入放逐区（exiled——入墓地还是放逐待确认，见 questions.md）；
-    无标记牌时空操作（伤害照常）。
+    结附该灵咒的牌时，当前伤害值归零终止（ev.amount=0），并**随机**移除其中
+    min(伤害值, cap) 张入**墓地**（thoughts(1)：伤害>3 按 3 计；不足则全移除；
+    无标记牌空操作伤害照常）。移除后敌方牌库标记数减少，enemy_deck_invocation
+    光环即时降身材——受害者上限降低钳当前生命、上限不大于 0 即气绝
+    （_invocation_lethality 同口径；已觉醒保留的永久身材不受影响）。
     """
     ev = (ctx.event or {}).get("damage")
     if ev is None:
@@ -4262,8 +4299,11 @@ def redirect_deck_invocation(game, ctx, *, targets: list[Ref], name: str,
     ev.amount = 0  # 终止伤害
     n = min(amt, int(cap), len(marked))
     game._log(f"{amt} 点伤害改为移除 {n} 张结附【{name}】的牌")
-    for card in marked[:n]:
-        game.move_card(p, card, "exiled", reason="梦魇移除")
+    for card in game.rng.sample(marked, n):
+        game.move_card(p, card, "graveyard", reason="梦魇移除")
+    vic = ev.victim
+    if vic is not None and vic.shikigami is not None:
+        game._invocation_lethality(vic)  # 光环降身材致死检查（支配者形态归零气绝）
 
 
 
@@ -4300,11 +4340,11 @@ def pick_generate(game, ctx, *, targets: list[Ref], pool: list[int],
 
 @action("quest_complete")
 def quest_complete(game, ctx, *, targets: list[Ref], mode: str = "choose") -> None:
-    """使一张紧急委托的委托条件视为达成（委托整理/截稿日，targets 忽略）。
+    """使一张紧急委托的委托条件视为达成（委托整理/休暇，targets 忽略）。
 
     候选 = 控制者手牌中 tags 含 "urgent_quest" 且尚未标记的实例；选中实例
     mods["quest_done"] 置位（_play_condition_met 读取——[条件]使用前提视为满足）。
-    mode="random"（截稿日"随机"）：rng 随机一张；mode="choose"（委托整理）：
+    mode="random"（休暇"随机"）：rng 随机一张；mode="choose"（委托整理）：
     1 张直接标记，多张挂起交互（pending_choice kind="quest_complete_pick"）。
     无候选 → 空操作。
     """

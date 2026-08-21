@@ -14,11 +14,13 @@ versions:
           - {op: gain_shield, amount: 1, target: {kind: self}}
           # "选择一个己方式神，本次攻击后将'八尺琼曲玉'结附于该式神并使其发起攻击"：
           # 战斗牌效果步 ctx 携带选择目标（engine._resolve_combat_card），
-          # delay_grant bind=chosen 登记到该式神；本次攻击后（on_after_assault，
-          # 攻击者=大岳丸）结附灵咒并令其发起一次无指定目标的额外攻击
+          # delay_grant bind=chosen 登记到该式神；本次攻击后=“战斗结束后”时机
+          # （on_battle_end，裁决(10)——战斗被取消/过早终止则不发事件、不执行），
+          # 攻击者=大岳丸时结附灵咒并令其发起一次无指定目标的额外攻击
           # （正常战斗目标规则：打敌方战斗区驻留者/牌手）
           - op: delay_grant
-            when: on_after_assault
+            when: on_battle_end
+            scope: battle  # 本次攻击后：战斗被取消/过早终止则过期不执行（裁决(10)）
             condition: {attacker_shikigami: 100408}
             bind: chosen
             steps:

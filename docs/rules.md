@@ -226,7 +226,7 @@
 
 ### 三、战斗结束后
 
-1. 战斗结束后（时机）：执行各类效果。
+1. 战斗结束后（时机）：执行各类效果。【已实现：`on_battle_end` 事件（延时队列时机）——`_battle_flow` 完整走完"战斗后"且攻击未被替换才由 `_resolve_combat` 收尾发出（裁决(10)）；战斗被取消/过早终止（攻击者气绝/鸦羽疾走 cancel_attack/攻击替换烬染不夜）不发。发点时本战斗的战力/关键字/临时触发已在终止点核销——挂此时机的延时打击不继承本次攻击增益（裁决(2) 影杀次序）；麓鸣·轰"本次攻击后"挂此时机（delay_grant scope="battle"：本次战斗结束即过期，不带到下次攻击）】
 2. "战斗结界"解除，该过程中新发起的战斗按后发先至依次进行。
 
 ### 备注
@@ -306,16 +306,16 @@
 
 要素：**来源、气绝者、原因**。
 
-1. **气绝前/消灭前1**：（多种能力）。【已实现：即时时机 `on_before_defeat`（`check_defeated` 开头 emit；响应挂此时机）。濒死已实现：伤害扣减生命至 ≤0 先标 `ShikigamiState.dying`（时机位于伤害流程"生成气绝事件"前），濒死者不受伤害/治疗、不进随机与选择目标池、不能再次被消灭，能力照常、可以攻击；check_defeated 标 defeated 时清除。已气绝式神可获得永久增益、不能获得非永久增益（buff_power/buff_health 按 perm 拦截）】
-2. **气绝前/消灭前2**：【判官-基础/觉醒能力】、解除变形、[英雄无畏]卡牌效果的后续效果等。【解除变形已实现：变形物的气绝事件在此处按 `transform_origin` 快照还原、原式神以已气绝状态进场后继续正常气绝流程（`check_defeated`，见「十七、变形事件流程」）；判官能力与英雄无畏后续效果未实现】
+1. **气绝前/消灭前1**（即时时机）：大部分能力/效果（射怪鸟事、破碎之音、不灭之火、不祥之刃、判官基础/觉醒能力、[英雄无畏]卡牌效果的后续效果等——裁决(9)）。【已实现：即时时机 `on_before_defeat`（`check_defeated` 开头 emit；响应挂此时机）。濒死已实现：伤害扣减生命至 ≤0 先标 `ShikigamiState.dying`（时机位于伤害流程"生成气绝事件"前），濒死者不受伤害/治疗、不进随机与选择目标池、不能再次被消灭，能力照常、可以攻击；check_defeated 标 defeated 时清除。已气绝式神可获得永久增益、不能获得非永久增益（buff_power/buff_health 按 perm 拦截）】
+2. **气绝前/消灭前2**：仅解除变形与关键字"替身"（裁决(9)——判官能力/英雄无畏后续效果归入前1）。【解除变形已实现：变形物的气绝事件在此处按 `transform_origin` 快照还原、原式神以已气绝状态进场后继续正常气绝流程（`check_defeated`，见「十七、变形事件流程」）；判官能力与英雄无畏后续效果未实现】
 3. 消灭气绝者的形态牌。【已实现：先于"能力离场"（step 6）执行——一目连类"形态离场时触发"能力仍会触发；形态离场/气绝同时清除倒计时】
 4. 移除气绝者的所有非永久 buff。（实现侧：临时修正与护甲在气绝时清除）
-5. **气绝前/消灭前3**：关键字"替身"。【未实现】
+5. ~~气绝前/消灭前3~~：本子时机已取消（裁决(9)：关键字"替身"【未引入】并入气绝前2）。
 6. 气绝者能力离场。（实现侧：气绝式神的能力不再触发）
 7. 此时若气绝者没有（因插入结算）被标记为"已气绝"，则视为本次气绝事件将其击杀（影响部分卡牌的"增强"效果）。【击杀标记未实现——与"增强"机制一同引入】
 8. 若气绝者是**非召唤物式神**：获得倒计时 3：复活（产生影响：形态"无情"等）；移动至准备区（产生影响：形态"不灭之火"、"棺封"卡牌效果等）。
 9. 若气绝者是**牌手**：若当前游戏未进入"待结束"状态，则标记为"待结束"——此刻起非系统流程的所有操作不再生效（具体来说，已加入队列的触发式能力和其他非并行事件的牌手气绝事件将不再执行，此刻以后的非系统操作不再触发）。将该气绝牌手设置为失败方；此次气绝事件结算完成后，进入「游戏结束阶段」。（注：气绝的牌手不会再受到伤害和治疗）
-10. **气绝后/消灭后**（延时时机）：（按优先度，各类能力）。
+10. **气绝后/消灭后**（延时时机）：各类能力（裁决(9)：不再按优先度细分）。跳跳哥哥各"将气绝时变为棺材"效果（不弃/罡身阵/棺封/棺葬）实际为"气绝前1 触发、本时机延时生成变形事件"（实现侧：`check_defeated` 在形态消灭前捕获 ext 旗标/形态 tag，气绝结算完成后把 `to_coffin` 追加为本气绝事件队列的收尾待结算项；棺葬经 `on_shikigami_defeated` 能力块同层）；棺击的增益效果触发于任一式神气绝事件的本时机。
 
 备注：即使气绝者在执行当前气绝事件前已气绝，当前事件也不会终止，只影响"是否认定是当前事件将其击杀"。
 
@@ -684,7 +684,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 所有引擎 `emit()` 产生的事件，例如：
 - `on_game_start`, `on_turn_start`, `on_turn_end`
-- `on_card_played`, `on_before_card_play`、`on_before_assault`, `on_after_assault`
+- `on_card_played`, `on_before_card_play`、`on_before_assault`, `on_after_assault`, `on_battle_end`
 - `on_damage`, `on_shikigami_defeated`, `on_shikigami_revived`
 - `on_upgrade`, `on_form_attached`, `on_form_destroyed`
 - `on_draw`, `on_shuffle`, `on_mulligan`
@@ -1063,7 +1063,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   （`client/cli.py _quest_progress`），不满足置灰同 [条件] 惯例。
 - **`quest_done` 视为达成**：实例 `mods["quest_done"]` 置位后 `_play_condition_met`
   视为满足（委托整理"完成紧急委托"——使手牌一张紧急委托的条件视为达成；
-  截稿日"随机完成"）。
+  休暇"随机完成"）。
 
 ### 三、专属 op 与交互
 
@@ -1108,8 +1108,9 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - 今日肆"造成6点伤害"：默认目标 = 敌方牌手（同白板伤害法术口径）；线索·判明
   "造成30点伤害"（定案(6)）：主动使用时选择合法目标（双方任一角色——choose
   any_character）。
-- 三目基础/觉醒能力（定案(3)）：具**气绝时有效**（trigger_when_defeated——避免
-  紧急委托使用事件中插入结算伤害使三目气绝而无法获得新委托）；"游戏开始时"0 级
+- 三目基础/觉醒能力（裁决(11)，推翻早先定案(3)）：气绝时**整体失效**（常规规则，
+  不再具 trigger_when_defeated）——紧急委托使用事件中插入结算使三目气绝则不再
+  获得新紧急委托；"游戏开始时"0 级
   未入场也触发且早于首回合开始（trigger_when_not_in_play，开局阶段发点）；紧急
   委托的置入手牌是延时的（on_card_played 延时时机，在该使用事件完成后结算）；
   委托·叁"使用了四张牌"不限主动使用（响应/自动使用同计 play 账本）。
@@ -1329,8 +1330,9 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   （`client/cli.py prompt_target` 共用助手；联机协议 dict 透传 target2，服务端
   校验不变）。
 - **战斗牌效果 ctx 携带 chosen**（`_resolve_combat_card`）——麓鸣·轰"选择一个
-  己方式神，本次攻击后…"的 delay_grant bind=chosen 通道（偏差报备：delay_grant
-  无 scope 时限，本次攻击被替换的理论路径下会留到下次攻击后）。
+  己方式神，本次攻击后…"的 delay_grant bind=chosen 通道；"本次攻击后"=
+  "战斗结束后"时机（on_battle_end，裁决(10)——战斗被取消/过早终止则不发事件、
+  不执行；scope="battle" 保证未触发条目随本次战斗终止过期，不带到下次攻击）。
 
 ### 六、条件键（本轮新增，registry 登记）
 
@@ -1419,7 +1421,8 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   随 grants 移除）、不可叠加（再贴幂等）。**[暴击]关键字本体**（critical）：
   攻击事件（kind=combat，反击不翻倍）来源式神持有时战斗伤害 ×2，挂扣减
   生命前（义道同锚点叠乘）；限原始事件（start="full"——贯通溢出/转移衍生
-  的新事件不再二次翻倍，**溢出量按翻倍前口径**——待确认见 questions.md）。
+  的新事件不再二次翻倍，**溢出量按翻倍前口径**——裁决(12)：暂不修改，下轮
+  待定，见 questions.md）。
 
 ### 二、蛊蚀与巫蛊师（灵咒存量机制）
 
@@ -1428,7 +1431,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   来源可为双方牌手）。**致死检查**（裁决(12)）：结附/存量增减改变生命上限
   后立即检查——上限（含 inv_mod 修饰层）≤0 即气绝（`_invocation_lethality`，
   上限降低先钳当前生命、不发事件）；存量增减（inv_count_mod）同口径检查
-  （待确认见 questions.md——裁决原文为"每当结附蛊蚀时"）。
+  （裁决(14)："也检查"——与结附同口径，定案）。
 - **结附增幅**：`inv_attach_bonus` op 登记牌手级规则表 ext["inv_attach_bonus"]
   （条目 {"name","add"} 可叠加、CLEAR_NEVER；觉醒·巫蛊师"当结附'蛊蚀'时
   数量额外+1"）——`engine.attach_invocation` 按**来源牌手**读取叠加（巫蛊师
@@ -1443,11 +1446,12 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   "per": n}`（食魂蛊"其上每有一个'蛊蚀'，为你恢复2点生命"）读取。
 - **魔蛊毒爆转移**：`inv_transfer_on_defeat` op 登记牌手级半回合能力
   ext["inv_transfer_on_defeat"]（{"victim": [pi,si], "inv": 灵咒名}，CLEAR_ANY_
-  TURN_START）——登记目标本回合气绝时（check_defeated 气绝事件后），由登记方
-  将其上等量（移除前快照计数，不论来源敌我）灵咒一次性结附于随机另一名
+  TURN_START）——视作赋予登记目标敌方式神的一次性能力（裁决(13)）：其本回合
+  气绝时（check_defeated 气绝事件后）由该敌方式神侧触发（来源牌手=气绝者所属
+  方——不吃登记方 inv_attach_bonus 增幅、严格等量），将其上等量（移除前快照
+  计数，不论来源敌我）灵咒一次性结附于随机另一名
   **在场**敌方式神（非选择目标；帷幕可结附、气绝/未在场不可；无合法目标
-  不转移；一次性消耗——裁决(14)）。转移走 attach_invocation 管线（登记方为
-  觉醒·巫蛊师时吃增幅——待确认见 questions.md）。
+  不转移；一次性消耗——裁决(14)）。
 - **缚蝶蛊狱**（幻境）：`redirect_to_invocation` op（挂 on_after_shield——伤害
   事件"护甲计算后"批次）将伤害改为结附等量'蛊蚀'并**终止伤害事件**
   （裁决(15)，双方式神受影响）；每**双方**回合结束时 `destroy` 目标池
@@ -1485,8 +1489,11 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   求值，标记牌离库移除即减）。
 - **支配者受伤替换**：`redirect_deck_invocation` op（name/cap=3）——挂
   on_after_shield priority 1 形态能力块（condition {victim_shikigami: self}）：
-  **敌方**牌库有结附该灵咒的牌时当前伤害值归零终止，并移除其中
-  min(伤害值, cap) 张入放逐区（exiled）；无标记牌空操作伤害照常。
+  **敌方**牌库有结附该灵咒的牌时当前伤害值归零终止，并**随机**移除其中
+  min(伤害值, cap) 张入**墓地**（thoughts(1)：伤害>3 按 3 计，不足则全移除；
+  无标记牌空操作伤害照常）。移除后 enemy_deck_invocation 光环即时降身材：
+  受害者钳当前生命、上限不大于 0 即气绝（已觉醒保留的永久身材不受影响——
+  thoughts(1) 例）。
 
 ### 二、鬼斩（髭切/友切/狮子之子）
 
@@ -1509,10 +1516,17 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
     在敌方交战阶段前插入）+ {player: opponent}；steps = announce →
     grant_immunity(scope=next_battle) → launch_attack(at="event")（新参数：
     战斗目标取事件 payload "shikigami" 字段，Ref/int 座次兼容）。
+    定案（thoughts(3)）：髭切在战斗准备步骤"攻击者移入战斗区"时插入；若插入
+    战斗使原攻击者气绝，外层战斗按"攻击方在战斗准备阶段气绝→战斗中止"终止
+    （无交战伤害、不发 on_battle_end——既有的 2968 行守卫路径，已补测试）。
   - 友切：when=on_before_card_play（payload 新增 card_type/shikigami 字段）
     + {player: opponent, card_type: spell}；launch_attack(at="targets") 配合
     step target 新 context 键 **`card_shikigami`**（被使用牌所属式神在事件
-    player 方的在场座次；未出战/气绝/中立牌为空操作）。
+    player 方的在场座次；未出战/气绝/中立牌为空操作）。定案（thoughts(4)）：
+    任意方式任意位置的使用均触发（主动/响应/自动统一经 `_emit_before_card_play`
+    发点）；`launch_attack`/`_resolve_combat`/`_battle_flow` 新增 `ignore_veil`
+    参数——灵咒效果发起的战斗不受帷幕限制，可对帷幕式神发起（气绝/离场校验
+    照常）。
   - 狮子之子：when=on_turn_end + {player: opponent, combat_empty: enemy}；
     attack_buff(+2) → launch_attack 无目标直击敌方牌手。
 - **刀鸣之刃复制**：伪关键字 `inv_trigger_echo`——_collect_abilities 的
@@ -1530,21 +1544,27 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - 三张响应块统一 when=on_invocation_trigger、condition {invocation: X,
   player: self}：两断=attack_buff(+2, [必杀])+gain_shield(1)；罗城门=
   attack_buff(+2)+gain_shield(1)+counter_on_kill；影杀=attack_buff(+2)+
-  gain_shield(1)+launch_attack(keywords=[直击])×3。
+  gain_shield(1)+delay_grant（when=on_battle_end，steps=[attack_buff(+2)
+  +launch直击]×2）——影杀次序定案（thoughts(2)）：响应本身不产新战斗、仅给
+  狮子灵咒战斗 +2（合计 +4）；两次复制打击延时到狮子1 的"战斗结束后"
+  （on_battle_end，攻击增益已在终止点核销）各带战斗牌 +2 依次发起；刀鸣复制
+  的狮子2 最后（仅灵咒 +2）。另：on_invocation_trigger 豁免回合结束阶段的
+  响应抑制（`_cmd_end_turn` 的 suppress 仅拦其他事件名——狮子之子在敌方回合
+  结束触发时影杀响应窗须即时打开）。
 - **反制**：`counter_on_kill` op 登记 `Game._counter_watches`
   （{"attacker": Ref}）；check_defeated 早期 return 之后钩——击杀者匹配
-  watch 且存在进行中的出牌（`Game._active_play_marker`，_cmd_play_card 的
-  on_before_card_play marker 在 emit 期间压栈）→ 置 nullified（同魔音扰心
-  通道，牌照常进墓地、效果不结算），条目消耗；战斗终止点清除该攻击者
-  残留条目。语义：击杀者须为登记来源（鬼切）、被击杀者不限定为施法者
-  （原文"若击杀式神"——见 questions.md）。
+  watch 且存在进行中的出牌（`Game._active_play_marker`，"使用前"统一发点
+  `_emit_before_card_play` 在 emit 期间压栈，主动/响应/自动使用同通道，
+  嵌套使用保存恢复外层 marker）→ 置 nullified（同魔音扰心通道，牌照常进
+  墓地、效果不结算），条目消耗；战斗终止点清除该攻击者残留条目。定案
+  （thoughts(5)）：击杀者须为登记来源（鬼切）；被击杀者为**双方任一**式神
+  （不限施法者）；刀鸣之刃复制的第二次友切不再携带罗城门（响应名额 =
+  窗口+事件名去重）；"反制"= 插入战斗结算完成后终止原法术使用事件。
 
-### 四、觉醒·鬼切检索
+### 四、觉醒·鬼切选择生成
 
-- `search_deck` 新参数 `choose: bool`——命中 >1 张时不随机，挂起 pending
-  kind="search_pick"（options=候选 uid 列表，`_cmd_search_pick_choose` 作答
-  置入手牌 reason="search" + 洗牌 + 续跑挂起块）；0/1 张不挂起（未命中
-  不洗牌，花信风先例）。"选择一张鬼切的战斗牌置入手牌"= shikigami=鬼切 +
-  card_type=combat + choose。
+- "选择一张鬼切的战斗牌置入手牌"定案为**选择并凭空生成**（thoughts(6)）——
+  不检索牌库、不洗牌；复用 `pick_generate` 通道（pool=[两断/罗城门/影杀]，
+  >1 候选挂起 pending kind="pick_generate"，作答 choice=数据 id，续跑挂起块）。
 - 觉醒·鬼切的"鬼切的战斗牌获得[瞬发]"= card_aura(keywords=[fast],
   card_type=combat, shikigami=self, scope=ability)（既有通道，无引擎改动）。

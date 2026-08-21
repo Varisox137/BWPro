@@ -440,6 +440,29 @@ class NetClient:
                     cd = self.db.cards[cid]
                     print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
                 return
+            if kind == "pick_generate":
+                # 选择生成入手（三目线索/觉醒·鬼切战斗牌）：作答键 choice（数据 id）
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose",
+                                   "choice": pend["options"][int(args[0]) - 1]})
+                    return
+                print("—— 选择一张牌置入手牌：输入 choose <序号> ——")
+                for i, cid in enumerate(pend["options"]):
+                    cd = self.db.cards[cid]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                return
+            if kind == "quest_complete_pick":
+                # 委托整理：从手牌紧急委托中选一张使其视为达成（作答键 uid）
+                opts = [c for u in pend["options"]
+                        for c in [next((x for x in p.hand if x.uid == u), None)] if c]
+                if cmd == "choose" and args:
+                    self.send_cmd({"op": "choose", "uid": opts[int(args[0]) - 1].uid})
+                    return
+                print("—— 选择一张紧急委托使其视为达成：输入 choose <序号> ——")
+                for i, c in enumerate(opts):
+                    cd = self.db.cards[c.id]
+                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
+                return
             if kind == "invocation_pick":
                 # 选择灵咒结附（鬼切"选择一张鬼斩结附"）：作答键 choice（灵咒名）
                 if cmd == "choose" and args:
@@ -451,18 +474,6 @@ class NetClient:
                     idef = self.db.invocations.get(name)
                     text = f" {idef.text}" if idef is not None and idef.text else ""
                     print(f"  [{i + 1}]【{name}】{text}")
-                return
-            if kind == "search_pick":
-                # 检索选择置入手牌（觉醒·鬼切）：从牌库命中牌中选一张（作答键 uid）
-                opts = [c for u in pend["options"]
-                        for c in [next((x for x in p.deck if x.uid == u), None)] if c]
-                if cmd == "choose" and args:
-                    self.send_cmd({"op": "choose", "uid": opts[int(args[0]) - 1].uid})
-                    return
-                print("—— 检索：输入 choose <序号> 选择一张置入手牌 ——")
-                for i, c in enumerate(opts):
-                    cd = self.db.cards[c.id]
-                    print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
                 return
             # 检视牌库顶（青灯夜谈/明心）
             opts = [c for u in pend["options"]
@@ -486,14 +497,23 @@ class NetClient:
             rest = args[1:]
             eff = cdef
             if cdef.card_type == "reinforce":
-                # 协战牌：先选择子选项（显示两选项卡名与文本），目标/等级按子卡
+                # 协战牌子选项（裁决(16) 多择引导）：列出全部子选项（含当前不合法者，
+                # 标注原因）；选不合法要求重选，不能回退不使用该牌
                 options = [self.db.cards[o] for o in cdef.options]
-                if rest:
-                    pick = int(rest.pop(0))
-                else:
-                    for i, o in enumerate(options):
-                        print(f"  [{i}]【{o.name}】 {o.text}")
-                    pick = int(tui.prompt("子选项 > "))
+                while True:
+                    if rest:
+                        pick = int(rest.pop(0))
+                    else:
+                        for i, o in enumerate(options):
+                            err = game.reinforce_sub_option_error(
+                                self.me, cdef, i)
+                            mark = f"（不可选：{err}）" if err else ""
+                            print(f"  [{i}]【{o.name}】 {o.text}{mark}")
+                        pick = int(tui.prompt("子选项 > "))
+                    err = game.reinforce_sub_option_error(self.me, cdef, pick)
+                    if err is None:
+                        break
+                    print(f"  子选项不可选：{err}——请重选（不能取消使用）")
                 cmd_dict["choice"] = pick
                 eff = options[pick]
             if eff.target.kind == "choose":
