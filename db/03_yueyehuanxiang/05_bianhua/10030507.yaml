@@ -14,3 +14,13 @@ versions:
           # 对你造成5点伤害（来源=彼岸花→己方伤害，可触发基础/觉醒）
           - {op: damage, amount: 5, target: {kind: all, pool: self_player}}
       text: "抽牌直至所抽牌等级总和>=5，对你造成5点伤害。"
+    - date: 20201126  # 平衡性调整：改为每抽一张自伤1点 + 抽牌对应式神本回合[迅捷]
+      card_type: spell
+      rarity: R
+      level: 3
+      effects:
+        steps:
+          # 抽牌直至所抽牌等级总和>=5；每抽一张对你造成1点伤害（紧随该次抽牌），
+          # 且该牌所属式神本回合获得[迅捷]（draw_until 新参数通道）
+          - {op: draw_until, level_sum_ge: 5, damage_per_draw: 1, haste_per_draw: true}
+      text: "抽牌直至所抽牌等级总和>=5，每抽一张牌对你造成1点伤害。抽牌对应的式神本回合获得[迅捷]。"

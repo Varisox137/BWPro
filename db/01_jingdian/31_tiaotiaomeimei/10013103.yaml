@@ -17,3 +17,15 @@ versions:
              scope: game}
           - {op: summon, shikigami: 10013199, orb_cost: 1}
       text: "使‘番茄’永久获得1力量。然后额外消耗1点鬼火，召唤‘番茄’。"
+    - date: 20201029  # 平衡性调整：去掉额外耗火（效果块按新版完整重写）
+      card_type: spell
+      rarity: SR
+      level: 1
+      effects:
+        # 召唤'番茄'并使其永久得+1力量（stat_aura scope=game 读取时求值，
+        # 对召唤/变形番茄同生效——顺序不影响后召唤者）
+        steps:
+          - {op: stat_aura, kind: ids_power, ids: [10013199, 10013198], power: 1,
+             scope: game}
+          - {op: summon, shikigami: 10013199}
+      text: "召唤‘番茄’并使其永久得+1力量。"

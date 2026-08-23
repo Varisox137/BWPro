@@ -1,7 +1,7 @@
 id: 10012508
 name: 风符·龙
 versions:
-  best: 20191212
+  best: 20201126  # 历史最强 = 20201126（倒计时伤害 6，严格优于发布版 5）
   history:
     - date: 20191212
       card_type: form
@@ -17,3 +17,17 @@ versions:
           - {op: random_damage, amount: 5, pool: enemy_character, count: {mod: count, base: 1}}
           - {op: add_mod, to: instance, key: count, amount: 1}
       text: "[倒计时2]：{随机对一个敌方角色造成5点伤害。此效果之前每触发过一次，多作用一个目标。}"
+    - date: 20201126  # 平衡性调整：倒计时伤害 5→6
+      card_type: form
+      rarity: SSR
+      level: 3
+      form_power: 5
+      form_health: 8
+      effects: {steps: []}
+      countdown: 2
+      countdown_effects:
+        # 随机对一个敌方角色造成 6 点伤害；实例计数器：每触发过一次，多作用一个目标
+        steps:
+          - {op: random_damage, amount: 6, pool: enemy_character, count: {mod: count, base: 1}}
+          - {op: add_mod, to: instance, key: count, amount: 1}
+      text: "[倒计时2]：{随机对一个敌方角色造成6点伤害。此效果之前每触发过一次，多作用一个目标。}"

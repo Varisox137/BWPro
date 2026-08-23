@@ -1748,11 +1748,18 @@ def field_rebound(game, ctx, *, targets: list[Ref],
 
 @action("draw_until")
 def draw_until(game, ctx, *, targets: list[Ref], level_sum_ge: int = 1,
-               limit: int = 40) -> None:
+               limit: int = 40, damage_per_draw: int = 0,
+               haste_per_draw: bool = False) -> None:
     """抽牌直至所抽牌等级总和 >= level_sum_ge（血华散；targets 忽略）：逐张经
     draw_cards 管线（每张照常 emit on_draw）；达到总和、牌库抽空（判负/烧牌由
-    draw_cards 处理）、对局待结束或触及 limit 保底时终止。"""
+    draw_cards 处理）、对局待结束或触及 limit 保底时终止。
+
+    damage_per_draw（20201126 版血华散"每抽一张牌对你造成1点伤害"）：每抽一张
+    紧随该次抽牌对控制者牌手造成 N 点伤害（来源=ctx.source——己方伤害口径）。
+    haste_per_draw（同版"抽牌对应的式神本回合获得[迅捷]"）：每抽一张，该牌所属
+    式神按 grant_keyword scope=turn 同通道授予[迅捷]（未出战/中立牌跳过）。"""
     total = 0
+    spell = game._spell_damage(ctx) if damage_per_draw else False
     for _ in range(int(limit)):
         if (total >= int(level_sum_ge) or game.state.pending_end
                 or game.state.winner is not None):
@@ -1763,6 +1770,17 @@ def draw_until(game, ctx, *, targets: list[Ref], level_sum_ge: int = 1,
         top = p.deck[0]
         game.draw_cards(ctx.controller, 1)
         total += game.db.cards[top.id].level
+        if damage_per_draw:
+            game.deal_to_player(ctx.controller, int(damage_per_draw), ctx.source,
+                                spell=spell, card=ctx.card)
+        if haste_per_draw:
+            sid = game.db.cards[top.id].shikigami
+            idx = (game._find_shikigami(p, sid) if sid is not None else None)
+            if idx is not None and p.shikigami[idx].in_play:
+                cls = game._grant_keyword(p.shikigami[idx], "haste")
+                p.ext.setdefault("turn_keyword_grants", []).append(
+                    {"ref": Ref(player=ctx.controller, shikigami=idx),
+                     "keyword": "haste", "cls": cls, "turn": game.state.turn})
 
 
 @action("nullify_card_play")

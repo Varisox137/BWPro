@@ -2980,6 +2980,40 @@ def test_draw_until_level_sum(db, make_game):
     assert len(pa.hand) == before + want
 
 
+def test_draw_until_per_draw_effects(db, make_game):
+    """20201126 版血华散（draw_until 新参数）：每抽一张牌对己方牌手造成1点伤害
+    （damage_per_draw，紧随该次抽牌、来源=出牌式神——己方伤害口径）；抽牌对应
+    的式神本回合获得[迅捷]（haste_per_draw，scope=turn 授予通道）。"""
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="draw_until", level_sum_ge=5,
+               damage_per_draw=1, haste_per_draw=True)])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    total, want, drawn_ids = 0, 0, []
+    for c in pa.deck:                           # 按当前牌库顶顺序预估应抽的牌
+        total += db.cards[c.id].level
+        want += 1
+        drawn_ids.append(c.id)
+        if total >= 5:
+            break
+    hp_before = pa.health
+    play(g, 0, cid)
+    assert pa.health == hp_before - want        # 每张 1 点自伤
+    hit = set()                                 # 抽到牌对应的在场式神获得[迅捷]
+    for cid2 in drawn_ids:
+        sid = db.cards[cid2].shikigami
+        if sid is None:
+            continue
+        idx = g._find_shikigami(pa, sid)
+        if idx is not None:
+            hit.add(idx)
+    for idx in hit:
+        # [迅捷]=一次性关键字（ONE_SHOT_KEYWORDS），入 one_shot_keywords 列表
+        assert "haste" in pa.shikigami[idx].one_shot_keywords
+
+
 def test_conditional_power_pseudo_keywords(db, make_game):
     """连续条件力量伪关键字（stat_aura 读取时求值）：power_if_field（有幻境+1）、
     power_per_field（每幻境+1）、power_if_shield（有护甲+1）、power_equal_shield

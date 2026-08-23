@@ -18,3 +18,18 @@ versions:
           steps:
             - {op: draw, count: 1, target: {kind: all, pool: self_player}}
       text: 对敌方牌手造成伤害时，抽一张牌。
+    - date: 20201224  # 平衡性调整：触发改为击杀敌方式神
+      card_type: combat
+      rarity: R
+      level: 1
+      effects:
+        steps:
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+      temp_grants:
+        # 消灭敌方式神时抽一张牌：source_shikigami 限定妖刀姬为击杀来源
+        # （释煞阵先例），victim_side 限定敌方
+        - when: on_shikigami_defeated
+          condition: {source_shikigami: self, victim_side: enemy}
+          steps:
+            - {op: draw, count: 1, target: {kind: all, pool: self_player}}
+      text: "消灭敌方式神时，抽一张牌。"

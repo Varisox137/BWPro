@@ -2955,9 +2955,14 @@ def test_real_invocations_pack04_new_loaded(gdb):
     assert z.unique == "shikigami_unique"
     ab = z.abilities[0]
     assert ab.when == "on_enter_combat" and ab.timing == "insert"
-    assert ab.condition == {"player": "opponent", "holder_in_combat": True}
+    # 最新版（20201224）：敌方进入战斗区 + 鬼切视同战斗区 + 敌方回合限定
+    assert ab.condition["player"] == "opponent"
+    assert ab.condition["holder_in_combat"] is True
+    assert ab.condition["active"] == "opponent"
     assert [s.op for s in ab.steps] == ["announce_invocation", "grant_immunity",
                                         "launch_attack"]
+    # 免疫所有伤害（kind=all；20200928 版为缺省战斗伤害）
+    assert (ab.steps[1].model_extra or {}).get("kind") == "all"
     y = gdb.invocations["友切"]
     assert y.abilities[0].when == "on_before_card_play"
     assert y.abilities[0].condition.get("card_type") == "spell"

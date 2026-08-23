@@ -1,7 +1,7 @@
 id: 10040204
 name: 死而复生
 versions:
-  best: 20200928
+  best: 20201029  # 历史最强 = 20201029（加[瞬发]，严格优于发布版）
   history:
     - date: 20200928  # 发布日期
       card_type: spell
@@ -13,3 +13,14 @@ versions:
         steps:
           - {op: to_coffin, into: 10040299, target: {kind: all, pool: friendly_defeated}}
       text: "气绝时可用。将所有己方气绝的式神替换为‘棺材’。"
+    - date: 20201029  # 平衡性调整：加[瞬发]
+      card_type: spell
+      rarity: SR
+      level: 2
+      keywords: [fast]  # [瞬发]
+      playable_when_defeated: true  # 气绝时可用
+      effects:
+        # 将所有己方气绝的式神替换为‘棺材’（to_coffin 对未气绝/已离场/召唤物空操作）
+        steps:
+          - {op: to_coffin, into: 10040299, target: {kind: all, pool: friendly_defeated}}
+      text: "[瞬发]。气绝时可用。将所有己方气绝的式神替换为‘棺材’。"

@@ -22,3 +22,21 @@ versions:
                target: {kind: all, pool: friendly_shikigami,
                         has_invocation: {name: 鸮之守护, same_source: true}}}
       text: "敌方回合开始时，使你结附‘鸮之守护’的式神获得1生命。"
+    - date: 20201015  # 平衡性调整：触发时机改"己方回合开始时"
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 2
+      form_health: 4
+      effects:
+        steps: []
+      abilities:
+        # 己方回合开始时，使你结附'鸮之守护'的式神获得1生命（同源限定与
+        # perm 上限修正口径同 20200928 版）
+        - when: on_turn_start
+          condition: {active: self}
+          steps:
+            - {op: buff_health, perm: true, amount: 1,
+               target: {kind: all, pool: friendly_shikigami,
+                        has_invocation: {name: 鸮之守护, same_source: true}}}
+      text: "己方回合开始时，使你结附‘鸮之守护’的式神获得1生命。"

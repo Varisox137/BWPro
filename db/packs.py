@@ -17,7 +17,7 @@ PACKS = {
     "02": "buyezhihuo",    # 不夜之火
     "03": "yueyehuanxiang",  # 月夜幻响
     "04": "canghaidaoming",  # 沧海刀鸣（已完结：10 式神全部落地去标）
-    "05": "jiyunyuanjie",  # 吉运缘结（骨架）
+    "05": "jiyunyuanjie",  # 吉运缘结（骨架；版本日期 20201224）
 }
 
 # 版本包中文名（卡组构筑二级目录等展示用；编号与 PACKS 一致）

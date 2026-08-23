@@ -36,3 +36,32 @@ versions:
                               power: 3, shield: 1,
                               text: "爆能使用时变为战斗牌‘破魔箭’：+3/+1"}}
       text: "[充能]。御馔津的符咒牌都具有‘[爆能3]：{转化为战斗牌且改为攻击任一敌方式神}’。"
+    - date: 20201015  # 平衡性调整：破魔符爆能转化战斗牌加成 +3/+1→+1/+1
+      # （其余字段同 20200928；10040706 觉醒版同日期同步削弱）
+      faction: 青岚
+      power: 3
+      health: 4
+      keywords: [charge]
+      abilities:
+        - when: on_ability_enter
+          condition: {target_shikigami: self}
+          steps:
+            - {op: card_aura, shikigami: self, card_id: 10040701, scope: ability,
+               grant_method: {id: burst, energy_cost: 3, card_type: combat,
+                              target: {kind: choose, pool: enemy_shikigami,
+                                       battle: true},
+                              power: 1, shield: 1,
+                              text: "爆能使用时变为战斗牌‘驱魔箭’：+1/+1"}}
+            - {op: card_aura, shikigami: self, card_id: 10040705, scope: ability,
+               grant_method: {id: burst, energy_cost: 3, card_type: combat,
+                              target: {kind: choose, pool: enemy_shikigami,
+                                       battle: true},
+                              power: 1, shield: 1,
+                              text: "爆能使用时变为战斗牌‘封魔箭’：+1/+1"}}
+            - {op: card_aura, shikigami: self, card_id: 10040708, scope: ability,
+               grant_method: {id: burst, energy_cost: 3, card_type: combat,
+                              target: {kind: choose, pool: enemy_shikigami,
+                                       battle: true},
+                              power: 1, shield: 1,
+                              text: "爆能使用时变为战斗牌‘破魔箭’：+1/+1"}}
+      text: "[充能]。御馔津的符咒牌都具有‘[爆能3]：{转化为战斗牌且改为攻击任一敌方式神}’。"
