@@ -4,7 +4,7 @@
 由动作 {op: emit, event: <name>} 触发。校验器只接受两处并集内的事件名，
 但事件总线本身按名字分发——新增事件不需要改动引擎代码。
 
-时机分类（thoughts.txt：能力的触发与执行分开）：
+时机分类（能力的触发与执行分开）：
 - 即时时机：有临时队列——同时机能力全部触发完毕后，依次执行。如"（被）攻击时"。
 - 延时时机：没有自己的队列——触发的能力加入当前效果的队列，该效果结算完后执行。
   如"造成伤害后"、"回合开始时"。
@@ -92,7 +92,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     #                       actual=0——减少效果对其仍算"生效"，2026-08 定案；延时时机——
     #                       觉醒·山风共享监听按"引起该次减少的结算单元完毕后"结算
     #                       （horizon 单元 drain），势类用 timing: insert 覆盖为即时）
-    # ---- 运势事件时点（thoughts.txt 运势事件流程，core/engine.py 运势管线）----
+    # ---- 运势事件时点（core/engine.py 运势管线）----
     "on_luck_judge",        # 运势判定时 {luck（可变事件 dict）, judge, source, x, dice}（座敷童子重投）
     "on_luck_success",      # 运势判定后（成功）{judge, source, x, dice}（青蛙瓷器/岭上开花/觉醒妖狐）
     "on_luck_effect_after",  # 运势生效后 {judge, source, x, dice}（预留）
@@ -117,7 +117,7 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_heal": "insert",      # 治疗前：即时时机
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
-    "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程，thoughts.txt）
+    "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程）
     "on_countdown_proc": "insert",    # 倒计时能力归零生效时：即时时机（先于归零块结算）
     "on_countdown_reduced": "insert", # 倒计时减少时：即时时机（定案：减少触发效果均即时；
     #                                 觉醒·山风复制为例外，单卡覆盖 timing=queue 延时）

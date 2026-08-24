@@ -2,7 +2,7 @@
 手牌累积（to=hand）、卡牌光环（card_auras）、战斗绑定一次性触发（temp_grants）、
 打出装配快照。
 
-对应 docs/enhance-design.md 即时装配模型与 thoughts.txt 妖刀姬/兵俑卡面。
+对应 docs/enhance-design.md 即时装配模型与妖刀姬/兵俑卡面。
 测试辅助卡使用衍生号段（61+，token=True）；0 号位式神（100101）充当妖刀姬、
 1 号位（100102）充当兵俑。
 """
@@ -479,6 +479,14 @@ def test_assault_on_player_counter_enhance(db, make_game):
     play(g, 0, cid)
     assert pa.health == 11                    # 10 + 1
     assert "on_heal" not in g.history[n:]     # 非治疗：不触发治疗事件
+    # 裁决(11)：变为的生命不超过牌手生命上限（set_health 钳制 [1, max_health]）
+    g2 = make_game()
+    pa2 = g2.state.players[0]
+    pa2.orb = 9
+    give(g2, 0, cid)
+    pa2.card_mods[cid] = {"enhance": 25}      # 10+25=35 > 上限 30
+    play(g2, 0, cid)
+    assert pa2.health == 30
 
 
 # ==========================================================================

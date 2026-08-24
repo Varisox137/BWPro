@@ -301,6 +301,34 @@ def test_hand_mods_display(db, make_game, color_off):
     assert "[瞬发]" in line
 
 
+# ---------- 幻境队列显示 ----------
+
+def test_field_queue_display(db, make_game, color_off):
+    """场况显示双方牌手的幻境队列：按入场顺序列出名称/耐久/效果文本；
+    无幻境的牌手不显示该段；幻境行不着座次色。"""
+    from core.model import FieldState
+    db.cards[10010151] = F.card(10010151, card_type="field", token=True,
+                                intensity=3, text="幻境甲效果")
+    db.cards[10010152] = F.card(10010152, card_type="field", token=True,
+                                intensity=5, name="幻境乙", text="幻境乙效果")
+    g = make_game()
+    assert "幻境队列" not in cli.render(g)   # 双方均无幻境：整段不出现
+    pa, pb = g.state.players
+    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    pb.fields.append(FieldState(card_id=10010151, intensity=4, shikigami=100101))
+    out = cli.render(g)
+    lines = out.splitlines()
+    a1 = next(l for l in lines if "卡10010151" in l and "耐久3" in l)
+    a2 = next(l for l in lines if "幻境乙" in l and "耐久2" in l)
+    b1 = next(l for l in lines if "卡10010151" in l and "耐久4" in l)
+    assert "[1]" in a1 and "幻境甲效果" in a1
+    assert "[2]" in a2 and "幻境乙效果" in a2      # 入场顺序编号
+    assert "[1]" in b1                              # 敌方队列独立编号
+    assert lines.index(a1) < lines.index(a2)        # 按入场顺序排列
+    assert "\033[" not in a1                        # 中性色（color_off 下亦无残留）
+
+
 # ---------- 卡组管理界面 / 战后流程 ----------
 
 def _store_entries(db):
@@ -778,7 +806,7 @@ def test_settle_printer_block_order_no_interleave(capsys):
 
 
 def test_timeline_merges_log_and_settle_in_order(db, make_game):
-    """合并时间线（thoughts(1) 打印顺序修复）：叙事行与结算明细按真实发生顺序
+    """合并时间线（打印顺序修复）：叙事行与结算明细按真实发生顺序
     合流——"使用了【x】"先于其引发的结算明细；kind 标记区分两通道（s=结算 l=叙事）。"""
     cid = 10010155
     db.cards[cid] = F.card(cid, shikigami=100101, level=1, token=True,
@@ -797,7 +825,7 @@ def test_timeline_merges_log_and_settle_in_order(db, make_game):
 
 
 def test_result_text_by_viewer():
-    """对局结果按视角（thoughts(1)）：联机自身胜利/落败/双方平局；热坐共享屏用玩家名。"""
+    """对局结果按视角：联机自身胜利/落败/双方平局；热坐共享屏用玩家名。"""
     names = ["玩家A", "玩家B"]
     assert cli.result_text(0, names, viewer=0) == "自身胜利！"
     assert cli.result_text(0, names, viewer=1) == "自身落败……"
@@ -807,7 +835,7 @@ def test_result_text_by_viewer():
 
 
 def test_net_can_act_gates_input_by_turn(db, make_game):
-    """对手回合不显示输入提示符（thoughts(1)）：_can_act 仅自己调度未完成 /
+    """对手回合不显示输入提示符：_can_act 仅自己调度未完成 /
     待自己作答的结算中选择 / 自己回合为真。"""
     from client.net import NetClient
     g = make_game()

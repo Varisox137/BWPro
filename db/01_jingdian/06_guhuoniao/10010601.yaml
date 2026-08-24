@@ -1,7 +1,7 @@
 id: 10010601
 name: 伞剑
 versions:
-  best: 20200722
+  best: 20200723
   history:
     - date: 20191212
       card_type: combat
@@ -19,7 +19,7 @@ versions:
             - {op: card_aura, shikigami: 100106, card_id: 10010601, keywords: [fast],
                scope: turn}
       text: 当其他己方式神攻击后，本回合此牌获得[瞬发]。
-    - date: 20200722  # 平衡性调整：战力 +1→+2（原误记 20200723，按 raw 订正）
+    - date: 20200723  # 平衡性调整：战力 +1→+2
       card_type: combat
       rarity: R
       level: 1

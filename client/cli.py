@@ -6,7 +6,7 @@
 运行：uv run python -m client.cli
 一级菜单：卡组构筑（client/deckbuilder.py）/ 本地热坐 / 联机对战（client/net.py，
 服务端见 server/main.py）。数据为正式 YAML（CardDatabase.load：db/cards、
-db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwp.decks.json，
+db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwpro/decks.json，
 db/deckstore.py）选择卡组，本地无可用卡组或取消选择时不开局、回主菜单。
 
 显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
@@ -100,7 +100,7 @@ def format_settle_lines(lines: list[str]) -> list[str]:
 
 
 def format_timeline_lines(entries: list[dict]) -> list[str]:
-    """合并时间线排版（结算/叙事按真实发生顺序合流，thoughts(1)）：结算行（k="s"）
+    """合并时间线排版（结算/叙事按真实发生顺序合流）：结算行（k="s"）
     按嵌套块层级缩进（同 format_settle_lines），叙事行（k="l"）以 "| "前缀按当前
     层级缩进。热坐 _play_settle 与联机 state.timeline 共用，保证两端格式一致。"""
     out: list[str] = []
@@ -130,7 +130,7 @@ def _play_settle(game: Game, seen: int, printer: SettlePrinter) -> int:
 def show_field(game: Game, printer: SettlePrinter, viewer: int | None = None,
                env_date: int | None = None) -> None:
     """空闲点场况：作为一块入打印队列尾——排在已入队的结算明细之后播完再显示
-    （thoughts(1)：每次操作的结算细节全部打印完之后再显示场况）；整段一次性
+    （每次操作的结算细节全部打印完之后再显示场况）；整段一次性
     直出（paced=False），不逐条 sleep。对局已结束不再显示场况（终局只打印结果块）。
     env_date 为对局环境（None = 最新），四相琉璃前不显示派系列。"""
     if game.state.winner is not None:
@@ -406,6 +406,7 @@ def render(game: Game, viewer: int | None = None,
                 f"{status}"
             )
             lines.append(line)
+        lines.extend(_field_lines(game, st.players[pi]))
         lines.append("")
     enemy = st.players[1 - view]
     revealed = sorted((c for c in enemy.hand if c.mods.get("revealed")),
@@ -423,6 +424,20 @@ def render(game: Game, viewer: int | None = None,
     lines.extend(format_hand_lines(game, p, hand_sorted(game, p)))
     lines.append("")
     return "\n".join(lines)
+
+
+def _field_lines(game: Game, p) -> list[str]:
+    """牌手幻境队列段（render 双方各一段；无幻境不产出——调度阶段幻境尚未
+    入场，天然不显示）：按入场顺序逐行列出名称/耐久/效果文本。
+    幻境为牌手级实体，不着座次色（中性色）。"""
+    if not p.fields:
+        return []
+    lines = ["    幻境队列："]
+    for i, f in enumerate(p.fields):
+        cd = game.db.cards[f.card_id]
+        text = f" {{{cd.text}}}" if cd.text else ""
+        lines.append(f"      [{i + 1}] 【{cd.name}】 耐久{f.intensity}{text}")
+    return lines
 
 
 def _quest_progress(game: Game, p, cd) -> str | None:
@@ -658,7 +673,7 @@ def run_debug(game: Game, args: list[str]) -> dict:
 
 
 def _choose_deck(db, player_name: str) -> tuple[list[int], list[int]] | None:
-    """热坐开局前：从本地卡组文件（~/.bwp.decks.json）选择卡组槽位；
+    """热坐开局前：从本地卡组文件（~/.bwpro/decks.json）选择卡组槽位；
     无可用卡组/取消时返回 None（不开局，见 client/deckbuilder.choose_deck）。"""
     picked = deckbuilder.choose_deck(db, player_name)
     if picked is None:
@@ -708,7 +723,7 @@ def run_battle(db) -> None:
 
 
 def result_text(winner: int, player_names, viewer: int | None = None) -> str:
-    """对局结果文本（thoughts(1)）：viewer 指定（联机视角）时按视角打印
+    """对局结果文本：viewer 指定（联机视角）时按视角打印
     "自身胜利/自身落败"，否则（热坐共享屏）按玩家名；winner=-1 为长对局平局。"""
     if winner == -1:
         return "双方平局"
@@ -942,7 +957,7 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
             print(f"无效操作: {e}")
         except (ValueError, IndexError):
             print("参数有误，输入 help 查看帮助")
-    # 对局结束（thoughts(1)）：不立即打印结果——剩余结算按固定速度播完，
+    # 对局结束：不立即打印结果——剩余结算按固定速度播完，
     # 最后打印结果块（不再额外打印场况）；结果文本按视角（热坐共享屏用玩家名）
     names = [pl.name for pl in game.state.players]
     printer.enqueue([f"***** {result_text(game.state.winner, names)} *****"])

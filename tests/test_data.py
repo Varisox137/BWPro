@@ -1751,6 +1751,206 @@ def test_inspire_assault_boost(real_game):
 
 
 # ==========================================================================
+# 海坊主（100107）全卡盘点裁决批（(1) 灵能 / (2) 沧海之盾 / (3) 巨浪）
+# 队伍固定 [海坊主, 白狼, 姑获鸟, 妖刀姬]（派系 ≤2），海坊主 0 号位。
+# ==========================================================================
+
+HF = 100107
+HF_TEAM = [100107, 100101, 100106, 100123]  # 青岚+苍叶（派系 ≤2）
+
+
+def test_spirit_form_self_heal_on_friendly_player_heal(real_game):
+    """灵能（裁决(1)）：挂"治疗后"（on_after_heal 延时）——海坊主为己方牌手实际
+    恢复生命时自身恢复等量（走治疗管线）；为敌方牌手恢复（执行者非己方牌手）不触发。"""
+    g, pa, pb = _game(real_game, HF_TEAM, {IDX: 1})
+    play(g, 0, 10010702)                      # 灵能形态 3/6
+    hf = pa.shikigami[IDX]
+    hf.health = 2
+    pa.health = 25
+    g.heal(Ref(player=0), 2, Ref(player=0, shikigami=IDX))
+    g._drain_queue()
+    assert pa.health == 27 and hf.health == 4   # 等量自疗
+    pb.health = 25
+    g.heal(Ref(player=1), 2, Ref(player=0, shikigami=IDX))
+    g._drain_queue()
+    assert pb.health == 27 and hf.health == 4   # target_side: friendly 不命中
+
+
+def test_sea_shield_delayed_heal_source_is_chosen(real_game):
+    """沧海之盾（裁决(2)）："为你恢复2点生命"的来源是被选己方式神（bind=chosen）
+    而非海坊主——灵能（source_shikigami: self）不触发，海坊主不自疗。"""
+    g, pa, pb = _game(real_game, HF_TEAM, {IDX: 1, 1: 1})
+    play(g, 0, 10010702)                      # 灵能在场
+    hf = pa.shikigami[IDX]
+    hf.health = 2
+    pa.health = 25
+    play(g, 0, 10010703, target=Ref(player=0, shikigami=1))   # 盾给白狼
+    assert pa.shikigami[1].shield == 2
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 2,
+                        Ref(player=0, shikigami=1), kind="combat")
+    g._drain_queue()
+    assert pa.health == 27                    # 延迟恢复 2（来源=白狼）
+    assert hf.health == 2                     # 灵能未触发
+
+
+def test_tidal_wave_heals_by_actual_damage_total(real_game):
+    """巨浪（裁决(3)）：并行 2 伤按实际造成伤害总量（护甲减/破甲增）恢复海坊主。"""
+    g, pa, pb = _game(real_game, HF_TEAM, {IDX: 2})
+    hf = pa.shikigami[IDX]
+    hf.health = 1
+    pb.shikigami[0].shield = 1                # 护甲减 1：实际 1
+    pb.shikigami[1].shield = -1               # 破甲增 1：实际 3
+    play(g, 0, 10010706)
+    assert hf.health == 6                     # 实际总量 1+3+2+2=8，已损失 5 封顶
+
+
+# ==========================================================================
+# 觉（100108）全卡盘点裁决批（(4) 读心）
+# 队伍固定 [觉, 白狼, 姑获鸟, 妖刀姬]（派系 ≤2），觉 0 号位。
+# ==========================================================================
+
+JUE = 100108
+JUE_TEAM = [100108, 100101, 100106, 100123]  # 青岚+苍叶（派系 ≤2）
+
+
+def test_mind_read_any_state_pool(real_game):
+    """读心（裁决(4)）：可选任一敌方式神——含气绝与未升级（any_state 目标池）。"""
+    g, pa, pb = _game(real_game, JUE_TEAM, {IDX: 1})
+    c1 = give(g, 1, 10010101)                 # B 手牌白狼专属牌
+    g.deal_to_shikigami(Ref(player=1, shikigami=1), 99, None)
+    g._drain_queue()
+    assert pb.shikigami[1].defeated
+    play(g, 0, 10010801, target=Ref(player=1, shikigami=1))   # 气绝仍可选
+    assert c1.mods.get("revealed")
+    pb.shikigami[3].level = 0                 # 未升级
+    c3 = give(g, 1, 10012301)                 # B 手牌妖刀姬专属牌
+    play(g, 0, 10010801, target=Ref(player=1, shikigami=3))
+    assert c3.mods.get("revealed")
+
+
+def test_mind_read_transformed_counts_as_original(real_game):
+    """读心（裁决(4)）：变形式神在"该式神的专属牌"判定中视为原式神
+    （_card_owner_sid 读 transform_owner；万象之书/忘忧的旋律同口径）。"""
+    g, pa, pb = _game(real_game, JUE_TEAM, {IDX: 1})
+    c = give(g, 1, 10010101)                  # B 手牌白狼专属牌
+    b1 = pb.shikigami[1]
+    b1.transform_owner = 100101               # 白狼被变形（棺材占位实体 10040299）
+    b1.id = 10040299
+    assert g._card_owner_sid(b1) == 100101
+    play(g, 0, 10010801, target=Ref(player=1, shikigami=1))
+    assert c.mods.get("revealed")             # 变形后仍展示原式神专属牌
+
+
+# ==========================================================================
+# 青坊主（100111）全卡盘点裁决批（(8) 基础随机双目标 / (9) 舍生 / (10) 法界唯心）
+# 队伍固定 [青坊主, 兵俑, 白狼, 妖刀姬]（派系 ≤2），青坊主 0 号位。
+# ==========================================================================
+
+QFZ = 100111
+QFZ_TEAM = [100111, 100102, 100101, 100123]  # 紫岩+苍叶（派系 ≤2）
+
+
+def test_random_two_enemy_characters_single_when_short(real_game):
+    """青坊主基础（裁决(8)）：随机对两个敌方角色——可选角色不足两名时只取一名。"""
+    g, pa, pb = _game(real_game, QFZ_TEAM)
+    for i in range(4):
+        g.deal_to_shikigami(Ref(player=1, shikigami=i), 99, None)
+    g._drain_queue()
+    pa.health = 25
+    g.heal(Ref(player=0), 1, Ref(player=0, shikigami=1))
+    g._drain_queue()
+    assert pa.health == 26
+    assert pb.health == 29                    # 仅剩敌方牌手可取：只打 1 次 1 伤
+
+
+def test_sacrifice_response_lethal_and_crit_prediction(real_game):
+    """舍生（裁决(9)）：响应时机=己方牌手受伤"护甲计算后"（on_after_shield）——
+    面板致命（victim_lethal）或暴击无贯通翻倍预判致命（crit_lethal）时自动使用：
+    消灭青坊主、当次伤害被免疫；暴击带贯通不做翻倍预判（不响应）。"""
+    # 面板致命：30 伤 vs 30 血
+    g, pa, pb = _game(real_game, QFZ_TEAM, {IDX: 2})
+    give(g, 0, 10011105)
+    pass_turns(g, 1)
+    g.deal_to_player(0, 30, Ref(player=1, shikigami=1), kind="effect")
+    g._drain_queue()
+    assert pa.shikigami[IDX].defeated         # 消灭青坊主
+    assert pa.health == 30                    # 免疫当次伤害
+    assert any(c.id == 10011105 for c in pa.graveyard)
+    # 暴击预判：3 攻[暴击]直击 vs 4 血，翻倍 3*2>=4 → 响应（免疫当次 6 伤）
+    g, pa, pb = _game(real_game, QFZ_TEAM, {IDX: 2})
+    give(g, 0, 10011105)
+    pass_turns(g, 1)
+    pa.health = 4
+    pb.shikigami[2].keywords.append("critical")   # B 白狼 3 攻
+    g.apply({"op": "assault", "index": 2})    # B 白狼直击牌手
+    g._drain_queue()
+    assert pa.shikigami[IDX].defeated and pa.health == 4
+    # 暴击+贯通：不预判翻倍，3<4 非致命 → 不响应（暴击翻倍照常结算 6 伤）
+    g, pa, pb = _game(real_game, QFZ_TEAM, {IDX: 2})
+    give(g, 0, 10011105)
+    pass_turns(g, 1)
+    pa.health = 4
+    pb.shikigami[2].keywords.extend(["critical", "piercing"])
+    g.apply({"op": "assault", "index": 2})
+    g._drain_queue()
+    assert not pa.shikigami[IDX].defeated
+    assert pa.health == 4 - 6
+    assert any(c.id == 10011105 for c in pa.hand)
+
+
+def test_sacrifice_response_blocked_when_holder_dying(real_game):
+    """舍生（裁决(9)）：青坊主已濒死（生命≤0、气绝未结算）时不可响应——
+    响应收集门控按事件受伤者放行自身气绝时机链，其余事件濒死式神不响应。"""
+    g, pa, pb = _game(real_game, QFZ_TEAM, {IDX: 2})
+    give(g, 0, 10011105)
+    pass_turns(g, 1)
+    qfz = pa.shikigami[IDX]
+    qfz.health = 0
+    qfz.dying = True                          # 濒死（气绝事件未结算）
+    g.deal_to_player(0, 30, Ref(player=1, shikigami=1), kind="effect")
+    g._drain_queue()
+    assert pa.health == 0                     # 舍生未响应：伤害照常
+    assert any(c.id == 10011105 for c in pa.hand)
+
+
+def test_sacrifice_response_executes_when_holder_defeated(real_game, gdb):
+    """舍生（裁决(9)）：响应收集后、执行前青坊主被消灭仍生效（response_when_defeated
+    放宽复查）——敌方 on_after_shield 即时能力先消灭青坊主，舍生照常结算。"""
+    gdb.shikigami[100106].ability = F.block(
+        F.Step(op="destroy", target=TargetSpec(
+            kind="all", pool="enemy_shikigami", shikigami=100111)),
+        when="on_after_shield",
+        condition={"victim_side": "enemy", "victim_kind": "player"})
+    g, pa, pb = _game(real_game, QFZ_TEAM, {IDX: 2})
+    give(g, 0, 10011105)
+    pass_turns(g, 1)
+    pa.health = 5
+    g.deal_to_player(0, 5, Ref(player=1, shikigami=1), kind="effect")
+    g._drain_queue()
+    assert pa.shikigami[IDX].defeated         # 先被敌方能力消灭、再被舍生消灭
+    assert pa.health == 5                     # 舍生仍结算：免疫当次伤害
+    assert any(c.id == 10011105 for c in pa.graveyard)
+
+
+def test_dharma_form_converts_enemy_heal_to_damage(real_game):
+    """法界唯心（裁决(10)）：来源己方、执行者敌方的治疗"治疗前"改 0 量 +
+    延时生成同来源等量伤害（kind=effect）；对己方的恢复不受影响。"""
+    g, pa, pb = _game(real_game, QFZ_TEAM, {IDX: 3})
+    play(g, 0, 10011106)                      # 法界唯心形态
+    pb.health = 25
+    n = len(g.history)
+    g.heal(Ref(player=1), 4, Ref(player=0, shikigami=IDX))
+    g._drain_queue()
+    assert pb.health == 25 - 4                # 恢复改为等额伤害
+    assert "on_heal" in g.history[n:]         # 治疗事件照常发出（0 量）
+    assert "on_after_heal" not in g.history[n:]
+    pa.health = 25
+    g.heal(Ref(player=0), 4, Ref(player=0, shikigami=IDX))
+    g._drain_queue()
+    assert pa.health == 29                    # 对己方恢复不受影响
+
+
+# ==========================================================================
 # 判官（100110）
 #
 # 覆盖：基础能力（消灭→敌方牌手 1 伤+己方恢复 1）、墨笔夺魂/勾诀连招（降身材+
@@ -1796,6 +1996,38 @@ def test_response_destroy_both_combat_zones(real_game):
     play(g, 0, 10011003)
     assert pa.shikigami[0].defeated and pb.shikigami[0].defeated
     assert pa.combat_index is None and pb.combat_index is None
+
+
+def test_life_death_response_normal(real_game):
+    """生死无常（响应正例，裁决(7)）：己方战斗区式神被攻击时自动使用——
+    双方战斗区式神均被消灭。"""
+    g, pa, pb = _game(real_game, PG_TEAM, {IDX: 2, 1: 1})
+    give(g, 0, 10011003)
+    move(g, 0, 1)                             # A 白狼驻守战斗区
+    pass_turns(g, 1)
+    g.apply({"op": "assault", "index": 0})    # B 判官出击被拦 → 响应
+    assert pa.shikigami[1].defeated and pb.shikigami[0].defeated
+    assert any(c.id == 10011003 for c in pa.graveyard)
+
+
+def test_life_death_response_exec_condition(real_game, gdb):
+    """生死无常（响应执行前检查，裁决(7)）：响应时机要求被攻击者=战斗区己方式神；
+    使用后、执行前再查己方战斗区有式神（exec_condition combat_occupied）——
+    敌方即时能力先把被攻击者移回准备区（战斗区已空）则牌已使用但效果不结算
+    （入墓地，敌方战斗区式神存活）。"""
+    gdb.shikigami[100106].ability = F.block(
+        F.Step(op="retreat", target=TargetSpec(kind="context", key="victim")),
+        when="on_before_assault", timing="insert",
+        condition={"victim_side": "enemy", "victim_kind": "shikigami"})
+    g, pa, pb = _game(real_game, PG_TEAM, {IDX: 2, 1: 1})
+    give(g, 0, 10011003)
+    move(g, 0, 1)                             # A 白狼驻守战斗区
+    pass_turns(g, 1)
+    g.apply({"op": "assault", "index": 2})    # B 姑获鸟出击：插入能力先移回白狼
+    assert pa.combat_index is None            # 白狼被移回准备区（未气绝）
+    assert not pa.shikigami[1].defeated
+    assert not pb.shikigami[2].defeated       # 效果未结算：敌方攻击者存活
+    assert any(c.id == 10011003 for c in pa.graveyard)   # 牌已使用入墓地
 
 
 def test_enemy_revive_countdown_plus(real_game):

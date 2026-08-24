@@ -68,6 +68,12 @@ _SPELL_ECHO_BLOCK = EffectBlock(steps=[Step(op="spell_echo_recast")])
 # 抽牌事件生成时绑定牌（ctx.card）入队，由外层 _drain_queue 统一结算（同 field_destroy 先例）
 _DRAW_MOVE_BLOCK = EffectBlock(steps=[Step(op="draw_move")])
 
+# 法界唯心治疗反转的延时伤害内部块（裁决(10)）：on_before_heal 处 convert_heal_to_damage
+# 把治疗量改 0 并按原量入队此块——延时生成同来源伤害事件（目标=事件 target，伤害值=
+# 事件 payload amount）。同 _DRAW_MOVE_BLOCK 先例：合成块 + ExecContext(event=...) 入队
+_HEAL_REVERSAL_BLOCK = EffectBlock(steps=[Step(
+    op="damage", amount={"event": "amount"}, target=TargetSpec(kind="context", key="target"))])
+
 # 运势批次引擎直读的式神 id（契约 .tokensave/opmap_luck_batch.md"引擎读"语义）：
 # 青蛙瓷器——运势翻倍标记（判定者方有未气绝觉醒青蛙瓷器）与判定成功回合 +2 力量光环；
 # 妖狐——伤害流程按来源 = 妖狐时计数牌手 ext yaohu_damage_count
@@ -89,9 +95,9 @@ class _DamageEvent:
     kind: "combat"（攻击方战斗伤害）/ "counter"（反击战斗伤害）/ "effect"（法术、能力等）。
     spell: 法术伤害标记（法术牌效果伤害；≠ 非战斗伤害——式神能力伤害不算，答复(7)）。
     start: 流程起点枚举（规则评审⑪泛化——"流程可从指定位置开始结算"的统一表达，
-        rules.md:20/第五章）："full"=完整流程（默认，从批次 0 伤害前开始）；
+        rules.md 第一章/第五章）："full"=完整流程（默认，从批次 0 伤害前开始）；
         "pre_shield_2"=从"护甲计算前2"（贯通修正批次）开始——贯通溢出产生的新事件
-        （rules.md:199③），跳过批次 0/1（穿刺/on_damage_start）；
+        （rules.md 第五章步骤3③），跳过批次 0/1（穿刺/on_damage_start）；
         "pre_shield_0"=从"护甲计算前0"（on_before_shield 批次）开始——伤害目标转移
         产生的新事件：穿刺/on_damage_start/贯通修正/翻倍修饰（护甲计算前1）均不判定
         （"无[贯通]"即贯通修正批次不执行；免疫判定已后移至护甲计算后
@@ -164,7 +170,7 @@ class Game:
         self._battle_stack: list[int] = []
         self._battle_grants: dict[int, list[tuple[Ref, str, str]]] = {}  # battle id → [(式神 Ref, 关键字, 类别)]
         # battle id → [(式神 Ref, 战力)]：响应战斗牌插入使用授予的战力，终止点核销
-        # （rules.md:52"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
+        # （rules.md 第二章响应备注"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
         self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
         self._op_param_cache: dict[str, frozenset] = {}  # op 函数签名缓存（Step.condition 分派用）
         # 出牌效果伤害记录栈：结算打出/响应/自动使用的效果块期间压栈一条记录，
@@ -539,6 +545,12 @@ class Game:
         return cdef.shikigami == sid or (cdef.shikigami2 is not None
                                          and cdef.shikigami2 == sid)
 
+    @staticmethod
+    def _card_owner_sid(s: "ShikigamiState") -> int:
+        """"该式神的专属牌"归属判定的式神 id（裁决(4)：读心/万象之书/忘忧的旋律）——
+        变形/替换/占位中的式神仍视为原式神（transform_owner 记原式神 id）。"""
+        return s.transform_owner if s.transform_owner is not None else s.id
+
     def _enemy_revealed_count(self, pi: int, mode: str,
                               chosen: list[Ref] | None = None) -> int:
         """敌方手牌中已展示牌的计数（_step_amount {"enemy_revealed_count": mode}
@@ -555,7 +567,8 @@ class Game:
         if mode == "shikigami_of_chosen":
             if not chosen or chosen[0].shikigami is None:
                 return 0
-            sid = self.state.players[chosen[0].player].shikigami[chosen[0].shikigami].id
+            sid = self._card_owner_sid(
+                self.state.players[chosen[0].player].shikigami[chosen[0].shikigami])
             return sum(1 for c in revealed
                        if self._card_belongs_to(self.db.cards[c.id], sid))
         raise ValueError(f"未知 enemy_revealed_count 口径: {mode}")
@@ -1397,11 +1410,13 @@ class Game:
 
     def _open_card_name_pick(self, pi: int) -> bool:
         """开启忘忧的旋律两级选择（kind="card_name"）：stage="shikigami" 列出敌方
-        全部式神数据 id（含气绝，未离场；等级 ≥1 即已参战的出战队列成员）。
+        全部式神数据 id（含气绝，未离场；等级 ≥1 即已参战的出战队列成员；变形/替换/
+        占位中的式神按裁决(4) 视为原式神——列原式神 id）。
         敌方无可选式神时不挂起（返回 False）。"""
         ep = self.state.players[1 - pi]
-        options = [s.id for s in ep.shikigami
-                   if not s.despawned and s.level >= 1]
+        options = list(dict.fromkeys(
+            self._card_owner_sid(s) for s in ep.shikigami
+            if not s.despawned and s.level >= 1))
         if not options:
             return False
         self.state.pending_choice = {
@@ -1586,7 +1601,7 @@ class Game:
         """调度换牌核心：把一张手牌返回牌库（随机位置），再随机抽一张放到原位置
         （抽上牌继承换回牌的顺序编号）。游戏开始阶段调度与战中调度（云游/强索）共用。
 
-        展示状态细则（docs/rules.md:528-533；以下按 rules 术语——
+        展示状态细则（docs/rules.md 第二十一章；以下按 rules 术语——
         "换入牌"=返回牌库的手牌，"换出牌"=牌库抽上的新牌）：
         换入牌具有"已展示"则失去（rules 528）；换入牌原本具有"已展示"则换出牌
         获得"已展示"（rules 530）。换出牌入手经统一钩子 _enter_hand 发点。"""
@@ -2035,7 +2050,7 @@ class Game:
                     card=card,
                     chosen=chosen,
                 )
-                # 法术觉醒牌使用事件流程（thoughts.txt）：移入墓地 → 觉醒前（即时）→
+                # 法术觉醒牌使用事件流程：移入墓地 → 觉醒前（即时）→
                 # 替换式神能力 → 法术本身效果 → 觉醒后（延时）→ 永久身材增益
                 awaken_si = si if (cdef.subtype == "awaken" and si is not None) else None
                 if awaken_si is not None:
@@ -2226,7 +2241,7 @@ class Game:
         "每使用一张黄金羽"类触发以 {golden_feather: true} 判等）与 affected_refs：该次
         出牌效果实际伤害过的式神列表（暴风之主"对受影响的敌方式神各造成1点伤害"以
         context 目标读取）。
-        使用位置/方式（rules.md:611）：play_from ∈ hand/deck/void（凭空生成）；
+        使用位置/方式（rules.md 第二十六章）：play_from ∈ hand/deck/void（凭空生成）；
         play_method = 使用方式 id（无方式则为 None）；triggered ∈ active（主动）/
         response（响应）/ auto（凭空自动使用，如 recast_recorded/法术回响）。
         card_revealed：被使用的牌在使用点是否具有"已展示"（读实例 mods，本局保持、
@@ -2375,7 +2390,7 @@ class Game:
         if not defeated_entry:
             self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
-        # 均绑定本次战斗上下文，终止点移除（rules.md:338"直到本次战斗结束后"）；
+        # 均绑定本次战斗上下文，终止点移除（rules.md 第十三章战斗牌分支"直到本次战斗结束后"）；
         # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
         # 角色，获得吸血"），battle_immunity step 可带 Step.condition（鸩羽的条件免疫），
         # convert_damage step = 毒蚀伤害→破甲转化、counter_piercing step = 反击贯通、
@@ -2407,7 +2422,7 @@ class Game:
                          "multi_strike"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
             self._run_step(st, ctx)
-        # rules.md:344：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
+        # rules.md 第十三章战斗牌分支：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
         self.move_card(p, card, "graveyard")
         if defeated_entry:
             if not s.in_play:
@@ -2440,7 +2455,7 @@ class Game:
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
                                cdef: CardDef) -> None:
-        """响应战斗牌的插入使用（rules.md:52）：在"（被）攻击时"触发时——
+        """响应战斗牌的插入使用（rules.md 第二章响应备注）：在"（被）攻击时"触发时——
 
         - 不发起新战斗：所属式神改为移入战斗区（无论是否具有远程）；
         - 牌的力量（战力）/护甲/关键字/战斗伤害免疫/一次性临时触发绑定当前（被插入的）战斗，
@@ -2914,7 +2929,7 @@ class Game:
         （[暴击]时机=扣减生命前2；反击/嵌套/插入战斗不翻倍；终止点清除标记）。
         target = 有目标的战斗的战斗目标（追猎；None = 无目标战斗，被攻击者按敌方战斗区/直击
         决定）；origin = 发起方式（"assault" 出击 / "card" 战斗牌 / "effect" 效果发起）——
-        帷幕再校验时出击取消战斗、其余改为无目标战斗（thoughts.txt 帷幕定义）；
+        帷幕再校验时出击取消战斗、其余改为无目标战斗（帷幕定义见 docs/rules.md）；
         "assault"/"card" 两种攻击发起记入薰攻击账本（player ext["last_attacker"]，
         效果发起的攻击不算）。
         ignore_veil = 目标帷幕再校验放行（定案(4)：灵咒效果发起的战斗不受帷幕限制，
@@ -2984,7 +2999,7 @@ class Game:
             completed = self._battle_flow(atk_ref, attacker, move=move, target=target,
                                           origin=origin, ignore_veil=ignore_veil)
         finally:
-            # 终止点（rules.md:174）：移除本战斗授予的关键字实例与免疫条目
+            # 终止点（rules.md 第四章战斗步骤）：移除本战斗授予的关键字实例与免疫条目
             for ref, kw, cls in grants:
                 st = self.state.players[ref.player].shikigami[ref.shikigami]
                 self._remove_keyword(st, kw, cls)
@@ -3073,7 +3088,7 @@ class Game:
 
         target = 有目标的战斗的战斗目标（追猎）；origin 区分发起方式——目标在发起战斗前
         获得帷幕（或已不可指定）时：有目标的出击不发起战斗，其余改为无目标战斗
-        （thoughts.txt 帷幕定义）；ignore_veil=True（灵咒效果发起的战斗，定案(4)）
+        （帷幕定义见 docs/rules.md）；ignore_veil=True（灵咒效果发起的战斗，定案(4)）
         跳过帷幕再校验（气绝/离场校验照常）。确定目标（战斗准备步骤）：有目标用目标；无目标且
         攻击者持直击（确定目标前1）则被攻击者改为敌方牌手；否则敌方战斗区式神。
         先攻阶段击杀被攻击者（定案(6)）：攻击者有贯通则被攻击者改为对方牌手，否则
@@ -3203,7 +3218,7 @@ class Game:
             vs = d.shikigami[vic_idx]
             if vs.defeated:
                 return None  # 气绝的被攻击者不反击（飘零之舞攻击气绝目标，定案(2)）
-            # 反击贯通例外（rules.md:201）：本战斗登记了 counter_piercing 时反击伤害具有贯通
+            # 反击贯通例外（rules.md 第五章步骤3）：本战斗登记了 counter_piercing 时反击伤害具有贯通
             cp = any(b in self._battle_counter_piercing for b in self._battle_stack)
             src_ref = Ref(player=def_pi, shikigami=vic_idx)
             victim = atk_ref
@@ -3495,7 +3510,7 @@ class Game:
         s.despawned = True
         self._log(f"{d.name} 离场")
 
-    # ---------- 变形（transform；契约 §2，thoughts.txt 变形相关） ----------
+    # ---------- 变形（transform；契约 §2） ----------
 
     def _transform_shikigami(self, p: PlayerState, i: int, into: int,
                              source: Ref | None = None) -> None:
@@ -4373,7 +4388,7 @@ class Game:
 
         每个事件依次经过时点批次：造成伤害前（穿刺）→ 伤害开始时 → 贯通修正 → 护甲计算前（屏障）→ 护甲计算 →
         护甲计算后 → 扣减生命前 → 合并 → 扣减生命（不屈）→ 伤害后。队列清空后按受伤顺序
-        生成气绝事件（rules.md:207）；defer_defeats 给出时改为把受伤者追加到该列表、
+        生成气绝事件（rules.md 第五章步骤11）；defer_defeats 给出时改为把受伤者追加到该列表、
         由调用方延后统一结算（随机分配伤害：气绝事件按延时时机在效果结束后结算）。
         子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者出现再拆。
         """
@@ -4548,7 +4563,7 @@ class Game:
         skip_shield_calc = False
         skip_before_health = False
         # 批次 2：贯通修正（非反击伤害、伤害原因具有贯通、受伤者是式神；
-        # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md:201）；
+        # 反击例外——本战斗登记 counter_piercing 的反击伤害同样走贯通修正，rules.md 第五章步骤3）；
         # 转移新事件（start="pre_shield_0"）跳过本批次——"无[贯通]"语义（贯通不随转移继承）。
         # 裁决(3) 次序：先额外一次护甲计算 → 提前执行"扣减生命前"系列时机（含扣减
         # 生命前2 的[暴击]/义道翻倍，后续不再重复）→ 贯通伤害分配（翻倍后口径）
@@ -4627,7 +4642,7 @@ class Game:
         if ev.amount <= 0:
             return  # 改非伤害类效果（优先级 1）把余量归零：原伤害事件终止，转移不再处理
         # 伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"，ext["damage_redirects"]
-        # 挂账）：挂点 = 护甲计算后批次优先级 2（rules.md:218 ②——①类监听者
+        # 挂账）：挂点 = 护甲计算后批次优先级 2（rules.md 第五章步骤6②——①类监听者
         # （on_after_shield）先结算再转移）：消耗一层挂账，以受伤者的牌手为受伤者、
         # 护甲计算后余量为伤害值重新结算该伤害事件。新事件语义（定案"转移链"）：
         # 等量、同来源、同原因、同属性（无[贯通]），从"护甲计算前0"（on_before_shield）
@@ -4699,16 +4714,14 @@ class Game:
                 ev.amount = s.health - 1
                 s.one_shot_keywords[:] = [k for k in s.one_shot_keywords if k != "unyielding"]
                 self._log(f"{self.db.shikigami[s.id].name} 的【不屈】生效，保留 1 点生命")
-            # 狂啸"本回合生命不会降到 1 以下"（ext["min_health_turn"]，半回合作用域）：
-            # 伤害压到至多 当前生命-1；生命已为 1 时不再扣减（同护甲完全吸收提前终止）
-            if s.ext.get("min_health_turn"):
-                cap = max(0, s.health - 1)
-                if ev.amount > cap:
-                    ev.amount = cap
-                    self._log(f"{self.db.shikigami[s.id].name} 的生命保持 1（狂啸）")
-                if ev.amount <= 0:
-                    return
             s.health -= ev.amount
+            # 狂啸"本回合生命不会降到 1 以下"（ext["min_health_turn"]，半回合作用域；
+            # 裁决(5)）：扣减生命步骤**后**若生命 <1 置为 1——伤害量不钳制（全额计入
+            # 实际造成/吸血/记账），仅对伤害导致的扣减有效（墨笔夺魂/蛊蚀等生命上限
+            # 削减不经伤害管线，仍可击杀锁血者）
+            if s.ext.get("min_health_turn") and s.health < 1:
+                s.health = 1
+                self._log(f"{self.db.shikigami[s.id].name} 的生命保持 1（狂啸）")
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             self._account_yaohu_damage(ev)  # 妖狐伤害计数（每次伤害事件计 1）
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
@@ -4719,7 +4732,7 @@ class Game:
                          f"（生命 {s.health + ev.amount}→{s.health}）")
             # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
             if s.health <= 0:
-                s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（thoughts.txt 濒死定义）
+                s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（濒死定义见 docs/rules.md）
             victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
             # 必杀：来源式神持 lethal（含斩型"本次攻击获得[必杀]"经 next_battle 统一
             # 通道授予的关键字实例——范围与免疫一致：该次战斗全程含嵌套战斗，外层战斗
@@ -4822,7 +4835,7 @@ class Game:
         src.ext["dealt_damage_turn"] = True
 
     def _queue_lifesteal(self, ev: _DamageEvent) -> None:
-        """关键字"吸血"（rules.md ch5 批次 10①；thoughts.txt 答复 (5)）：
+        """关键字"吸血"（rules.md ch5 批次 10①）：
         来源式神具有 lifesteal 时，生成"以其控制者牌手为执行者、治疗量 = 该次伤害值"
         的恢复生命事件——延时、优先级 1 锚点：以合成 _Pending 入队（先于同批延时能力结算），
         治疗走 Game.heal 管线。来源式神在结算前气绝不影响（先触发后执行）。
@@ -5317,26 +5330,18 @@ class Game:
         self.state.pending_loser = loser
 
     def heal(self, ref: Ref, amount: int, source: Ref | None = None, reason: str = "") -> None:
-        """治疗（恢复生命）事件流程（thoughts.txt；要素：来源、执行者、治疗量、原因）。
+        """治疗（恢复生命）事件流程（要素：来源、执行者、治疗量、原因）。
 
-        治疗前（即时 on_before_heal）→ 治疗量 = min(治疗量, 执行者已损失生命) →
+        治疗前（即时 on_before_heal，payload 带可变量 box heal——能力可改写治疗量，
+        法界唯心"改为造成等量伤害"= 置 0 + 延时生成等量伤害事件，裁决(10)）→
+        治疗量 = min(治疗量, 执行者已损失生命) →
         增加生命 → 治疗时 on_heal（延时，实际恢复为 0 也触发）→
         治疗后 on_after_heal（延时，仅实际恢复 > 0 才触发）。
         on_heal/on_after_heal 的 payload 带 overheal = max(0, 治疗量 - 实际治疗量)
         （海坊主"过量治疗转化"：满血治疗 overheal = 全额，照常转化）。
         "恢复生命时"类能力（青坊主/禅心）挂 on_after_heal——仅实际恢复触发。
         濒死/气绝（未在场）的式神与气绝的牌手不受治疗（早退，不产生任何事件）。
-        法界唯心（形态 tags 含 heal_reversal）：其控制者对敌方的恢复生命效果改为
-        等额伤害效果——直接走伤害管线，不发出任何治疗事件（伤害事件照常）。
         """
-        if source is not None and ref.player != source.player \
-                and self._field_form_has_tag(source.player, "heal_reversal"):
-            self._log(f"恢复生命效果被改为伤害效果（法界唯心）")
-            if ref.shikigami is None:
-                self.deal_to_player(ref.player, amount, source, kind="effect")
-            else:
-                self.deal_to_shikigami(ref, amount, source, kind="effect")
-            return
         p = self.state.players[ref.player]
         s = p.shikigami[ref.shikigami] if ref.shikigami is not None else None
         if s is not None and (not s.in_play or s.dying):
@@ -5344,7 +5349,10 @@ class Game:
         if s is None and p.defeated:
             return
         holder = s if s is not None else p
-        self.emit("on_before_heal", target=ref, amount=amount, source=source, reason=reason)
+        box = {"amount": int(amount)}
+        self.emit("on_before_heal", target=ref, amount=amount, source=source,
+                  reason=reason, heal=box)
+        amount = box["amount"]
         healed = min(amount, holder.max_health - holder.health)
         overheal = max(0, amount - healed)  # 过量治疗量（海坊主转化通道）
         if healed > 0:
@@ -5365,8 +5373,19 @@ class Game:
         self.emit("on_after_heal", target=ref, amount=healed, overheal=overheal,
                   source=source, reason=reason)
 
+    def _queue_heal_reversal_damage(self, ref: Ref, amount: int, source: Ref | None) -> None:
+        """法界唯心（裁决(10)）：on_before_heal 处治疗量被改 0 后，按原治疗量入队一个
+        延时伤害事件（同来源、目标=原治疗目标，kind=effect——暴击仅战斗伤害生效，
+        转化伤害不翻倍）。"""
+        self.queue.append(_Pending(
+            _HEAL_REVERSAL_BLOCK,
+            ExecContext(controller=source.player if source is not None else ref.player,
+                        source=source,
+                        event={"name": "on_heal_reversal_damage",
+                               "amount": int(amount), "target": ref})))
+
     def _field_form_has_tag(self, pi: int, tag: str) -> bool:
-        """玩家 pi 在场式神结附的形态中是否有 tags 含 tag 者（法界唯心 heal_reversal；
+        """玩家 pi 在场式神结附的形态中是否有 tags 含 tag 者（护盾增益 boost 等；
         硬编码扫描的先例见 _combat_zone_locked 的 destroy_immune 标记形态）。"""
         for s in self.state.players[pi].shikigami:
             if s.in_play and s.form is not None and tag in self.db.cards[s.form.id].tags:
@@ -5765,6 +5784,11 @@ class Game:
                 s = p.shikigami[si]
                 if s.stuns:
                     continue  # 眩晕式神不能响应使用其卡牌
+                if s.dying and event.get("victim") != Ref(player=pi, shikigami=si):
+                    continue  # 濒死式神不能响应使用其卡牌（裁决(9)：舍生"青坊主
+                    # 已处于濒死状态时无法响应使用"；濒死=生命≤0 气绝事件未结算）。
+                    # 例外：响应事件受伤者即自身（自身气绝时机链，射怪鸟事"当以津真天
+                    # 将死亡时"）仍放行
                 if s.defeated and not self._playable_when_defeated(cdef, card):
                     continue  # 对应式神气绝且无"气绝时可用"
                 if not s.defeated and cdef.only_when_defeated:
@@ -5780,7 +5804,7 @@ class Game:
             # 按所属式神从左往右排序（中立响应牌排在最后）；同式神保持手牌顺序
             order = si if si is not None else len(p.shikigami)
             candidates.append((order, card, eb, si))
-        # 带 choose 目标的响应牌：结算时自动选择事件中的被攻击者（rules.md:36），
+        # 带 choose 目标的响应牌：结算时自动选择事件中的被攻击者（rules.md 第二章），
         # 不在合法池则按无目标结算（自动使用而没有效果）——见 _resolve_block 响应前置。
         candidates.sort(key=lambda c: c[0])
         for _, card, eb, si in candidates:
@@ -5816,9 +5840,12 @@ class Game:
         # 收集到结算之间局面可能已变化：响应牌结算时必须复查条件、鬼火、消耗、使用者
         if ctx.card not in p.hand:
             return True
-        if ctx.event is not None and not self._match(
-                self._response_block(cdef).condition, ctx.event, ctx.controller):
+        resp_blk = self._response_block(cdef)
+        if ctx.event is not None and resp_blk.exec_condition is None and not self._match(
+                resp_blk.condition, ctx.event, ctx.controller):
             return True
+        # 裁决(7)：声明 exec_condition 的响应牌（生死无常），触发条件只在响应时机
+        # （收集时）判定；结算时不复查触发条件，改为支付后、执行前检查 exec_condition
         si: int | None = None
         if cdef.shikigami is not None:
             si = self._find_card_owner(p, cdef.shikigami)
@@ -5827,7 +5854,8 @@ class Game:
             s = p.shikigami[si]
             if s.stuns:
                 return True  # 眩晕式神不能响应使用其卡牌
-            if s.defeated and not self._playable_when_defeated(cdef, ctx.card):
+            if s.defeated and not self._playable_when_defeated(cdef, ctx.card) \
+                    and not cdef.response_when_defeated:
                 return True
             if not s.defeated and cdef.only_when_defeated:
                 return True  # "仅在气绝时可用"：复查时存活不可用（心即归处）
@@ -5848,7 +5876,7 @@ class Game:
         self._pay_orb(p, ctx.controller, cost, reason="响应使用")
         if self._fast_applies(p, cdef, ctx.card):
             p.fast_used = True
-        # choose 目标的响应牌：自动选择事件中的被攻击者（rules.md:36"执行效果时选择目标"；
+        # choose 目标的响应牌：自动选择事件中的被攻击者（rules.md 第二章"执行效果时选择目标"；
         # 不在合法池则无目标——自动使用而没有效果，如古尘之盾"对其自动使用"）
         if cdef.target.kind == "choose" and ctx.event is not None:
             v = ctx.event.get("victim")
@@ -5858,6 +5886,14 @@ class Game:
             self._response_window, (ctx.event or {}).get("name"))  # 成功结算才占用本时机名额
         self._log(f"{p.name} 的响应牌【{cdef.name}】触发")
         self.emit("on_trigger", player=ctx.controller, uid=ctx.card.uid)
+        exec_cond = resp_blk.exec_condition
+        if exec_cond is not None and not self._match(
+                exec_cond, ctx.event or {}, ctx.controller):
+            # 使用后、执行前再检查（裁决(7) 生死无常：己方战斗区须有式神——可与触发
+            # 响应的被攻击式神不同）：不满足则牌已使用但效果不结算
+            self._log(f"【{cdef.name}】执行前检查未通过，效果不结算")
+            self.move_card(p, ctx.card, "graveyard")
+            return True
         if cdef.card_type == "spell":
             # 响应使用的法术牌同发"使用前"即时时机（定案(4)：任意方式任意位置的
             # 使用均触发——友切类监听）；被无效化（反制等）：跳过效果、照常离手入
@@ -5876,11 +5912,11 @@ class Game:
             self.move_card(p, ctx.card, "graveyard")
             return False
         if cdef.card_type == "combat" and si is not None:
-            # 仅"（被）攻击时"时机触发的响应战斗牌插入当前战斗（rules.md:52）；
+            # 仅"（被）攻击时"时机触发的响应战斗牌插入当前战斗（rules.md 第二章响应备注）；
             # 其余时机（偷袭"敌方战斗区式神气绝时"等）即使战斗中触发，也不插入——
             # 按完整战斗事件流程发起一次新战斗（嵌套战斗，正常反击）
             if self._battle_stack and (ctx.event or {}).get("name") == "on_before_assault":
-                # 响应战斗牌插入使用（rules.md:52）：不发起新战斗，加成绑定被插入的战斗
+                # 响应战斗牌插入使用（rules.md 第二章响应备注）：不发起新战斗，加成绑定被插入的战斗
                 self._apply_response_combat(p, si, ctx.card, cdef)
             else:
                 # 无当前战斗/非攻击时机的响应战斗牌：不能插入，发起一次新战斗
@@ -5964,7 +6000,7 @@ class Game:
                 self._suspended = (block, ctx, idx + 1)
                 return
 
-    # ==================== 运势管线（契约 §3；thoughts.txt 运势事件流程） ====================
+    # ==================== 运势管线（契约 §3） ====================
 
     def _luck_doublers(self, judge: int) -> list[int]:
         """判定者方的运势翻倍提供者（契约"引擎读：判定者方有未气绝觉醒青蛙瓷器"）：

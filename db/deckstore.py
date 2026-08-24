@@ -1,4 +1,4 @@
-"""本地卡组存储：~/.bwp.decks.json。
+"""本地卡组存储：本地数据目录 ~/.bwpro/ 下的 decks.json。
 
 格式（v3，不向前兼容——旧版本文件视为格式异常，提示并删除）：
     {"version": 3,
@@ -11,18 +11,42 @@ env 为该卡组的构筑环境（平衡性版本日期 YYYYMMDD，null = 最新
 
 文件数据不符合应有格式：提示"本地卡组文件异常"并删除该文件（返回空列表）。
 保存为原子写入；文件/目录不存在时自动创建。
+
+旧路径 ~/.bwp.decks.json 读取时一次性自动迁移：新文件不存在且旧文件存在时，
+复制到新路径后删除旧文件（迁移失败仅提示并回退旧路径，不阻塞读写）。
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 from db import deckcode
 from db.deck import STANDARD_RULES, DeckRules, validate_deck
 from db.schema import check_version_date
 
-PATH = Path.home() / ".bwp.decks.json"
+DATA_DIR = Path.home() / ".bwpro"
+PATH = DATA_DIR / "decks.json"
+LEGACY_PATH = Path.home() / ".bwp.decks.json"
+
+
+def _migrate_legacy(path: Path) -> Path:
+    """旧路径一次性迁移：新文件不存在且旧文件存在时，复制后删旧。
+
+    仅对默认路径生效（测试传入的显式路径不触发）；返回实际应读写的路径
+    （迁移失败时回退旧路径，仅提示，不抛异常）。
+    """
+    if path != PATH or path.exists() or not LEGACY_PATH.exists():
+        return path
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(LEGACY_PATH, path)
+        LEGACY_PATH.unlink()
+    except OSError as e:
+        print(f"本地卡组文件迁移失败（{e}），仍使用旧文件：{LEGACY_PATH}")
+        return LEGACY_PATH
+    return path
 
 
 def _valid_groups(g) -> bool:
@@ -60,6 +84,7 @@ def load_decks(db, path: Path = PATH,
     文件不存在返回 []；数据格式不符：提示"本地卡组文件异常"并删除该文件。
     返回条目：{"name": str, "groups": [...], "standard": bool}。
     """
+    path = _migrate_legacy(path)
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:

@@ -213,6 +213,22 @@ def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
         ctx.memo["last_heal_targets"] = list(targets)
 
 
+@action("convert_heal_to_damage")
+
+def convert_heal_to_damage(game, ctx, *, targets: list[Ref]) -> None:
+    """治疗反转（法界唯心，裁决(10)）：挂 on_before_heal（即时）——把事件可变治疗量
+    置 0，并按原治疗量入队一个延时伤害事件（同来源、目标=原治疗目标，kind=effect；
+    暴击仅战斗伤害生效，转化伤害不翻倍）。本 op 只读事件 payload，不使用 targets。"""
+    ev = ctx.event or {}
+    box = ev.get("heal")
+    if not isinstance(box, dict):
+        return
+    amount = int(box.get("amount") or 0)
+    box["amount"] = 0
+    if amount > 0 and ev.get("target") is not None:
+        game._queue_heal_reversal_damage(ev["target"], amount, ev.get("source"))
+
+
 @action("draw")
 def draw(game, ctx, *, targets: list[Ref], count: int | dict = 1,
          side: str | None = None) -> None:
@@ -258,7 +274,7 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
                amount_sign: int = 1) -> None:
     """力量增益：perm=True 为永久修正（复活保留），否则为临时修正（气绝时清除）。
 
-    已气绝式神不能获得非永久增益，但可以获得永久增益（thoughts.txt"已气绝状态"）；
+    已气绝式神不能获得非永久增益，但可以获得永久增益（"已气绝状态"定案）；
     0 级未在场/已离场式神不受影响。
     scope="turn"：临时增益记账到 ext["turn_power"]，回合开始时随该通道一并清除
     （武士之笛/鼓舞类"本回合"增益；与 perm 互斥，数据侧只对临时增益使用）。
@@ -424,7 +440,7 @@ def attack_buff(game, ctx, *, targets: list[Ref], power: int = 0,
                 keywords: list[str] | None = None) -> None:
     """攻击后到期临时强化（起弓/离/无我/势）：立即生效并挂账 attack_buffs。
 
-    在目标式神自身作为攻击者的战斗终止点统一核销（rules.md:174"直到攻击后"）；
+    在目标式神自身作为攻击者的战斗终止点统一核销（rules.md 第四章战斗步骤"直到攻击后"）；
     持有 keep_attack_buffs（残心）时跳过核销。气绝时随临时修正一并清空。
     power 支持动态数值 dict（{"event": key} 等，经 _run_step 统一流水线求值——
     势"当倒计时减少时获得等量的力量直到下次攻击后"，定案(5)：按原始减少量）。
@@ -761,7 +777,7 @@ def mulligan_hand(game, ctx, *, targets: list[Ref], times: int = 3,
     强索通道（auto=True）：无 pending_choice 交互——对 target_side 所指方（opponent=
     敌方）手牌按入手顺序（hand_seq 升序）取前 times 张候选自动调度（only_revealed=
     True 时仅"已展示"牌为候选）；逐张 _swap_hand_card（展示状态传递见其内），
-    有实际调度才洗牌库（rules.md:531；候选为空/牌库为空不洗）。
+    有实际调度才洗牌库（rules.md 第二十一章步骤3；候选为空/牌库为空不洗）。
     """
     if auto:
         pi = ctx.controller if target_side == "self" else 1 - ctx.controller
@@ -772,7 +788,7 @@ def mulligan_hand(game, ctx, *, targets: list[Ref], times: int = 3,
         swapped = 0
         for c in cands[:max(0, int(times))]:
             if not p.deck:
-                break  # 待调度牌库为空：终止调度流程（rules.md:524）
+                break  # 待调度牌库为空：终止调度流程（rules.md 第二十一章步骤1）
             game._swap_hand_card(p, c)
             swapped += 1
         if swapped:
@@ -833,7 +849,8 @@ def reveal(game, ctx, *, targets: list[Ref], mode: str = "event",
             chosen = ctx.chosen or []
             if not chosen or chosen[0].shikigami is None:
                 return  # 无有效选择目标：空操作
-            sid = game.state.players[chosen[0].player].shikigami[chosen[0].shikigami].id
+            sid = game._card_owner_sid(
+                game.state.players[chosen[0].player].shikigami[chosen[0].shikigami])
         elif shikigami is None:
             raise ValueError("reveal(mode=shikigami) 需要 shikigami 参数（数据 id 或 chosen）")
         else:
@@ -1113,12 +1130,16 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     if shikigami == "friendly_others":
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("generate(shikigami=friendly_others) 需要来源式神")
-        src_id = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami].id
+        src_owner = game._card_owner_sid(
+            game.state.players[ctx.source.player].shikigami[ctx.source.shikigami])
         for s in p.shikigami:
-            if s.id == src_id or s.kind != "shikigami":
+            if s.kind == "summon":
+                continue  # 召唤物无专属牌池
+            owner = game._card_owner_sid(s)  # 变形/替换/占位中仍视为原式神（裁决(4)）
+            if owner == src_owner:
                 continue
             pool = [c.id for c in game.db.cards.values()
-                    if not c.token and c.shikigami == s.id
+                    if not c.token and c.shikigami == owner
                     and (card_type is None or c.card_type == card_type)]
             if not pool:
                 continue
@@ -2669,7 +2690,7 @@ def grant_redirect(game, ctx, *, targets: list[Ref], to: str = "player",
     """授予目标式神伤害转移（血蝠之盾"下一次将受到的伤害改由其牌手承受"）。
 
     挂账 ext["damage_redirects"]（每层独立，多张可叠加；气绝清除）：伤害事件流程
-    护甲计算后批次优先级 2（rules.md:218 ②，①类 on_after_shield 监听者先结算）
+    护甲计算后批次优先级 2（rules.md 第五章步骤6②，①类 on_after_shield 监听者先结算）
     消耗一层，以受伤者的牌手为受伤者、护甲计算后余量为伤害值重新结算该伤害事件
     ——牌手的护甲/破甲/免疫照常参与，式神自身的屏障不因持挂账而消耗、其护甲先
     参与计算；伤害类别不限（维护者定案(5)）。
@@ -2856,7 +2877,7 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
 @action("counter_piercing")
 def counter_piercing(game, ctx, *, targets: list[Ref]) -> None:
     """反击贯通标记（targets 忽略）：登记到当前战斗上下文——该战斗中被攻击方的反击
-    伤害具有贯通（贯通修正批次对 kind=counter 的例外，rules.md:201；战斗终止点清除）。
+    伤害具有贯通（贯通修正批次对 kind=counter 的例外，rules.md 第五章步骤3；战斗终止点清除）。
 
     主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
     响应插入使用时作为普通动作执行，登记到被插入的当前战斗。
@@ -4330,7 +4351,7 @@ def redirect_deck_invocation(game, ctx, *, targets: list[Ref], name: str,
     targets 忽略）：挂伤害事件"护甲计算后"批次（on_after_shield，insert，
     优先级 1，redirect_to_invocation 同挂点）的形态能力块；**敌方**牌库中存在
     结附该灵咒的牌时，当前伤害值归零终止（ev.amount=0），并**随机**移除其中
-    min(伤害值, cap) 张入**墓地**（thoughts(1)：伤害>3 按 3 计；不足则全移除；
+    min(伤害值, cap) 张入**墓地**（定案：伤害>3 按 3 计；不足则全移除；
     无标记牌空操作伤害照常）。移除后敌方牌库标记数减少，enemy_deck_invocation
     光环即时降身材——受害者上限降低钳当前生命、上限不大于 0 即气绝
     （_invocation_lethality 同口径；已觉醒保留的永久身材不受影响）。

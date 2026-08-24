@@ -3,7 +3,7 @@
 运行：uv run python -m client.net [--server ws://127.0.0.1:1037/ws] [--debug] [--name 名字]
 
 - 创建房间（可自建 6 位字母数字房码，缺省随机）或按房码加入；开局前从本地卡组文件
-  （~/.bwp.decks.json）选择卡组（client/deckbuilder.choose_deck）。
+  （~/.bwpro/decks.json）选择卡组（client/deckbuilder.choose_deck）。
 - 准备阶段：双方都位后 r 准备 / q 离开，15s 自动开始。
 - 服务端权威：指令与热坐 CLI 同一 cmd dict 协议；客户端只渲染服务端下发的
   GameState（本地 CardDatabase + Game 包装，不开局），"己方"视角为自己的座位。
@@ -207,7 +207,7 @@ class NetClient:
             if winner is None:
                 print(f"对局终止（{msg.get('reason')}）")
             elif self.payload is not None:
-                # thoughts(1)：按视角打印结果（不固定哪方获胜）；作为末块入队——
+                # 按视角打印结果（不固定哪方获胜）；作为末块入队——
                 # 剩余结算按固定速度播完后才显示，不重复打印、不附场况
                 names = [p["name"] for p in self.payload["players"]]
                 text = cli.result_text(winner, names, viewer=self.me)
@@ -265,7 +265,7 @@ class NetClient:
     # ---------- 输入循环 ----------
 
     def _can_act(self, st) -> bool:
-        """当前是否有合法输入场景（thoughts(1)）：自己调度未完成 / 待自己作答的
+        """当前是否有合法输入场景：自己调度未完成 / 待自己作答的
         结算中选择（pending_choice）/ 自己的回合。其余（对手回合、已完成调度等待）
         不显示输入提示符、不接受操作指令。"""
         if st.phase == "mulligan":

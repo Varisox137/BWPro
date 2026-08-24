@@ -82,7 +82,7 @@
 - 满足条件的响应牌在执行效果时选择目标；如果没有目标会自动使用而没有效果。
 - 式神气绝并不影响手牌中对应响应牌的队列位置。
 - **响应牌从左到右的冒泡修正**【实现侧等价于收集时按所属式神位置排序】：抽到一张响应牌后，将其加入己方对应时机触发队列末尾；若此牌所属式神战场区右侧已有相同时机响应牌所属的式神，则与优先级最后且高于其的右侧响应牌交换队列顺序，重复直到所有右侧式神的响应牌顺序低于此响应牌。因幻境"彼岸归航"展示的牌不做冒泡修正，始终在最后响应。
-- 响应牌结算时仍需检测：条件、鬼火、消耗、使用者（收集到结算之间局面可能已变化）。
+- 响应牌结算时仍需检测：条件、鬼火、消耗、使用者（收集到结算之间局面可能已变化）。**例外两则**（裁决(7)(9)）：① 声明 `exec_condition` 的响应牌（生死无常）——触发条件只在响应时机（收集时）判定、结算时不复查，改为支付并使用（占名额、发 on_trigger）后、效果执行前检查 exec_condition（己方战斗区有式神——可与触发响应的被攻击式神不同），不满足则牌已使用入墓地、效果不结算；② `response_when_defeated`（舍生）——结算复查时所属式神已气绝仍生效。另：濒死（dying，生命≤0 气绝未结算）式神不能响应使用其卡牌（舍生"青坊主已濒死不可响应"）——例外：响应事件受伤者即自身（自身气绝时机链，射怪鸟事）仍放行；舍生响应时机=己方牌手受伤"护甲计算后"（on_after_shield），条件=面板致命（victim_lethal）或[暴击]无[贯通]翻倍预判致命（crit_lethal）。
 
 ### 响应使用牌的流程
 
@@ -235,7 +235,7 @@
 2. 攻击者在战斗准备步骤气绝、攻击时气绝、先攻阶段气绝过：终止战斗；交战阶段气绝不终止，继续执行。被攻击者气绝再复活不终止战斗。
 3. 发起有目标的战斗（战斗的发起与进行类似能力的触发与执行），进行前目标气绝：攻击者具有贯通则改为无目标战斗，否则取消战斗。
 4. 具有连击/贯通的己方式神对己方角色发起战斗，先攻阶段消灭被攻击者后，仍会把被攻击者改为敌方牌手。
-5. 新关键字定义（thoughts.txt，2026-07 落地；代码标识见术语表）：
+5. 新关键字定义（2026-07 落地；代码标识见术语表）：
    - **不屈**：受到伤害扣减生命时，若当前剩余生命 >1 且扣减值不低于剩余生命：移除此关键字能力，生命保留 1 点。【已实现，伤害流程批次 9】
    - **帷幕**：不能成为敌方出击或使用牌的合法目标。已确定目标但在执行效果前目标具有帷幕：取消目标、不执行目标相关效果；有目标的出击在发起战斗前目标获得帷幕：不发起战斗；有目标的非出击战斗在发起战斗前目标获得帷幕：改为无目标战斗。【已实现：choose/出击目标过滤 + 结算时再校验 + 战斗发起前再校验】
    - **吸血**：伤害具有吸血属性时，造成伤害后为伤害来源所属牌手恢复等量生命。【已实现，批次 10①】
@@ -245,7 +245,7 @@
 
 ## 五、伤害事件完整流程（经测试）
 
-【实现侧（`Game._run_damage_queue`）：各时点批次事件 on_before_damage / on_damage_start / on_before_shield / on_after_shield / on_before_health（均即时时机，payload 含可变 damage 对象——boost_damage 动作在此类批次改写伤害值，只增）+ 穿刺（批次0，只移除正护甲/屏障，不动破甲，与伤害是否生效无关）+ 贯通修正（溢出同队列、提前结算扣减生命前；只吸收正护甲，跳过破甲计算）+ 屏障（批次3）+ 护甲计算（破甲 = 负 shield：移除并增加等量伤害；正护甲吸收）+ 合并 + 不屈（扣减生命）+ 濒死标记（扣减生命至 ≤0 先标 `dying`，再按受伤顺序延时生成气绝事件）+ 吸血（批次 10①，延时优先级 1 锚点：来源式神持 lifesteal 则合成 _Pending 入队，走 Game.heal 管线恢复牌手等量生命）+ on_damage/on_player_damaged（伤害后，延时）+ 按受伤顺序生成气绝事件均已实现；免疫各分支统一在"护甲计算后"批次**优先级 3** 判定（2026-08 修正定案"免疫只看最终受伤者"：改非伤害/伤害转移全部结算完、伤害事件未终止后，对**最终受伤者**判定其全部免疫条目；屏障/护甲计算/贯通修正均先于免疫参与计算——原"伤害开始时"挂点作废）：作用域战斗伤害免疫（仅 combat/counter）、非战斗伤害免疫（immunities 条目 {"kind": "effect", "from": "enemy"}，grant_immunity kind/from_side 参数，觉醒·山童）、破甲来源免疫（{"kind": "fragile_source"}，霸主）、牌手级全伤害免疫（`PlayerState.immunities` 条目 {"kind": "all", "turn": n}，`_player_immune`，舍生"你的牌手免疫所有伤害"）；伤害管线（`deal` / `deal_to_*`）返回实际伤害合计（按扣减生命口径：护甲吸收不计、过量击杀按面板值计），供块内合计类效果使用（巨浪，memo 键 `last_damage_total`）；子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者再拆；伤害转移已落地（grant_redirect，见时点 6②）；幻境耐久扣减已落地（扣减生命后立即扣队首幻境等量耐久，见第三十一章）；**改非伤害已落地**（redirect_to_field——"护甲计算后"批次按 `EffectBlock.priority` 分层结算：优先级 1=「伤害改为非伤害」类（竹取物语/新月之哀/日轮之城），优先级 2=「伤害目标转移」类（血蝠之盾挂账为引擎内建优先级 2 段）；改非伤害结算后原伤害事件终止（余量归零即 return）时，同时机已触发的优先级 2 转移失去当前伤害事件上下文不再处理。**伤害目标转移的统一语义**（定案(7)+2026-08"转移链"定案）：终止原伤害事件结算 + 以护甲计算后余量生成指向新目标的新伤害事件——新事件保留[吸血]（来源保留，吸血照常在批次 10① 结算）、**不保留[贯通]**（piercing 不随新事件继承），并跳过早期步骤从"护甲计算前0"开始结算（`_DamageEvent.start="pre_shield_0"`：穿刺/on_damage_start/贯通修正/double_damage 均不判定；免疫判定后移至护甲计算后优先级 3——新事件对最终受伤者照常判定，可被其免疫拦截；事件生成点的伤害转化与气绝/濒死保护仍先行）；**转移链**（`_DamageEvent.redirect_chain` + 能力实例身份 `ExecContext.ability_uid`）：多个转移效果联动时每次只单个触发（转移 op 归零原事件→归零断点跳过后续优先级≥2 块），链上记录已触发的转移能力实例、每个该类能力在同一链上只能执行一次（允许不同能力接力；并行伤害各自独立成链）；转移新目标已濒死（延时气绝未结算）时原事件仍终止、新事件入口拦截不造成实际伤害；已落地通道=血蝠之盾挂账（消耗式不占链身份）与 `redirect_damage_to_self` op（机制先行暂无实卡））】
+【实现侧（`Game._run_damage_queue`）：各时点批次事件 on_before_damage / on_damage_start / on_before_shield / on_after_shield / on_before_health（均即时时机，payload 含可变 damage 对象——boost_damage 动作在此类批次改写伤害值，只增）+ 穿刺（批次0，只移除正护甲/屏障，不动破甲，与伤害是否生效无关）+ 贯通修正（溢出同队列、提前结算扣减生命前；只吸收正护甲，跳过破甲计算）+ 屏障（批次3）+ 护甲计算（破甲 = 负 shield：移除并增加等量伤害；正护甲吸收）+ 合并 + 不屈（扣减生命）+ 濒死标记（扣减生命至 ≤0 先标 `dying`，再按受伤顺序延时生成气绝事件）+ 吸血（批次 10①，延时优先级 1 锚点：来源式神持 lifesteal 则合成 _Pending 入队，走 Game.heal 管线恢复牌手等量生命）+ on_damage/on_player_damaged（伤害后，延时）+ 按受伤顺序生成气绝事件均已实现；免疫各分支统一在"护甲计算后"批次**优先级 3** 判定（2026-08 修正定案"免疫只看最终受伤者"：改非伤害/伤害转移全部结算完、伤害事件未终止后，对**最终受伤者**判定其全部免疫条目；屏障/护甲计算/贯通修正均先于免疫参与计算）：作用域战斗伤害免疫（仅 combat/counter）、非战斗伤害免疫（immunities 条目 {"kind": "effect", "from": "enemy"}，grant_immunity kind/from_side 参数，觉醒·山童）、破甲来源免疫（{"kind": "fragile_source"}，霸主）、牌手级全伤害免疫（`PlayerState.immunities` 条目 {"kind": "all", "turn": n}，`_player_immune`，舍生"你的牌手免疫所有伤害"）；伤害管线（`deal` / `deal_to_*`）返回实际伤害合计（按扣减生命口径：护甲吸收不计、过量击杀按面板值计），供块内合计类效果使用（巨浪，memo 键 `last_damage_total`）；子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者再拆；伤害转移已落地（grant_redirect，见时点 6②）；幻境耐久扣减已落地（扣减生命后立即扣队首幻境等量耐久，见第三十一章）；**改非伤害已落地**（redirect_to_field——"护甲计算后"批次按 `EffectBlock.priority` 分层结算：优先级 1=「伤害改为非伤害」类（竹取物语/新月之哀/日轮之城），优先级 2=「伤害目标转移」类（血蝠之盾挂账为引擎内建优先级 2 段）；改非伤害结算后原伤害事件终止（余量归零即 return）时，同时机已触发的优先级 2 转移失去当前伤害事件上下文不再处理。**伤害目标转移的统一语义**（定案(7)+2026-08"转移链"定案）：终止原伤害事件结算 + 以护甲计算后余量生成指向新目标的新伤害事件——新事件保留[吸血]（来源保留，吸血照常在批次 10① 结算）、**不保留[贯通]**（piercing 不随新事件继承），并跳过早期步骤从"护甲计算前0"开始结算（`_DamageEvent.start="pre_shield_0"`：穿刺/on_damage_start/贯通修正/double_damage 均不判定；免疫判定后移至护甲计算后优先级 3——新事件对最终受伤者照常判定，可被其免疫拦截；事件生成点的伤害转化与气绝/濒死保护仍先行）；**转移链**（`_DamageEvent.redirect_chain` + 能力实例身份 `ExecContext.ability_uid`）：多个转移效果联动时每次只单个触发（转移 op 归零原事件→归零断点跳过后续优先级≥2 块），链上记录已触发的转移能力实例、每个该类能力在同一链上只能执行一次（允许不同能力接力；并行伤害各自独立成链）；转移新目标已濒死（延时气绝未结算）时原事件仍终止、新事件入口拦截不造成实际伤害；已落地通道=血蝠之盾挂账（消耗式不占链身份）与 `redirect_damage_to_self` op（机制先行暂无实卡））】
 
 要素：**伤害来源，受伤者，是否贯通，伤害值，伤害原因**（战斗、某法术牌、某能力）。
 
@@ -264,11 +264,11 @@
 6. **护甲计算后**（同一时机）：①（多种能力）；②**伤害转移类能力【已实现】**——本批次优先级 2 挂点（晚于改非伤害类优先级 1、晚于贯通修正/护甲计算；原受伤者护甲已先行扣除、其屏障不消耗）。**转移统一语义**（2026-08 定案"转移链"）：原伤害值 >0 时原事件立即终止结算，生成等量、同来源、同原因、同属性（**无[贯通]**）的新伤害事件，跳过早期步骤从"护甲计算前0"（批次 4 子批次 0）开始结算——穿刺/贯通修正/翻倍修饰均不再判定（事件生成点的伤害转化与气绝/濒死保护仍先行）；**免疫判定在本批次优先级 3**（修正定案"免疫只看最终受伤者"：转移链结算完成、确定最终受伤者后判定其全部免疫条目，免疫则伤害归零终止——转移后的伤害可被最终受伤者免疫拦截，血蝠之盾→牌手免疫场景适用；屏障/护甲计算/贯通修正均先于免疫参与计算）。**转移链**：多个转移效果联动时不一次性全部触发——每次单个触发后生成或延长"转移链"，链上记录已触发的转移能力实例，每个该类能力在同一链上只能执行一次（允许不同能力接力——例：A 持"其他己方角色受伤改由我承受"、B 被赋予"其他角色受伤改由 B 承受"，A 受伤→B 的赋予先触发→A 的能力再触发→最终 A 受伤；B 被赋予两个实例时→最终 B 受伤）；并行伤害事件各自独立成链。转移新目标已标记濒死（延时气绝未结算）时：原事件仍终止结算、新事件不造成实际伤害（并行队列中其余事件不受干扰）。已落地通道：`grant_redirect` 一次性挂账 `ext["damage_redirects"]`（血蝠之盾 10030103，消耗式天然有界、不占链身份）与 `redirect_damage_to_self` 能力块 op（"改由本能力持有者承受"，机制先行暂无实卡）；③将伤害改为非伤害的能力（优先级 1，已实现——redirect_to_field，见第三十一章）。
 7. **扣减生命前**（各不同时机批次；已被贯通修正提前结算则跳过，即此时机序列实际要求"本次伤害不具有贯通"）：0：灵咒"蜘蛛印记"；1：幻境"理想国"、形态能力"鸮之守护""金刚经"等；2：关键字"暴击"；3：式神能力【面灵气-基础】【面灵气-觉醒】等。然后若伤害值 ≤ 0，终止结算。**此刻开始视为"攻击者造成过伤害"且"受伤者受到过伤害"，伤害值以此时的数值为准。**
 8. **合并**：若伤害队列中存在（伤害来源，受伤者，伤害原因）均相同的伤害事件，则合并（最前者伤害值改为合计值，移除其余）。主要是战斗反击伤害等并行伤害事件合并。
-9. **扣减生命**：伤害来源令受伤者扣减等同伤害值的生命（可能受影响：关键字"庇佑"、【狂啸】后续效果、关键字"不屈"、幻境"铃鹿山的秘宝"等）。【**庇佑已实现**：消耗型一次性关键字，抵消一次敌方来源的**法术伤害**（法术牌效果伤害，伤害事件 spell 标记；法术伤害 ≠ 非战斗伤害——白狼基础能力、觉醒·入阵歌等式神能力伤害不抵消，维护者答复(7)），抵消后失去；判定置于护甲计算后、扣减生命前、不屈之前——被护甲完全吸收/屏障归零的伤害不消耗庇佑。灵咒抵消半侧（"灵咒"挂点）随灵咒机制引入】然后若受伤者是牌手，其幻境队列的首个幻境减少等量耐久值。【已实现狂啸钳制：`ext["min_health_turn"]` 置位时伤害压到至多 当前生命-1（不屈判定之后），生命已为 1 时压为 0 提前终止（0 伤不触发受伤能力）；该标记半回合作用域——任一回合开始双方清除。扣减生命后按实际伤害值记账 `ext["damage_taken_turn"]`（百鬼夜行 X"本回合所受伤害之和"用，同半回合作用域）】
+9. **扣减生命**：伤害来源令受伤者扣减等同伤害值的生命（可能受影响：关键字"庇佑"、【狂啸】后续效果、关键字"不屈"、幻境"铃鹿山的秘宝"等）。【**庇佑已实现**：消耗型一次性关键字，抵消一次敌方来源的**法术伤害**（法术牌效果伤害，伤害事件 spell 标记；法术伤害 ≠ 非战斗伤害——白狼基础能力、觉醒·入阵歌等式神能力伤害不抵消，维护者答复(7)），抵消后失去；判定置于护甲计算后、扣减生命前、不屈之前——被护甲完全吸收/屏障归零的伤害不消耗庇佑。灵咒抵消半侧（"灵咒"挂点）随灵咒机制引入】然后若受伤者是牌手，其幻境队列的首个幻境减少等量耐久值。【已实现狂啸钳制（裁决(5) 后置定案）：`ext["min_health_turn"]` 置位时，**扣减生命步骤后**生命 < 1 则置为 1——伤害事件 ev.dealt 仍锁全额（吸血/记账等按全额读），仅对伤害有效，上限削减等非伤害通道仍可击杀；不屈判定之后、dying 标记判定之前。该标记半回合作用域——任一回合开始双方清除。扣减生命后按实际伤害值记账 `ext["damage_taken_turn"]`（百鬼夜行 X"本回合所受伤害之和"用，同半回合作用域）】
 10. **造成/受到伤害后**（延时时机；同一时机的不同优先级）：①关键字"吸血"；②（各类能力）。【**伤害插入帧已实现**（裁决(7)(9)，damage 动作 `insert={condition, steps}` 参数）：每个伤害事件在扣减生命后、本时点延时批次发出前，逐事件判定当前生效帧的条件并**立即插入**执行帧 steps——插入的移动/伤害先于本时点延时批次与气绝事件结算（风神一扇"将受到此伤害的式神移回准备区"：移回触发的能力如觉醒·鸦天狗移动攻击先于受伤效果/气绝；引燃"若消灭则再对它的牌手造成 2 点伤害"：牌手伤害先于受伤效果/气绝事件）。帧生效期间该伤害队列的气绝事件延后（`_deferred_defeats`），待插入效果触发的延时能力链结算完后由最外层 `_drain_queue` 统一生成（嵌套排水不定死濒死者——多步能力块步骤之间的排水不截断后续步骤）】
 11. **生成气绝事件**：将所有生命值 ≤ 0 的受伤者，以与伤害队列相同的顺序生成（延时的）气绝事件队列（伤害插入帧生效期间延后者按原受伤顺序统一生成，见上）。
 
-【附：治疗（恢复生命）事件流程——实现侧（`Game.heal`）：heal_reversal 判定（治疗来源方在场形态 tags 含 heal_reversal 法界唯心时，对**敌方**目标的恢复改为走伤害管线造成等量伤害；对己方目标不受影响）→ on_before_heal（即时）→ 实际治疗量 = min(治疗量, 已损失生命) → 增加生命 → **治疗时 on_heal**（延时；实际恢复为 0 也触发，amount=0）→ **治疗后 on_after_heal**（延时；仅实际恢复 > 0 才触发）。两事件 payload 带 `overheal` = max(0, 治疗量 − 实际治疗量)（海坊主"过量治疗转化"通道：满血治疗 overheal=全额，照常转化；heal 动作把本步治疗目标记入块内暂存 `last_heal_targets`，佛光池 `side_of_last_heal` 读取）。濒死/气绝者不受治疗。挂点口径："过量治疗转化/为牌手恢复生命时"（海坊主、灵能）挂 on_heal；"你恢复生命时"（青坊主基础/禅心/觉醒、吸血姬基础/血怒/觉醒·吸血姬）= 己方任一角色（含牌手）**实际**恢复，挂 on_after_heal（维护者答复(1)：0 治疗不触发）】
+【附：治疗（恢复生命）事件流程——实现侧（`Game.heal`）：on_before_heal（即时；payload 带可变量 box `heal`，能力可改写治疗量——法界唯心治疗反转在此把治疗量置 0 并按原量延时生成同来源伤害事件，见术语表「治疗反转」行；对己方目标不受影响）→ 实际治疗量 = min(治疗量, 已损失生命) → 增加生命 → **治疗时 on_heal**（延时；实际恢复为 0 也触发，amount=0）→ **治疗后 on_after_heal**（延时；仅实际恢复 > 0 才触发）。两事件 payload 带 `overheal` = max(0, 治疗量 − 实际治疗量)（海坊主"过量治疗转化"通道：满血治疗 overheal=全额，照常转化；heal 动作把本步治疗目标记入块内暂存 `last_heal_targets`，佛光池 `side_of_last_heal` 读取）。濒死/气绝者不受治疗。挂点口径："过量治疗转化"（海坊主）挂 on_heal；"为牌手恢复生命时"（灵能——裁决(1)：执行者须为**己方**牌手）与"你恢复生命时"（青坊主基础/禅心/觉醒、吸血姬基础/血怒/觉醒·吸血姬）= 己方任一角色（含牌手）**实际**恢复，挂 on_after_heal（维护者答复(1)：0 治疗不触发）】
 
 ## 六、护甲/破甲变化事件流程
 
@@ -634,7 +634,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - **命名**：数据 id 叫 `id`；局内对象 id 叫 `uid`（CardInstance.uid；召唤物/衍生卡生成时既需数据 id 初始化也需 uid 引用）。
 - **卡牌主类型**：spell / combat / form / field（幻境，见第三十一章）/ reinforce（协战，双式神从属，见「组卡规则」节）。**觉醒牌不是主类型**，而是子类型（`subtype=awaken`）；任意主类型的牌都可以是觉醒牌。
 - **子类型 `subtype`**：引擎可见的分类，会影响效果结算与目标选择（例如“从牌库获取一张非觉醒牌”）。当前有 `awaken`（觉醒牌）与专属子类型 `quest`（委托牌，三目专属——`db/schema.py EXCLUSIVE_SUBTYPES` 登记所属式神，loader 校验只能出现在所属式神的牌上）。
-- **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、heal_reversal 治疗反转、quest_enemy 多事多忙、gen_weekday_quest 今日委托每日替换、revive_on_defeat 平和猫又屋、urgent_quest 紧急委托池等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
+- **tags**：主要用于卡牌数据库检索与 UI 展示（关键字、机制、对局定位等）；**例外**——少数机制标记由引擎读取（golden_feather 计数、orb_store 鬼火储存、quest_enemy 多事多忙、gen_weekday_quest 今日委托每日替换、revive_on_defeat 平和猫又屋、urgent_quest 紧急委托池等，见术语表登记），其余 tags 引擎不使用。机制未实现前不建议放入数据，避免静默失效。
 - **稀有度 rarity**：R/SR/SSR（良/优/极）预留，供抽卡/账号系统。**衍生牌（token）不标稀有度**（原版衍生牌无稀有度；loader 校验 token 卡须缺省 rarity）。
 - **关键词**：数据侧接受的关键字见 db/schema.py `KEYWORDS`（含 fast/trigger/combo/initiative/piercing/pierce/pierce_armor/remote/unyielding/haste/barrier/enraged/lifesteal/hunt/direct/veil/lethal/inspire 等；定义见术语表）。机制未实现的关键词不放进数据，避免静默失效。
 - **区域 zones**：deck/hand/graveyard/exiled 为标准区域，可扩展；墓地仅 UI 层隐藏（引擎可查看并保留对象引用，区域移动需要）；同名卡靠 uid 区分，实例差异放 mods（目前认识 cost_delta/revealed；对局中动态赋予卡牌效果为预留能力）。
@@ -770,7 +770,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   - `all`：敌方全部手牌；
   - `event`：展示触发事件 payload 中的那张牌——专供"每当一张牌进入敌方手牌时将其展示"类被动（挂 `on_card_enter_hand`）。
 - **入手统一钩子**：一切"进入手牌"路径（抽牌、生成置入手牌、牌库检索、检视挑选、调度换入）经 `_enter_hand` 发出 `on_card_enter_hand`（延时时机 queue，payload {player, uid, card}）；**起始手牌静默不算入手**，爆牌转墓地不视为进入手牌（超出上限的牌直接转墓地，不发该事件）。
-- **调度细则**（rules 528-530 落实，`_swap_hand_card`）：换入牌失去"已展示"；换入牌原本已展示，则换出牌获得"已展示"。
+- **调度细则**（第二十一章调度流程落实，`_swap_hand_card`）：换入牌失去"已展示"；换入牌原本已展示，则换出牌获得"已展示"。
 - **信息可见性**：已展示的敌方手牌对对方公开——CLI 按入手顺序（hand_seq）单独列出显示（format_hand_lines 复用）；联机按视角脱敏时对已展示卡放行真实内容（sanitize_state 例外），其余手牌照常脱敏。
 - **配套读取点**：on_card_played 载荷 `card_revealed`（使用点该牌是否已展示——"使用已展示的手牌时"类触发）；TargetSpec 过滤键 `dealt_damage_turn`（本回合造成过伤害的角色，伤害结算点记账、回合开始清除）；动态数值 `enemy_revealed_count`（敌方已展示手牌计数，法术牌/其他牌/指定式神三口径）；手牌费用修正 `card_flag`（仅命中已展示手牌额外耗火，仍在 cost>0 门内——[瞬发]/[不消耗鬼火]全免）；conditional_keywords 算子 `enemy_hand_all_revealed`（敌方有手牌且全部已展示）。各键登记见术语表。
 
@@ -819,22 +819,21 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 ### 七、复制使用与分身复制法术
 
 - **复制使用** `use_card_copy{card_id}`（爆能"{额外使用'三太郎之斧'}"类）：凭空生成指定牌复制并自动使用——不耗鬼火/瞬发名额/出击次数（维护者定案）；法术牌按基础方式效果结算（`_auto_cast_copy` 共用助手），战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地，照常 emit on_card_played（play_from=void、triggered=auto）。链式"再额外使用"= 数据侧并列多个 step。
-- **分身复制法术** `mirror_spell`（烟烟罗的分身"会复制她使用的法术牌"）：挂 on_card_played，复制持有者使用的法术牌并自动使用一次（基础方式）——**主动/响应/自动使用均触发**（维护者定案；引擎 `mirror_copy` 标记防递归，复制自身不连锁）；觉醒牌由数据侧条件（subtype_not: awaken）排除；choose 目标沿用原选（仍合法）否则随机重选。记仇类"敌方使用法术时"响应对自动使用同样命中（响应收集不过滤 triggered，现状即定案口径）。
+- **分身复制法术** `mirror_spell`（烟烟罗的分身）：挂 on_card_played，复制持有者使用的法术牌并自动使用一次（基础方式）——**主动/响应/自动使用均触发**（维护者定案；`mirror_copy` 标记防递归，复制自身不连锁）；choose 目标沿用原选（仍合法）否则随机重选。响应对自动使用同样命中（响应收集不过滤 triggered，定案口径）。
 
-### 八、萤草 20200327（能力要求结附形态）
+### 八、能力要求结附形态（萤草 20200327）
 
-- 萤草基础/觉醒能力加 20200327 快照（best 保持 20191212）："萤草的形态牌获得[瞬发]"光环要求萤草当前结附形态才生效——card_aura `require_holder_form`（读取时动态判定）；"使用形态牌时抽 1"以 on_card_played 新 payload `pre_play_form`（该牌使用前是否已结附形态的快照）门控——形态牌先结附后发 on_card_played，收集时求值的 holder_has_form 对该牌恒真，故须用打出前快照。
+- card_aura `require_holder_form`：光环读取时动态判定，要求来源式神当前结附形态才生效；on_card_played payload `pre_play_form` = 该牌使用前是否已结附形态的快照——形态牌先结附后发 on_card_played，收集时求值对该牌恒真，故须以打出前快照门控。逐卡快照口径见 card-status.md 萤草节。
 
 ### 九、破甲来源免疫 / 光影单事件触发 / 破甲双倍（铃鹿御前批次）
 
 - **破甲来源免疫**：grant_immunity 新 kind="fragile_source"（霸主）——免疫当前持有破甲的**敌方式神**造成的任意种类伤害（战斗/效果不限类别；牌手来源不免疫——"有破甲的敌方式神"明文，维护者定案确认）；scope="form" 绑定来源形态、随形态离场清除（`_fragile_source_immune` 在伤害管线免疫判定段）。
 - **光影（单伤害事件触发）**：temp_grants 双块挂 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + amount_ge:6）——按单个伤害事件判定（维护者定案）：贯通对式神+牌手两段各 <6 合计 ≥6 不触发；连击两段各 ≥6 各触发一次；回血=floor(该次伤害/2)，经数值通道 `{"event": "amount", "half": true}`（与 cap 同修饰位、cap 先截后减）。
 - **破甲双倍** `double_damage_vs_fragile`（义道"对有破甲的式神造成双倍伤害"）：战斗牌专用提取步——按**[暴击]时机**（伤害事件"扣减生命前2"挂点，`Game._damage_double_modifiers`）：仅本张战斗牌发起的战斗内、攻击者本人、kind=combat（反击不翻倍）、victim=持破甲式神才 ×2；嵌套/插入战斗按战斗 id 精确匹配不继承（维护者定案）。[暴击]关键字本体（critical）已落地（破魔符/破魔箭 crit_pierce_mark 通道，见第三十六章与 terminology「暴击」条）。
-- **随机分配伤害**：冥弓"随机分配给敌方式神"走既有 `distribute_damage` 通道（pool enemy_shikigami），无新机制。
 
 ## 三十一、幻境
 
-> 规范来源：维护者 thoughts.txt 幻境规范零~四条（2026-08）。机制框架与首批实卡（03 月夜幻响第二批 5 式神，含 20 张幻境牌）均已落地；遗留口径疑问统一见 questions.md 待确认节。
+> 规范来源：维护者幻境规范零~四条（2026-08）。机制框架与首批实卡（03 月夜幻响第二批 5 式神，含 20 张幻境牌）均已落地；遗留口径疑问统一见 questions.md 待确认节。
 
 ### 零、幻境是什么
 
@@ -879,15 +878,11 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - **幻境能力触发管线**：能力收集阶段 `Game._collect_fields` 把在场幻境的能力块纳入监听（收集器键 `field_self`=幻境自身 Ref、`field_intensity_ge`=仅耐久 ≥n 时生效）；能力结算时 `ctx.field` 指向来源幻境实体，step 可经 `redirect_to_field` / `field_op` 等引用。`disabled_abilities` / `extra_abilities` 字段服务于叠加合并（见下）。
 - **幻境实体关键字**：幻境牌 def 以 `field_keywords` 声明进场实体的关键字（不经 `keywords`，loader 不校验其实卡子集）。已落地：`health_floor_one`（铃鹿山的秘宝——己方生命不低于 1，伤害量扣减前钳制、已为 1 时免除）、`deck_top_play`（彼岸归航——牌库顶牌可视并可如手牌般使用）、`piercing`（星轨——幻境能力伤害贯通，`_ability_piercing` 判定时并入 `ctx.field.keywords`）；`veil`（方圆之备授予）——**幻境[帷幕]已实现**（定案(11)）：带[帷幕]的幻境不能成为**敌方**效果的目标，`field_op` 取对象类 pick（first/max_intensity）在 side="enemy" 时候选池排除之；无目标效果（all/random/others）与己方效果不受影响。
 - **耐久动态数值**：`_step_amount` 动态键 `{"field_intensity": "self"}`=该幻境当前耐久、`{"field_count": "controller"}`=控制者幻境数；`repeat` 的 count 同样支持 `{"field_intensity": "self"}`。鲸骨·开（力量/护甲 = 幻境数）、月之奥义（重复次数 = 耐久）等按此取值。
-- **定向幻境 op**：`summon_field`（pick="all" 按幻境牌**数据 id 升序**依次召唤（定案(15) 觉醒·辉夜姬增强"五种幻境各耐久1"）、pick="choose" 玩家交互选择（残阳无影，定案(2)——pending_choice kind="field_summon_pick"，选项>1 才挂起，作答键 choice=数据 id；联机回合内主动选择超时由服务端自动随机选择并结束回合）、intensity 覆写入场耐久——耐久取值链：指定值（intensity 覆写）> 卡牌标注值（使用/不指定效果同）+实例 intensity_boost）、`field_op`（对己方幻境增减耐久，pick="others" 排除自身）、`redirect_to_field`（伤害改由幻境承受——**首个同名代受**（定案(10)：同名幻境多个时只由队列首个同名代受）；field_shikigami 定位控制者首个该式神幻境（竹取物语代受=首个她的幻境，定案(14)）；field_card 限定首个指定牌 id 幻境——永劫轮回②"对己方所有式神有效"仍由两幻境分别代受：新月之哀代受非战斗/日轮之城代受战斗，定案(10)）、`boost_change`（增幅改量）、`field_rebound`（消灭时回手并失去能力）、`draw_until`（抽至等级总和 ≥n）。检索/弃牌配套：`search_deck` intensity_boost（入手幻境耐久 +n）、`discard` card_type+random_pick（随机弃指定类型牌——五道难题/余辉弃牌维持随机代替选择口径）。
-- **辉夜姬叠加**（定案(6)，原伪关键字 `field_stack`/`field_ability_stack` 通道作废删除）：她的基础/觉醒能力 = 触发点「能力进场时」（`on_ability_enter` 自指）+ 能力在场时的「召唤幻境后」延时时机（`on_summon_field`）——经 `field_merge` 动作合并：其所属牌手幻境队列中存在多个她的幻境时，**保留队列中最后一个**，将其耐久**设置为**所有她的幻境的耐久总和（差量走 `_change_field_intensity` 管线，触发耐久变化事件）；已觉醒则把其他**不同名**幻境的能力块**按幻境牌 id 去重**添加到保留幻境（每种同名幻境的能力不叠加；`mods.merged_ability_ids` 记账，此前合并的 id 随来源幻境传递）；然后**消灭**其他她的幻境（走完整消灭事件流，"被消灭时"能力照常）。召唤一律新建实体，叠加不在召唤事件内联处理。
+- **定向幻境 op**：`summon_field`（pick="all" 按幻境牌**数据 id 升序**依次召唤（定案(15) 觉醒·辉夜姬增强"五种幻境各耐久1"）、pick="choose" 玩家交互选择（残阳无影，定案(2)——pending_choice kind="field_summon_pick"，选项>1 才挂起，作答键 choice=数据 id；联机回合内主动选择超时由服务端自动随机选择并结束回合）、intensity 覆写入场耐久——耐久取值链：指定值（intensity 覆写）> 卡牌标注值（使用/不指定效果同）+实例 intensity_boost）、`field_op`（对己方幻境增减耐久，pick="others" 排除自身）、`redirect_to_field`（伤害改由幻境承受——**首个同名代受**（定案(10)：同名幻境多个时只由队列首个同名代受）；field_shikigami 定位控制者首个该式神幻境（竹取物语代受=首个她的幻境，定案(14)）；field_card 限定首个指定牌 id 幻境——永劫轮回②"对己方所有式神有效"仍由两幻境分别代受：新月之哀代受非战斗/日轮之城代受战斗，定案(10)；代受"战斗伤害"的口径 = kind_not: effect（含反击 kind=counter——日轮之城/永劫轮回条件键，实战 bug 修复：kind: combat 漏反击））、`boost_change`（增幅改量）、`field_rebound`（消灭时回手并失去能力）、`draw_until`（抽至等级总和 ≥n）。检索/弃牌配套：`search_deck` intensity_boost（入手幻境耐久 +n）、`discard` card_type+random_pick（随机弃指定类型牌——五道难题/余辉弃牌维持随机代替选择口径）。
+- **辉夜姬叠加**（定案(6)）：她的基础/觉醒能力 = 触发点「能力进场时」（`on_ability_enter` 自指）+ 能力在场时的「召唤幻境后」延时时机（`on_summon_field`）——经 `field_merge` 动作合并：其所属牌手幻境队列中存在多个她的幻境时，**保留队列中最后一个**，将其耐久**设置为**所有她的幻境的耐久总和（差量走 `_change_field_intensity` 管线，触发耐久变化事件）；已觉醒则把其他**不同名**幻境的能力块**按幻境牌 id 去重**添加到保留幻境（每种同名幻境的能力不叠加；`mods.merged_ability_ids` 记账，此前合并的 id 随来源幻境传递）；然后**消灭**其他她的幻境（走完整消灭事件流，"被消灭时"能力照常）。召唤一律新建实体，叠加不在召唤事件内联处理。
 - **能力伪关键字与觉醒换绑**：`power_if_field` / `power_per_field` / `power_if_shield` / `power_equal_shield` 登记为能力伪关键字（schema `ABILITY_PSEUDO_KEYWORDS`）——它们属于"式神能力"而非卡牌/实体关键字，写在式神基础能力块或觉醒牌 keywords 中；觉醒时引擎把基础式神的伪关键字移除、改为授予觉醒牌（perm 类别），觉醒后能力来源切换。均为**实时光环**（读取时求值、动态跟随，定案(1)）。stat_aura 伪关键字读取、kind="field_count_stats"（每幻境 +力量/+生命）同批落地。
-- **月坠阈值判定收窄**（定案(13)）：「然后若耐久>=30」只在「己方回合开始时获得耐久」那一串结算内判定（获得耐久→然后若 >=30 自毁并造成伤害），不再挂 `on_field_intensity_changed` 任意途径判定——步级专用键 `field_intensity_ge`（执行器消费，读触发来源幻境 `ctx.field` 当前耐久；同一块内多次判定共享**首次判定快照**（ctx.memo 块级暂存），"若…则自毁并造成伤害"类自毁归零后后续步仍按判定时耐久通过）。
-- **余辉**（定案(9)）：使用合法性谓词 `play_condition: {hand_card_type: field}`（手牌中有幻境牌才能使用，主动/响应/自动使用同检）；使用后结算前手牌中因插入结算已无幻境牌时，「弃一张幻境牌」不处理（discard 空池安全空过）但「抽三张牌」仍处理——弃牌步失败不中断后续步骤。
-- **白骨之盾目标限定**（定案(12)）：主动使用与响应使用的目标都必须是「己方其他式神」——TargetSpec 过滤键 `exclude_shikigami`（choose 池排除指定数据 id 式神=久次良本人；响应路径由 victim_not_shikigami 保证）。
+- **条件键/算子扩展与逐卡定案**：月坠步级键 `field_intensity_ge`（定案(13) 判定收窄——只在「己方回合开始获得耐久」串内判定，同块共享首次判定快照）、余辉 `play_condition {hand_card_type}`（定案(9)；弃牌步空池安全空过——步骤失败不中断后续步骤）、白骨之盾 `exclude_shikigami`（定案(12)）、`friendly_field`/`friendly_field_intensity_ge`/`field_summon_distinct_ge`/通用 `_le` 后缀、conditional_keywords 算子 `friendly_field`/`deck_field_distinct_ge`——键义与口径逐条登记见 terminology.md「幻境条件键」「目标池与过滤扩展」行。
 - **己方伤害口径**：火照之路/彼岸归航等对己方牌手的自伤以己方牌手自身为伤害来源（source=Ref(player=active)，非 None），计入"己方式神/卡牌/牌手效果造成的伤害"链（`source_side: friendly`）；`ext.self_damage_taken` 记账本局己方伤害（死亡之花[增强]读取）。牌手受伤挂 `on_player_damaged`（payload player=下标），与式神受伤的 `on_damage`（victim=Ref）区分——彼岸花基础/觉醒等自伤链、残阳无影/月之奥义等对敌方牌手伤害的能力均按此接线。
-- **条件键扩展**：`friendly_field`（存在任一幻境）、`friendly_field_intensity_ge`（存在耐久 ≥n 的幻境——值 = n（任一幻境）或 {ge, shikigami:"self"|id}（限定所属式神；竹取物语"若辉夜姬的幻境耐久>=20"，定案(14)））、`hand_card_type`（手牌中有指定主类型的牌）、`field_summon_distinct_ge`（本局召唤过的不同名幻境数 ≥n，值 = n 或 {count, shikigami:"self"|id}，依据 ext `field_summon_ids` 记账）、通用 `_le` 后缀（读控制者 ext 比较 ≤）。
-- **conditional_keywords 新算子**：`friendly_field`（有幻境才获得关键字）、`deck_field_distinct_ge`（牌库中不同名幻境牌数 ≥n）。
 
 ### 附：实现备注
 
@@ -897,7 +892,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 ## 三十二、灵咒（04 沧海刀鸣批次落地）
 
-> 规范来源：维护者三机制规范（thoughts.txt 灵咒节）+ 2026-08 灵咒批次维护者
+> 规范来源：维护者三机制规范·灵咒节+ 2026-08 灵咒批次维护者
 > 定案（数值增强继承/唯一分侧/inv_mod 修饰/inv_override 覆写，均已落实）。
 > 实卡数据：迟钝（跳跳哥哥）/鸮之守护（薰）/八尺琼曲玉（大岳丸）。
 
@@ -1015,15 +1010,14 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
   严格递归结构 + 单元 drain 下，内层抽牌事件先完成——**第 2 张（后抽）的移动
   与灵咒先结算**（倒序，与第十九章原文"后发先至"方向一致）；可观察后果：后抽
   的牌先入手、hand_seq 更小（报备）。
-- 灵咒眩晕按名撤销：移除灵咒时撤掉该名全部眩晕条目（现数据无同名多条目场景，
-  报备）；灵咒倒计时占用式神唯一倒计时槽（结附迟钝会替换持有者当前倒计时，
-  与原版互动语义待首个冲突场景确认）。迟钝无唯一性：同源重复结附条目并存
-  （光环层叠加），倒计时槽由后者替换——倒计时生效时移除全部同名条目
-  （定案(9)，见第一节倒计时段）。
+- 灵咒眩晕按名撤销：移除灵咒时撤掉该名全部眩晕条目；灵咒倒计时占用式神唯一
+  倒计时槽（结附即替换持有者当前倒计时，与原版互动语义待确认——见 questions.md）。
+  迟钝无唯一性：同源重复结附条目并存（光环层叠加），倒计时槽由后者替换，
+  生效时移除全部同名条目（定案(9)，见第一节倒计时段）。
 
 ## 三十三、委托机制（三目专属，已实现）
 
-> 规范来源：card_data_raw.md 三目节 + thoughts.txt 委托定案（2026-08）。
+> 规范来源：card_data_raw.md 三目节 + 维护者委托定案（2026-08）。
 > 委托牌 = subtype `quest` 的三目专属衍生牌（衍生号段 51-66：紧急委托 51-54 /
 > 今日委托 55-61 / 线索 62-66），无稀有度、不可入卡组。
 
@@ -1108,7 +1102,7 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 - 今日肆"造成6点伤害"：默认目标 = 敌方牌手（同白板伤害法术口径）；线索·判明
   "造成30点伤害"（定案(6)）：主动使用时选择合法目标（双方任一角色——choose
   any_character）。
-- 三目基础/觉醒能力（裁决(11)，推翻早先定案(3)）：气绝时**整体失效**（常规规则，
+- 三目基础/觉醒能力（裁决(11)）：气绝时**整体失效**（常规规则，
   不再具 trigger_when_defeated）——紧急委托使用事件中插入结算使三目气绝则不再
   获得新紧急委托；"游戏开始时"0 级
   未入场也触发且早于首回合开始（trigger_when_not_in_play，开局阶段发点）；紧急
@@ -1150,25 +1144,14 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 ### 三、动态数值与目标扩展
 
-- amount 通道新增：`{"health_of": "self"}` 来源式神当前生命（灾厄之花，经
-  delay_grant bind=chosen 延迟块内 self=持有者）；`{"orb": true}` 控制者当前
-  鬼火（汲取养分）。
-- **逐目标动态数值**：amount 字典中 `health_of`/`half_health_of` 值为
-  `"target"` 时，`_run_step` 不预解析、原样传字典由 damage op 逐目标求值
-  （`_target_amount`，"一半"向下取整；此通道不叠加 damage_boost 等平坦加成）
-  ——凋零之森"对他所有角色造成等同于他自身一半生命的伤害"。
-- 目标池 `active_character`：当前行动玩家（回合方）的所有角色（在场式神+
-  牌手）——目标侧随事件玩家而非效果控制者。
-- TargetSpec 过滤键：`has_form`（仅结附形态的式神）；`prefer_wounded`
-  （候选中存在受伤或气绝式神时收窄到该子集再交 random 均等取——晚樱之意
-  "优先受伤或气绝式神"）；`include_defeated` 同步纳入 choose 校验池
-  （spec_pool_refs），并扩展支持 `any_shikigami` 池（双侧未离场气绝者入池）；
-  `include_defeated_kw` 樱花妖门控（定案(2)，见下节）；`include_player`
-  （friendly_injured 池追加受伤的己方牌手——"己方受伤角色"
-  含牌手，维护者答复(4)，落英缤纷羁绊）。
-- repeat count 通道新增 `{"event_base_power": key}`：触发事件 key 所指式神的
-  当前基础力量（落英缤纷/晚樱之意"重复该式神基础力量的次数"，"该式神"=
-  复活/气绝事件角色；开始时一次性取值）。
+本章落地的动态数值/目标扩展键——amount 通道 `{"health_of": "self"}` /
+`{"orb": true}` / 逐目标 `{"health_of"/"half_health_of": "target"}`（逐目标
+通道不叠加 damage_boost 等平坦加成）、目标池 `active_character`、TargetSpec
+过滤键 `has_form` / `prefer_wounded` / `include_defeated`（含 any_shikigami
+池扩域）/ `include_defeated_kw`（定案(2)，见下节）/ `include_player`（答复(4)）、
+repeat count 通道 `{"event_base_power": key}`——键义逐条登记见
+terminology.md「逐目标动态数值」「回合方目标池」「有形态目标过滤」
+「事件基础力量次数」「随机取样复用 / 气绝纳入」行。
 
 ### 四、气绝式神的恢复/伤害转化（樱花妖）
 
@@ -1223,33 +1206,26 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 ### 六、报备口径（简化/解读）
 
-- 灾厄之花"在他下个回合结束时"：经 delay_grant（when=on_turn_end、条件
-  active=self、uses=1）落地——维护者答复(1) 确认：即"该能力拥有者的下一次
-  '回合结束时'触发"，对己方式神于己方回合内使用时本回合结束即触发（现状
-  语义正确）。
-- 神木诅咒/落英缤纷的"变成/切换为"按结附流程处理：新形态结附**生命回满**
-  （_attach_form 通道语义；待确认）。
+- 灾厄之花"在他下个回合结束时"经 delay_grant（when=on_turn_end、条件
+  active=self、uses=1）落地——维护者答复(1)："该能力拥有者的下一次
+  '回合结束时'触发"，己方回合内使用时本回合结束即触发。
 - 凋零之森"他自身一半生命"解读为**每个目标角色各自**当前生命的一半。
-- 落英缤纷/晚樱之意"每个己方回合一次"：数据侧用既有 turn_mark/turn_mark_not
-  通道（任一回合开始双方清除，半回合粒度；与"己方回合"粒度有出入，待确认）。
-- 绽放复活与造伤顺序：全部复活完成后统一造伤（文本"复活所有式神，每个…"
-  按两阶段读；待确认）。
-- 神木庇佑授予按持续性关键字类别（气绝清除；是否永久待确认）。
+- 待确认项（神木诅咒/落英缤纷形态切换结附是否生命回满、落英缤纷/晚樱之意
+  "每个己方回合一次"以 turn_mark 半回合粒度近似的出入、绽放复活与造伤次序、
+  神木庇佑授予是否永久）统一见 questions.md 待确认节。
 
 ## 三十五、跳跳哥哥/薰/大岳丸机制（04 沧海刀鸣批次，已实现）
 
-> 规范来源：card_data_raw.md 04 包三节（20200928）+ thoughts.txt 本轮 4 条裁决
+> 规范来源：card_data_raw.md 04 包三节（20200928）+ 维护者本轮 4 条裁决
 > （灵咒数值增强挂条目并继承/唯一分侧/棺材=占位+普通复活/replace_action 改为
 > 结附——均已落实，归档于本章与第三十二章）。灵咒本体机制见第三十二章。
 
 ### 一、replace_action（"改为结附"，跳跳哥哥）
 
-- 伪关键字 `replace_action:<灵咒名>`（基础能力/觉醒牌 keywords 携带，带冒号参数
-  按前缀归入能力伪关键字集合——觉醒替换换绑通道同其他能力伪关键字）：携带者
-  **出击或使用战斗牌时改为结附**指定灵咒——动作分派处短路（不发起攻击/不进战斗
-  流程），鬼火/瞬发/出击次数照常消耗（`engine._replace_action_invocation`；
-  出击点 `_cmd_assault` 与战斗牌打出点两读取处，能力在场判定由读取处 in_play
-  门控）。
+- 伪关键字 `replace_action:<灵咒名>`：携带者**出击或使用战斗牌时改为结附**指定
+  灵咒——动作分派处短路（不发起攻击/不进战斗流程），鬼火/瞬发/出击次数照常
+  消耗（`engine._replace_action_invocation`；出击点与战斗牌打出点两读取处，
+  能力在场判定由读取处 in_play 门控）。键义登记见 terminology.md「改为结附」行。
 - 迟钝自带眩晕：眩晕期间出击/战斗牌本就不可用，故替换只在无迟钝时实际发生
   （觉醒·跳跳哥哥"不能在跳跳哥哥有[倒计时]时使用"另由 play_condition
   `shikigami_countdown_free` 门控）。
@@ -1288,28 +1264,16 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 ### 三、薰：攻击账本与灵咒联动
 
-- **攻击账本**：牌手 ext["last_attacker"]（CLEAR_OWN_TURN_START）= 本回合最后一个
-  **攻击**的己方式神座次；记账点 = 战斗统一入口 `_resolve_combat` 的
-  origin="assault"（主动出击）与 origin="card"（战斗牌）——用牌与效果发起的
-  攻击（origin="effect"）不记账。攻击后该式神才气绝的账本仍保留（context
-  读取处 in_play 门控）。context 目标专用 key `last_attacker` 读取（账本空/
-  已不在场为空）——薰"己方回合结束时，使你本回合最后一个攻击的式神结附
-  '鸮之守护'"。
-- **觉醒·薰触发时机**："当你的式神攻击时"的结附在**攻击前**
-  （on_before_assault 即时时机、优先级 1——结附先于战斗伤害，守护减伤赶上
-  本次交战反击；出击与战斗牌攻击都经 `_battle_flow` 走该时机，目标 = 事件
-  攻击者）。
-- **stat_aura kind="friendly_invocation"**：己方在场且结附指定灵咒（`name`
-  参数，不限结附来源）的式神 +power/+health（鸮之利爪"结附'鸮之守护'的己方
-  式神获得2力量"）；`keywords` 参数部分经 `_reconcile_invocation_aura_keywords`
-  读取时求值持续授予（鸮之警惕[帷幕]/鸮之庇佑[不屈]；与式神 ext["inv_aura_kw"]
-  已授记录比对多退少补，以 continuous 类授予——不屈不被消耗移除）。
-- **no_damage_vs_inv 禁伤**（干扰投掷）：定案(7)——结附**己方牌手**的一回合
-  效果；牌手 ext["no_damage_vs_inv"] 为 append 列表（bump_ext host=controller +
-  append + with_ref 写入），条目 {"value": 灵咒名, "ref": [pi, 座次]} 限定被施
-  debuff 的式神身份——该式神**气绝/复活不丢失**，对结附该灵咒的式神造成的伤害
-  无效（伤害管线早期终止，**一切伤害类型**——D2 按字面；不限灵咒来源；响应挂
-  on_before_assault + 条件 `victim_has_invocation`）。
+- **攻击账本**：牌手 ext["last_attacker"] = 本回合最后一个**攻击**的己方式神
+  座次（仅 origin="assault"/"card" 记账，效果发起的攻击不记；攻击后才气绝
+  账本仍保留）；context 目标专用 key `last_attacker` 读取。键义与清除时机
+  登记见 terminology.md「攻击账本」行。
+- **觉醒·薰触发时机**："当你的式神攻击时"的结附在**攻击前**（on_before_assault
+  即时时机、优先级 1——守护减伤赶上本次交战反击；出击与战斗牌攻击同走
+  该时机，目标 = 事件攻击者）。
+- stat_aura `kind="friendly_invocation"` 灵咒光环（鸮之利爪/鸮之警惕/鸮之庇佑）
+  与 `no_damage_vs_inv` 灵咒禁伤（干扰投掷，定案(7)）——键义登记见
+  terminology.md「灵咒光环」「灵咒禁伤」行。
 
 ### 四、大岳丸：灵咒数值通道
 
@@ -1320,147 +1284,77 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 ### 五、双选择目标与战斗牌选择目标传递
 
-- **CardDef.target2**：第二 choose 目标（麓鸣·灭"使结附'八尺琼曲玉'的己方式神
-  获得2护甲并攻击一个敌方式神"）——出牌指令 `cmd["target2"]` 经 spec_pool_refs
-  校验（optional 同主目标口径）后 `ctx.chosen = [主目标, 第二目标]`；step 目标
-  `{kind: choose, chosen_index: n}` 按序取（targets.resolve）；`launch_attack`
-  增 `at_index` 参数（at=chosen 时按序取攻击目标）。主目标过滤用
-  `has_invocation` 目标过滤键（值 = 灵咒名，或 {"name", "same_source": true}
-  同源限定——决意"你结附'鸮之守护'的式神"）。热坐/联机 CLI 依次提示两个目标
-  （`client/cli.py prompt_target` 共用助手；联机协议 dict 透传 target2，服务端
-  校验不变）。
-- **战斗牌效果 ctx 携带 chosen**（`_resolve_combat_card`）——麓鸣·轰"选择一个
-  己方式神，本次攻击后…"的 delay_grant bind=chosen 通道；"本次攻击后"=
-  "战斗结束后"时机（on_battle_end，裁决(10)——战斗被取消/过早终止则不发事件、
-  不执行；scope="battle" 保证未触发条目随本次战斗终止过期，不带到下次攻击）。
+- **CardDef.target2**：第二 choose 目标——出牌指令 `cmd["target2"]` 经
+  spec_pool_refs 校验（optional 同主目标口径）后 `ctx.chosen = [主目标, 第二目标]`；
+  step 目标 `{kind: choose, chosen_index: n}` 按序取（targets.resolve）；
+  `launch_attack` 增 `at_index` 参数（at=chosen 时按序取攻击目标）；主目标过滤
+  用 `has_invocation` 键（值 = 灵咒名，或 {"name", "same_source": true} 同源限定）。
+  热坐/联机两端依次提示两个目标（`client/cli.py prompt_target` 共用助手）。
+  逐卡用例（麓鸣·灭/决意等）见 card-status.md。
+- **战斗牌效果 ctx 携带 chosen**（`_resolve_combat_card`）——"本次攻击后"=
+  战斗结束后时机（on_battle_end，裁决(10)——战斗被取消/过早终止则不发事件、
+  不执行；delay_grant scope="battle" 保证未触发条目随本次战斗终止过期）。
 
 ### 六、条件键（本轮新增，registry 登记）
 
-- `invocation_on_field: <灵咒名>`：场上有己方式神结附该灵咒（存在性，不限结附
-  来源；麓鸣·穿/麓鸣·袭[增强]）。conditional_keywords 同名算子同语义（麓鸣·穿
-  条件[瞬发]）。
-- `holder_has_invocation: <灵咒名>`：能力持有者结附该灵咒（棺击降级口径"持有
-  '迟钝'期间"门控——D5 偏差：非 uid 绑定）。
-- `victim_has_invocation` 等 `_has_invocation` 通用后缀：事件中该前缀 Ref 所指
-  式神结附指定灵咒（干扰投掷响应）。具名实例另登记 `attacker_has_invocation`
-  （事件 attacker 结附——鸮鸣"己方具'鸮之守护'的式神发起攻击"=攻击者本人
-  结附门控；琼玉镇海牌手级监听同用）。
-- `victim_invocation` 等 `_invocation` 通用后缀：事件 payload 的
-  `<前缀>_invocations` 灵咒名快照列表包含指定灵咒（on_shikigami_defeated 的
-  victim_invocations = 气绝移除前快照；无尽蛊/食魂蛊"结附'蛊蚀'的敌方式神
-  气绝时"——灵咒随气绝先移除，活体过滤读不到，须读快照）。
-- `turn_count_eq: {key, count}`：控制者本回合 turn_mark count=True 通道累计
-  次数恰等于 count（"若是本回合第 N 次触发"，鸮鸣第二次触发抽牌）；收集阶段
-  求值——同事件先结算的计数步对同批后匹配块不可见。
-- `from_coffin_not: true`：气绝事件非棺材击破来源（`_not` 通用后缀实例）——
-  棺材被击破的 on_shikigami_defeated 携带 `from_coffin=True`，棺葬门控不再
-  触发变棺。
-- `shikigami_countdown_free: <式神id>`：控制者的式神当前没有[倒计时]（觉醒·
-  跳跳哥哥 play_condition；未出战/气绝/未在场视为无倒计时，可用）。
+`invocation_on_field` / `holder_has_invocation` / `_has_invocation` 通用后缀
+（victim_/attacker_ 实例）/ `victim_invocation`（气绝快照，读 on_shikigami_defeated
+payload 的 victim_invocations）/ `turn_count_eq` / `from_coffin_not` /
+`shikigami_countdown_free`——键义与定案逐条登记见 terminology.md「灵咒条件键」
+「每回合合计一次」「棺材」「气绝灵咒快照」行。
 
 ### 七、协战子卡（棺葬 10040251 / 鸮鸣 10040551 / 琼玉镇海 10040852）
 
-三张协战子选项（token 牌，raw 标"未加入"=不进历史环境，本体两两组合牌
-已入库）本轮补全效果：
+三张协战子选项（token 牌，raw 标"未加入"=不进历史环境，本体两两组合牌已入库）：
 
 - **棺葬**（跳跳哥哥侧，幻境）：每回合一次己方基础式神气绝时变为'棺材'并
   降低 2 耐久（turn_mark 门控；跳跳家族——跳跳哥哥/跳跳弟弟/跳跳妹妹——还
   使其永久获得 1 生命且不降低耐久，家族判定与耐久 +2/-2 对冲须在变棺前）。
   棺材被击破的气绝事件携带 `from_coffin=True` 判别字段，`from_coffin_not`
-  门控不再触发变棺（修前会每回合首次误触发）。[羁绊]：进场时跳跳弟弟将
-  自身破甲转移到敌方战斗区式神（transfer_fragile 以来源为破甲来源，偏差
-  报备维持）。
+  门控不再触发变棺。
 - **鸮鸣**（薰侧，幻境）：每当己方**具'鸮之守护'的式神**发起攻击时，该式神
-  获得 +1 力量直到回合结束（`attacker_has_invocation` = 攻击者本人结附门控，
-  修前 invocation_on_field 在场性门控过宽）；**若是本回合第二次触发**则抽
-  一张牌（turn_mark count=True 累计 + `turn_count_eq` 恰等门控，修前落为
-  每回合第一次触发即抽）。[羁绊]：进场时山风倒计时 -2。
-- **琼玉镇海**（大岳丸侧，法术）：将'八尺琼曲玉'结附于一个己方式神并使其
-  获得[迅捷]；"本局游戏结附'八尺琼曲玉'式神攻击时使攻击目标获得 2 破甲"
-  落 **player_aura 牌手级"本局游戏"通道**（once_key 防重复登记；跨气绝
-  保留、覆盖后续其他来源的结附——修前 delay_grant bind=chosen 仅覆盖本次
-  被选者且随气绝清除）。残留近似：①"不可叠加"以 `victim_has_fragile: false`
-  近似（目标已有破甲不再叠加）；②"每个式神每回合一次"无分目标每回合门控
-  通道（破甲被消耗后本回合可再次获得）。[羁绊]：铃鹿御前[投射]造成 1 伤害。
+  +1 力量直到回合结束（`attacker_has_invocation` = 攻击者本人结附门控）；
+  **若是本回合第二次触发**则抽一张牌（turn_mark count=True 累计 +
+  `turn_count_eq` 恰等门控）。
+- **琼玉镇海**（大岳丸侧，法术）：结附'八尺琼曲玉'并授予[迅捷]；"本局游戏
+  结附'八尺琼曲玉'式神攻击时使攻击目标获得 2 破甲"落 **player_aura 牌手级
+  "本局游戏"通道**（once_key 防重复登记；跨气绝保留、覆盖后续其他来源的
+  结附）。残留近似：①"不可叠加"以 `victim_has_fragile: false` 近似（目标已有
+  破甲不再叠加）；②"每个式神每回合一次"无分目标每回合门控通道（破甲被消耗
+  后本回合可再次获得）。
+
+三卡的[羁绊]进场效果与逐卡状态见 card-status.md。
 
 ## 三十六、御馔津/巫蛊师机制（04 沧海刀鸣批次，已实现）
 
-> 规范来源：card_data_raw.md 04 包两节（20200928）+ thoughts.txt 裁决(9)-(15)
+> 规范来源：card_data_raw.md 04 包两节（20200928）+ 维护者裁决(9)-(15)
 > （均已落实；残留开放点见 questions.md 本轮待确认节 2）。
 
 ### 一、符咒（talisman）子类型与爆能转化（御馔津）
 
-- **符咒子类型**：`subtype: talisman`（驱魔符/封魔符/破魔符三张）——普通
-  子类型字段，无排他归属（不入 EXCLUSIVE_SUBTYPES）；读取点：狐狩界
-  card_aura `subtype` 参数（仅命中该子类型的牌）与符咒账本记账。
-- **爆能转化（grant_method）**：御馔津基础/觉醒能力经 `card_aura` 的
-  `grant_method` 参数给每张符咒牌挂一个使用方式（方式模板 dict：
-  id/energy_cost/card_type/target/power/shield/effects/text）——"[爆能3]：
-  转化为战斗牌且改为攻击任一敌方式神"。方式按生效 card_type="combat" 路由
-  进战斗流程：身材取方式 power/shield、原法术效果不结算（类型转化时方式
-  effects 整体替换原 effects，缺省=空块；觉醒版 effects 给"本次战斗免疫
-  战斗伤害"）、耗能量+鬼火、须主动选择合法目标（裁决(9)）。scope=ability
-  随能力离场/觉醒换绑移除。爆能使用时**仍是符咒牌子类型**（裁决(9)——
-  subtype 不随 card_type 转化丢失，符咒账本照常记账）。
-- **狐狩界**（幻境）：实体关键字 `burst_discount`——你的所有[爆能]消耗
-  -1/个（可叠加，裁决(11)——`engine` 能量消耗读取处按在场幻境数求和）；
-  进场时 card_aura `subtype=talisman` + keywords=[fast] 给符咒牌授予[瞬发]
-  （scope=field 随幻境离场失效）。
-- **奉祝之愿账本**：牌手 ext["talisman_ledger"]（CLEAR_NEVER）= 本局使用过
-  的符咒牌 id 列表（按使用顺序、去重、至多 3 种；`_account_card_played`
-  记账——裁决(10)）；奉祝之愿出击时 `cast_ledger` op 按序对被攻击的式神
-  依次自动使用所记录的每种符咒（出击目标未具有形态也照常自动使用驱魔符
-  并使其获得'受伤即气绝'——裁决(10)；爆能转化方式不走账本，转化后的战斗
-  牌使用仍按原符咒 card_id 记账）。
-- **驱魔符标记**：ext["defeat_on_damage"]（式神宿主，CLEAR_ANY_TURN_START）
-  ——本回合"受到伤害时使其气绝"：伤害管线扣减生命后入气绝队列（同必杀
-  通道，伤害本身未致死时令受伤者气绝）。
-- **破魔符标记与[暴击]**：ext["crit_pierce_mark"]（式神宿主，CLEAR_ANY_TURN_
-  START）——"对其造成伤害的式神或卡牌获得[暴击][贯通]"（裁决(4)）：伤害事件
-  "造成/受到伤害开始时"按**受伤者**标记置位事件属性（`_DamageEvent.crit_pierce`
-  + piercing）——被贴标记者的反击伤害受伤者是攻击方（无标记），天然不生效；
-  效果伤害命中带标记者同样获得（[暴击] 按关键字语义仍限攻击事件翻倍）；
-  不可叠加（再贴幂等）。**[暴击]关键字本体**（critical）：攻击事件
-  （kind=combat，反击不翻倍）伤害 ×2，挂"扣减生命前2"（义道同锚点叠乘）；
-  限原始事件（start="full"——贯通溢出/转移衍生的新事件不再二次翻倍）。
-  **[暴击]×[贯通]次序**（裁决(3)）：贯通的额外护甲计算 → 提前执行"扣减生命前"
-  系列（含翻倍）→ 贯通分配（**翻倍后口径**）；溢出给牌手的伤害从"护甲计算
-  前2"起走常规流程（跳过伤害开始时/贯通修正/翻倍修饰，扣减生命前系列不重复
-  执行），不再二次翻倍。[暴击]/[贯通]/[吸血]均不叠加生效（可多来源临时共存）。
+- **符咒子类型** `subtype: talisman`（驱魔符/封魔符/破魔符；普通子类型、无排他
+  归属）与**爆能转化** card_aura `grant_method`（方式模板按生效 card_type 路由
+  战斗流程；爆能使用时仍是符咒牌子类型——裁决(9)）；狐狩界 `burst_discount`
+  （爆能消耗 -1/个，可叠加——裁决(11)）+ 符咒瞬发光环；奉祝之愿 `cast_ledger`
+  符咒账本（裁决(10)）；驱魔符 `defeat_on_damage`（受伤即气绝）；破魔符
+  `crit_pierce_mark` 与 **[暴击]关键字本体**（critical——攻击事件伤害 ×2 挂
+  "扣减生命前2"、限原始事件不二次翻倍、[暴击]×[贯通]次序与均不叠加——
+  裁决(3)(4)）。键义与裁决逐条登记见 terminology.md「符咒 / 爆能转化」
+  「符咒账本」「爆能消耗折扣」「暴击」行。
 
 ### 二、蛊蚀与巫蛊师（灵咒存量机制）
 
-- **蛊蚀**（`db/04_canghaidaoming/10_wugushi/invocations.yaml`）：unique=none
-  可叠加灵咒，power/health -1/-1（一次性赋予的持续性光环类减益——裁决(12)；
-  来源可为双方牌手）。**致死检查**（裁决(12)）：结附/存量增减改变生命上限
-  后立即检查——上限（含 inv_mod 修饰层）≤0 即气绝（`_invocation_lethality`，
-  上限降低先钳当前生命、不发事件）；存量增减（inv_count_mod）同口径检查
-  （裁决(14)："也检查"——与结附同口径，定案）。
-- **结附增幅**：`inv_attach_bonus` op 登记牌手级规则表 ext["inv_attach_bonus"]
-  （条目 {"name","add"} 可叠加、CLEAR_NEVER；觉醒·巫蛊师"当结附'蛊蚀'时
-  数量额外+1"）——`engine.attach_invocation` 按**来源牌手**读取叠加（巫蛊师
-  方的结附才 +1）；裁决(13)：仅'结附'动作触发，存量增减不吃增幅。
-- **存量增减**：`inv_count_mod` op（增殖"其他结附'蛊蚀'敌方式神上的'蛊蚀'
-  数量+1"）——直接按条目追加/移除：不发 on_invocation_attached、不吃增幅、
-  不做唯一性移除（限 unique=none 灵咒）；"其他"口径用目标过滤键
-  **`exclude_chosen`**（排除卡牌选择目标，主目标不重复结算）。
-- **气绝快照读取**：on_shikigami_defeated payload 携带 `victim_invocations`
-  （灵咒名列表，按条目重复，气绝移除前快照）——条件键 `victim_invocation`
-  （无尽蛊抽牌门控）与动态数值键 `{"victim_invocation_count": <灵咒名>,
-  "per": n}`（食魂蛊"其上每有一个'蛊蚀'，为你恢复2点生命"）读取。
-- **魔蛊毒爆转移**：`inv_transfer_on_defeat` op 登记牌手级半回合能力
-  ext["inv_transfer_on_defeat"]（{"victim": [pi,si], "inv": 灵咒名}，CLEAR_ANY_
-  TURN_START）——视作赋予登记目标敌方式神的一次性能力（裁决(13)）：其本回合
-  气绝时（check_defeated 气绝事件后）由该敌方式神侧触发（来源牌手=气绝者所属
-  方——不吃登记方 inv_attach_bonus 增幅、严格等量），将其上等量（移除前快照
-  计数，不论来源敌我）灵咒一次性结附于随机另一名
-  **在场**敌方式神（非选择目标；帷幕可结附、气绝/未在场不可；无合法目标
-  不转移；一次性消耗——裁决(14)）。
-- **缚蝶蛊狱**（幻境）：`redirect_to_invocation` op（挂 on_after_shield——伤害
-  事件"护甲计算后"批次）将伤害改为结附等量'蛊蚀'并**终止伤害事件**
-  （裁决(15)，双方式神受影响）；每**双方**回合结束时 `destroy` 目标池
-  any_shikigami + 过滤键 **`power_eq`**（力量恰等于 n）消灭所有力量为 0 的
-  式神。
+- **蛊蚀**：unique=none 可叠加灵咒（power/health -1/-1 持续性光环减益——
+  裁决(12)）；结附/存量增减改变生命上限后立即**致死检查**
+  （`_invocation_lethality`——裁决(12)(14)，上限降低先钳当前生命、不发事件）。
+- 本批落地的 op/键——`inv_attach_bonus` 结附增幅（裁决(13)：仅'结附'动作
+  触发，存量增减不吃）/ `inv_count_mod` 存量增减（配目标过滤 `exclude_chosen`）/
+  `victim_invocation` 气绝快照条件与 `victim_invocation_count` 计数 /
+  `inv_transfer_on_defeat` 魔蛊毒爆严格等量转移（裁决(13)(14)：一次性消耗、
+  不吃登记方增幅）/ `redirect_to_invocation` 缚蝶蛊狱伤害改结附并终止伤害
+  事件（裁决(15)）/ `power_eq` 过滤——键义与裁决逐条登记见 terminology.md
+  「蛊蚀 / 结附增幅 / 存量增减」「气绝灵咒快照 / 魔蛊毒爆转移 / 伤害改结附」
+  「选择目标排除」「力量等值过滤」行。
 
 ## 三十七、食梦貘/鬼切机制（04 沧海刀鸣批次，已实现）
 
@@ -1470,105 +1364,53 @@ pick（检视入手）/ hand_cap（爆牌转墓地）；None = 其余（回手/�
 
 ### 一、牌库灵咒（梦魇）
 
-- **结附**：`attach_deck_invocation` op（`name`/`count`/`side`，缺省 enemy）——
-  随机选指定侧牌库中 N 张**未结附该灵咒**的牌各结附一个（走
-  `engine.attach_invocation` 的 card 通道，发 on_invocation_attached）；
-  未标记牌不足 N 张按实际张数结附。梦魇 unique=none（多张牌各结附共存）。
-- **抽到触发**：复用 InvocationDef.draw_trigger（来源牌手为控制者；梦魇 =
-  对敌方牌手 3 伤）。触发点 `_proc_invocations_on_move` 追加两件套：
-  ① 惊梦账本——抽牌者 ext["drew_invocation_turn"]（牌手宿主、
-  CLEAR_ANY_TURN_START）记灵咒名，条件键/conditional_keywords 算子
-  `enemy_drew_invocation`（惊梦[瞬发]）读取；② 发 `on_invocation_drawn`
-  （延时时机；payload {player=抽牌者, card, invocation, source_player}——
-  梦中低语/永眠之梦监听挂点）。draw_trigger 块的 when 字段仅为过校验
-  （引擎手动入队，不经事件匹配），取语义最近的 on_invocation_drawn。
-- **离库移除**：move_card 中 src_zone=="deck" 且目标区域非 deck/hand 时
-  静默清除牌上全部灵咒（"当结附'梦魇'的牌离开牌库时移除"）；入手路径
-  走既有 _proc_invocations_on_move（抽牌触发后移除/其余入手静默移除），
-  回库/洗牌保留。
-- **计数**：动态数值键 `{"deck_invocation_count": {"name": 灵咒名,
-  "side": "self"|"enemy"}}`（_step_amount；安魂"恢复等同于其牌库中'梦魇'
-  总数量的生命"）；stat_aura kind="enemy_deck_invocation"（支配者
-  "敌方牌库中每有一张结附'梦魇'的牌，此牌便获得1力量和1生命"——读取时
-  求值，标记牌离库移除即减）。
-- **支配者受伤替换**：`redirect_deck_invocation` op（name/cap=3）——挂
-  on_after_shield priority 1 形态能力块（condition {victim_shikigami: self}）：
-  **敌方**牌库有结附该灵咒的牌时当前伤害值归零终止，并**随机**移除其中
-  min(伤害值, cap) 张入**墓地**（thoughts(1)：伤害>3 按 3 计，不足则全移除；
-  无标记牌空操作伤害照常）。移除后 enemy_deck_invocation 光环即时降身材：
-  受害者钳当前生命、上限不大于 0 即气绝（已觉醒保留的永久身材不受影响——
-  thoughts(1) 例）。
+- **结附**：`attach_deck_invocation` op（name/count/side，缺省 enemy）——随机
+  选指定侧牌库中 N 张未结附该灵咒的牌各结附一个；梦魇 unique=none 多张共存。
+- **抽到触发**：复用 InvocationDef.draw_trigger（来源牌手为控制者）；触发时
+  ① 记惊梦账本 ext["drew_invocation_turn"]（条件键/conditional_keywords 算子
+  `enemy_drew_invocation` 读取）② 发 `on_invocation_drawn`（延时时机）。
+  **离库移除**：非入手离库静默清除，回库/洗牌保留。**计数**：动态数值键
+  `deck_invocation_count` 与 stat_aura `enemy_deck_invocation` 光环。
+  **支配者受伤替换**：`redirect_deck_invocation`（当前伤害归零终止、随机移除
+  敌方牌库 min(伤害值, cap=3) 张标记牌入墓地）。键义与定案逐条登记见
+  terminology.md「牌库灵咒（梦魇）」行。
 
 ### 二、鬼斩（髭切/友切/狮子之子）
 
-- **定义**：`db/04_canghaidaoming/09_guiqie/invocations.yaml`——式神级灵咒，
-  unique=shikigami_unique（同名再结附替换、不同名共存）；能力块首步
-  `announce_invocation`（新 op）发 `on_invocation_trigger`（**即时**时机，
-  EVENT_TIMING 登记 insert；payload {player=持有者方, invocation, holder: Ref,
-  target: Ref|None}）——鬼斩响应牌的响应挂点。
-- **选择结附**：`choose_invocation` op（names 列表，target=self/chosen）——
-  剔除目标已结附的同名候选；0 个空操作 / 1 个直接结附 / >1 个挂起
-  pending kind="invocation_pick"（作答键 choice=灵咒名，
-  `_cmd_invocation_pick_choose` 走 attach_invocation 完整流程后续跑挂起块）。
-  **敌方回合结束移除**：`detach_invocation` op（names 列表）逐条
-  _remove_invocation。鬼切基础/觉醒能力 = on_turn_start 己方 choose 块 +
-  on_turn_end 敌方 detach 块（数据侧组合）。
-- **三触发**（能力块 condition 均含新条件键 `holder_in_combat`——持有者方
-  战斗区座次==持有者，或持有者持 `virtual_combat` 伪关键字（复仇之刃
-  "在准备区时视同在战斗区一样触发鬼斩"））：
-  - 髭切：when=on_enter_combat + **timing: insert**（"额外先攻击一次"——
-    在敌方交战阶段前插入）+ {player: opponent}；steps = announce →
-    grant_immunity(scope=next_battle) → launch_attack(at="event")（新参数：
-    战斗目标取事件 payload "shikigami" 字段，Ref/int 座次兼容）。
-    定案（thoughts(3)）：髭切在战斗准备步骤"攻击者移入战斗区"时插入；若插入
-    战斗使原攻击者气绝，外层战斗按"攻击方在战斗准备阶段气绝→战斗中止"终止
-    （无交战伤害、不发 on_battle_end——既有的 2968 行守卫路径，已补测试）。
-  - 友切：when=on_before_card_play（payload 新增 card_type/shikigami 字段）
-    + {player: opponent, card_type: spell}；launch_attack(at="targets") 配合
-    step target 新 context 键 **`card_shikigami`**（被使用牌所属式神在事件
-    player 方的在场座次；未出战/气绝/中立牌为空操作）。定案（thoughts(4)）：
-    任意方式任意位置的使用均触发（主动/响应/自动统一经 `_emit_before_card_play`
-    发点）；`launch_attack`/`_resolve_combat`/`_battle_flow` 新增 `ignore_veil`
-    参数——灵咒效果发起的战斗不受帷幕限制，可对帷幕式神发起（气绝/离场校验
-    照常）。
-  - 狮子之子：when=on_turn_end + {player: opponent, combat_empty: enemy}；
-    attack_buff(+2) → launch_attack 无目标直击敌方牌手。
-- **刀鸣之刃复制**：伪关键字 `inv_trigger_echo`——_collect_abilities 的
-  灵咒能力块收集两份（announce 双发；响应名额按（窗口, 事件名）去重，
-  不双响应）。
-- **散华之刃**：伪关键字 `power_on_enemy_turn:N`（冒号参数）——
-  _refresh_stat_auras 伪关键字段在非己方回合前缀扫描 +N 力量。
+- 三鬼斩 = 式神级灵咒（unique=shikigami_unique 同名替换、不同名共存），能力
+  块首步 `announce_invocation` 发 `on_invocation_trigger`（**即时**时机——
+  鬼斩响应牌的响应挂点）；`choose_invocation`/`detach_invocation` = 选择结附
+  与敌方回合结束移除（鬼切基础/觉醒 = on_turn_start 己方 choose 块 +
+  on_turn_end 敌方 detach 块的数据侧组合）；三触发条件均含 `holder_in_combat`
+  （或持 `virtual_combat` 视同战斗区）；其余伪关键字/键 `inv_trigger_echo`
+  （刀鸣之刃复制，响应名额按窗口+事件名去重不双响应）/ `power_on_enemy_turn:N`
+  （散华之刃）/ context 键 `card_shikigami` / launch_attack `at="event"/"targets"`
+  + `ignore_veil`——键义与定案逐条登记见 terminology.md「鬼斩 / 灵咒触发宣告」
+  行。
+- **髭切插入时点定案**：髭切在战斗准备步骤"攻击者移入战斗区"时插入；若插入
+  战斗使原攻击者气绝，外层战斗按"攻击方在战斗准备阶段气绝→战斗中止"终止
+  （无交战伤害、不发 on_battle_end）。
 
 ### 三、鬼斩响应三连（两断/罗城门/影杀）
 
 - **响应分派改动**：`_settle_response_card` 置顶上分支——cdef.response 非
   None 的响应牌一律落墓地走覆盖块 steps，**不走战斗/形态分派**（响应战斗牌
-  不发起战斗；攻击语义由覆盖块内 attack_buff/launch_attack 组合表达）。
-  存量 19 张带覆盖块的响应牌全是法术，后向兼容。
-- 三张响应块统一 when=on_invocation_trigger、condition {invocation: X,
-  player: self}：两断=attack_buff(+2, [必杀])+gain_shield(1)；罗城门=
-  attack_buff(+2)+gain_shield(1)+counter_on_kill；影杀=attack_buff(+2)+
-  gain_shield(1)+delay_grant（when=on_battle_end，steps=[attack_buff(+2)
-  +launch直击]×2）——影杀次序定案（thoughts(2)）：响应本身不产新战斗、仅给
-  狮子灵咒战斗 +2（合计 +4）；两次复制打击延时到狮子1 的"战斗结束后"
-  （on_battle_end，攻击增益已在终止点核销）各带战斗牌 +2 依次发起；刀鸣复制
-  的狮子2 最后（仅灵咒 +2）。另：on_invocation_trigger 豁免回合结束阶段的
-  响应抑制（`_cmd_end_turn` 的 suppress 仅拦其他事件名——狮子之子在敌方回合
-  结束触发时影杀响应窗须即时打开）。
-- **反制**：`counter_on_kill` op 登记 `Game._counter_watches`
-  （{"attacker": Ref}）；check_defeated 早期 return 之后钩——击杀者匹配
-  watch 且存在进行中的出牌（`Game._active_play_marker`，"使用前"统一发点
-  `_emit_before_card_play` 在 emit 期间压栈，主动/响应/自动使用同通道，
-  嵌套使用保存恢复外层 marker）→ 置 nullified（同魔音扰心通道，牌照常进
-  墓地、效果不结算），条目消耗；战斗终止点清除该攻击者残留条目。定案
-  （thoughts(5)）：击杀者须为登记来源（鬼切）；被击杀者为**双方任一**式神
-  （不限施法者）；刀鸣之刃复制的第二次友切不再携带罗城门（响应名额 =
-  窗口+事件名去重）；"反制"= 插入战斗结算完成后终止原法术使用事件。
+  不发起战斗；攻击语义由覆盖块内 attack_buff/launch_attack 组合表达）。机制
+  键义见 terminology.md「响应覆盖块分派 / 反制」行。
+- **影杀次序定案**：响应本身不产新战斗、仅给狮子灵咒战斗 +2（合计 +4）；两次
+  复制打击延时到狮子1 的"战斗结束后"（on_battle_end，攻击增益已在终止点核销）
+  各带战斗牌 +2 依次发起；刀鸣复制的狮子2 最后（仅灵咒 +2）。另：
+  on_invocation_trigger 豁免回合结束阶段的响应抑制（狮子之子在敌方回合结束
+  触发时影杀响应窗须即时打开）。
+- **反制** `counter_on_kill`：登记 `Game._counter_watches`——击杀者匹配且存在
+  进行中的出牌（`Game._active_play_marker`）时置 nullified（魔音扰心同通道），
+  条目消耗、战斗终止点清除残留。定案：击杀者须为登记来源（鬼切）；被击杀者
+  为**双方任一**式神（不限施法者）；刀鸣之刃复制的第二次友切不再携带罗城门；
+  "反制"= 插入战斗结算完成后终止原法术使用事件。
 
 ### 四、觉醒·鬼切选择生成
 
-- "选择一张鬼切的战斗牌置入手牌"定案为**选择并凭空生成**（thoughts(6)）——
-  不检索牌库、不洗牌；复用 `pick_generate` 通道（pool=[两断/罗城门/影杀]，
-  >1 候选挂起 pending kind="pick_generate"，作答 choice=数据 id，续跑挂起块）。
-- 觉醒·鬼切的"鬼切的战斗牌获得[瞬发]"= card_aura(keywords=[fast],
-  card_type=combat, shikigami=self, scope=ability)（既有通道，无引擎改动）。
+- "选择一张鬼切的战斗牌置入手牌"定案为**选择并凭空生成**——不检索牌库、
+  不洗牌；复用 `pick_generate` 通道（pool=[两断/罗城门/影杀]，>1 候选挂起
+  pending kind="pick_generate"）。"鬼切的战斗牌获得[瞬发]"= card_aura 既有
+  通道（keywords=[fast], card_type=combat, shikigami=self, scope=ability）。

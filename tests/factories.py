@@ -1,6 +1,6 @@
 """测试数据工厂：所有机制测试使用程序内构造的数据，不依赖 db/ 下的 YAML。
 
-真实卡牌数据按维护者要求暂不放入仓库（见 thoughts.txt），
+真实卡牌数据按维护者要求暂不放入仓库，
 db/ 目录下的 YAML 只存放经确认的正式数据。
 """
 from __future__ import annotations

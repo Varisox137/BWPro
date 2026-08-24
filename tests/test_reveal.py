@@ -1,6 +1,6 @@
 """「已展示」机制族测试。
 
-覆盖：reveal 三档（含协战归属）/ 调度展示传递（rules.md:528-533）/ 强索自动调度 /
+覆盖：reveal 三档（含协战归属）/ 调度展示传递（rules.md 第二十一章）/ 强索自动调度 /
 on_card_played card_revealed 条件 / dealt_damage_turn 过滤 / enemy_hand_all_revealed
 条件关键字 / enemy_revealed_count 三口径 / cost_delta_player 已展示耗火 /
 入手钩子被动展示 / 能力伤害吸血传导。按机制命名，不用式神/卡牌名命名。
@@ -49,7 +49,7 @@ def test_reveal_modes(db, make_game):
 
 
 def test_mulligan_reveal_transfer(db, make_game):
-    """调度展示传递（rules.md:528-533）：换入牌（返回牌库的手牌）具有已展示则失去；
+    """调度展示传递（rules.md 第二十一章）：换入牌（返回牌库的手牌）具有已展示则失去；
     换入牌原本已展示 → 换出牌（牌库抽上的新牌）获得已展示；未展示手牌调度则换出牌
     不获得已展示。"""
     g = make_game()
@@ -92,7 +92,7 @@ def test_mulligan_hand_auto_opponent_revealed(db, make_game):
     assert len(pb.hand) == 5                     # 换 3 补 3
     new_cards = [c for c in pb.hand if c not in (cs[1], cs[4])]
     assert len(new_cards) == 3
-    # 换入牌原本已展示 → 换出牌获得已展示（rules.md:530）
+    # 换入牌原本已展示 → 换出牌获得已展示（rules.md 第二十一章步骤2）
     assert all(c.mods.get("revealed") for c in new_cards)
     assert any("洗了牌库" in l for l in g.state.log[log_mark:])  # 有实际调度：洗牌
     # 无已展示候选：无调度、不洗牌

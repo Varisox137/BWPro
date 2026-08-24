@@ -2171,7 +2171,7 @@ def test_enemy_deck_invocation_aura(db, make_game):
 def test_redirect_deck_invocation(db, make_game):
     """支配者受伤替换（redirect_deck_invocation，on_after_shield priority=1 形态
     能力块）：敌方牌库有结附'梦魇'的牌时伤害归零终止、随机移除 min(伤害,3) 张
-    入**墓地**（thoughts(1)）；无标记牌时伤害照常。"""
+    入**墓地**；无标记牌时伤害照常。"""
     _mengyan_inv(db)
     db.cards[10010151] = F.card(
         10010151, card_type="form", form_power=0, form_health=7, token=True,
@@ -2201,7 +2201,7 @@ def test_redirect_deck_invocation(db, make_game):
 
 
 def test_redirect_deck_invocation_lethal(db, make_game):
-    """支配者替换致死（thoughts(1) 例）：形态 0/0 + 敌方牌库每张'梦魇'+1/+1——
+    """支配者替换致死（定案例）：形态 0/0 + 敌方牌库每张'梦魇'+1/+1——
     5 伤改 3、标记不足全移除（2 张入墓地），光环归零形态 0 生命即气绝；
     觉醒永久 +1/+1 情形下保留 1 生命不气绝（再受伤害照常扣减）。"""
     _mengyan_inv(db)
@@ -2600,7 +2600,7 @@ def test_response_counter_on_kill(db, make_game):
 
 
 def test_response_counter_any_victim_and_echo(db, make_game):
-    """罗城门反制定案（thoughts(5)）：① 本次友切战斗中鬼切击杀**双方任一**式神
+    """罗城门反制定案：① 本次友切战斗中鬼切击杀**双方任一**式神
     即反制（被击杀者不限定为施法者——友切嵌套战斗中鬼切能力击杀另一敌方式神，
     进行中的法术同样无效化）；② 刀鸣之刃复制的第二次友切不携带罗城门效果
     （响应名额=窗口+事件名：同事件第二次触发时名额已占，第二张罗城门留在手牌）。"""
@@ -2655,7 +2655,7 @@ def test_response_counter_any_victim_and_echo(db, make_game):
 # ---------- 选择生成入手（pick_generate，觉醒·鬼切"选择并凭空生成"） ----------
 
 def test_pick_generate_guqie(db, make_game):
-    """觉醒·鬼切通道（thoughts(6)）：选择并**凭空生成**一张战斗牌置入手牌——
+    """觉醒·鬼切通道：选择并**凭空生成**一张战斗牌置入手牌——
     不检索牌库、不洗牌（牌库构成与顺序不变）；>1 候选挂起 pick_generate 交互，
     作答 choice=数据 id；生成的牌 generated 标记。"""
     dummy = [10010161, 10010162, 10010163]
@@ -2913,7 +2913,7 @@ def test_real_switch_form_chain(real_game):
 
 
 def test_real_bond_include_player(real_game):
-    """落英缤纷（10040351）羁绊"己方受伤角色"含牌手（thoughts 答复(4)）：
+    """落英缤纷（10040351）羁绊"己方受伤角色"含牌手（维护者答复定案）：
     仅己方牌手受伤时必奶牌手。"""
     team = [100403, 100119, 100102, 100103]  # 樱花妖/桃花妖/兵俑/茨木
     g, pa, pb = _rg(real_game, team, levels={0: 2, 1: 1})

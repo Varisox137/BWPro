@@ -8,16 +8,24 @@ versions:
       rarity: SSR
       level: 2
       keywords: [fast, trigger]
+      response_when_defeated: true  # 裁决(9)：执行时青坊主已气绝仍生效（给牌手免疫）
       effects:
         steps:
           - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
           # "你免疫所有伤害"：牌手级免疫条目（PlayerState.immunities，按回合号过期）
           - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}
       response:
-        # 响应：当你将受到致命伤害时自动使用（面板伤害 ≥ 当前生命；on_damage_start
-        # 时机在护甲计算前，与狂啸同先例）
-        when: on_damage_start
-        condition: {victim_side: friendly, victim_kind: player, victim_lethal: true}
+        # 响应（裁决(9)）：时机=己方牌手作为受伤者的伤害事件"护甲计算后"
+        # （on_after_shield——护甲/破甲已结算，暴击翻倍尚未结算）；条件=伤害具暴击
+        # 且无贯通且牌手生命<=伤害值*2，或牌手生命<=伤害值（any_of 析取；
+        # victim_lethal=面板伤害>=当前生命，crit_lethal=暴击无贯通翻倍预判）。
+        # 青坊主濒死不可响应（引擎收集门控）；执行时已气绝仍生效
+        # （response_when_defeated 放宽复查）
+        when: on_after_shield
+        condition:
+          victim_side: friendly
+          victim_kind: player
+          any_of: [{victim_lethal: true}, {crit_lethal: true}]
         steps:
           - {op: destroy, target: {kind: all, pool: friendly_shikigami, shikigami: 100111}}
           - {op: grant_immunity, kind: all, scope: turn, target: {kind: all, pool: self_player}}

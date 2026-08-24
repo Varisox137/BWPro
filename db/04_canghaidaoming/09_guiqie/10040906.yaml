@@ -13,7 +13,7 @@ versions:
       level: 2
       effects:
         steps:
-          # 选择一张鬼切的战斗牌置入手牌（thoughts(6) 定案：选择并**凭空生成**，
+          # 选择一张鬼切的战斗牌置入手牌（定案：选择并**凭空生成**，
           # 不检索牌库、不洗牌——pick_generate 通道，>1 候选挂起 pick_generate 交互）
           - {op: pick_generate, pool: [10040901, 10040905, 10040908]}
       abilities:

@@ -14,9 +14,11 @@ versions:
           - {op: destroy, target: {kind: all, pool: friendly_combat}}
           - {op: destroy, target: {kind: all, pool: enemy_combat}}
       response:
-        # [响应]：当己方战斗区式神被攻击时，自动使用
+        # [响应]：当己方战斗区式神被攻击时，自动使用；裁决(7)：使用后、执行前
+        # 再检查己方战斗区是否有式神（可与被攻击者不同——exec_condition）
         when: on_before_assault
         condition: {victim_side: friendly, victim_kind: shikigami, victim_in_combat: true}
+        exec_condition: {combat_occupied: friendly}
         steps:
           - {op: destroy, target: {kind: all, pool: friendly_combat}}
           - {op: destroy, target: {kind: all, pool: enemy_combat}}

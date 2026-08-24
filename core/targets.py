@@ -381,6 +381,17 @@ def spec_pool_refs(game, spec, controller: int, *, targeted: bool = False) -> li
     受伤的己方牌手（"己方受伤角色"含牌手口径）。"""
     refs = pool_refs(game, spec.pool, controller, targeted=targeted)
     extra = spec.model_extra or {}
+    if extra.get("any_state") and spec.pool in (
+            "friendly_shikigami", "enemy_shikigami", "any_shikigami"):
+        # 任一状态（裁决(4)，读心"选择一个敌方式神"）：不论在场/气绝/未升级，
+        # 未离场即入池——取代在场池（含 include_defeated 的语义上位）
+        sides = (controller,) if spec.pool == "friendly_shikigami" else (
+            (1 - controller,) if spec.pool == "enemy_shikigami"
+            else (controller, 1 - controller))
+        refs = [Ref(player=side, shikigami=i)
+                for side in sides
+                for i, s in enumerate(game.state.players[side].shikigami)
+                if not s.despawned]
     if extra.get("include_defeated") and spec.pool in (
             "friendly_shikigami", "enemy_shikigami", "any_shikigami"):
         sides = (controller,) if spec.pool == "friendly_shikigami" else (
@@ -659,7 +670,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     if not condition:
         return True
     for key, want in condition.items():
-        if key == "active":
+        if key == "any_of":
+            # 子条件任一命中（OR；舍生响应"生命<=伤害值*2（暴击无贯通）或 <=伤害值"）
+            if not any(match_condition(game, sub, event, controller, holder, chosen)
+                       for sub in want):
+                return False
+        elif key == "active":
             if (want == "self") != (game.state.active == controller):
                 return False
         elif key == "player_ext":
@@ -791,6 +807,29 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             vp = game.state.players[v.player]
             hp = vp.shikigami[v.shikigami].health if v.shikigami is not None else vp.health
             if int(event.get("amount", 0)) < hp:
+                return False
+        elif key == "crit_lethal":
+            # 暴击致命预判（裁决(9) 舍生响应，挂"护甲计算后"）：伤害事件具[暴击]
+            # （crit_pierce 事件属性或来源式神持 critical）且不具[贯通]，且
+            # 伤害值*2 ≥ victim 当前生命（暴击翻倍在"扣减生命前"尚未结算，提前预判）
+            dmg = event.get("damage")
+            if dmg is None or event.get("piercing"):
+                return False
+            crit = getattr(dmg, "crit_pierce", False)
+            if not crit:
+                src = event.get("source")
+                if isinstance(src, Ref) and src.shikigami is not None:
+                    crit = game._has_keyword(
+                        game.state.players[src.player].shikigami[src.shikigami],
+                        "critical")
+            if not crit:
+                return False
+            v = event.get("victim")
+            if not isinstance(v, Ref):
+                return False
+            vp = game.state.players[v.player]
+            hp = vp.shikigami[v.shikigami].health if v.shikigami is not None else vp.health
+            if int(event.get("amount", 0)) * 2 < hp:
                 return False
         elif key == "victim_is_chosen":
             # 事件 victim 为选择目标之一（引燃"该伤害事件的受伤者是目标式神"——伤害

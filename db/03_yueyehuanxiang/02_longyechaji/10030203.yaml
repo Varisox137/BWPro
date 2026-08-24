@@ -13,10 +13,11 @@ versions:
         steps: []
       abilities:
         # 泷夜叉姬受到的战斗伤害改为降低此幻境的耐久（同新月之哀通道；优先级 1；
+        # 战斗伤害口径 = kind_not: effect——含反击 kind=counter，同沧海之盾；
         # 同名多个时只由队列首个同名代受——定案(10)）
         - when: on_after_shield
           priority: 1
-          condition: {victim_shikigami: self, kind: combat}
+          condition: {victim_shikigami: self, kind_not: effect}
           steps:
             - {op: redirect_to_field}
       text: "[瞬发]。泷夜叉姬受到的战斗伤害改为降低此幻境的耐久。"

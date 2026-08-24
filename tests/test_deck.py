@@ -290,6 +290,42 @@ def test_store_missing_file(db, tmp_path):
     assert deckstore.load_decks(db, tmp_path / "decks.json") == []
 
 
+def test_store_legacy_migration(db, tmp_path, monkeypatch):
+    """旧路径 ~/.bwp.decks.json：新文件不存在时自动迁移（复制后删旧）。"""
+    new = tmp_path / ".bwpro" / "decks.json"
+    legacy = tmp_path / ".bwp.decks.json"
+    monkeypatch.setattr(deckstore, "PATH", new)
+    monkeypatch.setattr(deckstore, "LEGACY_PATH", legacy)
+    deckstore.save_decks(db, [mk_entry(db, "旧卡组")], legacy)
+    decks = deckstore.load_decks(db, new)
+    assert [d["name"] for d in decks] == ["旧卡组"]
+    assert new.exists() and not legacy.exists()
+
+
+def test_store_legacy_kept_when_new_exists(db, tmp_path, monkeypatch):
+    """新文件已存在时不迁移不覆盖，旧文件原样保留。"""
+    new = tmp_path / ".bwpro" / "decks.json"
+    legacy = tmp_path / ".bwp.decks.json"
+    monkeypatch.setattr(deckstore, "PATH", new)
+    monkeypatch.setattr(deckstore, "LEGACY_PATH", legacy)
+    deckstore.save_decks(db, [mk_entry(db, "旧")], legacy)
+    deckstore.save_decks(db, [mk_entry(db, "新")], new)
+    assert [d["name"] for d in deckstore.load_decks(db, new)] == ["新"]
+    assert legacy.exists()
+
+
+def test_store_legacy_malformed_deleted(db, tmp_path, monkeypatch, capsys):
+    """旧文件格式异常：迁移后按惯例提示并删除（作用于新路径）。"""
+    new = tmp_path / ".bwpro" / "decks.json"
+    legacy = tmp_path / ".bwp.decks.json"
+    monkeypatch.setattr(deckstore, "PATH", new)
+    monkeypatch.setattr(deckstore, "LEGACY_PATH", legacy)
+    legacy.write_text("not json", encoding="utf-8")
+    assert deckstore.load_decks(db, new) == []
+    assert not new.exists() and not legacy.exists()
+    assert "本地卡组文件异常" in capsys.readouterr().out
+
+
 def test_store_malformed_file_deleted(db, tmp_path, capsys):
     """文件数据不符合应有格式：提示异常并删除文件。"""
     for raw in ("not json",

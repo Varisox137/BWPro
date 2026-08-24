@@ -19,7 +19,7 @@ class GameConfig(BaseModel):
     """对局基础设定：随对局状态序列化。
 
     每项都可能对双方不同——PlayerState.config 可按键覆盖（见 engine.cfg）。
-    默认值即标准规则（来源：thoughts.txt / 规则集，待校对项见 questions.md）。
+    默认值即标准规则（来源：规则集，待校对项见 questions.md）。
     """
 
     player_health: int = 30       # 牌手初始生命及上限
@@ -54,7 +54,7 @@ class Ref(BaseModel):
 class ShikigamiState(BaseModel):
     """对局中一个式神（实体）的运行时状态。
 
-    身材组成（thoughts.txt）：基础值（式神基础值/当前形态基础值）
+    身材组成：基础值（式神基础值/当前形态基础值）
     + 永久增减益修正 + 临时增减益修正 + 灵咒类光环层（读取时实时合计）。
     临时/永久的区分标准是"气绝后复活能否保留"：临时修正在气绝时清除，
     永久修正复活后保留（光环类属临时修正的细分——连续型动态身材光环走
@@ -72,7 +72,7 @@ class ShikigamiState(BaseModel):
     entry_order: int = 0  # 角色进场顺序：牌手为 0，式神按入场顺序 1-4；再进场（变形/还原/召唤/替换）排本队最后
     ability_entry: dict[str, int] = Field(default_factory=dict)  # 各能力的进场序号
     # （"ability"=基础/觉醒能力、"form"=形态能力；进场点记录——对局开始/升级/复活/觉醒替换/
-    # 形态结附/变形与还原；同事件触发按能力进场顺序排序，thoughts 答复(4)(6)；快照携带、还原重记）
+    # 形态结附/变形与还原；同事件触发按能力进场顺序排序；快照携带、还原重记）
     base_power: int  # 基础力量（形态会改写，Phase 5）
     base_health: int  # 基础生命
     perm_power: int = 0  # 永久增减益修正（气绝后复活保留）

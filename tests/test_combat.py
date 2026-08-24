@@ -794,7 +794,7 @@ def test_counter_piercing_overflow_to_player(db, make_game):
 
 
 def test_counter_no_piercing_default(db, make_game):
-    """负面对照：未登记 counter_piercing 时反击不贯通（rules.md:201 默认排除）。"""
+    """负面对照：未登记 counter_piercing 时反击不贯通（rules.md 第五章步骤3 默认排除）。"""
     _cp_combat_card(db)
     g = make_game()
     pa, pb = g.state.players
@@ -1219,14 +1219,14 @@ def test_awaken_remote_no_followup(gdb):
 
 
 def test_awaken_kill_followup_attack(gdb):
-    """觉醒·姑获鸟 20200722 版：追加"姑获鸟击杀敌方式神时，再发起一次攻击"
+    """觉醒·姑获鸟 20200723 版：追加"姑获鸟击杀敌方式神时，再发起一次攻击"
     （气绝事件的"气绝后"延时时机触发、延时到气绝事件后执行的无目标战斗——
     on_shikigami_defeated + launch_attack，不耗出击次数）。"""
-    g = F.mk_game(gdb.at_date(20200722), team=GH_TEAM)
+    g = F.mk_game(gdb.at_date(20200723), team=GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 3})
     play(g, 0, 10010608)                       # 觉醒（+2/+0 → eff 5）
     move(g, 1, 0)                              # B 姑获鸟（3/4）驻守战斗区
-    play(g, 0, 10010601)                       # 伞剑 20200722 版 +2 → 7 击杀
+    play(g, 0, 10010601)                       # 伞剑 20200723 版 +2 → 7 击杀
     assert pb.shikigami[0].defeated
     assert pb.health == 25                     # 追加攻击：战斗区已空，打敌方牌手 5
 
@@ -1244,9 +1244,9 @@ def test_bench_targeted_battle(gdb):
 
 
 def test_bench_targeted_battle_immunity(gdb):
-    """天翔鹤斩 20200722 版：追加"免疫战斗伤害"（battle_immunity 绑定本次战斗），
+    """天翔鹤斩 20200723 版：追加"免疫战斗伤害"（battle_immunity 绑定本次战斗），
     不受反击。"""
-    g = F.mk_game(gdb.at_date(20200722), team=GH_TEAM)
+    g = F.mk_game(gdb.at_date(20200723), team=GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})
     c = give(g, 0, 10010606)
     g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})
@@ -1433,6 +1433,43 @@ def test_destroy_on_combat_damage_transformed(db, make_game):
     pa.orb = 9
     play(g, 0, cid)
     assert pb.defeated and g.state.winner == 0
+
+
+def test_destroy_on_combat_damage_redirected(db, make_game):
+    """夺命型（裁决(6)）：战斗伤害被转移时消灭实际承受者——转移产生的新伤害事件
+    同来源同原因（kind=combat），夺命监听按实际受伤者命中（转移者被消灭，
+    原目标无伤）。"""
+    cid = 10010174
+    gate = {"source_shikigami": "self", "kind": "combat", "kill_count_ge": 2}
+    db.cards[cid] = F.card(
+        cid, card_type="combat", steps=[],
+        temp_grants=[
+            F.EffectBlock(
+                when="on_damage", condition=gate,
+                steps=[F.Step(op="destroy", target=T(kind="context", key="victim"))]),
+            F.EffectBlock(
+                when="on_player_damaged", condition=gate,
+                steps=[F.Step(op="destroy",
+                              target=T(kind="context", key="damaged_player"))]),
+        ], token=True)
+    # 敌方 1 号位转移能力：其他己方式神受伤改由其承受
+    db.shikigami[100102].ability = F.block(
+        F.Step(op="redirect_damage_to_self"),
+        when="on_after_shield", priority=2,
+        condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                   "victim_not_shikigami": 100102})
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shield = 0
+    pa.kill_total = 2                          # 增强门控达标
+    pa.shikigami[0].health = 99                # 扛反击
+    pb.shikigami[0].level = 1
+    pb.shikigami[1].level = 1
+    b0, b1 = pb.shikigami[0], pb.shikigami[1]
+    move(g, 1, 0)                              # B0 入战斗区
+    play(g, 0, cid)                            # A0 战斗牌攻击 B0 → 伤害转移给 B1
+    assert b1.defeated                         # 夺命消灭实际承受者 B1
+    assert not b0.defeated and b0.health == b0.max_health   # 原目标无伤
 
 
 # ---------- 交战目标改换（battle_retarget，声东击西） ----------

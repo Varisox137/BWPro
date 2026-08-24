@@ -99,7 +99,7 @@ KEYWORDS = frozenset({
     "power_on_enemy_turn",      # 引擎级伪关键字（带 `:N` 参数，如 power_on_enemy_turn:3）：
     #                             敌方回合期间该式神 +N 力量（散华之刃；_refresh_stat_auras
     #                             动态读取，按冒号前缀匹配；卡面不出现）
-})  # 机制未实现的关键词不放进数据，避免静默失效（rules.md:270）。
+})  # 机制未实现的关键词不放进数据，避免静默失效（rules.md 第二十二章）。
 
 # 能力伪关键字集合：觉醒替换基础能力时按本集合换绑（移除基础式神的、授予觉醒牌的；
 # 气绝不清——永久类别随觉醒状态保留，读取处以 in_play 门控）。engine 觉醒点引用。
@@ -113,7 +113,7 @@ ABILITY_PSEUDO_KEYWORDS = frozenset({
 # 天然持久性类别入列（见 core.model.ShikigamiState 与 docs/terminology.md）。
 FACTIONS = frozenset({"红莲", "紫岩", "青岚", "苍叶", "无相"})  # 无相 = 无派系
 FACTION_COLORS = {"红莲": "red", "紫岩": "purple", "青岚": "blue", "苍叶": "green", "无相": "white"}  # Phase 4 UI 展示预留，代码侧暂无消费方
-RARITIES = frozenset({"R", "SR", "SSR"})  # 良 / 优 / 极（抽卡/账号系统预留，见 thoughts.txt）
+RARITIES = frozenset({"R", "SR", "SSR"})  # 良 / 优 / 极（抽卡/账号系统预留）
 # 觉醒牌 = 任意主类型 + tags 含 "awaken"；保留字面量即可，无需单独常量。
 
 NEUTRAL_PREFIX = 9  # 中立牌 id 首位（9avvvvvv：9 + 1 位异画位 + 6 位数字）
@@ -168,6 +168,9 @@ class EffectBlock(BaseModel):
     # 新月之哀/日轮之城 redirect_to_field）；2=「伤害目标转移」类（血蝠之盾挂账为
     # 引擎内建优先级 2 段）。改非伤害结算后原事件终止时，优先级≥2 的转移不再处理
     condition: dict[str, Any] | None = None
+    exec_condition: dict[str, Any] | None = None  # 响应牌"使用后、执行前"再检查
+    # （裁决(7) 生死无常：响应时机合法性由 condition 检查，执行前以本键复查——
+    # 不满足则牌已使用（支付/入墓地）但效果不结算；仅响应分派读取）
     steps: list[Step] = Field(default_factory=list)
     trigger_when_not_in_play: bool = False
     trigger_when_defeated: bool = False
@@ -223,7 +226,7 @@ class InvocationDef(BaseModel):
 class PlayMethod(BaseModel):
     """卡牌的一种使用方式（多择子选项，保留扩展空间）。
 
-    多择牌仅保留核心使用方式、参数可变（thoughts.txt）：如爆能表示为
+    多择牌仅保留核心使用方式、参数可变：如爆能表示为
     PlayMethod(id="burst", param=2, ...)，param 为能量等数值参数，
     其数值可被效果增减（Phase 5 落地全局增减钩子）。
     每个选项可以拥有自己的费用/等级/卡牌类型/目标。
@@ -266,7 +269,7 @@ class CardDef(BaseModel):
     subtype: str | None = None  # 子类型：awaken=觉醒牌（通用）；quest=委托（专属子类型，
     # 仅所属式神的牌可用——登记表 db/schema.py EXCLUSIVE_SUBTYPES，loader 校验归属）
     awaken_power: int = 0  # 觉醒牌：永久身材增益（力量），"觉醒后"延时时机之后授予
-    awaken_health: int = 0  # 觉醒牌：永久身材增益（生命），同上（thoughts.txt 法术觉醒流程）
+    awaken_health: int = 0  # 觉醒牌：永久身材增益（生命），同上
     tags: list[str] = Field(default_factory=list)  # 自由标记；机制未实现前不放进数据，避免静默失效
     rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）；
     # 衍生牌（token=true）无稀有度——rarity 须缺省（维护者定案，loader 校验）
@@ -274,6 +277,9 @@ class CardDef(BaseModel):
     playable_when_defeated: bool = False  # 气绝时可用（与是否响应牌无关）
     only_when_defeated: bool = False  # 仅在所属式神气绝时可用（心即归处；主动使用与响应均门控，
     # 与 playable_when_defeated 配对使用——后者放宽气绝可用、前者收紧存活不可用）
+    response_when_defeated: bool = False  # 响应复查放行气绝（裁决(9) 舍生："执行时
+    # 青坊主已气绝仍生效"——仅放宽 _settle_response_card 的气绝复查，不放宽主动使用，
+    # 也不放宽收集时点：收集时气绝/濒死仍不可响应）
     level: int = 1  # 使用所需式神等级（中立牌无等级，忽略此字段）
     cost: int = 1  # 鬼火消耗
     form_power: int | None = None  # 形态牌结附时的基础力量（card_type=form 时使用）

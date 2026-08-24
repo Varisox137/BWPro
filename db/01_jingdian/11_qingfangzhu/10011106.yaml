@@ -9,7 +9,13 @@ versions:
       level: 3
       form_power: 5
       form_health: 6
-      tags: [heal_reversal]  # 引擎 heal() 读取：控制者对敌方的恢复改为等额伤害（不走治疗事件）
       effects:
         steps: []
+      abilities:
+        # 裁决(10)：来源己方、执行者敌方的治疗事件"治疗前"（on_before_heal 即时时机）
+        # 把治疗量改 0，并按原量延时生成同来源伤害事件（kind=effect，不翻倍暴击）
+        - when: on_before_heal
+          condition: {source_side: friendly, target_side: enemy}
+          steps:
+            - {op: convert_heal_to_damage}
       text: 你对敌方的恢复生命效果改为伤害效果。

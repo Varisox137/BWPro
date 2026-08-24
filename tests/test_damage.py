@@ -1,8 +1,7 @@
 """破甲（负 shield）/ 治疗管线 / 吸血 / 濒死与气绝前 1 测试（A3/A4/A5）。
 
 对应 docs/rules.md 第五章（伤害流程批次 4 破甲计算、批次 10① 吸血）、
-第六章（护甲/破甲变化事件流程）、第七章（气绝前/消灭前 1）与
-thoughts.txt（治疗流程、濒死/已气绝定义、答复 (3)(5)）。
+第六章（护甲/破甲变化事件流程）、第七章（气绝前/消灭前 1）。
 0 号位（100101）为测试主体式神；破甲以 shield 负值表示。
 """
 from core import targets
@@ -170,7 +169,7 @@ def test_fragile_to_damage_anchor(db, make_game):
     assert s.health == 1             # 4 - 3 等量伤害
 
 
-# ---------- 治疗管线（thoughts.txt 治疗流程） ----------
+# ---------- 治疗管线（治疗事件流程） ----------
 
 def test_heal_capped_by_lost_health(db, make_game):
     """治疗量 = min(治疗量, 已损失生命）。"""
@@ -238,7 +237,7 @@ def test_defeated_and_dying_no_heal(db, make_game):
     assert len(g.history) == n
 
 
-# ---------- 吸血（rules.md ch5 批次 10①；thoughts.txt 答复 5） ----------
+# ---------- 吸血（rules.md ch5 批次 10①） ----------
 
 def test_lifesteal_heals_player_after_damage(db, make_game):
     """吸血：来源式神造成伤害后（延时、优先级 1 锚点）为控制者牌手恢复等量生命。"""
@@ -277,7 +276,7 @@ def test_lifesteal_ability_damage(db, make_game):
     assert pa.health == 27
 
 
-# ---------- 濒死（thoughts.txt 濒死定义）与气绝前 1 ----------
+# ---------- 濒死（濒死定义）与气绝前 1 ----------
 
 def test_dying_marked_before_defeat_event(db, make_game):
     """伤害扣减生命至 ≤0 → 先标 dying，气绝事件延时；check_defeated 清除 dying。"""
@@ -353,7 +352,7 @@ def test_on_before_defeat_fires_for_destroy(db, make_game):
     assert "on_before_defeat" in g.history
 
 
-# ---------- 已气绝状态的增益限制（thoughts.txt 已气绝定义） ----------
+# ---------- 已气绝状态的增益限制（已气绝定义） ----------
 
 def test_defeated_only_perm_buffs_apply(db, make_game):
     """已气绝式神：非永久 buff 不生效，perm 照常（perm 生命不上调当前生命）。"""
@@ -627,11 +626,16 @@ def test_overheal_converts_on_friendly_heal(db, make_game):
 
 
 def test_heal_reversal_to_enemy(db, make_game):
-    """治疗反转（法界唯心 heal_reversal 标记形态在场）：控制者对敌方的恢复生命
-    效果改为等额伤害（不发出任何治疗事件，伤害事件照常）；对己方的恢复不受影响。"""
+    """治疗反转（法界唯心，裁决(10)）：来源己方、执行者敌方的治疗事件"治疗前"
+    （on_before_heal 即时）治疗量改 0 + 延时生成同来源等量伤害——on_heal 以 0 量
+    照常触发（on_after_heal 不触发），伤害事件在延时队列后结算；对己方的恢复不受影响。"""
     db.cards[10010157] = F.card(
         10010157, shikigami=SID, card_type="form", level=1,
-        form_power=5, form_health=6, tags=["heal_reversal"], token=True)
+        form_power=5, form_health=6, token=True,
+        abilities=[F.block(
+            F.Step(op="convert_heal_to_damage"),
+            when="on_before_heal",
+            condition={"source_side": "friendly", "target_side": "enemy"})])
     db.cards[10010158] = F.card(
         10010158, shikigami=SID, level=1, token=True,
         steps=[F.Step(op="heal", amount=4, target=T(kind="all", pool="enemy_player"))])
@@ -642,9 +646,10 @@ def test_heal_reversal_to_enemy(db, make_game):
     play(g, 0, 10010157)             # 结附反转形态
     pa.health = 25
     n = len(g.history)
-    play(g, 0, 10010158)             # 对敌方牌手的"恢复"→ 等额伤害
+    play(g, 0, 10010158)             # 对敌方牌手的"恢复"→ 0 量治疗 + 延时等量伤害
     assert pb.health == 30 - 4
-    assert "on_heal" not in g.history[n:]
+    assert "on_heal" in g.history[n:]          # 治疗事件照常发出（治疗量 0）
+    assert "on_after_heal" not in g.history[n:]
     assert "on_player_damaged" in g.history[n:]
     play(g, 0, 10010159)             # 对己方的恢复不受影响
     assert pa.health == 29
@@ -733,6 +738,18 @@ def test_damage_total_memo_heal(db, make_game):
     assert pb.shikigami[0].health == pb.shikigami[0].max_health - 1
     assert pb.shikigami[1].health == pb.shikigami[1].max_health - 2
     assert s.health == 4             # 按实际总点数恢复 3
+    # 破甲增加实际伤害（裁决(3)：护甲/破甲会减/增总量）——破甲 2 使 2 伤变 4
+    g2, pa2, pb2 = _game(make_game)
+    s2 = pa2.shikigami[IDX]
+    s2.temp_health = 6               # 上限抬到 10，避免恢复被已损失量封顶
+    s2.health = 1
+    pb2.shikigami[0].level = 1
+    pb2.shikigami[1].level = 1
+    pb2.shikigami[0].shield = -2     # 破甲 2：实际造成 4（另一名不受破甲影响为 2）
+    play(g2, 0, 10010155)
+    assert pb2.shikigami[0].health == pb2.shikigami[0].max_health - 4
+    assert pb2.shikigami[0].shield == 0
+    assert s2.health == 7            # 按实际总点数恢复 6（1 + 6）
 
 
 def test_side_of_last_heal_pool(db, make_game):
@@ -753,14 +770,19 @@ def test_side_of_last_heal_pool(db, make_game):
 
 
 def test_heal_player_triggers_self_heal(db, make_game):
-    """灵能：来源式神为牌手恢复生命时，自身恢复等量（按实际治疗量）。"""
+    """灵能（裁决(1)）：挂治疗后 on_after_heal——来源式神为所属牌手实际恢复生命时，
+    自身延时恢复等量（按实际治疗量，可触发过量转护甲）；为敌方牌手恢复不触发。"""
     db.shikigami[SID].ability = F.block(
         F.Step(op="heal", amount={"event": "amount"}, target=T(kind="self")),
-        when="on_heal",
-        condition={"source_shikigami": "self", "target_kind": "player"})
+        when="on_after_heal",
+        condition={"source_shikigami": "self", "target_kind": "player",
+                   "target_side": "friendly"})
     db.cards[10010155] = F.card(
         10010155, shikigami=SID, level=1, token=True,
         steps=[F.Step(op="heal", amount=4, target=T(kind="all", pool="self_player"))])
+    db.cards[10010156] = F.card(
+        10010156, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=4, target=T(kind="all", pool="enemy_player"))])
     g, pa, pb = _game(make_game)
     s = pa.shikigami[IDX]
     s.health = 1                     # 已损失 3
@@ -768,6 +790,10 @@ def test_heal_player_triggers_self_heal(db, make_game):
     play(g, 0, 10010155)
     assert pa.health == 29           # 牌手实际恢复 4
     assert s.health == 4             # 灵能恢复等量 3（ capped by 已损失）
+    pb.health = 25
+    play(g, 0, 10010156)             # 为敌方牌手恢复：不触发灵能
+    assert pb.health == 29
+    assert s.health == 4
 
 
 # ---------- 清姬伤害转化 / 庇佑 / 生命钳制 / 破甲保留 ----------
@@ -1193,7 +1219,7 @@ def test_damage_redirect_to_player(db, make_game):
 
 
 def test_damage_redirect_after_armor(db, make_game):
-    """伤害转移挂点 = 护甲计算后批次优先级 2（rules.md:218②，维护者答复(5) 定案）：
+    """伤害转移挂点 = 护甲计算后批次优先级 2（rules.md 第五章步骤6②，维护者答复(5) 定案）：
     原受伤者的护甲先参与计算、余量转移给牌手；贯通修正先于转移（护甲先在贯通修正
     批次被吸收，再按封顶余量转移）。"""
     cid = 10010172

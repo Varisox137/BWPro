@@ -851,8 +851,9 @@ def _set_health(g, player, index, value):
 
 
 def test_min_health_clamp_turn_scope(real_game):
-    """狂啸（10010908）主动使用：本回合酒吞童子生命不会降到 1 以下——超额伤害
-    钳制为 0（不触发受伤能力）；半回合作用域，回合开始清除。"""
+    """狂啸（10010908，裁决(5)）主动使用：本回合酒吞童子生命不会降到 1 以下——
+    伤害全额结算（受伤能力照常触发、全额记账），扣减生命后生命 <1 则置为 1；
+    半回合作用域，回合开始清除。"""
     g = real_game(JT_TEAM)
     pa, pb = F.battle_setup(g, {0: 3})
     jt = pa.shikigami[0]
@@ -860,15 +861,16 @@ def test_min_health_clamp_turn_scope(real_game):
     _set_health(g, 0, 0, 2)
     play(g, 0, 10010901)                       # 醉里乾坤：-1 → 1（触发能力 +1）
     assert jt.health == 1 and jt.temp_power == 1
-    play(g, 0, 10010901)                       # 再醉里乾坤：钳制为 0 伤害
-    assert jt.health == 1 and jt.temp_power == 1   # 0 伤不再触发受伤能力
+    play(g, 0, 10010901)                       # 再醉里乾坤：1 伤全额造成（2→0→置 1）
+    assert jt.health == 1 and jt.temp_power == 2   # 伤害有效：受伤能力再次触发
+    assert jt.ext["damage_taken_turn"] == 2    # 全额记账（不钳制伤害量）
     pass_turns(g, 1)
     assert not jt.ext.get("min_health_turn")   # 回合开始清除（半回合作用域）
 
 
 def test_min_health_clamp_response(real_game):
-    """狂啸[响应]：酒吞童子将受到伤害时自动使用——4 伤钳制到 2（停 1），
-    本回合后续伤害继续被钳制为 0。"""
+    """狂啸[响应]：酒吞童子将受到伤害时自动使用——4 伤全额结算后生命置 1，
+    本回合后续伤害同样置 1。"""
     g = real_game(JT_TEAM)
     pa, pb = F.battle_setup(g)
     pb.shikigami[0].level = 3                  # 响应等级要求（狂啸 3 级）
@@ -877,10 +879,10 @@ def test_min_health_clamp_response(real_game):
     _set_health(g, 1, 0, 3)
     jb = pb.shikigami[0]
     pa.shikigami[3].level = 2                  # 鸢击 2 级
-    play(g, 0, 10000203, target=Ref(player=1, shikigami=0))  # 鸢击 4 → 钳制 2
+    play(g, 0, 10000203, target=Ref(player=1, shikigami=0))  # 鸢击 4 → 3-4 置 1
     assert jb.health == 1
     assert any(c.id == 10010908 for c in pb.graveyard)
-    play(g, 0, 10000203, target=Ref(player=1, shikigami=0))  # 第二次：钳制 0
+    play(g, 0, 10000203, target=Ref(player=1, shikigami=0))  # 第二次：同样置 1
     assert jb.health == 1
 
 
@@ -2914,6 +2916,19 @@ def test_redirect_to_field(db, make_game):
     pa.fields.append(FieldState(card_id=10010153, intensity=20, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 8, Ref(player=1, shikigami=0))
     assert pa.fields[0].intensity == 15 and s0.health == 1  # 4 - 3
+
+
+def test_field_absorbs_counter_damage(real_game):
+    """日轮之城（真实库回归）：战斗伤害口径含反击（kind_not: effect）——泷夜叉姬
+    出击吃反击时，反击战斗伤害同样改降幻境耐久（曾漏 kind=counter 只认 combat）。"""
+    g = real_game([100302, 100101, 100102, 100123])
+    pa, pb = F.battle_setup(g, {0: 1})
+    pa.orb = 9
+    play(g, 0, 10030203)                      # 日轮之城（耐久 1）
+    move(g, 1, 0)                             # B 泷夜叉姬驻守（3 攻反击）
+    g.apply({"op": "assault", "index": 0})   # A 泷夜叉姬出击：反击 3 由幻境代受 1
+    assert pa.shikigami[0].health == 2        # 4 - (3 - 1)
+    assert pa.fields == []                    # 耐久耗尽，幻境消灭
 
 
 def test_boost_change_positive_only(db, make_game):

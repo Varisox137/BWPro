@@ -142,6 +142,9 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "friendly_field_intensity_ge", "field_summon_distinct_ge", "friendly_field",
     "hand_card_type", "chosen_stunned", "chosen_has_fragile", "chosen_side",
     "combat_opponent_stunned", "kill_count_ge",
+    "any_of",  # 子条件列表任一命中（OR 组合；舍生响应"<=伤害值*2 或 <=伤害值"）
+    "crit_lethal",  # 伤害事件具[暴击]且无[贯通]且伤害值*2 ≥ victim 当前生命
+    #               （裁决(9) 舍生响应，"护甲计算后"时机暴击翻倍预判）
     "quest_count_ge",
     "invocation_on_field", "shikigami_countdown_free",
     "holder_has_invocation",  # 能力持有者结附指定灵咒（棺击"持有'迟钝'期间"门控）
@@ -200,6 +203,8 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
     "dealt_damage_turn", "keyword", "highest_power", "shield_nonzero",
     "strippable", "exclude_shikigami", "shikigami", "exclude_victim",
     "optional",  # choose 目标可空（无合法目标则无目标结算，天翔鹤斩）
+    "any_state",  # choose 池任一状态：不论在场/气绝/未升级，未离场即入池
+    #             （裁决(4)，读心"选择一个敌方式神"）
     "battle",    # 选择目标进战斗区（engine._resolve_combat_card 换目标通道）
     "no_form",   # 仅无形态的式神（今日委托·伍"消灭一个没有形态的式神"）
     "has_form",  # 仅有形态的式神（神木诅咒"使一个形态变成…"取对象口径）
