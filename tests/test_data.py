@@ -144,7 +144,7 @@ def test_record_lost_on_defeat(real_game):
 # ---------- 02 风神一扇 ----------
 
 def test_projectile_retreats_damaged_to_bench(real_game):
-    """投射命中战斗区式神：受伤者移回准备区（last_damage_victims 引用上一步受伤者）。"""
+    """投射命中战斗区式神：受伤者移回准备区（伤害"造成伤害后"立即插入移动，裁决(7)）。"""
     g, pa, pb = _game(real_game, DT_TEAM)
     move(g, 1, 1)                             # B 白狼（3/4）入战斗区
     assert pb.combat_index == 1
@@ -153,6 +153,26 @@ def test_projectile_retreats_damaged_to_bench(real_game):
     assert wolf.health == 2                   # 2 伤
     assert pb.combat_index is None            # 被移回准备区
     assert wolf.in_play                       # 非气绝/离场
+
+
+def test_projectile_insert_retreat_before_defeat(gdb):
+    """风神一扇（裁决(7) 测试例）：觉醒鸦天狗 2 生命受投射 2 伤→濒死即移回准备区
+    （插入移动）→ 先因移动触发觉醒鸦天狗的战斗（远程直击 A 牌手）→ 然后才气绝。"""
+    team = [100104, 100201, 100101, 100102]   # A0 大天狗 / B1 鸦天狗
+    g = F.mk_game(gdb, team=team)
+    pa, pb = F.battle_setup(g)
+    pass_turns(g, 1)                          # A 回合1 空过
+    pb.shikigami[1].level = 3
+    pb.orb = 9
+    play(g, 1, 10020108)                      # B 回合1：准备区觉醒·鸦天狗（+2/+2 → 3/8，基础投射能力已被替换）
+    pass_turns(g, 1)                          # 换 A 回合2
+    move(g, 1, 1)                             # 鸦天狗入战斗区 → 觉醒能力攻击#1：远程直击 A 牌手 3
+    assert pa.health == 27
+    pb.shikigami[1].health = 2
+    play(g, 0, KAZAMI)                        # 投射 2 → 濒死 → 插入移回准备区（攻击#2 再直击 3）
+    assert pa.health == 24                    # 两次攻击各 3 伤直击 A 牌手
+    assert pb.shikigami[1].defeated           # 然后才气绝（气绝事件延后统一生成）
+    assert pb.combat_index is None
 
 
 # ---------- 08 吾即正义 ----------
@@ -1159,6 +1179,36 @@ def test_kill_pings_own_player(real_game):
     assert pa.shikigami[1].defeated
     assert pa.health == 28
     assert pb.health == 29                    # 投射 1
+
+
+def test_kill_ping_insert_order(gdb):
+    """引燃（裁决(9)）：牌手 2 伤在该伤害的"受到伤害后"立即插入——结算次序 =
+    牌手受伤触发效果 → 被消灭目标的受伤效果 → 该式神的气绝事件。
+    监听链：牌手受伤置 pd → 目标受伤效果（step 条件读 pd）置 od → 气绝事件
+    （step 条件读 od）置 df；次序正确三者才能全部置位。"""
+    g = F.mk_game(gdb, team=FHH_TEAM)
+    pa, pb = F.battle_setup(g)
+    sp = TargetSpec(kind="all", pool="self_player")
+    gdb.shikigami[100105].ability = EffectBlock(  # 双方凤凰火基础能力置空（免投射干扰）
+        when="on_game_start", steps=[])
+    gdb.shikigami[100116].ability = EffectBlock(  # B1 山童：牌手受伤监听
+        when="on_player_damaged", condition={"player": "self"},
+        steps=[Step(op="bump_ext", key="pd", target=sp)])
+    gdb.shikigami[100101].ability = EffectBlock(  # B2 白狼：目标受伤效果监听
+        when="on_damage", condition={"victim_kind": "shikigami"},
+        steps=[Step(op="bump_ext", key="od", target=sp,
+                    condition={"player_ext": "pd"})])
+    gdb.shikigami[100123].ability = EffectBlock(  # B3 妖刀姬：气绝事件监听
+        when="on_shikigami_defeated",
+        steps=[Step(op="bump_ext", key="df", target=sp,
+                    condition={"player_ext": "od"})])
+    pb.shikigami[0].health = 2
+    play(g, 0, YR, target=Ref(player=1, shikigami=0))
+    assert pb.shikigami[0].defeated
+    assert pb.health == 28                    # 插入的牌手 2 伤（无投射）
+    assert pb.ext.get("pd") == 1              # 牌手受伤触发效果已结算
+    assert pb.ext.get("od") == 1              # → 之后才是被消灭目标的受伤效果
+    assert pb.ext.get("df") == 1              # → 最后是该式神的气绝事件
 
 
 def test_boost_effect_damage(real_game):

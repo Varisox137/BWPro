@@ -55,7 +55,7 @@
 | 02 古尘之盾 | ✅ | |
 | 03 不动如山 | ✅ | |
 | 04 冲撞 | ✅ | 跨回合手牌触发式增强 |
-| 05 森罗之阵 | ✅ | |
+| 05 森罗之阵 | ✅ | 两段式（裁决(4)）：①on_damage_start{victim_shikigami: self, piercing: true} → cap_damage to=zero_pre_shield（有护甲则置位 pre_shield_zero 标记，护甲计算前1 归零）；②on_pre_shield_1 → cap_damage to=shield |
 | 06 觉醒·兵俑 | ✅ | 原版卡面 +0/+0，实现无身材加成，一致 |
 | 07 古尘之壁 | ✅ | +x生命/+x生命上限（持久性增益，气绝清除；不算治疗，不走 heal 事件） |
 | 08 尘缚之阵 | ✅ | 开服版仅"战斗区锁定"（combat_lock）；激怒/免疫直接消灭按 raw 移除（引擎机制与合成数据测试保留） |
@@ -65,7 +65,7 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 永久成长（perm=True，维护者答复(3)） |
-| 01 鬼之手 | ✅ | 非追猎：效果步 force_enter_combat（random_pick 不取对象不吃帷幕 + if_combat_empty 空发），拉入者随即成为本场无目标战斗被攻击者 |
+| 01 鬼之手 | ✅ | 非追猎：choose enemy_bench 选取目标（裁决(6) 改选取不再随机；有合法目标必选、空池可空发）+ force_enter_combat if_combat_empty 空发，拉入者随即成为本场无目标战斗被攻击者 |
 | 02 豪拳 | ✅ | 临时 +3 力量（维护者答复(3)） |
 | 03 罗生门之鬼 | ✅ | 茨木击杀式神触发 random_enhance：仅手牌实例强化（"仅在手牌时可触发增强"）、每实例 ≤3 次、tiers min/max 档位门控、实例 enhance_got 去重；强化写入 mods：keywords_add/form_power_delta/form_health_delta/playable_when_defeated+revive_on_play |
 | 04 黑焰之手 | ✅ | [远程] |
@@ -97,7 +97,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 使用法术→记录该法术并注册一次型[倒计时2]，归零凭空免费复用同名牌（非从手牌、不耗火）；记录随气绝丢失；倒计时来源按 A2 决策 = 式神 id；raw 无"非觉醒"限定，实现仍排除觉醒法术（见出入 18） |
 | 01 黑羽之刃 | ✅ | [瞬发] 投射 2 伤 |
-| 02 风神一扇 | ✅ | 投射 2 伤 + retreat；受伤者经块内暂存 last_damage_victims 引用 |
+| 02 风神一扇 | ✅ | 投射 2 伤 + 伤害插入帧（裁决(7)：damage insert {victim_kind: shikigami → retreat context victim}——移回在受伤效果/气绝事件前） |
 | 03 暴风之盾 | ✅ | gain_shield + delay_grant（下己方回合开始再 +2；选择目标随延迟条目存储）；响应挂 on_before_assault（受击方即战斗区式神） |
 | 04 暴风之主 | ✅ | 形态 4/6：形态能力读 on_card_played payload affected_refs（该次出牌效果伤害过的敌方式神；只计敌方式神、去重，牌手与己方式神不计） |
 | 05 天狗风乱 | ✅ | distribute_damage 6 点随机分配（敌方角色，生命≤0 退出分配） |
@@ -148,7 +148,7 @@
 | 05 金风流羽 | ✅ | 20191212：+0/+0、不再"视为黄金羽"（去 tags golden_feather，不记账）；cost_zero_if {ext: feather_used_turn} 条件免费保留 |
 | 06 不可饶恕 | ✅ | grant_immunity(scope=turn, unique) 回合级战斗伤害免疫：回合号记账自然过期；多次使用黄金羽不重复授予 |
 | 07 千羽风之舞 | ✅ | 20191212 改 transform_card：手牌一张'黄金羽'原位变成'金风流羽'（无匹配空操作）；step 级条件 {player_ext: feather_used_turn} |
-| 08 流浪之羽 | ✅ | 20191212 改全体：形态能力挂 on_card_played（golden_feather payload）→ 所有敌方式神 2 伤 |
+| 08 流浪之羽 | ✅ | 三快照：20191212 改全体：形态能力挂 on_card_played（golden_feather payload）→ 所有敌方式神 2 伤；20200820 生命 8→6；20200928 改"随机敌方式神 2 伤×2 次"（两个独立 random:1 取样步） |
 | 21 致命之羽 | ✅ | 协战主牌：同风之乐章（options=[鎏金幻羽, 蚀刃毒羽]） |
 | 51 黄金羽 | ✅ | 衍生 token 法术（不可构筑）；基础效果固定打敌方牌手，觉醒后狙击走 methods（choose 敌方角色） |
 | 52 鎏金幻羽 | ✅ | mod_hand 实例修饰（真黄金羽=tags+token 谓词，金风流羽不修饰；once_key 不可叠加）：气绝时可用/伤害+1/双方气绝倒计时-1 三读取点；羁绊=鸩倒计时-2 |
@@ -190,7 +190,7 @@
 | 基础能力 | ✅ | on_card_played {player: self, card_type: spell, shikigami: 100105} → 投射 1（含觉醒/响应/凭空自动使用） |
 | 01 凤鸣 | ✅ | [瞬发] 打敌方牌手；双版本：20191212（best）3 伤 / 20200227 2 伤 |
 | 02 瑞翔 | ✅ | 所有敌方式神 1（enemy_shikigami，不含牌手） |
-| 03 引燃 | ✅ | 可对己方式神（维护者答复）；消灭追加走 delay_grant scope="play" + victim_player 语境目标（敌己两向） |
+| 03 引燃 | ✅ | 可对己方式神（维护者答复）；消灭追加改伤害插入帧（裁决(9)：damage insert {victim_is_chosen + victim_dying → damage 2 context victim_player}——伤害后立即插入，先于受伤效果/气绝事件） |
 | 04 焚羽 | ✅ | 非战斗伤害 +1：on_damage_start {source_shikigami: self, kind: effect} boost_damage（含觉醒后其他式神法术触发的投射） |
 | 05 凤火 | ✅ | |
 | 06 觉醒·凤凰火 | ✅ | 己方式神任意专属法术 → 投射 1（{shikigami_not: null} 排除中立牌；来源=凤凰火，吃焚羽、计炎舞） |
@@ -445,13 +445,13 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 20191212 接入（2/4）：on_stun 新事件（即时时机，stun 施加点发出）+ turn_mark 每回合一次 → '雪球'置手 |
+| 基础能力 | ✅ | 双快照：20191212 接入（2/4）：on_stun 新事件（即时时机，stun 施加点发出）+ turn_mark 每回合一次 → '雪球'置手；20200722 身材 2/4→2/5（best=20200722） |
 | 01 寒冰之盾 | ✅ | [响应] 挂"己方战斗区式神被攻击时"自动对其使用（剧毒之盾先例） |
 | 02 吹雪 | ✅ | 打 3 + '雪球'置手 |
 | 03 冰墙 | ✅ | 召唤'冰墙'：no_attack 新字段（不能发动攻击——出击校验拦截、launch_attack 空操作）；召唤物身材 20200520 快照见 99 行 |
 | 04 寒冬之心 | ✅ | id 按 raw 重排（原 06）；'雪球'×2 置手 + card_aura 新通道：tag 谓词（仅命中 tags 含 snowball 的牌）+ damage_boost（卡牌效果伤害 +1）+ scope="game"（本局有效不清除） |
 | 05 崩雪 | ✅ | id 按 raw 重排（原 04）；双版本：20191212 消灭一个[眩晕]的式神（目标池 stunned 过滤，best=20200120）/ 20200120 消灭或[眩晕]两段分流 |
-| 06 冰风暴 | ✅ | id 按 raw 重排（原 05）；形态 2/4：敌方式神攻击后打其 1 再[眩晕]受伤者 |
+| 06 冰风暴 | ✅ | id 按 raw 重排（原 05）；双快照：20191212 形态 2/4 / 20200722 形态 3/5（best=20200722）：敌方式神攻击后打其 1 再[眩晕]受伤者 |
 | 07 流霰 | ✅ | id 按 raw 重排（原 08）；20191212 改"[瞬发]连用所有手牌雪球"：auto_use 新参数 from_hand（手牌全部同名牌逐张免费使用、目标强制继承、计入从手牌使用记账、无雪球空操作——定案(1)） |
 | 08 觉醒·雪女 | ✅ | id 按 raw 重排（原 07）；+2/+1；20191212 去使用效果 3 点伤害、得雪球触发源收窄为雪女自己造成的眩晕（source_shikigami: self，定案(3)） |
 | 21 冰霜永冻 | ✅ | 协战主牌（雪女&雪童子，id 10012121）：雪女侧子选项 冰封 已入库；雪童子侧 雪刃 待幻境机制；raw 标"未加入"，保持 20251212 快照 |
@@ -528,11 +528,11 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 己方回合开始鼓舞 +1 战力（basic_boost） |
 | 01 不夜之舞 | ✅ | 形态 4/5：boost_on_combat_card scope=form（玩家级旗标：战斗牌攻击也获得并消耗出击加成，形态离场清除） |
-| 02 真意之歌 | ✅ | 双快照：20200327 reset_assaults 单段 / 20200423 [瞬发]"若出击次数>0 则[鼓舞]+1/+1 否则重置出击次数"（assaults_left_ge/le 两条件 step 分流，best 保持 20200327） |
-| 03 自由之歌 | ✅ | 鼓舞 +3 战力 +3 护甲 |
+| 02 真意之歌 | ✅ | 三快照：20200327 reset_assaults 单段 / 20200423 [瞬发]"若出击次数>0 则[鼓舞]+1/+1 否则重置出击次数"（assaults_left_ge/le 两条件 step 分流）/ 20200820 [鼓舞]+1/+1 与重置出击次数均无条件执行（best 保持 20200327） |
+| 03 自由之歌 | ✅ | 双快照：20200327 鼓舞 +3/+3 / 20200820 改"使一个式神获得[迅捷]（any_shikigami 选择授予）+鼓舞+2/+2" |
 | 04 初会之舞 | ✅ | 形态 2/6 [远程]（卡牌级关键字）：对牌手造成伤害时抽 1 |
 | 05 觉醒·不知火 | ✅ | 双快照：20200327 +0/+0 / 20200423 +1/+1（best 保持 20200327）；inspire_bonus{1,1}（鼓舞数值额外 +1/+1，玩家级永久旗标、可叠加）+ 基础同款回合开始鼓舞 |
-| 06 星火之歌 | ✅ | 召唤'烬染不夜'（10020299） |
+| 06 星火之歌 | ✅ | 双快照：召唤'烬染不夜'（10020299）；20200820 等级 3→2 |
 | 07 离殇之舞 | ✅ | 形态 5/5：boost_no_consume scope=form（出击加成不消耗旗标） |
 | 08 惊鸿之舞 | ✅ | 形态 SSR 3 级 7/7（date/best=20200327）；on_turn_start（无 condition，双方回合开始均触发）单步 random_branch 19 分支（新 op：逐项求值 condition、通过者均等随机一项、无满足空操作；raw 清单与触发前置括注保留为 yaml 注释）——分支前置新条件键 friendly_defeated_exists/player_health_le/player_missing_health_ge/combat_occupied；分支 19 鼓舞带 keyword_random 随机关键字槽（ext["boost_keyword"]，池=[不屈/吸血/远程/必杀/贯通/连击]）；分支 5/13 highest_power 过滤（并列全保留交 random 均等取）；分支 4 grant_keyword scope="turn"；分支 6 敌方全体 -2 力量=非永久持续减益（跨回合保留、气绝清除）、分支 13/14 多步随机目标经 memo 键复用同次取样（14 加 include_defeated 含气绝——均已定案） |
 | 99 烬染不夜 | ✅ | 召唤物 1/1，先天[迅捷]；attack_replace（攻击时改为对两个随机不重复敌方角色造成 力量+战力 效果伤害，无交战不受反击；目标池含牌手、伤害为非战斗伤害 kind=effect 不触发[吸血]——均维护者定案） |
@@ -639,8 +639,8 @@
 
 | 卡 | 状态 | 备注 |
 |----|------|------|
-| 基础能力 | ✅ | on_after_heal {target_side: friendly, target_kind: player} → buff_power 1 **perm: false**（thoughts(4) 定案：一次性持续性增益、气绝清除）+ gain_shield 1 |
-| 01 血袭 | ✅ | 战斗 +0/+0，[吸血] |
+| 基础能力 | ✅ | 双快照：20200624 on_after_heal {target_side: friendly, target_kind: player} → buff_power 1 **perm: false**（thoughts(4) 定案：一次性持续性增益、气绝清除）+ gain_shield 1；20200820 加"每回合一次"（turn_mark heal_buff 门控） |
+| 01 血袭 | ✅ | 双快照：战斗 [吸血]；20200624 +0/+0 / 20200820 +1/+1（best=20200820） |
 | 02 血蝠之盾 | ✅ | grant_redirect 一次性伤害转移（ext["damage_redirects"]，类别不限定案）；[响应] on_before_assault {victim_side: friendly} 自动对其使用 |
 | 03 血怒 | ✅ | [瞬发][吸血] 对敌方牌手 1 伤；[增强] = CardDef.triggers 游离块 on_after_heal {target_side: enemy, target_kind: player, card_in_hand} → add_mod damage_boost 累加；吸血姬受伤 → choose any_character 补 1 伤（答复(12) 定案） |
 | 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血限战斗伤害 kind: [combat, counter]、反击也算——答复(9) 定案） |

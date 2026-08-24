@@ -69,7 +69,8 @@ def _target_amount(game, raw: dict, ref: Ref) -> int:
 def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
            piercing: bool | None = None, amount_ctx: str | None = None,
            amount_ext: str | None = None, amount_ext_source: str | None = None,
-           allow_defeated: bool = False, repeat_on_kill: int = 0) -> None:
+           allow_defeated: bool = False, repeat_on_kill: int = 0,
+           insert: dict | None = None) -> None:
     """对目标（式神或牌手）造成 amount 点伤害；护甲优先吸收。
 
     实例修饰 damage_boost（鎏金幻羽给手牌黄金羽的"伤害+1"）在卡牌效果伤害上累加。
@@ -88,6 +89,13 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
     repeat_on_kill=n：本步结算后若有目标因本步伤害新气绝，则对原目标列表整体
     重复，至多 n 次（樱吹雪"若击杀式神，重复此效果一次"；已气绝者被管线拦截
     或经转化通道，天然收敛）。
+    insert={"condition": …, "steps": [...]}：伤害插入帧（裁决(7)(9)——风神一扇
+    "在该伤害的'造成伤害后'立即插入移动受伤式神"/引燃"在该伤害的'造成/受到伤害后'
+    立即插入对牌手伤害"）：本步结算期间压栈，伤害事件"造成/受到伤害后"（扣减生命
+    后、伤害后延时批次发出前）逐事件判定 condition 并立即插入执行 steps（帧上下文
+    携带本步来源/卡牌/选择目标——context 目标键 victim/victim_player 与
+    victim_is_chosen/victim_dying 条件键可用）；帧生效期间的气绝事件延后到下一次
+    队列排水后统一生成（插入的移动/伤害触发的延时能力先于气绝结算）。
     """
     static = not isinstance(amount, dict)
     if static:
@@ -105,33 +113,46 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
     kw_convert = src is not None and src.in_play and (
         game._has_keyword(src, "damage_defeated_countdown"))
     total = 0
-    for _pass in range(1 + int(repeat_on_kill)):  # 首波 + 至多 repeat_on_kill 次重复
-        killed = False
-        for ref in targets:
-            amt = amount if static else _target_amount(game, amount, ref)
-            if ref.shikigami is None:
-                total += game.deal_to_player(ref.player, amt, ctx.source, spell=spell,
-                                             card=ctx.card)
-                continue
-            s = game.state.players[ref.player].shikigami[ref.shikigami]
-            if s.defeated:
-                if not s.despawned and s.level >= 1 and (
-                        allow_defeated
-                        or (kw_convert and ref.player != ctx.controller)):
-                    # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖，仅敌方目标；
-                    # 不再视为伤害）
-                    s.revive_countdown += 1
-                    game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
-                                 f"（现 {s.revive_countdown}，伤害转化）")
-                continue  # 气绝目标不进伤害管线（未授权时拦截空过），也不计新击杀
-            total += game.deal_to_shikigami(ref, amt, ctx.source, piercing=pierce,
-                                            spell=spell, card=ctx.card)
-            if repeat_on_kill and s.defeated:
-                killed = True  # 本步造成新气绝（deal 内同队列已结算气绝事件）
-        if not killed:
-            break
+    if insert:
+        # 伤害插入帧压栈（本步全部伤害队列生效；引擎 _run_damage_inserts 消费）
+        from db.schema import Step as _Step
+        game._damage_insert_frames.append({
+            "condition": insert.get("condition"),
+            "steps": [_Step.model_validate(st) for st in insert.get("steps", [])],
+            "controller": ctx.controller, "source": ctx.source,
+            "chosen": list(ctx.chosen or ()), "card": ctx.card,
+        })
+    try:
+        for _pass in range(1 + int(repeat_on_kill)):  # 首波 + 至多 repeat_on_kill 次重复
+            killed = False
+            for ref in targets:
+                amt = amount if static else _target_amount(game, amount, ref)
+                if ref.shikigami is None:
+                    total += game.deal_to_player(ref.player, amt, ctx.source, spell=spell,
+                                                 card=ctx.card)
+                    continue
+                s = game.state.players[ref.player].shikigami[ref.shikigami]
+                if s.defeated:
+                    if not s.despawned and s.level >= 1 and (
+                            allow_defeated
+                            or (kw_convert and ref.player != ctx.controller)):
+                        # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖，仅敌方目标；
+                        # 不再视为伤害）
+                        s.revive_countdown += 1
+                        game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
+                                     f"（现 {s.revive_countdown}，伤害转化）")
+                    continue  # 气绝目标不进伤害管线（未授权时拦截空过），也不计新击杀
+                total += game.deal_to_shikigami(ref, amt, ctx.source, piercing=pierce,
+                                                spell=spell, card=ctx.card)
+                if repeat_on_kill and s.defeated:
+                    killed = True  # 本步造成新气绝（deal 内同队列已结算气绝事件）
+            if not killed:
+                break
+    finally:
+        if insert:
+            game._damage_insert_frames.pop()
     if ctx.memo is not None:
-        # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用（风神一扇）
+        # 记录本步伤害的受伤者（式神），供同块后续 step 以 context 目标引用
         ctx.memo["last_damage_victims"] = [r for r in targets if r.shikigami is not None]
         # 记录本步实际造成的伤害合计（扣减生命口径），供同块后续 step 以 {"memo": key}
         # 动态数值引用（巨浪"每造成 1 点伤害，海坊主便恢复 1 生命"）
@@ -1947,11 +1968,22 @@ def cap_damage(game, ctx, *, targets: list[Ref], to: str | int = "shield") -> No
     to="shield"：若受伤式神具有护甲，伤害值至多为其当前护甲值（护甲 0 不生效）。
     to=<整数>：伤害值至多为该定值（雪融之时"每次至多只会受到3点伤害"——单次伤害
     事件面板值封顶，护甲吸收照常在其后结算）。
+    to="zero_pre_shield"（森罗之阵①贯通分段保护，裁决(4)）：若受伤式神具有护甲，
+    不立即改写，改为给事件置位 pre_shield_zero 标记——本次伤害在"护甲计算前1"
+    时机改为 0（贯通流程下贯通修正的额外护甲计算/翻倍/溢出分配均已在前面完成，
+    仅保护式神本人不拦截给牌手的贯通溢出）。须挂"造成/受到伤害开始时"批次并配合
+    {piercing: true} 条件（仅贯通伤害需要分段保护；非贯通伤害走②to="shield"）。
     须挂在伤害时点批次（on_damage_start 等 payload 含 damage 的事件）上。
     """
     ev = (ctx.event or {}).get("damage")
     victim = (ctx.event or {}).get("victim")
     if ev is None or not isinstance(victim, Ref) or victim.shikigami is None:
+        return
+    if to == "zero_pre_shield":
+        s = game.state.players[victim.player].shikigami[victim.shikigami]
+        if s.shield > 0 and ev.amount > 0:
+            ev.pre_shield_zero = True
+            game._log(f"{game.db.shikigami[s.id].name} 获得了本次伤害的贯通分段保护")
         return
     if to == "shield":
         s = game.state.players[victim.player].shikigami[victim.shikigami]

@@ -1107,23 +1107,34 @@ CM_TEAM = [100103, 100001, 100002, 100105]  # 派系 ≤2（红莲×3 + 青岚�
 
 
 def test_force_enter_combat_pulls_bench_then_battle(real_game):
-    """鬼之手：敌方战斗区为空时随机将一名敌方准备区式神移入战斗区（随机不取
-    对象、不吃帷幕），随即成为本场无目标战斗的被攻击者。"""
+    """鬼之手：敌方战斗区为空时选取一名敌方准备区式神移入战斗区（裁决(6)：效果
+    需选取目标，战斗本身仍是无目标战斗），新进场者随即成为被攻击者。"""
     g = real_game(CM_TEAM)
     pa, pb = F.battle_setup(g)
-    play(g, 0, 10010301)                       # 鬼之手（战斗 +0/+0）
-    # 有敌方式神被拉入战斗区并成为被攻击者：恰好一名受到茨木（eff 4）的战斗伤害
-    hit = [s for s in pb.shikigami if s.defeated or s.health < s.max_health]
-    assert len(hit) == 1
-    assert hit[0].defeated or hit[0].health == hit[0].max_health - 4
+    play(g, 0, 10010301, target=Ref(player=1, shikigami=1))   # 选取 B 纸人（4 命）
+    assert pb.shikigami[1].defeated            # 被移入战斗区并成为被攻击者：4 - 4 气绝
+    for i in (0, 2, 3):
+        assert pb.shikigami[i].health == pb.shikigami[i].max_health
+
+
+def test_force_enter_combat_direct_hits_player(real_game):
+    """鬼之手+直击（裁决(6) 测试例）：敌方空场，直击茨木用鬼之手移敌方式神至
+    战斗区，随后发起无目标战斗因[直击]将被攻击者设为敌方牌手。"""
+    g = real_game(CM_TEAM)
+    pa, pb = F.battle_setup(g)
+    pa.shikigami[0].keywords.append("direct")  # 茨木获得[直击]
+    play(g, 0, 10010301, target=Ref(player=1, shikigami=1))
+    assert pb.combat_index == 1                # 纸人已被移入战斗区……
+    assert pb.shikigami[1].health == pb.shikigami[1].max_health  # ……但未成为被攻击者
+    assert pb.health == 26                     # 直击：被攻击者 = 敌方牌手（30 - 4）
 
 
 def test_force_enter_combat_noop_when_enemy_combat_occupied(real_game):
-    """鬼之手空发：敌方战斗区非空时不拉人，战斗正常打战斗区驻守者。"""
+    """鬼之手空发：敌方战斗区非空时不拉人（选取的目标不动），战斗正常打战斗区驻守者。"""
     g = real_game(CM_TEAM)
     pa, pb = F.battle_setup(g)
     move(g, 1, 2)                              # B 天邪鬼军团（5 命）驻守战斗区
-    play(g, 0, 10010301)
+    play(g, 0, 10010301, target=Ref(player=1, shikigami=1))
     assert pb.combat_index == 2                # 驻守者未被替换
     assert pb.shikigami[2].health == 1         # 5 - 4
     for i in (0, 1, 3):
@@ -1208,13 +1219,14 @@ def test_awaken_remote_no_followup(gdb):
 
 
 def test_awaken_kill_followup_attack(gdb):
-    """觉醒·姑获鸟 20200723 版：追加"姑获鸟击杀敌方式神时，再发起一次攻击"
-    （on_shikigami_defeated + launch_attack，不耗出击次数）。"""
-    g = F.mk_game(gdb.at_date(20200723), team=GH_TEAM)
+    """觉醒·姑获鸟 20200722 版：追加"姑获鸟击杀敌方式神时，再发起一次攻击"
+    （气绝事件的"气绝后"延时时机触发、延时到气绝事件后执行的无目标战斗——
+    on_shikigami_defeated + launch_attack，不耗出击次数）。"""
+    g = F.mk_game(gdb.at_date(20200722), team=GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 3})
     play(g, 0, 10010608)                       # 觉醒（+2/+0 → eff 5）
     move(g, 1, 0)                              # B 姑获鸟（3/4）驻守战斗区
-    play(g, 0, 10010601)                       # 伞剑 20200723 版 +2 → 7 击杀
+    play(g, 0, 10010601)                       # 伞剑 20200722 版 +2 → 7 击杀
     assert pb.shikigami[0].defeated
     assert pb.health == 25                     # 追加攻击：战斗区已空，打敌方牌手 5
 
@@ -1232,9 +1244,9 @@ def test_bench_targeted_battle(gdb):
 
 
 def test_bench_targeted_battle_immunity(gdb):
-    """天翔鹤斩 20200723 版：追加"免疫战斗伤害"（battle_immunity 绑定本次战斗），
+    """天翔鹤斩 20200722 版：追加"免疫战斗伤害"（battle_immunity 绑定本次战斗），
     不受反击。"""
-    g = F.mk_game(gdb.at_date(20200723), team=GH_TEAM)
+    g = F.mk_game(gdb.at_date(20200722), team=GH_TEAM)
     pa, pb = F.battle_setup(g, {0: 2})
     c = give(g, 0, 10010606)
     g.apply({"op": "play_card", "uid": c.uid, "target": Ref(player=1, shikigami=1)})

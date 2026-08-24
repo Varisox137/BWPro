@@ -815,7 +815,7 @@ def test_on_kill_random_aura_fixed_once_key(real_game):
     pass_turns(g, 2)
     s = pa.shikigami[0]
     temp_before = s.temp_power
-    play(g, 0, 10010301)                       # 鬼之手（战斗牌）→ 固定项触发
+    play(g, 0, 10010301, target=Ref(player=1, shikigami=1))  # 鬼之手（战斗牌，选取目标）→ 固定项触发
     assert s.temp_power == temp_before + 1     # +1 力量
     assert s.shield >= 1                       # +1 护甲（战斗结算后保留）
 

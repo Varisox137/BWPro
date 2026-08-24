@@ -171,6 +171,12 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "target_shikigami", "shikigami_shikigami",
     "attacker_not_shikigami", "victim_not_shikigami", "shikigami_not_shikigami",
     "kind_not", "shikigami_not", "subtype_not", "natural_not",
+    "piercing",  # 伤害事件是否具[贯通]（伤害时点批次 payload 等值键；森罗之阵①
+    #            分段保护"若本次伤害具有[贯通]"门控）
+    "victim_is_chosen",  # 事件 victim 为选择目标之一（引燃"该伤害事件的受伤者是
+    #                    目标式神"——伤害插入帧条件；转移后的新事件受伤者 ≠ 目标则不命中）
+    "victim_dying",  # 事件 victim 式神已濒死（生命 ≤ 0；引燃"受伤者生命<=0"——
+    #                 扣减生命后、气绝事件前的判定）
     "defender_has_fragile", "victim_has_fragile", "victim_stunned",
     "amount_ge", "overheal_ge", "yaohu_damage_count_ge", "self_damage_taken_ge",
     "amount_le",

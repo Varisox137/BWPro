@@ -1,7 +1,7 @@
 id: 10012106
 name: 冰风暴
 versions:
-  best: 20191212
+  best: 20200722  # 历史最强 = 20200722（形态 3/5 严格优于发布版 2/4）
   history:
     - date: 20191212
       card_type: form
@@ -21,7 +21,7 @@ versions:
             - {op: damage, amount: 1, target: {kind: context, key: attacker}}
             - {op: stun, target: {kind: context, key: attacker}}
       text: "每当敌方式神攻击后，对其造成1点伤害，然后[眩晕]受到此伤害的式神。"
-    - date: 20200723
+    - date: 20200722  # 平衡性调整：形态身材 2/4→3/5（原误记 20200723，按 raw 订正）
       card_type: form
       rarity: SR
       level: 2

@@ -7,10 +7,11 @@ versions:
       card_type: combat
       rarity: SR
       level: 1
+      # 移入效果需选取目标（裁决(6)），但战斗本身仍是无目标战斗（被攻击者在战斗
+      # 准备步骤确定）——敌方战斗区非空时效果空发（if_combat_empty）；敌方准备区
+      # 无人时允许无目标使用（optional）
+      target: {kind: choose, pool: enemy_bench, optional: true}
       effects:
-        # 效果步在战斗结算前执行：敌方战斗区为空时随机将一名敌方式神移入战斗区
-        # （随机不取对象、不吃帷幕），新进场者随即成为本场无目标战斗的被攻击者
         steps:
-          - {op: force_enter_combat, random_pick: true, if_combat_empty: true,
-             target: {kind: all, pool: enemy_bench}}
+          - {op: force_enter_combat, if_combat_empty: true}
       text: 若敌方战斗区没有式神，将一个敌方式神移入战斗区。

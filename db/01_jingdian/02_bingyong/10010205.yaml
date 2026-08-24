@@ -12,7 +12,16 @@ versions:
       effects:
         steps: []
       abilities:
+        # 两段式（裁决(4)）：①伤害"造成/受到伤害开始时"——若本次伤害具[贯通]且兵俑
+        # 有护甲，获得"本次伤害的'护甲计算前1'将伤害改为0"（贯通修正已预分配：护甲
+        # 已扣、翻倍后口径的溢出已生成给牌手——仅保护兵俑不保护牌手）
         - when: on_damage_start
+          condition: {victim_shikigami: self, piercing: true}
+          steps:
+            - {op: cap_damage, to: zero_pre_shield}
+        # ②"护甲计算前1"——兵俑有护甲且伤害值>护甲，将伤害改为护甲值（非贯通流程下
+        # 早于护甲计算：护甲全部移除且不受伤）
+        - when: on_pre_shield_1
           condition: {victim_shikigami: self}
           steps:
             - {op: cap_damage, to: shield}

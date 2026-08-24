@@ -626,6 +626,10 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       类计数比较）
     - {victim_lethal: true}    ：事件 victim 当前生命 ≤ 事件伤害值 amount（"将受到致命
       伤害"——舍生响应；on_damage_start 时机在护甲计算前，按面板伤害判定）
+    - {victim_is_chosen: true} ：事件 victim 为选择目标之一（引燃"该伤害事件的受伤者
+      是目标式神"——伤害插入帧条件；伤害转移的新事件受伤者 ≠ 原目标则不命中）
+    - {victim_dying: true|false} ：事件 victim 式神已濒死（生命 ≤ 0；引燃"受伤者
+      生命<=0"——扣减生命后、气绝事件前的判定）
     - {victim_in_combat: true|false} ：事件 victim 是否其控制者战斗区式神（"战斗区式神
       被攻击"——沧海之盾响应；false = 准备区式神，桃红簇簇"准备区式神受到致命伤害"）
     - {holder_defeated: true|false} ：能力持有者当前是否气绝（觉醒·犬神"气绝时也能触发"
@@ -787,6 +791,21 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             vp = game.state.players[v.player]
             hp = vp.shikigami[v.shikigami].health if v.shikigami is not None else vp.health
             if int(event.get("amount", 0)) < hp:
+                return False
+        elif key == "victim_is_chosen":
+            # 事件 victim 为选择目标之一（引燃"该伤害事件的受伤者是目标式神"——伤害
+            # 插入帧条件；伤害转移产生的新事件受伤者 ≠ 原目标，天然不命中）
+            v = event.get("victim")
+            if not isinstance(v, Ref) or not chosen or v not in chosen:
+                return False
+        elif key == "victim_dying":
+            # 事件 victim 式神已濒死（生命 ≤ 0；引燃"受伤者生命<=0"——扣减生命后、
+            # 气绝事件前的判定；victim 非式神不命中）
+            v = event.get("victim")
+            if not isinstance(v, Ref) or v.shikigami is None:
+                return False
+            dying = game.state.players[v.player].shikigami[v.shikigami].health <= 0
+            if dying != bool(want):
                 return False
         elif key == "victim_in_combat":
             # 事件 victim 是否其控制者的战斗区式神（沧海之盾"战斗区式神被攻击"；

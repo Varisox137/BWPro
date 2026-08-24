@@ -121,6 +121,9 @@ class _DamageEvent:
     # 裁决(4)）：受伤者式神带 crit_pierce_mark 时于"造成/受到伤害开始时"置位——
     # [暴击]按关键字语义（攻击事件 kind=combat 翻倍、反击不翻倍）；[贯通]置
     # ev.piercing 并放行反击事件的贯通修正批次
+    pre_shield_zero: bool = False  # 森罗之阵①贯通分段保护标记（cap_damage
+    # to="zero_pre_shield" 在"造成/受到伤害开始时"置位）：本次伤害在"护甲计算前1"
+    # 改为 0——贯通修正已预分配（护甲已扣、溢出已生成），仅保护式神本人
 
 
 @dataclass
@@ -188,6 +191,17 @@ class Game:
         self._battle_strikes: dict[int, int] = {}
         # 结算中交互选择（青灯夜谈）的挂起块续点：(block, ctx, 下一步下标)；内存态不序列化
         self._suspended: tuple | None = None
+        # 伤害插入帧栈（damage 动作 insert 参数，裁决(7)(9)：风神一扇伤害后插入移动/
+        # 引燃伤害后插入牌手伤害）：帧在 damage 步结算期间压栈，伤害事件"造成/受到
+        # 伤害后"挂点（扣减生命后、on_damage/on_player_damaged 发出前）逐事件判定
+        # 帧条件并立即插入执行帧 steps；帧生效期间该伤害队列的气绝事件延后到下一次
+        # 队列排水后统一生成（_deferred_defeats，"先因移动触发…战斗，然后气绝"定案）
+        self._damage_insert_frames: list[dict] = []
+        self._deferred_defeats: list[tuple[Ref, Ref | None, str]] = []
+        # 排水深度（_drain_queue 可重入——块步骤之间/战斗时点内嵌套排水）：延后气绝
+        # 只在最外层排水（深度 1）统一生成，避免嵌套排水在插入帧触发的多步能力块
+        # 执行中途（如鸦天狗移回→授予远程→额外攻击之间）抢先定死濒死者（裁决(7)）
+        self._drain_depth: int = 0
         # 伤害转移类能力（redirect_damage_to_self）在伤害批次内生成的新事件挂起列表：
         # op 在 emit 上下文中执行（访问不到伤害队列），由 _run_damage_queue 统一入队
         self._redirect_spawned: list[_DamageEvent] = []
@@ -4382,6 +4396,10 @@ class Game:
         for ref, source, reason in victims:
             if defer_defeats is not None:
                 defer_defeats.append((ref, source, reason))
+            elif self._damage_insert_frames:
+                # 伤害插入帧生效期间（风神一扇/引燃，裁决(7)(9)）：气绝事件延后到下一次
+                # 队列排水后统一生成——插入效果（移动/牌手伤害）触发的延时能力先结算
+                self._deferred_defeats.append((ref, source, reason))
             else:
                 self.check_defeated(ref, source=source, reason=reason)
         self._settle("—— 伤害结算结束 ——")
@@ -4392,7 +4410,7 @@ class Game:
         battle 键供战斗绑定的一次性临时触发（二帚流"伤害改为1"类 on_damage_start
         挂账）按本战斗过滤。"""
         self.emit(name, damage=ev, victim=ev.victim, source=ev.source,
-                  amount=ev.amount, kind=ev.kind,
+                  amount=ev.amount, kind=ev.kind, piercing=ev.piercing,
                   battle=self._battle_stack[-1] if self._battle_stack else None)
 
     def _damage_double_modifiers(self, ev: _DamageEvent,
@@ -4559,9 +4577,22 @@ class Game:
                                        amount=overflow, kind=ev.kind, spell=ev.spell,
                                        start="pre_shield_2", card=ev.card))
         # 护甲计算前1（汤盆冲撞[增强]"此牌伤害翻倍"时机锚点，terminology.md 登记）：
-        # 来源卡牌实例带 double_damage 修饰（conditional_mods 装配写入）时伤害值翻倍；
-        # 限原始事件（start="full"）——转移新事件从"护甲计算前0"开始、贯通溢出从
-        # "护甲计算前2"开始，均晚于本锚点（裁决(3)），不再判定
+        # ①森罗之阵贯通分段保护归零（pre_shield_zero 标记，裁决(4)：贯通修正在前的
+        # 额外护甲计算已扣护甲、翻倍后口径的贯通分配已生成溢出事件，此处将命中式神
+        # 本人的伤害改为 0——仅保护式神不保护牌手）→ ②on_pre_shield_1 批次（森罗之阵②
+        # "有护甲且伤害>护甲则改为护甲值"挂点；转移新事件 start="pre_shield_0" 从更晚的
+        # 护甲计算前0 进入，跳过本锚点）→ ③来源卡牌实例带 double_damage 修饰
+        # （conditional_mods 装配写入）时伤害值翻倍；③限原始事件（start="full"）——
+        # 转移新事件从"护甲计算前0"开始、贯通溢出从"护甲计算前2"开始，均晚于本锚点
+        # （裁决(3)），不再判定
+        if ev.start != "pre_shield_0":
+            if ev.pre_shield_zero and ev.amount > 0:
+                ev.amount = 0
+                self._log(f"{self.db.shikigami[s.id].name} 的森罗之阵挡下了本次伤害")
+                return
+            self._emit_damage_batch("on_pre_shield_1", ev)
+            if ev.amount <= 0:
+                return  # 护甲计算前1 批次将伤害归零（森罗之阵②等）：终止结算
         if ev.start == "full" and ev.card is not None \
                 and ev.card.mods.get("double_damage") and ev.amount > 0:
             ev.amount *= 2
@@ -4709,6 +4740,7 @@ class Game:
                 # 出牌效果实际伤害过的敌方式神（答复(7)：己方式神/牌手不计，去重）
                 self._affected_stack[-1]["refs"].append(ev.victim)
             self._queue_lifesteal(ev)  # 伤害后（延时，优先级 1 锚点）：吸血生成恢复生命事件
+            self._run_damage_inserts(ev)  # 造成伤害后：伤害插入帧立即插入（先于延时批次）
             self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source,
                       kind=ev.kind, fragile=ev.fragile,
                       battle=self._battle_stack[-1] if self._battle_stack else None)
@@ -4733,12 +4765,41 @@ class Game:
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
             self._field_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
+            self._run_damage_inserts(ev)  # 受到伤害后：伤害插入帧立即插入（先于延时批次）
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind,
                       battle=self._battle_stack[-1] if self._battle_stack else None)
             if p.health <= 0:
                 # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
                 self._set_pending_end(loser=ev.victim.player, defeat=True)
+
+    def _run_damage_inserts(self, ev: "_DamageEvent") -> None:
+        """伤害插入帧执行点（"造成/受到伤害后"，裁决(7)(9)：扣减生命后、
+        on_damage/on_player_damaged 延时批次发出前立即插入）。
+
+        逐活动帧判定帧条件（payload 含 victim/source/amount/kind/damage 可变对象，
+        选择目标随帧存储供 victim_is_chosen 判定），命中即以帧上下文同步执行
+        帧 steps（风神一扇"移动该受伤式神"/引燃"对目标式神所属牌手造成2点伤害"）。
+        插入结算 queued 的延时事件（on_leave_combat/on_player_damaged 等）先于
+        本事件的延时批次入队；帧生效期间的气绝事件经 _deferred_defeats 延后到
+        下一次队列排水后统一生成（"先因移动触发…战斗，然后气绝"）。
+        """
+        if not self._damage_insert_frames:
+            return
+        payload = {"name": "on_damage", "victim": ev.victim, "source": ev.source,
+                   "amount": ev.amount, "kind": ev.kind, "damage": ev,
+                   "player": ev.victim.player}
+        for frame in self._damage_insert_frames:
+            cond = frame.get("condition")
+            if cond and not self._match(cond, payload, frame["controller"],
+                                        holder=frame["source"],
+                                        chosen=frame["chosen"]):
+                continue
+            ctx = ExecContext(controller=frame["controller"], source=frame["source"],
+                              card=frame["card"], chosen=list(frame["chosen"]),
+                              event=payload, memo={})
+            for st in frame["steps"]:
+                self._run_step(st, ctx)
 
     def _account_yaohu_damage(self, ev: _DamageEvent) -> None:
         """妖狐伤害计数（契约 §3.6）：伤害事件来源 = 妖狐且实际造成（走到扣减生命批次）
@@ -6120,6 +6181,13 @@ class Game:
         指令/回合级）统一清尾。结算中途（能力块/战斗等嵌套排水）只排无标记项，
         不冲刷任何单元的复制延时项（含外层卡牌级与本单元尚未完成的）。
         """
+        self._drain_depth += 1
+        try:
+            self._drain_queue_inner()
+        finally:
+            self._drain_depth -= 1
+
+    def _drain_queue_inner(self) -> None:
         guard = 0
         while True:
             if not self._horizon_stack:
@@ -6127,9 +6195,21 @@ class Game:
             else:
                 pend = next((p for p in self.queue if p.horizon == 0), None)
             if pend is None:
+                if (self._deferred_defeats and not self.state.pending_end
+                        and self._drain_depth == 1):
+                    # 伤害插入帧期间延后的气绝事件（裁决(7)(9)）：队列冲刷完毕
+                    # （插入效果触发的延时能力——移动/牌手伤害的监听——已结算）
+                    # 后统一生成，其延时批次继续入队由本循环结算；仅最外层排水处理
+                    # （嵌套排水可能处于插入帧触发的多步能力块步骤之间——此时定死
+                    # 濒死者会截断该块剩余步骤，如觉醒·鸦天狗移回后的额外攻击）
+                    deferred, self._deferred_defeats = self._deferred_defeats, []
+                    for ref, source, reason in deferred:
+                        self.check_defeated(ref, source=source, reason=reason)
+                    continue
                 break
             if self.state.pending_end:
                 self.queue.clear()
+                self._deferred_defeats.clear()  # 待结束：延后的气绝事件一并丢弃
                 break
             guard += 1
             if guard > MAX_QUEUE_ITERATIONS:

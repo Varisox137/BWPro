@@ -213,7 +213,7 @@ class ExecContext:
     # ——卡牌效果（on_play/响应/卡牌触发器/临时触发）为 False；贯通继承等的判定依据
     memo: dict[str, Any] | None = None  # 块内步骤间暂存（由 _resolve_block 初始化）：
     # damage 动作写入 last_damage_victims（上一步伤害的受伤者），后续 step 以
-    # TargetSpec(kind="context", key="last_damage_victims") 引用（风神一扇）
+    # TargetSpec(kind="context", key="last_damage_victims") 引用
     field: Any = None  # 触发来源幻境实体（幻境能力块结算时持有——自毁/改降耐久/
     # 自身耐久条件等"此牌"自指语义的定位依据；非幻境能力为 None）
     block: Any = None  # 正在结算的效果块（_resolve_pending 塞入——field_rebound

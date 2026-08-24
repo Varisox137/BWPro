@@ -10,13 +10,15 @@ versions:
       target: {kind: choose, pool: any_shikigami}  # 含己方式神（维护者确认：可对己方残血式神使用）
       effects:
         steps:
-          # scope="play"："本次使用期间"窗口——未消灭不留存（先例黑羽之刃 10010404）
-          - op: delay_grant
-            when: on_shikigami_defeated
-            condition: {victim_kind: shikigami, source_shikigami: self}
-            scope: play
-            steps:
-              # 对它的牌手造成2点伤害（消灭己方式神则打己方牌手）
-              - {op: damage, amount: 2, target: {kind: context, key: victim_player}}
-          - {op: damage, amount: 2}
+          # 裁决(9)：在该伤害的"造成/受到伤害后"（原延时时机改立即插入）——若该伤害
+          # 事件的受伤者是目标式神（考虑伤害转移：转移后新事件的受伤者 ≠ 目标则不触发）
+          # 且受伤者生命<=0，立即插入"对它的牌手造成2点伤害"；次序 = 牌手受伤触发效果
+          # → 被消灭目标的受伤效果 → 该式神的气绝事件（插入帧期间气绝延后统一生成）
+          - op: damage
+            amount: 2
+            insert:
+              condition: {victim_is_chosen: true, victim_dying: true}
+              steps:
+                # 对它的牌手造成2点伤害（消灭己方式神则打己方牌手）
+                - {op: damage, amount: 2, target: {kind: context, key: victim_player}}
       text: 对一个式神造成2点伤害，若击杀则再对它的牌手造成2点伤害。

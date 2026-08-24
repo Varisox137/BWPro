@@ -109,9 +109,16 @@ def _sen_luo(db, cid=SEN_LUO):
         cid, shikigami=BING, card_type="form", level=2,
         form_power=4, form_health=7, token=True,
         steps=[F.Step(op="gain_shield", amount=2, target=T(kind="self"))],
-        abilities=[F.EffectBlock(
-            when="on_damage_start", condition={"victim_shikigami": "self"},
-            steps=[F.Step(op="cap_damage", to="shield")])])
+        abilities=[
+            # 两段式（裁决(4)）：①贯通伤害在伤害开始时挂"护甲计算前1 改 0"分段保护
+            F.EffectBlock(
+                when="on_damage_start",
+                condition={"victim_shikigami": "self", "piercing": True},
+                steps=[F.Step(op="cap_damage", to="zero_pre_shield")]),
+            # ②护甲计算前1：有护甲且伤害>护甲则改为护甲值
+            F.EffectBlock(
+                when="on_pre_shield_1", condition={"victim_shikigami": "self"},
+                steps=[F.Step(op="cap_damage", to="shield")])])
     return cid
 
 
@@ -346,6 +353,43 @@ def test_hui_target_already_defeated_no_error(db, make_game):
     assert a.shikigami[BAI_IDX].delayed == []
 
 
+def test_hui_delayed_damage_inherits_piercing_lifesteal(db, make_game):
+    """会（裁决(1)）：延时 8 伤 = 白狼造成的非战斗伤害——白狼持[贯通]时贯通溢出
+    传导牌手、持[吸血]时按其伤害恢复牌手生命（来源式神关键字通道）。"""
+    _hui(db)
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BAI_IDX].level = 2
+    bai = a.shikigami[BAI_IDX]
+    bai.keywords.extend(["piercing", "lifesteal"])
+    b.shield = 0
+    a.health = 20
+    play(g, 0, HUI, target=Ref(player=1, shikigami=0))
+    pass_turns(g, 2)                          # A 第 2 回合开始触发：8 伤贯通
+    assert b.shikigami[0].defeated       # 4 命全吃仍击杀
+    assert b.health == 26                # 贯通溢出 4 传导牌手
+    assert a.health == 28                # 吸血：两段各按实际伤害恢复（4+4）
+
+
+def test_hui_delayed_damage_not_spell(db, make_game):
+    """会（裁决(1)）：延时伤害不是法术伤害——"你的法术牌获得[吸血]"类卡牌光环
+    （猩红之月型）不享用（延时能力 ctx 无来源卡牌，spell=False）。"""
+    _hui(db)
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BAI_IDX].level = 2
+    b.shield = 0
+    a.health = 20
+    a.card_auras.append({"shikigami": None, "card_type": "spell", "card_id": None,
+                         "tag": None, "keywords": ["lifesteal"], "cost_zero": False,
+                         "power": 0, "shield": 0, "turn": None, "scope": "game"})
+    play(g, 0, HUI, target=Ref(player=1, shikigami=0))
+    pass_turns(g, 2)
+    assert b.shikigami[0].defeated       # 8 伤击杀 4 血（无贯通不溢出）
+    assert b.health == 30
+    assert a.health == 20                # 非法术伤害：法术牌[吸血]光环不生效
+
+
 # ---------- 8. 尘刀（护甲快照战力） ----------
 
 def test_chendao_power_snapshot(db, make_game):
@@ -388,6 +432,29 @@ def test_senluo_damage_cap(db, make_game):
     g._drain_queue()
     assert bing.shield == 2              # 3 < 5 不截
     assert bing.health == 3
+
+
+def test_senluo_piercing_segmented_guard(db, make_game):
+    """森罗之阵两段式（裁决(4) 测试例）：7 攻[暴击][贯通]攻击 1 生命 2 护甲的
+    兵俑-森罗之阵——贯通修正先扣护甲（7-2=5）→ 提前"扣减生命前"系列[暴击]翻倍（10）
+    → 贯通分配（命中兵俑 1 / 溢出 9 给牌手）→"护甲计算前1"分段保护把命中兵俑的
+    1 改为 0：牌手受 9 点贯通溢出、兵俑 1 生命 0 护甲存活（仅保护兵俑不拦截溢出）。"""
+    _sen_luo(db)
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BING_IDX].level = 2
+    play(g, 0, SEN_LUO)                    # 兵俑形态 4/7，进场 +2 甲
+    bing = a.shikigami[BING_IDX]
+    bing.health = 1                        # 1 生命 2 护甲
+    atk = b.shikigami[BAI_IDX]             # B 白狼位 3/4
+    atk.level = 1
+    atk.temp_power = 4                     # 7 攻
+    atk.keywords.extend(["critical", "piercing"])
+    move(g, 0, BING_IDX)                   # 兵俑驻守战斗区
+    pass_turns(g, 1)                       # 换 B 回合出击
+    g.apply({"op": "assault", "index": BAI_IDX})
+    assert bing.health == 1 and bing.shield == 0 and not bing.defeated
+    assert a.health == 21                  # 贯通溢出 9（翻倍后口径分配）
 
 
 # ---------- 10. 不动如山（进场进战斗区 + 回合开始加攻） ----------

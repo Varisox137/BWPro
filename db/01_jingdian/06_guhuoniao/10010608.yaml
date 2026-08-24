@@ -1,7 +1,7 @@
 id: 10010608
 name: 觉醒·姑获鸟
 versions:
-  best: 20191212
+  best: 20200722
   history:
     - date: 20191212
       card_type: spell
@@ -29,7 +29,8 @@ versions:
           steps:
             - {op: grant_keyword, keyword: remote, target: {kind: self}}
       text: "当其他己方式神攻击后，本回合此牌获得[瞬发]。[觉醒]：{[远程]。}"
-    - date: 20200723
+    - date: 20200722  # 平衡性调整：觉醒追加"击杀敌方式神时再发起一次攻击"（原误记
+      # 20200723，按 raw 订正）
       card_type: spell
       subtype: awaken
       awaken_power: 2   # +2/+0：永久身材增益，"觉醒后"延时时机之后授予

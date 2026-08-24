@@ -9,7 +9,14 @@ versions:
       level: 1
       effects:
         steps:
-          # last_damage_victims = 上一步伤害的受伤者（damage 动作写入块内暂存）
-          - {op: damage, amount: 2, target: {kind: all, pool: projectile}}
-          - {op: retreat, target: {kind: context, key: last_damage_victims}}
+          # 裁决(7)：在该伤害的"造成伤害后"立即插入"移动该受伤式神"（原延时时机改
+          # 立即插入——受伤式神因此移动触发的能力（觉醒·鸦天狗）先于其气绝结算）；
+          # 未实际造成伤害（被护甲吸收等）不移回
+          - op: damage
+            amount: 2
+            target: {kind: all, pool: projectile}
+            insert:
+              condition: {victim_kind: shikigami}
+              steps:
+                - {op: retreat, target: {kind: context, key: victim}}
       text: "[投射]：{造成2点伤害，然后将受到此伤害的式神移回准备区}。"

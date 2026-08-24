@@ -1,7 +1,7 @@
 id: 10010607
 name: 慈乌稚子
 versions:
-  best: 20191212
+  best: 20200722
   history:
     - date: 20191212
       card_type: form
@@ -19,7 +19,7 @@ versions:
           steps:
             - {op: grant_keyword, keyword: haste, target: {kind: self}}
       text: 当其他己方式神攻击后，姑获鸟获得[迅捷]。
-    - date: 20200723
+    - date: 20200722  # 平衡性调整：形态身材 8/4→8/6（原误记 20200723，按 raw 订正）
       card_type: form
       rarity: R
       level: 3
