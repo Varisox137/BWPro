@@ -13,7 +13,7 @@ versions:
         steps: []
       abilities:
         # 对跳跳弟弟造成战斗伤害的式神获得3破甲（夺命 10011006 on_damage 管线；
-        # 反击伤害 kind=counter 不命中——与夺命同口径仅 kind=combat）
+        # 反击属战斗伤害同样命中——三类化裁决"受到/造成战斗伤害对攻击、反击均可触发"）
         - when: on_damage
           condition: {victim_shikigami: self, kind: combat}
           steps:

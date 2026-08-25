@@ -2919,8 +2919,8 @@ def test_redirect_to_field(db, make_game):
 
 
 def test_field_absorbs_counter_damage(real_game):
-    """日轮之城（真实库回归）：战斗伤害口径含反击（kind_not: effect）——泷夜叉姬
-    出击吃反击时，反击战斗伤害同样改降幻境耐久（曾漏 kind=counter 只认 combat）。"""
+    """日轮之城（真实库回归）：战斗伤害口径含反击（kind: combat——三类化合并后反击
+    同 kind）——泷夜叉姬出击吃反击时，反击战斗伤害同样改降幻境耐久。"""
     g = real_game([100302, 100101, 100102, 100123])
     pa, pb = F.battle_setup(g, {0: 1})
     pa.orb = 9

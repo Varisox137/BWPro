@@ -13,9 +13,10 @@ versions:
         steps:
           - {op: gain_shield, amount: 2}
           # "本回合获得'当他造成战斗伤害时，为你恢复2点生命'"：延迟能力绑定到被选式神
-          # （bind=chosen），scope=turn 本回合未消耗则己方回合开始清除
+          # （bind=chosen），scope=turn 本回合未消耗则己方回合开始清除；
+          # 战斗伤害口径 kind: combat（含反击——三类化裁决）
           - {op: delay_grant, bind: chosen, scope: turn, when: on_damage,
-             condition: {source_shikigami: self, kind_not: effect},
+             condition: {source_shikigami: self, kind: combat},
              steps: [{op: heal, amount: 2, target: {kind: all, pool: self_player}}]}
       response:
         # 响应：当你战斗区式神被攻击时，自动对其使用（choose 目标自动取事件 victim）
@@ -24,6 +25,6 @@ versions:
         steps:
           - {op: gain_shield, amount: 2}
           - {op: delay_grant, bind: chosen, scope: turn, when: on_damage,
-             condition: {source_shikigami: self, kind_not: effect},
+             condition: {source_shikigami: self, kind: combat},
              steps: [{op: heal, amount: 2, target: {kind: all, pool: self_player}}]}
       text: 使一个己方式神获得2护甲并本回合获得‘当他造成战斗伤害时，为你恢复2点生命’。[响应]：{当你战斗区式神被攻击时，自动对其使用。}

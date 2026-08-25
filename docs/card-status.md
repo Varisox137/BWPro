@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 无基础能力 |
 | 01 天邪鬼赤·燃烧 | ✅ | |
-| 02 天邪鬼黄·鼓舞 | ✅ | 牌手级监听（player_aura scope=turn，无 once_key 可叠加）；"法术伤害"按非战斗（effect）伤害（维护者答复(2)） |
+| 02 天邪鬼黄·鼓舞 | ✅ | 牌手级监听（player_aura scope=turn，无 once_key 可叠加）；三类化后卡面"法术伤害"精确映射 kind: spell（法术牌效果伤害；旧答复(2)"按非战斗伤害"系无 spell 类时近似，待确认见 questions.md） |
 | 03 天邪鬼青·鸢击 | ✅ | |
 | 04 天邪鬼绿·拍打 | ✅ | |
 
@@ -191,7 +191,7 @@
 | 01 凤鸣 | ✅ | [瞬发] 打敌方牌手；双版本：20191212（best）3 伤 / 20200227 2 伤 |
 | 02 瑞翔 | ✅ | 所有敌方式神 1（enemy_shikigami，不含牌手） |
 | 03 引燃 | ✅ | 可对己方式神（维护者答复）；消灭追加改伤害插入帧（裁决(9)：damage insert {victim_is_chosen + victim_dying → damage 2 context victim_player}——伤害后立即插入，先于受伤效果/气绝事件） |
-| 04 焚羽 | ✅ | 非战斗伤害 +1：on_damage_start {source_shikigami: self, kind: effect} boost_damage（含觉醒后其他式神法术触发的投射） |
+| 04 焚羽 | ✅ | 非战斗伤害 +1：on_damage_start {source_shikigami: self, kind_not: combat} boost_damage（三类化后法术/其他均命中；含觉醒后其他式神法术触发的投射） |
 | 05 凤火 | ✅ | |
 | 06 觉醒·凤凰火 | ✅ | 己方式神任意专属法术 → 投射 1（{shikigami_not: null} 排除中立牌；来源=凤凰火，吃焚羽、计炎舞） |
 | 07 炎舞 | ✅ | [贯通] 投射 5（步骤显式 piercing:true）；增强按次数不限伤害类型（on_player_damaged persistent 计数，打出装配快照） |
@@ -236,11 +236,11 @@
 | 基础能力 | ✅ | on_heal 过量转化：payload 新增 overheal（治疗量-实际治疗量）；{source_shikigami: self, target_side: friendly, overheal_ge 1} → 目标获得等量护甲。实际恢复 0（满血）不发 on_heal、不触发转化（答复 0） |
 | 01 治愈之水 | ✅ | [瞬发]；{base: 3, half_shield_of: self} 动态数值（海坊主护甲 //2，向下取整）；choose any_character 新池 |
 | 02 灵能 | ✅ | 形态 3/6：裁决(1) 改挂 **on_after_heal** {source_shikigami: self, target_kind: player, **target_side: friendly**}（"治疗后"延时时机、仅实际恢复触发；执行者须为己方牌手——为敌方牌手恢复不触发）→ 自身恢复等量（按实际治疗量，自疗走治疗管线可触发过量转护甲） |
-| 03 沧海之盾 | ✅ | +2 甲 + delay_grant **bind=chosen**（延迟能力绑定被选式神；scope=turn）：其造成战斗伤害（kind≠effect，含反击）时为牌手恢复 2（裁决(2) 核验：恢复来源=被选式神而非海坊主——灵能不联动）；[响应]挂 on_before_assault {victim_in_combat: true} 新条件键，choose 自动取事件 victim（古尘之盾先例） |
+| 03 沧海之盾 | ✅ | +2 甲 + delay_grant **bind=chosen**（延迟能力绑定被选式神；scope=turn）：其造成战斗伤害（kind: combat，含反击——三类化合并）时为牌手恢复 2（裁决(2) 核验：恢复来源=被选式神而非海坊主——灵能不联动）；[响应]挂 on_before_assault {victim_in_combat: true} 新条件键，choose 自动取事件 victim（古尘之盾先例） |
 | 04 水龙卷 | ✅ | {base: 3, shield_of: self} 动态造伤（海坊主当前每 1 点护甲伤害 +1；开服版不再先自 +3 甲） |
 | 05 祝福之水 | ✅ | [瞬发]；friendly_character 新池（己方在场式神 + 己方牌手） |
 | 06 巨浪 | ✅ | 所有敌方式神 2 伤（enemy_shikigami）；damage 记录块内暂存 last_damage_total（实际造成伤害合计，扣减生命口径，护甲吸收不计、破甲增伤计入——裁决(3) 核验）→ heal {memo: last_damage_total} 恢复自身 |
-| 07 蹈海 | ✅ | 双快照：20191212 形态 4/9（best 保持）/ 20200520 形态 3/8；on_damage {source_shikigami: self, kind_not: effect} → friendly_others_character 新池（己方其他角色，排除来源含牌手）恢复等量 |
+| 07 蹈海 | ✅ | 双快照：20191212 形态 4/9（best 保持）/ 20200520 形态 3/8；on_damage {source_shikigami: self, kind: combat}（含反击——三类化合并）→ friendly_others_character 新池（己方其他角色，排除来源含牌手）恢复等量 |
 | 08 觉醒·海坊主 | ✅ | +1/+3；觉醒替换 = 过量治疗额外转等量力量+护甲（buff_power 临时修正；开服版无"恢复 3"） |
 
 ## 青坊主（100111）
@@ -643,7 +643,7 @@
 | 01 血袭 | ✅ | 双快照：战斗 [吸血]；20200624 +0/+0 / 20200820 +1/+1（best=20200820） |
 | 02 血蝠之盾 | ✅ | grant_redirect 一次性伤害转移（ext["damage_redirects"]，类别不限定案）；[响应] on_before_assault {victim_side: friendly} 自动对其使用 |
 | 03 血怒 | ✅ | [瞬发][吸血] 对敌方牌手 1 伤；[增强] = CardDef.triggers 游离块 on_after_heal {target_side: enemy, target_kind: player, card_in_hand} → add_mod damage_boost 累加；吸血姬受伤 → choose any_character 补 1 伤（答复(12) 定案） |
-| 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血限战斗伤害 kind: [combat, counter]、反击也算——答复(9) 定案） |
+| 04 初拥 | ✅ | [瞬发] 1 伤 + delay_grant 双块（bind=chosen、scope=turn、uses=99）on_damage/on_player_damaged → heal {event: amount} 己方牌手（吸血限战斗伤害 kind: combat——三类化合并后反击同 kind，答复(9) 定案） |
 | 05 渴血之时 | ✅ | 形态 3/6，[吸血] |
 | 06 血香 | ✅ | 战斗 +2/+1；@20200624 conditional_keywords player_health_ge 30 → [连击]（按 ≥ 判定）；@20200928 [增强]改为免疫战斗伤害——match_condition 新键 `player_health_ge` + battle_immunity step Step.condition（鸩羽条件免疫先例，raw"生命值为30"按 ≥30 口径） |
 | 07 觉醒·吸血姬 | ✅ | +1/+1；觉醒能力 on_after_heal 同条件 → buff_power（perm: false）/gain_shield {event: amount, cap: 5} |
@@ -700,13 +700,13 @@
 |----|------|------|
 | 基础能力 | ✅ | 能力伪关键字 power_if_field（有幻境时 +1 力量，读取时求值；觉醒换绑通道登记） |
 | 01 曜断 | ✅ | 战斗牌；conditional_keywords friendly_field → [瞬发] |
-| 02 新月之哀 | ✅ | 幻境 耐久1 [瞬发]；能力 on_after_shield {victim_shikigami: self, kind: effect} → redirect_to_field（非战斗伤害改降此幻境耐久；块标 priority:1） |
-| 03 日轮之城 | ✅ | 同构战斗伤害版（**kind_not: effect 口径，含反击 kind=counter**——实战 bug 修复：原 kind: combat 漏反击；块标 priority:1） |
+| 02 新月之哀 | ✅ | 幻境 耐久1 [瞬发]；能力 on_after_shield {victim_shikigami: self, kind_not: combat} → redirect_to_field（非战斗伤害改降此幻境耐久——三类化后法术/其他均代受；块标 priority:1） |
+| 03 日轮之城 | ✅ | 同构战斗伤害版（**kind: combat 口径，含反击**——三类化合并后反击同 kind；块标 priority:1） |
 | 04 残阳无影 | ✅ | 战斗牌；进场 summon_field pick=choose（"选择召唤"真选择——pending kind field_summon_pick，候选>1 挂起、单只自动，CLI/net/超时随机均接入）；on_player_damaged {source_shikigami: self, player: opponent} → field_op pick=all 全幻境 +3 耐久 |
 | 05 觉醒·泷夜叉姬 | ✅ | 觉醒牌 keywords 伪关键字换绑（power_per_field 每幻境 +1 力量）；能力 on_before_assault {attacker_shikigami: self, friendly_field} → grant_keyword initiative scope=battle |
 | 06 月之奥义 | ✅ | 战斗牌；on_player_damaged {source_shikigami: self, player: opponent, kind: combat} → field_op side=enemy pick=max_intensity destroy（消灭敌方耐久最大幻境；帷幕候选排除） |
 | 07 胧月无眠 | ✅ | 战斗牌；on_after_assault {attacker_shikigami: self, friendly_field} → field_op pick=random destroy 己方随机幻境 + auto_use 再次使用此牌（auto_use 战斗牌通道） |
-| 08 永劫轮回 | ✅ | 形态；进场 summon_field shikigami=self pick=all（两个幻境全召唤）；能力双块按类别分代（均 priority:1）：on_after_shield {…, **kind_not: effect**} → redirect_to_field field_card=10030203（战斗伤害→日轮之城，含反击——同日轮之城口径修复）/ {…, kind: effect} → field_card=10030202（法术伤害→新月之哀）；redirect_to_field 首个同名守卫（队列前缀已有同名牌则空操作） |
+| 08 永劫轮回 | ✅ | 形态；进场 summon_field shikigami=self pick=all（两个幻境全召唤）；能力双块按类别分代（均 priority:1）：on_after_shield {…, **kind: combat**} → redirect_to_field field_card=10030203（战斗伤害→日轮之城，含反击——三类化合并）/ {…, kind_not: combat} → field_card=10030202（非战斗伤害→新月之哀，法术/其他均代受）；redirect_to_field 首个同名守卫（队列前缀已有同名牌则空操作） |
 
 ## 辉夜姬（100303）
 

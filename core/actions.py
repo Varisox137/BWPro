@@ -2877,7 +2877,7 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
 @action("counter_piercing")
 def counter_piercing(game, ctx, *, targets: list[Ref]) -> None:
     """反击贯通标记（targets 忽略）：登记到当前战斗上下文——该战斗中被攻击方的反击
-    伤害具有贯通（贯通修正批次对 kind=counter 的例外，rules.md 第五章步骤3；战斗终止点清除）。
+    伤害具有贯通（贯通修正批次对反击（is_counter）的例外，rules.md 第五章步骤3；战斗终止点清除）。
 
     主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
     响应插入使用时作为普通动作执行，登记到被插入的当前战斗。

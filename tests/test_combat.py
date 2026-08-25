@@ -1624,3 +1624,42 @@ def test_battle_damage_per_event_trigger(db, make_game):
     assert pb3.health == 28                  # 牌手段溢出 2
     assert len(pa3.zones["deck"]) == deck2   # 未触发
     assert pa3.health == 20
+
+
+# ==========================================================================
+# 伤害分类三类化：反击并入战斗伤害（kind=combat + is_counter，维护者裁决）
+# ==========================================================================
+
+def test_counter_damage_matches_combat_kind(db, make_game):
+    """反击伤害合并入战斗分类："受到/造成战斗伤害"条件（kind: combat）对反击同样
+    触发（"攻击时"类由独立事件时机表达）——瘴疠体质 10012002 型管线：出击方带
+    victim=self 监听，吃反击时令反击方获得破甲。"""
+    db.shikigami[100101].ability = F.EffectBlock(
+        when="on_damage",
+        condition={"victim_shikigami": "self", "kind": "combat"},
+        steps=[F.Step(op="gain_shield", amount=3, kind="fragile",
+                      target=T(kind="context", key="source"))])
+    g = make_game()
+    move(g, 1, 0)                         # B0 驻守战斗区
+    a = g.state.players[0].shikigami[0]   # 100101 出击（监听持有者）
+    b = g.state.players[1].shikigami[0]
+    g.apply({"op": "assault", "index": 0})
+    # A0 攻击命中 B0（victim=B0 ≠ 持有者，不触发）；B0 反击命中 A0（victim=self
+    # 且反击 kind=combat）→ 触发：反击来源 B0 获得 3 破甲
+    assert b.health == 1                  # 4 - 3 攻击
+    assert a.health == 1                  # 4 - 3 反击
+    assert b.shield == -3                 # 反击触发：来源获得 3 破甲
+
+
+def test_counter_kill_counts_kill_ledger(db, make_game):
+    """反击击杀计入击杀账本（kill_total/kill_by 按消灭来源记账——三类化后反击与
+    攻击同 kind=combat；判官夺命 kill_count_ge 门控同读此账本）。"""
+    g = make_game()
+    move(g, 1, 0)
+    a = g.state.players[0].shikigami[0]
+    a.health = 1                          # 反击 3 即死
+    g.apply({"op": "assault", "index": 0})
+    pb = g.state.players[1]
+    assert a.defeated                     # 被反击击杀
+    assert pb.kill_total == 1
+    assert pb.kill_by.get(100101) == 1    # B0（100101）反击击杀按来源记账

@@ -389,9 +389,10 @@ def test_defeated_only_perm_buffs_apply(db, make_game):
 # ==========================================================================
 
 def _boost_ability(db, amount=1, sid=SID):
-    """测试能力：on_damage_start 时来源=自身、kind=effect 的伤害 +amount。"""
+    """测试能力：on_damage_start 时来源=自身的非战斗伤害 +amount（焚羽型：
+    kind_not=combat——三类化后法术/其他均命中）。"""
     db.shikigami[sid].ability = F.EffectBlock(
-        when="on_damage_start", condition={"source_shikigami": "self", "kind": "effect"},
+        when="on_damage_start", condition={"source_shikigami": "self", "kind_not": "combat"},
         steps=[F.Step(op="boost_damage", amount=amount)])
 
 
@@ -424,7 +425,7 @@ def test_boost_damage_source_mismatch_noop(db, make_game):
 
 
 def test_boost_damage_kind_filter(db, make_game):
-    """负面对照：战斗伤害（kind=combat/counter）不匹配条件，不增幅。"""
+    """负面对照：战斗伤害（kind=combat，含反击）不匹配条件，不增幅。"""
     _boost_ability(db)
     g, pa, pb = _game(make_game)
     move(g, 1, 0)
@@ -514,13 +515,25 @@ def test_effect_immunity_friendly_or_none_source_not(db, make_game):
 
 
 def test_effect_immunity_not_combat(db, make_game):
-    """kind=effect 免疫不覆盖战斗伤害（combat/counter 属 combat_damage 免疫）。"""
+    """非战斗伤害免疫（kind=effect 条目）不覆盖战斗伤害（combat 含反击，
+    属 combat_damage 免疫）。"""
     _effect_immunity_spell(db)
     g, pa, pb = _game(make_game)
     play(g, 0, 10010158)
     ref = Ref(player=0, shikigami=IDX)
     g.deal_to_shikigami(ref, 2, Ref(player=1, shikigami=0), kind="combat")
     assert pa.shikigami[IDX].health == 2     # 战斗伤害照常
+
+
+def test_effect_immunity_covers_spell_damage(db, make_game):
+    """非战斗伤害免疫覆盖法术伤害（三类化口径：法术属非战斗伤害——觉醒·山童
+    "免疫敌方非战斗伤害"对法术牌效果伤害 kind=spell 同样生效）。"""
+    _effect_immunity_spell(db)
+    g, pa, pb = _game(make_game)
+    play(g, 0, 10010158)
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, Ref(player=1, shikigami=0),
+                        spell=True)
+    assert pa.shikigami[IDX].health == 4     # 法术伤害同样免疫
 
 
 # ---------- 免疫次序（修正定案"免疫只看最终受伤者"，挂点=护甲计算后优先级 3） ----------
@@ -823,7 +836,7 @@ def test_damage_to_fragile_conversion(db, make_game):
 
 
 def test_blessing_negates_enemy_spell_damage(db, make_game):
-    """庇佑（消耗型关键字）：抵消一次敌方造成的法术伤害（法术牌效果伤害，spell=True）
+    """庇佑（消耗型关键字）：抵消一次敌方造成的法术伤害（法术牌效果伤害，kind=spell）
     并失去；战斗伤害、式神能力伤害（非法术的非战斗伤害——答复(7)）、己方来源伤害
     不触发；被护甲完全吸收的伤害不消耗。"""
     g, pa, pb = _game(make_game)
@@ -1076,8 +1089,8 @@ def test_delayed_lifesteal_grant_stacks(db, make_game):
     scope=turn）：多次授予各触发一次、与[吸血]关键字叠加；[吸血]自身不叠加——
     两张授予 + 吸血，3 点战斗伤害依次 3 次恢复 3（维护者定案）。
     授予挂 on_damage（式神受伤）与 on_player_damaged（牌手受伤）两个事件各一层；
-    kind: [combat, counter] 限战斗伤害类别（维护者答复(9) 定案）——效果伤害不触发
-    授予（仅[吸血]关键字通道照常恢复）。"""
+    kind: combat 限战斗伤害类别（维护者答复(9) 定案；三类化合并后反击同 kind）——
+    效果伤害不触发授予（仅[吸血]关键字通道照常恢复）。"""
     cid = 10010168
     grant_steps = [{"op": "heal", "amount": {"event": "amount"},
                     "target": {"kind": "all", "pool": "self_player"}}]
@@ -1085,11 +1098,11 @@ def test_delayed_lifesteal_grant_stacks(db, make_game):
         cid, shikigami=SID, level=1, token=True,
         target=T(kind="choose", pool="friendly_shikigami"),
         steps=[F.Step(op="delay_grant", bind="chosen", when="on_damage",
-                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      condition={"source_shikigami": "self", "kind": "combat"},
                       scope="turn", uses=99,
                       steps=grant_steps),
                F.Step(op="delay_grant", bind="chosen", when="on_player_damaged",
-                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      condition={"source_shikigami": "self", "kind": "combat"},
                       scope="turn", uses=99,
                       steps=grant_steps)])
     g, pa, pb = _game(make_game)
@@ -1119,8 +1132,8 @@ def test_delayed_lifesteal_grant_stacks(db, make_game):
 
 
 def test_delayed_lifesteal_grant_combat_only(db, make_game):
-    """初拥型延迟吸血限战斗伤害类别（kind: [combat, counter]，维护者答复(9) 定案）：
-    反击（kind=counter，该式神造成的战斗伤害）触发；效果伤害（kind=effect）不触发。"""
+    """初拥型延迟吸血限战斗伤害类别（kind: combat，维护者答复(9) 定案；三类化合并后
+    反击同 kind）：反击（is_counter，该式神造成的战斗伤害）触发；效果伤害不触发。"""
     cid = 10010171
     grant_steps = [{"op": "heal", "amount": {"event": "amount"},
                     "target": {"kind": "all", "pool": "self_player"}}]
@@ -1128,11 +1141,11 @@ def test_delayed_lifesteal_grant_combat_only(db, make_game):
         cid, shikigami=SID, level=1, token=True,
         target=T(kind="choose", pool="friendly_shikigami"),
         steps=[F.Step(op="delay_grant", bind="chosen", when="on_damage",
-                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      condition={"source_shikigami": "self", "kind": "combat"},
                       scope="turn", uses=99,
                       steps=grant_steps),
                F.Step(op="delay_grant", bind="chosen", when="on_player_damaged",
-                      condition={"source_shikigami": "self", "kind": ["combat", "counter"]},
+                      condition={"source_shikigami": "self", "kind": "combat"},
                       scope="turn", uses=99,
                       steps=grant_steps)])
     g, pa, pb = _game(make_game)
@@ -1147,11 +1160,11 @@ def test_delayed_lifesteal_grant_combat_only(db, make_game):
     pa.health = 10
     play(g, 0, cid2)
     assert pa.health == 10                           # 效果伤害：不恢复
-    # 反击触发（kind=counter）：授予者驻战斗区，敌方出击吃反击
+    # 反击触发（kind=combat + is_counter）：授予者驻战斗区，敌方出击吃反击
     move(g, 0, 1)
     pass_turns(g, 1)
     pb.orb = 9
-    g.apply({"op": "assault", "index": 0})           # B 出击：授予者反击 1 点（counter）
+    g.apply({"op": "assault", "index": 0})           # B 出击：授予者反击 1 点
     assert pa.health == 11                           # 反击 1 → 恢复 1
 
 

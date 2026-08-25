@@ -1101,7 +1101,7 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if event.get(key) == controller:
                 return False
         elif isinstance(want, (list, tuple)):
-            # 列表等值匹配（任一命中即通过；如 kind: [combat, counter] 限战斗伤害类别）
+            # 列表等值匹配（任一命中即通过；如 kind: [combat, spell] 多分类并集）
             if event.get(key) not in want:
                 return False
         elif event.get(key) != want:

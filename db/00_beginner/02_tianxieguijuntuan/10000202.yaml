@@ -10,11 +10,13 @@ versions:
       keywords: [fast]
       effects:
         # 牌手级监听（本回合，scope=turn 己方回合开始清除；无 once_key 可叠加）：
-        # 天邪鬼军团造成的非战斗伤害+1（维护者答复(2)——"法术伤害"按 effect 类伤害）
+        # 天邪鬼军团造成的法术伤害+1——三类化后卡面"法术伤害"精确映射 kind: spell
+        # （法术牌效果伤害；旧答复(2)"按 effect 类伤害"系无 spell 类时的近似，
+        # 见 questions.md 待确认）
         steps:
           - op: player_aura
             when: on_damage_start
-            condition: {source_shikigami: 100002, kind: effect}
+            condition: {source_shikigami: 100002, kind: spell}
             steps:
               - {op: boost_damage, amount: 1}
             scope: turn

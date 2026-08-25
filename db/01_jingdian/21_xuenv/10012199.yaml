@@ -10,8 +10,8 @@ versions:
       health: 2
       no_attack: true  # 不能发动攻击（出击校验与 launch_attack 同拦截）
       ability:
-        # [眩晕]对其造成战斗伤害的式神（瘴疠体质 10012002 同管线；反击 kind=counter
-        # 不命中——仅 kind=combat）
+        # [眩晕]对其造成战斗伤害的式神（瘴疠体质 10012002 同管线；反击属战斗伤害
+        # 同样命中——三类化裁决）
         when: on_damage
         condition: {victim_shikigami: self, kind: combat}
         steps:
@@ -24,8 +24,8 @@ versions:
       health: 4
       no_attack: true  # 不能发动攻击（出击校验与 launch_attack 同拦截）
       ability:
-        # [眩晕]对其造成战斗伤害的式神（瘴疠体质 10012002 同管线；反击 kind=counter
-        # 不命中——仅 kind=combat）
+        # [眩晕]对其造成战斗伤害的式神（瘴疠体质 10012002 同管线；反击属战斗伤害
+        # 同样命中——三类化裁决）
         when: on_damage
         condition: {victim_shikigami: self, kind: combat}
         steps:

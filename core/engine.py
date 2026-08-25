@@ -92,8 +92,15 @@ def _kill_snap_key(spec: dict) -> str:
 class _DamageEvent:
     """伤害事件要素（docs/rules.md 第五章）：来源、受伤者、伤害值、原因、是否贯通。
 
-    kind: "combat"（攻击方战斗伤害）/ "counter"（反击战斗伤害）/ "effect"（法术、能力等）。
-    spell: 法术伤害标记（法术牌效果伤害；≠ 非战斗伤害——式神能力伤害不算，答复(7)）。
+    kind: 伤害分类三类（维护者裁决，rules.md 第五章/terminology.md「伤害分类」）——
+        "combat"（战斗伤害：攻击与反击，反击另以 is_counter 区分）/
+        "spell"（法术伤害：法术牌效果伤害，答复(7)——式神能力伤害不算）/
+        "effect"（其他伤害：式神能力/灵咒/幻境等；战斗牌效果伤害暂定此类，待确认）。
+        "受到/造成战斗伤害"对攻击、反击均可触发（"攻击时"类由独立事件时机表达）。
+    spell: 构造便捷标记（deal_to_* 与动作层 _spell_damage 链路传入）——置 True 时
+        __post_init__ 把 kind 归为 "spell"；结算读取一律用 kind，不再读 spell。
+    is_counter: 反击伤害标记（反击事件 kind=combat 与本字段一并置位）——仅供确需
+        区分反击的机制读取（贯通修正批次门控、暴击/义道翻倍豁免）。
     start: 流程起点枚举（规则评审⑪泛化——"流程可从指定位置开始结算"的统一表达，
         rules.md 第一章/第五章）："full"=完整流程（默认，从批次 0 伤害前开始）；
         "pre_shield_2"=从"护甲计算前2"（贯通修正批次）开始——贯通溢出产生的新事件
@@ -112,7 +119,8 @@ class _DamageEvent:
     victim: Ref  # shikigami 字段为 None 表示牌手
     amount: int
     kind: str = "effect"
-    spell: bool = False
+    spell: bool = False  # 构造便捷标记：置 True 时 kind 归为 "spell"（见 docstring）
+    is_counter: bool = False  # 反击伤害标记（kind=combat 时有效，见 docstring）
     piercing: bool = False
     start: str = "full"  # 流程起点枚举："full" / "pre_shield_2" / "pre_shield_0"（见上）
     redirect_chain: frozenset = frozenset()
@@ -125,11 +133,15 @@ class _DamageEvent:
     # ——吸血判定除来源式神关键字外也读来源卡牌实例关键字，见 _queue_lifesteal）
     crit_pierce: bool = False  # 本事件获得[暴击][贯通]属性（破魔符/破魔箭通道，
     # 裁决(4)）：受伤者式神带 crit_pierce_mark 时于"造成/受到伤害开始时"置位——
-    # [暴击]按关键字语义（攻击事件 kind=combat 翻倍、反击不翻倍）；[贯通]置
+    # [暴击]按关键字语义（攻击事件翻倍、反击 is_counter 不翻倍）；[贯通]置
     # ev.piercing 并放行反击事件的贯通修正批次
     pre_shield_zero: bool = False  # 森罗之阵①贯通分段保护标记（cap_damage
     # to="zero_pre_shield" 在"造成/受到伤害开始时"置位）：本次伤害在"护甲计算前1"
     # 改为 0——贯通修正已预分配（护甲已扣、溢出已生成），仅保护式神本人
+
+    def __post_init__(self) -> None:
+        if self.spell:
+            self.kind = "spell"  # 法术牌效果伤害归法术类（构造便捷标记折叠）
 
 
 @dataclass
@@ -531,11 +543,12 @@ class Game:
 
     def _account_quest_damage(self, ev: "_DamageEvent") -> None:
         """委托账本伤害记账：伤害实际造成（扣减生命批次锁定 dealt）时，来源归属方
-        damage += 实际量；非战斗伤害（kind=effect）另计 effect_damage。无来源不计。"""
+        damage += 实际量；非战斗伤害（kind != combat，法术/其他均计入）另计
+        effect_damage。无来源不计。"""
         if ev.source is None or ev.dealt <= 0:
             return
         self._quest_tick(ev.source.player, "damage", ev.dealt)
-        if ev.kind == "effect":
+        if ev.kind != "combat":
             self._quest_tick(ev.source.player, "effect_damage", ev.dealt)
 
     @staticmethod
@@ -3231,7 +3244,7 @@ class Game:
                       if self._has_keyword(vs, "combat_base_health")
                       else vs.eff_power)  # 神木庇佑：反击同为战斗伤害
             return _DamageEvent(source=src_ref, victim=victim,
-                                amount=amount, kind="counter",
+                                amount=amount, kind="combat", is_counter=True,
                                 piercing=cp)
 
         if replace_marker["active"]:
@@ -4347,7 +4360,9 @@ class Game:
 
     def _spell_damage(self, ctx: ExecContext) -> bool:
         """法术伤害判定（答复(7)）：伤害来自法术牌的效果（ctx.card 为法术牌且非能力
-        来源）。法术伤害 ≠ 非战斗伤害——式神能力（基础/觉醒/形态/延迟）伤害不算。"""
+        来源）。法术伤害 ≠ 非战斗伤害——式神能力（基础/觉醒/形态/延迟）伤害不算。
+        返回 True 时经 deal_to_* 的 spell 构造标记把伤害事件 kind 归为 "spell"
+        （_DamageEvent.__post_init__ 折叠）。"""
         return (ctx.card is not None and not ctx.is_ability
                 and self.db.cards[ctx.card.id].card_type == "spell")
 
@@ -4434,23 +4449,25 @@ class Game:
 
         两个修饰同挂点叠乘：
         - 义道——本战斗牌发起的战斗中，攻击者本人（ev.source == 登记攻击者）对具有
-          破甲的式神造成的战斗伤害翻倍（kind=combat 限攻击事件，反击不翻倍；嵌套/
+          破甲的式神造成的战斗伤害翻倍（kind=combat 且非反击（is_counter）限攻击
+          事件，反击不翻倍；嵌套/
           插入战斗按战斗 id 精确匹配不继承；贯通路径破甲未被消耗按当前 shield<0
           判定，非贯通按本事件已消耗的 ev.fragile 判定）；
         - [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
-          裁决(4)）：攻击事件（kind=combat；反击不翻倍）战斗伤害 ×2——
+          裁决(4)）：攻击事件（kind=combat 且非反击；反击不翻倍）战斗伤害 ×2——
           多来源共存不叠加（布尔判定，裁决(3)）。
 
         贯通路径在贯通修正批次提前执行本系列（贯通分配按翻倍后口径）；限原始事件
         （start="full"——贯通溢出/转移衍生的新事件不再二次翻倍）。
         """
-        if (s is not None and ev.kind == "combat" and self._battle_stack
+        if (s is not None and ev.kind == "combat" and not ev.is_counter
+                and self._battle_stack
                 and (s.shield < 0 or ev.fragile > 0)):
             atk = self._battle_double_fragile.get(self._battle_stack[-1])
             if atk is not None and ev.source == atk:
                 ev.amount *= 2
                 self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
-        if ev.kind == "combat" and ev.start == "full":
+        if ev.kind == "combat" and not ev.is_counter and ev.start == "full":
             has_crit = ev.crit_pierce
             if not has_crit and ev.source is not None and ev.source.shikigami is not None:
                 src_s = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
@@ -4468,7 +4485,7 @@ class Game:
         入口被拦截、不造成实际伤害，但原事件照常终止（定案备注）。"""
         self._redirect_spawned.append(_DamageEvent(
             source=ev.source, victim=new_victim, amount=ev.amount, kind=ev.kind,
-            spell=ev.spell, converted=ev.converted, start="pre_shield_0",
+            is_counter=ev.is_counter, converted=ev.converted, start="pre_shield_0",
             redirect_chain=ev.redirect_chain | {uid}, card=ev.card))
 
     def _damage_event_flow(self, ev: _DamageEvent, dq: deque[_DamageEvent],
@@ -4568,7 +4585,7 @@ class Game:
         # 裁决(3) 次序：先额外一次护甲计算 → 提前执行"扣减生命前"系列时机（含扣减
         # 生命前2 的[暴击]/义道翻倍，后续不再重复）→ 贯通伤害分配（翻倍后口径）
         if ev.piercing and ev.start != "pre_shield_0" and s is not None and (
-                ev.kind != "counter" or ev.crit_pierce
+                not ev.is_counter or ev.crit_pierce
                 or any(b in self._battle_counter_piercing for b in self._battle_stack)):
             skip_shield_calc = True
             if s.shield > 0:
@@ -4589,7 +4606,8 @@ class Game:
                 overflow = ev.amount - s.health
                 ev.amount = s.health
                 dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
-                                       amount=overflow, kind=ev.kind, spell=ev.spell,
+                                       amount=overflow, kind=ev.kind,
+                                       is_counter=ev.is_counter,
                                        start="pre_shield_2", card=ev.card))
         # 护甲计算前1（汤盆冲撞[增强]"此牌伤害翻倍"时机锚点，terminology.md 登记）：
         # ①森罗之阵贯通分段保护归零（pre_shield_zero 标记，裁决(4)：贯通修正在前的
@@ -4656,7 +4674,8 @@ class Game:
             dq.appendleft(_DamageEvent(source=ev.source,
                                        victim=Ref(player=ev.victim.player),
                                        amount=ev.amount, kind=ev.kind,
-                                       spell=ev.spell, converted=ev.converted,
+                                       is_counter=ev.is_counter,
+                                       converted=ev.converted,
                                        start="pre_shield_0",
                                        redirect_chain=ev.redirect_chain,
                                        card=ev.card))
@@ -4667,12 +4686,14 @@ class Game:
         # 贯通修正均先于免疫参与计算。免疫则伤害归零终止。普通事件与转移新事件
         # （start="pre_shield_0"，从护甲计算前0 进入）均走到此点——转移后的伤害可被
         # 最终受伤者免疫拦截（血蝠之盾→牌手免疫场景适用）
-        # 作用域战斗伤害免疫：仅免疫 combat/counter，且须命中授予时指定的作用域
-        if ev.kind in ("combat", "counter") and s is not None and self._combat_immune(s):
+        # 作用域战斗伤害免疫：仅免疫 combat（攻击与反击同 kind，裁决三类化），
+        # 且须命中授予时指定的作用域
+        if ev.kind == "combat" and s is not None and self._combat_immune(s):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
             return
-        # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）
-        if ev.kind == "effect" and s is not None and self._effect_immune(s, ev):
+        # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）：
+        # 法术伤害与其他伤害均属"非战斗伤害"（三类化口径），一并免疫
+        if ev.kind != "combat" and s is not None and self._effect_immune(s, ev):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
             return
         # 破甲来源免疫（霸主；条目 {"kind": "fragile_source"}）：伤害来源为当前持有
@@ -4690,19 +4711,20 @@ class Game:
             self._damage_double_modifiers(ev, s)
         if ev.amount <= 0:
             return
-        # 批次 7：合并——队列中 (来源, 受伤者, 原因) 均相同的伤害事件合并进最前者
+        # 批次 7：合并——队列中 (来源, 受伤者, 伤害分类) 均相同的伤害事件合并进最前者
         for other in list(dq):
             if other.source == ev.source and other.victim == ev.victim \
-                    and other.kind == ev.kind and other.spell == ev.spell:
+                    and other.kind == ev.kind:
                 ev.amount += other.amount
                 dq.remove(other)
         # 批次 8：扣减生命
         if s is not None:
-            # 庇佑（消耗型关键字）：抵消一次敌方来源的法术伤害（法术牌效果伤害；
-            # 非战斗伤害 ≠ 法术伤害——白狼基础能力、觉醒·入阵歌等能力伤害不抵消，
-            # 答复(7)），抵消后失去；灵咒抵消半侧随灵咒机制引入（docs/rules.md 锚点）。
-            # 置于扣减生命前——被护甲完全吸收/屏障归零的伤害不消耗庇佑
-            if (ev.kind == "effect" and ev.spell and ev.source is not None
+            # 庇佑（消耗型关键字）：抵消一次敌方来源的法术伤害（kind=spell——法术牌
+            # 效果伤害；其他非战斗伤害 ≠ 法术伤害——白狼基础能力、觉醒·入阵歌等能力
+            # 伤害不抵消，答复(7)），抵消后失去；灵咒抵消半侧随灵咒机制引入
+            # （docs/rules.md 锚点）。置于扣减生命前——被护甲完全吸收/屏障归零的
+            # 伤害不消耗庇佑
+            if (ev.kind == "spell" and ev.source is not None
                     and ev.source.player != ev.victim.player
                     and "blessing" in s.one_shot_keywords):
                 s.one_shot_keywords.remove("blessing")
@@ -4733,7 +4755,7 @@ class Game:
             # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（濒死定义见 docs/rules.md）
-            victims.append((ev.victim, ev.source, "战斗" if ev.kind in ("combat", "counter") else "伤害"))
+            victims.append((ev.victim, ev.source, "战斗" if ev.kind == "combat" else "伤害"))
             # 必杀：来源式神持 lethal（含斩型"本次攻击获得[必杀]"经 next_battle 统一
             # 通道授予的关键字实例——范围与免疫一致：该次战斗全程含嵌套战斗，外层战斗
             # 终止点核销；维护者改判），且本次伤害实际造成（走到扣减生命即已造成）——
@@ -4892,7 +4914,7 @@ class Game:
         """霸主：免疫当前持有破甲的敌方式神造成的伤害（条目 {"kind": "fragile_source"}）。
 
         来源须为敌方式神且其当前 shield < 0；无来源/牌手来源/己方来源不免疫。
-        伤害类别不限（战斗/反击/效果皆可免疫）。"""
+        伤害类别不限（战斗（含反击）/法术/其他皆可免疫）。"""
         if not any(e.get("kind") == "fragile_source" for e in s.immunities):
             return False
         src = ev.source
@@ -4901,7 +4923,8 @@ class Game:
         return self.state.players[src.player].shikigami[src.shikigami].shield < 0
 
     def _effect_immune(self, s: ShikigamiState, ev: _DamageEvent) -> bool:
-        """式神是否免疫该次非战斗伤害（条目 {"kind": "effect", "from": "enemy"|None}）。
+        """式神是否免疫该次非战斗伤害（条目 {"kind": "effect", "from": "enemy"|None}；
+        调用处已按 kind != "combat" 门控——法术伤害与其他伤害均属"非战斗伤害"）。
 
         from="enemy"：伤害来源属于敌方才免疫（无来源 ev.source=None 或己方来源不免疫）；
         scope="perm" 条目无过期键，随气绝清除（immunities 气绝清空）。

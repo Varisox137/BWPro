@@ -371,8 +371,8 @@ def test_hui_delayed_damage_inherits_piercing_lifesteal(db, make_game):
 
 
 def test_hui_delayed_damage_not_spell(db, make_game):
-    """会（裁决(1)）：延时伤害不是法术伤害——"你的法术牌获得[吸血]"类卡牌光环
-    （猩红之月型）不享用（延时能力 ctx 无来源卡牌，spell=False）。"""
+    """会（裁决(1)）：延时伤害不是法术伤害（kind=effect——延时能力 ctx 无来源卡牌）
+    ——"你的法术牌获得[吸血]"类卡牌光环（猩红之月型）不享用。"""
     _hui(db)
     g = make_game()
     a, b = g.state.players
@@ -1079,7 +1079,7 @@ def test_combat_victim_response_with_delayed_heal(db, make_game):
     s = pa.shikigami[BING_IDX]
     assert s.shield == 0              # 2 护甲被 3 伤消耗
     assert s.health == 5              # 6 - 1
-    assert pa.health == 27            # 反击（kind=counter 战斗伤害）触发延迟恢复 2
+    assert pa.health == 27            # 反击（kind=combat + is_counter 战斗伤害）触发延迟恢复 2
 
 
 # ==========================================================================

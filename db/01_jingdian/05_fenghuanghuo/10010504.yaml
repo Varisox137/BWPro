@@ -12,9 +12,10 @@ versions:
       effects:
         steps: []
       abilities:
-        # 凤凰火造成的所有非战斗伤害+1（含觉醒后其他己方式神法术触发的投射——其来源是凤凰火）
+        # 凤凰火造成的所有非战斗伤害+1（含觉醒后其他己方式神法术触发的投射——其来源是凤凰火）；
+        # 非战斗伤害口径 = kind_not: combat——法术与其他均增幅（三类化裁决）
         - when: on_damage_start
-          condition: {source_shikigami: self, kind: effect}
+          condition: {source_shikigami: self, kind_not: combat}
           steps:
             - {op: boost_damage, amount: 1}
       text: 凤凰火造成的所有非战斗伤害+1。
