@@ -99,8 +99,9 @@ class _DamageEvent:
         "受到/造成战斗伤害"对攻击、反击均可触发（"攻击时"类由独立事件时机表达）。
     spell: 构造便捷标记（deal_to_* 与动作层 _spell_damage 链路传入）——置 True 时
         __post_init__ 把 kind 归为 "spell"；结算读取一律用 kind，不再读 spell。
-    is_counter: 反击伤害标记（反击事件 kind=combat 与本字段一并置位）——仅供确需
-        区分反击的机制读取（贯通修正批次门控、暴击/义道翻倍豁免）。
+    is_counter: 反击伤害标记（反击事件 kind=combat 与本字段一并置位）——供确需
+        区分反击的机制读取（贯通修正批次门控；[暴击]/义道翻倍已不豁免反击——
+        2026-08 裁决：反击携带暴击属性同样翻倍）。
     start: 流程起点枚举（规则评审⑪泛化——"流程可从指定位置开始结算"的统一表达，
         rules.md 第一章/第五章）："full"=完整流程（默认，从批次 0 伤害前开始）；
         "pre_shield_2"=从"护甲计算前2"（贯通修正批次）开始——贯通溢出产生的新事件
@@ -133,8 +134,8 @@ class _DamageEvent:
     # ——吸血判定除来源式神关键字外也读来源卡牌实例关键字，见 _queue_lifesteal）
     crit_pierce: bool = False  # 本事件获得[暴击][贯通]属性（破魔符/破魔箭通道，
     # 裁决(4)）：受伤者式神带 crit_pierce_mark 时于"造成/受到伤害开始时"置位——
-    # [暴击]按事件属性语义翻倍（伤害类型不限——2026-08 新裁决；反击 is_counter
-    # 不翻倍）；[贯通]置 ev.piercing 并放行反击事件的贯通修正批次
+    # [暴击]按事件属性语义翻倍（伤害类型不限、反击同享——2026-08 裁决）；
+    # [贯通]置 ev.piercing 并放行反击事件的贯通修正批次
     pre_shield_zero: bool = False  # 森罗之阵①贯通分段保护标记（cap_damage
     # to="zero_pre_shield" 在"造成/受到伤害开始时"置位）：本次伤害在"护甲计算前1"
     # 改为 0——贯通修正已预分配（护甲已扣、溢出已生成），仅保护式神本人
@@ -4449,27 +4450,26 @@ class Game:
 
         两个修饰同挂点叠乘：
         - 义道——本战斗牌发起的战斗中，攻击者本人（ev.source == 登记攻击者）对具有
-          破甲的式神造成的战斗伤害翻倍（kind=combat 且非反击（is_counter）限攻击
-          事件，反击不翻倍；嵌套/
+          破甲的式神造成的战斗伤害翻倍（kind=combat 限本战斗；反击同属战斗伤害
+          不豁免——2026-08 裁决（实际不可达：反击来源=被攻击者 ≠ 登记攻击者）；嵌套/
           插入战斗按战斗 id 精确匹配不继承；贯通路径破甲未被消耗按当前 shield<0
           判定，非贯通按本事件已消耗的 ev.fragile 判定）；
         - [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
-          裁决(4)）：**携带暴击属性的伤害事件 ×2，伤害类型不限**（2026-08 新裁决：
-          [暴击][贯通]是伤害事件本身的属性——法术/其他类伤害携带暴击属性同样翻倍，
-          如破魔符标记给效果伤害赋予暴击贯通）；反击（is_counter）不翻倍语义保持；
+          裁决(4)）：**携带暴击属性的伤害事件 ×2，伤害类型不限、反击同享**
+          （2026-08 裁决：[暴击][贯通]是伤害事件本身的属性——法术/其他类伤害
+          携带暴击属性同样翻倍；反击携带暴击属性也翻倍，为[暴击]形态铺路）；
           多来源共存不叠加（布尔判定，裁决(3)）。
 
         贯通路径在贯通修正批次提前执行本系列（贯通分配按翻倍后口径）；限原始事件
         （start="full"——贯通溢出/转移衍生的新事件不再二次翻倍）。
         """
-        if (s is not None and ev.kind == "combat" and not ev.is_counter
-                and self._battle_stack
+        if (s is not None and ev.kind == "combat" and self._battle_stack
                 and (s.shield < 0 or ev.fragile > 0)):
             atk = self._battle_double_fragile.get(self._battle_stack[-1])
             if atk is not None and ev.source == atk:
                 ev.amount *= 2
                 self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
-        if not ev.is_counter and ev.start == "full":
+        if ev.start == "full":
             has_crit = ev.crit_pierce
             if not has_crit and ev.source is not None and ev.source.shikigami is not None:
                 src_s = self.state.players[ev.source.player].shikigami[ev.source.shikigami]

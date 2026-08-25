@@ -1512,7 +1512,7 @@ def test_battle_retarget_redirects_strike_to_other_enemy(db, make_game):
 def test_double_damage_vs_fragile(db, make_game):
     """义道型破甲双倍（[暴击]时机=扣减生命前2）：战斗牌 double_damage_vs_fragile 步
     提取绑定本次战斗——攻击者本人对有破甲的式神造成的战斗伤害翻倍（破甲照常消耗）；
-    对牌手不翻倍；反击伤害不翻倍。"""
+    对牌手不翻倍；反击同属战斗伤害不再豁免（2026-08 裁决——实际不可达：反击来源=被攻击者 ≠ 登记攻击者）。"""
     cid = 10010174
     db.cards[cid] = F.card(cid, card_type="combat", token=True,
                            steps=[F.Step(op="double_damage_vs_fragile")])
@@ -1533,7 +1533,7 @@ def test_double_damage_vs_fragile(db, make_game):
     pb2.shield = -2
     play(g2, 0, cid)
     assert pb2.health == 25                  # 3 + 2 破甲（无翻倍）
-    # 反击不翻倍：攻击者持破甲吃反击，仅破甲加伤
+    # 反击不翻倍（来源≠登记攻击者，非 is_counter 豁免——豁免已删）：攻击者持破甲吃反击，仅破甲加伤
     g3 = make_game()
     pa3, pb3 = g3.state.players
     pa3.orb = 9

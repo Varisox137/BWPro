@@ -878,15 +878,16 @@ def test_crit_attribute_effect_damage_doubles(db, make_game):
     assert b2.health == 3           # 无标记、来源无 critical：不翻倍（6 - 3）
 
 
-def test_counter_damage_not_doubled_by_crit(db, make_game):
-    """反击不翻倍语义保持（is_counter）：反击方持 critical 关键字，其反击伤害仍
-    不翻倍（[暴击]属性读取被 is_counter 门控豁免）。"""
+def test_counter_damage_doubled_by_crit(db, make_game):
+    """反击携带暴击属性同样翻倍（2026-08 裁决：[暴击]是伤害事件本身的属性，反击
+    不豁免——为[暴击]形态铺路）：反击方持 critical，反击伤害 ×2。"""
     g, pa, pb = _game(make_game)
     move(g, 1, 0)                   # B0（3/4，持 critical）驻守战斗区
     pb.shikigami[0].keywords.append("critical")
     a = pa.shikigami[0]
+    a.health = 7                    # 吃翻倍反击 6 不死，便于断言
     g.apply({"op": "assault", "index": 0})
-    assert a.health == 1            # 反击 3 不翻倍（翻倍则 6 → 气绝）
+    assert a.health == 1            # 7 - 3×2（反击暴击翻倍）
     assert pb.shikigami[0].health == 1  # 攻击 3（来源无 critical）
 
 
