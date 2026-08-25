@@ -394,8 +394,9 @@ def render(game: Game, viewer: int | None = None,
 
     for pi, rows in player_rows:
         lines.append(_player_segment(game, pi))
+        cur_p = game.state.players[pi]
         for i, name, kind, lv, faction, status in rows:
-            color = _seat_color(p, i) if pi == view else None
+            color = _seat_color(cur_p, i) if pi == view else None
             faction_seg = f"{_pad(f'[{faction}]', faction_w)} " if show_faction else ""
             line = (
                 f"    [{_pad(str(i + 1), idx_w)}] "
