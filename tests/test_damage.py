@@ -862,6 +862,34 @@ def test_blessing_negates_enemy_spell_damage(db, make_game):
     assert "blessing" not in b.one_shot_keywords
 
 
+# ---------- 暴击属性与伤害类型解耦（2026-08 裁决：[暴击]是伤害事件本身的属性） ----------
+
+def test_crit_attribute_effect_damage_doubles(db, make_game):
+    """效果伤害携带暴击属性同样翻倍（破魔符 crit_pierce_mark 场景）：命中带标记的
+    受伤者时扣减生命前2 翻倍；无暴击属性的普通效果伤害不翻倍。"""
+    g, pa, pb = _game(make_game)
+    b = pb.shikigami[0]
+    b.health = 10
+    b.ext["crit_pierce_mark"] = 1   # 破魔符标记：对其造成的伤害获得[暴击][贯通]
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, Ref(player=0, shikigami=IDX))
+    assert b.health == 4            # 3 ×2 = 6（贯通无碍：10 > 6 无溢出）
+    b2 = pb.shikigami[1]
+    g.deal_to_shikigami(Ref(player=1, shikigami=1), 3, Ref(player=0, shikigami=IDX))
+    assert b2.health == 3           # 无标记、来源无 critical：不翻倍（6 - 3）
+
+
+def test_counter_damage_not_doubled_by_crit(db, make_game):
+    """反击不翻倍语义保持（is_counter）：反击方持 critical 关键字，其反击伤害仍
+    不翻倍（[暴击]属性读取被 is_counter 门控豁免）。"""
+    g, pa, pb = _game(make_game)
+    move(g, 1, 0)                   # B0（3/4，持 critical）驻守战斗区
+    pb.shikigami[0].keywords.append("critical")
+    a = pa.shikigami[0]
+    g.apply({"op": "assault", "index": 0})
+    assert a.health == 1            # 反击 3 不翻倍（翻倍则 6 → 气绝）
+    assert pb.shikigami[0].health == 1  # 攻击 3（来源无 critical）
+
+
 def test_buff_health_negative_clamps_current(db, make_game):
     """墨笔夺魂型"降低生命"：上限下调同步钳当前生命；上限降至不大于 0 目标气绝。"""
     cid = 10010155

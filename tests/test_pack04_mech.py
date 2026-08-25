@@ -1835,9 +1835,10 @@ def test_crit_pierce_mark_damage_start(db, make_game):
     """破魔符（crit_pierce_mark 旗标，裁决(4)）：本回合"对其造成伤害的式神或卡牌
     获得[暴击][贯通]"——伤害事件"造成/受到伤害开始时"按受伤者标记置位事件属性：
     攻击事件翻倍+贯通溢出（裁决(3) 翻倍后口径）；被贴标记者的反击伤害
-    （受伤者=攻击方，无标记）天然不生效；效果伤害命中带标记者同样获得[贯通]；
-    带标记者主动攻击时吃反击（其受伤者=带标记者）亦获得[贯通]（[暴击]按关键字
-    语义反击不翻倍）；不可叠加、再贴幂等、半回合清除。"""
+    （受伤者=攻击方，无标记）天然不生效；效果伤害命中带标记者同样获得[暴击][贯通]
+    并翻倍（2026-08 新裁决：[暴击]是伤害事件本身的属性，与伤害类型解耦）；
+    带标记者主动攻击时吃反击（其受伤者=带标记者）亦获得[贯通]（反击 is_counter
+    不翻倍语义保持）；不可叠加、再贴幂等、半回合清除。"""
     db.cards[10010151] = F.card(  # 破魔符位
         10010151, subtype="talisman", token=True, target=F.CHOOSE_ENEMY,
         steps=[F.Step(op="bump_ext", key="crit_pierce_mark", value=1)])
@@ -1857,9 +1858,9 @@ def test_crit_pierce_mark_damage_start(db, make_game):
     assert es.health == 4   # [暴击]：攻击事件 3→6
     assert s.health == 1    # 防守侧（反击伤害受伤者=攻击方）：不增强，3
     assert pb.health == 30  # 无溢出
-    # 效果伤害命中带标记者：获得[贯通]（[暴击]限攻击事件不翻倍）
+    # 效果伤害命中带标记者：获得[暴击][贯通]——5×2=10，式神段截 4，溢出 6 传导牌手
     F.play(g, 0, 10010152, target=Ref(player=1, shikigami=0))
-    assert es.defeated and pb.health == 29  # 5-4=1 溢出牌手
+    assert es.defeated and pb.health == 24  # 30 - 6 溢出
     F.pass_turns(g, 2)      # 旗标半回合清除，重新贴（换一个未气绝的敌方式神）
     F.play(g, 0, 10010151, target=Ref(player=1, shikigami=1))
     es2 = pb.shikigami[1]   # 3/4
@@ -1869,7 +1870,7 @@ def test_crit_pierce_mark_damage_start(db, make_game):
     assert es2.defeated
     # 裁决(3)：先额外护甲计算→提前"扣减生命前"系列（[暴击] 3→6）→贯通分配
     # 按翻倍后口径（6-2=4 溢出）；溢出事件从"护甲计算前2"起不再二次翻倍
-    assert pb.health == 25
+    assert pb.health == 20  # 24（前段效果伤害暴击溢出 6 后） - 4
     # 带标记者主动攻击：吃反击时反击方"对其造成伤害"亦获得[贯通]（受伤者带标记）
     g2 = make_game()
     pa2, pb2 = F.battle_setup(g2)

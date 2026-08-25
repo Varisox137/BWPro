@@ -133,8 +133,8 @@ class _DamageEvent:
     # ——吸血判定除来源式神关键字外也读来源卡牌实例关键字，见 _queue_lifesteal）
     crit_pierce: bool = False  # 本事件获得[暴击][贯通]属性（破魔符/破魔箭通道，
     # 裁决(4)）：受伤者式神带 crit_pierce_mark 时于"造成/受到伤害开始时"置位——
-    # [暴击]按关键字语义（攻击事件翻倍、反击 is_counter 不翻倍）；[贯通]置
-    # ev.piercing 并放行反击事件的贯通修正批次
+    # [暴击]按事件属性语义翻倍（伤害类型不限——2026-08 新裁决；反击 is_counter
+    # 不翻倍）；[贯通]置 ev.piercing 并放行反击事件的贯通修正批次
     pre_shield_zero: bool = False  # 森罗之阵①贯通分段保护标记（cap_damage
     # to="zero_pre_shield" 在"造成/受到伤害开始时"置位）：本次伤害在"护甲计算前1"
     # 改为 0——贯通修正已预分配（护甲已扣、溢出已生成），仅保护式神本人
@@ -4454,7 +4454,9 @@ class Game:
           插入战斗按战斗 id 精确匹配不继承；贯通路径破甲未被消耗按当前 shield<0
           判定，非贯通按本事件已消耗的 ev.fragile 判定）；
         - [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
-          裁决(4)）：攻击事件（kind=combat 且非反击；反击不翻倍）战斗伤害 ×2——
+          裁决(4)）：**携带暴击属性的伤害事件 ×2，伤害类型不限**（2026-08 新裁决：
+          [暴击][贯通]是伤害事件本身的属性——法术/其他类伤害携带暴击属性同样翻倍，
+          如破魔符标记给效果伤害赋予暴击贯通）；反击（is_counter）不翻倍语义保持；
           多来源共存不叠加（布尔判定，裁决(3)）。
 
         贯通路径在贯通修正批次提前执行本系列（贯通分配按翻倍后口径）；限原始事件
@@ -4467,7 +4469,7 @@ class Game:
             if atk is not None and ev.source == atk:
                 ev.amount *= 2
                 self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
-        if ev.kind == "combat" and not ev.is_counter and ev.start == "full":
+        if not ev.is_counter and ev.start == "full":
             has_crit = ev.crit_pierce
             if not has_crit and ev.source is not None and ev.source.shikigami is not None:
                 src_s = self.state.players[ev.source.player].shikigami[ev.source.shikigami]
