@@ -775,3 +775,27 @@ def test_invocation_stats_aura_survives_reset(db, make_game):
     g._remove_invocation(s, s.invocations[0], reason="唯一")
     assert (s.eff_power, s.max_health) == (3, 4)     # 移除即失效，无双重扣减
     assert s.health == 4                             # 上限降低钳当前生命
+
+
+def test_card_trigger_display_suppressed_when_holder_not_in_play(real_game):
+    """结算明细显示过滤（维护者改进①）：卡牌触发器（CardDef.triggers 游离触发块）
+    的持有式神不在场（0 级未在场/气绝）时，结算期间不产生日志/明细行（效果照常结算）；
+    持有式神在场时照常记录。用例：姑获鸟'伞剑'（10010601）——队友出击时手牌得修饰。"""
+    # 持有式神不在场：姑获鸟 1 号位 0 级（0 号位白狼开局自动 1 级并出击）
+    g = real_game(team=[100101, 100106, 100104, 100113])
+    F.battle_setup(g, {0: 1})
+    assert not g.state.players[0].shikigami[1].in_play
+    card = give(g, 0, 10010601)
+    g.apply({"op": "assault", "index": 0})
+    assert not [m for m in g.state.log if "卡牌光环生效" in m]
+    assert not [m for m in g.state.settle_log if "卡牌光环生效" in m]
+    assert not [e for e in g.state.timeline if "卡牌光环生效" in e.get("m", "")]
+    # 效果本身照常结算（伞剑为光环授予：[瞬发]卡牌光环已挂到牌手级列表）
+    assert any(a.get("card_id") == 10010601 for a in g.state.players[0].card_auras)
+
+    # 持有式神在场：照常记录
+    g2 = real_game(team=[100101, 100106, 100104, 100113])
+    F.battle_setup(g2, {0: 1, 1: 1})
+    give(g2, 0, 10010601)
+    g2.apply({"op": "assault", "index": 0})
+    assert [m for m in g2.state.log if "卡牌光环生效" in m]

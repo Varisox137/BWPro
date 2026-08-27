@@ -707,6 +707,12 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 - 服务端持有 authoritative 的 `Game` 实例；客户端可维护本地镜像用于预校验与 UI 展示。
 - 客户端上报的 `cmd dict` 与服务端 `Game.apply(cmd)` 使用的协议一致。
 
+### 结算明细显示（2026-08 维护者改进）
+
+- **不在场能力不打印触发**：卡牌触发器（`CardDef.triggers` 游离触发块）结算期间，若其持有式神不在场（未升级/气绝/离场），不产出任何日志/结算明细行（效果本身照常结算）；式神能力在收集处已按在场门控。豁免：带 `trigger_when_defeated`/`trigger_when_not_in_play` 的块、牌手级 `player_aura`、幻境能力、响应牌使用。实现：`Game._display_suppressed`（`core/engine.py`），以结算上下文栈栈顶的游离卡牌触发器 ctx 判定。
+- **非公开信息仅所属方可见**：仅改变己方手牌/牌库的效果行（手牌修饰置位、生成/检索/检视得手牌名、灵咒结附于牌库中哪张牌、灵咒离库移除、梦魇抽到触发、委托视为达成等）由引擎在产出时打 `owner` 标（`Game._log/_settle` 关键字参数；state 层 `log_vis`/`settle_vis` 与 log/settle_log 逐条对齐，timeline 条目带 `"o"` 键）。联机端按视角过滤：增量广播（log/settle/timeline 三通道）、resync 全量补发、state 负载内嵌的完整 log/settle_log/timeline 均过滤（vis 列表本身不下发）；对方调度行为行在负载内嵌 log/timeline 中同样滤除。热坐共享屏维持全见。抽牌/磨牌的数量与事件公开、具体牌名不公开；弃牌/爆牌落入公开墓地，保持公开。
+
+
 ## 二十六、增强与卡牌修饰（部分已实现）
 
 > 完整设计结论见 `docs/enhance-design.md`；本节为纲要。

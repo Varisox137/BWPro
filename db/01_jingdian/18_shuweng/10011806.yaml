@@ -14,4 +14,4 @@ versions:
         # 形态在场上，手牌皆为"其他"）
         steps:
           - {op: stat_aura, kind: self_hand_count}
-      text: "每有一张其他手牌此牌便获得1力量与1生命。"
+      text: "每有一张其它手牌此牌便获得1力量与1生命。"

@@ -20,4 +20,4 @@ versions:
           condition: {player: self}
           steps:
             - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
-      text: 入场和己方回合开始时，为所有己方式神恢复2点生命。
+      text: 进场和己方回合开始时，为所有己方式神恢复2点生命。

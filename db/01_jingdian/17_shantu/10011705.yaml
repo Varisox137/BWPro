@@ -24,4 +24,4 @@ versions:
           condition: {judge: self, dice_six_ge: 10}
           steps:
             - {op: add_mod, to: persistent, key: transformed, cap: 1}
-      text: "[瞬发]。山兔下一次投骰子必定会投出6点。[增强]：{本局游戏若你骰子投出十次6点，则你获得本局游戏的胜利。}"
+      text: "[增强]：{本局游戏若你骰子投出十次6点，则你获得本局游戏的胜利。}"

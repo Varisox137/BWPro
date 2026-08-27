@@ -61,6 +61,22 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
     if pending is not None and pending.get("player") != viewer:
         # 结算中交互选择（青灯夜谈）：可检视牌内容仅选择方可见，其余视角以占位 uid 抹除
         pending["options"] = [0] * len(pending.get("options", []))
+    # 非公开日志/明细（改进②）：state 负载内嵌的完整 log/settle_log/timeline 按
+    # 可见性对齐过滤（"o" 键/log_vis/settle_vis，见 Game._log/_settle），vis 列表
+    # 本身不下发（否则泄露各行归属）；对方调度行为行一并滤除（与 _hide_mulligan_log
+    # 同口径——负载内嵌 log 原样携带时的既有泄露面随本过滤一并堵上）。
+    log_vis = payload.pop("log_vis", [])
+    settle_vis = payload.pop("settle_vis", [])
+    prefix = f"{payload['players'][1 - viewer].get('name', '')} "
+    payload["log"] = [l for l, v in zip(payload.get("log", []), log_vis)
+                      if (v is None or v == viewer)
+                      and not (l.startswith(prefix) and "调度了一张手牌" in l)]
+    payload["settle_log"] = [l for l, v in zip(payload.get("settle_log", []), settle_vis)
+                             if v is None or v == viewer]
+    payload["timeline"] = [e for e in payload.get("timeline", [])
+                           if (e.get("o") is None or e.get("o") == viewer)
+                           and not (e.get("m", "").startswith(prefix)
+                                    and "调度了一张手牌" in e.get("m", ""))]
     return payload
 
 
@@ -80,6 +96,18 @@ def _hide_mulligan_timeline(entries: list[dict], st, viewer: int) -> list[dict]:
     return [e for e in entries
             if not (e.get("k") == "l" and e.get("m", "").startswith(prefix)
                     and "调度了一张手牌" in e["m"])]
+
+
+def _visible_entries(entries: list[dict], viewer: int) -> list[dict]:
+    """非公开信息过滤（2026-08 维护者改进②）：带 "o"（所属方下标）标记的时间线
+    条目只发给所属方——仅改变己方手牌/牌库的效果行（增强置位/灵咒结附对象/
+    检索生成得手牌名等）对敌方隐藏；公开事件行（无 "o"）双方可见。"""
+    return [e for e in entries if e.get("o") is None or e.get("o") == viewer]
+
+
+def _visible_lines(lines: list[str], vis: list[int | None], viewer: int) -> list[str]:
+    """log/settle_log 通道的同款过滤：vis 与 lines 逐条对齐（None=双方可见）。"""
+    return [l for l, o in zip(lines, vis) if o is None or o == viewer]
 
 
 class Connection:
@@ -439,8 +467,10 @@ class Room:
         附带当前计时器的 timer（kind/deadline），客户端状态栏倒计时显示用。"""
         st = self.game.state
         log = st.log[self._sent_log:]
+        log_vis = st.log_vis[self._sent_log:]  # 与 log 增量逐条对齐的可见性
         self._sent_log = len(st.log)
         settle = st.settle_log[self._sent_settle:]
+        settle_vis = st.settle_vis[self._sent_settle:]
         self._sent_settle = len(st.settle_log)
         timeline = st.timeline[self._sent_timeline:]
         self._sent_timeline = len(st.timeline)
@@ -448,10 +478,13 @@ class Room:
         timer = self._current_timer()
         for c in self.conns:
             viewer = self.seat_to_player[c.seat]
-            vlog = _hide_mulligan_log(log, st, viewer)  # 对方调度行为行不发给 viewer
-            vtimeline = _hide_mulligan_timeline(timeline, st, viewer)  # 合流同样过滤
+            vlog = _hide_mulligan_log(  # 对方调度行为行不发给 viewer
+                _visible_lines(log, log_vis, viewer), st, viewer)
+            vsettle = _visible_lines(settle, settle_vis, viewer)  # 非公开行仅所属方可见
+            vtimeline = _visible_entries(
+                _hide_mulligan_timeline(timeline, st, viewer), viewer)
             await c.send(protocol.state(sanitize_state(base, viewer), vlog,
-                                        timer=timer, settle=settle,
+                                        timer=timer, settle=vsettle,
                                         timeline=vtimeline))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
@@ -470,7 +503,9 @@ class Room:
         viewer = self.seat_to_player[conn.seat]
         await conn.send(protocol.state(
             sanitize_state(base, viewer),
-            _hide_mulligan_log(list(st.log), st, viewer),  # 全量补发同样隐藏对方调度明细
+            # 全量补发同样隐藏对方调度明细与非公开信息行
+            _hide_mulligan_log(_visible_lines(list(st.log), list(st.log_vis), viewer),
+                               st, viewer),
             timer=self._current_timer()))
 
     # ---------- 计时器 ----------

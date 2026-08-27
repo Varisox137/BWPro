@@ -347,9 +347,12 @@ class GameState(BaseModel):
     config: GameConfig = Field(default_factory=GameConfig)
     log: list[str] = Field(default_factory=list)
     settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；CLI 空闲点逐条展示用，与 log 指令回显分离）
-    timeline: list[dict[str, str]] = Field(default_factory=list)  # 合并时间线（{"k": "s"|"l", "m": msg}：
+    timeline: list[dict[str, Any]] = Field(default_factory=list)  # 合并时间线（{"k": "s"|"l", "m": msg}：
     # _settle/_log 双通道按真实发生顺序的合流；联机/热坐的结算播放以此为准，避免
-    # "能力触发"类叙事行滞后到插入结算明细之后（维护者定案））
+    # "能力触发"类叙事行滞后到插入结算明细之后（维护者定案）。非公开信息行另带
+    # "o": 所属方下标（仅该方可见——联机 server 按 viewer 过滤；热坐单屏不过滤））
+    log_vis: list[int | None] = Field(default_factory=list)  # 与 log 逐条对齐的可见性（None=双方；int=仅该方）
+    settle_vis: list[int | None] = Field(default_factory=list)  # 与 settle_log 逐条对齐（同上）
     temp_grants: list[TempGrant] = Field(default_factory=list)  # 一次性临时触发注册表
     pending_choice: dict | None = None  # 结算中交互选择（青灯夜谈 deck_top_pick：
     # {"kind", "player", "options": [uid], "remaining", "clear_orb"}）；挂起期间只接受

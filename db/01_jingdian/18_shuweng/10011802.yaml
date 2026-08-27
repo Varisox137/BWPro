@@ -13,4 +13,4 @@ versions:
         # （pending mulligan_pick，choose 作答：uid=手牌换该张，缺省=提前结束）
         steps:
           - {op: mulligan_hand, times: 3, shuffle: true}
-      text: "[瞬发]。调度你的手牌，然后洗牌库。（3次调度次数）"
+      text: "[瞬发]。调度你的手牌。（3次调度次数）"

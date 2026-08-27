@@ -17,4 +17,4 @@ versions:
           - {op: buff_health, amount: 2, condition: {dice_six_ge: 3}}
           - {op: grant_keyword, keyword: haste, condition: {dice_six_ge: 3}}
           - {op: draw, count: 1}
-      text: "使一个己方式神获得1力量与1生命，抽一张牌。[增强]：{本局游戏若你骰子投出三次6点，该式神额外获得2力量、2生命和[迅捷]。}"
+      text: "使一个式神获得1力量与1生命。[增强]：{本局游戏若你骰子投出三次6点，该式神额外获得2力量与2生命。}"

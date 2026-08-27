@@ -51,6 +51,32 @@ class IllegalAction(Exception):
     """指令不合法（费用/等级/目标/时机等）。"""
 
 
+# 选择目标报错用的目标池中文描述（_choose_target_error）；未登记的池回退为原始池名
+_POOL_DESC = {
+    "enemy_shikigami": "一名敌方式神",
+    "friendly_shikigami": "一名己方式神",
+    "any_shikigami": "一名式神",
+    "enemy_player": "敌方牌手",
+    "any_player": "一名牌手",
+    "self_player": "己方牌手",
+    "projectile": "敌方战斗区式神（空则敌方牌手）",
+    "enemy_combat": "敌方战斗区式神",
+    "enemy_bench": "一名敌方准备区式神",
+    "enemy_character": "一名敌方角色",
+    "friendly_others": "一名其他己方式神",
+    "friendly_character": "一名己方角色",
+    "friendly_others_character": "一名其他己方角色",
+    "any_character": "一名角色",
+    "friendly_lowest_level": "己方等级最低的式神",
+    "friendly_combat": "己方战斗区式神",
+    "side_of_last_heal": "上一步治疗目标所属方的角色",
+    "friendly_injured": "一名受伤的己方角色",
+    "friendly_defeated": "一名已气绝的己方式神",
+    "active_character": "当前回合方的一名角色",
+    "enemy_fragile_or_combat": "敌方有破甲的式神或敌方战斗区式神",
+}
+
+
 MAX_QUEUE_ITERATIONS = 1000  # 效果队列死循环保护（DIY 安全网）
 
 # 天然类别为"一次性"的关键字（触发后移除）；其余战斗关键字默认持续性（触发后不移除）。
@@ -229,6 +255,9 @@ class Game:
         # 单元 drain（_drain_horizon）；栈空=非块上下文（horizon=0，由外层统一结算）
         self._horizon_seq: int = 0
         self._horizon_stack: list[int] = []
+        # 执行上下文栈（结算明细显示过滤用）：_resolve_block 压栈 (block, ctx)，
+        # _log/_settle 读取栈顶判定"不在场式神卡牌触发器的行不打印"（改进①）
+        self._ctx_stack: list[tuple[EffectBlock, ExecContext]] = []
         # 反制挂账（罗城门 counter_on_kill）：条目 {"attacker": Ref}——该攻击者击杀
         # 式神且存在进行中的出牌（_active_play_marker）时无效化该次使用并消耗条目；
         # 战斗终止点清除该攻击者的残留条目
@@ -1180,7 +1209,8 @@ class Game:
         if card is None:
             raise IllegalAction("该牌已不在牌库中")
         self.move_card(p, card, "hand", reason="pick")
-        self._log(f"{p.name} 将检视的【{self.db.cards[card.id].name}】置入手牌")
+        self._log(f"{p.name} 将检视的【{self.db.cards[card.id].name}】置入手牌",
+                  owner=pi)  # 检视内容仅所属方可见（改进②）
         self.rng.shuffle(p.deck)  # 按原文"然后洗牌库"：每次选择后都洗牌
         self.state.pending_choice = None
         if not self._open_deck_top_pick(pi, pending["count"],
@@ -1304,7 +1334,8 @@ class Game:
         self.state.next_uid += 1
         self.move_card(p, inst, "hand", reason="generate")
         self._materialize(p, inst, cdef)  # 生成点统一快照（断罪 form_power_delta 等）
-        self._log(f"{p.name} 将【{cdef.name}】置入手牌")
+        self._log(f"{p.name} 将【{cdef.name}】置入手牌",
+                  owner=pi)  # 生成/检索得手的是哪张牌仅所属方可见（改进②）
         if pending.get("unique_ext"):
             p.ext.setdefault(pending["unique_ext"], []).append(cdef.id)
         self.state.pending_choice = None
@@ -1379,7 +1410,8 @@ class Game:
         if card is None:
             raise IllegalAction("该牌已不在手牌中")
         card.mods["quest_done"] = True
-        self._log(f"{p.name} 的【{self.db.cards[card.id].name}】委托条件视为达成")
+        self._log(f"{p.name} 的【{self.db.cards[card.id].name}】委托条件视为达成",
+                  owner=pi)  # 手牌内部状态变化仅所属方可见（改进②）
         self.state.pending_choice = None
         if self._suspended is not None:
             block, ctx, start = self._suspended
@@ -1628,7 +1660,8 @@ class Game:
         if new_card.invocations:
             # 换出牌结附的灵咒直接移除而不生效（rules.md 第二十一章；调度非抽牌）
             new_card.invocations = []
-            self._log(f"【{self.db.cards[new_card.id].name}】上结附的灵咒移除（调度换出）")
+            self._log(f"【{self.db.cards[new_card.id].name}】上结附的灵咒移除（调度换出）",
+                      owner=self.state.players.index(p))  # 换出哪张牌仅所属方可见（改进②）
         new_card.hand_seq = old_seq                                 # 换出牌继承换回牌的顺序编号
         p.hand.insert(idx, new_card)
         if had_revealed:
@@ -1650,6 +1683,25 @@ class Game:
         if pi not in (0, 1):
             raise IllegalAction("调度指令需要 player（0/1）")
         return pi
+
+    def _ref_display(self, ref: Ref) -> str:
+        """报错用的目标称呼（输入本身非法时回退"该目标"，报错路径不再抛错）。"""
+        try:
+            pl = self.state.players[ref.player]
+            if ref.shikigami is None:
+                return pl.name
+            s = pl.shikigami[ref.shikigami]
+            return self.db.shikigami[s.id].name
+        except (IndexError, KeyError):
+            return "该目标"
+
+    def _choose_target_error(self, want: Ref, spec, second: bool = False) -> str:
+        """选择目标不合法的具体原因：能进不过滤帷幕的池但被指定池排除 = 目标持[帷幕]；
+        否则为不在目标池范围/不满足过滤条件（给出目标池描述）。"""
+        which = "第二目标" if second else "目标"
+        if want in targets.spec_pool_refs(self, spec, self.state.active):
+            return f"{which}不合法：{self._ref_display(want)}拥有[帷幕]，不可被指定"
+        return f"{which}不合法：须选择{_POOL_DESC.get(spec.pool, spec.pool)}"
 
     def reinforce_sub_option_error(self, pi: int, cdef: CardDef,
                                    choice: int) -> str | None:
@@ -1815,10 +1867,11 @@ class Game:
         if sub.target.kind == "choose":
             want = cmd.get("target")
             if want is None:
-                raise IllegalAction("该子选项需要选择目标")
+                raise IllegalAction(f"【{sub.name}】需要选择目标"
+                                    f"（{_POOL_DESC.get(sub.target.pool, sub.target.pool)}）")
             want = want if isinstance(want, Ref) else Ref(**want)
             if want not in targets.spec_pool_refs(self, sub.target, self.state.active):
-                raise IllegalAction("目标不合法")
+                raise IllegalAction(f"【{sub.name}】{self._choose_target_error(want, sub.target)}")
         if (sub.card_type == "combat" and si is not None
                 and p.combat_index != si
                 and not self._has_keyword(p.shikigami[si], "remote")
@@ -1972,12 +2025,14 @@ class Game:
                 pool = targets.spec_pool_refs(self, eff_target, self.state.active,
                                               targeted=True)
                 if not ((eff_target.model_extra or {}).get("optional") and not pool):
-                    raise IllegalAction("该牌需要选择目标")
+                    raise IllegalAction(f"【{cdef.name}】需要选择目标"
+                                        f"（{_POOL_DESC.get(eff_target.pool, eff_target.pool)}）")
             else:
                 want = want if isinstance(want, Ref) else Ref(**want)
                 if want not in targets.spec_pool_refs(self, eff_target, self.state.active,
                                                       targeted=True):
-                    raise IllegalAction("目标不合法")
+                    raise IllegalAction(f"【{cdef.name}】"
+                                        f"{self._choose_target_error(want, eff_target)}")
                 chosen = [want]
         # 第二选择目标（CardDef.target2，麓鸣·灭型双 choose 卡）：校验后追加进
         # chosen（[主目标, 第二目标]，step 侧用 chosen_index 按序取）
@@ -1988,12 +2043,14 @@ class Game:
                 pool2 = targets.spec_pool_refs(self, t2, self.state.active,
                                                targeted=True)
                 if not ((t2.model_extra or {}).get("optional") and not pool2):
-                    raise IllegalAction("该牌需要选择第二目标")
+                    raise IllegalAction(f"【{cdef.name}】需要选择第二目标"
+                                        f"（{_POOL_DESC.get(t2.pool, t2.pool)}）")
             else:
                 want2 = want2 if isinstance(want2, Ref) else Ref(**want2)
                 if want2 not in targets.spec_pool_refs(self, t2, self.state.active,
                                                        targeted=True):
-                    raise IllegalAction("第二目标不合法")
+                    raise IllegalAction(f"【{cdef.name}】"
+                                        f"{self._choose_target_error(want2, t2, second=True)}")
                 chosen.append(want2)
         if self._fast_applies(p, cdef, card):
             p.fast_used = True
@@ -2383,7 +2440,8 @@ class Game:
         s = p.shikigami[si]
         defeated_entry = not s.in_play
         if defeated_entry and not (s.defeated and self._playable_when_defeated(cdef, card)):
-            raise IllegalAction("该式神未在场，无法使用战斗牌")
+            raise IllegalAction(f"{self.db.shikigami[s.id].name} 未在场，"
+                                f"无法使用战斗牌【{cdef.name}】")
         # 气绝时可用的战斗牌（不玩了啦"气绝时可用，复活跳跳妹妹"，定案(14)）：
         # 气绝中不获得战力/护甲——先结算卡面效果，结算完未气绝则补齐战力/护甲并
         # 正常发起战斗；仍未气绝则牌入墓地、不发起战斗（不崩守卫）
@@ -2567,7 +2625,9 @@ class Game:
             # 牌级灵咒离库清除（梦魇）：移出牌库且非入手（入手走 _proc_invocations_on_move
             # 触发/移除通道）时静默移除——回库/洗牌保留
             card.invocations = []
-            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（离开牌库）")
+            # 指名牌库中哪张牌为非公开信息，仅所属方可见（改进②）
+            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（离开牌库）",
+                      owner=self.state.players.index(p))
         if to_zone == "hand":
             self._assign_hand_seq(p, card)
         p.zones.setdefault(to_zone, []).append(card)
@@ -2604,18 +2664,21 @@ class Game:
         再经 hand_cap 递归转墓地。"""
         if not card.invocations:
             return
+        pi = self.state.players.index(p)
         invs, card.invocations = card.invocations, []
         if reason != "draw" or payload.get("from_zone") != "deck":
-            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（入手）")
+            # 指名入手的是哪张牌为非公开信息，仅所属方可见（改进②）
+            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（入手）",
+                      owner=pi)
             return
         for inv in invs:
             idef = self.db.invocations.get(inv["name"])
             if idef is None or idef.draw_trigger is None:
                 continue
+            # 抽到的是哪张牌不公开（改进②）——伤害等触发效果行照常双方可见
             self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒"
-                      f"【{idef.name}】触发（抽到）")
+                      f"【{idef.name}】触发（抽到）", owner=pi)
             # 惊梦账本：抽牌者本回合抽到过结附该灵咒的牌（enemy_drew_invocation 读取）
-            pi = self.state.players.index(p)
             ledger = self.state.players[pi].ext.setdefault("drew_invocation_turn", [])
             ledger.append(inv["name"])
             self.emit("on_invocation_drawn", player=pi, card=card,
@@ -2706,7 +2769,13 @@ class Game:
                 assert card is not None
                 card.invocations.append(entry)
                 holder = f"【{self.db.cards[card.id].name}】"
-            self._log(f"灵咒【{name}】结附于{holder}")
+                # 结附对象=某张牌（牌库灵咒，如梦魇）时仅该牌所在区域所属方可见
+                card_owner = next(
+                    (i for i, pl in enumerate(self.state.players)
+                     if any(c is card for z in pl.zones.values() for c in z)),
+                    None)
+            self._log(f"灵咒【{name}】结附于{holder}",
+                      owner=card_owner if target is None else None)
             self._apply_invocation_uniqueness(idef, entry, player, target)
             if target is not None:
                 self._refresh_invocation_mods(target.player)
@@ -3343,7 +3412,7 @@ class Game:
         i = cmd.get("index")
         s = self._own_shikigami(p, i)
         if not s.in_play:
-            raise IllegalAction("该式神未在场（0 级），不能出击")
+            raise IllegalAction(f"{self.db.shikigami[s.id].name} 未在场（0 级），不能出击")
         if getattr(self.db.shikigami[s.id], "no_attack", False):
             raise IllegalAction(f"{self.db.shikigami[s.id].name} 不能发动攻击")
         if p.is_stunned:
@@ -3406,7 +3475,7 @@ class Game:
             # [迅捷]出击完全不耗（含额外的 1 火，定案(11)）
             need = 2 if self._has_keyword(s, "extra_orb_cost") else 1
             if p.orb < need:
-                raise IllegalAction(f"出击需要 {need} 点鬼火")
+                raise IllegalAction(f"出击需要 {need} 点鬼火（现有 {p.orb}）")
             self._pay_orb(p, self.state.active, need, reason="出击")
         if not energy_assault:
             p.assaults_left -= 1
@@ -5986,28 +6055,32 @@ class Game:
         """
         if ctx.memo is None:
             ctx.memo = {}  # 块内步骤间暂存（damage 记录 last_damage_victims 等）
-        affected: list[Ref] | None = None
-        if ctx.triggered and ctx.card is not None:
-            p = self.state.players[ctx.controller]
-            cdef = self.db.cards[ctx.card.id]
-            if self._settle_response_card(p, cdef, ctx):
-                return
-            self._affected_stack.append({"controller": ctx.controller, "refs": []})  # 响应法术：记录该次使用伤害过的敌方式神
+        self._ctx_stack.append((block, ctx))  # 显示过滤上下文（_log/_settle 读取栈顶）
         try:
-            if block.luck is not None and start == 0:
-                self._run_luck_events([self._luck_event_for_block(block, ctx)])
-            else:
-                self._run_block_steps(block, ctx, start)
-        finally:
+            affected: list[Ref] | None = None
             if ctx.triggered and ctx.card is not None:
-                affected = self._affected_stack.pop()["refs"]
-        # mode == "atomic"：步骤连发，队列留到块外统一结算
-        if ctx.triggered and ctx.card is not None:
-            # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
-            self._account_card_played(p, cdef)
-            self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
-                                   triggered="response", chosen=ctx.chosen)
-            self._rebound_check(p, ctx.card, cdef)  # 弹回：响应使用同样回手
+                p = self.state.players[ctx.controller]
+                cdef = self.db.cards[ctx.card.id]
+                if self._settle_response_card(p, cdef, ctx):
+                    return
+                self._affected_stack.append({"controller": ctx.controller, "refs": []})  # 响应法术：记录该次使用伤害过的敌方式神
+            try:
+                if block.luck is not None and start == 0:
+                    self._run_luck_events([self._luck_event_for_block(block, ctx)])
+                else:
+                    self._run_block_steps(block, ctx, start)
+            finally:
+                if ctx.triggered and ctx.card is not None:
+                    affected = self._affected_stack.pop()["refs"]
+            # mode == "atomic"：步骤连发，队列留到块外统一结算
+            if ctx.triggered and ctx.card is not None:
+                # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
+                self._account_card_played(p, cdef)
+                self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
+                                       triggered="response", chosen=ctx.chosen)
+                self._rebound_check(p, ctx.card, cdef)  # 弹回：响应使用同样回手
+        finally:
+            self._ctx_stack.pop()
 
     def _run_block_steps(self, block: EffectBlock, ctx: ExecContext, start: int = 0) -> None:
         """依次执行效果块的 steps（_resolve_block 与运势门控续段共用）。
@@ -6325,14 +6398,50 @@ class Game:
             raise IllegalAction(f"{self.db.shikigami[s.id].name} 无法行动（气绝/已离场）")
         return s
 
-    def _log(self, msg: str) -> None:
-        self.state.log.append(msg)
-        self.state.timeline.append({"k": "l", "m": msg})
+    def _display_suppressed(self) -> bool:
+        """结算明细显示过滤（2026-08 维护者改进①）：持有式神不在场（气绝/离场/
+        未进场）的**卡牌触发器**（CardDef.triggers 游离触发块，ctx.card_id 通道——
+        姑获鸟'伞剑'类）结算期间不产生任何日志/明细行（效果本身照常结算）。
+        豁免：块带 trigger_when_defeated / trigger_when_not_in_play（设计为离场/
+        气绝/未进场后生效）；式神能力（收集处已按在场门控，"先触发后执行"触发后
+        气绝的合法执行不在此列）、牌手级 player_aura、幻境能力、响应牌使用均不过滤。"""
+        if not self._ctx_stack:
+            return False
+        block, ctx = self._ctx_stack[-1]
+        if ctx.card_id is None or ctx.card is not None or ctx.triggered \
+                or ctx.is_ability or ctx.field is not None:
+            return False
+        if block is not None and (block.trigger_when_defeated
+                                  or block.trigger_when_not_in_play):
+            return False
+        sid = self.db.cards[ctx.card_id].shikigami
+        if sid is None:
+            return False  # 中立牌无持有式神
+        p = self.state.players[ctx.controller]
+        si = self._find_shikigami(p, sid)
+        return si is None or not p.shikigami[si].in_play
 
-    def _settle(self, msg: str) -> None:
+    def _log(self, msg: str, *, owner: int | None = None) -> None:
+        if self._display_suppressed():
+            return
+        self.state.log.append(msg)
+        self.state.log_vis.append(owner)
+        entry: dict[str, Any] = {"k": "l", "m": msg}
+        if owner is not None:
+            entry["o"] = owner  # 非公开信息：仅所属方可见（联机按 viewer 过滤）
+        self.state.timeline.append(entry)
+
+    def _settle(self, msg: str, *, owner: int | None = None) -> None:
         """结算明细记录（GameState.settle_log）：等级/力量/战力/生命/护甲/破甲变化与
         各事件开始结束。纯记录不打印——CLI 在空闲点取增量逐条展示（client/cli.py）。
         数值类事件只记本通道、不再写 _log 孪生行（避免联机端双通道同屏重复）。
-        两通道同步记入 timeline 合流（结算播放按真实发生顺序）。"""
+        两通道同步记入 timeline 合流（结算播放按真实发生顺序）。
+        owner：非公开信息行的所属方下标（仅该方可见，见 _log）。"""
+        if self._display_suppressed():
+            return
         self.state.settle_log.append(msg)
-        self.state.timeline.append({"k": "s", "m": msg})
+        self.state.settle_vis.append(owner)
+        entry: dict[str, Any] = {"k": "s", "m": msg}
+        if owner is not None:
+            entry["o"] = owner
+        self.state.timeline.append(entry)

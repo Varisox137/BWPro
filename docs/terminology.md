@@ -76,6 +76,7 @@
 | 平衡性版本 | `versions` | yaml 顶层仅 id/name/versions 三项，规则数据全部在 versions.history 的版本快照中（每条 = date + 完整数据，不按差量；首条 date = 发布日期）；`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用）；加载/解析结果的 `version` = 所取快照 date；卡牌的 shikigami 由 id 推导注入、cost 默认 1，均不入数据；解析规则见 db/versioning.py。真实数据起点 = 20191212 公测开服（历史平衡性数据源见 card_data_raw.md「平衡性调整」节） | ✅ |
 | 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间分标准模式（固定最新，不可更改）与自由模式（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新；环境输入/显示支持别名（经典/不夜之火/月夜幻响/沧海刀鸣/吉运缘结=20201224 等）与 8/6 位日期，解析见 db/envs.py；**客户端派系显示分界** `FACTION_DISPLAY_MIN_DATE=20210330` + `show_faction(date)`（db/envs.py——deckbuilder 与对局渲染按环境日期隐藏派系列，早于分界不显示派系；外来式神手牌按中立色） | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
+| 描述文本管线 | `text` / `db/rawtext.py` | yaml 各版本快照的 text 逐字 = card_data_raw.md 对应条目引号内原文（db.validate 硬门禁 `check_text_alignment`：按名匹配——[母卡]后缀与（未加入）标注剥离、"A/B"双名按分段配单名、重名按（号段,序号）配对；raw 仅调整说明无引号文本的日期沿用最近更早文本；yaml 版本日期未在 raw 登记 / 匹配不上降级为警告）；README 不出现具体式神/卡牌名（`check_readme_names` 硬门禁，单字名误报面大豁免） | ✅ |
 | 同源 | `origin` | 原形/SP 共享 origin，不能同时出战 | ✅ |
 | 衍生卡 | `token` | 对局中生成，不可入卡组（序号从 51 开始递增）；**不标稀有度**（原版衍生牌无稀有度，loader 校验 token 卡须缺省 rarity） | ✅ |
 | 委托牌 | `subtype = "quest"` | 三目专属子类型（衍生号段 51-66：紧急委托 51-54 / 今日委托 55-61 / 线索 62-66）：专属子类型登记表 `db/schema.py EXCLUSIVE_SUBTYPES`（loader 校验只能出现在所属式神的牌上）；使用数由委托账本 `quest_used` 记账；机制见 rules.md 第三十三章 | ✅ |
@@ -163,6 +164,7 @@
 | 不可中断 | `atomic`（mode） | 步骤连发 | ✅ |
 | 结算次序总表 | （rules.md 第一章小节） | 一个能力"何时执行"的六旋钮判定链：事件默认类别 → 单卡 timing 覆盖 → priority 分层 → 能力进场序号 → horizon 单元绑定 → 排水模式；通用次序规则的唯一出处，其余章节只写事件语义。timing 覆盖 / 非伤害管线 priority / horizon 为**特例机制**（受限使用，新卡先用先讨论并登记总表节；现状清单见该节） | ✅ |
 | 延时单元绑定 | `_Pending.horizon` / `Game._drain_horizon` / `Game._horizon_stack` | 延时待结算项 emit 时记下当前结算单元 id，只在所属单元完成后冲刷、中途排水跳过；现用于觉醒·山风复制（on_countdown_reduced）、灵咒"抽到触发"挂起、抽牌事件移动挂起（draw_move）三处 | ✅ |
+| 结算明细可见性 | `Game._log/_settle(owner=)` / `log_vis`/`settle_vis` / timeline `"o"` 键 / `Game._display_suppressed` | ① 持有式神不在场的卡牌触发器结算期间不产出日志/明细行（豁免 trigger_when_defeated/trigger_when_not_in_play、player_aura、幻境）；② owner 打标行仅所属方可见，联机增量广播/resync/负载内嵌全量均按 viewer 过滤，热坐全见（口径见 rules.md 二十五章"结算明细显示"） | ✅ |
 | 目标 | `target` / `Ref` | Ref(player, shikigami?) | ✅ |
 | 随机生成 | `generate`（动作） | 从 db 按谓词（所属式神/主类型）随机生成卡牌置入区域（发 uid、可重复、池内不含衍生卡；杀念/觉醒·一目连） | ✅ |
 | 直接消灭 | `destroy` / `destroy_form`（动作） | 非伤害消灭：生命归零走气绝流程 / 消灭当前结附的形态（直接消灭免疫为扩展锚点） | ✅ |

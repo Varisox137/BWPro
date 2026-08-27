@@ -572,7 +572,8 @@ def mod_hand(game, ctx, *, targets: list[Ref], tag: str | None = None,
             c.mods[k] = v
         n += 1
     if n:
-        game._log(f"{p.name} 手牌中 {n} 张牌获得了修饰")
+        # 手牌内部状态变化仅所属方可见（改进②）
+        game._log(f"{p.name} 手牌中 {n} 张牌获得了修饰", owner=ctx.controller)
 
 
 @action("card_aura")
@@ -664,7 +665,8 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         aura["holder"] = [ctx.source.player, ctx.source.shikigami]  # 形态/能力离场按持有者移除
     game.state.players[ctx.controller].card_auras.append(aura)
     label = "全体式神" if sid is None else game.db.shikigami[sid].name
-    game._log(f"{label} 的卡牌光环生效（{scope}）")
+    # 卡牌光环作用于控制者的卡牌（手牌/牌库内部状态），仅所属方可见（改进②）
+    game._log(f"{label} 的卡牌光环生效（{scope}）", owner=ctx.controller)
 
 
 @action("stat_aura")
@@ -1117,7 +1119,9 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             p.deck.remove(inst)
             p.deck.insert(game.rng.randrange(len(p.deck) + 1), inst)
         game._materialize(p, inst, game.db.cards[cid])  # 生成点统一快照
-        game._log(f"生成了【{game.db.cards[cid].name}】")
+        # 生成得手的是哪张牌仅所属方可见（改进②）；入墓地等公开区域不打标
+        game._log(f"生成了【{game.db.cards[cid].name}】",
+                  owner=ctx.controller if zone in ("hand", "deck") else None)
 
     if card_id is not None:
         for _ in range(n):

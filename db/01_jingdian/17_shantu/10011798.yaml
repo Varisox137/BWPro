@@ -14,4 +14,4 @@ versions:
         condition: {player: self}
         steps:
           - {op: untransform, target: {kind: self}}
-      text: "己方回合结束时变回原式神。"
+      text: "回合结束时变回原式神。"

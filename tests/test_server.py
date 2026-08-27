@@ -623,6 +623,42 @@ def test_mulligan_hidden_from_opponent(db):
     run(go())
 
 
+def test_private_log_visible_only_to_owner(db):
+    """非公开信息行（维护者改进②）：引擎打 owner 标的日志行仅所属方可见——
+    增量广播（log/timeline 双通道）、resync 全量补发与 state 负载内嵌的完整
+    log/timeline 均按 viewer 过滤；无标行双方照常可见。"""
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        g = room.game
+        p0 = room.seat_to_player[0]
+        g._log("【私密】仅己方可见行", owner=p0)
+        g._log("双方可见行")
+        await room.broadcast_state()
+        log0, log1 = ws0.messages[-1]["log"], ws1.messages[-1]["log"]
+        assert any("仅己方可见行" in l for l in log0)       # 所属方可见
+        assert not any("仅己方可见行" in l for l in log1)   # 对方不可见
+        assert any("双方可见行" in l for l in log1)         # 公开行照常
+        tl0 = ws0.messages[-1].get("timeline", [])
+        tl1 = ws1.messages[-1].get("timeline", [])
+        assert any("仅己方可见行" in e.get("m", "") for e in tl0)
+        assert not any("仅己方可见行" in e.get("m", "") for e in tl1)
+        # state 负载内嵌的完整 log/timeline 同样脱敏（防改端窥探）
+        assert not any("仅己方可见行" in l
+                       for l in ws1.messages[-1]["payload"]["log"])
+        assert not any("仅己方可见行" in e.get("m", "")
+                       for e in ws1.messages[-1]["payload"]["timeline"])
+        assert any("仅己方可见行" in l
+                   for l in ws0.messages[-1]["payload"]["log"])
+        # resync 全量补发同样过滤
+        room.disconnect(room.conns[1])
+        ws_new = FakeWS()
+        await room.reconnect(room.conns[1].token, ws_new)
+        await room.resync(room.conns[1])
+        full = [m for m in ws_new.messages if m["type"] == "state"][-1]["log"]
+        assert not any("仅己方可见行" in l for l in full)
+    run(go())
+
+
 def test_pending_choice_sanitized_for_opponent():
     """联机信息隐藏：pending_choice 的可检视牌仅选择方可见，其余视角抹除为占位。"""
     from server.room import sanitize_state

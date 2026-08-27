@@ -14,4 +14,4 @@ versions:
         steps:
           - {op: draw, count: 1}
           - {op: damage, amount: {hand_count_half: controller}}
-      text: "抽一张牌，对一个式神造成等同于你手牌数量一半的伤害。"
+      text: "对一个式神造成等同于你手牌数量一半的伤害。"

@@ -723,9 +723,12 @@ def run_battle(db) -> None:
         tui.set_status(None)
 
 
-def result_text(winner: int, player_names, viewer: int | None = None) -> str:
+def result_text(winner: int | None, player_names, viewer: int | None = None) -> str:
     """对局结果文本：viewer 指定（联机视角）时按视角打印
-    "自身胜利/自身落败"，否则（热坐共享屏）按玩家名；winner=-1 为长对局平局。"""
+    "自身胜利/自身落败"，否则（热坐共享屏）按玩家名；winner=-1 为长对局平局，
+    winner=None 为中途退出。"""
+    if winner is None:
+        return "对局中断"
     if winner == -1:
         return "双方平局"
     if viewer is None:
