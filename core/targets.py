@@ -654,6 +654,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {hand_has: <卡牌id>}   ：控制者手牌中有该数据 id 的牌（转化步门控）
     - {hand_lacks: <卡牌id>} ：控制者手牌中没有该数据 id 的牌（天井下"若你手牌中
       没有'妖怪屋·灵力'"类生成门控）
+    - {hand_count_ge: n}     ：控制者当前手牌数 ≥ n（转运"若手牌>=2"，全卡盘点(6)）
+    - {deck_ge: n}           ：控制者牌库张数 ≥ n（明心"若己方牌库有牌"，全卡盘点(13)）
     - {enemy_deck_le: n}     ：敌方牌库张数 ≤ n（月夜幻响包条件[增强]；
       conditional_mods 装配求值与步骤门控共用）
     - {friendly_armor_ge: n} ：控制者有在场式神护甲 ≥ n（焕然之音"若你有式神的
@@ -912,6 +914,14 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
         elif key == "hand_lacks":
             # 控制者手牌中没有该数据 id 的牌（天井下"若你手牌中没有'灵力'"）
             if any(c.id == int(want) for c in game.state.players[controller].hand):
+                return False
+        elif key == "hand_count_ge":
+            # 控制者当前手牌数 ≥ n（转运"若手牌>=2"外/内层判定，全卡盘点(6)）
+            if len(game.state.players[controller].hand) < int(want):
+                return False
+        elif key == "deck_ge":
+            # 控制者牌库张数 ≥ n（明心"若己方牌库有牌"触发门控，全卡盘点(13)）
+            if len(game.state.players[controller].deck) < int(want):
                 return False
         elif key == "enemy_deck_le":
             # 敌方牌库张数 ≤ n（月夜幻响包条件[增强]：conditional_mods 求值/步骤门控）

@@ -1200,13 +1200,18 @@ def test_revenge_echo_persists_across_turns(db, make_game):
 def test_revenge_echo_friendly_spell_data(gdb):
     """记仇 2019（数据端对端）：主动使用注册监听——己方百闻一得（单体己方式神
     法术）被复制、再对施法者青行灯使用一次（强制目标=施法者，不做合法性检查：
-    青行灯非最低等级也被升级）；一次性，第二张不再复制。"""
+    青行灯非最低等级也被升级；[条件] 使用前提同免）；一次性，第二张不再复制。
+    百闻一得使用前提（盘点(2)）：手牌需有'明灯'——原使用与复制各自判定执行时
+    手牌（复制时手牌仍有第二张明灯才弃牌并升级）。"""
     g = F.mk_game(gdb.at_date(20191212), team=[100108, 100112, 100116, 100115])  # 青岚+红莲
     pa, pb = F.battle_setup(g, {0: 2, 1: 2, 2: 1, 3: 1})
     play(g, 0, 10010806)                      # 记仇（觉 2 级）
+    give(g, 0, 10011201)                      # 明灯 ×2：原使用弃 1、复制再弃 1
+    give(g, 0, 10011201)
     play(g, 0, 10011204, target=Ref(player=0, shikigami=2))   # 百闻一得→山童
     assert pa.shikigami[2].level == 2         # 原效果：最低等级之一 1→2
     assert pa.shikigami[1].level == 3         # 复制：施法者青行灯 2→3（非最低也生效）
+    give(g, 0, 10011201)
     play(g, 0, 10011204, target=Ref(player=0, shikigami=3))   # 一次性：不再复制
     assert pa.shikigami[3].level == 2
     assert pa.shikigami[1].level == 3

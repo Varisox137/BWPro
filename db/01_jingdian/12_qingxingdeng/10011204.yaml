@@ -7,11 +7,18 @@ versions:
       card_type: spell
       rarity: SR
       level: 2
+      # 全卡盘点(2) 裁决：手牌中有'明灯'才能使用（无论使用方式——play_condition
+      # 使用前提，主动/响应/自动使用统一校验）
+      play_condition: {hand_has: 10011201}
       target: {kind: choose, pool: friendly_lowest_level}
       effects:
         steps:
-          # "弃掉一张'明灯'"：按数据 id 精确弃牌；手牌无明灯时不弃，等级提升仍执行
-          - {op: discard, card_id: 10011201, count: 1}
+          # "弃掉一张'明灯'"：按数据 id 精确弃牌；执行时手牌没有'明灯'则不执行弃牌
+          # （盘点(2) 执行时条件），且后续升级/抽牌也不执行（memo_ge 门控读取
+          # discard 写入的块内暂存 discarded_count）
+          - {op: discard, card_id: 10011201, count: 1,
+             condition: {hand_has: 10011201}}
           # 等级 +1 不走升级次数；已为 3 级改为抽一张牌（overflow_draw）
-          - {op: level_up, amount: 1, overflow_draw: true}
+          - {op: level_up, amount: 1, overflow_draw: true,
+             condition: {memo_ge: {key: discarded_count, ge: 1}}}
       text: 弃掉一张‘明灯’，使一个己方最低等级的式神等级+1。若其等级已为3则改为抽一张牌。

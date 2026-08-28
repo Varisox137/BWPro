@@ -17,7 +17,7 @@ from core.engine import IllegalAction
 from core.model import CardInstance, GameConfig, Ref
 from core.setup import new_game
 from tests import factories as F
-from tests.factories import move, pass_turns, play
+from tests.factories import give, move, pass_turns, play
 
 IDX = 0
 
@@ -173,6 +173,53 @@ def test_luck_dice_ctx_amount(gdb, monkeypatch):
     play(g, 0, TOUZI_ZHADAN, target=Ref(player=1, shikigami=1))
     assert pb.shikigami[1].health == 1         # 4 - 3（骰点）
     assert pa.ext["dice_history"] == [3]
+
+
+def test_battle_end_reuse_chain_doubled(gdb, monkeypatch):
+    """转运（全卡盘点(6) 裁决链）：挂点=该战斗的"战斗后"（on_battle_end +
+    scope=battle）；外层手牌>=2 才判定运势；每次生效各自判定手牌>=2 → 随机弃 2 +
+    延时生成凭空新'转运'使用事件（不继承已展示/灵咒）；延时复用深度优先——
+    复用 1 的整条递归链先于复用 2；觉醒青蛙瓷器翻倍时两次生效分别判定手牌。"""
+    g, pa, pb = _game(gdb, QWQC_TEAM, levels={IDX: 3})
+    play(g, 0, QWQC_AWAKEN)                     # 觉醒青蛙瓷器（成功效果翻倍）
+    pa.hand.clear()                             # 清空初始手牌（避开手牌上限与计数干扰）
+    for _ in range(5):
+        give(g, 0, CHUQIAN)                     # 填充手牌：转运 + 5 = 6 张
+    _force_dice(monkeypatch, g, [6, 6])
+    g.history.clear()
+    play(g, 0, ZHUANYUN)                        # 战斗牌：青蛙瓷器发起战斗
+    # 战斗后手牌 5 ≥2 → 判定成功并翻倍：生效1 延时复用1 + 弃2（余3）；
+    # 生效2 弃前 3 ≥2 → 延时复用2 + 弃2（余1）；深度优先：复用1 战斗后手牌 1 <2
+    # 不触发，复用2 同 → 共 3 次战斗
+    assert pa.ext["dice_history"] == [6]        # 翻倍不重新掷骰：全程仅 1 次判定
+    assert len(pa.hand) == 1                    # 两次生效各弃 2
+    assert g.history.count("on_battle_end") == 3  # 本体 + 复用1 + 复用2
+    assert sum(1 for c in pa.graveyard if c.id == ZHUANYUN) == 3  # 凭空新实例用后入墓
+
+
+def test_battle_end_reuse_chain_hand_gate(gdb, monkeypatch):
+    """转运（未觉醒）：每次生效弃 2 + 延时复用，递归直至手牌不足；战斗后手牌<2
+    不判定运势（不弃牌、不复用）。"""
+    g, pa, pb = _game(gdb, QWQC_TEAM, levels={IDX: 3})
+    pa.hand.clear()                             # 清空初始手牌（避开手牌上限与计数干扰）
+    for _ in range(6):
+        give(g, 0, CHUQIAN)                     # 转运 + 6 = 7 张
+    _force_dice(monkeypatch, g, [6, 6, 6])
+    g.history.clear()
+    play(g, 0, ZHUANYUN)
+    # 战斗后手牌 6 → 成功：弃2（余4）+复用1；复用1 后 4≥2 → 弃2（余2）+复用2；
+    # 复用2 后 2≥2 → 弃2（余0）+复用3；复用3 后 0<2 → 不判定
+    assert pa.ext["dice_history"] == [6, 6, 6]
+    assert len(pa.hand) == 0
+    assert g.history.count("on_battle_end") == 4  # 本体 + 复用1~3
+    # 战斗后手牌不足 2：不判定、不弃牌、不复用
+    g2, pa2, pb2 = _game(gdb, QWQC_TEAM, levels={IDX: 3})
+    _force_dice(monkeypatch, g2, [6])
+    pa2.hand.clear()                            # 手牌仅转运 → 打出后 0 张
+    g2.history.clear()
+    play(g2, 0, ZHUANYUN)
+    assert not pa2.ext.get("dice_history")
+    assert g2.history.count("on_battle_end") == 1
 
 
 # ==========================================================================

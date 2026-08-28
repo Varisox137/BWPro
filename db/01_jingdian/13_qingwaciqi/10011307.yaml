@@ -9,16 +9,24 @@ versions:
       level: 3
       effects:
         steps:
-          # +0/+0 无战斗加成；"攻击后"经延迟能力挂点（攻击中气绝则延迟能力清除、不触发）
+          # +0/+0 无战斗加成；全卡盘点(6) 裁决：挂点 = 本战斗的"战斗后"时机
+          # （on_battle_end + scope=battle 战斗内延迟能力——战斗被取消/过早终止则
+          # 过期不触发）；外层条件手牌>=2 才进行运势判定
           - op: delay_grant
-            when: on_after_assault
-            condition: {attacker_shikigami: self}
+            when: on_battle_end
+            scope: battle
             uses: 1
+            condition: {attacker_shikigami: self, hand_count_ge: 2}
             steps:
               - op: luck_roll
                 x: 4
                 judge: self
                 then:
-                  - {op: discard_random, count: 2}
-                  - {op: reuse_card}
+                  # 每次生效各自判定手牌>=2（觉醒青蛙瓷器翻倍时两次生效分别判定）：
+                  # 通过则随机弃 2 张 + 延时生成凭空新'转运'的使用事件（新实例，
+                  # 不继承原牌已展示/灵咒等状态；深度优先复用栈 drain）。
+                  # 延时生成步排在弃牌前——两步均以弃牌前的手牌数判定
+                  - {op: auto_use, card_id: 10011307, delayed: true,
+                     condition: {hand_count_ge: 2}}
+                  - {op: discard_random, count: 2, condition: {hand_count_ge: 2}}
       text: "攻击后[运势4]：{随机弃两张手牌并再次使用此牌。}"

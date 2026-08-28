@@ -948,8 +948,9 @@ def test_bond_generate_exact_level(real_game):
 # ---------- 弹回 / 本回合力量覆写 / 目标池过滤 ----------
 
 def test_rebound_returns_to_hand(db, make_game):
-    """弹回（蛇行击型）：使用后回手而非入墓；再次打出时持久修饰快照按实例去重
-    （_materialize 只补差值，不重复合并）。"""
+    """弹回（蛇行击型）：使用后回手而非入墓；全卡盘点(7) 裁决：弹回回手后该实例
+    失去[弹回]（仍是原牌，保留灵咒/已展示等实例状态），再次打出后正常入墓。
+    持久修饰快照按实例去重（_materialize 只补差值，不重复合并）。"""
     cid = 10010156
     db.cards[cid] = F.card(
         cid, keywords=["rebound"], steps=[F.dmg(1)], target=CHOOSE_ENEMY, token=True,
@@ -972,8 +973,9 @@ def test_rebound_returns_to_hand(db, make_game):
     g.apply({"op": "play_card", "uid": c.uid, "target": tgt})
     assert c in pa.hand                          # 回手而非入墓
     assert c.mods["enhance"] == 2                # 首次打出快照
+    assert c.mods["rebound_lost"]                # 该实例已失去[弹回]（盘点(7)）
     g.apply({"op": "play_card", "uid": c.uid, "target": tgt})
-    assert c in pa.hand
+    assert c in pa.graveyard                     # 再次打出：正常入墓、不再回手
     assert c.mods["enhance"] == 2                # 再次打出不重复合并
 
 

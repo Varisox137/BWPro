@@ -10,7 +10,8 @@ versions:
       effects:
         steps:
           # 次数 = 1 + 效果结算时剩余鬼火（维护者答复：基础 1 次 + 每点剩余鬼火
-          # 重复 1 次，0 火仍执行基础 1 次）；每次重复经 pending_choice 挂起等 choose 作答，
-          # 选择后洗牌库；末次后一次性清空鬼火（2→0 不经过 1）
+          # 重复 1 次，0 火仍执行基础 1 次）；全卡盘点(1) 裁决：先一次性失去所有剩余
+          # 鬼火、再执行 X+1 次（clear_orb 前置，次数按清空前取值）；每次重复经
+          # pending_choice 挂起等 choose 作答，选择后洗牌库（至少执行一次故必然洗牌）
           - {op: deck_top_pick, count: 3, times: {orb: true}, clear_orb: true}
       text: 检视牌库顶三张牌然后选择一张置入手牌。你每有1点鬼火便重复一次。清空你的鬼火。

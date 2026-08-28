@@ -2165,23 +2165,29 @@ def test_game_start_draw_extra_card(real_game):
 
 
 def test_draw_two_and_hand_count_half_damage(real_game):
-    """开卷抽两张牌；墨染先抽 1 再按当前手牌数一半（向下取整）造成伤害。"""
+    """开卷抽两张牌；墨染按当前手牌数一半（向上取整，全卡盘点(14)——本牌结算前
+    已离手不计入，raw 原文无抽牌）造成伤害。"""
     g, pa, pb = _game(real_game, SW_TEAM, {0: 2})
     play(g, 0, 10011803)                      # 开卷：7 → 8-1+2 = 9
     assert len(pa.hand) == 9
     b0 = pb.shikigami[0]                      # 书翁 1/5
-    play(g, 0, 10011804, target=Ref(player=1, shikigami=0))  # 9+1=10 → 5 伤
-    assert len(pa.hand) == 10 and b0.defeated
+    play(g, 0, 10011804, target=Ref(player=1, shikigami=0))  # 余 9 张 → ⌈9/2⌉ = 5 伤
+    assert len(pa.hand) == 9 and b0.defeated and b0.health == 0
+    # （向下取整 4 则剩 1 不气绝——奇数手牌区分两种口径）
 
 
 def test_draw_when_dealing_player_damage(real_game):
-    """纪行（[迅捷]形态 2/5）：当书翁对敌方牌手造成伤害时抽一张牌。"""
+    """纪行（[迅捷]形态 2/5）：当书翁对敌方牌手造成伤害时抽一张牌；全卡盘点(12)
+    裁决：仅战斗伤害触发（效果伤害不触发）。"""
     g, pa, pb = _game(real_game, SW_TEAM)
     play(g, 0, 10011801)
     hand = len(pa.hand)
     g.apply({"op": "assault", "index": 0})    # 迅捷出击，空战斗区打牌手
     assert pb.health == 28
     assert len(pa.hand) == hand + 1
+    g.deal_to_player(1, 2, Ref(player=0, shikigami=0))  # 效果伤害（kind=effect 默认）
+    g._drain_queue()
+    assert pb.health == 26 and len(pa.hand) == hand + 1  # 不触发抽牌
 
 
 def test_generate_each_friendly_other_shikigami(real_game):

@@ -25,6 +25,7 @@ from fastapi.responses import PlainTextResponse
 from db.loader import CardDatabase
 from server import protocol
 from server.manager import RoomManager
+from server.webgui import mount_webgui
 
 # 输入字段长度上限（基本防护：拒绝超长/异常输入）
 MAX_NAME = 32
@@ -106,6 +107,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
             watchdog.cancel()
 
     app = FastAPI(title="BWPro 联机服务端", lifespan=_lifespan)
+
+    # Web GUI（/gui 单页 + /gui/api/*）：须在下方 403 catch-all 之前注册
+    mount_webgui(app, manager.db)
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:

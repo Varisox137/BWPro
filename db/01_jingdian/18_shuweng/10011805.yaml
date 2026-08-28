@@ -9,7 +9,20 @@ versions:
       level: 2
       form_power: 4
       form_health: 5
-      tags: [draw_to_pick]  # 在场形态：回合开始的抽牌改为检视牌库顶三张选一张置入手牌
       effects:
         steps: []
+      abilities:
+        # 全卡盘点(13) 裁决（回合开始触发型）：己方回合开始时若己方牌库有牌则触发——
+        # 己方牌手获得一次性能力"抽牌事件的'抽牌前'：若抽牌原因是回合开始的通常抽牌，
+        # 移除此能力并立即终止该次抽牌结算"（draw_cancel_once，bump_ext 结附牌手；
+        # 授予步排在检视前——deck_top_pick 挂起等 choose 作答时后续步延迟到作答后，
+        # 而终止能力须在同回合抽牌点已生效）；然后检视牌库顶 3 张（不足则全部）选 1
+        # 置入手牌并洗牌库。一旦成功触发，执行时牌库已空也照常获得终止能力（检视步
+        # 空转）；牌库没有牌则不触发（通常抽牌照常，判负检查照旧）
+        - when: on_turn_start
+          condition: {player: self, deck_ge: 1}
+          steps:
+            - {op: bump_ext, key: draw_cancel_once, value: 1, host: controller,
+               target: {kind: self}}
+            - {op: deck_top_pick, count: 3, times: 1}
       text: "回合开始的抽牌改为检视牌库顶三张牌然后选择一张置入手牌。"

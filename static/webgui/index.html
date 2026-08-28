@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BWPro Web GUI</title>
+<link rel="stylesheet" href="/gui/static/style.css">
+</head>
+<body>
+<div id="bwpro-app">
+
+  <!-- 主菜单 -->
+  <section id="view-menu" class="view">
+    <h1>BWPro <small>Web GUI（基础框架）</small></h1>
+    <div class="menu-buttons">
+      <button id="btn-goto-builder" class="big">卡组构筑</button>
+      <button id="btn-goto-battle" class="big">联机对战</button>
+    </div>
+    <p class="hint">热座对战仍请使用 CLI（python -m client.cli）。</p>
+  </section>
+
+  <!-- 卡组构筑 -->
+  <section id="view-builder" class="view hidden">
+    <header class="bar">
+      <button class="btn-back" data-back>← 主菜单</button>
+      <h2>卡组构筑</h2>
+      <label>环境 <select id="builder-env"></select></label>
+    </header>
+    <div class="builder-cols">
+      <div class="col">
+        <h3>式神池（点击加入队伍）</h3>
+        <div id="shiki-pool" class="pool"></div>
+      </div>
+      <div class="col">
+        <h3>出战队伍（4 名；点击槽位配卡）</h3>
+        <div id="team-slots"></div>
+        <h3 id="card-pool-title">卡牌池（先选中上方槽位）</h3>
+        <div id="card-pool" class="pool"></div>
+      </div>
+      <div class="col">
+        <h3>当前卡组</h3>
+        <div id="deck-list"></div>
+        <div class="row">
+          <input id="deck-name" placeholder="卡组名">
+          <button id="btn-deck-save">保存到本地</button>
+        </div>
+        <div class="row">
+          <button id="btn-deck-validate">校验卡组</button>
+          <button id="btn-deck-export">导出卡组码</button>
+        </div>
+        <div id="deck-validate-result" class="msg"></div>
+        <div class="row">
+          <input id="deck-code-box" placeholder="卡组码（导出在此显示 / 粘贴后导入）">
+          <button id="btn-deck-import">导入</button>
+        </div>
+        <h3>本地卡组</h3>
+        <div id="saved-decks"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 联机对战 -->
+  <section id="view-battle" class="view hidden">
+    <header class="bar">
+      <button class="btn-back" data-back>← 主菜单</button>
+      <h2>联机对战</h2>
+      <span id="net-status" class="msg"></span>
+    </header>
+
+    <div id="net-lobby-form" class="panel">
+      <div class="row"><label>服务器 <input id="net-server" size="30"></label>
+        <label>玩家名 <input id="net-name" size="12"></label></div>
+      <div class="row"><label>卡组 <select id="net-deck"></select></label>
+        <label>房间代码 <input id="net-room" size="8" placeholder="加入必填/创建可空"></label></div>
+      <div class="row"><label>重连令牌 <input id="net-token" size="20" placeholder="断线重连时填写"></label>
+        <button id="btn-room-create">创建房间</button>
+        <button id="btn-room-join">加入房间</button></div>
+      <p class="hint">也可直连其他 BWPro 服务端（地址自动规范化为 ws(s)://…/ws）。</p>
+    </div>
+
+    <div id="net-lobby" class="panel hidden">
+      <div id="lobby-info" class="msg"></div>
+      <button id="btn-ready">准备 / 取消准备</button>
+      <button id="btn-leave">离开房间</button>
+    </div>
+
+    <div id="net-game" class="hidden">
+      <div id="game-topbar" class="bar"></div>
+      <div id="opponent-area" class="player-area enemy">
+        <div class="player-card" id="opp-player"></div>
+        <div class="shiki-row" id="opp-shiki"></div>
+      </div>
+      <div id="my-area" class="player-area mine">
+        <div class="shiki-row" id="my-shiki"></div>
+        <div class="player-card" id="my-player"></div>
+      </div>
+      <div id="hand-row"></div>
+      <div class="bar">
+        <button id="btn-mulligan-done" class="hidden">完成调度</button>
+        <button id="btn-end-turn">结束回合</button>
+        <button id="btn-reconnect" class="hidden">断线重连</button>
+        <span id="game-msg" class="msg"></span>
+      </div>
+      <div id="game-log" class="log"></div>
+    </div>
+  </section>
+
+  <!-- 详情弹窗 / 交互选择 -->
+  <div id="modal" class="hidden"><div id="modal-body"></div></div>
+
+</div>
+<script src="/gui/static/app.js"></script>
+</body>
+</html>

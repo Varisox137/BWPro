@@ -1,0 +1,95 @@
+/* BWPro Web GUI 基础框架样式（深色主题，无框架依赖） */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 12px;
+  background: #1b1e27; color: #dfe3ee;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px;
+}
+.hidden { display: none !important; }
+h1 small { font-size: 13px; color: #8a90a5; font-weight: normal; }
+button {
+  background: #2e3448; color: #dfe3ee; border: 1px solid #4a5170;
+  border-radius: 4px; padding: 4px 10px; cursor: pointer;
+}
+button:hover { background: #3a4060; }
+button.big { font-size: 20px; padding: 18px 36px; margin: 8px; }
+input, select {
+  background: #14161d; color: #dfe3ee; border: 1px solid #4a5170;
+  border-radius: 4px; padding: 4px 6px;
+}
+.bar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.hint { color: #8a90a5; font-size: 12px; }
+.msg { color: #9fd0ff; white-space: pre-wrap; }
+.msg.err { color: #ff9a9a; }
+.log {
+  max-height: 140px; overflow-y: auto; background: #14161d;
+  border: 1px solid #333a52; border-radius: 4px; padding: 6px;
+  font-size: 12px; color: #a9b0c6; white-space: pre-wrap;
+}
+.panel { background: #222634; border: 1px solid #333a52; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+.row { display: flex; gap: 8px; margin: 6px 0; align-items: center; flex-wrap: wrap; }
+
+/* 主菜单 */
+#view-menu { text-align: center; padding-top: 60px; }
+
+/* 卡组构筑 */
+.builder-cols { display: flex; gap: 12px; align-items: flex-start; }
+.builder-cols .col { flex: 1; min-width: 0; }
+.pool { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.pool .item {
+  background: #222634; border: 1px solid #333a52; border-radius: 4px;
+  padding: 3px 8px; cursor: pointer;
+}
+.pool .item:hover { border-color: #7c86b8; }
+.pool .item .sub { color: #8a90a5; font-size: 12px; margin-left: 6px; }
+#team-slots { display: flex; gap: 6px; margin-bottom: 8px; }
+.team-slot {
+  flex: 1; min-height: 56px; border: 1px dashed #4a5170; border-radius: 6px;
+  padding: 4px 6px; cursor: pointer; text-align: center;
+}
+.team-slot.active { border: 2px solid #9fd0ff; }
+.team-slot .sub { display: block; color: #8a90a5; font-size: 12px; }
+#deck-list .deck-entry { display: flex; justify-content: space-between; padding: 1px 4px; cursor: pointer; }
+#deck-list .deck-entry:hover { background: #2a2f42; }
+#saved-decks .saved { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+
+/* 对局界面 */
+.player-area { border: 1px solid #333a52; border-radius: 6px; padding: 6px; margin: 6px 0; }
+.player-area.enemy { background: #2a2229; }
+.player-area.mine { background: #212a26; }
+.player-area.drop-hover { outline: 2px dashed #ffb86b; }
+.shiki-row { display: flex; gap: 6px; }
+.shiki {
+  width: 110px; min-height: 74px; background: #262b3c; border: 1px solid #4a5170;
+  border-radius: 6px; padding: 4px 6px; cursor: pointer; position: relative;
+}
+.shiki.combat { border-color: #ffb86b; }
+.shiki.defeated { opacity: 0.45; }
+.shiki .stats { font-size: 13px; }
+.shiki .lvl { position: absolute; top: 3px; right: 6px; color: #9fd0ff; }
+.shiki .kw { font-size: 11px; color: #b8c48a; }
+.player-card {
+  display: inline-block; background: #262b3c; border: 1px solid #4a5170;
+  border-radius: 6px; padding: 4px 10px; margin: 4px 0; cursor: pointer;
+}
+.player-card.targetable, .shiki.targetable { outline: 2px solid #ff6b6b; }
+#hand-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.hand-card {
+  width: 120px; min-height: 84px; background: #2b3048; border: 1px solid #5a6390;
+  border-radius: 6px; padding: 4px 6px; cursor: pointer; font-size: 12px;
+}
+.hand-card:hover { border-color: #9fd0ff; }
+.hand-card .cost { color: #ffd479; }
+.hand-card .sub { color: #8a90a5; }
+
+/* 弹窗 */
+#modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center; z-index: 10;
+}
+#modal-body {
+  background: #222634; border: 1px solid #4a5170; border-radius: 8px;
+  padding: 14px 18px; max-width: 520px; max-height: 80vh; overflow-y: auto;
+}
+#modal-body h3 { margin-top: 0; }
+#modal-body .choice { display: block; width: 100%; text-align: left; margin: 4px 0; }

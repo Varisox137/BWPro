@@ -4,8 +4,8 @@
 鬼火变化事件与响应通道（on_orb_changed old→new，月食类合成卡）。
 
 对应维护者答复：「每有1点鬼火便重复一次」总次数 = 1 + 效果结算时
-剩余鬼火（0 火仍执行基础 1 次），随后一次性清空（2→0 不经过 1）；鬼火变化逐个
-发事件（old→new），付费点先于效果结算。返场同一实例不生成新牌；鬼火储存封顶 4 点；
+剩余鬼火（0 火仍执行基础 1 次）；全卡盘点(1) 裁决：先一次性清空（2→0 不经过 1）、
+再执行 X+1 次；鬼火变化逐个发事件（old→new），付费点先于效果结算。返场同一实例不生成新牌；鬼火储存封顶 4 点；
 百闻一得并列由使用者选择。0 号位（100101）为持卡式神。
 """
 import pytest
@@ -82,7 +82,8 @@ def test_orb_gain_on_turn_end_form(make_game, db):
 
 def test_repeat_per_orb_and_clear(make_game, db):
     """按鬼火重复并清空（吸魂灯）：重复次数 = 1 + 付费后剩余鬼火（基础 1 次 + 每点
-    剩余鬼火重复 1 次）；投射目标每次独立求值；结束后一次性清空鬼火。"""
+    剩余鬼火重复 1 次）；全卡盘点(1) 裁决：先一次性清空鬼火、再执行 X+1 次
+    （次数按清空前取值）；投射目标每次独立求值。"""
     db.cards[REPEAT_SPELL] = F.card(
         REPEAT_SPELL, shikigami=SID, level=3, token=True,
         steps=[F.Step(op="repeat", count={"orb": True}, clear_orb=True,
@@ -92,8 +93,8 @@ def test_repeat_per_orb_and_clear(make_game, db):
     pa.shikigami[IDX].level = 3
     pa.orb = 3
     g.apply({"op": "play_card", "uid": give(g, 0, REPEAT_SPELL).uid})
+    assert pa.orb == 0               # 先清空（次数仍按清空前 2 火取值）
     assert pb.health == 30 - 3 * 5   # 付费后 2 火 → 1+2=3 次（战斗区空 → 敌方牌手）
-    assert pa.orb == 0               # 清空
     # 0 剩余鬼火：仍执行基础 1 次，清空仍执行
     g2, pa2, pb2 = _game(make_game)
     pa2.shikigami[IDX].level = 3
@@ -107,7 +108,8 @@ def test_repeat_per_orb_and_clear(make_game, db):
 
 def test_deck_top_pick_suspend_resume(make_game, db):
     """检视选牌（青灯夜谈）：pending_choice 挂起期间只接受 choose 指令；每次选择
-    置入手牌后洗牌库，重复次数（1 + 付费后剩余鬼火）耗尽后清空鬼火并续跑挂起块。"""
+    置入手牌后洗牌库。全卡盘点(1) 裁决：先一次性清空鬼火（按清空前剩余鬼火定
+    次数 1+X）、再开始 X+1 次检视挑选。"""
     db.cards[PICK_SPELL] = F.card(
         PICK_SPELL, shikigami=SID, level=1, token=True,
         steps=[F.Step(op="deck_top_pick", count=3, times={"orb": True},
@@ -116,6 +118,7 @@ def test_deck_top_pick_suspend_resume(make_game, db):
     pa.orb = 3
     hand_before = len(pa.hand)
     g.apply({"op": "play_card", "uid": give(g, 0, PICK_SPELL).uid})
+    assert pa.orb == 0                                       # 先清空鬼火（盘点(1)）
     pend = g.state.pending_choice
     assert pend is not None and pend["kind"] == "deck_top_pick"
     assert pend["player"] == 0 and pend["remaining"] == 3   # 付费后 2 火 → 1+2=3 次
@@ -155,7 +158,8 @@ def _return_form(db):
             F.Step(op="revive", target=T(kind="self")),
             F.Step(op="reattach_form"),
             when="on_form_destroyed",
-            condition={"target_shikigami": "self", "orb_ge": 1})])
+            # 全卡盘点(3)：触发钉在气绝事件（reason: defeat）——替换离场不触发
+            condition={"target_shikigami": "self", "orb_ge": 1, "reason": "defeat"})])
     return RETURN_FORM
 
 
@@ -189,18 +193,46 @@ def test_form_returns_on_defeat_with_orb(make_game, db):
     assert inst2 in pa2.graveyard
 
 
+OTHER_FORM = 10010173        # 假形态：用于替换离场场景
+
+
+def test_form_replaced_does_not_return(make_game, db):
+    """形态返场钉在气绝事件（全卡盘点(3)）：不灭之火被其它形态替换离场
+    （on_form_destroyed reason="replace"）不触发——不耗火、不返场。"""
+    _return_form(db)
+    db.cards[OTHER_FORM] = F.card(
+        OTHER_FORM, shikigami=SID, card_type="form", level=1,
+        form_power=2, form_health=2, token=True)
+    g, pa, pb = _game(make_game)
+    pa.orb = 3
+    inst = give(g, 0, RETURN_FORM)
+    g.apply({"op": "play_card", "uid": inst.uid})   # 付费后 2 火
+    s = pa.shikigami[IDX]
+    assert s.form is inst
+    g.apply({"op": "play_card", "uid": give(g, 0, OTHER_FORM).uid})  # 替换离场（付费 1）
+    g._drain_queue()
+    assert s.form is not None and s.form.id == OTHER_FORM
+    assert not s.defeated
+    assert pa.orb == 1                               # 未触发：只剩第二张形态的付费
+    assert inst in pa.graveyard
+
+
 # ---------- 精确弃牌与等级提升（百闻一得） ----------
 
 def test_level_up_lowest_pool_and_overflow(make_game, db):
     """百闻一得：friendly_lowest_level 池 = 己方最低等级在场式神（并列全入池由
-    使用者选择）；弃掉一张'明灯'（按数据 id 精确弃牌）；已为 3 级改为抽一张牌；
-    手牌无明灯时不弃、升级仍执行。"""
+    使用者选择）；弃掉一张'明灯'（按数据 id 精确弃牌）；已为 3 级改为抽一张牌。
+    全卡盘点(2) 裁决：手牌有'明灯'才能使用（play_condition 使用前提）；执行时
+    没有'明灯'则不弃牌、升级/抽牌也不执行（memo_ge 门控 discarded_count）。"""
     db.cards[MINGDENG] = F.card(MINGDENG, shikigami=SID, token=True)
     db.cards[LEVEL_SPELL] = F.card(
         LEVEL_SPELL, shikigami=SID, level=1, token=True,
+        play_condition={"hand_has": MINGDENG},
         target=T(kind="choose", pool="friendly_lowest_level"),
-        steps=[F.Step(op="discard", card_id=MINGDENG, count=1),
-               F.Step(op="level_up", amount=1, overflow_draw=True)])
+        steps=[F.Step(op="discard", card_id=MINGDENG, count=1,
+                      condition={"hand_has": MINGDENG}),
+               F.Step(op="level_up", amount=1, overflow_draw=True,
+                      condition={"memo_ge": {"key": "discarded_count", "ge": 1}})])
     from core import targets as targets_mod
     g, pa, pb = _game(make_game)
     for i, lv in enumerate([1, 1, 2, 3]):
@@ -215,16 +247,18 @@ def test_level_up_lowest_pool_and_overflow(make_game, db):
     # 已为 3 级：改为抽一张牌
     for s in pa.shikigami:
         s.level = 3
-    hand_before = len(pa.hand)
+    give(g, 0, MINGDENG)
+    hand_before = len(pa.hand)                     # 含明灯、不含将打出的法术
     g.apply({"op": "play_card", "uid": give(g, 0, LEVEL_SPELL).uid,
              "target": Ref(player=0, shikigami=3).model_dump()})
     assert pa.shikigami[3].level == 3
-    assert len(pa.hand) == hand_before + 1             # 抽 1
-    # 无明灯：不弃牌，升级仍执行
+    assert len(pa.hand) == hand_before             # 法术/明灯离手 -2、溢出抽 1 +1
+    # 无明灯：不满足使用前提，不能使用（任何方式同检）
     pa.shikigami[2].level = 2
-    g.apply({"op": "play_card", "uid": give(g, 0, LEVEL_SPELL).uid,
-             "target": Ref(player=0, shikigami=2).model_dump()})
-    assert pa.shikigami[2].level == 3
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": give(g, 0, LEVEL_SPELL).uid,
+                 "target": Ref(player=0, shikigami=2).model_dump()})
+    assert pa.shikigami[2].level == 2                  # 未升级
 
 
 # ---------- 鬼火变化事件与响应通道（月食类合成卡；月食本身不入数据） ----------

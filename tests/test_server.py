@@ -432,7 +432,7 @@ def test_turn_timeout_pending_choice_random_choose(db):
             g.apply({"op": "upgrade", "player": 0, "index": idx})
         p0 = g.state.players[0]
         hand_n = len(p0.hand)
-        assert g._open_deck_top_pick(0, 2, 1, False)  # 青灯夜谈式挂起（无续块）
+        assert g._open_deck_top_pick(0, 2, 1)  # 青灯夜谈式挂起（无续块）
         assert g.state.pending_choice is not None
         turn = g.state.turn
         room.reschedule_timer()  # 调度→回合切换后刷新计时 key，走真实超时路径
@@ -527,7 +527,7 @@ def test_reconnect_resync_pending_choice(db):
         g = room.game
         for pi in (0, 1):
             g.apply({"op": "ready", "player": pi})
-        assert g._open_deck_top_pick(0, 2, 1, False)
+        assert g._open_deck_top_pick(0, 2, 1)
         real_opts = list(g.state.pending_choice["options"])
         room.reschedule_timer()  # 调度→回合切换后刷新计时 key
         seat0 = room.seat_to_player.index(0)

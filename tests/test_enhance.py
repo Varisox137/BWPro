@@ -565,12 +565,11 @@ def test_conditional_keywords_combat_nonempty(db, make_game):
 
 
 def test_hand_count_half_amount(db, make_game):
-    """墨染型数值键 hand_count_half：先抽 1 再按控制者当前手牌数一半
-    （向下取整）造成伤害。"""
+    """墨染型数值键 hand_count_half：按控制者当前手牌数一半（向上取整——全卡盘点(14)
+    裁决，除自身外 0-12 张对应 0-6）造成伤害；本牌结算前已离手不计入。"""
     cid = 10010174
     db.cards[cid] = F.card(
-        cid, steps=[F.Step(op="draw", count=1),
-                    F.Step(op="damage", amount={"hand_count_half": "controller"})],
+        cid, steps=[F.Step(op="damage", amount={"hand_count_half": "controller"})],
         target=CHOOSE_ENEMY, token=True)
     g = make_game()
     pa, pb = g.state.players
@@ -578,8 +577,13 @@ def test_hand_count_half_amount(db, make_game):
     pb.shikigami[0].level = 1
     b = pb.shikigami[0]                           # 3/4
     play(g, 0, cid, target=Ref(player=1, shikigami=0))
-    # 打出后手牌 6 → 抽 1 = 7 → 7//2 = 3
-    assert len(pa.hand) == 7 and b.health == 4 - 3
+    # 打出后手牌 6（本牌已离手不计）→ 6/2 = 3
+    assert len(pa.hand) == 6 and b.health == 4 - 3
+    give(g, 0, 10010101)                          # 手牌补到 7
+    b.health = 5                                  # 抬血读数（避开气绝钳 0）
+    play(g, 0, cid, target=Ref(player=1, shikigami=0))
+    # 手牌 7（本牌离手不计）→ 向上取整 7/2 = 4（向下取整则只打 3 剩 2）
+    assert b.health == 5 - 4 and not b.defeated
 
 
 def test_shikigami_has_form_condition(db, make_game):

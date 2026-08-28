@@ -344,22 +344,50 @@ def test_hand_cap_burns_excess(db, make_game):
 
 
 def test_empty_deck_burn_replaces_loss(db, make_game):
-    """觉醒·书翁型空库替换（觉醒牌 tags 含 deck_out_burn）：牌库为空时抽牌改为
-    对敌方牌手造成 10 点伤害（每张空抽各触发一次），伤害致死走正常牌手气绝判负。"""
+    """觉醒·书翁型空库替换（全卡盘点(16) 裁决：牌手级永久能力，觉醒落点写
+    p.ext["deck_out_burn"]）：牌库为空时抽牌改为对敌方牌手造成 10 点伤害（每张
+    空抽各触发一次），伤害致死走正常牌手气绝判负；书翁气绝后能力仍在——不判负、
+    照烧 10，伤害来源为无（式神不在场）。"""
     awaken_cid = 10010168
     db.cards[awaken_cid] = F.card(awaken_cid, subtype="awaken",
                                   tags=["deck_out_burn"], token=True)
     g = make_game()
     pa, pb = g.state.players
     pb.shield = 0
-    pa.shikigami[0].awakened = awaken_cid         # 在场（1 级）且已觉醒
+    pa.orb = 9
+    play(g, 0, awaken_cid)                        # 觉醒落点授予牌手级永久能力
+    assert pa.ext["deck_out_burn"] == 0
     pa.deck.clear()
     for expected in (20, 10):
         pass_turns(g, 2)                          # A 回合开始空抽 → 烧 10
         assert pb.health == expected and g.state.winner is None
     pass_turns(g, 2)                              # 再空抽 → 30→0，敌方牌手气绝
     assert pb.defeated and g.state.winner == 0
-    # 对照：无该标记的空库抽牌照常判负
+    # 书翁气绝后：能力仍在（不判负、照烧 10），伤害来源为无
+    g3 = make_game()
+    pa3, pb3 = g3.state.players
+    pb3.shield = 0
+    pa3.orb = 9
+    seen: list = []
+    orig_deal = g3.deal_to_player
+
+    def _spy(*a, **k):
+        seen.append(a[2] if len(a) > 2 else k.get("source"))
+        return orig_deal(*a, **k)
+
+    g3.deal_to_player = _spy
+    play(g3, 0, awaken_cid)
+    s3 = pa3.shikigami[0]
+    s3.health = 0
+    g3.check_defeated(Ref(player=0, shikigami=0))
+    g3._drain_queue()
+    assert s3.defeated
+    pa3.deck.clear()
+    seen.clear()
+    pass_turns(g3, 2)
+    assert pb3.health == 20 and g3.state.winner is None  # 照烧 10、不判负
+    assert seen and seen[-1] is None                     # 书翁不在场：无来源伤害
+    # 对照：无该能力的空库抽牌照常判负
     g2 = make_game()
     g2.state.players[0].deck.clear()
     pass_turns(g2, 2)
@@ -392,43 +420,65 @@ def test_battle_mulligan_flow(db, make_game):
 
 
 def test_draw_to_pick_replaces_turn_draw(db, make_game):
-    """明心型抽牌替换（在场形态 tags 含 draw_to_pick）：回合开始的抽牌改为检视牌库顶
-    3 张选 1 置入手牌（然后洗牌库）；牌库不足 3 张全检视；牌库为空走空库分支（判负）。"""
+    """明心型通常抽牌终止（全卡盘点(13)：回合开始触发型）——在场形态能力：己方回合
+    开始时若牌库有牌则触发，牌手获得一次性"抽牌前终止通常抽牌"能力（draw_cancel_once）
+    并检视牌库顶 3 张选 1 置入手牌（然后洗牌库）；牌库不足 3 张全检视；牌库没有牌
+    不触发（通常抽牌照常、空库判负照旧）；一旦触发，执行时牌库已空也照常终止。"""
     cid = 10010170
-    db.cards[cid] = F.card(cid, card_type="form", form_power=4, form_health=5,
-                           tags=["draw_to_pick"], token=True)
+    db.cards[cid] = F.card(
+        cid, card_type="form", form_power=4, form_health=5, token=True,
+        abilities=[F.block(
+            F.Step(op="bump_ext", key="draw_cancel_once", value=1,
+                   host="controller", target=F.T(kind="self")),
+            F.Step(op="deck_top_pick", count=3, times=1),
+            when="on_turn_start", condition={"player": "self", "deck_ge": 1})])
     g = make_game()
     pa = g.state.players[0]
     pa.orb = 9
     play(g, 0, cid)
     hand_before = len(pa.hand)
-    pass_turns(g, 2)                              # → A 第 2 回合开始：挂起检视
+    pass_turns(g, 2)                              # → A 第 2 回合开始：触发并挂起检视
     pend = g.state.pending_choice
     assert pend and pend["kind"] == "deck_top_pick" and len(pend["options"]) == 3
     g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
     assert g.state.pending_choice is None
-    assert len(pa.hand) == hand_before + 1
+    assert len(pa.hand) == hand_before + 1        # 通常抽牌已终止，仅检视入手 1 张
     # 牌库不足 3 张：全部检视（截断到 2）
     del pa.deck[2:]
     pass_turns(g, 2)
     pend = g.state.pending_choice
     assert len(pend["options"]) == 2
     g.apply({"op": "choose", "uid": pend["options"][0], "player": 0})
-    # 牌库为空：走空库抽牌分支（无 deck_out_burn → 判负）
+    # 牌库为空：不触发——通常抽牌照常，走空库判负
     pa.deck.clear()
     pass_turns(g, 2)
     assert g.state.winner == 1
+    # 已授予终止能力后、抽牌点牌库已空：照常终止（不落入空库判定）——直接经
+    # _turn_start_draw 验证一次性能力的消费语义（触发→执行间牌库被磨空的等价态）
+    g2 = make_game()
+    pa2 = g2.state.players[0]
+    pa2.ext["draw_cancel_once"] = 1
+    pa2.turn_count = 2                            # 越过先手首回合不抽的门槛
+    pa2.deck.clear()
+    g2._turn_start_draw(pa2, 0)
+    assert g2.state.winner is None and not g2.state.pending_end
+    assert "draw_cancel_once" not in pa2.ext      # 一次性：消费即移除
 
 
 def test_termination_sources_terminate_multi_draw(db, make_game):
-    """多张抽牌事件的终止语义（答复(4)）：三类终止源——draw_to_pick（明心型"抽牌前"
-    触发替换）、deck_out_burn（觉醒·书翁型空库烧 10）、空库判负——各自终止整个
-    抽牌事件（剩余张数不再结算、整次不再发 on_draw）。"""
-    # 终止源① draw_to_pick：回合开始抽 X>1 张时"抽牌前"触发替换并终止——
-    # 无论剩余多少张没抽都只触发一次、只检视选 1 张
+    """多张抽牌事件的终止语义（答复(4)）：三类终止源——明心一次性能力（盘点(13)，
+    "抽牌前"终止通常抽牌）、deck_out_burn（觉醒·书翁型空库烧 10，盘点(16)）、
+    空库判负——各自终止整个抽牌事件（剩余张数不再结算、整次不再发 on_draw）。"""
+    # 终止源① 明心一次性能力：回合开始抽 X>1 张时"抽牌前"终止——无论剩余多少张
+    # 没抽都只触发一次、只检视选 1 张
     cid = 10010171
-    db.cards[cid] = F.card(cid, card_type="form", form_power=4, form_health=5,
-                           tags=["draw_to_pick"], token=True)
+    db.cards[cid] = F.card(
+        cid, card_type="form", form_power=4, form_health=5, token=True,
+        abilities=[F.block(
+            F.Step(op="bump_ext", key="draw_cancel_once", value=1,
+                   host="controller", target=F.T(kind="self")),
+            F.Step(op="deck_top_pick", count=3, times=1),
+            when="on_turn_start", condition={"player": "self", "deck_ge": 1})])
     g = make_game(config=GameConfig(draw_per_turn=2, auto_skip_upgrade=True))
     pa = g.state.players[0]
     pa.orb = 9
@@ -453,7 +503,7 @@ def test_termination_sources_terminate_multi_draw(db, make_game):
     g = make_game()
     pa, pb = g.state.players
     pb.shield = 0
-    pa.shikigami[0].awakened = awaken_cid         # 在场（1 级）且已觉醒
+    pa.ext["deck_out_burn"] = 0                   # 牌手级永久能力（盘点(16)）直接置位
     del pa.deck[1:]                               # 牌库只剩 1 张
     bound = pa.deck[0]
     g.history.clear()

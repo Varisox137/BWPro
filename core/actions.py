@@ -2221,20 +2221,35 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
 
 @action("auto_use")
 def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
-             inherit_target: bool = False, from_hand: bool = False) -> None:
+             inherit_target: bool = False, from_hand: bool = False,
+             delayed: bool = False) -> None:
     """凭空生成指定卡牌并免费自动使用（流霰"对目标使用一张'雪球'"；targets 忽略）。
 
     不耗鬼火、不视作从手牌使用、用后进墓地、play_from=void、triggered=auto，
     照常 emit on_card_played（recast_recorded 同管线）。inherit_target=True：
     不另选目标，以本效果的卡牌选择目标（ctx.chosen）作为其使用目标（目标继承
-    流霰目标，无视该牌自身目标限制）。目前仅支持法术牌（效果块结算）；
+    流霰目标，无视该牌自身目标限制）。目前仅支持法术牌（效果块结算）与战斗牌；
     [条件] 使用前提同检。
+
+    delayed=True（转运"生成延时的'转运'使用事件"，全卡盘点(6)）：不立即执行，
+    追加到运势延时复用栈（engine._deferred_luck_stack）当前层，由 _run_luck_events
+    收尾时深度优先逐一执行——同层先生成的复用的整条递归链先于后生成的兄弟；
+    凭空生成新实例（不继承原牌已展示/灵咒等状态）。栈空（非运势管线上下文）时
+    兜底立即执行。
 
     from_hand=True（流霰 20191212"自动对其使用手牌中所有'雪球'"）：改为从手牌
     移出全部同名牌逐张免费使用——不耗鬼火/不占瞬发位、用后进墓地、
     play_from="hand"（计入"从手牌使用"记账 snowball_used_game，定案(1a)）、
     逐张独立结算；手牌无同名牌时空操作（定案(1b)）。
     """
+    if delayed:
+        stack = game._deferred_luck_stack
+        if stack:
+            stack[-1].append({"card_id": int(card_id), "source": ctx.source,
+                              "chosen": (list(ctx.chosen or []) if inherit_target else []),
+                              "controller": ctx.controller})
+            return
+        # 栈空（非运势管线上下文）：兜底立即执行
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
     cdef = game.db.cards[int(card_id)]
@@ -2965,8 +2980,9 @@ def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
     = 触发来源幻境当前耐久（星陨"重复耐久次"——幻境能力块专用，开始时一次性取值）；
     {"event_base_power": key} = 触发事件 key 所指式神的当前基础力量（落英缤纷类，
     开始时一次性取值）。
-    子步骤在同一块上下文（共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时重复
-    结束后一次性清空控制者鬼火（2→0 不经过 1）。
+    子步骤在同一块上下文（共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时先一次性
+    清空控制者鬼火（2→0 不经过 1）、再执行 X+1 次子步骤（全卡盘点(1) 裁决：
+    "失去所有剩余 X 点鬼火，执行 X+1 次"——次数按清空前剩余鬼火取值）。
     """
     from db.schema import Step
     p = game.state.players[ctx.controller]
@@ -2984,11 +3000,11 @@ def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
     else:
         n = _orb_count(count, p, 0)
     sub = [Step.model_validate(st) for st in steps]
+    if clear_orb:
+        game._clear_orb(p, ctx.controller)  # 先清火再执行（全卡盘点(1)，吸魂灯）
     for _ in range(max(0, n)):
         for st in sub:
             game._run_step(st, ctx)
-    if clear_orb:
-        game._clear_orb(p, ctx.controller)
 
 
 @action("deck_top_pick")
@@ -2998,13 +3014,15 @@ def deck_top_pick(game, ctx, *, targets: list[Ref], count: int = 3,
     targets 忽略）。通过 pending_choice 挂起等 choose 指令作答（见 Game._cmd_choose）。
 
     times 为整数或 {"orb": true}（解析见 _orb_count）。牌库无可检视牌 = 不挂起；
-    clear_orb=True 的清空仍执行（挂起时延后到末次选择后）。
+    clear_orb=True 时先一次性清空鬼火、再开始检视挑选（全卡盘点(1) 裁决："失去所有
+    剩余 X 点鬼火，执行 X+1 次"——次数按清空前剩余鬼火取值，青灯夜谈；选择后洗牌库，
+    至少执行一次故必然洗牌）。
     """
     p = game.state.players[ctx.controller]
     n = _orb_count(times, p, 1)
-    if not game._open_deck_top_pick(ctx.controller, int(count), n, clear_orb):
-        if clear_orb:
-            game._clear_orb(p, ctx.controller)
+    if clear_orb:
+        game._clear_orb(p, ctx.controller)  # 先清火再检视（全卡盘点(1)，青灯夜谈）
+    game._open_deck_top_pick(ctx.controller, int(count), n)
 
 
 @action("consume_orb")

@@ -263,12 +263,12 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | on_turn_start {player: opponent, orb_ge: 1} → generate 明灯（敌方回合开始时有剩余鬼火） |
 | 01 明灯 | ✅ | [瞬发] gain_orb 1；凤凰火/青行灯协战与青行灯基础能力的产物 |
-| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（1+剩余鬼火，0 火仍执行基础 1 次），末次后清空鬼火续块；联机 sanitize 对非选择方抹除 options；text 按 raw 无"洗牌库"——调度/牌库拿牌隐含检索洗牌（维护者答复(8)），引擎 deck_top_pick 固定洗牌为正确行为 |
+| 02 青灯夜谈 | ✅ | **pending_choice 结算中交互选择**机制（GameState.pending_choice + choose 指令 + _suspended 内存态续点）：deck_top_pick 次数={orb: true}（1+剩余鬼火，0 火仍执行基础 1 次），**clear_orb 先清火再执行、次数按清空前取值**（全卡盘点(1)）；联机 sanitize 对非选择方抹除 options；text 按 raw 无"洗牌库"——调度/牌库拿牌隐含检索洗牌（维护者答复(8)），引擎 deck_top_pick 固定洗牌为正确行为 |
 | 03 幽光之火 | ✅ | 形态 4/5：20191212 触发改"对敌方牌手造成战斗伤害时"——on_player_damaged {player: opponent, source_shikigami: self, kind: combat} → generate 明灯 |
-| 04 百闻一得 | ✅ | discard card_id 精确弃明灯（无明灯不弃、升级仍执行）；friendly_lowest_level 新池（并列全入池由使用者选择，答复 7）；level_up 新 op 不走升级次数，满 3 级 overflow_draw 改抽 1 |
+| 04 百闻一得 | ✅ | **play_condition {hand_has: 明灯}**（有明灯才能用，全卡盘点(2)）；discard card_id 精确弃明灯（步级 condition hand_has——执行时无明灯不弃不升级不抽牌）；level_up 步挂步级 **memo_ge 键**（memo.discarded_count ≥1 才执行，全卡盘点(2) 新条件键）；friendly_lowest_level 新池（并列全入池由使用者选择，答复 7）；level_up 新 op 不走升级次数，满 3 级 overflow_draw 改抽 1 |
 | 05 百物语之火 | ✅ | 形态 4/5：on_turn_end {player: self} → gain_orb 1 |
-| 06 不灭之火 | ✅ | 形态 4/5：on_form_destroyed {target_shikigami: self, orb_ge: 1}（离场前 emit 收集，含被替换/气绝连带，鸩先例）→ consume_orb 1 → revive（气绝先复活）→ reattach_form 新 op（墓地同一实例重新结附，不生成新牌，答复 6） |
-| 07 吸魂灯 | ✅ | repeat op（次数={orb: true}，1+剩余鬼火，0 火仍执行基础 1 次）：20191212 投射 5→4 ×鬼火，独立求值，clear_orb 清空 |
+| 06 不灭之火 | ✅ | 形态 4/5：on_form_destroyed {target_shikigami: self, orb_ge: 1, **reason: defeat**}（全卡盘点(3)：仅气绝/被消灭触发返场，**被替换不再触发**；裁决"气绝者移动回准备区不执行"未实现——复活仍回准备区，已报备）→ consume_orb 1 → revive（气绝先复活）→ reattach_form 新 op（墓地同一实例重新结附，不生成新牌，答复 6） |
+| 07 吸魂灯 | ✅ | repeat op（次数={orb: true}，1+剩余鬼火，0 火仍执行基础 1 次；**clear_orb 先清火再执行、次数按清空前取值**，全卡盘点(1)）：20191212 投射 5→4 ×鬼火，独立求值 |
 | 08 觉醒·青行灯 | ✅ | +1/+1；tags [awaken, orb_store]：觉醒替换 = 基础保留 + 鬼火储存（引擎回合开始不清零、储存累加封顶 4，答复 3） |
 | 51 烛火重燃 | ❌ | 协战子选项（青行灯侧幻境）：幻境机制未实现，暂缓 |
 
@@ -298,7 +298,7 @@
 | 04 恶·即·斩 | ✅ | 战斗 +4/+0 |
 | 05 守护 | ✅ | id 按 raw 重排（原 06）；战斗 +0/+4；[响应]挂 on_before_assault {victim_side: friendly, victim_kind: shikigami, victim_not_shikigami: 100115, attacker_side: enemy}：响应插入把犬神移入防守方战斗区、无目标战斗重读目标 = "攻击目标改为犬神"（零新引擎代码）；追猎类定向战斗可响应——守护者照常移入并获得 +0/+4，但目标不转移仍打原定目标（维护者定案）；text 按 raw 无"转移攻击目标"字样（见出入 20） |
 | 06 心剑乱舞 | ✅ | id 按 raw 重排（原 07）；形态 4/9：card_aura scope=form keywords [fast]（犬神的牌获得[瞬发]，读取时求值） |
-| 07 心技一体 | ✅ | id 按 raw 重排（原 05）；level 2 形态 3/5 → level 3 形态 4/9；card_aura scope=form + power_ext/shield_ext（ext 数值通道，读 lianmo_used_game）；双快照：20191212 记账卡='羁绊的价值' best / 20200120 记账卡='心身炼磨'（均 tags [lianmo] 出牌记账）；手牌数值显示已含光环 ext 通道（刃影叠岚同解） |
+| 07 心技一体 | ✅ | id 按 raw 重排（原 05）；level 2 形态 3/5 → level 3 形态 4/9；card_aura scope=form + power_ext/shield_ext（ext 数值通道，读 lianmo_used_game）；双快照：20191212 记账卡='羁绊的价值' best / 20200120 记账卡='心身炼磨'（均 tags [lianmo] 出牌记账——**记账时机 = 预使用小步骤 _emit_before_card_play**，无效化不计，全卡盘点(8)）；手牌数值显示已含光环 ext 通道（刃影叠岚同解） |
 | 08 觉醒·犬神 | ✅ | +0/+0（20191212 去 +1/+1）；on_turn_end {player: self, holder_defeated: true} + trigger_when_defeated 字段（能力收集对气绝者放行——仅气绝时触发）：revive + perm +1/+1；raw 无气绝限定，机制保持仅气绝时触发（见出入 19） |
 | 51 心身炼磨 | ✅ | 衍生（20200120 起升级产物）：perm +1/+1；tags [lianmo] 保留；重写为 20200120 唯一版本——去 20251212 的动态瞬发（conditional_keywords {level_ge: 2}）与免费（cost_zero_if {level_ge: 3}） |
 
@@ -337,7 +337,7 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 伪关键字 damage_to_fragile 永久通道（ShikigamiDef.keywords → perm_keywords，死亡不清）：伤害事件生成点对无破甲受伤者全额转化为等量破甲（不再视为伤害；与毒蚀同位置，converted 防循环） |
-| 01 蛇行击 | ✅ | 双版本：20191212（best）= [瞬发] 1 伤 + 条件式增强（chosen_has_fragile 新 Step 条件键：目标有破甲 → bounce_self 条件回手 + 伤害再 +1）；20200624 = [瞬发][弹回] 2 伤——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；_mat 快照去重防修饰重复合并） |
+| 01 蛇行击 | ✅ | 双版本：20191212（best）= [瞬发] 1 伤 + 条件式增强（chosen_has_fragile 新 Step 条件键：目标有破甲 → bounce_self 条件回手 + 伤害再 +1）；20200624 = [瞬发][弹回] 2 伤——弹回首卡（_rebound_check：结算完毕牌在墓地移回手牌；**回手后该实例失去[弹回]**——card.mods rebound_lost 置位，再次打出正常入墓，全卡盘点(7)；_mat 快照去重防修饰重复合并） |
 | 02 淬毒 | ✅ | 所有敌方角色 2（经伤害转化：无破甲者转为 2 破甲） |
 | 03 剧毒之盾 | ✅ | 2 护甲 + delay_grant scope=turn bind=chosen（"本回合获得'使受到它战斗伤害的式神获得3破甲'"）；[响应] 挂"己方战斗区式神被攻击时"自动对其使用 |
 | 04 氤氲蛇姬 | ✅ | 20191212 重写：形态 4/6，敌方回合结束时敌方战斗区式神 +2 破甲（on_turn_end {player: opponent} → gain_shield kind=fragile enemy_combat） |
@@ -351,14 +351,14 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 游戏开始时抽 1（rules.md 游戏开始阶段步骤 3 已载） |
-| 01 纪行 | ✅ | [迅捷]；书翁对敌方牌手造成伤害时抽 1（on_player_damaged {source_shikigami: self}） |
+| 01 纪行 | ✅ | [迅捷]；书翁对敌方牌手造成**战斗伤害**时抽 1（on_player_damaged {source_shikigami: self, kind: combat}——仅战斗伤害触发，全卡盘点(12)） |
 | 02 云游 | ✅ | [瞬发]；战中调度 mulligan_hand times=3（pending_choice kind=mulligan_pick 挂起 + choose 作答，结束后洗牌库——rules.md ch21） |
 | 03 开卷 | ✅ | 抽 2 |
-| 04 墨染 | ✅ | 抽 1 + 打 {hand_count_half: controller}（手牌数一半向下取整） |
-| 05 明心 | ✅ | draw_to_pick tags 抽牌替换：回合开始抽 1 改为检视牌库顶 3 张选 1 入手再洗牌（不足 3 张全检视，空库走判负/燃烧分支） |
+| 04 墨染 | ✅ | 打 {hand_count_half: controller}（**无抽牌**——raw 无抽牌文本；手牌数一半**向上取整**，执行时此牌已离手不计入，全卡盘点(14)） |
+| 05 明心 | ✅ | 抽牌替换新机制（全卡盘点(13)）：在场形态能力 on_turn_start {player: self, deck_ge: 1} → **先** bump_ext 授予牌手一次性旗标 draw_cancel_once（己方回合开始清除）**再** deck_top_pick 检视牌库顶 3 张选 1 入手再洗牌（不足 3 张全检视）；同回合回合开始抽牌被 _draw_terminate 终止并消费旗标（授予成功即生效，无论抽牌时点牌库是否有牌） |
 | 06 闻世 | ✅ | stat_aura self_hand_count 动态光环：每有一张其他手牌 +1/+1（_refresh_stat_auras 读取点重算，dyn_power/dyn_health 缓存通道） |
 | 07 万象之书 | ✅ | [瞬发]；generate shikigami=friendly_others——按座次顺序逐个其他己方式神（含 0 级/气绝）各随机 1 张可构筑牌（非衍生，与本局卡组无关；维护者答复(6)确认）入手 |
-| 08 觉醒·书翁 | ✅ | deck_out_burn tags 空库燃烧：空库抽牌改为对敌方牌手打 10、自己不判负（每张空抽各触发一次） |
+| 08 觉醒·书翁 | ✅ | deck_out_burn tags 空库燃烧（全卡盘点(16) 牌手级永久能力口径）：觉醒落点把书翁座次写入 `PlayerState.ext["deck_out_burn"]`（唯一、不清除）——空库抽牌改为对敌方牌手打 10 并终止该次抽牌事件、自己不判负；多抽空库整链只触发一次；书翁不在场（气绝/变形/替换）照烧且伤害无来源 |
 
 ## 青蛙瓷器（100113）
 
@@ -371,7 +371,7 @@
 | 04 立直 | ✅ | 战斗 +0/+0；luck_roll force_x1_if（有形态阈值视为 1，骰子照投照计）→ grant_immunity；[响应] 青蛙瓷器被攻击时自动使用 |
 | 05 骰子炸弹 | ✅ | 已按 raw 与 06 互换（level 2）；20191212 去[瞬发]；luck_roll{x:1} → damage amount_ctx:luck_dice（造成等同骰点的伤害） |
 | 06 门前清 | ✅ | 已按 raw 与 05 互换；形态 2/9；双快照：20191212（best）只留被攻击挂点（on_before_assault {victim_shikigami: self}）/ 20200423 出击或被攻击双挂（attacker/victim 两块，祝福之愿同型）；EffectBlock.luck:4 → gain_shield 2 |
-| 07 转运 | ✅ | 攻击后 luck_roll{x:4} → discard_random 2 + reuse_card（战斗流程重走，不耗火） |
+| 07 转运 | ✅ | 全卡盘点(6) 重写：delay_grant（when=on_battle_end、scope=battle、uses=1，condition {attacker_shikigami: self, hand_count_ge: 2}）→ 该战斗的"战斗后"手牌 ≥2 才运势4；成功则每次生效各判 hand_count_ge:2 → **先延时生成凭空新'转运'使用事件**（auto_use delayed，`_deferred_luck_stack` 深度优先：复用1 整条递归链先于复用2；新实例不继承已展示/灵咒）**再** discard_random 2；觉醒翻倍时两次生效分别判定手牌 |
 | 08 觉醒·青蛙瓷器 | ✅ | +2/+2；觉醒能力 = 基础同款 + 翻倍标记（判定者方未气绝觉醒青蛙：成功效果执行两次，不重新掷骰；on_luck_success 延时触发同样翻倍、自身光环不翻倍、失败效果不翻倍） |
 
 ## 山兔（100117）

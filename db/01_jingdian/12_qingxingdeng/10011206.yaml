@@ -12,11 +12,15 @@ versions:
       effects:
         steps: []
       abilities:
-        # "当此牌被消灭时"：on_form_destroyed 在形态离场前发出（含被替换/被消灭/气绝
-        # 连带离场，同鸩 10012807 口径）；条件限定离场形态结附于自身且有鬼火可耗。
-        # 返回场上 = 气绝则先复活，再把墓地中的同一实例重新结附（维护者答复 6：不生成新实例）
+        # 全卡盘点(3) 裁决：触发钉在青行灯作为气绝者的气绝事件（reason: defeat——
+        # 被其它形态替换离场 reason="replace" 不触发）；"气绝前1"检测有剩余鬼火才
+        # 触发（on_form_destroyed 在形态离场前发出、条件收集时求值，延时到气绝流程
+        # 后执行——先触发后执行：执行时没有鬼火也照常复活+结附，consume_orb 钳 0）。
+        # 返回场上 = 复活后把墓地中的同一实例重新结附（维护者答复 6：不生成新实例）。
+        # 报备：裁决①"气绝者移动回准备区不执行"未实现（复活仍回准备区）；
+        # 形态被效果消灭（非气绝/替换）是否触发裁决未言明，现不触发
         - when: on_form_destroyed
-          condition: {target_shikigami: self, orb_ge: 1}
+          condition: {target_shikigami: self, orb_ge: 1, reason: defeat}
           steps:
             - {op: consume_orb, amount: 1}
             - {op: revive, target: {kind: self}}

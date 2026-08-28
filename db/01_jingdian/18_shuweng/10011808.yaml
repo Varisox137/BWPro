@@ -10,7 +10,8 @@ versions:
       awaken_health: 2
       rarity: SSR
       level: 3
-      tags: [deck_out_burn]  # 在场已觉醒：牌库为空时抽牌改为对敌方牌手造成10点伤害
+      tags: [deck_out_burn]  # 觉醒落点授予牌手级永久能力（p.ext deck_out_burn）：
+      # 空库抽牌不判负，"抽牌前"改为对敌方牌手打 10 并终止（书翁不在场时无来源，盘点(16)）
       effects:
         steps: []
       text: "[觉醒]：{当你抽牌时若牌库里没有牌，则对敌方牌手造成10点伤害。}"

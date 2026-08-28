@@ -243,6 +243,11 @@ class Game:
         # 队列排水后统一生成（_deferred_defeats，"先因移动触发…战斗，然后气绝"定案）
         self._damage_insert_frames: list[dict] = []
         self._deferred_defeats: list[tuple[Ref, Ref | None, str]] = []
+        # 运势延时复用栈（转运"生成延时的'转运'使用事件"，全卡盘点(6)）：
+        # _run_luck_events 开头压入新一层，收尾弹出并深度优先 drain（本层逐条执行，
+        # 执行期间新产生的延时复用进嵌套层、先于本层后续兄弟结算——复现裁决
+        # "复用 1 全链先于复用 2"的次序）；auto_use(delayed=True) 写入栈顶
+        self._deferred_luck_stack: list[list[dict]] = []
         # 排水深度（_drain_queue 可重入——块步骤之间/战斗时点内嵌套排水）：延后气绝
         # 只在最外层排水（深度 1）统一生成，避免嵌套排水在插入帧触发的多步能力块
         # 执行中途（如鸦天狗移回→授予远程→额外攻击之间）抢先定死濒死者（裁决(7)）
@@ -925,8 +930,9 @@ class Game:
           去重数字种数（九莲宝灯"每投出过一个不重复数字 +1/+1"）。
         - {"enemy_stunned_count": true}：场上眩晕的敌方角色数（霜天之织[增强]
           "每有一个[眩晕]的敌方角色便+1力量"；活局面量，engine._enemy_stunned_count）。
-        - {"hand_count_half": "controller"}：效果归属玩家当前手牌数的一半（向下取整，
-          墨染"等同于你手牌数量一半的伤害"）。
+        - {"hand_count_half": "controller"}：效果归属玩家当前手牌数的一半（向上取整，
+          墨染"等同于你手牌数量一半的伤害"——全卡盘点(14) 裁决：除自身外手牌数
+          一半向上取整，0-12 张对应 0-6；法术结算前已离手，天然不含自身）。
         - {"field_intensity": "self"}：触发来源幻境（ctx.field）当前耐久（星轨
           "造成等同于它耐久的伤害"——幻境能力块专用，读取时求值）。
         - {"field_count": "controller"}：控制者当前幻境数（鲸骨·开[增强]
@@ -961,7 +967,7 @@ class Game:
             base = int(raw.get("base", 0))  # 静态底数（不受 per 倍率影响）
             dyn = 0  # 动态项总和（"每有一个…"类，受 per 倍率放大）
             if raw.get("hand_count_half") and game is not None and controller is not None:
-                dyn += len(game.state.players[controller].hand) // 2  # "一半"：向下取整
+                dyn += -(-len(game.state.players[controller].hand) // 2)  # "一半"：向上取整
             if raw.get("field_intensity") and field is not None:
                 dyn += int(field.intensity)  # 触发来源幻境当前耐久（星轨）
             if raw.get("field_count") and game is not None and controller is not None:
@@ -1214,17 +1220,14 @@ class Game:
         self.rng.shuffle(p.deck)  # 按原文"然后洗牌库"：每次选择后都洗牌
         self.state.pending_choice = None
         if not self._open_deck_top_pick(pi, pending["count"],
-                                        pending["remaining"] - 1, pending["clear_orb"]):
-            # 重复结束（或牌库已空无可检视）：清空鬼火（0 鬼火开局挂起时同样执行）并续块
-            if pending["clear_orb"]:
-                self._clear_orb(p, pi)
+                                        pending["remaining"] - 1):
+            # 重复结束（或牌库已空无可检视）：续跑挂起块
             if self._suspended is not None:
                 block, ctx, start = self._suspended
                 self._suspended = None
                 self._resolve_block(block, ctx, start)
 
-    def _open_deck_top_pick(self, pi: int, count: int, remaining: int,
-                            clear_orb: bool) -> bool:
+    def _open_deck_top_pick(self, pi: int, count: int, remaining: int) -> bool:
         """开启一次牌库顶挑选：设置 pending_choice 挂起等待 choose 指令；返回是否挂起。
         重复次数耗尽或牌库无可检视牌时不挂起（返回 False，由调用方走收尾）。"""
         p = self.state.players[pi]
@@ -1233,7 +1236,7 @@ class Game:
             return False
         self.state.pending_choice = {
             "kind": "deck_top_pick", "player": pi, "count": count,
-            "options": options, "remaining": remaining, "clear_orb": clear_orb,
+            "options": options, "remaining": remaining,
         }
         self._log(f"{p.name} 检视牌库顶 {len(options)} 张牌（选择一张置入手牌）")
         return True
@@ -2132,6 +2135,11 @@ class Game:
                     # 保留觉醒状态）；动态倒计时继承见 _register_ability_countdown(awaken=)
                     self._clear_ability_card_auras(p, self.state.active, awaken_si)  # 旧能力离场：其 ability 光环移除
                     p.shikigami[awaken_si].awakened = cdef.id
+                    if "deck_out_burn" in cdef.tags:
+                        # 觉醒·书翁（全卡盘点(16) 裁决）：牌手级永久能力——觉醒时获得、
+                        # 唯一；空库抽牌不判负，"抽牌前"对敌方牌手打 10 并终止该次抽牌
+                        # （书翁气绝/变形/替换后能力仍在；_draw_terminate 读取）
+                        p.ext["deck_out_burn"] = awaken_si
                     # 能力伪关键字换绑（觉醒替换基础能力）：移除基础式神 def 携带的
                     # 伪关键字（如 power_if_field）、授予觉醒牌 keywords 携带的（如
                     # power_per_field）——永久类别，气绝/复活随觉醒状态保留；
@@ -2190,8 +2198,12 @@ class Game:
     def _rebound_check(self, p: PlayerState, card: CardInstance, cdef: CardDef) -> None:
         """弹回（rebound 卡牌级关键字）：使用后回手而非入墓——效果/战斗结算完毕、
         卡牌在墓地时移回手牌（蛇行击）。回手后可再次打出：持久修饰快照按实例去重，
-        不重复合并（见 _materialize）。"""
-        if "rebound" in cdef.keywords and card in p.graveyard:
+        不重复合并（见 _materialize）。
+        全卡盘点(7) 裁决：弹回回手后该实例失去[弹回]（仍是原牌，保留灵咒/已展示
+        等实例状态）——实例修饰 rebound_lost 置位，再次使用后正常入墓。"""
+        if ("rebound" in cdef.keywords and card in p.graveyard
+                and not card.mods.get("rebound_lost")):
+            card.mods["rebound_lost"] = True  # 回手后该实例失去[弹回]（盘点(7)）
             self.move_card(p, card, "hand")
             self._log(f"【{cdef.name}】弹回手牌")
 
@@ -2258,15 +2270,14 @@ class Game:
 
     def _account_card_played(self, p: PlayerState, cdef: CardDef) -> None:
         """出牌统一记账（按 tags 计数）：tags 含 golden_feather 时累计本局/本回合使用数
-        （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）；tags 含 lianmo 时
-        累计本局使用数（心技一体"本局每使用过一张炼磨牌"光环数值通道）；tags 含
+        （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）；tags 含
         snowball 时累计本局使用数（流霰"本局每从手牌使用过一张'雪球'额外重复一次"——
-        本记账点只覆盖手牌/响应使用，凭空自动使用不经此处，不计）。"""
+        本记账点只覆盖手牌/响应使用，凭空自动使用不经此处，不计）。
+        （lianmo 炼磨记账已前移至"使用前"小步骤 `_emit_before_card_play`——
+        全卡盘点(8) 裁决：计数增加时机在卡牌使用事件的预使用小步骤。）"""
         if "golden_feather" in cdef.tags:
             p.ext["feather_used_game"] = p.ext.get("feather_used_game", 0) + 1
             p.ext["feather_used_turn"] = p.ext.get("feather_used_turn", 0) + 1
-        if "lianmo" in cdef.tags:
-            p.ext["lianmo_used_game"] = p.ext.get("lianmo_used_game", 0) + 1
         if "snowball" in cdef.tags:
             p.ext["snowball_used_game"] = p.ext.get("snowball_used_game", 0) + 1
         if cdef.subtype == "talisman":
@@ -2286,6 +2297,10 @@ class Game:
         （魔音扰心/反制），调用方跳过效果结算、牌照常离手入墓地、不发 on_card_played。
         marker 同步登记 _active_play_marker（反制钩子读取点，check_defeated）；
         嵌套使用（自动使用内再触发使用）保存/恢复外层 marker。
+
+        炼磨记账（心技一体"本局每使用过一张'心身炼磨'"光环数值通道）：计数增加的
+        时机在卡牌使用事件的"预使用"小步骤（全卡盘点(8) 裁决）——本函数 emit 之后、
+        未被无效化时 +1（被魔音扰心无效化的使用不计，"使用→无效化 = 记 0"）。
         """
         marker = {"nullified": False}
         prev = self._active_play_marker
@@ -2296,6 +2311,9 @@ class Game:
                       nullified=marker)
         finally:
             self._active_play_marker = prev
+        if not marker["nullified"] and "lianmo" in cdef.tags:
+            pl = self.state.players[player]
+            pl.ext["lianmo_used_game"] = pl.ext.get("lianmo_used_game", 0) + 1
         return marker
 
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
@@ -4388,9 +4406,10 @@ class Game:
     def _turn_start_draw(self, p: PlayerState, pi: int) -> None:
         """回合开始阶段 step 14：抽 1（后手第 1 回合也抽；先手从第 2 回合开始抽）。
 
-        reason="turn_start" 贯通抽牌事件——明心（draw_to_pick，"回合开始的抽牌
-        改为检视牌库顶三张选一张置入手牌然后洗牌库"）与觉醒·书翁（deck_out_burn）
-        均为抽牌事件"抽牌前"挂点的触发+终止（答复(4)，见 `_draw_terminate`）。"""
+        reason="turn_start" 贯通抽牌事件——明心（一次性 draw_cancel_once 牌手能力，
+        "回合开始的通常抽牌在'抽牌前'终止"，全卡盘点(13)）与觉醒·书翁（deck_out_burn
+        牌手级永久能力）均为抽牌事件"抽牌前"挂点的触发+终止（答复(4)，见
+        `_draw_terminate`）。"""
         if not (p.turn_count > 1 or self.state.active == 1):
             return
         self.draw_cards(pi, self.cfg(pi, "draw_per_turn"), reason="turn_start")
@@ -5490,11 +5509,12 @@ class Game:
         """效果抽牌（抽牌事件流程，docs/rules.md 第十九章——严格递归结构 + 终止语义）。
 
         "抽X张牌"事件（`_draw_event` 递归体）：
-        1. 发 on_before_draw（即时时机，count=X——"获得卡牌前"锚点）；
+        1. 发 on_before_draw（即时时机，count=X——"抽牌前"锚点，全卡盘点(13) 措辞统一）；
         2. **抽牌前触发的终止**（答复(4)，`_draw_terminate`）：满足条件则触发相应
            能力并**终止该抽牌事件**（不绑定移动、不再递归——无论剩余多少张没抽都
-           只触发一次）——明心（reason="turn_start" 且在场形态 tags 含
-           draw_to_pick：改为检视牌库顶三张选一）/ 觉醒·书翁（牌库无牌：烧 10 终止）
+           只触发一次）——明心（reason="turn_start" 且持有 draw_cancel_once 一次性
+           牌手能力：终止通常抽牌，全卡盘点(13)）/ 觉醒·书翁（牌库无牌：烧 10 终止，
+           牌手级永久能力 deck_out_burn，盘点(16)）
            / 空库判负（终止整个抽牌事件链，递归立即回卷，on_draw 不再发）；
         3. 绑定牌库顶 1 张（即刻离库，移动结算前处悬置态），其"牌移动事件"
            （deck→hand, reason="draw"）按**延时通道**挂起到**本抽牌事件单元**
@@ -5524,9 +5544,9 @@ class Game:
             self.emit("on_draw", player=player_index, count=count)
 
     def _draw_event(self, player_index: int, count: int, reason: str | None) -> bool:
-        """"抽X张牌"事件递归体；返回 False = 事件被终止（明心替换 / 觉醒·书翁烧血
-        / 空库判负——上层不再发 on_draw；判负时已挂起的移动随 pending_end 丢弃，
-        对局已结束、悬置离库牌不归位）。"""
+        """"抽X张牌"事件递归体；返回 False = 事件被终止（明心一次性能力终止通常抽牌
+        / 觉醒·书翁烧血 / 空库判负——上层不再发 on_draw；判负时已挂起的移动随
+        pending_end 丢弃，对局已结束、悬置离库牌不归位）。"""
         p = self.state.players[player_index]
         self.emit("on_before_draw", player=player_index, count=count, reason=reason)
         if self._draw_terminate(player_index, reason):
@@ -5549,21 +5569,28 @@ class Game:
     def _draw_terminate(self, player_index: int, reason: str | None) -> bool:
         """抽牌事件的"抽牌前"触发+终止（答复(4)；判定点在绑定步骤之前——此时牌库
         已被外层事件绑定取走相应张数，计数正确）。返回 True = 终止该抽牌事件。
-        - 明心（在场形态 tags 含 draw_to_pick）：条件=回合开始的抽牌
-          （reason="turn_start"）→ 无条件触发 → 终止 → 改为检视牌库顶三张选一张
-          置入手牌（然后洗牌库）；牌库为空时落入下方空库判定（觉醒·书翁/判负）。
-        - 觉醒·书翁（deck_out_burn）：条件=牌库无牌 → 触发（对敌方牌手 10 点）→ 终止。
+        - 明心一次性能力（player ext draw_cancel_once，全卡盘点(13)）：回合开始时
+          若牌库有牌触发授予（数据侧 on_turn_start 能力块）；在"抽牌前"若抽牌原因
+          为回合开始的通常抽牌（reason="turn_start"）则移除此能力（pop 消费）并立即
+          终止该次抽牌结算——授予后即使抽牌点牌库已空也照常终止（不落入空库判定）。
+        - 觉醒·书翁牌手级永久能力（player ext deck_out_burn，全卡盘点(16)）：
+          条件=牌库无牌 → 对敌方牌手造成 10 点伤害并终止（不因空库抽牌落败；
+          多抽递归只触发至多一次——终止即整链回卷）。伤害来源 = 己方书翁仅当在场
+          （只看式神是否在场，无论能力是否在场），否则无来源（气绝/变形/替换后
+          能力仍在）。
         - 无书翁且牌库无牌 → 判负并终止。"""
         p = self.state.players[player_index]
-        if reason == "turn_start" and p.deck \
-                and self._field_form_has_tag(player_index, "draw_to_pick"):
-            self._open_deck_top_pick(player_index, min(3, len(p.deck)), 1, False)
+        if reason == "turn_start" and p.ext.pop("draw_cancel_once", None):
+            self._log(f"{p.name} 的通常抽牌被终止（明心）")
             return True
         if not p.deck:
-            burner = self._deck_out_burner(player_index)
-            if burner is not None:
+            burn = p.ext.get("deck_out_burn")
+            if burn is not None:
+                s = p.shikigami[burn]
+                # 伤害来源=己方书翁仅当在场（无论能力是否在场）；不在场=无来源
+                source = Ref(player=player_index, shikigami=burn) if s.in_play else None
                 self._log(f"{p.name} 牌库已空，抽牌改为对敌方牌手造成 10 点伤害（觉醒·书翁）")
-                self.deal_to_player(1 - player_index, 10, burner)
+                self.deal_to_player(1 - player_index, 10, source)
             else:
                 # 牌库为空时执行抽牌立即落败（可能有效果改变此判定；判负非气绝）
                 if self.state.winner is None:
@@ -5571,15 +5598,6 @@ class Game:
                 self._set_pending_end(loser=player_index)
             return True
         return False
-
-    def _deck_out_burner(self, pi: int) -> Ref | None:
-        """觉醒·书翁：己方在场、已觉醒且觉醒牌 tags 含 deck_out_burn 的式神
-        （"每当你抽牌时若牌库里没有牌，则改为对敌方牌手造成10点伤害"）。"""
-        for i, s in enumerate(self.state.players[pi].shikigami):
-            if s.in_play and s.awakened is not None \
-                    and "deck_out_burn" in self.db.cards[s.awakened].tags:
-                return Ref(player=pi, shikigami=i)
-        return None
 
     # ==================== 事件与触发 ====================
 
@@ -6128,6 +6146,21 @@ class Game:
         """
         if not events:
             return
+        self._deferred_luck_stack.append([])  # 本批运势事件的延时复用层（转运）
+        try:
+            self._run_luck_events_inner(events)
+        finally:
+            deferred = self._deferred_luck_stack.pop()
+        # 深度优先 drain 延时复用（转运）：逐条凭空自动使用；执行期间新产生的
+        # 延时复用进入嵌套 _run_luck_events 的新层并先 drain 完，故每条复用的
+        # 整条递归链先于本层后续兄弟（裁决(6)"复用 1 全链先于复用 2"）
+        for entry in deferred:
+            ctx = ExecContext(controller=entry["controller"], source=entry["source"],
+                              chosen=entry["chosen"])
+            actions.ACTIONS["auto_use"](self, ctx, targets=[], card_id=entry["card_id"],
+                                        inherit_target=bool(entry["chosen"]))
+
+    def _run_luck_events_inner(self, events: list[dict]) -> None:
         # 1. 投掷骰子（修饰：必 6）
         for ev in events:
             dice = self.rng.randint(1, 6)
@@ -6243,6 +6276,16 @@ class Game:
                         return
                     cond = {k: v for k, v in cond.items()
                             if k != "field_intensity_ge"} or None
+                if cond is not None and "memo_ge" in cond:
+                    # 步级专用键（百闻一得"若弃了牌才升级/抽牌"，全卡盘点(2)——执行器
+                    # 消费，不进条件迷你语言）：{"key": k, "ge": n} = 块内暂存
+                    # ctx.memo[k] ≥ n 才执行该步
+                    spec = cond["memo_ge"]
+                    got = int((ctx.memo or {}).get(spec["key"], 0))
+                    if got < int(spec["ge"]):
+                        return
+                    cond = {k: v for k, v in cond.items()
+                            if k != "memo_ge"} or None
                 if cond is not None and not self._match(
                         cond, ctx.event or {}, ctx.controller,
                         holder=ctx.source, chosen=ctx.chosen):

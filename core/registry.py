@@ -121,6 +121,13 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     "drew_invocation_turn": ("player", CLEAR_ANY_TURN_START),  # 惊梦账本（本回合
     # 该牌手抽到过结附灵咒的牌）：灵咒名列表，_proc_invocations_on_move 触发时记账；
     # enemy_drew_invocation 条件键读取
+    "draw_cancel_once": ("player", CLEAR_OWN_TURN_START),      # 明心一次性能力
+    # （全卡盘点(13)）：回合开始触发授予，"抽牌前"终止一次回合开始的通常抽牌
+    # （_draw_terminate 消费）；未消费则下次己方回合开始清除
+    "deck_out_burn": ("player", CLEAR_NEVER),                  # 觉醒·书翁牌手级永久
+    # 能力（全卡盘点(16)）：觉醒落点写入书翁座次——空库抽牌不判负，改为对敌方牌手
+    # 打 10 并终止该抽牌事件；伤害来源 = 该书翁仅当在场，否则无来源（气绝/变形/
+    # 替换后能力仍在）
 }
 
 # ---------- 条件迷你语言键白名单 ----------
@@ -139,6 +146,8 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "luck_success_total_ge", "dice_below_x", "victim_lethal", "victim_in_combat",
     "holder_defeated", "holder_has_form", "energy_ge",
     "hand_has", "hand_lacks", "enemy_deck_le", "friendly_armor_ge",
+    "hand_count_ge",  # 控制者当前手牌数 ≥ n（转运"若手牌>=2"外/内层判定，全卡盘点(6)）
+    "deck_ge",  # 控制者牌库张数 ≥ n（明心"若己方牌库有牌"触发门控，全卡盘点(13)）
     "friendly_field_intensity_ge", "field_summon_distinct_ge", "friendly_field",
     "hand_card_type", "chosen_stunned", "chosen_has_fragile", "chosen_side",
     "combat_opponent_stunned", "kill_count_ge",
@@ -163,6 +172,9 @@ CONDITION_KEYS: frozenset[str] = frozenset({
                               # 读取对方 ext["drew_invocation_turn"] 账本
     # —— 收集器专用（不进 match_condition 按键循环）——
     "card_in_hand", "field_self", "field_intensity_ge",
+    "memo_ge",  # 步级执行器专用键（同 field_intensity_ge 通道，engine._run_step 消费）：
+    # {"key": k, "ge": n} = 块内暂存 ctx.memo[k] ≥ n 才执行该步（百闻一得"若弃了牌
+    # 才升级/抽牌"，全卡盘点(2)）
     # —— 事件字段等值/通用后缀具名实例（现行数据全集）——
     "player", "kind", "card_type", "subtype", "reason", "shikigami",
     "card_id", "invocation",

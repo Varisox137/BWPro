@@ -13,9 +13,10 @@ versions:
       effects:
         steps: []
       abilities:
-        # 当书翁对敌方牌手造成伤害时，抽一张牌
+        # 当书翁对敌方牌手造成伤害时，抽一张牌；全卡盘点(12) 裁决：仅战斗伤害触发
+        # （kind: combat——投射/效果伤害不触发）
         - when: on_player_damaged
-          condition: {player: opponent, source_shikigami: self}
+          condition: {player: opponent, source_shikigami: self, kind: combat}
           steps:
             - {op: draw, count: 1}
       text: "[迅捷]。当书翁对敌方牌手造成伤害时，抽一张牌。"

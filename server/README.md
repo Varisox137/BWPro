@@ -2,6 +2,23 @@
 
 基于 FastAPI + WebSocket 的双人联机对战服务端，已实现。
 
+## Web GUI（/gui，基础框架）
+
+启动服务端后浏览器访问 `http://<host>:<port>/gui` 即单页图形界面
+（纯 vanilla JS/HTML/CSS，无构建步骤，静态文件在 `static/webgui/`）：
+
+- **卡组构筑**：选环境 → 选 4 式神 → 每式神配 8 张卡，卡组码导入/导出，
+  卡组保存于浏览器 localStorage，合法性校验走 HTTP API；
+- **联机对战**：页面本身即 /ws 协议的一个 WebSocket 客户端（client 标识
+  沿用 `BWPro-CLI` 前缀软门槛），支持创建/加入房间、准备流程、场况渲染、
+  点击出牌（需目标时点选目标）、拖拽己方式神到敌方区域出击、结束回合、
+  断线凭房间代码+重连令牌恢复。
+
+HTTP API：`GET /gui/api/catalog?env=<别名或日期>`（环境目录）、
+`POST /gui/api/validate_deck`、`POST /gui/api/deckcode/import|export`。
+实现在 `server/webgui.py`（挂载于 `create_app`，须在 403 catch-all 之前；
+不改 protocol/room/manager 任何行为）。测试见 `tests/test_webgui.py`。
+
 ## 运行
 
 ```bash
@@ -51,9 +68,9 @@ ws(s)://.../ws，并在询问玩家名/卡组前先试连，失败则要求重�
   不构成访问控制。
 - **debug 对局门控**：客户端创建 debug 对局需服务端 `--allow-debug-rooms`
   （默认拒绝；公网部署勿开）。debug 指令可任意改对局状态，仅本机调试使用。
-- **HTTP 探针面**：非 WebSocket 的 HTTP 请求（含对 `/ws` 的普通 GET）一律
-  403 空体，不用框架默认 404；uvicorn 启动关闭 `server` 响应头，不暴露
-  应用结构与框架指纹。
+- **HTTP 探针面**：非 WebSocket 的 HTTP 请求（含对 `/ws` 的普通 GET）除
+  `/gui` Web GUI 路由外一律 403 空体，不用框架默认 404；uvicorn 启动关闭
+  `server` 响应头，不暴露应用结构与框架指纹。
 - **滥用防护**：每连接每秒最多 10 条消息（`--rate-limit`）；单条 WS 消息最大
   1MB；输入字段长度上限（名字 32 / 房间 id 16 / 令牌 64 / 卡组码 1024）；
   房间总数上限 1000（`--max-rooms`）。
@@ -68,6 +85,7 @@ server/
   room.py          # Room：封装 Game + 玩家连接 + 调度/回合计时器
   manager.py       # RoomManager：创建/加入/查询/回收房间（内存表，无持久化）
   protocol.py      # 消息信封构造与客户端消息校验
+  webgui.py        # Web GUI（/gui 单页 + /gui/api/* 目录/卡组校验/卡组码）
 ```
 
 - 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交
