@@ -17,8 +17,9 @@ versions:
           - {op: stat_aura, kind: ext_power, ext: enemy_stunned_game, power: 1,
              target: {kind: self}}
       abilities:
-        # 每次至多只会受到3点伤害（单次伤害事件面板值封顶 3，护甲吸收照常在后结算）
-        - when: on_damage_start
+        # 每次至多只会受到3点伤害（全卡盘点(13) 定案：挂"扣减生命前"on_before_health——
+        # 护甲先吸收、余量再封 3；贯通修正路径同批次提前结算不受影响）
+        - when: on_before_health
           condition: {victim_shikigami: self}
           steps:
             - {op: cap_damage, to: 3}

@@ -188,6 +188,10 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "kind_not", "shikigami_not", "subtype_not", "natural_not",
     "piercing",  # 伤害事件是否具[贯通]（伤害时点批次 payload 等值键；森罗之阵①
     #            分段保护"若本次伤害具有[贯通]"门控）
+    "already_nullified",  # on_before_card_play payload：本次使用是否已被"使用手牌前"
+    #                     时机无效化（魔音扰心衍生能力门控——已被响应无效化则不再消耗，
+    #                     全卡盘点(19)）
+    "play_from",  # on_before_card_play payload：使用来源区域（hand/void）等值键
     "victim_is_chosen",  # 事件 victim 为选择目标之一（引燃"该伤害事件的受伤者是
     #                    目标式神"——伤害插入帧条件；转移后的新事件受伤者 ≠ 目标则不命中）
     "victim_dying",  # 事件 victim 式神已濒死（生命 ≤ 0；引燃"受伤者生命<=0"——

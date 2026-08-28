@@ -14,9 +14,10 @@ versions:
         steps: []
       abilities:
         # [眩晕]受到雪女伤害的式神——任意伤害类别（战斗/法术/能力，定案(7)），
-        # on_damage 以来源匹配、不分 kind（test_on_damage_source_condition_any_kind 同型）
+        # on_damage 以来源匹配、不分 kind（test_on_damage_source_condition_any_kind 同型）；
+        # victim_kind: shikigami（全卡盘点(7)）：受伤者是式神（无论敌我）——伤害牌手不眩晕
         - when: on_damage
-          condition: {source_shikigami: self}
+          condition: {source_shikigami: self, victim_kind: shikigami}
           steps:
             - {op: stun, target: {kind: context, key: victim}}
         # 原基础能力（替换非叠加，故全量重写）收窄为雪女自己造成的眩晕

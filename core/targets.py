@@ -551,7 +551,8 @@ def resolve(game, spec, ctx) -> list[Ref]:
 def _chosen(game, ctx) -> list[Ref]:
     """卡牌的选择目标（帷幕再校验：结算时目标持帷幕则取消；能力结算不过滤）。"""
     refs = list(ctx.chosen or [])
-    if getattr(ctx, "is_ability", False):
+    if getattr(ctx, "is_ability", False) or getattr(ctx, "chosen_ignore_veil", False):
+        # chosen_ignore_veil：自动使用继承目标（流霰）——目标在使用后再获帷幕也照打
         return refs
     return [r for r in refs if not is_veiled(game, r, ctx.controller)]
 

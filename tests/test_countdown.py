@@ -559,6 +559,19 @@ def test_replace_form_triggers_countdown(db, make_game):
     assert b.health == 1         # 破离场时投射 3
 
 
+def test_form_leave_zero_max_health_defeats(db, make_game):
+    """形态离场上限≤0 气绝（全卡盘点(20)，一目连形态替换场合）：_destroy_form 身材
+    回退后生命上限不大于 0 → 触发气绝（in_play 守卫：气绝流程自身的形态销毁不重复）。"""
+    po_form(db)
+    plain = _lk_form(db, 10010458)  # 无倒计时形态
+    g, pa, s = _lk_setup(db, make_game, level=1)
+    play(g, 0, PO)               # 结附破（上限 6）
+    s.perm_health = -5           # 离场回退基础 5 → 上限 0
+    assert s.max_health == 1
+    play(g, 0, plain)            # 形态替换：旧形态离场 → 上限 0 → 气绝
+    assert s.defeated
+
+
 def test_defeat_form_destruction_still_triggers(db, make_game):
     """一目连气绝：形态随之消灭并清除倒计时；消灭形态早于能力离场（rules.md ch7 step 3/6），
     倒计时效果仍触发。"""

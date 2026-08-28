@@ -13,10 +13,16 @@ versions:
         steps: []
       abilities:
         # 觉醒倒计时（initial 3，来源=觉醒牌 id）：己方其他式神倒计时-1 并获得 1 力量与 1 生命
-        # （无倒计时能力者修正 -0；增益为临时修正，气绝清除）
+        # （无倒计时能力者修正 -0；增益为临时修正，气绝清除）。
+        # 倒计时步（全卡盘点(18) 定案："能够减少任意倒计时，包含气绝倒计时"）——
+        # include_revive + include_defeated 纳入气绝者改减气绝倒计时（≤0 立即复活）；
+        # pool 换 friendly_shikigami + exclude_shikigami 妖琴师本人（=friendly_others
+        # 口径扩气绝）；增益步维持 friendly_others 只在场
         - countdown: 3
           steps:
-            - {op: countdown_delta, amount: -1, target: {kind: all, pool: friendly_others}}
+            - {op: countdown_delta, amount: -1, include_revive: true,
+               target: {kind: all, pool: friendly_shikigami, include_defeated: true,
+                        exclude_shikigami: 100124}}
             - {op: buff_power, amount: 1, target: {kind: all, pool: friendly_others}}
             - {op: buff_health, amount: 1, target: {kind: all, pool: friendly_others}}
         # 牌面"使妖琴师的倒计时-3"——挂"觉醒前"（on_before_awaken，能力替换前），

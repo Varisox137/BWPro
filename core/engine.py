@@ -2307,9 +2307,17 @@ class Game:
                 ledger.append(cdef.id)
 
     def _emit_before_card_play(self, player: int, card: CardInstance,
-                               cdef: CardDef, card_type: str) -> dict:
+                               cdef: CardDef, card_type: str,
+                               *, play_from: str = "hand") -> dict:
         """"使用前"即时时机（on_before_card_play）统一发点（定案(4)：任意方式/任意
         位置的使用均发——主动/响应/自动使用同一事件）。
+
+        play_from="hand"（主动出牌/响应触发/流霰 from_hand 自动使用）时先发
+        on_before_hand_play（使用手牌前，即时时机——魔音扰心响应挂点，全卡盘点(19)：
+        比衍生能力的"使用前"早一个时机，仅手牌来源的使用发出），两事件共享同一
+        nullified marker；on_before_card_play 的 payload 额外携带
+        already_nullified（手牌前时机是否已无效化——衍生能力以此门控不再重复消耗）
+        与 play_from。
 
         返回可变 marker（{"nullified": bool}）：监听者置位 = 本次使用被无效化
         （魔音扰心/反制），调用方跳过效果结算、牌照常离手入墓地、不发 on_card_played。
@@ -2324,9 +2332,14 @@ class Game:
         prev = self._active_play_marker
         self._active_play_marker = marker
         try:
+            if play_from == "hand":
+                self.emit("on_before_hand_play", player=player, uid=card.uid, card=card,
+                          card_type=card_type, shikigami=cdef.shikigami,
+                          nullified=marker)
             self.emit("on_before_card_play", player=player, uid=card.uid, card=card,
                       card_type=card_type, shikigami=cdef.shikigami,
-                      nullified=marker)
+                      nullified=marker,
+                      already_nullified=marker["nullified"], play_from=play_from)
         finally:
             self._active_play_marker = prev
         if not marker["nullified"] and "lianmo" in cdef.tags:
@@ -3904,6 +3917,11 @@ class Game:
         self._log(f"{d.name} 的形态【{cdef.name}】被消灭（原因：{reason}）")
         self._settle(f"【形态】{d.name} 的形态【{cdef.name}】离场"
                      f"（身材回退 {s.base_power}/{s.max_health}，生命回满）")
+        if s.in_play and s.max_health <= 0:
+            # 形态离场后生命上限不大于 0：触发气绝（全卡盘点(20) 定案——离场瞬间
+            # 上限 ≤0 即气绝检查；in_play 守卫：气绝流程自身的形态销毁不重复触发）
+            self._log(f"{d.name} 生命上限不大于 0，气绝（形态离场）")
+            self.check_defeated(Ref(player=pi, shikigami=i), reason="形态离场")
 
     # ---------- 升级 / 结束回合 ----------
 

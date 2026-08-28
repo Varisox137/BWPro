@@ -684,10 +684,11 @@ def test_fu_destroy_immune_in_combat(db, make_game):
 # ==========================================================================
 #
 # 出牌流程在合法性检查与支付之后、效果结算之前 emit on_before_card_play
-# （即时时机，payload 含可变 nullified 标记）；
+# （即时时机，payload 含可变 nullified 标记）；手牌来源的使用在其前先发
+# on_before_hand_play（全卡盘点(19)，两事件共享同一 nullified marker）；
 # 无效化：跳过效果块、牌照常离手进墓地、费用/瞬发名额已付不退；
-# 一次性"下一次敌方用牌前无效化"能力用 delay_grant(scope="turn") 表达，
-# 响应牌则直接把 effects.when 挂在 on_before_card_play。
+# 一次性"下一次敌方用牌前无效化"能力用 delay_grant(scope="turn", unique=True) 表达，
+# 响应牌则直接把 effects.when 挂在 on_before_hand_play（仅手牌使用触发响应）。
 # 0 号位（100101）为己方主体，1 号位（100102）为响应/对方用牌所属。
 
 MAYIN = 10010151      # 魔音扰心（主动使用：登记一次性无效化延迟能力）
@@ -709,11 +710,13 @@ def _bcp_game(make_game):
 
 
 def _mayin(db):
-    """魔音扰心·主动使用：登记一次性"下一次敌方用牌的使用手牌前无效化"（本回合）。"""
+    """魔音扰心·主动使用：登记一次性"下一次敌方用牌的使用前无效化"（[唯一]、本回合；
+    已被响应无效化的使用不消耗——already_nullified 门控）。"""
     db.cards[MAYIN] = F.card(
         MAYIN, shikigami=100101, level=1, token=True,
         steps=[F.Step(op="delay_grant", when="on_before_card_play",
-                      condition={"player": "opponent"}, scope="turn",
+                      condition={"player": "opponent", "already_nullified": False},
+                      scope="turn", unique=True,
                       steps=[{"op": "nullify_card_play"}])])
 
 
@@ -726,11 +729,12 @@ def _enemy_spells(db):
         steps=[F.Step(op="damage", amount=2, target=T(kind="all", pool="enemy_player"))])
 
 
-def _response(db, cid):
-    """魔音扰心·响应牌：敌方用牌的使用手牌前必发，无效化之。"""
+def _response(db, cid, sid=100102):
+    """魔音扰心·响应牌：敌方用牌的"使用手牌前"（on_before_hand_play，比衍生能力的
+    "使用前"早一个时机）必发，无效化之。"""
     db.cards[cid] = F.card(
-        cid, shikigami=100102, level=1, cost=1, token=True,
-        keywords=["trigger"], when="on_before_card_play",
+        cid, shikigami=sid, level=1, cost=1, token=True,
+        keywords=["trigger"], when="on_before_hand_play",
         block_kw={"condition": {"player": "opponent"}},
         steps=[F.Step(op="nullify_card_play")])
 
@@ -794,6 +798,68 @@ def test_nullify_response_card(db, make_game):
     assert pb.health == 30 and pb.shield == 5  # A 的牌效果不结算（后手护甲也在）
     assert pa.orb == 8                        # A 的费用已付不退
     assert any(c.id == vic for c in pa.graveyard)
+
+
+def test_nullify_response_only_on_hand_play(db, make_game):
+    """响应仅"使用手牌前"触发（全卡盘点(19)）：敌方凭空自动使用（非手牌来源）不发出
+    on_before_hand_play，魔音扰心响应不触发；随后的手牌使用照常触发。"""
+    _response(db, RESP)
+    auto = 10010153
+    db.cards[auto] = F.card(
+        auto, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="damage", amount=3, target=T(kind="all", pool="enemy_player"))])
+    db.shikigami[100101].ability = F.block(   # A 方凭空自动使用通道（回合开始能力）
+        F.Step(op="auto_use", card_id=auto, target=T(kind="self")),
+        when="on_turn_start", condition={"active": "self"})
+    vic = 10010154
+    db.cards[vic] = F.card(
+        vic, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="damage", amount=5, target=T(kind="all", pool="enemy_player"))])
+    g, pa, pb = _bcp_game(make_game)
+    pa.shikigami[0].level = 1
+    pb.shield = 0
+    pb.orb = 2                                # 留火响应
+    give(g, 1, RESP)
+    pass_turns(g, 2)                          # B 第 1 回合 → A 第 2 回合开始：凭空自动使用
+    assert pb.health == 27                    # 凭空使用生效：响应未触发
+    assert any(c.id == RESP for c in pb.hand)
+    assert pb.orb == 2                        # 未付响应费
+    play(g, 0, vic)                           # 手牌使用 → 响应触发无效化
+    assert pb.health == 27
+    assert pb.orb == 1                        # 响应费用照付
+    assert any(c.id == RESP for c in pb.graveyard)
+
+
+def test_nullify_delay_not_consumed_after_response(db, make_game):
+    """已被响应无效化不消耗延迟能力（全卡盘点(19)）：响应挂"使用手牌前"（早一个时机）
+    已无效化该次使用时，主动登记挂"使用前"的延迟能力以 already_nullified 门控不再消耗。"""
+    _mayin(db)
+    _enemy_spells(db)
+    resp_a = 10010158
+    _response(db, resp_a, sid=100101)         # A 方同型响应牌
+    g, pa, pb = _bcp_game(make_game)
+    s = pa.shikigami[0]
+    play(g, 0, MAYIN)
+    give(g, 0, resp_a)
+    pass_turns(g, 1)                          # B 第 1 回合
+    pa.orb = 9
+    play(g, 1, PLAIN_SPELL)                   # 响应先无效化 → 延迟能力不消耗
+    assert pa.health == 30
+    assert len(s.delayed) == 1
+    play(g, 1, PLAIN_SPELL)                   # 第二张：无响应可用 → 延迟能力无效化
+    assert pa.health == 30
+    assert not s.delayed
+
+
+def test_delay_grant_unique_replaces(db, make_game):
+    """[唯一]延迟能力（魔音扰心 delay_grant unique=True，全卡盘点(19)）：重复登记
+    替换同 when 同来源卡的旧条目，不叠加。"""
+    _mayin(db)
+    g, pa, pb = _bcp_game(make_game)
+    s = pa.shikigami[0]
+    play(g, 0, MAYIN)
+    play(g, 0, MAYIN)
+    assert len(s.delayed) == 1
 
 
 # ---------- 吾即正义 transform ----------

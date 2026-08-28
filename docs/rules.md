@@ -341,7 +341,7 @@
 1. **形态被消灭前**（延时时机）：各能力触发。
 2. 移除式神的该形态（式神失去形态能力，形态牌进入墓地；部分形态牌离场时不进入墓地，如「引路人」改为洗回牌库）。
 3. 刷新式神力量/生命上限的计算逻辑。
-4. 将式神的当前生命调整为其新的生命上限（可能因被赋予减益等原因，在形态移除后生命不大于 0，从而触发延时的式神气绝事件）。
+4. 将式神的当前生命调整为其新的生命上限（可能因被赋予减益等原因，在形态移除后生命不大于 0，从而触发延时的式神气绝事件）。【已实现（全卡盘点(20)）：`_destroy_form` 身材回退后上限 ≤0 即 `check_defeated`；in_play 守卫使气绝流程自身的形态销毁不重复触发】
 5. **形态被消灭后**（延时时机）：若形态牌具有「倒计时」，式神失去该倒计时能力。
 
 ### 二、形态的结附
@@ -422,7 +422,7 @@
 > （均未引入）。（0928 起觉醒·薰改"攻击时"口径，原"行动前"时机
 > on_before_card_played 随之废除。）
 
-1. **使用手牌前**（时机）：（各能力）。【已实现：即时时机 `on_before_card_play`，付费/打出装配后、类型分支前 emit；payload 含可变 dict 标记 `nullified`，`nullify_card_play` 动作置位后该次使用终止——牌移至墓地、跳过效果与 on_card_played（响应牌同样占用时机名额；魔音扰心类"一次性无效化"用 `delay_grant(scope="turn")` 表达，己方回合开始清除）】
+1. **使用手牌前**（时机）：（各能力）。【已实现：双即时时机——`on_before_hand_play`（仅手牌来源的使用发出：主动出牌/响应触发/流霰 from_hand 自动使用；魔音扰心响应挂点，全卡盘点(19)）先于 `on_before_card_play`（任意方式/任意位置的使用均发）发出，付费/打出装配后、类型分支前 emit；两事件共享同一可变 dict 标记 `nullified`，`nullify_card_play` 动作置位后该次使用终止——牌移至墓地、跳过效果与 on_card_played；`on_before_card_play` payload 另带 `already_nullified`（手牌前时机是否已无效化——魔音扰心延迟能力以此门控不再重复消耗）与 `play_from`（hand/void）；（响应牌同样占用时机名额；魔音扰心类"一次性无效化"用 `delay_grant(scope="turn", unique=True)` 表达——[唯一]重复登记替换旧条目不叠加，己方回合开始清除）】
 2. **使用前**（时机）：（各能力）。【未实现】
 3. **预使用**：待使用的卡牌从此刻开始视作已经被使用（主要影响卡牌的"增强"）。【未实现】
 4. **检测目标合法性**（"使用前"时点之后）：取消所有不合法的目标（例如关键字"帷幕"产生影响）。若该牌需要目标而目标均被取消，则不执行该牌效果中**目标相关的内容**（可能导致该牌变为无效果或残缺效果，但消耗已经支付）。【已实现（帷幕）：choose 目标在使用合法性处过滤持帷幕的敌方式神（targets.pool_refs targeted）；已确定目标在效果结算时持帷幕则取消目标相关效果（targets.resolve 再校验）；全体/随机效果不取对象，不受帷幕影响】
@@ -670,7 +670,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 
 所有引擎 `emit()` 产生的事件，例如：
 - `on_game_start`, `on_turn_start`, `on_turn_end`
-- `on_card_played`, `on_before_card_play`、`on_before_assault`, `on_after_assault`, `on_battle_end`
+- `on_card_played`, `on_before_hand_play`（使用手牌前·更早时机，仅手牌来源）、`on_before_card_play`、`on_before_assault`, `on_after_assault`, `on_battle_end`
 - `on_damage`, `on_shikigami_defeated`, `on_shikigami_revived`
 - `on_upgrade`, `on_form_attached`, `on_form_destroyed`
 - `on_draw`, `on_shuffle`, `on_mulligan`

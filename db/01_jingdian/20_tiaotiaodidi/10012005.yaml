@@ -13,9 +13,11 @@ versions:
       effects: {steps: []}
       abilities:
         # [觉醒]：{当跳跳弟弟受到伤害时，获得等量的破甲并永久获得1生命}
-        # （基础能力 + 永久 1 生命，同一 on_damage 触发两步；替换非叠加）
+        # （基础能力 + 永久 1 生命，同一 on_damage 触发两步；替换非叠加）。
+        # victim_dying: false（全卡盘点(2)）：致死伤害使跳跳弟弟濒死（生命≤0）时不发——
+        # "若跳跳弟弟生命>0"门控，不错误地永久 +1 生命
         - when: on_damage
-          condition: {victim_shikigami: self}
+          condition: {victim_shikigami: self, victim_dying: false}
           steps:
             - {op: gain_shield, amount: {event: amount}, kind: fragile,
                target: {kind: self}}

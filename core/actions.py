@@ -1470,7 +1470,8 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False,
 def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                 condition: dict | None = None, steps: list | None = None,
                 secret: bool = False, scope: str | None = None,
-                bind: str = "source", uses: int = 1) -> None:
+                bind: str = "source", uses: int = 1,
+                unique: bool = False) -> None:
     """给来源式神登记一个延迟能力（会；targets 忽略）。
 
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
@@ -1486,6 +1487,8 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     bind="chosen"：改登记到选择目标式神上（沧海之盾"使一个己方式神获得……当他造成
     战斗伤害时……"——延迟能力的持有者与条件 self 基准均为被选式神）。
+    unique=True（魔音扰心"[唯一]"，全卡盘点(19)）：登记前移除持有者身上同 when
+    且同来源卡 id 的旧延迟条目——后者替换前者，不叠加。
     """
     if bind == "chosen":
         if not ctx.chosen or ctx.chosen[0].shikigami is None:
@@ -1499,12 +1502,17 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     block = EffectBlock(when=when, condition=condition,
                         steps=[Step.model_validate(st) for st in (steps or [])])
     s = game.state.players[holder_ref.player].shikigami[holder_ref.shikigami]
+    origin = ctx.card.id if ctx.card is not None else None
+    if unique:
+        s.delayed[:] = [e for e in s.delayed
+                        if not (e["block"].when == when and e.get("origin") == origin)]
     s.delayed.append({
         "block": block,
         "chosen": ctx.chosen[0] if ctx.chosen else None,
         "uses": int(uses),
         "secret": secret,
         "scope": scope,
+        "origin": origin,  # 来源卡 id（unique 替换口径用）
         # scope="battle"：来源式神（攻击者）座次——该来源下次作为攻击者的战斗
         # 结束时过期清除（engine._resolve_combat 收尾；裁决(10)）
         "watch": ([ctx.source.player, ctx.source.shikigami]
@@ -2030,7 +2038,7 @@ def cap_damage(game, ctx, *, targets: list[Ref], to: str | int = "shield") -> No
 @action("countdown_delta")
 def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
                     shikigami: int | None = None, revive: bool = False,
-                    reset: bool = False) -> None:
+                    reset: bool = False, include_revive: bool = False) -> None:
     """目标式神倒计时增减 amount（±）。
 
     无倒计时能力或倒计时为 0（归零结算中）时修正为 -0（空操作，rules.md ch12
@@ -2053,6 +2061,11 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
     倒计时-2"——未出战为空操作）；revive=True：改为作用于气绝倒计时（减到 ≤0
     立即复活）——targets 非空时只作用于这些目标（可跨阵营，豪焰"使该式神气绝
     倒计时+1"），targets 为空时扫描控制者全队已气绝式神（幻音绝弦先例）。
+
+    include_revive=True（觉醒·神乐歌"倒计时-1"含气绝倒计时，全卡盘点(18)）：
+    目标已气绝（未离场、等级 ≥1）时改减其 revive_countdown（减到 ≤0 立即复活，
+    同 revive 分支口径；不发 on_countdown_reduced）；未气绝目标照常走倒计时通道。
+    目标池须自行以 include_defeated 纳入气绝者。
     """
     if shikigami is not None:
         pi = ctx.controller
@@ -2090,6 +2103,12 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
         if ref.shikigami is None:
             continue
         s = game.state.players[ref.player].shikigami[ref.shikigami]
+        if include_revive and s.defeated and not s.despawned and s.level >= 1:
+            # 觉醒·神乐歌通道：气绝目标改减气绝倒计时（减到 ≤0 立即复活）
+            s.revive_countdown += amount
+            if s.revive_countdown <= 0:
+                game._revive(game.state.players[ref.player], ref.player, ref.shikigami)
+            continue
         if s.countdown is None or s.countdown <= 0 or s.countdown_block is None:
             # 修正为 -0（空操作，rules.md ch12 增减流程 1）。例外（2026-08 觉醒·山风
             # 定案）：减少效果作用于**未气绝且无倒计时能力**的式神也算"生效"——发出
@@ -2149,7 +2168,7 @@ def set_countdown(game, ctx, *, targets: list[Ref], initial: int,
 
 @action("replay_countdown")
 def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
-                     skip_forms: bool = False) -> None:
+                     skip_forms: bool = False, fixed_order: bool = False) -> None:
     """按本局 countdown_history 的首次出现顺序，依次执行来源属于目标式神的倒计时
     能力块（每种至多一次；targets 忽略；大合奏"本局游戏妖琴师的基础能力每生效过一种，
     此牌便具有对应效果"——维护者答复：按 4 种基础/觉醒倒计时能力的生效顺序依次执行）。
@@ -2158,6 +2177,9 @@ def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "s
     skip_forms=True 时形态牌来源跳过（维护者答复(8)：大合奏只计入基础/觉醒能力；
     风韵雅乐的一目连倒计时皆来自形态，不过滤）；找不回对应块（_countdown_block_for）
     的历史条目跳过。重放为卡牌效果（非能力来源）。
+
+    fixed_order=True（大合奏固定顺序定案，全卡盘点(17)）：不按首次出现顺序，
+    改按来源 id 数值升序执行（妖琴师四倒计时恰为 基础<入阵歌<神乐歌<镇魂歌）。
     """
     if shikigami == "self":
         if ctx.source is None or ctx.source.shikigami is None:
@@ -2167,6 +2189,7 @@ def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "s
         sid = int(shikigami)
     p = game.state.players[ctx.controller]
     seen: set[int] = set()
+    matched: list[int] = []
     for src in p.ext.get("countdown_history", []):
         if src in seen:
             continue  # 每种至多一次（按首次出现顺序）
@@ -2175,10 +2198,14 @@ def replay_countdown(game, ctx, *, targets: list[Ref], shikigami: int | str = "s
             continue  # 形态来源不计入（答复(8)，大合奏用）
         if src != sid and not (src_card is not None and src_card.shikigami == sid):
             continue  # 非目标式神的倒计时来源（含其召唤物/其他式神）
+        seen.add(src)
+        matched.append(src)
+    if fixed_order:
+        matched.sort()  # 固定按来源 id 升序（大合奏定案）
+    for src in matched:
         block = game._countdown_block_for(src)
         if block is None or not block.steps:
             continue
-        seen.add(src)
         cname = game.db.cards[ctx.card.id].name if ctx.card is not None else "效果"
         game._log(f"【{cname}】重放了{game.db.shikigami[sid].name}的倒计时效果（来源 {src}）")
         game._resolve_block(block, ExecContext(
@@ -2209,7 +2236,8 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
-        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell",
+                                             play_from="void")
         if marker["nullified"]:  # 被无效化：跳过效果、不发 on_card_played
             game._log(f"【{cdef.name}】的使用被无效化")
             return
@@ -2278,7 +2306,8 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
             game._log(f"自动使用了手牌的【{cdef.name}】")
             game._affected_stack.append({"controller": ctx.controller, "refs": []})
             try:
-                marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+                marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell",
+                                                     play_from="hand")
                 if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
                     game._log(f"【{cdef.name}】的使用被无效化")
                     game.move_card(p, inst, "graveyard")
@@ -2286,7 +2315,8 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
                 game._resolve_block(game._played_block(p, cdef, inst, None),
                                     ExecContext(controller=ctx.controller,
                                                 source=ctx.source, card=inst,
-                                                chosen=chosen))
+                                                chosen=chosen,
+                                                chosen_ignore_veil=inherit_target))
             finally:
                 affected = game._affected_stack.pop()["refs"]
             if ctx.source is not None and ctx.source.shikigami is not None:
@@ -2303,13 +2333,15 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
     game._log(f"凭空自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
-        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell",
+                                             play_from="void")
         if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
             game._log(f"【{cdef.name}】的使用被无效化")
             game.move_card(p, inst, "graveyard")
             return
         game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
-            controller=ctx.controller, source=ctx.source, card=inst, chosen=chosen))
+            controller=ctx.controller, source=ctx.source, card=inst, chosen=chosen,
+            chosen_ignore_veil=inherit_target))
     finally:
         affected = game._affected_stack.pop()["refs"]
     if ctx.source is not None and ctx.source.shikigami is not None:
@@ -2372,7 +2404,8 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
             chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选
     game._affected_stack.append({"controller": controller, "refs": []})
     try:
-        marker = game._emit_before_card_play(controller, inst, cdef, "spell")
+        marker = game._emit_before_card_play(controller, inst, cdef, "spell",
+                                             play_from="void")
         if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发 on_card_played
             game._log(f"【{cdef.name}】的使用被无效化")
             game.move_card(p, inst, "graveyard")
@@ -3460,7 +3493,8 @@ def reuse_card(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"【{cdef.name}】再次使用（不耗鬼火）")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
-        marker = game._emit_before_card_play(ctx.controller, ctx.card, cdef, "spell")
+        marker = game._emit_before_card_play(ctx.controller, ctx.card, cdef, "spell",
+                                             play_from="void")
         if marker["nullified"]:  # 被无效化：跳过效果、不发使用事件（牌已在墓地）
             game._log(f"【{cdef.name}】的使用被无效化")
             return
@@ -3509,7 +3543,8 @@ def echo_event_card(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"凭空复制使用了【{cdef.name}】（目标为其施法者）")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
-        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell")
+        marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell",
+                                             play_from="void")
         if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
             game._log(f"【{cdef.name}】的使用被无效化")
             game.move_card(p, inst, "graveyard")

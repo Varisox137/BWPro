@@ -2154,6 +2154,22 @@ def test_echo_auto_use_from_hand_targets_caster(gdb):
     assert pa.ext["snowball_used_game"] == 1         # 从手牌使用记账（觉方）
 
 
+def test_awakened_xuenv_stun_shikigami_only(gdb):
+    """觉醒·雪女（全卡盘点(7)）：[眩晕]受到雪女伤害的式神——受伤者是式神（无论敌我）；
+    雪女伤害牌手不再把牌手眩晕。"""
+    g = _jue_vs_xuenv(gdb)
+    pa, pb = F.battle_setup(g, {0: 2})
+    pb.shikigami[0].level = 3                        # 雪女 3 级（觉醒 3 级牌）
+    pass_turns(g)                                    # → B 回合
+    pb.orb = 9
+    play(g, 1, 10012108)                             # 觉醒·雪女
+    g.apply({"op": "assault", "index": 0})           # 雪女直接攻击 A 牌手
+    assert pa.health == 26                           # 战斗伤害照常（觉醒 +2 力量 = 4 攻）
+    assert not pa.ext.get("stuns")                   # 牌手不被眩晕
+    play(g, 1, 10012102, target=Ref(player=0, shikigami=0))   # 吹雪打 A 式神
+    assert pa.shikigami[0].is_stunned                # 式神照常被眩晕
+
+
 # ---------- 手牌限定卡牌触发器（血怒型）/ 条件关键字 player_health_ge（血香型） ----------
 
 def test_card_trigger_hand_only_damage_boost_stacks(db, make_game):

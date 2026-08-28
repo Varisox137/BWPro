@@ -8,7 +8,9 @@ versions:
       rarity: SR
       level: 1
       keywords: [fast]
-      target: {kind: choose, pool: friendly_shikigami}
+      target: {kind: choose, pool: friendly_shikigami, include_defeated: true}
+      # 任一己方式神（无论是否在场（已升级）、是否未气绝，全卡盘点(1)）：include_defeated
+      # 纳入已升级的气绝者；未升级/离场不选
       effects:
         # [瞬发]。选择一个己方式神，从牌库中随机抽一张该式神的牌
         steps:

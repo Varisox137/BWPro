@@ -1062,6 +1062,36 @@ def test_cap_damage_fixed_value(db, make_game):
     assert s.health == 1
 
 
+def test_cap_damage_after_armor_at_before_health(gdb):
+    """雪融之时（全卡盘点(13)）：伤害上限挂"扣减生命前"——护甲先吸收、余量再封 3
+    （与旧挂"伤害开始时"口径区分：5 甲吃 8 伤 → 护甲吸 5、余 3 封 3、生命 -3）。"""
+    g = F.mk_game(gdb.at_date(20191212), team=[100122, 100112, 100116, 100115])
+    pa, pb = F.battle_setup(g, {0: 3})
+    play(g, 0, 10012207)             # 雪融之时（形态 5/7）
+    s = pa.shikigami[0]
+    assert s.health == 7
+    s.shield = 5
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 8, None)
+    assert s.shield == 0 and s.health == 4   # 护甲先吸收 5，余量 3 被封顶，生命 -3
+
+
+def test_fragile_on_damage_gated_by_dying(gdb):
+    """跳跳弟弟基础/觉醒能力（全卡盘点(2)）："若跳跳弟弟生命>0"门控——致死伤害
+    使自身濒死（生命≤0）时能力不发，觉醒版不再错误地永久 +1 生命。"""
+    team = [100120, 100101, 100123, 100116]
+    g = F.mk_game(gdb.at_date(20191212), team=team)
+    pa, pb = F.battle_setup(g, {0: 2})
+    s = pa.shikigami[0]
+    play(g, 0, 10012005)                       # 觉醒·跳跳弟弟（+1/+1 永久）
+    assert s.perm_health == 1
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 3, None)
+    g._drain_queue()                             # on_damage 为延时时机：排空后断言
+    assert s.shield == -3 and s.perm_health == 2   # 非致死：破甲 + 永久 1 生命照常
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
+    g._drain_queue()
+    assert s.defeated and s.perm_health == 2       # 致死（濒死）：能力未再发
+
+
 # ---------- 治疗后牌手条件 / 0 治疗不触发（吸血姬批次：on_after_heal 条件键组合） ----------
 
 def test_on_after_heal_player_side_condition(db, make_game):

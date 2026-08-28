@@ -414,6 +414,53 @@ def test_scoped_combat_immunity(db, make_game):
     assert a.immunities == []  # 战斗结束条目清除
 
 
+class _ImmunitySpy(list):
+    """捕获 append 的免疫条目（战斗内授予的 nested 键断言用）。"""
+
+    def __init__(self, seen: list) -> None:
+        self._seen = seen
+
+    def append(self, entry) -> None:
+        self._seen.append(dict(entry))
+        super().append(entry)
+
+
+def test_battle_immunity_nested_kept_in_inserted_battle(gdb):
+    """雪童子基础/觉醒能力（全卡盘点(9)）：与眩晕角色交战获得的战斗免疫 nested=True——
+    本战斗内有插入进行的嵌套战斗时，仍保有外层战斗获得的免疫（[连击]挂式神实例、
+    外层战斗终止点才移除，天然保有）。嵌套战斗内免疫生效机制见 test_countdown.py
+    的嵌套必杀/免疫用例。"""
+    team = [100122, 100112, 100116, 100115]
+    # 基础能力：交战对方眩晕 → 免疫（双向）
+    g = F.mk_game(gdb.at_date(20191212), team=team)
+    pa, pb = F.battle_setup(g, {0: 1})
+    b = pb.shikigami[0]
+    b.stuns.append({"kind": "normal", "turn": 0})
+    move(g, 1, 0)
+    a = pa.shikigami[0]
+    seen: list[dict] = []
+    a.immunities = _ImmunitySpy(seen)
+    g.apply({"op": "assault", "index": 0})
+    assert seen and seen[0].get("nested") is True    # 免疫覆盖本战斗内的嵌套战斗
+    assert a.health == 4                             # 反击被免疫（雪童子 3/4）
+    assert not a.immunities                          # 战斗终止点清除
+    # 觉醒版同口径（仅主动攻击眩晕角色：连击 + nested 免疫）
+    g = F.mk_game(gdb.at_date(20191212), team=team)
+    pa, pb = F.battle_setup(g, {0: 3})
+    b = pb.shikigami[0]
+    b.health = 20
+    b.stuns.append({"kind": "normal", "turn": 0})
+    move(g, 1, 0)
+    play(g, 0, 10012208)                             # 觉醒·雪童子（+1/+2 → 4/6）
+    a = pa.shikigami[0]
+    seen = []
+    a.immunities = _ImmunitySpy(seen)
+    g.apply({"op": "assault", "index": 0})
+    assert seen and seen[0].get("nested") is True
+    assert b.health == 12                            # 4 攻 × [连击] 2 段
+    assert a.health == 6                             # 免疫反击
+
+
 def test_form_keyword_grant(db, make_game):
     """形态授予：结附期间持有形态牌关键字，形态离场按实例移除。"""
     cid, cid2 = 10010155, 10010156

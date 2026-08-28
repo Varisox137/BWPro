@@ -8,9 +8,11 @@ versions:
       power: 2
       health: 9
       ability:
-        # 受伤获得等量破甲（{event: amount} 读 on_damage 事件伤害值，寂寥心象 10012803 先例）
+        # 受伤获得等量破甲（{event: amount} 读 on_damage 事件伤害值，寂寥心象 10012803 先例）。
+        # victim_dying: false（全卡盘点(2)）：致死伤害使跳跳弟弟濒死（生命≤0）时不发——
+        # "若跳跳弟弟生命>0"门控
         when: on_damage
-        condition: {victim_shikigami: self}
+        condition: {victim_shikigami: self, victim_dying: false}
         steps:
           - {op: gain_shield, amount: {event: amount}, kind: fragile,
              target: {kind: self}}

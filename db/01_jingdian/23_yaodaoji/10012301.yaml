@@ -11,10 +11,10 @@ versions:
         steps:
           - {op: gain_shield, amount: 1, target: {kind: self}}
       temp_grants:
-        # 对敌方牌手造成伤害时抽一张牌：不限伤害类别（定案(4)）；source_shikigami
-        # 限定妖刀姬为来源
+        # 对敌方牌手造成战斗伤害时抽一张牌（全卡盘点(14) 定案：限战斗伤害，
+        # 取代旧定案(4) 的不限类别口径）；source_shikigami 限定妖刀姬为来源
         - when: on_player_damaged
-          condition: {source_shikigami: self}
+          condition: {source_shikigami: self, kind: combat}
           steps:
             - {op: draw, count: 1, target: {kind: all, pool: self_player}}
       text: 对敌方牌手造成伤害时，抽一张牌。

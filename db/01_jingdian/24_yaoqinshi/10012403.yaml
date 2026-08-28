@@ -8,9 +8,10 @@ versions:
       rarity: SSR
       level: 1
       effects:
-        # 按 countdown_history 首次出现顺序重放妖琴师生效过的基础/觉醒倒计时能力块
-        # （每种至多一次；维护者答复(8)：只计入基础/觉醒能力，形态来源跳过）。
+        # 重放妖琴师生效过的基础/觉醒倒计时能力块（每种至多一次；维护者答复(8)：
+        # 只计入基础/觉醒能力，形态来源跳过）。fixed_order（全卡盘点(17) 定案）：
+        # 不按生效顺序，固定按 基础→入阵歌→神乐歌→镇魂歌（=来源 id 升序）执行。
         # 20191212 公测版：无 [瞬发]
         steps:
-          - {op: replay_countdown, shikigami: self, skip_forms: true}
+          - {op: replay_countdown, shikigami: self, skip_forms: true, fixed_order: true}
       text: "[增强]：{本局游戏妖琴师的基础能力每生效过一种，此牌便具有对应效果。}"

@@ -343,9 +343,10 @@ def test_awaken_replace_and_initial_one(real_game):
 # 妖琴师（100124）（原 test_yaqinshi.py）
 #
 # 覆盖：基础倒计时治疗、三觉醒替换+"觉醒前"旧能力倒计时 -3 再完成替换（on_before_awaken，
-# 维护者答复）、大合奏按 countdown_history 首次出现顺序重放（replay_countdown +
-# _countdown_block_for）、魔音扰心无效化（主动 delay_grant / 响应 response 覆盖块两路径）、
-# 惊弦/疯魔琴心/余音的 countdown_delta（含无倒计时修正 -0）、镇魂歌抽牌+鬼火。
+# 维护者答复）、大合奏固定顺序重放（replay_countdown fixed_order + _countdown_block_for，
+# 全卡盘点(17)）、魔音扰心无效化（主动 delay_grant unique / 响应 response 覆盖块两路径）、
+# 惊弦/疯魔琴心/余音的 countdown_delta（含无倒计时修正 -0、觉醒神乐歌含气绝倒计时）、
+# 镇魂歌抽牌+鬼火。
 # 队伍固定 [妖琴师, 鸩, 以津真天, 妖刀姬]，妖琴师 0 号位开局自动 1 级（静态倒计时开局
 # 注册 3、对局开始批次已 -1，故开局 countdown == 2）。
 # ==========================================================================
@@ -444,11 +445,32 @@ def test_awaken_countdown_minus_before_replacement(real_game):
     assert pa.ext["countdown_history"] == [YQS, RUZHENG]
 
 
-# ---------- 03 大合奏：按 history 首次出现顺序重放 ----------
+def test_countdown_delta_include_revive(real_game):
+    """觉醒·神乐歌（全卡盘点(18)）："倒计时-1"能够减少任意倒计时，包含气绝倒计时——
+    气绝的己方其他式神 revive_countdown -1（减到 ≤0 立即复活）；增益仍仅在场者。
+    （惊弦回合中归零神乐歌，避开回合开始批次的自然减少通道。）"""
+    g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2, 1: 1})
+    s = pa.shikigami[IDX]
+    play(g, 0, SHENYUE)                        # 觉醒替换：倒计时 3（来源=神乐歌）
+    zhen = pa.shikigami[1]
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)   # 鸩气绝（倒计时 3）
+    assert zhen.defeated and zhen.revive_countdown == 3
+    s.countdown = 2
+    play(g, 0, JINGXIAN, target=Ref(player=0, shikigami=IDX))   # 惊弦归零神乐歌
+    assert zhen.defeated and zhen.revive_countdown == 2         # 气绝倒计时 -1
+    assert zhen.temp_power == 0 and zhen.temp_health == 0       # 气绝者不吃增益
+    zhen.revive_countdown = 1
+    s.countdown = 2
+    play(g, 0, JINGXIAN, target=Ref(player=0, shikigami=IDX))   # 再归零：-1 → 0
+    assert not zhen.defeated                                    # 立即复活
+
+
+# ---------- 03 大合奏：固定顺序重放（全卡盘点(17)：不按生效顺序，按来源 id 升序） ----------
 
 def test_replay_countdown_history_order(real_game):
-    """大合奏：按 history 首次出现顺序依次重放，每种至多一次（新语义：
-    觉醒前旧能力 -3——入阵歌在镇魂歌觉醒前被归零计入 history，镇魂歌自身未归零）。"""
+    """大合奏：固定按 基础→入阵歌→神乐歌→镇魂歌（来源 id 升序）依次重放，每种至多一次
+    （觉醒前旧能力 -3——入阵歌在镇魂歌觉醒前被归零计入 history，镇魂歌自身未归零；
+    本例 history 顺序恰与 id 序一致）。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 3})
     pa.health = 20
     pass_turns(g, 4)                          # 基础归零：pa 20→23，history [100124]
@@ -470,7 +492,21 @@ def test_replay_countdown_history_order(real_game):
     replay_logs = [m for m in g.state.log[log_before:] if "重放" in m]
     ids = [next(sid for sid in (YQS, RUZHENG, ZHENHUN) if f"来源 {sid}）" in m)
            for m in replay_logs]
-    assert ids == [YQS, RUZHENG]              # 按 history 首次出现顺序，每种至多一次
+    assert ids == [YQS, RUZHENG]              # 固定 id 升序（本例同 history 顺序），每种至多一次
+
+
+def test_replay_countdown_fixed_order(real_game):
+    """大合奏固定顺序（全卡盘点(17)）：生效顺序与 id 序相反时仍按 id 升序重放
+    （基础→入阵歌→神乐歌→镇魂歌）。"""
+    g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 1})
+    pa.ext["countdown_history"] = [ZHENHUN, RUZHENG]   # 注入反序 history
+    pa.orb = 9
+    log_before = len(g.state.log)
+    play(g, 0, DAHEZOU)
+    replay_logs = [m for m in g.state.log[log_before:] if "重放" in m]
+    ids = [next(sid for sid in (YQS, RUZHENG, SHENYUE, ZHENHUN) if f"来源 {sid}）" in m)
+           for m in replay_logs]
+    assert ids == [RUZHENG, ZHENHUN]                   # 固定 id 升序而非 history 顺序
 
 
 def test_replay_countdown_skips_form_sources(real_game, gdb):
@@ -504,6 +540,16 @@ def test_nullify_next_enemy_card(real_game):
     assert any(c.id == JINGXIAN for c in pb.graveyard)         # 牌照常进墓地
     assert pb.orb == 8                        # 费用已付不退
     assert not s.delayed                      # 一次性：收集即消耗
+
+
+def test_nullify_unique_replaces(real_game):
+    """魔音扰心[唯一]（全卡盘点(19)）：重复主动使用替换旧的延迟条目，不叠加。"""
+    g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
+    s = pa.shikigami[IDX]
+    pa.orb = 9
+    play(g, 0, MOYIN)
+    play(g, 0, MOYIN)
+    assert len(s.delayed) == 1
 
 
 def test_nullify_current_card_response(real_game):
@@ -1718,6 +1764,17 @@ def test_search_deck_miss_no_shuffle(real_game):
     play(g, 0, HUAXIN, target=Ref(player=0, shikigami=IDX))
     assert [c.uid for c in pa.deck] == before                 # 未命中不洗牌
     assert len(pa.hand) == hand0                              # 未补牌（give 补的已打出）
+
+
+def test_search_deck_target_include_defeated(real_game):
+    """检索目标含气绝（花信风，全卡盘点(1)）："任一己方式神（无论是否在场（已升级）、
+    是否未气绝）"——已升级的气绝己方式神是合法选择目标，检索其牌照常。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 1, 1: 1})
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)   # 白狼气绝
+    hand0 = {c.uid for c in pa.hand}
+    play(g, 0, HUAXIN, target=Ref(player=0, shikigami=1))       # 气绝的白狼仍为合法目标
+    drawn = [c for c in pa.hand if c.uid not in hand0]
+    assert len(drawn) == 1 and drawn[0].id // 100 == 100101     # 检索到白狼的牌
 
 
 def test_random_injured_heal(real_game):

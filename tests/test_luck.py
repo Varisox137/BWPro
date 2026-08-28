@@ -563,6 +563,28 @@ def test_auto_use_from_hand_all_copies(db, make_game):
     assert pb.shield == 3 and pb.health == 30
 
 
+def test_auto_use_inherit_target_ignores_veil_recheck(db, make_game):
+    """流霰帷幕豁免（全卡盘点(8)）：inherit_target 的自动使用目标在使用后（结算中）
+    再获[帷幕]也照打——选择目标豁免结算时帷幕再校验（chosen_ignore_veil）。"""
+    snow = 10010169
+    db.cards[snow] = F.card(snow, tags=["snowball"], token=True,
+                            target=CHOOSE_ENEMY, steps=[
+        Step(op="grant_keyword", keyword="veil"),   # 先给选择目标挂[帷幕]
+        F.dmg(1),                                   # 再对选择目标造成伤害
+    ])
+    liuxian = 10010170
+    db.cards[liuxian] = F.card(liuxian, token=True, target=CHOOSE_ENEMY, steps=[
+        Step(op="auto_use", card_id=snow, inherit_target=True, target=T(kind="self"))])
+    g = make_game()
+    pa, pb = g.state.players
+    pa.orb = 9
+    b = pb.shikigami[0]
+    b.health = 30
+    play(g, 0, liuxian, target=Ref(player=1, shikigami=0))
+    assert "veil" in b.keywords
+    assert b.health == 29                          # 帷幕再校验豁免：雪球仍命中
+
+
 
 # ----------眩晕存在性/计数通道（雪童子批次） ----------
 

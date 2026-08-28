@@ -62,7 +62,12 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_after_heal",        # 治疗后 {target: Ref, amount, source, reason}
     "on_before_defeat",     # 气绝前/消灭前 1 {victim: Ref, source, reason, battle}
     "on_before_card_play",  # 使用手牌前 {player, uid, card, card_type, shikigami,
-    #                       nullified（可变标记 dict）}
+    #                       nullified（可变标记 dict）, already_nullified（"使用手牌前"
+    #                       时机是否已无效化）, play_from}
+    "on_before_hand_play",  # 使用手牌前（比 on_before_card_play 早一个时机，全卡盘点(19)）
+    #                       {player, uid, card, card_type, shikigami, nullified（同一可变
+    #                       标记）}——仅手牌来源的使用发出（主动/响应/流霰 from_hand 自动
+    #                       使用）；魔音扰心响应挂点
     "on_card_enter_hand",   # 一张牌进入手牌 {player, uid, card}（"已展示"机制入手统一钩子）
     "on_enter_combat",      # 式神进入战斗区 {player, shikigami: Ref}（延时时机）
     "on_leave_combat",      # 式神离开战斗区 {player, shikigami: Ref}（延时时机；气绝移动不发）
@@ -117,6 +122,7 @@ EVENT_TIMING: dict[str, str] = {
     "on_before_heal": "insert",      # 治疗前：即时时机
     "on_before_defeat": "insert",    # 气绝前/消灭前 1：即时时机（响应挂此时机）
     "on_before_card_play": "insert",  # 使用手牌前：即时时机（魔音扰心；响应必发检查）
+    "on_before_hand_play": "insert",  # 使用手牌前（更早一个时机）：即时时机（魔音扰心响应）
     "on_before_awaken": "insert",     # 觉醒前：即时时机（法术觉醒使用事件流程）
     "on_countdown_proc": "insert",    # 倒计时能力归零生效时：即时时机（先于归零块结算）
     "on_countdown_reduced": "insert", # 倒计时减少时：即时时机（定案：减少触发效果均即时；
