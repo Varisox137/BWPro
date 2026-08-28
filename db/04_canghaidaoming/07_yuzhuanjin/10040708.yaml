@@ -9,6 +9,16 @@ versions:
       rarity: SR
       level: 3
       target: {kind: choose, pool: enemy_shikigami}
+      methods:
+        # 符咒自带[爆能3]转化战斗牌（同 10040701 注释——单卡自带；本卡身材
+        # +3/+1，@20201015 快照削弱为 +1/+1）
+        - id: burst
+          energy_cost: 3
+          card_type: combat
+          target: {kind: choose, pool: enemy_shikigami, battle: true}
+          power: 3
+          shield: 1
+          text: "爆能使用时变为战斗牌‘破魔箭’：+3/+1"
       effects:
         # 使一个敌方式神本回合获得'对其造成伤害的式神或卡牌获得[暴击]和[贯通]'
         # （crit_pierce_mark 旗标，式神宿主半回合清除、再贴幂等：伤害事件
@@ -19,13 +29,21 @@ versions:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}
       text: "使一个敌方式神本回合获得‘对其造成伤害的式神或卡牌获得[暴击]和[贯通]’。"
     - date: 20201015  # 平衡性调整：爆能转化战斗牌加成 +3/+1→+1/+1（raw 该条无
-      # 引号文本行，仅调整说明；本卡字段不变——转化身材数据在 100407/10040706 的
-      # grant_method 方式模板中，两文件同日期快照同步削弱；text 沿用）
+      # 引号文本行，仅调整说明；重构后转化身材数据在本卡自带 methods 中，本快照
+      # 只改方式 power——100407/10040706 能力侧同日期快照已随重构删除；text 沿用）
       card_type: spell
       subtype: talisman
       rarity: SR
       level: 3
       target: {kind: choose, pool: enemy_shikigami}
+      methods:
+        - id: burst
+          energy_cost: 3
+          card_type: combat
+          target: {kind: choose, pool: enemy_shikigami, battle: true}
+          power: 1
+          shield: 1
+          text: "爆能使用时变为战斗牌‘破魔箭’：+1/+1"
       effects:
         steps:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}

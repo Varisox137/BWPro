@@ -70,7 +70,7 @@ function builderCardsOf(sid) {
   // （与 client/deckbuilder.buildable_cards 同口径）
   const own = [], second = [];
   for (const c of S.catalog.cards) {
-    if (c.token) continue;
+    if (c.token || c.unreleased) continue;
     if (c.shikigami === sid) own.push(c);
     else if (c.card_type === "reinforce" && c.shikigami2 === sid) second.push(c);
   }

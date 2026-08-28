@@ -749,6 +749,8 @@ def test_player_aura_game_scope(db, make_game):
 # 队伍派系均 ≤2；0 号位开局自动 1 级（茨木对局开始批次基础能力已 perm+1）。
 # ==========================================================================
 
+# 以下队伍含未加入式神（纸人武士/天邪鬼军团）作测试棋子，
+# real_game 调用处均传 check_deck=False 跳过构筑校验。
 ZR_TEAM = [100001, 100103, 100002, 100105]   # 纸人武士主力
 CM_TEAM2 = [100103, 100001, 100002, 100105]  # 茨木童子主力
 TX_TEAM = [100002, 100103, 100001, 100105]   # 天邪鬼军团主力
@@ -757,7 +759,7 @@ TX_TEAM = [100002, 100103, 100001, 100105]   # 天邪鬼军团主力
 def test_turn_scoped_buff_expires(real_game):
     """武士之笛：己方全体本回合 +1 力量（scope=turn），己方回合开始时清除；
     历史峰值 max_power 只增不回落。"""
-    g = real_game(ZR_TEAM)
+    g = real_game(ZR_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g)
     s = pa.shikigami[0]                        # 纸人武士 3/4
     play(g, 0, 10000102)                       # 武士之笛（瞬发，全队本回合 +1）
@@ -770,7 +772,7 @@ def test_turn_scoped_buff_expires(real_game):
 
 def test_inspire_aura_boosts_effect_damage_this_turn(real_game):
     """鼓舞：牌手级监听（scope=turn 可叠加）使天邪鬼军团本回合非战斗伤害 +1。"""
-    g = real_game(TX_TEAM)
+    g = real_game(TX_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g)
     play(g, 0, 10000202)                       # 鼓舞（瞬发）
     assert len(pa.auras) == 1
@@ -784,7 +786,7 @@ def test_inspire_aura_boosts_effect_damage_this_turn(real_game):
 
 def test_max_power_gap_restores_peak(real_game):
     """断臂：力量变为本局游戏最大值 = 补峰值差值（max_power - eff_power）。"""
-    g = real_game(CM_TEAM2)
+    g = real_game(CM_TEAM2, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 2, 1: 1})   # 纸人 1 级（武士之笛使用条件）
     s = pa.shikigami[0]                        # 茨木 eff 4（perm 1）
     play(g, 0, 10000102)                       # 武士之笛 +1（turn 通道）
@@ -802,7 +804,7 @@ def test_max_power_gap_restores_peak(real_game):
 def test_on_kill_random_aura_fixed_once_key(real_game):
     """地狱豪焰：本次战斗击杀式神后登记固定项（haoyan_base，不可叠加）与
     一项随机豪焰监听；之后茨木使用战斗牌时固定项 +1 力量/+1 护甲。"""
-    g = real_game(CM_TEAM2)
+    g = real_game(CM_TEAM2, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 2})         # 茨木 2 级（豪拳使用条件）
     play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
     move(g, 1, 3)                              # B 凤凰火（4 命）驻守战斗区
@@ -841,6 +843,7 @@ def test_bond_self_damage_triggers_ally_ability(gdb):
 
 # ---- 真实数据：酒吞童子（百闻牌原型）----
 
+# 队伍含未加入式神（纸人武士/天邪鬼军团）作测试棋子，real_game 调用处均传 check_deck=False。
 JT_TEAM = [100109, 100103, 100001, 100002]  # 酒吞童子、茨木童子、纸人武士、天邪鬼军团（红莲×3+青岚）
 
 
@@ -854,7 +857,7 @@ def test_min_health_clamp_turn_scope(real_game):
     """狂啸（10010908，裁决(5)）主动使用：本回合酒吞童子生命不会降到 1 以下——
     伤害全额结算（受伤能力照常触发、全额记账），扣减生命后生命 <1 则置为 1；
     半回合作用域，回合开始清除。"""
-    g = real_game(JT_TEAM)
+    g = real_game(JT_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 3})
     jt = pa.shikigami[0]
     play(g, 0, 10010908)                       # 狂啸：min_health_turn 置位
@@ -871,7 +874,7 @@ def test_min_health_clamp_turn_scope(real_game):
 def test_min_health_clamp_response(real_game):
     """狂啸[响应]：酒吞童子将受到伤害时自动使用——4 伤全额结算后生命置 1，
     本回合后续伤害同样置 1。"""
-    g = real_game(JT_TEAM)
+    g = real_game(JT_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g)
     pb.shikigami[0].level = 3                  # 响应等级要求（狂啸 3 级）
     give(g, 1, 10010908)
@@ -889,7 +892,7 @@ def test_min_health_clamp_response(real_game):
 def test_fury_first_self_damage_aura(real_game):
     """无尽愤怒（10010904）：本回合酒吞受过己方伤害后此牌 +2 力量
     （卡牌光环数值通道）；对照组无自伤则只有牌面 +2 战力。"""
-    g = real_game(JT_TEAM)
+    g = real_game(JT_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 2})
     jt = pa.shikigami[0]
     play(g, 0, 10010901)                       # 醉里乾坤：自伤 1（能力 +1）
@@ -897,7 +900,7 @@ def test_fury_first_self_damage_aura(real_game):
     assert pb.health == 30 - 7
     assert jt.shield == 0                      # 光环只加力量，无护甲
     # 对照：无自伤 → 无光环
-    g2 = real_game(JT_TEAM)
+    g2 = real_game(JT_TEAM, check_deck=False)
     pa2, pb2 = F.battle_setup(g2, {0: 2})
     play(g2, 0, 10010904)                      # 2 攻 + 战力 2 → 4
     assert pb2.health == 30 - 4
@@ -907,7 +910,7 @@ def test_fury_first_self_damage_aura(real_game):
 def test_awaken_equal_power_per_point(real_game):
     """觉醒·酒吞童子（10010906）：+1/+3；受伤改为每受 1 点伤害获得 1 力量
     （鬼王进场自伤 4 → +4）。"""
-    g = real_game(JT_TEAM)
+    g = real_game(JT_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 3})
     jt = pa.shikigami[0]
     play(g, 0, 10010906)                       # 觉醒：+1/+3 → 3/8
@@ -921,7 +924,7 @@ def test_awaken_equal_power_per_point(real_game):
 def test_ext_damage_taken_turn_aoe(real_game):
     """百鬼夜行（10010907）：X = 本回合酒吞所受伤害之和，对双方所有其他式神
     各造成 X（friendly_others + enemy_shikigami 两段，酒吞自身除外）。"""
-    g = real_game(JT_TEAM)
+    g = real_game(JT_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 3, 1: 1, 2: 1, 3: 1})  # A 全员在场才进 friendly_others 池
     jt = pa.shikigami[0]
     play(g, 0, 10010901)                       # 醉里乾坤：自伤 1 → X=1
@@ -935,7 +938,7 @@ def test_ext_damage_taken_turn_aoe(real_game):
 def test_bond_generate_exact_level(real_game):
     """醉酒当歌（10010951，协战主牌）：自伤 3 + 等量护甲 3；[羁绊]获得一张茨木
     当前等级的战斗牌（茨木 1 级 → 1 级战斗牌鬼之手/黑焰之手之一）。"""
-    g = real_game(JT_TEAM)
+    g = real_game(JT_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 1, 1: 1})
     jt = pa.shikigami[0]
     play(g, 0, 10010951)                       # 醉酒当歌（战斗牌，自伤 3 → 能力 +1）

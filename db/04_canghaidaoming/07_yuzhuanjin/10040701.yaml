@@ -9,6 +9,18 @@ versions:
       rarity: R
       level: 1
       target: {kind: choose, pool: enemy_shikigami, has_form: true}
+      methods:
+        # 符咒自带[爆能3]转化战斗牌（2026-08 裁决：爆能转化为单卡自身效果，
+        # 不再经御馔津能力 card_aura grant_method 授予——御馔津气绝/能力离场
+        # 仍有爆能；觉醒的"本次战斗免疫战斗伤害"由觉醒能力同 id 键级合并追加，
+        # tests/test_pack04_mech.py test_burst_method_merge_over_inherent 同型）
+        - id: burst
+          energy_cost: 3
+          card_type: combat
+          target: {kind: choose, pool: enemy_shikigami, battle: true}
+          power: 1
+          shield: 1
+          text: "爆能使用时变为战斗牌‘驱魔箭’：+1/+1"
       effects:
         # 使一个有形态的敌方式神获得'本回合受到伤害时使其气绝'（defeat_on_damage
         # 旗标，任一回合开始清除；tests/test_pack04_mech.py

@@ -52,13 +52,14 @@ def _ask_env() -> int | None:
 
 
 def available_shikigami(db: CardDatabase) -> list:
-    """全部可构筑式神（kind=shikigami 且非 WIP，按 id 排序）。
+    """全部可构筑式神（kind=shikigami 且非 WIP 且非未发布，按 id 排序）。
 
     WIP 式神（wip=true 标记的半成品式神——仅基础数据或卡牌未齐）
-    不进构筑可选池；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团）可选。
+    不进构筑可选池；unreleased=true 的未加入游戏条目（哨兵日期 20251212，
+    如纸人武士/天邪鬼军团）同样排除。
     """
     return sorted((d for d in db.shikigami.values()
-                   if d.kind == "shikigami" and not d.wip),
+                   if d.kind == "shikigami" and not d.wip and not d.unreleased),
                   key=lambda d: d.id)
 
 
@@ -67,9 +68,10 @@ def buildable_cards(db: CardDatabase, sid: int) -> list:
     在前（01-08 即 1-8 号），作为第二所属式神的协战牌列最后。协战牌同时列入
     两位所属式神。"""
     cards = [c for c in db.cards.values()
-             if not c.token and (c.shikigami == sid
-                                 or (c.card_type == "reinforce"
-                                     and c.shikigami2 == sid))]
+             if not c.token and not c.unreleased
+             and (c.shikigami == sid
+                  or (c.card_type == "reinforce"
+                      and c.shikigami2 == sid))]
     return sorted(cards, key=lambda c: (0 if c.shikigami == sid else 1, c.id))
 
 

@@ -527,20 +527,23 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
 
 
 def test_buildable_cards_reinforce_listed_under_both_owners(gdb):
-    """协战牌同时列入两位所属式神的可选卡牌（风之乐章 = 妖琴师 & 一目连）。"""
-    assert any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100124))
-    assert any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100125))
+    """协战牌同时列入两位所属式神的可选卡牌（海国共主 = 铃鹿御前 & 大岳丸）；
+    unreleased 协战牌（风之乐章 10012421，哨兵日期占位）不列入。"""
+    assert any(c.id == 10020721 for c in deckbuilder.buildable_cards(gdb, 100207))
+    assert any(c.id == 10020721 for c in deckbuilder.buildable_cards(gdb, 100408))
+    assert not any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100124))
+    assert not any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100125))
 
 
 def test_buildable_cards_main_first_reinforce_last(gdb):
     """可携带卡牌排序：本家 8 张（01-08）按 id 升序在前，协战牌列最后——
-    协战第二所属式神（福星高照主式神 id 更小）的列表中协战牌不再排最前。"""
-    zuofu = deckbuilder.buildable_cards(gdb, 100129)
-    assert [c.id for c in zuofu[:8]] == [10012900 + n for n in range(1, 9)]
-    assert zuofu[-1].id == 10011721            # 福星高照列最后
-    shantu = deckbuilder.buildable_cards(gdb, 100117)
-    assert [c.id for c in shantu[:8]] == [10011700 + n for n in range(1, 9)]
-    assert shantu[-1].id == 10011721
+    协战第二所属式神（鸮羽共鸣主式神 id 更小）的列表中协战牌不再排最前。"""
+    shanfeng = deckbuilder.buildable_cards(gdb, 100307)
+    assert [c.id for c in shanfeng[:8]] == [10030700 + n for n in range(1, 9)]
+    assert shanfeng[-1].id == 10030721           # 鸮羽共鸣列最后
+    xun = deckbuilder.buildable_cards(gdb, 100405)
+    assert [c.id for c in xun[:8]] == [10040500 + n for n in range(1, 9)]
+    assert xun[-1].id == 10030721
 
 
 def test_deckbuilder_rename(db, tmp_path, monkeypatch):
@@ -615,9 +618,10 @@ def test_edit_cards_strict_input(db, tmp_path, monkeypatch, capsys):
         [10010100 + n for n in range(1, 9)]
 
 
-def test_available_shikigami_excludes_wip(gdb):
+def test_available_shikigami_excludes_wip_and_unreleased(gdb):
     """构筑可选池：wip=true 的半成品式神不可选（当前 wip 已清零——04 沧海刀鸣包
-    10 式神全部落地去标）；卡数不足 8 种的成品式神（纸人武士/天邪鬼军团，各 4 卡）可选。"""
+    10 式神全部落地去标）；unreleased=true 的未加入游戏式神（纸人武士/天邪鬼军团，
+    哨兵日期 20251212 占位）同样排除。"""
     ids = [d.id for d in deckbuilder.available_shikigami(gdb)]
     wip_ids = {d.id for d in gdb.shikigami.values() if d.wip}
     assert wip_ids == set()  # 04 包完结，wip 清零
@@ -634,5 +638,5 @@ def test_available_shikigami_excludes_wip(gdb):
     assert 100410 in ids                 # 巫蛊师（已落地去 wip）可选
     assert 100112 in ids                 # 青行灯（8 卡齐，已去 wip）可选
     assert 100106 in ids and 100109 in ids   # 姑获鸟/酒吞童子（8 卡齐，已去 wip）可选
-    assert 100001 in ids and 100002 in ids   # 纸人武士/天邪鬼军团（4 卡成品）可选
+    assert 100001 not in ids and 100002 not in ids  # 纸人武士/天邪鬼军团（unreleased）排除
     assert 100105 in ids and 100116 in ids   # 凤凰火/山童（8 卡齐）可选

@@ -276,6 +276,8 @@ class CardDef(BaseModel):
     rarity: str | None = None  # 稀有度 R/SR/SSR（预留，抽卡/账号系统用）；
     # 衍生牌（token=true）无稀有度——rarity 须缺省（维护者定案，loader 校验）
     token: bool = False  # 衍生卡：对局中由系统/效果生成，不可编入卡组
+    unreleased: bool = False  # 未加入游戏（yaml 顶层标记，哨兵日期 20251212 占位）：
+    # loader 仍加载（对局详情可查），环境解析（at_date）与构筑可选池排除
     playable_when_defeated: bool = False  # 气绝时可用（与是否响应牌无关）
     only_when_defeated: bool = False  # 仅在所属式神气绝时可用（心即归处；主动使用与响应均门控，
     # 与 playable_when_defeated 配对使用——后者放宽气绝可用、前者收紧存活不可用）
@@ -364,6 +366,8 @@ class ShikigamiDef(BaseModel):
     no_attack: bool = False  # 仅召唤物/衍生物类：不能发动攻击（冰墙；出击校验与
     # 效果发起的额外攻击 launch_attack 同拦截）
     wip: bool = False  # 半成品式神（仅基础数据/卡牌未齐）：不进构筑可选池与测试卡组
+    unreleased: bool = False  # 未加入游戏（yaml 顶层标记，哨兵日期 20251212 占位）：
+    # loader 仍加载，环境解析（at_date）与构筑可选池排除
     ability: EffectBlock | None = None  # 被动；when 为事件名（不可用 on_play）
     abilities: list[EffectBlock] = Field(default_factory=list)  # 多能力块（含倒计时能力块）；
     # 字段只增不改：旧 ability 字段并入 abilities[0] 读取（见 all_abilities）

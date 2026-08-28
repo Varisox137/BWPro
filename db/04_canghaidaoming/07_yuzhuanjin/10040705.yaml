@@ -10,6 +10,16 @@ versions:
       level: 2
       keywords: [trigger]
       target: {kind: choose, pool: enemy_shikigami}
+      methods:
+        # 符咒自带[爆能3]转化战斗牌（同 10040701 注释——单卡自带，觉醒免疫
+        # 由觉醒能力同 id 键级合并追加）
+        - id: burst
+          energy_cost: 3
+          card_type: combat
+          target: {kind: choose, pool: enemy_shikigami, battle: true}
+          power: 1
+          shield: 1
+          text: "爆能使用时变为战斗牌‘封魔箭’：+1/+1"
       effects:
         # [眩晕]一个敌方式神并使其本回合力量变为0（stun + power_override
         # scope=turn 半回合作用域；一太郎之棒 10020608 同型）

@@ -381,14 +381,22 @@ def test_balance_version_factory_db_at_date(db):
 
 
 def test_balance_version_real_db(gdb):
-    """真实库：at_date 按 versions 日期判可用（白狼/兵俑/茨木童子发布于 20191212）。"""
+    """真实库：at_date 按 versions 日期判可用（白狼/兵俑/茨木童子发布于 20191212）；
+    unreleased=true 的未加入游戏条目 loader 仍加载（定义携带标记），任何环境日期
+    下不可用（含晚于哨兵日期的日期）。"""
     assert gdb.at_date(None) is gdb
     assert not gdb.at_date(20190101).cards
     early = gdb.at_date(20200101)
     assert {100101, 100102, 100103} <= set(early.shikigami)
-    latest = gdb.at_date(20991231)
-    assert set(latest.cards) == set(gdb.cards)
-    assert set(latest.shikigami) == set(gdb.shikigami)
+    # 未加入游戏条目：最新库仍加载（哨兵日期 20251212 占位 + unreleased 标记）
+    assert gdb.cards[10011721].unreleased is True    # 福星高照（协战）
+    assert gdb.shikigami[100001].unreleased is True  # 纸人武士
+    unrel_cards = {i for i, c in gdb.cards.items() if c.unreleased}
+    unrel_shiki = {i for i, s in gdb.shikigami.items() if s.unreleased}
+    assert len(unrel_cards) == 31 and len(unrel_shiki) == 2
+    latest = gdb.at_date(20991231)  # 晚于哨兵日期：unreleased 条目仍不可用
+    assert set(latest.cards) == set(gdb.cards) - unrel_cards
+    assert set(latest.shikigami) == set(gdb.shikigami) - unrel_shiki
 
 
 def test_env_alias_parse_and_label():

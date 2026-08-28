@@ -56,30 +56,35 @@ def _play_reinforce(g, player: int, main_id: int, choice: int, target: Ref | Non
 
 # ---------- 构筑归属 ----------
 
+HGGZ = 10020721   # 海国共主（协战：铃鹿御前 100207 / 大岳丸 100408，已上线）
+XYGM = 10030721   # 鸮羽共鸣（协战：山风 100307 / 薰 100405，已上线）
+
+
 def test_deck_reinforce_counts_toward_owner(gdb):
-    """协战牌计入所属式神 8 张（挂到种类数较少的在队所属式神名下）：风之乐章×2 补足
-    妖琴师 6 张、致命之羽×2 补足以津真天 6 张——整组 32 张合法。"""
-    cards = ([10012401, 10012402, 10012403] * 2 + [FYZ, FYZ]
-             + [10012501, 10012502, 10012503, 10012504] * 2
-             + [10012601, 10012602, 10012603] * 2 + [ZMZY, ZMZY]
-             + [10012801, 10012802, 10012803, 10012804] * 2)
-    assert validate_deck(gdb, TEAM, cards) == []
+    """协战牌计入所属式神 8 张（挂到剩余配额较多的在队所属式神名下）：海国共主×2
+    补足大岳丸 6 张、鸮羽共鸣×2 补足薰 6 张——整组 32 张合法。"""
+    team = [100207, 100408, 100405, 100205]  # 铃鹿御前/大岳丸/薰/日和坊（紫岩+红莲）
+    cards = ([10020701, 10020702, 10020703, 10020704] * 2
+             + [10040801, 10040802, 10040803] * 2 + [HGGZ, HGGZ]
+             + [10040501, 10040502, 10040503] * 2 + [XYGM, XYGM]
+             + [10020501, 10020502, 10020503, 10020504] * 2)
+    assert validate_deck(gdb, team, cards) == []
 
 
 def test_deck_reinforce_single_owner_and_limit(gdb):
-    """双归属任一出战即可编入（队无一目连时风之乐章仍合法）；同名限 2。"""
-    team = [100124, 100126, 100128, 100101]
-    cards = ([10012401, 10012402, 10012403] * 2 + [FYZ, FYZ]
-             + [10012601, 10012602, 10012603, 10012604] * 2
-             + [10012801, 10012802, 10012803, 10012804] * 2
+    """双归属任一出战即可编入（队无大岳丸时海国共主仍合法）；同名限 2。"""
+    team = [100207, 100307, 100405, 100101]  # 铃鹿御前/山风/薰/白狼（紫岩+苍叶）
+    cards = ([10020701, 10020702, 10020703] * 2 + [HGGZ, HGGZ]
+             + [10030701, 10030702, 10030703, 10030704] * 2
+             + [10040501, 10040502, 10040503, 10040504] * 2
              + [10010101, 10010102, 10010103, 10010104] * 2)
     assert validate_deck(gdb, team, cards) == []
-    over = ([10012401, 10012402] * 2 + [FYZ, FYZ, FYZ] + [10012403]
-            + [10012601, 10012602, 10012603, 10012604] * 2
-            + [10012801, 10012802, 10012803, 10012804] * 2
+    over = ([10020701, 10020702] * 2 + [HGGZ, HGGZ, HGGZ] + [10020703]
+            + [10030701, 10030702, 10030703, 10030704] * 2
+            + [10040501, 10040502, 10040503, 10040504] * 2
             + [10010101, 10010102, 10010103, 10010104] * 2)
     errors = validate_deck(gdb, team, over)
-    assert any("风之乐章" in e and "限 2" in e for e in errors)
+    assert any("海国共主" in e and "限 2" in e for e in errors)
 
 
 def test_deck_reinforce_no_owner_rejected(gdb):
@@ -87,9 +92,21 @@ def test_deck_reinforce_no_owner_rejected(gdb):
     cards = ([10010101, 10010102, 10010103, 10010104] * 2
              + [10010201, 10010202, 10010203, 10010204] * 2
              + [10012301, 10012302, 10012303, 10012304] * 2
-             + [10010401, 10010402, 10010403] * 2 + [FYZ, FYZ])
+             + [10010401, 10010402, 10010403] * 2 + [HGGZ, HGGZ])
     errors = validate_deck(gdb, TEAM_WOLF, cards)
     assert any("均未出战" in e for e in errors)
+
+
+def test_deck_reinforce_unreleased_rejected(gdb):
+    """未上线协战牌（unreleased 条目）：构筑校验拒绝（刃影鹤唳/狂歌豪情）。"""
+    team = [100106, 100103, 100109, 100104]  # 姑获鸟/茨木/酒吞/大天狗（苍叶+红莲）
+    cards = ([10010601, 10010602, 10010603] * 2 + [10010621, 10010621]   # 刃影鹤唳×2
+             + [10010301, 10010302, 10010303] * 2 + [10010321, 10010321]  # 狂歌豪情×2
+             + [10010901, 10010902, 10010903, 10010904] * 2
+             + [10010401, 10010402, 10010403, 10010404] * 2)
+    errors = validate_deck(gdb, team, cards)
+    assert any("刃影鹤唳" in e and "未加入游戏" in e for e in errors)
+    assert any("狂歌豪情" in e and "未加入游戏" in e for e in errors)
 
 
 # ---------- 打出流程 ----------
@@ -498,28 +515,25 @@ KGHQ = 10010321   # 狂歌豪情（茨木童子/酒吞童子）
 HHHF = 10010651   # 鹤唳回风（姑获鸟侧子卡）
 ZJDG = 10010951   # 醉酒当歌（酒吞侧子卡）
 
-KG_TEAM = [100103, 100109, 100001, 100002]  # 茨木/酒吞/纸人武士/天邪鬼军团
+KG_TEAM = [100103, 100109, 100001, 100002]  # 茨木/酒吞/纸人武士/天邪鬼军团（含未加入
+# 式神作测试棋子，调用处传 check_deck=False 跳过构筑校验）
 
 
 def test_reinforce_main_dual_ownership(gdb):
-    """协战主牌双归属（刃影鹤唳/狂歌豪情/森佑灵矢）：options 登记两侧子卡，
-    构筑池同时列入两位所属式神（两侧均可编入）。"""
-    from client.deckbuilder import buildable_cards
+    """协战主牌双归属（刃影鹤唳/狂歌豪情/森佑灵矢）：options 登记两侧子卡。
+    （三张均为 unreleased 未加入游戏条目——构筑池双归属列出由 test_deck 以正式
+    协战牌（海国共主/鸮羽共鸣）覆盖。）"""
     assert gdb.cards[RYHL].options == [HHHF, 10012351]
     assert gdb.cards[KGHQ].options == [10010351, ZJDG]
-    assert RYHL in {c.id for c in buildable_cards(gdb, 100106)}
-    assert RYHL in {c.id for c in buildable_cards(gdb, 100123)}
-    assert KGHQ in {c.id for c in buildable_cards(gdb, 100103)}
-    assert KGHQ in {c.id for c in buildable_cards(gdb, 100109)}
     assert gdb.cards[SYLS].options == [LSGH, SYLY]
-    assert SYLS in {c.id for c in buildable_cards(gdb, 100101)}
-    assert SYLS in {c.id for c in buildable_cards(gdb, 100127)}
 
 
 def test_play_sub_side_bond_generate(make_game):
     """狂歌豪情选副侧醉酒当歌：主牌离手放逐；酒吞自伤 3（触发基础能力）+ 等量
     护甲 3；[羁绊]获得茨木当前等级（1 级）的战斗牌——唯一为鬼之手。"""
-    g, pa, pb = _game(make_game, levels={0: 1, 1: 1}, team=KG_TEAM)
+    # KG_TEAM 含未加入式神棋子（狂歌豪情本身亦未加入，give 直接发牌），跳过构筑校验
+    g = make_game(team=KG_TEAM, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
     _play_reinforce(g, 0, KGHQ, 1)            # 狂歌豪情 → 醉酒当歌
     assert not any(c.id == KGHQ for c in pa.hand)
     assert any(c.id == KGHQ for c in pa.zones["exiled"])

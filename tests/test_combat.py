@@ -1103,13 +1103,14 @@ def test_followup_attack_chain(db, make_game):
 # 对局开始批次基础能力已 perm+1（裸 eff 4）。
 # ==========================================================================
 
-CM_TEAM = [100103, 100001, 100002, 100105]  # 派系 ≤2（红莲×3 + 青岚）
+CM_TEAM = [100103, 100001, 100002, 100105]  # 派系 ≤2（红莲×3 + 青岚）；含未加入式神
+# （纸人武士/天邪鬼军团）作测试棋子，real_game 调用处均传 check_deck=False 跳过构筑校验
 
 
 def test_force_enter_combat_pulls_bench_then_battle(real_game):
     """鬼之手：敌方战斗区为空时选取一名敌方准备区式神移入战斗区（裁决(6)：效果
     需选取目标，战斗本身仍是无目标战斗），新进场者随即成为被攻击者。"""
-    g = real_game(CM_TEAM)
+    g = real_game(CM_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g)
     play(g, 0, 10010301, target=Ref(player=1, shikigami=1))   # 选取 B 纸人（4 命）
     assert pb.shikigami[1].defeated            # 被移入战斗区并成为被攻击者：4 - 4 气绝
@@ -1120,7 +1121,7 @@ def test_force_enter_combat_pulls_bench_then_battle(real_game):
 def test_force_enter_combat_direct_hits_player(real_game):
     """鬼之手+直击（裁决(6) 测试例）：敌方空场，直击茨木用鬼之手移敌方式神至
     战斗区，随后发起无目标战斗因[直击]将被攻击者设为敌方牌手。"""
-    g = real_game(CM_TEAM)
+    g = real_game(CM_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g)
     pa.shikigami[0].keywords.append("direct")  # 茨木获得[直击]
     play(g, 0, 10010301, target=Ref(player=1, shikigami=1))
@@ -1131,7 +1132,7 @@ def test_force_enter_combat_direct_hits_player(real_game):
 
 def test_force_enter_combat_noop_when_enemy_combat_occupied(real_game):
     """鬼之手空发：敌方战斗区非空时不拉人（选取的目标不动），战斗正常打战斗区驻守者。"""
-    g = real_game(CM_TEAM)
+    g = real_game(CM_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g)
     move(g, 1, 2)                              # B 天邪鬼军团（5 命）驻守战斗区
     play(g, 0, 10010301, target=Ref(player=1, shikigami=1))
@@ -1144,7 +1145,7 @@ def test_force_enter_combat_noop_when_enemy_combat_occupied(real_game):
 def test_followup_attack_on_kill(real_game):
     """地狱之手：本次战斗中击杀式神后，战斗结束追加攻击生命最低的敌方式神
     （不吃原战斗牌加成）。"""
-    g = real_game(CM_TEAM, )
+    g = real_game(CM_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 3})
     play(g, 0, 10010302)                       # 豪拳 +3 → eff 7
     move(g, 1, 1)                              # B 纸人（4 命）驻守战斗区
@@ -1155,7 +1156,7 @@ def test_followup_attack_on_kill(real_game):
 
 def test_bench_damage_on_combat_kill(real_game):
     """迁怒：茨木消灭敌方战斗区式神时，对其准备区式神各造成 2 点伤害。"""
-    g = real_game(CM_TEAM)
+    g = real_game(CM_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 2})
     play(g, 0, 10010305)                       # 迁怒（形态 3/7）
     play(g, 0, 10010302)                       # 豪拳 +3 → eff 7

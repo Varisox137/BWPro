@@ -8,60 +8,9 @@ versions:
       power: 3
       health: 4
       keywords: [charge]  # [充能]（先天关键字，永久类别：气绝不清除、复活重获）
-      abilities:
-        # 御馔津的符咒牌都具有'[爆能3]：转化为战斗牌且改为攻击任一敌方式神'
-        # （card_aura grant_method 通道：方式模板按符咒 card_id 各挂一条，身材取
-        # raw 爆能注记行；scope=ability 随能力离场/觉醒换绑移除——觉醒版同 id
-        # 覆盖定义位；tests/test_pack04_mech.py
-        # test_burst_method_converts_to_combat_card 同型）
-        - when: on_ability_enter
-          condition: {target_shikigami: self}
-          steps:
-            - {op: card_aura, shikigami: self, card_id: 10040701, scope: ability,
-               grant_method: {id: burst, energy_cost: 3, card_type: combat,
-                              target: {kind: choose, pool: enemy_shikigami,
-                                       battle: true},
-                              power: 1, shield: 1,
-                              text: "爆能使用时变为战斗牌‘驱魔箭’：+1/+1"}}
-            - {op: card_aura, shikigami: self, card_id: 10040705, scope: ability,
-               grant_method: {id: burst, energy_cost: 3, card_type: combat,
-                              target: {kind: choose, pool: enemy_shikigami,
-                                       battle: true},
-                              power: 1, shield: 1,
-                              text: "爆能使用时变为战斗牌‘封魔箭’：+1/+1"}}
-            - {op: card_aura, shikigami: self, card_id: 10040708, scope: ability,
-               grant_method: {id: burst, energy_cost: 3, card_type: combat,
-                              target: {kind: choose, pool: enemy_shikigami,
-                                       battle: true},
-                              power: 3, shield: 1,
-                              text: "爆能使用时变为战斗牌‘破魔箭’：+3/+1"}}
-      text: "[充能]。御馔津的符咒牌都具有‘[爆能3]：{转化为战斗牌且改为攻击任一敌方式神}’。"
-    - date: 20201015  # 平衡性调整：破魔符爆能转化战斗牌加成 +3/+1→+1/+1
-      # （其余字段同 20200928；10040706 觉醒版同日期同步削弱）
-      faction: 青岚
-      power: 3
-      health: 4
-      keywords: [charge]
-      abilities:
-        - when: on_ability_enter
-          condition: {target_shikigami: self}
-          steps:
-            - {op: card_aura, shikigami: self, card_id: 10040701, scope: ability,
-               grant_method: {id: burst, energy_cost: 3, card_type: combat,
-                              target: {kind: choose, pool: enemy_shikigami,
-                                       battle: true},
-                              power: 1, shield: 1,
-                              text: "爆能使用时变为战斗牌‘驱魔箭’：+1/+1"}}
-            - {op: card_aura, shikigami: self, card_id: 10040705, scope: ability,
-               grant_method: {id: burst, energy_cost: 3, card_type: combat,
-                              target: {kind: choose, pool: enemy_shikigami,
-                                       battle: true},
-                              power: 1, shield: 1,
-                              text: "爆能使用时变为战斗牌‘封魔箭’：+1/+1"}}
-            - {op: card_aura, shikigami: self, card_id: 10040708, scope: ability,
-               grant_method: {id: burst, energy_cost: 3, card_type: combat,
-                              target: {kind: choose, pool: enemy_shikigami,
-                                       battle: true},
-                              power: 1, shield: 1,
-                              text: "爆能使用时变为战斗牌‘破魔箭’：+1/+1"}}
+      # 2026-08 裁决：御馔津能力可看做只有[充能]——符咒的'[爆能3]：转化为战斗牌…'
+      # 是单卡自身效果（10040701/10040705/10040708 自带 methods；御馔津气绝/能力
+      # 离场符咒仍有爆能），不再经 card_aura grant_method 授予；原 @20201015 快照
+      # （破魔符削弱经能力内联数值的传导）随之删除——削弱数据落在 10040708 自带
+      # 方式快照上
       text: "[充能]。御馔津的符咒牌都具有‘[爆能3]：{转化为战斗牌且改为攻击任一敌方式神}’。"

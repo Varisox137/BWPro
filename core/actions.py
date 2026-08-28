@@ -597,8 +597,10 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     subtype：仅命中该子类型的牌（觉醒·三目"你的委托牌不消耗鬼火"、狐狩界
     "你的符咒牌获得[瞬发]"）。
     grant_method：命中牌获得一个使用方式（方式模板 dict：id/energy_cost/card_type/
-    target/power/shield/effects/text——御馔津基础与觉醒的符咒爆能3转化；读取点
-    engine._card_methods，出牌方式合法性/展示同源）。
+    target/power/shield/effects/text；读取点 engine._card_methods——同 id 命中卡牌
+    自带方式时键级合并、text 作后缀追加（觉醒·御馔津的符咒爆能免疫追加），无自带
+    方式时整段授予（觉醒·御馔津重构前的御馔津基础能力同型），出牌方式合法性/
+    展示同源）。
     power/shield 为战斗牌数值通道（combat_card_stats 读取时叠加到战力/一次性护甲）：
     可叠加——多次授予数值累加（与 keywords 的集合语义不同）。
     power_ext/shield_ext：数值改从控制者 PlayerState.ext[key] 读取（心技一体"本局
@@ -1107,7 +1109,8 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             cd = game.db.cards[cid]
             if cd.shikigami == hook["shikigami"] and cd.card_type != hook["to_type"]:
                 rep = [c.id for c in game.db.cards.values()
-                       if not c.token and c.shikigami == hook["shikigami"]
+                       if not c.token and not c.unreleased
+                       and c.shikigami == hook["shikigami"]
                        and c.card_type == hook["to_type"]]
                 if rep:
                     cid = game.rng.choice(rep)  # 生成替换：非战斗牌改为随机战斗牌
@@ -1143,7 +1146,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             if owner == src_owner:
                 continue
             pool = [c.id for c in game.db.cards.values()
-                    if not c.token and c.shikigami == owner
+                    if not c.token and not c.unreleased and c.shikigami == owner
                     and (card_type is None or c.card_type == card_type)]
             if not pool:
                 continue
@@ -1173,7 +1176,7 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
         else:
             lv_eq = int(level)
     pool = [c.id for c in game.db.cards.values()
-            if not c.token and c.shikigami == sid
+            if not c.token and not c.unreleased and c.shikigami == sid
             and (card_type is None or c.card_type == card_type)
             and (subtype is None or c.subtype == subtype)
             and (lv is None or c.level <= lv)

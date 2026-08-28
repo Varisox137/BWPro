@@ -33,7 +33,8 @@ _STATIC_FILES = {"app.js": "text/javascript", "style.css": "text/css"}
 
 def _shiki_json(d) -> dict:
     """式神目录条目：基础数值 + 能力文本；buildable = 可进构筑池
-    （kind=shikigami 且非 WIP，与 client/deckbuilder.available_shikigami 同口径）。"""
+    （kind=shikigami 且非 WIP 且非未发布，与 client/deckbuilder.available_shikigami
+    同口径）。"""
     return {
         "id": d.id,
         "name": d.name,
@@ -43,13 +44,14 @@ def _shiki_json(d) -> dict:
         "health": d.health,
         "text": d.text,
         "keywords": list(d.keywords),
-        "buildable": d.kind == "shikigami" and not d.wip,
+        "unreleased": d.unreleased,
+        "buildable": d.kind == "shikigami" and not d.wip and not d.unreleased,
     }
 
 
 def _card_json(c) -> dict:
     """卡牌目录条目：类型/等级/费用/数值/效果文本；token=衍生卡（不可构筑，
-    目录保留供对局详情查询）。"""
+    目录保留供对局详情查询）；unreleased=未加入游戏（哨兵日期占位，不可构筑）。"""
     return {
         "id": c.id,
         "name": c.name,
@@ -61,6 +63,7 @@ def _card_json(c) -> dict:
         "cost": c.cost,
         "rarity": c.rarity,
         "token": c.token,
+        "unreleased": c.unreleased,
         "text": c.text,
         "keywords": list(c.keywords),
         "form_power": c.form_power,

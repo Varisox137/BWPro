@@ -1,5 +1,6 @@
 id: 10011751
 name: 幸运兔兔
+unreleased: true  # 未加入游戏（哨兵日期 20251212 占位，任何环境不可解析；构筑池排除）
 versions:
   best: 20251212
   history:

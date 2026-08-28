@@ -678,15 +678,32 @@ class Game:
 
     def _card_methods(self, p: PlayerState, cdef: CardDef) -> list[PlayMethod]:
         """一张卡当前可用的使用方式：定义 methods ∪ 命中光环授予的方式（card_aura
-        grant_method，御馔津基础/觉醒"符咒牌具有'[爆能3]：转化为战斗牌…'"——
-        scope="ability" 随能力离场/觉醒换绑移除重注册）。读取时求值，同 id 光环
-        方式覆盖定义位（觉醒版替换基础版——换绑后基础光环已移除，双保险）。"""
+        grant_method——scope="ability" 随能力离场/觉醒换绑移除重注册）。读取时求值。
+
+        合并语义（御馔津符咒爆能重构，2026-08 裁决：爆能转化为符咒单卡自带效果，
+        御馔津能力只剩[充能]）：光环方式 id 命中卡牌自带方式时做**键级合并**——
+        光环模板只覆盖其显式给出的键（text 例外：作为后缀追加到自带方式 text 后；
+        觉醒·御馔津只写 effects 追加 battle_immunity + text 后缀，身材/消耗沿用
+        卡牌自带方式，破魔符 @20201015 削弱只改卡牌版本快照、不再传导到御馔津
+        能力快照）；无自带同 id 方式时维持旧的整段定义行为（光环模板须自含完整
+        方式定义）。多个光环依次应用，后者叠在前者合并结果上。"""
         methods = list(cdef.methods)
         for aura in self._match_auras(p, cdef):
             gm = aura.get("grant_method")
             if not gm:
                 continue
             gm = dict(gm)
+            existing = next((x for x in methods if x.id == gm.get("id")), None)
+            if existing is not None:
+                # 键级合并：卡牌自带方式为底，光环显式给出的键覆盖之；text 例外——
+                # 光环 text 作为**后缀**追加到自带方式 text 后（觉醒·御馔津
+                # "，本次战斗获得免疫战斗伤害"：身材数值沿用卡牌版本快照的展示）
+                merged = existing.model_dump()
+                if gm.get("text") and merged.get("text"):
+                    gm = {**gm, "text": merged["text"] + gm["text"]}
+                merged.update(gm)
+                gm = merged
+                methods = [x for x in methods if x.id != existing.id]
             gm.setdefault("target", None)
             if gm.get("target") is not None:
                 gm["target"] = TargetSpec.model_validate(gm["target"])
@@ -1476,7 +1493,7 @@ class Game:
         return True
 
     def _cmd_card_name_choose(self, cmd: dict, pending: dict) -> None:
-        """忘忧的旋律作答：stage="shikigami" → 按所选式神算可构筑牌池（非衍生、
+        """忘忧的旋律作答：stage="shikigami" → 按所选式神算可构筑牌池（非衍生、非未加入、
         本家卡 + 作为第二所属式神的协战牌，口径同 client.deckbuilder.buildable_cards）
         转 stage="card"；stage="card" → 对 target_player 手牌+牌库移除全部同名牌
         （purge_copies 核心；刚使用/在场的同名实体不在两区域，不受影响），
@@ -1490,9 +1507,10 @@ class Game:
         if pending["stage"] == "shikigami":
             sid = int(choice)
             pool = sorted(c.id for c in self.db.cards.values()
-                          if not c.token and (c.shikigami == sid
-                                              or (c.card_type == "reinforce"
-                                                  and c.shikigami2 == sid)))
+                          if not c.token and not c.unreleased
+                          and (c.shikigami == sid
+                               or (c.card_type == "reinforce"
+                                   and c.shikigami2 == sid)))
             if not pool:
                 raise IllegalAction("该式神没有可选择的牌")
             pending["stage"] = "card"

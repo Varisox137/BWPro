@@ -382,7 +382,8 @@ def test_card_aura_turn_filter(db, make_game):
 # 茨木 0 号位开局自动 1 级（对局开始批次基础能力已 perm+1）。
 # ==========================================================================
 
-CM_TEAM = [100103, 100001, 100002, 100105]
+CM_TEAM = [100103, 100001, 100002, 100105]  # 含未加入式神（纸人武士/天邪鬼军团）
+# 作测试棋子，real_game 调用处传 check_deck=False 跳过构筑校验
 
 
 def _rashomon_kill(g, bench_index: int) -> None:
@@ -397,7 +398,7 @@ def _rashomon_kill(g, bench_index: int) -> None:
 def test_hand_instance_random_enhance_tiers(real_game):
     """随机强化分层（原型：罗生门之鬼）：茨木童子击杀式神时手牌中同名卡各随机强化一次——仅手牌实例
     （在场形态不强化）、每实例最多 3 次、按实例 enhance_got 去重（不会出现已有的强化）。"""
-    g = real_game(CM_TEAM)
+    g = real_game(CM_TEAM, check_deck=False)
     pa, pb = F.battle_setup(g, {0: 2})
     F.play(g, 0, 10010302)                     # 豪拳 +3（出击力量垫高）
     F.play(g, 0, 10010303)                     # 罗生门之鬼（形态 3/4）进场

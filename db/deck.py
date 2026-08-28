@@ -94,6 +94,9 @@ def validate_deck(db, shikigami_ids: list[int], card_ids: list[int],
         if d.kind != "shikigami":
             errors.append(f"《{d.name}》（{sid}）是召唤物，不能编入队伍")
             continue
+        if d.unreleased:
+            errors.append(f"《{d.name}》（{sid}）未加入游戏，不能编入队伍")
+            continue
         if d.faction != "无相":
             factions.add(d.faction)
         # origin 为空时回退到式神名；两个无 origin 的不同式神若同名才会误判，数据侧应避免
@@ -115,6 +118,9 @@ def validate_deck(db, shikigami_ids: list[int], card_ids: list[int],
             continue
         if c.token:
             errors.append(f"《{c.name}》是衍生卡，不能编入卡组")
+            continue
+        if c.unreleased:
+            errors.append(f"《{c.name}》（{cid}）未加入游戏，不能编入卡组")
             continue
         suffix = cid % 100
         if c.card_type == "reinforce":

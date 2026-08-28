@@ -1319,8 +1319,12 @@ payload 的 victim_invocations）/ `turn_count_eq` / `from_coffin_not` /
 ### 一、符咒（talisman）子类型与爆能转化（御馔津）
 
 - **符咒子类型** `subtype: talisman`（驱魔符/封魔符/破魔符；普通子类型、无排他
-  归属）与**爆能转化** card_aura `grant_method`（方式模板按生效 card_type 路由
-  战斗流程；爆能使用时仍是符咒牌子类型——裁决(9)）；狐狩界 `burst_discount`
+  归属）与**爆能转化**（2026-08 裁决：爆能转化为符咒**单卡自带**效果——三张符咒
+  各带 `methods` 方式（[爆能3] 转战斗牌选目标攻击），御馔津能力只剩[充能]，
+  御馔津气绝/能力离场符咒仍有爆能；觉醒·御馔津经 card_aura `grant_method` 同 id
+  **键级合并**只追加"本次战斗免疫战斗伤害"（effects + text 后缀），身材数值不再
+  内联于能力快照；方式按生效 card_type 路由战斗流程，爆能使用时仍是符咒牌子
+  类型——裁决(9)）；狐狩界 `burst_discount`
   （爆能消耗 -1/个，可叠加——裁决(11)）+ 符咒瞬发光环；奉祝之愿 `cast_ledger`
   符咒账本（裁决(10)）；驱魔符 `defeat_on_damage`（受伤即气绝）；破魔符
   `crit_pierce_mark` 与 **[暴击]关键字本体**（critical——携带暴击属性的伤害

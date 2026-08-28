@@ -84,8 +84,9 @@ class CardDatabase:
         paths: dict[int, str] = {}
         custom_events: set[str] = set()
         from db.versioning import resolve_latest
-        # db/<pack>/<seq>_<slug>/*.yaml 递归收集；顶层仅 id/name/versions，
-        # 先解析最新版本快照，再按有无 card_type 区分卡牌/式神定义
+        # db/<pack>/<seq>_<slug>/*.yaml 递归收集；顶层仅 id/name/versions
+        # （+ 可选 unreleased 未发布标记），
+        # 先解析最新版本快照（含未发布条目），再按有无 card_type 区分卡牌/式神定义
         for f in sorted(root.rglob("*.yaml")):
             if f.name == "events.yaml":
                 for entry in yaml.safe_load(f.read_text(encoding="utf-8")) or []:
@@ -137,7 +138,7 @@ class CardDatabase:
         for i, c in self.cards.items():
             raw = self.raw_cards.get(i)
             if raw is None:  # 无原始 dict（测试工厂）：仅按 version 判可用
-                if c.version <= date:
+                if c.version <= date and not c.unreleased:
                     cards[i] = c
                 continue
             r = resolve_at_date(raw, date)
@@ -146,7 +147,7 @@ class CardDatabase:
         for i, s in self.shikigami.items():
             raw = self.raw_shikigami.get(i)
             if raw is None:
-                if s.version <= date:
+                if s.version <= date and not s.unreleased:
                     shikigami[i] = s
                 continue
             r = resolve_at_date(raw, date)

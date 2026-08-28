@@ -1692,10 +1692,11 @@ def _gushi_inv(db):
 
 
 def test_burst_method_converts_to_combat_card(db, make_game):
-    """符咒牌[爆能3]转化为战斗牌（御馔津基础能力，card_aura grant_method 通道）：
-    方式按生效类型 card_type="combat" 路由进战斗流程——身材取方式 power/shield、
-    原法术效果不结算（类型转化时方式 effects 整体替换，缺省=空块）、耗能量+鬼火、
-    符咒账本照常记账；非符咒牌无此方式、能量不足不可用。"""
+    """符咒牌[爆能3]转化为战斗牌（card_aura grant_method 通道，无自带方式时的
+    旧式整段授予——兼容路径）：方式按生效类型 card_type="combat" 路由进战斗
+    流程——身材取方式 power/shield、原法术效果不结算（类型转化时方式 effects
+    整体替换，缺省=空块）、耗能量+鬼火、符咒账本照常记账；非符咒牌无此方式、
+    能量不足不可用。"""
     _talisman(db, 10010151)
     db.shikigami[100101] = F.shiki(100101, abilities=[F.block(
         F.Step(op="card_aura", subtype="talisman", scope="ability",
@@ -1728,6 +1729,45 @@ def test_burst_method_converts_to_combat_card(db, make_game):
     with pytest.raises(IllegalAction):  # 能量不足
         g.apply({"op": "play_card", "uid": F.give(g, 0, 10010151).uid,
                  "play_method": "burst", "target": Ref(player=1, shikigami=0)})
+
+
+def test_burst_method_merge_over_inherent(db, make_game):
+    """光环 grant_method 同 id 命中卡牌自带方式 → 键级合并（御馔津符咒爆能重构，
+    2026-08 裁决：爆能转化为符咒单卡自带，觉醒能力只追加"本次战斗免疫战斗伤害"）：
+    energy_cost/身材/目标沿用卡牌自带方式，effects 由光环覆盖追加、battle_immunity
+    照常提取绑定本次战斗，text 为自带 text + 光环 text 后缀。"""
+    db.cards[10010151] = F.card(
+        10010151, subtype="talisman", token=True,
+        steps=[F.Step(op="damage", amount=1,
+                      target=T(kind="all", pool="projectile"))],
+        methods=[F.method("burst", energy_cost=3, card_type="combat",
+                          target=T(kind="choose", pool="enemy_shikigami",
+                                   battle=True),
+                          power=3, shield=1,
+                          text="爆能使用时变为战斗牌‘破魔箭’：+3/+1")])
+    db.shikigami[100101] = F.shiki(100101, abilities=[F.block(
+        F.Step(op="card_aura", subtype="talisman", scope="ability",
+               grant_method={"id": "burst",
+                             "effects": {"steps": [{"op": "battle_immunity"}]},
+                             "text": "，本次战斗获得免疫战斗伤害"}),
+        when="on_ability_enter", condition={"target_shikigami": "self"})])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    s = pa.shikigami[0]  # 3/4
+    s.energy = 3
+    t = pb.shikigami[0]
+    t.health = 20
+    m = next(m for m in g._card_methods(pa, db.cards[10010151]) if m.id == "burst")
+    assert (m.energy_cost, m.power, m.shield) == (3, 3, 1)   # 自带方式的键保留
+    assert m.text == "爆能使用时变为战斗牌‘破魔箭’：+3/+1，本次战斗获得免疫战斗伤害"
+    assert m.effects is not None and m.effects.steps[0].op == "battle_immunity"
+    inst = F.give(g, 0, 10010151)
+    g.apply({"op": "play_card", "uid": inst.uid, "play_method": "burst",
+             "target": Ref(player=1, shikigami=0)})
+    assert s.energy == 0      # 爆能 3 照付（沿用自带方式）
+    assert t.health == 14     # 转化战斗：力量 3 + 自带方式 power 3 = 6 伤
+    assert s.health == 4      # 觉醒追加的免疫：反击 3 不伤
+    assert pa.ext["talisman_ledger"] == [10010151]
 
 
 def test_burst_discount_field_keyword(db, make_game):
