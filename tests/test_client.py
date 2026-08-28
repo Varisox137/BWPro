@@ -133,16 +133,33 @@ def test_hand_stats_labels(db, make_game):
         10010163, subtype="awaken", token=True,
         steps=[F.Step(op="buff_power", amount=1, perm=True, target=T(kind="self")),
                F.Step(op="buff_health", amount=2, perm=True, target=T(kind="self"))])
+    db.cards[10010167] = F.card(
+        10010167, card_type="combat", token=True,
+        steps=[F.Step(op="buff_power", amount={"base": 2, "enemy_stunned_count": True},
+                      target=T(kind="self"))])
     g = make_game()
     c1 = give(g, 0, 10010161)
     c1.mods["enhance"] = 2
     give(g, 0, 10010162)
     give(g, 0, 10010163)
+    give(g, 0, 10010167)
     out = cli.render(g)
     assert "力量+3" in out   # base 1 + 已装配增强 2
     assert "护甲+2" in out
     assert "身材5/9" in out
     assert "觉醒+1/+2" in out
+    # 霜天之织型活局面增强（裁决④）：场上眩晕的敌方角色数实时并入数值段，解除即减
+    pb = g.state.players[1]
+    b = pb.shikigami[0]
+    b.level = 1
+    b.stuns.append({"kind": "normal", "turn": 0})
+    pb.ext.setdefault("stuns", []).append({"kind": "normal", "turn": 0})  # 眩晕牌手
+    out = cli.render(g)
+    assert "力量+4" in out   # base 2 + 眩晕敌方式神 1 + 眩晕敌方牌手 1
+    b.stuns.clear()
+    pb.ext["stuns"].clear()
+    out = cli.render(g)
+    assert "力量+4" not in out
 
 
 def test_hand_stats_live_enhance(db, make_game):

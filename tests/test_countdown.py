@@ -570,6 +570,9 @@ def test_form_leave_zero_max_health_defeats(db, make_game):
     assert s.max_health == 1
     play(g, 0, plain)            # 形态替换：旧形态离场 → 上限 0 → 气绝
     assert s.defeated
+    # 裁决②：替换致气绝后不再给已气绝式神结附新形态，新形态牌置入墓地
+    assert s.form is None
+    assert any(c.id == plain for c in pa.zones["graveyard"])
 
 
 def test_defeat_form_destruction_still_triggers(db, make_game):

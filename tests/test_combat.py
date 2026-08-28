@@ -459,6 +459,22 @@ def test_battle_immunity_nested_kept_in_inserted_battle(gdb):
     assert seen and seen[0].get("nested") is True
     assert b.health == 12                            # 4 攻 × [连击] 2 段
     assert a.health == 6                             # 免疫反击
+    # 裁决①：觉醒口径与基础能力同为双向——眩晕敌方式神被驱动攻击觉醒雪童子的
+    # 场合同样免疫（来打我呀 10011707 型 launch_attack 不查眩晕，正合眩晕中发起攻击）
+    team2 = [100122, 100117, 100112, 100121]
+    g = F.mk_game(gdb.at_date(20191212), team=team2)
+    pa, pb = F.battle_setup(g, {0: 3, 1: 2})
+    b = pb.shikigami[0]
+    b.health = 20
+    b.stuns.append({"kind": "normal", "turn": 0})
+    play(g, 0, 10012208)                             # 觉醒·雪童子（+1/+2 → 4/6）
+    move(g, 0, 0)                                    # 雪童子驻留战斗区
+    a = pa.shikigami[0]
+    seen = []
+    a.immunities = _ImmunitySpy(seen)
+    play(g, 0, 10011707, target=Ref(player=1, shikigami=0))  # 驱动眩晕的 b 攻击
+    assert seen and seen[0].get("nested") is True    # 被攻击侧也获得 nested 免疫
+    assert a.health == 6                             # 免疫眩晕敌方式神的攻击伤害
 
 
 def test_form_keyword_grant(db, make_game):

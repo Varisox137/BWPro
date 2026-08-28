@@ -1487,13 +1487,19 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     bind="chosen"：改登记到选择目标式神上（沧海之盾"使一个己方式神获得……当他造成
     战斗伤害时……"——延迟能力的持有者与条件 self 基准均为被选式神）。
+    bind="player"：改登记到控制者牌手身上（魔音扰心"己方牌手获得"，裁决③）——
+    来源式神气绝/离场不影响该延迟能力；收集时 holder=None，条件不得含 self 基准键；
+    过期清除目前仅支持 scope="turn"（己方回合开始）与 uses 耗尽（scope="play"/"battle"
+    的牌手级过期通道随首个需要的实卡引入）。
     unique=True（魔音扰心"[唯一]"，全卡盘点(19)）：登记前移除持有者身上同 when
     且同来源卡 id 的旧延迟条目——后者替换前者，不叠加。
     """
     if bind == "chosen":
         if not ctx.chosen or ctx.chosen[0].shikigami is None:
             raise ValueError("delay_grant(bind=chosen) 需要选择目标式神")
-        holder_ref = ctx.chosen[0]
+        holder_ref: Ref | None = ctx.chosen[0]
+    elif bind == "player":
+        holder_ref = None  # 牌手级：登记到控制者牌手（holders 与条件 self 基准均为牌手）
     else:
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("delay_grant 需要来源式神")
@@ -1501,12 +1507,19 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     from db.schema import EffectBlock, Step
     block = EffectBlock(when=when, condition=condition,
                         steps=[Step.model_validate(st) for st in (steps or [])])
-    s = game.state.players[holder_ref.player].shikigami[holder_ref.shikigami]
+    if holder_ref is not None:
+        hs = game.state.players[holder_ref.player].shikigami[holder_ref.shikigami]
+        delayed = hs.delayed
+        holder_name = game.db.shikigami[hs.id].name
+    else:
+        hp = game.state.players[ctx.controller]
+        delayed = hp.delayed
+        holder_name = hp.name
     origin = ctx.card.id if ctx.card is not None else None
     if unique:
-        s.delayed[:] = [e for e in s.delayed
-                        if not (e["block"].when == when and e.get("origin") == origin)]
-    s.delayed.append({
+        delayed[:] = [e for e in delayed
+                      if not (e["block"].when == when and e.get("origin") == origin)]
+    delayed.append({
         "block": block,
         "chosen": ctx.chosen[0] if ctx.chosen else None,
         "uses": int(uses),
@@ -1520,7 +1533,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                   and ctx.source.shikigami is not None else None),
         "seq": game.state.next_ability_seq(),  # 能力进场序号（卡牌赋予的能力进场点，答复(4)）
     })
-    game._log(f"{game.db.shikigami[s.id].name} 获得了延迟能力")
+    game._log(f"{holder_name} 获得了延迟能力")
 
 
 @action("field_destroy")

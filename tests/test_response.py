@@ -710,13 +710,14 @@ def _bcp_game(make_game):
 
 
 def _mayin(db):
-    """魔音扰心·主动使用：登记一次性"下一次敌方用牌的使用前无效化"（[唯一]、本回合；
+    """魔音扰心·主动使用：给己方牌手登记一次性"下一次敌方用牌的使用前无效化"
+    （bind="player" 牌手级，裁决③；[唯一]、本回合；
     已被响应无效化的使用不消耗——already_nullified 门控）。"""
     db.cards[MAYIN] = F.card(
         MAYIN, shikigami=100101, level=1, token=True,
         steps=[F.Step(op="delay_grant", when="on_before_card_play",
                       condition={"player": "opponent", "already_nullified": False},
-                      scope="turn", unique=True,
+                      bind="player", scope="turn", unique=True,
                       steps=[{"op": "nullify_card_play"}])])
 
 
@@ -747,13 +748,12 @@ def test_nullify_proactive_delay_grant(db, make_game):
     _mayin(db)
     _enemy_spells(db)
     g, pa, pb = _bcp_game(make_game)
-    s = pa.shikigami[0]
     play(g, 0, MAYIN)
-    assert len(s.delayed) == 1
+    assert len(pa.delayed) == 1               # 牌手级登记（bind="player"，裁决③）
     pass_turns(g, 1)                          # B 第 1 回合（鬼火 2）
     n_played = g.history.count("on_card_played")
     play(g, 1, NULL_SPELL)                    # 敌方瞬发牌 → 被无效化
-    assert s.delayed == []                    # 一次性：触发即移除
+    assert pa.delayed == []                   # 一次性：触发即移除
     assert pa.health == 30                    # 效果不结算
     assert pb.fast_used                       # 瞬发名额已付不退
     assert pb.orb == 2                        # 瞬发免费
@@ -769,10 +769,9 @@ def test_turn_scope_grant_expires(db, make_game):
     _mayin(db)
     _enemy_spells(db)
     g, pa, pb = _bcp_game(make_game)
-    s = pa.shikigami[0]
     play(g, 0, MAYIN)
     pass_turns(g, 2)                          # B 第 1 回合（未用牌）→ A 第 2 回合开始
-    assert s.delayed == []                    # scope="turn" 清除
+    assert pa.delayed == []                   # scope="turn" 清除（牌手级同口径）
     pass_turns(g, 1)                          # B 第 2 回合
     play(g, 1, PLAIN_SPELL)
     assert pa.health == 28                    # 不再无效化
@@ -838,17 +837,16 @@ def test_nullify_delay_not_consumed_after_response(db, make_game):
     resp_a = 10010158
     _response(db, resp_a, sid=100101)         # A 方同型响应牌
     g, pa, pb = _bcp_game(make_game)
-    s = pa.shikigami[0]
     play(g, 0, MAYIN)
     give(g, 0, resp_a)
     pass_turns(g, 1)                          # B 第 1 回合
     pa.orb = 9
     play(g, 1, PLAIN_SPELL)                   # 响应先无效化 → 延迟能力不消耗
     assert pa.health == 30
-    assert len(s.delayed) == 1
+    assert len(pa.delayed) == 1
     play(g, 1, PLAIN_SPELL)                   # 第二张：无响应可用 → 延迟能力无效化
     assert pa.health == 30
-    assert not s.delayed
+    assert not pa.delayed
 
 
 def test_delay_grant_unique_replaces(db, make_game):
@@ -856,10 +854,28 @@ def test_delay_grant_unique_replaces(db, make_game):
     替换同 when 同来源卡的旧条目，不叠加。"""
     _mayin(db)
     g, pa, pb = _bcp_game(make_game)
+    play(g, 0, MAYIN)
+    play(g, 0, MAYIN)
+    assert len(pa.delayed) == 1               # 牌手级 unique 同口径替换
+
+
+def test_nullify_player_bound_survives_source_defeat(db, make_game):
+    """牌手级延迟能力（裁决③）：魔音扰心主动登记在己方牌手身上，来源式神（妖琴师）
+    气绝后延迟能力不清除，仍触发无效化敌方用牌。"""
+    _mayin(db)
+    _enemy_spells(db)
+    g, pa, pb = _bcp_game(make_game)
     s = pa.shikigami[0]
     play(g, 0, MAYIN)
-    play(g, 0, MAYIN)
-    assert len(s.delayed) == 1
+    assert len(pa.delayed) == 1
+    pass_turns(g, 1)                          # B 第 1 回合
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)  # 来源式神气绝
+    g._drain_queue()
+    assert s.defeated
+    assert len(pa.delayed) == 1               # 气绝不清除牌手级条目
+    play(g, 1, PLAIN_SPELL)                   # 敌方用牌仍被无效化
+    assert pa.health == 30
+    assert not pa.delayed
 
 
 # ---------- 吾即正义 transform ----------

@@ -113,7 +113,7 @@
 | 01 觉醒·入阵歌 | ✅ | 20191212：觉醒倒计时 distribute_damage 4（enemy_character）；牌面-3 挂 on_before_awaken |
 | 02 惊弦 | ✅ | choose any_shikigami 的 countdown_delta -2（可点任意式神；无倒计时修正 -0） |
 | 03 大合奏 | ✅ | 20191212：无[瞬发]；replay_countdown(skip_forms, fixed_order)：固定按 基础→入阵歌→神乐歌→镇魂歌（来源 id 升序）重放妖琴师生效过的基础/觉醒倒计时块（全卡盘点(17)，取代首次出现顺序；维护者答复(8)：形态来源不计入；_countdown_block_for 按来源 id 找回块） |
-| 04 魔音扰心 | ✅ | 主动=delay_grant(scope=turn, unique=True [唯一]替换不叠加) 登记一次性无效化（already_nullified 门控：已被响应无效化不消耗）；响应=response 覆盖块挂 on_before_hand_play（比"使用前"早一个时机、仅手牌使用触发，全卡盘点(19)）直接无效化当前用牌（CardDef.response 新字段：主动/响应结构不同） |
+| 04 魔音扰心 | ✅ | 主动=delay_grant(bind=player 牌手级——裁决③：己方牌手获得、妖琴师气绝/离场不清除；scope=turn, unique=True [唯一]替换不叠加) 登记一次性无效化（already_nullified 门控：已被响应无效化不消耗）；响应=response 覆盖块挂 on_before_hand_play（比"使用前"早一个时机、仅手牌使用触发，全卡盘点(19)）直接无效化当前用牌（CardDef.response 新字段：主动/响应结构不同） |
 | 05 疯魔琴心 | ✅ | 双版本：20191212（best）"重置所有敌方角色的倒计时"（countdown_delta reset=true，复原 countdown_initial，无能力者空操作）/ 20200227"使一个敌方式神[倒计时]+2，妖琴师[倒计时]-2"（choose 敌方式神；正向 delta 直接累加无上限，-2 可归零触发基础能力） |
 | 06 觉醒·神乐歌 | ✅ | 倒计时-1 + 1 力量/1 生命（倒计时步含气绝倒计时——countdown_delta include_revive + 池 include_defeated/exclude_shikigami，全卡盘点(18)；增益维持 friendly_others 只在场、临时修正气绝清除）；牌面-3 挂 on_before_awaken |
 | 07 觉醒·镇魂歌 | ✅ | 倒计时 draw 1 + gain_orb 1；牌面-3 挂 on_before_awaken |
@@ -125,7 +125,7 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 20191212 文本"被消灭时触发"；实现保持离场/被消灭均触发（早期文本不规范，能力不变——维护者定案）；全卡盘点(20)：形态离场身材回退后上限 ≤0 即气绝检查落地（_destroy_form 致死检查；此前 docstring 已述未实现） |
+| 基础能力 | ✅ | 20191212 文本"被消灭时触发"；实现保持离场/被消灭均触发（早期文本不规范，能力不变——维护者定案）；全卡盘点(20)：形态离场身材回退后上限 ≤0 即气绝检查落地（_destroy_form 致死检查；此前 docstring 已述未实现）；裁决②：替换致气绝后不再结附新形态、新形态牌置入墓地（_attach_form 守卫，rules.md 第十章） |
 | 01 风符·破 | ✅ | |
 | 02 风符·护 | ✅ | |
 | 03 风符·势 | ✅ | |
@@ -471,7 +471,7 @@
 | 05 胧月雪华斩 | ✅ | +2/+0；造成伤害时对所有其他[眩晕]的敌方角色造成等量伤害 |
 | 06 霜天之织 | ✅ | 增强：场上每有一个[眩晕]的敌方角色 +1 力量 |
 | 07 雪融之时 | ✅ | 形态 5/7：每次至多受到 3 点伤害（全卡盘点(13)：cap_damage 改挂"扣减生命前"——护甲先吸收、余量再封 3）；增强按本局敌人被[眩晕]次数 +力量 |
-| 08 觉醒·雪童子 | ✅ | +1/+2；20191212 去使用效果眩晕、触发收窄为仅主动攻击（{attacker_shikigami: self, victim_stunned}，定案(2)）：获得[连击]（"额外先击中对手一次"）且免疫战斗伤害——grant_keyword scope="battle" 战斗作用域授予；全卡盘点(9)：免疫 nested=True（嵌套战斗保有） |
+| 08 觉醒·雪童子 | ✅ | +1/+2；20191212 去使用效果眩晕、触发=交战对方眩晕（{combat_opponent_stunned} 双向口径——裁决①：与基础能力同键，含被眩晕式神驱动攻击/反击及对方为眩晕牌手的场合）：获得[连击]（"额外先击中对手一次"）且免疫战斗伤害——grant_keyword scope="battle" 战斗作用域授予；全卡盘点(9)：免疫 nested=True（嵌套战斗保有） |
 | 51 雪刃 | ❌ | 协战子选项（雪童子侧幻境）：幻境机制未实现，暂缓；raw 标"未加入" |
 
 ## 跳跳妹妹（100131）

@@ -9,7 +9,8 @@ versions:
       level: 2
       keywords: [trigger]
       effects:
-        # 主动使用：登记一次性延迟能力"下一次敌方用牌的使用前无效化"（[唯一]——
+        # 主动使用：给己方牌手登记一次性延迟能力"下一次敌方用牌的使用前无效化"
+        # （bind: player 牌手级，裁决③——妖琴师气绝/离场不影响；[唯一]——
         # unique: true，全卡盘点(19)：重复登记替换旧条目不叠加；本回合，己方回合
         # 开始未消耗则清除）；无效化 = 跳过效果块、牌照常离手进墓地（费用已付不退）。
         # already_nullified: false：该次使用若已被响应（"使用手牌前"时机，早一个
@@ -18,6 +19,7 @@ versions:
           - op: delay_grant
             when: on_before_card_play
             condition: {player: opponent, already_nullified: false}
+            bind: player
             scope: turn
             unique: true
             steps:

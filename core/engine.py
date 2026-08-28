@@ -3806,6 +3806,12 @@ class Game:
         old_form_id = s.form.id if s.form is not None else None
         if s.form is not None:
             self._destroy_form(p, i, reason="replace")
+        if s.defeated:
+            # 形态替换致气绝：旧形态离场已使式神气绝时不再结附新形态，新形态牌置入墓地
+            # （裁决②——气绝中使用形态由 revive_on_play 先行复活，此处仅拦截替换致气绝路径）
+            self._log(f"{self.db.shikigami[s.id].name} 已气绝，形态【{cdef.name}】置入墓地")
+            self.move_card(p, card, "graveyard")
+            return
         s.form = card
         s.ability_entry["form"] = self.state.next_ability_seq()  # 形态能力进场序号（答复(4)）
         # 形态牌具有倒计时时，式神获得该倒计时能力（替换当前倒计时；rules.md ch10 结附流程）
@@ -4086,12 +4092,14 @@ class Game:
         # "本回合"类牌手级监听（scope="turn"，天邪鬼黄·鼓舞类）同步失效
         p.auras[:] = [a for a in p.auras if a.get("scope") != "turn"]
         # "本回合"类延迟能力（scope="turn"，魔音扰心类）在己方回合开始清除（未消耗时）；
+        # 牌手级条目（bind="player"）同口径清除；
         # ext 半回合记账键按 core/registry.EXT_KEYS 登记表统一清除（不再散落手写 pop）：
         # 己方回合开始清除（own_turn_start：法术回响 spell_echo、"本回合额外力量"
         # turn_power 扣减、黄金羽 feather_used_turn——game 级键不清）
         for s in p.shikigami:
             s.delayed[:] = [e for e in s.delayed if e.get("scope") != "turn"]
             self._clear_ext(s, CLEAR_OWN_TURN_START)
+        p.delayed[:] = [e for e in p.delayed if e.get("scope") != "turn"]
         self._clear_ext(p, CLEAR_OWN_TURN_START)
         # "每回合合计一次"标记（寂寥心象类 turn_marks）：任一回合开始双方均清除
         # （回合 = 半回合）；狂啸"本回合生命不降到1以下"（min_health_turn）、百鬼夜行 X
@@ -5900,6 +5908,19 @@ class Game:
                         seq=int(entry.get("seq", 0))))
                     entry["uses"] -= 1
             s.delayed[:] = [e for e in s.delayed if e["uses"] > 0]
+        # 牌手级延迟能力（delay_grant bind="player"，魔音扰心"己方牌手获得"，裁决③）：
+        # 登记在牌手身上，来源式神气绝/离场不影响；holder=None（条件不含 self 基准键）
+        for entry in p.delayed:
+            block = entry["block"]
+            if block.when != event["name"]:
+                continue
+            if self._match(block.condition, event, pi, holder=None):
+                chosen = [entry["chosen"]] if entry.get("chosen") is not None else []
+                out.append(_Pending(block, ExecContext(
+                    controller=pi, event=event, chosen=chosen, is_ability=True),
+                    seq=int(entry.get("seq", 0))))
+                entry["uses"] -= 1
+        p.delayed[:] = [e for e in p.delayed if e["uses"] > 0]
         out.sort(key=lambda pend: pend.seq)
         return out
 

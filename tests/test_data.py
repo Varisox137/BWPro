@@ -531,7 +531,7 @@ def test_nullify_next_enemy_card(real_game):
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
     s = pa.shikigami[IDX]
     play(g, 0, MOYIN)
-    assert len(s.delayed) == 1
+    assert len(pa.delayed) == 1               # 牌手级登记（bind: player，裁决③）
     cd_before = s.countdown
     pass_turns(g, 1)                          # B 回合
     pb.orb = 9
@@ -539,17 +539,16 @@ def test_nullify_next_enemy_card(real_game):
     assert s.countdown == cd_before           # 被无效化：倒计时未 -2
     assert any(c.id == JINGXIAN for c in pb.graveyard)         # 牌照常进墓地
     assert pb.orb == 8                        # 费用已付不退
-    assert not s.delayed                      # 一次性：收集即消耗
+    assert not pa.delayed                     # 一次性：收集即消耗
 
 
 def test_nullify_unique_replaces(real_game):
     """魔音扰心[唯一]（全卡盘点(19)）：重复主动使用替换旧的延迟条目，不叠加。"""
     g, pa, pb = _game(real_game, YQS_TEAM, {IDX: 2})
-    s = pa.shikigami[IDX]
     pa.orb = 9
     play(g, 0, MOYIN)
     play(g, 0, MOYIN)
-    assert len(s.delayed) == 1
+    assert len(pa.delayed) == 1               # 牌手级 unique 替换同口径
 
 
 def test_nullify_current_card_response(real_game):
