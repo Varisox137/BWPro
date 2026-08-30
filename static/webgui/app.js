@@ -17,7 +17,8 @@ const S = {
   net: {
     ws: null, roomId: null, token: null, seat: null, me: null,
     payload: null, timer: null, over: false, endedNormally: false,
-    targeting: null,       // 待选目标的出牌 {uid}
+    targeting: null,       // 待选目标的出牌 {cmd, effDef, mainDef, stage}
+    choiceOpen: false,     // 交互选择弹窗打开中（state 更新时按 pending_choice 收口）
     server: "", name: "",
   },
 };
@@ -26,6 +27,38 @@ const $ = (id) => document.getElementById(id);
 const DECKS_KEY = "bwpro.webgui.decks";
 // 客户端标识：服务端软门槛要求 create/join 带 BWPro-CLI 前缀（server/main.py）
 const CLIENT_ID = "BWPro-CLI/webgui";
+
+// 结算明细排版：与 client/cli.py format_settle_lines/format_timeline_lines 同口径
+// （嵌套块"战斗/伤害结算 开始-结束"按层级缩进两格，结束行与开始行同级；
+// 时间线叙事行 k="l" 以 "| "前缀按当前层级缩进）。纯展示排版，不含规则计算。
+const SETTLE_OPEN = ["—— 战斗开始", "—— 伤害结算开始"];
+
+function fmtSettle(lines) {
+  const out = [];
+  let depth = 0;
+  for (const line of lines) {
+    const s = line.trim();
+    if (s.startsWith("—— 战斗结束") || s.startsWith("—— 伤害结算结束"))
+      depth = Math.max(0, depth - 1);
+    out.push(depth ? "  ".repeat(depth) + s : s);
+    if (SETTLE_OPEN.some((p) => s.startsWith(p))) depth += 1;
+  }
+  return out;
+}
+
+function fmtTimeline(entries) {
+  const out = [];
+  let depth = 0;
+  for (const e of entries) {
+    const s = (e.m || "").trim();
+    if (e.k === "l") { out.push((depth ? "  ".repeat(depth) : "  ") + "| " + s); continue; }
+    if (s.startsWith("—— 战斗结束") || s.startsWith("—— 伤害结算结束"))
+      depth = Math.max(0, depth - 1);
+    out.push(depth ? "  ".repeat(depth) + s : s);
+    if (SETTLE_OPEN.some((p) => s.startsWith(p))) depth += 1;
+  }
+  return out;
+}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -348,7 +381,13 @@ function handleNet(msg) {
   } else if (t === "state") {
     n.payload = msg.payload;
     n.timer = msg.timer || null;
-    if (msg.log) appendLog(msg.log);
+    // 结算播放：合并时间线（结算/叙事按真实发生顺序合流）优先，旧字段
+    // settle+log 兜底（断线重连 resync 只发全量 payload+log）——与 CLI 联机端同口径
+    if (msg.timeline && msg.timeline.length) appendLog(fmtTimeline(msg.timeline));
+    else {
+      if (msg.settle && msg.settle.length) appendLog(fmtSettle(msg.settle));
+      if (msg.log) appendLog(msg.log.map((l) => "  | " + l));
+    }
     renderGame();
   } else if (t === "error") {
     gameMsg("无效操作: " + (msg.reason || ""), true);
@@ -431,7 +470,9 @@ function renderGame() {
   $("btn-mulligan-done").classList.toggle("hidden", !mull);
   $("btn-end-turn").disabled = !myTurn();
   // 待选目标提示
-  if (n.targeting) gameMsg("选择目标中：点击式神或牌手（右键取消）");
+  if (n.targeting) gameMsg(
+    (n.targeting.stage === 2 ? "选择第二目标" : "选择目标") +
+    "中：点击式神或牌手（右键取消）");
   // 结算中交互选择
   renderPendingChoice();
 }
@@ -491,6 +532,32 @@ function renderShikiRow(box, p, pi, mine) {
   });
 }
 
+function handInfo(uid) {
+  // 服务端随 state 下发的己方手牌实时信息（hand_info，键为 uid 字符串）：
+  // 费用/关键字/数值段/增强/委托进度/使用方式枚举，全部为引擎求值结果
+  const pl = S.net.payload;
+  return ((pl && pl.hand_info) || {})[String(uid)] || null;
+}
+
+function usageLabel(usage) {
+  // 使用方式段：与 client/cli.py format_hand_lines 的 _usage_label 同口径
+  // （常规仅在不可用或多方式时占版面；多择方式/协战子选项逐条 ✓/✗原因+耗能）
+  const parts = [];
+  for (const u of usage || []) {
+    const mark = u.ok ? "✓" : `✗${u.reason || ""}`;
+    const energy = u.energy ? `耗能${u.energy}` : "";
+    if (u.id === null || u.id === undefined) {
+      if (usage.length === 1 && u.ok) continue;
+      parts.push(`常规${energy}${mark}`);
+    } else if (String(u.id).startsWith("choice:")) {
+      parts.push(`子选项【${u.label}】${mark}`);
+    } else {
+      parts.push(`「${u.label}」${energy}${mark}`);
+    }
+  }
+  return parts.join(" ");
+}
+
 function renderHand(me) {
   const row = $("hand-row");
   row.innerHTML = "";
@@ -498,20 +565,30 @@ function renderHand(me) {
   const mull = pl.phase === "mulligan" && !me.mulligan_done;
   for (const c of (me.zones.hand || [])) {
     const def = S.cardById[c.id];
-    const box = el("div", "hand-card");
+    const info = handInfo(c.uid);
+    const box = el("div", "hand-card" + (info && !info.playable ? " unplayable" : ""));
+    const cost = info ? info.cost : (def ? def.cost : 0);
     box.append(el("div", null, `【${def ? def.name : c.id}】` +
-      (def ? ` <span class="cost">费${def.cost}</span>` : "")));
+      ` <span class="cost">费${cost}</span>`));
     if (def) box.append(el("div", "sub", `${typeLabel(def)} Lv${def.level}`));
+    if (info) {
+      const dataParts = [];
+      if (info.keywords && info.keywords.length)
+        dataParts.push(`[${info.keywords.join("/")}]`);
+      if (info.enhance) dataParts.push(`增强+${info.enhance}`);
+      if (info.quest) dataParts.push(info.quest);
+      if (dataParts.length) box.append(el("div", "kw", dataParts.join(" ")));
+      if (info.stats) box.append(el("div", "stats", info.stats));
+      if (!mull && pl.phase === "battle") {  // 使用方式列（调度阶段不显示，同 CLI）
+        const u = usageLabel(info.usage);
+        if (u) box.append(el("div", "usage", u));
+      }
+    }
     box.onclick = () => {
       if (mull) return;  // 调度阶段用按钮调度，不出牌
       if (!myTurn()) { showCardDetail(def); return; }
       if (!def) return;
-      if (def.needs_target) {
-        S.net.targeting = { uid: c.uid };
-        renderGame();
-      } else {
-        netCmd({ op: "play_card", uid: c.uid });
-      }
+      startPlayFlow(c, def);
     };
     box.oncontextmenu = (ev) => { ev.preventDefault(); showCardDetail(def); };
     if (mull) {
@@ -523,11 +600,94 @@ function renderHand(me) {
   }
 }
 
+// ---------- 出牌流程（使用方式 → 子选项 → 目标 → 第二目标） ----------
+
+function startPlayFlow(c, def) {
+  // 出牌入口：按服务端 usage 枚举决定路径（协战牌子选项 / 多择使用方式 / 常规），
+  // 再按需收集目标与第二目标（target2）。合法性交服务端校验。
+  const info = handInfo(c.uid);
+  const usage = info ? info.usage : [{ id: null, ok: true, cost: def.cost }];
+  if (def.card_type === "reinforce") {
+    // 协战牌子选项（裁决(16)）：列出全部子选项（含不合法者与原因）
+    const subs = usage.filter((u) => String(u.id).startsWith("choice:"));
+    if (!subs.length) { beginPlay({ uid: c.uid }, def, def); return; }  // 兜底直发
+    showUsagePicker(def, subs, (u) => {
+      const idx = Number(String(u.id).split(":")[1]);
+      const sub = S.cardById[(def.options || [])[idx]] || null;
+      beginPlay({ uid: c.uid, choice: idx }, sub, def);
+    });
+    return;
+  }
+  const methods = usage.filter((u) => u.id !== null && u.id !== undefined);
+  if (!methods.length) {
+    const normal = usage[0];
+    if (normal && !normal.ok) {
+      gameMsg(`无法使用【${def.name}】：${normal.reason || ""}`, true);
+      return;
+    }
+    beginPlay({ uid: c.uid }, def, def);
+    return;
+  }
+  // 多择使用方式（爆能等）：常规 + 各方式逐条列出（含不合法原因）
+  showUsagePicker(def, usage, (u) => {
+    const cmd = { uid: c.uid };
+    if (u.id !== null && u.id !== undefined) cmd.play_method = u.id;
+    beginPlay(cmd, def, def);
+  });
+}
+
+function showUsagePicker(def, usage, onPick) {
+  // 使用方式/协战子选项选择弹窗：合法性交服务端校验，不合法项灰显并附原因
+  const body = $("modal-body");
+  body.innerHTML = "";
+  body.append(el("h3", null, `使用【${def.name}】`));
+  for (const u of usage) {
+    const isSub = String(u.id).startsWith("choice:");
+    const head = (u.id === null || u.id === undefined) ? "常规"
+      : isSub ? `子选项【${u.label}】` : `「${u.label}」`;
+    const energy = u.energy ? ` 耗能${u.energy}` : "";
+    const btn = el("button", "choice",
+      `${head}（费${u.cost}${energy}）` +
+      (u.ok ? "" : ` —— 不可选：${u.reason || ""}`) +
+      (u.effect ? `\n${u.effect}` : ""));
+    btn.disabled = !u.ok;
+    btn.onclick = () => { closeModal(); onPick(u); };
+    body.append(btn);
+  }
+  const cancel = el("button", null, "取消");
+  cancel.onclick = closeModal;
+  body.append(el("div", null, ""), cancel);
+  $("modal").classList.remove("hidden");
+}
+
+function beginPlay(cmd, effDef, mainDef) {
+  // 方式/子选项已定：effDef 的目标（协战牌 = 子选项卡目标），mainDef 的第二目标
+  if (effDef && effDef.needs_target) {
+    S.net.targeting = { cmd, effDef, mainDef, stage: 1 };
+    renderGame();
+  } else if (mainDef && mainDef.needs_target2) {
+    S.net.targeting = { cmd, effDef, mainDef, stage: 2 };
+    renderGame();
+  } else {
+    netCmd(Object.assign({ op: "play_card" }, cmd));
+  }
+}
+
 function playWithTarget(ref) {
   const t = S.net.targeting;
   if (!t) return;
+  if (t.stage === 1) {
+    t.cmd.target = ref;
+    if (t.mainDef && t.mainDef.needs_target2) {
+      t.stage = 2;  // 双选择目标卡（target2）：继续收集第二目标
+      renderGame();
+      return;
+    }
+  } else {
+    t.cmd.target2 = ref;
+  }
   S.net.targeting = null;
-  netCmd({ op: "play_card", uid: t.uid, target: ref });
+  netCmd(Object.assign({ op: "play_card" }, t.cmd));
 }
 
 function cancelTargeting() {
@@ -535,24 +695,49 @@ function cancelTargeting() {
   renderGame();
 }
 
+// 结算中交互选择（pending_choice）的作答键与标题：按 CLI 联机端分支对齐
+// （client/net.py input_loop pending_choice 段）——card_name/field_summon_pick/
+// pick_generate/invocation_pick 作答键为 choice（数据 id 或灵咒名），
+// discard_pick/quest_complete_pick 与默认（检视牌库顶）为 uid（实例 uid）。
+const PEND_CHOICE_KINDS = new Set(
+  ["card_name", "field_summon_pick", "pick_generate", "invocation_pick"]);
+const PEND_TITLES = {
+  discard_pick: "弃置手牌：选择一张弃置",
+  field_summon_pick: "选择要召唤的幻境",
+  pick_generate: "选择一张牌置入手牌",
+  quest_complete_pick: "选择一张紧急委托使其视为达成",
+  invocation_pick: "选择一张灵咒牌结附",
+};
+
+function pendTitle(pend) {
+  if (pend.kind === "card_name")
+    return pend.stage === "shikigami" ? "选择敌方式神" : "选择一张牌名";
+  return PEND_TITLES[pend.kind] || "检视牌库顶：选择一张置入手牌";
+}
+
 function renderPendingChoice() {
   // 结算中交互选择（青灯夜谈检视/弃牌/生成选取等）：通用列出选项作答
   const pl = S.net.payload, n = S.net;
   const pend = pl.pending_choice;
-  if (!pend) return;
-  if (pend.player !== n.me) { gameMsg("等待对方完成交互选择"); return; }
+  if (!pend || pend.player !== n.me) {
+    if (pend) gameMsg("等待对方完成交互选择");
+    if (n.choiceOpen) { n.choiceOpen = false; closeModal(); }  // 作答完毕/视角不符时收口
+    return;
+  }
   const body = $("modal-body");
   body.innerHTML = "";
-  body.append(el("h3", null, "交互选择"));
+  body.append(el("h3", null, pendTitle(pend)));
   for (const opt of pend.options || []) {
     const label = choiceLabel(opt, pend);
     const btn = el("button", "choice", label);
     btn.onclick = () => {
+      n.choiceOpen = false;
       closeModal();
       netCmd(choiceCmd(opt, pend));
     };
     body.append(btn);
   }
+  n.choiceOpen = true;
   $("modal").classList.remove("hidden");
 }
 
@@ -561,16 +746,22 @@ function choiceLabel(opt, pend) {
   const zones = (me.zones.hand || []).concat(me.zones.deck || []);
   const inst = zones.find((c) => c.uid === opt);
   if (inst) { const d = S.cardById[inst.id]; return d ? `【${d.name}】 ${d.text || ""}` : String(opt); }
+  if (pend.kind === "card_name" && pend.stage === "shikigami" && S.shikiById[opt])
+    return S.shikiById[opt].name;  // 忘忧的旋律第一级：敌方式神
   if (typeof opt === "number" && S.cardById[opt])
     return `【${S.cardById[opt].name}】 ${S.cardById[opt].text || ""}`;
+  if (pend.kind === "invocation_pick") {
+    const inv = ((S.catalog && S.catalog.invocations) || {})[opt];
+    return `【${opt}】` + (inv && inv.text ? ` ${inv.text}` : "");
+  }
   if (typeof opt === "number" && S.shikiById[opt]) return S.shikiById[opt].name;
   return String(opt);
 }
 
 function choiceCmd(opt, pend) {
-  // 作答键判定：选项命中自己手牌/牌库 uid → uid 键；其余（卡名/牌名/灵咒名/
-  // 式神 id 等生成类选项）→ choice 键。TODO: 个别 kind 的作答键以 CLI 分支为准
-  // （client/net.py input_loop pending_choice 段），这里取通用启发式。
+  // 作答键判定：choice 键 kind 直接作答；uid 键 kind 与默认（检视牌库顶等）
+  // 以选项命中己方手牌/牌库实例 uid 为准
+  if (PEND_CHOICE_KINDS.has(pend.kind)) return { op: "choose", choice: opt };
   const me = S.net.payload.players[S.net.me];
   const zones = (me.zones.hand || []).concat(me.zones.deck || []);
   if (zones.some((c) => c.uid === opt)) return { op: "choose", uid: opt };

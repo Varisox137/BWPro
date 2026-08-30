@@ -444,27 +444,46 @@ def test_luck_fail_branch_stuns_attacker(gdb, monkeypatch):
     assert pb.shikigami[0].stuns               # 普通眩晕条目
 
 
-def test_luck_fail_branch_power_zero(gdb, monkeypatch):
-    """和气满满（luck on:fail + power_override scope=battle）：式神攻击时判定失败——
-    攻击者本次战斗力量变为 0。"""
+def test_luck_fail_branch_power_debuff(gdb, monkeypatch):
+    """和气满满（luck on:fail + buff_power scope=battle 逐目标 {power_of: target}，
+    全卡盘点(12)）：式神攻击时判定失败——攻击者一次性减少等同此时力量的力量
+    （一次性减益），直到本次战斗后（终止点核销）。"""
     g, pa, pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 3})
     play(g, 0, HEQI)                           # 形态 0/7
     move(g, 0, IDX)                            # A 座敷驻战斗区
     pass_turns(g, 1)                           # B 回合
     _force_dice(monkeypatch, g, [2])           # 运势4 失败
     g.apply({"op": "assault", "index": 1})     # B 白狼（3 攻）出击
-    assert pa.shikigami[IDX].health == 7       # 攻击力量 0：无战斗伤害
+    assert pa.shikigami[IDX].health == 7       # 攻击力量 3-3=0：无战斗伤害
+    assert pb.shikigami[1].temp_power == 0     # 减益随本次战斗结束核销
+    pass_turns(g, 2)                           # 回到 B 下回合再出击：力量已恢复
+    move(g, 0, IDX)                            # 座敷重新驻战斗区（否则打在牌手脸上）
+    _force_dice(monkeypatch, g, [6])           # 运势4 成功：不减
+    g.apply({"op": "assault", "index": 1})
+    assert pa.shikigami[IDX].health == 4       # 正常 3 伤
 
 
-def test_form_leave_orb_only_on_replace(gdb):
-    """福寿双全：进场双方各 +1 鬼火；仅形态被替换离场时再各 +1（气绝消灭不触发）。"""
+def test_form_enter_leave_orb_any_reason(gdb):
+    """福寿双全（全卡盘点(11)）：进场双方各 +1 鬼火；离场再各 +1——触发条件类似
+    觉醒·一目连（任意原因消灭均触发：替换与气绝消灭同）；[增强]只在使用时检查
+    形态（无形态时不瞬发不抽牌）。"""
     g, pa, pb = _game(gdb, ZFTZ_TEAM)
     pa.orb = 8
     pb.orb = 0
-    play(g, 0, FUSHOU)                         # 1 火，进场双方 +1
-    assert pa.orb == 8 and pb.orb == 1
-    play(g, 0, JINYUN)                         # 替换形态：离场双方再 +1
+    hand0 = len(pa.hand)
+    play(g, 0, FUSHOU)                         # 无形态使用：1 火（无瞬发），不抽牌
+    assert pa.orb == 8 and pb.orb == 1         # 进场（延时）双方 +1
+    assert len(pa.hand) == hand0               # 打出前无形态 → 不抽
+    play(g, 0, JINYUN)                         # 有形态使用：替换，离场双方再 +1
     assert pa.orb == 8 and pb.orb == 2
+    # 气绝消灭同样触发离场鬼火（触发条件类似觉醒·一目连）
+    g, pa, pb = _game(gdb, ZFTZ_TEAM)
+    play(g, 0, FUSHOU)
+    pa.orb, pb.orb = 5, 3
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g._drain_queue()
+    assert pa.shikigami[IDX].defeated and pa.shikigami[IDX].form is None
+    assert pa.orb == 6 and pb.orb == 4         # 气绝消灭离场：双方各 +1
 
 
 def test_play_condition_luck_total_gate(gdb):
@@ -556,6 +575,19 @@ def test_repeat_random_damage_stop_on_defeat(gdb, monkeypatch):
     total_after = sum(max(s.health, 0) for p in (pa, pb) for s in p.shikigami)
     assert total_before - total_after == 20    # 10 次 × 2
     assert pa.shikigami[IDX].health == yaohu_hp
+
+
+def test_reuse_card_counts_as_second_play(gdb, monkeypatch):
+    """叠风斩（reuse_card，全卡盘点(15)）：两段 2 伤是一段效果但视为两次使用——
+    妖狐基础能力随两次使用各判定一次，于整牌结算完后连续两次执行。"""
+    g, pa, pb = _game(gdb, YH_TEAM, levels={IDX: 2})
+    hp = pb.shikigami[1].health
+    _force_dice(monkeypatch, g, [4, 4])        # 两次使用各一次运势4：均成功
+    before = _enemy_total(pb)
+    play(g, 0, DIEFENG, target=Ref(player=1, shikigami=1))
+    assert pb.shikigami[1].health <= hp - 4    # 两段 2 伤（能力随机落点可能叠加）
+    assert before - _enemy_total(pb) == 8      # 两段 4 + 能力两次各 2
+    assert pa.ext["yaohu_damage_count"] == 4   # 两段 + 能力两次伤害事件
 
 
 def test_awaken_triggers_on_spell_and_luck_success(gdb, monkeypatch):

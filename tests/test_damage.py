@@ -160,13 +160,22 @@ def test_turn_start_clears_both_directions(db, make_game):
 
 
 def test_fragile_to_damage_anchor(db, make_game):
-    """碧羽散华锚点：ext 持 fragile_to_damage 标记的式神获得破甲改为受到等量伤害。"""
+    """碧羽散华锚点（全卡盘点(9)）：ext 持 fragile_to_damage 标记的式神获得**来源为
+    敌方鸩**的破甲时——变化量变为 0，改为受到等量伤害（伤害来源=鸩）；非鸩来源的
+    破甲不转化。"""
     g, pa, pb = _game(make_game)
     s = pa.shikigami[IDX]
     s.ext["fragile_to_damage"] = True
-    g._change_shield(Ref(player=0, shikigami=IDX), 3, "test", kind="fragile")
+    zhen = Ref(player=1, shikigami=1)
+    db.shikigami[100128] = F.shiki(100128, name="鸩")   # 来源侧鸩（锚点按来源过滤）
+    pb.shikigami[1].id = 100128
+    g._change_shield(Ref(player=0, shikigami=IDX), 3, "test", kind="fragile",
+                     source=zhen)
     assert s.shield == 0             # 未获得破甲
     assert s.health == 1             # 4 - 3 等量伤害
+    g._change_shield(Ref(player=0, shikigami=IDX), 2, "test", kind="fragile",
+                     source=Ref(player=1, shikigami=2))
+    assert s.shield == -2 and s.health == 1   # 非鸩来源：正常获得破甲
 
 
 # ---------- 治疗管线（治疗事件流程） ----------

@@ -611,7 +611,8 @@ def test_perm_power_snapshot(db, make_game):
 
 
 def test_power_override_zeroes_attack(db, make_game):
-    """power_override：力量视为 0（覆盖基础+永久+临时+战力全部）；攻击造成 0 伤害。"""
+    """power_override：力量视为 0（覆盖基础+永久+临时+战力层）；攻击造成 0 伤害。
+    全卡盘点(3)：光环类增减益（dyn_power 动态光环/灵咒结附层）不被覆写。"""
     db.cards[10010161] = F.card(10010161, token=True, steps=[
         F.Step(op="power_override", target=T(kind="self"))])
     g = make_game()
@@ -621,6 +622,9 @@ def test_power_override_zeroes_attack(db, make_game):
     s.perm_power = 3
     F.play(g, 0, 10010161)
     assert s.eff_power == 0               # 永久 +3 也被覆写
+    s.ext["dyn_power"] = 2                # 光环类力量（stat_aura 缓存通道）不被覆写
+    assert s.eff_power == 2
+    s.ext["dyn_power"] = 0
     move(g, 1, 0)
     pa.orb = 1
     g.apply({"op": "assault", "index": 0})

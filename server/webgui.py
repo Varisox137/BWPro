@@ -72,6 +72,8 @@ def _card_json(c) -> dict:
         "awaken_power": c.awaken_power,
         "awaken_health": c.awaken_health,
         "needs_target": c.target.kind == "choose",
+        "needs_target2": c.target2 is not None and c.target2.kind == "choose",
+        "options": list(c.options or []),  # 协战牌子选项卡 id（前端子选项选择用）
     }
 
 
@@ -124,6 +126,9 @@ def mount_webgui(app: FastAPI, db: CardDatabase) -> None:
                 edb.shikigami.values(), key=lambda x: x.id)],
             "cards": [_card_json(c) for c in sorted(
                 edb.cards.values(), key=lambda x: x.id)],
+            # 灵咒定义表（交互选择 invocation_pick 的选项文本展示用）
+            "invocations": {n: {"text": getattr(idef, "text", "") or ""}
+                            for n, idef in sorted(edb.invocations.items())},
         }
 
     @router.post("/gui/api/validate_deck")

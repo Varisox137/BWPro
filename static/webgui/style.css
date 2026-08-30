@@ -79,8 +79,12 @@ input, select {
   border-radius: 6px; padding: 4px 6px; cursor: pointer; font-size: 12px;
 }
 .hand-card:hover { border-color: #9fd0ff; }
+.hand-card.unplayable { opacity: 0.5; }
 .hand-card .cost { color: #ffd479; }
 .hand-card .sub { color: #8a90a5; }
+.hand-card .kw { color: #b8c48a; font-size: 11px; }
+.hand-card .stats { color: #ffd479; font-size: 11px; }
+.hand-card .usage { color: #c9a7ff; font-size: 11px; }
 
 /* 弹窗 */
 #modal {
@@ -92,4 +96,5 @@ input, select {
   padding: 14px 18px; max-width: 520px; max-height: 80vh; overflow-y: auto;
 }
 #modal-body h3 { margin-top: 0; }
-#modal-body .choice { display: block; width: 100%; text-align: left; margin: 4px 0; }
+#modal-body .choice { display: block; width: 100%; text-align: left; margin: 4px 0; white-space: pre-wrap; }
+#modal-body .choice:disabled { opacity: 0.5; cursor: default; }

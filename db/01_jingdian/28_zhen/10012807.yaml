@@ -11,8 +11,10 @@ versions:
       form_health: 7
       effects:
         # "鸩对有破甲的角色造成的破甲效果转化为等量的伤害"：锚点 ext["fragile_to_damage_if"]
-        # （"获得破甲前"转化，_change_shield 读取——仅当受害者本已持有破甲才转化）；
-        # victim 侧标记与"鸩造成的"等价（当前卡池仅鸩给予破甲；牌手沿用任一式神持标记语义）
+        # （"获得破甲前"转化，_change_shield 读取——仅当受害者本已持有破甲才转化；
+        # 来源须为受伤者敌方的鸩，转化伤害的来源=该鸩——全卡盘点(9)）；
+        # victim 侧标记与"鸩造成的"等价（标记只挂在敌方——鸩不会给己方上此标记；
+        # 牌手沿用任一式神持标记语义）
         steps:
           - {op: bump_ext, key: fragile_to_damage_if, target: {kind: all, pool: enemy_shikigami}}
       abilities:
@@ -31,7 +33,8 @@ versions:
       form_health: 7
       effects:
         # "鸩造成的破甲效果转化为等量的伤害"：锚点 ext["fragile_to_damage"]
-        # （无条件转化；converted=True 防止与毒蚀的伤害→破甲转化来回循环）
+        # （无条件转化；converted=True 防止与毒蚀的伤害→破甲转化来回循环；
+        # 来源须为受伤者敌方的鸩、转化伤害的来源=该鸩——全卡盘点(9)）
         steps:
           - {op: bump_ext, key: fragile_to_damage, target: {kind: all, pool: enemy_shikigami}}
       abilities:

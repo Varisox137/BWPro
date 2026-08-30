@@ -145,14 +145,18 @@ class ShikigamiState(BaseModel):
         """有效力量 = 基础 + 永久修正 + 临时修正 + 本次战斗战力 + 动态光环缓存。
 
         覆写层：ext["power_zero"] 置位时力量视为 0（power_override op 授予，
-        覆盖全部加成层；形态离场/气绝时清除）。
+        覆盖基础+永久+临时+战力层，但**不覆盖其他光环类增减益**——dyn_power
+        动态光环缓存与灵咒结附层照常合计，全卡盘点(3) 闪烁/山童笨拙口径；
+        形态离场/气绝时清除）。
         ext["dyn_power"]：连续型动态身材光环的缓存通道（闻世/火吻之蛇；
         由 engine._refresh_stat_auras 在手牌数/破甲变化等读取点统一刷新）。
         灵咒层：结附灵咒条目的 power 快照实时合计（类光环——rules.md 灵咒节
         定案：被"日出有曜"类清除临时修正后仍立即继续生效）。
         """
         if self.ext.get("power_zero"):
-            return 0
+            return (int(self.ext.get("dyn_power", 0))
+                    + sum(int(e.get("power", 0)) + int(e.get("bonus", 0))
+                          + int(e.get("mod_power", 0)) for e in self.invocations))
         return (self.base_power + self.perm_power + self.temp_power
                 + self.combat_power + int(self.ext.get("dyn_power", 0))
                 + sum(int(e.get("power", 0)) + int(e.get("bonus", 0))

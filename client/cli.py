@@ -542,6 +542,35 @@ def format_hand_lines(game: Game, p, hand: list, with_usage: bool = True) -> lis
     return out
 
 
+def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
+    """联机推送的己方手牌实时信息（webgui 等远程客户端的展示数据——与
+    format_hand_lines 同一批求值函数：usage_options/_card_keywords/_stats_label
+    等引擎与本模块展示口径，前端不重复实现规则计算）。
+    返回 {uid: {...}}：
+    - cost     当前费用（含实例修饰 cost_delta）
+    - keywords 当前关键字显示名列表（_card_keywords 统一读取点，中文化）
+    - stats    数值段文本（战斗牌力量/护甲、形态身材、增强数值等，_stats_label 同口径）
+    - enhance  实时增强计数（无 = 0）
+    - quest    委托条件进度标签（无 = None）
+    - playable 使用条件（play_condition）当前是否满足
+    - usage    使用方式枚举（Game.usage_options 原样：常规/爆能等方式与协战子选项
+               各自的合法性/原因/鬼火/能量消耗）"""
+    p = game.state.players[pi]
+    out: dict[int, dict] = {}
+    for c in p.hand:
+        cd = game.db.cards[c.id]
+        out[c.uid] = {
+            "cost": cd.cost + c.mods.get("cost_delta", 0),
+            "keywords": _kw_labels(sorted(game._card_keywords(p, cd, c))),
+            "stats": _stats_label(game, p, c),
+            "enhance": _live_enhance(p, c),
+            "quest": _quest_progress(game, p, cd),
+            "playable": game._play_condition_met(p, cd, c),
+            "usage": game.usage_options(pi, c),
+        }
+    return out
+
+
 def format_seat_line(game: Game, pi: int) -> str:
     """调度前展示的先后手与座次行（热坐 run_mulligan 与联机 net 共用）。"""
     p = game.state.players[pi]

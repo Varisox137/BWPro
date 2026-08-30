@@ -18,6 +18,7 @@ import uuid
 from core.engine import Game, IllegalAction
 from core.model import GameConfig
 from core.setup import new_game
+from client.cli import hand_cards_info
 from db import deckcode
 from server import protocol
 
@@ -486,7 +487,11 @@ class Room:
             vsettle = _visible_lines(settle, settle_vis, viewer)  # 非公开行仅所属方可见
             vtimeline = _visible_entries(
                 _hide_mulligan_timeline(timeline, st, viewer), viewer)
-            await c.send(protocol.state(sanitize_state(base, viewer), vlog,
+            payload = sanitize_state(base, viewer)
+            # 己方手牌实时信息（使用方式枚举/数值段等，引擎求值结果随状态下发，
+            # 远程客户端不重复实现规则计算；仅含己方手牌，键为 uid）
+            payload["hand_info"] = hand_cards_info(self.game, viewer)
+            await c.send(protocol.state(payload, vlog,
                                         timer=timer, settle=vsettle,
                                         timeline=vtimeline))
         if st.winner is not None and not self._over_sent:
@@ -504,8 +509,10 @@ class Room:
         st = self.game.state
         base = st.model_dump(mode="json")
         viewer = self.seat_to_player[conn.seat]
+        payload = sanitize_state(base, viewer)
+        payload["hand_info"] = hand_cards_info(self.game, viewer)  # 同 broadcast_state
         await conn.send(protocol.state(
-            sanitize_state(base, viewer),
+            payload,
             # 全量补发同样隐藏对方调度明细与非公开信息行
             _hide_mulligan_log(_visible_lines(list(st.log), list(st.log_vis), viewer),
                                st, viewer),

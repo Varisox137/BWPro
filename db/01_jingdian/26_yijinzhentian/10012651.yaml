@@ -14,12 +14,15 @@ versions:
         steps:
           - {op: damage, amount: 2, target: {kind: all, pool: enemy_player}}
       methods:
-        # 维护者答复(11)：觉醒后效果实为"选择一名敌方角色，对其造成2点伤害"（含牌手）
+        # 维护者答复(11)：觉醒后效果实为"选择一名敌方角色，对其造成2点伤害"（含牌手）；
+        # 全卡盘点(1)：觉醒能力在场时"使用时改为需要指定目标"——replaces_base 使
+        # 常规（无目标打敌方牌手）方式不可用（engine 校验与 usage_options 同口径）
         - id: snipe
           target: {kind: choose, pool: enemy_character}
           effects:
             steps:
               - {op: damage, amount: 2}
           requires_awaken: true  # 使用方式的觉醒门控（所属式神须已觉醒；engine 校验）
+          replaces_base: true    # 门控通过时替换常规使用方式（全卡盘点(1)）
           text: 以一名敌方角色为目标（需觉醒·以津真天）
       text: "[瞬发]。对敌方牌手造成2点伤害。"

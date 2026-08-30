@@ -273,14 +273,16 @@ def test_amount_ext_sources(db, make_game):
 
 def test_repeat_random_damage_stop_on_defeat_synthetic(db, make_game):
     """repeat_random_damage 合成卡（无羁风弹原型）：逐次插入结算（每次重新求值
-    目标池）；stop_on_defeat 时任一式神气绝即停（满 max 次分支由
-    test_luck_cards.py 真卡版覆盖）。"""
-    db.cards[10010151] = F.card(10010151, token=True, steps=[
+    目标池，池按式神 id 豁免妖狐）；stop_on_defeat 时任一式神气绝即停（满 max 次
+    分支由 test_luck_cards.py 真卡版覆盖）。"""
+    db.cards[10010151] = F.card(10010151, shikigami=100130, token=True, steps=[
         Step(op="repeat_random_damage", amount=1, pool="all_other_shikigami",
              max=10, stop_on_defeat=True)])
     g = make_game()
-    g.rng = StubRng()               # choice 恒取首元素（来源除外的 1 号位）
+    g.rng = StubRng()               # choice 恒取首元素（妖狐除外的 1 号位）
     a, b = g.state.players
+    db.shikigami[100130] = F.shiki(100130, name="妖狐")
+    a.shikigami[0].id = 100130      # 使用者按妖狐处理（目标池按式神 id 豁免妖狐）
     a.orb = 9
     own = a.shikigami[1]
     own.level = 1

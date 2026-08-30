@@ -12,11 +12,13 @@ versions:
       effects:
         steps: []
       abilities:
-        # 每当一个式神攻击时（不分敌我）：运势4判定失败则攻击者本次战斗力量变为0
-        # （power_override scope=battle 为契约外扩展——战斗终止点清除，需引擎侧支持）
+        # 每当一个式神攻击时（不分敌我），（被）攻击时即时时机：运势4 失败则攻击者
+        # 一次性减少等同此时力量的力量（一次性赋予的减益——debuff 后本次战斗内新获得
+        # 的增减益仍有效；全卡盘点(12)），直到本次战斗后（buff_power scope=battle
+        # 战斗终止点核销通道；逐目标动态数值 {"power_of": "target"} 按执行时快照）
         - when: on_before_assault
           luck: {x: 4, "on": fail}
           steps:
-            - {op: power_override, "on": true, scope: battle,
+            - {op: buff_power, amount: {power_of: target}, amount_sign: -1, scope: battle,
                target: {kind: context, key: attacker}}
       text: "每当一个式神攻击时[运势4]：{失败则本次战斗力量变为0。}"

@@ -4,12 +4,14 @@ versions:
   best: 20200928
   history:
     - date: 20200928  # 发布日期
-      card_type: combat
+      card_type: spell
       subtype: quest  # 委托牌（三目专属子类型）
       token: true  # 衍生牌（无稀有度；周二'今日委托'）
       level: 1
       play_condition: {quest_count_ge: {kind: attack, count: 10}}
       # [条件]：{己方式神还需攻击10次}（在牌库也有效——条件按牌手账本求值）
       effects:
-        steps: []  # 白板战斗牌（+0/+0 发起战斗）
-      text: "[条件]：{己方式神还需攻击10次}（在牌库也有效）。"
+        # [鼓舞]：{获得+5战力和+5护甲}——basic_boost 出击加成通道
+        steps:
+          - {op: basic_boost, power: 5, shield: 5}
+      text: "[条件]：{己方式神还需攻击10次}（在牌库也有效）。[鼓舞]：{获得+5战力和+5护甲。}"

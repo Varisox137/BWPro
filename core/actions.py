@@ -50,10 +50,11 @@ def _luck_amount(game, ctx, amount: int, amount_ctx: str | None,
 
 
 def _target_amount(game, raw: dict, ref: Ref) -> int:
-    """逐目标动态数值求值（amount={"health_of"/"half_health_of": "target"}）：
-    按目标角色（式神或牌手）当前生命求值——"一半"向下取整；静态 base 不受 per
-    倍率影响（口径同 Game._step_amount；凋零之森"对他所有角色造成等同于他自身
-    一半生命的伤害"）。"""
+    """逐目标动态数值求值（amount={"health_of"/"half_health_of"/"power_of": "target"}）：
+    按目标角色当前生命/力量求值——"一半"向下取整；power_of 仅式神目标有效（牌手
+    无力量，计 0；和气满满"减少等同此时力量的力量"，全卡盘点(12)）；静态 base 不
+    受 per 倍率影响（口径同 Game._step_amount；凋零之森"对他所有角色造成等同于他
+    自身一半生命的伤害"）。"""
     pl = game.state.players[ref.player]
     holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
     dyn = 0
@@ -61,6 +62,8 @@ def _target_amount(game, raw: dict, ref: Ref) -> int:
         dyn += holder.health
     if raw.get("half_health_of") == "target":
         dyn += holder.health // 2
+    if raw.get("power_of") == "target":
+        dyn += holder.eff_power if ref.shikigami is not None else 0
     return int(raw.get("base", 0)) + dyn * int(raw.get("per", 1))
 
 
@@ -268,7 +271,7 @@ def draw_move(game, ctx, *, targets: list[Ref]) -> None:
 
 
 @action("buff_power")
-def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False,
+def buff_power(game, ctx, *, targets: list[Ref], amount: int | dict = 0, perm: bool = False,
                scope: str | None = None, amount_ctx: str | None = None,
                amount_ext: str | None = None, amount_ext_source: str | None = None,
                amount_sign: int = 1) -> None:
@@ -278,25 +281,36 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int, perm: bool = False
     0 级未在场/已离场式神不受影响。
     scope="turn"：临时增益记账到 ext["turn_power"]，回合开始时随该通道一并清除
     （武士之笛/鼓舞类"本回合"增益；与 perm 互斥，数据侧只对临时增益使用）。
+    scope="battle"：临时增减记账到引擎 _battle_temp_power，当前战斗终止点核销
+    （和气满满"失败则本次战斗力量减少等同此时力量"，全卡盘点(12)）。
+    amount 为字典（{"power_of": "target"}）时是逐目标动态数值（_run_step 直通，
+    见 _target_amount；不叠加 _luck_amount 扩展）。
     amount_ctx / amount_ext / amount_ext_source：数值扩展（见 _luck_amount；
     来打我呀/萌即正义增强按 dice_six_count 增减）；amount_sign=-1 转为 debuff。
     """
-    amount = _luck_amount(game, ctx, amount, amount_ctx, amount_ext,
-                          amount_ext_source) * int(amount_sign)
+    per_target = isinstance(amount, dict)
+    if not per_target:
+        amount = _luck_amount(game, ctx, amount, amount_ctx, amount_ext,
+                              amount_ext_source) * int(amount_sign)
     for ref in targets:
         if ref.shikigami is not None:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
             if not s.in_play and (s.despawned or not s.defeated or not perm):
                 continue
+            amt = (_target_amount(game, amount, ref) * int(amount_sign)
+                   if per_target else amount)
             if perm:
-                s.perm_power += amount
+                s.perm_power += amt
             else:
-                s.temp_power += amount
+                s.temp_power += amt
                 if scope == "turn":
-                    s.ext["turn_power"] = s.ext.get("turn_power", 0) + amount
+                    s.ext["turn_power"] = s.ext.get("turn_power", 0) + amt
+                elif scope == "battle" and game._battle_stack:
+                    bid = game._battle_stack[-1]
+                    game._battle_temp_power.setdefault(bid, []).append((ref, amt))
             game._record_max_power(s)
             game._settle(f"【力量】{game.db.shikigami[s.id].name} "
-                         f"{'永久' if perm else '临时'}力量 {amount:+d}（现 {s.eff_power}）")
+                         f"{'永久' if perm else '临时'}力量 {amt:+d}（现 {s.eff_power}）")
 
 
 @action("buff_health")
@@ -358,11 +372,11 @@ def gain_shield(game, ctx, *, targets: list[Ref], amount: int, kind: str = "shie
         amount += int(ctx.card.mods.get("shield_boost", 0))
     for ref in targets:
         if ref.shikigami is None:
-            game._change_shield(ref, amount, "gain_shield", kind=kind)
+            game._change_shield(ref, amount, "gain_shield", kind=kind, source=ctx.source)
         else:
             s = game.state.players[ref.player].shikigami[ref.shikigami]
             if s.in_play:
-                game._change_shield(ref, amount, "gain_shield", kind=kind)
+                game._change_shield(ref, amount, "gain_shield", kind=kind, source=ctx.source)
 
 
 @action("summon")
@@ -498,7 +512,8 @@ def transfer_fragile(game, ctx, *, targets: list[Ref]) -> None:
     # 来源清零（走失去破甲流程，发 on_shield_changed）
     game._change_shield(ctx.source, holder.shield, "transfer_fragile", kind="fragile")
     for ref in targets:
-        game._change_shield(ref, amount, "transfer_fragile", kind="fragile")
+        game._change_shield(ref, amount, "transfer_fragile", kind="fragile",
+                            source=ctx.source)
 
 
 @action("add_mod")
@@ -2578,7 +2593,7 @@ def fragile_echo(game, ctx, *, targets: list[Ref]) -> None:
         p = game.state.players[ref.player]
         holder = p.shikigami[ref.shikigami] if ref.shikigami is not None else p
         if holder.shield < 0:
-            game._battle_echo.setdefault(bid, []).append((ref, -holder.shield))
+            game._battle_echo.setdefault(bid, []).append((ref, -holder.shield, ctx.source))
             game._log(f"蚀刃毒羽记录了 {-holder.shield} 点破甲（战斗结束后回赋）")
 
 
@@ -2841,8 +2856,9 @@ def turn_mark(game, ctx, *, targets: list[Ref], key: str,
 
 @action("convert_damage")
 def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> None:
-    """伤害转化标记（targets 忽略）：登记到当前战斗上下文——该战斗中双方造成的伤害
-    转化为等量的破甲（毒蚀；伤害管线于护甲计算后、扣减生命前读取，战斗终止点清除）。
+    """伤害转化标记（targets 忽略）：登记到当前战斗上下文——该战斗中鸩参与（作为伤害
+    来源或受伤者）的战斗伤害转化为等量的破甲（毒蚀，全卡盘点(6)；伤害管线于"护甲
+    计算前1"锚点读取，战斗终止点清除；登记来源 Ref 即参与者口径的鸩）。
 
     主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
     响应插入使用时作为普通动作执行，登记到被插入的当前战斗。
@@ -2851,7 +2867,7 @@ def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> Non
         raise ValueError(f"未知 convert_damage 转化类型: {to}")
     if not game._battle_stack:
         return
-    game._battle_convert.add(game._battle_stack[-1])
+    game._battle_convert[game._battle_stack[-1]] = ctx.source
 
 
 @action("double_damage_vs_fragile")
@@ -2986,7 +3002,8 @@ def reduce_damage(game, ctx, *, targets: list[Ref], amount: int = 0) -> None:
 def power_override(game, ctx, *, targets: list[Ref], on: bool = True,
                    scope: str | None = None) -> None:
     """力量覆写（山童笨拙类）：on=True 时目标式神力量视为 0（覆盖基础+永久+临时+
-    战力全部，eff_power 覆写层）；on=False 解除。形态离场、式神气绝时自动清除。
+    战力层；光环类增减益——dyn_power 动态光环与灵咒结附层——不被覆盖，全卡盘点(3)，
+    eff_power 覆写层）；on=False 解除。形态离场、式神气绝时自动清除。
     scope="turn"（闪烁"本回合力量变为 0"）：半回合作用域——任一回合开始时随
     ext["power_zero_turn"] 通道一并解除（min_health_turn 先例，双方清除）。"""
     for ref in targets:
@@ -3438,13 +3455,17 @@ def repeat_random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: st
                          max: int = 10, stop_on_defeat: bool = False) -> None:
     """无羁风弹（targets 忽略）：逐次在 pool 随机 1 名造成 amount 点伤害，插入结算。
 
-    pool="all_other_shikigami"：双方所有其他未气绝式神（不含来源）；每次重新求值
-    （已气绝/濒死者不再是合法目标）。stop_on_defeat=True：一旦任一式神因此效果
-    （含其插入结算）气绝即停；否则满 max 次即停。
+    pool="all_other_shikigami"：双方所有未气绝式神中妖狐（按式神 id 甄别，双方妖狐均
+    豁免）以外的目标；每次重新求值（已气绝/濒死者不再是合法目标）。妖狐在此牌使用
+    事件中被变形后，变形实体 id 已非妖狐、回到目标池（全卡盘点(14)）。
+    stop_on_defeat=True：任一式神气绝即停——含已结算气绝与延时气绝（濒死/生命≤0
+    标记在伤害落地时即置位，气绝事件延后生成的情形同样命中），或有角色（牌手）
+    生命≤0；否则满 max 次即停。多次重复是一段连续效果：触发型能力由事件队列在此牌
+    结算完后统一排水，不在循环中间插入。
     """
     if pool != "all_other_shikigami":
         raise ValueError(f"未知 repeat_random_damage 目标池: {pool}")
-    from core.engine import _DamageEvent  # 避免模块顶层循环引用
+    from core.engine import _DamageEvent, _YAOHU_SHIKIGAMI  # 避免模块顶层循环引用
 
     def _refs() -> list[Ref]:
         out: list[Ref] = []
@@ -3452,15 +3473,18 @@ def repeat_random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: st
             for i, s in enumerate(game.state.players[pi].shikigami):
                 if not s.in_play or s.dying:
                     continue
-                if (ctx.source is not None and pi == ctx.source.player
-                        and i == ctx.source.shikigami):
-                    continue  # 不含来源
+                if s.id == _YAOHU_SHIKIGAMI:
+                    continue  # 不含妖狐（双方；变形后的原妖狐不在豁免之列）
                 out.append(Ref(player=pi, shikigami=i))
         return out
 
+    def _bad_count() -> int:
+        return sum(1 for q in game.state.players for s in q.shikigami
+                   if s.defeated or s.dying or s.health <= 0)
+
     pierce = game._ability_piercing(ctx)
     spell = game._spell_damage(ctx)
-    defeated = sum(s.defeated for q in game.state.players for s in q.shikigami)
+    bad0 = _bad_count()
     for _ in range(int(max)):
         refs = _refs()
         if not refs:
@@ -3471,11 +3495,10 @@ def repeat_random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: st
                          piercing=pierce, spell=spell, card=ctx.card)])
         if game.state.pending_end or game.state.winner is not None:
             break
-        if stop_on_defeat:
-            now = sum(s.defeated for q in game.state.players for s in q.shikigami)
-            if now != defeated:
-                break  # 任一式神气绝即停
-            defeated = now
+        if any(q.health <= 0 for q in game.state.players):
+            break  # 有角色（牌手）生命≤0 即停
+        if stop_on_defeat and _bad_count() != bad0:
+            break  # 任一式神气绝（含延时气绝：濒死/生命≤0 已置位）即停
 
 
 @action("reuse_card")
@@ -4062,9 +4085,11 @@ def consolidate_shields(game, ctx, *, targets: list[Ref]) -> None:
             game._change_shield(ref, -abs(old), "consolidate_shields", kind=kind)
             total += old  # 代数和：正护甲 + 负破甲（shield 为有符号字段）
     if total > 0:
-        game._change_shield(goal, total, "consolidate_shields", kind="shield")
+        game._change_shield(goal, total, "consolidate_shields", kind="shield",
+                            source=ctx.source)
     elif total < 0:
-        game._change_shield(goal, -total, "consolidate_shields", kind="fragile")
+        game._change_shield(goal, -total, "consolidate_shields", kind="fragile",
+                            source=ctx.source)
 
 
 @action("transform_hand_card")

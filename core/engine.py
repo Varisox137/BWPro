@@ -105,6 +105,8 @@ _HEAL_REVERSAL_BLOCK = EffectBlock(steps=[Step(
 # 妖狐——伤害流程按来源 = 妖狐时计数牌手 ext yaohu_damage_count
 _QINGWA_SHIKIGAMI = 100113
 _YAOHU_SHIKIGAMI = 100130
+# 鸩——碧羽散华"获得破甲前"转化锚点按来源过滤（来源须为受伤者敌方的鸩，全卡盘点(9)）
+_ZHEN_SHIKIGAMI = 100128
 # 不夜之火批次引擎直读的式神 id：日和坊——能量免单（在场已觉醒）与生命代偿（在场基础能力）
 _RIHEFANG_SHIKIGAMI = 100205
 
@@ -208,21 +210,29 @@ class Game:
         self._battle_seq: int = 0
         self._battle_stack: list[int] = []
         self._battle_grants: dict[int, list[tuple[Ref, str, str]]] = {}  # battle id → [(式神 Ref, 关键字, 类别)]
+        # 战斗牌条件授予/免疫的延后登记（全卡盘点(4)(7) 鸩羽/致命诱惑）：带 Step.condition
+        # 的条目不在战斗开始求值，挂账到"确定战斗目标后"（（被）攻击时响应结算完）按
+        # 实际交战另一方判定；battle id → ([(kw, cond)], [(nested, cond, kind)])
+        self._battle_cond_pending: dict[int, tuple[list, list]] = {}
         # battle id → [(式神 Ref, 战力)]：响应战斗牌插入使用授予的战力，终止点核销
         # （rules.md 第二章响应备注"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
         self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
+        # battle id → [(式神 Ref, 临时力量增减)]：buff_power scope="battle" 的"直到本次
+        # 战斗后"一次性增减（和气满满减益，全卡盘点(12)），终止点核销
+        self._battle_temp_power: dict[int, list[tuple[Ref, int]]] = {}
         self._op_param_cache: dict[str, frozenset] = {}  # op 函数签名缓存（Step.condition 分派用）
         # 出牌效果伤害记录栈：结算打出/响应/自动使用的效果块期间压栈一条记录，
         # 伤害管线把实际受伤的"敌方"式神记入栈顶（维护者答复(7)：只计敌方式神——
         # 牌手与己方式神不计；去重），弹出后随 on_card_played 的 affected_refs
         # 发出（暴风之主"对受影响的敌方式神各造成1点伤害"）
         self._affected_stack: list[dict] = []
-        # 毒蚀：伤害→破甲转化登记的战斗 id 集合（战斗终止点随弹栈清除）
-        self._battle_convert: set[int] = set()
+        # 毒蚀：伤害→破甲转化登记 battle id → 鸨 Ref（参与者口径，全卡盘点(6)；
+        # 战斗终止点随弹栈清除）
+        self._battle_convert: dict[int, Ref] = {}
         # 反击贯通：反击伤害具有贯通的战斗 id 集合（counter_piercing 登记；终止点清除）
         self._battle_counter_piercing: set[int] = set()
-        # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量)]，"攻击时"登记、战斗结束后回赋
-        self._battle_echo: dict[int, list[tuple[Ref, int]]] = {}
+        # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量, 来源 Ref)]，"攻击时"登记、战斗结束后回赋
+        self._battle_echo: dict[int, list[tuple[Ref, int, Ref | None]]] = {}
         # 义道：battle id → 攻击者 Ref——仅此战斗牌发起的战斗（嵌套/插入不继承）中，
         # 攻击者本人对有破甲的式神造成的战斗伤害翻倍（[暴击]时机=扣减生命前2；终止点清除）
         self._battle_double_fragile: dict[int, Ref] = {}
@@ -713,6 +723,21 @@ class Game:
             methods = [x for x in methods if x.id != m.id]  # 同 id 覆盖（觉醒版优先）
             methods.append(m)
         return methods
+
+    def _base_method_replaced(self, p: PlayerState, si: int | None, cdef: CardDef) -> bool:
+        """方式替换常规（全卡盘点(1) 黄金羽：觉醒能力在场时"使用时改为需要指定目标"）：
+        任一带 replaces_base 标记的方式其门控（目前仅 requires_awaken）通过时，
+        常规（无方式）使用不可用。"""
+        for m in self._card_methods(p, cdef):
+            extra = m.model_extra or {}
+            if not extra.get("replaces_base"):
+                continue
+            if extra.get("requires_awaken"):
+                gate = p.shikigami[si] if si is not None else None
+                if gate is None or not gate.awakened or gate.defeated or gate.despawned:
+                    continue
+            return True
+        return False
 
     def _match_auras(self, p: PlayerState, cdef: CardDef) -> list[dict]:
         """命中该卡牌的卡牌光环（card_auras 注册表，读取时求值，覆盖已有与新生成的牌）。
@@ -1783,6 +1808,8 @@ class Game:
             gate = p.shikigami[si] if si is not None else None
             if gate is None or not gate.awakened or gate.defeated or gate.despawned:
                 return "需要所属式神已觉醒且在场上"
+        if method is None and self._base_method_replaced(p, si, cdef):
+            return "觉醒能力在场：需以指定目标的使用方式出牌"
         if (eff_type == "combat" and si is not None
                 and p.combat_index != si
                 and not self._has_keyword(p.shikigami[si], "remote")
@@ -2001,6 +2028,9 @@ class Game:
             if gate is None or not gate.awakened or gate.defeated or gate.despawned:
                 who = sname if si is not None else "所属式神"
                 raise IllegalAction(f"「{method.text or method.id}」需要 {who} 已觉醒且在场上")
+        # 方式替换常规（全卡盘点(1)：觉醒能力在场时黄金羽"使用时改为需要指定目标"）
+        if method is None and self._base_method_replaced(p, si, cdef):
+            raise IllegalAction(f"【{cdef.name}】需以指定目标的使用方式出牌（觉醒能力在场）")
         # 方式授予关键字（PlayMethod.keywords，森之力"[爆能2]：获得[瞬发]"）：本次使用
         # 临时授予——装配在瞬发/费用判定（_effective_cost/_fast_applies）之前，结算后移除
         old_kw_add = card.mods.get("keywords_add")
@@ -2109,7 +2139,8 @@ class Game:
                 if p.shikigami[si].defeated and fdp_cost is not None:
                     # 气绝形态使用（觉醒·小鹿男）：使用效果前先复活持有者，再正常结附
                     self._revive(p, self.state.active, si, reason="气绝形态使用")
-                self._play_form_card(p, si, card, cdef, self.state.active, chosen)
+                self._play_form_card(p, si, card, cdef, self.state.active, chosen,
+                                     pre_play_form=pre_play_form)
             elif eff_type == "combat":
                 # 战斗牌：以完整战斗事件流程结算（移入战斗区、战力/一次性护甲、
                 # 战斗前/后时机、战斗伤害），结算完后进入墓地。
@@ -2964,7 +2995,8 @@ class Game:
                     return s.form
         return None
 
-    def _change_shield(self, ref: Ref, delta: int, reason: str, kind: str = "shield") -> None:
+    def _change_shield(self, ref: Ref, delta: int, reason: str, kind: str = "shield",
+                       source: Ref | None = None) -> None:
         """目标（式神或牌手）护甲/破甲变化（docs/rules.md 第六章），并发出 on_shield_changed。
 
         shield 为有符号字段（>0 护甲 / <0 破甲）；delta 以 kind 方向的正数计量
@@ -2976,6 +3008,8 @@ class Game:
         事件 payload 带 kind 区分方向（"获得护甲"与"失去破甲"属不同事件）。
         获得量受欢愉之音型光环增益（shield_gain_boost 形态标记：己方获得护甲 +1 /
         敌方获得破甲 +1，见流程 5 内注释）。
+        source = 造成本次变化的来源角色（"获得破甲事件的来源/执行者"，全卡盘点(6)(9)——
+        碧羽散华锚点按来源过滤并以其为转化伤害来源；缺省 None = 无来源）。
         """
         if delta == 0:
             return  # 流程 1：变化量为 0 终止
@@ -2993,26 +3027,37 @@ class Game:
         else:
             # 流程 5：获得——先抵消反向值再盈余同向（获得 5 护甲且持有 3 破甲 → 2 护甲）
             if kind == "fragile":
-                # 碧羽散华锚点（"获得破甲前"转化）：持有 fragile_to_damage 标记的角色
-                # 获得破甲改为受到等量伤害（标记经 ext 授予；converted=True 防止与
-                # 毒蚀的伤害→破甲转化来回循环——转化类效果对同一事件链只生效一次）。
-                # 维护者答复(1)：无论式神/牌手——victim 侧标记挂在敌方式神上，牌手
-                # 沿用"其任一式神持标记"语义（当前卡池仅鸩给予破甲，两者等价）
-                if ref.shikigami is not None:
-                    s = p.shikigami[ref.shikigami]
-                    # fragile_to_damage_if：20191212 版碧羽散华——仅当受害者本已有
-                    # 破甲（shield < 0）时才转化（"对有破甲的角色"）
-                    if s.ext.get("fragile_to_damage") or (
-                            s.ext.get("fragile_to_damage_if") and old < 0):
-                        self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 {delta} 点伤害")
-                        self.deal_to_shikigami(ref, delta, None, converted=True)
+                # 碧羽散华锚点（"获得护甲/破甲前"即时时机，全卡盘点(9)）：持有
+                # fragile_to_damage 标记的角色，获得**来源为敌方鸩**的破甲时——变化量
+                # 变为 0（本函数直接返回、不发变化事件），立即插入结算"鸩对其造成
+                # 等量伤害"的伤害事件（converted=True 防止与毒蚀的伤害→破甲转化
+                # 来回循环——转化类效果对同一事件链只生效一次）。维护者答复(1)：
+                # 无论式神/牌手——victim 侧标记挂在敌方式神上，牌手沿用"其任一
+                # 式神持标记"语义
+                zhen_src = (source if (source is not None
+                                       and source.shikigami is not None
+                                       and source.player != ref.player
+                                       and self.state.players[source.player]
+                                           .shikigami[source.shikigami].id
+                                       == _ZHEN_SHIKIGAMI)
+                            else None)
+                if zhen_src is not None:
+                    if ref.shikigami is not None:
+                        s = p.shikigami[ref.shikigami]
+                        # fragile_to_damage_if：20191212 版碧羽散华——仅当受害者本已有
+                        # 破甲（shield < 0）时才转化（"对有破甲的角色"）
+                        if s.ext.get("fragile_to_damage") or (
+                                s.ext.get("fragile_to_damage_if") and old < 0):
+                            self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 "
+                                      f"{delta} 点伤害（来源鸩）")
+                            self.deal_to_shikigami(ref, delta, zhen_src, converted=True)
+                            return
+                    elif (any(st.ext.get("fragile_to_damage") for st in p.shikigami)
+                            or (old < 0 and any(st.ext.get("fragile_to_damage_if")
+                                                for st in p.shikigami))):
+                        self._log(f"{p.name} 的破甲转化为 {delta} 点伤害（来源鸩）")
+                        self.deal_to_player(ref.player, delta, zhen_src, converted=True)
                         return
-                elif (any(st.ext.get("fragile_to_damage") for st in p.shikigami)
-                        or (old < 0 and any(st.ext.get("fragile_to_damage_if")
-                                            for st in p.shikigami))):
-                    self._log(f"{p.name} 的破甲转化为 {delta} 点伤害")
-                    self.deal_to_player(ref.player, delta, None, converted=True)
-                    return
             # 欢愉之音型光环（"获得护甲/破甲前2"，维护者定案）：在场形态 tags 含
             # shield_gain_boost 时——其控制者方角色获得护甲 +1；其敌方角色获得破甲 +1
             # （获得量增益，先于"抵消反向值"计算；回合开始清除不走本函数，不受影响）
@@ -3050,12 +3095,14 @@ class Game:
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
         （终止点按实例移除，不误删式神原有同名关键字），元素为 (keyword, condition)——
-        condition 以 {"defender": 被攻击者} 在战斗开始时求值（"若攻击有破甲的角色"，
-        致命诱惑）；immunities 为作用域战斗伤害免疫，元素为 (nested, condition, kind)——
-        kind 缺省 "combat_damage"（鸩羽的条件免疫），"all" 为免疫所有伤害（二帚流）；
-        nested = 是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌携带的
-        一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的击杀抽牌）；
-        convert = 毒蚀：本战斗中双方造成的伤害转化为等量破甲（终止点清除标记）；
+        condition 以 {"defender": 被攻击者} 在战斗步骤"确定战斗目标后"求值（（被）
+        攻击时响应结算后按实际交战另一方判定，全卡盘点(4)(7) 鸩羽/致命诱惑；无条件
+        条目在战斗开始时即授）；immunities 为作用域战斗伤害免疫，元素为 (nested,
+        condition, kind)——kind 缺省 "combat_damage"（鸩羽的条件免疫），"all" 为免疫
+        所有伤害（二帚流）；nested = 是否覆盖本战斗内的嵌套战斗）；temp_grants 为战斗牌
+        携带的一次性临时触发（绑定本战斗 id 注册，终止点移除未用者，如不祥之刃的
+        击杀抽牌）；convert = 毒蚀：本战斗中鸩参与（来源或受伤者）的战斗伤害转化为
+        等量破甲（"护甲计算前1"锚点读取，终止点清除登记）；
         counter_piercing = 反击贯通：本战斗中被攻击方的反击伤害具有贯通（终止点清除标记）。
         double_fragile = 义道：仅此战斗中攻击者本人对有破甲的式神造成的战斗伤害翻倍
         （[暴击]时机=扣减生命前2；反击/嵌套/插入战斗不翻倍；终止点清除标记）。
@@ -3094,29 +3141,28 @@ class Game:
         for e in attacker.ext.pop("next_battle_immunities", []):
             attacker.immunities.append({"kind": e.get("kind", "combat_damage"),
                                         "battle": bid, "nested": bool(e.get("nested", True))})
-        # 条件授予/免疫的求值事件：被攻击者 = 战斗目标；无目标时敌方战斗区式神，
-        # 无目标且攻击者持直击（确定目标前1）则为敌方牌手
-        d0 = self.state.players[1 - atk_ref.player]
-        if target is not None:
-            vic0 = target.shikigami
-        elif self._has_keyword(attacker, "direct"):
-            vic0 = None  # 直击：无目标的战斗被攻击者改为敌方牌手
-        else:
-            vic0 = d0.combat_index
-        def_event = {"defender": Ref(player=1 - atk_ref.player, shikigami=vic0)}
+        # 条件授予/免疫（鸩羽/致命诱惑"若攻击有破甲的角色"，Step.condition 以
+        # {"defender": 被攻击者} 求值）：不在战斗开始求值——全卡盘点(4)(7) 定案为
+        # 战斗步骤"确定战斗目标后"（（被）攻击时响应结算完、被攻击者按实际交战
+        # 另一方重读后）判定，挂账延后（_battle_flow 读取；响应获护甲失去破甲/
+        # 甜蜜的负担换人按响应后状态判定）。无条件条目（cond=None）照常即授。
+        pend_kw: list[tuple[str, dict]] = []
+        pend_im: list[tuple[bool, dict, str]] = []
         for kw, cond in grant_keywords:
-            if cond is not None and not self._match(cond, def_event, atk_ref.player,
-                                                    holder=atk_ref):
-                continue  # 条件不满足（如被攻击者无破甲）：不授予
+            if cond is not None:
+                pend_kw.append((kw, cond))
+                continue
             cls = self._grant_keyword(attacker, kw)
             grants.append((atk_ref, kw, cls))
         for nested, cond, kind in immunities:
-            if cond is not None and not self._match(cond, def_event, atk_ref.player,
-                                                    holder=atk_ref):
+            if cond is not None:
+                pend_im.append((nested, cond, kind))
                 continue
             attacker.immunities.append({"kind": kind, "battle": bid, "nested": nested})
+        if pend_kw or pend_im:
+            self._battle_cond_pending[bid] = (pend_kw, pend_im)
         if convert:
-            self._battle_convert.add(bid)  # 毒蚀：伤害→破甲转化（伤害管线读取）
+            self._battle_convert[bid] = atk_ref  # 毒蚀：伤害→破甲转化（伤害管线读取，参与者=鸩）
         if counter_piercing:
             self._battle_counter_piercing.add(bid)  # 反击贯通（反击事件生成/贯通修正读取）
         if double_fragile:
@@ -3136,16 +3182,21 @@ class Game:
                 st = self.state.players[ref.player].shikigami[ref.shikigami]
                 self._remove_keyword(st, kw, cls)
             self._battle_grants.pop(bid, None)
+            self._battle_cond_pending.pop(bid, None)  # 条件授予/免疫延后挂账随战斗终止清理
             # 响应战斗牌插入使用授予的战力核销（持续到该次战斗后）
             for ref, pw in self._battle_power.pop(bid, []):
                 st = self.state.players[ref.player].shikigami[ref.shikigami]
                 st.combat_power -= pw
+            # buff_power scope="battle" 的临时力量增减核销（"直到本次战斗后"）
+            for ref, pw in self._battle_temp_power.pop(bid, []):
+                st = self.state.players[ref.player].shikigami[ref.shikigami]
+                st.temp_power -= pw
             for pl in self.state.players:
                 for st in pl.shikigami:
                     st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
             # 移除本战斗绑定的一次性临时触发（已触发完的已随 uses 归零移除）
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
-            self._battle_convert.discard(bid)  # 毒蚀转化标记随战斗结束清除
+            self._battle_convert.pop(bid, None)  # 毒蚀转化标记随战斗结束清除
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
             self._battle_double_fragile.pop(bid, None)  # 义道破甲双倍标记随战斗结束清除
             self._battle_strikes.pop(bid, None)  # 多段攻击登记随战斗结束清除
@@ -3294,6 +3345,22 @@ class Game:
         # （rules.md「被攻击者随敌方战斗区式神改变而变更」）；有目标/直击者不变
         if target is None and not self._has_keyword(attacker, "direct"):
             vic_idx = d.combat_index
+        # 战斗牌条件授予/免疫的"确定战斗目标后"求值（全卡盘点(4)(7)：鸩羽条件免疫/
+        # 致命诱惑条件吸血——白骨之盾响应获护甲失去破甲则不免疫；甜蜜的负担换人按
+        # 实际交战另一方判定）
+        bid0 = self._battle_stack[-1]
+        pend = self._battle_cond_pending.get(bid0)
+        if pend:
+            def_event = {"defender": Ref(player=def_pi, shikigami=vic_idx)}
+            for kw, cond in pend[0]:
+                if self._match(cond, def_event, atk_ref.player, holder=atk_ref):
+                    cls = self._grant_keyword(attacker, kw)
+                    self._battle_grants[bid0].append((atk_ref, kw, cls))
+            for nested, cond, kind in pend[1]:
+                if self._match(cond, def_event, atk_ref.player, holder=atk_ref):
+                    attacker.immunities.append({"kind": kind, "battle": bid0,
+                                                "nested": nested})
+            self._battle_cond_pending.pop(bid0, None)
         # 重读攻击方战斗关键字快照与动态身材缓存（使用点读取）："攻击时获得[先攻]"类
         # （火吻之蛇，on_before_assault 监听授予）才能赶上本场战斗的先攻判定
         piercing = self._has_keyword(attacker, "piercing")
@@ -3444,8 +3511,9 @@ class Game:
         # ---- 战斗后 ----
         self.emit("on_after_assault", attacker=atk_ref, battle=self._battle_stack[-1])
         # ---- 战斗结束后：蚀刃毒羽"攻击时"登记的一次性破甲回赋（维护者答复(2)）----
-        for echo_ref, echo_amount in self._battle_echo.pop(self._battle_stack[-1], []):
-            self._change_shield(echo_ref, echo_amount, "蚀刃毒羽", kind="fragile")
+        for echo_ref, echo_amount, echo_src in self._battle_echo.pop(self._battle_stack[-1], []):
+            self._change_shield(echo_ref, echo_amount, "蚀刃毒羽", kind="fragile",
+                                source=echo_src)
         # 攻击替换（烬染不夜）视为本次攻击未正常完成：不发 on_battle_end（裁决(10)）
         return not replace_marker["active"]
 
@@ -3840,14 +3908,19 @@ class Game:
         pi = self.state.players.index(p)
         # form_changed：无当前形态或新旧形态不同（萤草"使用与当前形态不同的形态牌时"）
         self.emit("on_form_attached", player=pi, shikigami=i, uid=card.uid,
-                  target=Ref(player=pi, shikigami=i), card=card,
+                  target=Ref(player=pi, shikigami=i), card=card, card_id=card.id,
                   form_changed=(old_form_id != card.id))
 
     def _play_form_card(self, p: PlayerState, si: int, card: CardInstance,
-                        cdef: CardDef, controller: int, chosen: list[Ref]) -> None:
+                        cdef: CardDef, controller: int, chosen: list[Ref],
+                        pre_play_form: bool = False) -> None:
         """形态牌结附（主动使用与响应插入使用共用）：从手牌/原区域移除（不进入任何区域），
         以该卡牌数据给式神结附形态；形态离场时变为卡牌并置入墓地。此过程不是“卡牌移动事件”。
         随后结算形态牌的进场时效果（effects 块；可用打出时的选择目标，如尘缚之阵授予激怒）。
+        pre_play_form = 打出前来源式神已结附形态（主动使用路径快照；全卡盘点(11)
+        福寿双全[增强]"座敷童子结附形态牌时…使用时抽一张牌"按使用时状态判定——
+        形态牌先结附后结算效果，执行时已结附本形态恒真）——经 ctx.event 供
+        Step.condition 的 pre_play_form 键读取；效果外生成/响应插入使用为 False。
         实例修饰 revive_on_play：气绝中使用该形态时先复活来源式神（罗生门强化项）。
         """
         s = p.shikigami[si]
@@ -3859,7 +3932,8 @@ class Game:
             self._resolve_block(cdef.effects, ExecContext(
                 controller=controller,
                 source=Ref(player=controller, shikigami=si),
-                card=card, chosen=chosen))
+                card=card, chosen=chosen,
+                event={"pre_play_form": pre_play_form}))
 
     def _destroy_form(self, p: PlayerState, i: int, reason: str) -> None:
         """消灭式神当前结附的形态牌：形态牌进入墓地，基础身材恢复为式神原本身材。
@@ -3876,7 +3950,7 @@ class Game:
         # 形态离场事件在状态变更前发出（延时时机：先触发后执行）——离场形态自身的
         # 形态能力此时仍可收集（碧羽散华的离场清除标记）；结算时形态已离场
         self.emit("on_form_destroyed", player=pi, shikigami=i,
-                  uid=old.uid, reason=reason,
+                  uid=old.uid, reason=reason, card_id=old.id,
                   target=Ref(player=pi, shikigami=i), card=old)
         s.form = None
         s.ability_entry.pop("form", None)  # 形态能力离场（进场序号一并失效）
@@ -4660,13 +4734,7 @@ class Game:
                         self._log(f"{self.db.shikigami[src0.id].name} 不能对结附"
                                   f"【{e['value']}】的式神造成伤害，本次伤害无效")
                         return
-        # 毒蚀转化（维护者答复(5)）：伤害事件生成点全额转化为等量破甲——护甲不再
-        # 先吸收，不再视为伤害（无扣减/气绝/吸血/on_damage）。converted=True 的伤害
-        # （碧羽散华破甲→伤害的嵌套事件）不再转化，防止转化类效果来回循环。
-        if not ev.converted and any(b in self._battle_convert for b in self._battle_stack):
-            self._change_shield(ev.victim, ev.amount, "毒蚀", kind="fragile")
-            self._log(f"伤害转化为 {ev.amount} 点破甲（毒蚀）")
-            return
+        # 毒蚀转化已移至"护甲计算前1"锚点（全卡盘点(6)，见下方批次）；此处仅余
         # 清姬伤害转化（基础/觉醒共用，伪关键字 damage_to_fragile 永久通道——先天关键字
         # 按永久类别入列，死亡不清）：来源式神持标记且受伤者无破甲 → 伤害事件生成点
         # 全额转化为等量破甲（不再视为伤害：无扣减/气绝/吸血/on_damage）
@@ -4676,7 +4744,8 @@ class Game:
                     "damage_to_fragile")):
             holder0 = s if s is not None else p
             if holder0.shield >= 0:
-                self._change_shield(ev.victim, ev.amount, "清姬", kind="fragile")
+                self._change_shield(ev.victim, ev.amount, "清姬", kind="fragile",
+                                    source=ev.source)
                 self._log(f"伤害转化为 {ev.amount} 点破甲（清姬）")
                 return
         # 批次 1：造成/受到伤害开始时（即时时机）；流程起点晚于本批次的事件
@@ -4756,6 +4825,20 @@ class Game:
             if ev.pre_shield_zero and ev.amount > 0:
                 ev.amount = 0
                 self._log(f"{self.db.shikigami[s.id].name} 的森罗之阵挡下了本次伤害")
+                return
+            # 毒蚀转化（全卡盘点(6)）：鸩参与（作为来源或受伤者）的战斗伤害在
+            # "护甲计算前1"转化为等量破甲——受伤者改为获得等量破甲、伤害值改为 0
+            # （不再视为伤害：无扣减/气绝/吸血/on_damage）；转化后获得的破甲事件的
+            # 来源/执行者 = 原伤害来源（鸩造成伤害时=鸩，鸩受伤时=对方式神）。
+            # 早于"护甲计算后"的伤害量修正/伤害转移；converted=True 的事件
+            # （碧羽散华破甲→伤害的嵌套事件）不再转化，防止转化类效果来回循环。
+            conv = next((self._battle_convert[b] for b in reversed(self._battle_stack)
+                         if b in self._battle_convert), None)
+            if (conv is not None and not ev.converted and ev.kind == "combat"
+                    and (ev.source == conv or ev.victim == conv)):
+                self._change_shield(ev.victim, ev.amount, "毒蚀", kind="fragile",
+                                    source=ev.source)
+                self._log(f"伤害转化为 {ev.amount} 点破甲（毒蚀）")
                 return
             self._emit_damage_batch("on_pre_shield_1", ev)
             if ev.amount <= 0:
@@ -6352,9 +6435,10 @@ class Game:
             if isinstance(params.get(num_key), dict):
                 raw_num = params[num_key]
                 if any(raw_num.get(k) == "target"
-                       for k in ("health_of", "half_health_of")):
+                       for k in ("health_of", "half_health_of", "power_of")):
                     # 逐目标动态数值（凋零之森"对他所有角色造成等同于他自身一半生命
-                    # 的伤害"）：不以来源/事件预解析，原样传字典由 op 逐目标求值
+                    # 的伤害"、和气满满"减少等同此时力量的力量"）：不以来源/事件
+                    # 预解析，原样传字典由 op 逐目标求值
                     continue
                 # 动态数值（enhance 快照 / shield_of / power_of / ext / 事件引用等）：
                 # 以 ctx 来源式神与触发事件求值（援护/古尘之壁/鸩觉醒/毒之华）；

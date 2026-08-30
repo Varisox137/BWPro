@@ -8,8 +8,9 @@ versions:
       rarity: SR
       level: 1
       effects:
-        # battle_immunity step 由战斗牌流程提取、绑定本次战斗；Step.condition 在战斗
-        # 开始时以 {"defender": 被攻击者} 求值（"若攻击有破甲的角色"）
+        # battle_immunity step 由战斗牌流程提取、绑定本次战斗；Step.condition 在战斗步骤
+        # "确定战斗目标后"以 {"defender": 被攻击者} 求值（全卡盘点(4)："若攻击有破甲的
+        # 角色"——响应获护甲失去破甲的场合不免疫）
         steps:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: battle_immunity, target: {kind: self}, condition: {defender_has_fragile: true}}

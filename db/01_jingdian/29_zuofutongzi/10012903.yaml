@@ -10,20 +10,25 @@ versions:
       form_power: 4
       form_health: 5
       conditional_keywords:
-        # "结附形态牌时"=现有 has_form 条件语义（在座即视为已结附），文本按 raw 规范化
+        # "结附形态牌时"=使用时检查（在座即视为已结附；打出前判定——形态先结附后
+        # 结算，conditional_keywords 费用时点读取），文本按 raw 规范化
         - {keyword: fast, shikigami_has_form: 100129}
       effects:
         steps:
-          # 增强同条件：使用时抽一张牌
-          - {op: draw, count: 1, condition: {shikigami_has_form: 100129}}
-          # 进场时双方各获得1点鬼火（gain_orb side 参数为契约外扩展，需引擎侧支持）
-          - {op: gain_orb, amount: 1, side: self}
-          - {op: gain_orb, amount: 1, side: opponent}
+          # 增强同条件：使用时抽一张牌——按打出前快照（pre_play_form，全卡盘点(11)：
+          # 只在使用时检查是否具有形态；执行时（本形态已结附）无形态也照抽）
+          - {op: draw, count: 1, condition: {pre_play_form: true}}
       abilities:
-        # 离场时双方各+1鬼火——仅形态被替换离场触发（reason=replace 已有挂点，
-        # _attach_form 旧形态以 "replace" 消灭；气绝导致消灭不触发，规则要点）
+        # 进场/离场时双方各+1鬼火——触发条件类似觉醒·一目连（全卡盘点(11)：
+        # 任意原因消灭均含；on_form_attached/on_form_destroyed 均延时时机，
+        # 离场形态自身能力在状态变更前仍可收集；card_id 限定本牌）
+        - when: on_form_attached
+          condition: {target_shikigami: self, card_id: 10012903}
+          steps:
+            - {op: gain_orb, amount: 1, side: self}
+            - {op: gain_orb, amount: 1, side: opponent}
         - when: on_form_destroyed
-          condition: {target_shikigami: self, reason: replace}
+          condition: {target_shikigami: self, card_id: 10012903}
           steps:
             - {op: gain_orb, amount: 1, side: self}
             - {op: gain_orb, amount: 1, side: opponent}

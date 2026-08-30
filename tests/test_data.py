@@ -793,12 +793,18 @@ def test_awaken_countdown_one(real_game):
 
 def test_method_requires_awaken_gating(real_game):
     """黄金羽以敌方角色为目标（答复(11)）：未觉醒门控 IllegalAction；觉醒后可狙击
-    式神或牌手 2 伤。"""
+    式神或牌手 2 伤。全卡盘点(1)：觉醒能力在场时常规（无目标打敌方牌手）方式被
+    替换（replaces_base），usage_options 与出牌校验同口径。"""
     g, pa, pb = _game(real_game, YJZT_TEAM, {IDX: 2})
     wolf = Ref(player=1, shikigami=1)
     with pytest.raises(IllegalAction):
         _play_method(g, 0, FEATHER, "snipe", wolf)   # 未觉醒：门控拒绝
     play(g, 0, YJZT_AWAKEN)
+    feather = next(c for c in pa.hand if c.id == FEATHER)
+    base = next(o for o in g.usage_options(0, feather) if o["id"] is None)
+    assert not base["ok"]                      # 常规方式被替换（需指定目标）
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": feather.uid})   # 无方式出牌被拒
     _play_method(g, 0, FEATHER, "snipe", wolf)       # 觉醒后：瞬发免费狙击式神
     assert pb.shikigami[1].health == 2
     _play_method(g, 0, FEATHER, "snipe", Ref(player=1))  # 也可狙击敌方牌手
@@ -1051,23 +1057,79 @@ def test_lifesteal_denied_without_fragile(real_game):
     assert pa.shikigami[IDX].health == 5      # +2 护甲吸收反击 1
 
 
+def test_battle_condition_evaluated_after_responses(real_game):
+    """全卡盘点(4)：鸩羽条件免疫在战斗步骤"确定战斗目标后"求值——（被）攻击时响应
+    使被攻击者获得护甲、不再持有破甲的场合（白骨之盾同型），鸩不免疫战斗伤害。"""
+    g, pa, pb = _game(real_game, ZHEN_TEAM)
+    g.db.cards[10010251] = F.card(            # 白骨之盾同型工厂响应卡（兵俑持有）
+        10010251, shikigami=100102, token=True, keywords=["trigger"],
+        steps=[Step(op="gain_shield", amount=4, target=TargetSpec(kind="self"))],
+        response=EffectBlock(
+            when="on_before_assault",
+            condition={"victim_side": "friendly", "victim_kind": "shikigami"},
+            steps=[Step(op="gain_shield", amount=4, target=TargetSpec(kind="self"))]))
+    pb.orb = 9
+    pb.shikigami[2].shield = -1               # B 兵俑（1/6）持 1 破甲
+    move(g, 1, 2)
+    give(g, 1, 10010251)
+    play(g, 0, ZY)                            # 鸩羽：鸩 2+2=4 攻 → 响应兵俑 +4 护甲
+    bing = pb.shikigami[2]
+    assert bing.shield == 0 and bing.health == 5   # 破甲被护甲冲销（-1+4=3 吸收 3），余 1 伤
+    assert pa.shikigami[IDX].health == 4      # 响应后无破甲 → 不免疫，反击 1 正常扣血
+
+
+ZMYH_TEAM = [100128, 100120, 100101, 100123]  # 鸩 + 跳跳弟弟（甜蜜的负担响应换人；苍叶+红莲）
+
+
+def test_lifesteal_condition_after_response_swap(real_game):
+    """全卡盘点(7)：致命诱惑条件吸血按（被）攻击时响应结算后的实际交战另一方
+    判定——攻击有破甲的敌方牌手被甜蜜的负担换人（跳跳弟弟无破甲）→ 无吸血；
+    换人后跳跳弟弟持有破甲 → 获得吸血。"""
+    # ① 牌手有破甲、跳跳弟弟无破甲：响应换人后无吸血
+    g, pa, pb = _game(real_game, ZMYH_TEAM, {IDX: 2})
+    pa.health = 20
+    pb.orb = 9
+    pb.shikigami[1].level = 2                 # 甜蜜的负担 level 2
+    pb.shield = -2                            # B 牌手持 2 破甲（战斗区空）
+    give(g, 1, 10012006)
+    play(g, 0, ZMYH)                          # 攻击 B 牌手 → 响应换人：跳跳弟弟入战斗区
+    assert any(c.id == 10012006 for c in pb.graveyard)   # 响应已用
+    assert pb.shikigami[1].health == 5        # 跳跳弟弟 9-4（鸩 2+2）
+    assert pa.health == 20                    # 实际交战方无破甲 → 无吸血
+    # ② 换人后的跳跳弟弟持有破甲：获得吸血
+    g, pa, pb = _game(real_game, ZMYH_TEAM, {IDX: 2})
+    pa.health = 20
+    pb.orb = 9
+    pb.shikigami[1].level = 2
+    pb.shikigami[1].shield = -1
+    give(g, 1, 10012006)
+    play(g, 0, ZMYH)
+    assert pb.shikigami[1].health == 4        # 4+1=5 伤
+    assert pa.health == 25                    # 吸血：恢复 5（伤害值）
+
+
 # ---------- 07 碧羽散华：获得破甲→伤害 ----------
 
 def test_fragile_gain_converts_to_damage(real_game):
-    """结附期间：敌方式神获得破甲转化为等量伤害；形态离场（替换）后标记清除。
-    （20200120 版无条件转化；默认环境=最新）"""
+    """结附期间：来源为鸩的破甲使敌方式神获得破甲转化为等量伤害；形态离场（替换）
+    后标记清除。（20200120 版无条件转化；默认环境=最新；全卡盘点(9) 来源过滤）"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 3})
     play(g, 0, BYSH)
     wolf = pb.shikigami[1]
-    g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile")
+    zhen = Ref(player=0, shikigami=IDX)
+    g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile", source=zhen)
     assert wolf.health == 1 and wolf.shield == 0      # 3 破甲 → 3 伤害
-    g._change_shield(Ref(player=1), 2, "test", kind="fragile")
+    g._change_shield(Ref(player=1), 2, "test", kind="fragile", source=zhen)
     assert pb.shield == 0 and pb.health == 28          # 牌手同样转化（维护者答复(1)）
+    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile",
+                     source=Ref(player=0, shikigami=1))
+    assert wolf.shield == -2 and wolf.health == 1      # 非鸩来源（白狼）：不转化
+    wolf.shield = 0
     play(g, 0, JLXX)                                   # 替换形态 → 旧形态离场清除标记
-    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile")
+    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile", source=zhen)
     assert wolf.shield == -2 and wolf.health == 1      # 不再转化
     h, sh = pb.health, pb.shield
-    g._change_shield(Ref(player=1), 2, "test", kind="fragile")
+    g._change_shield(Ref(player=1), 2, "test", kind="fragile", source=zhen)
     assert pb.health == h and pb.shield == sh - 2      # 牌手也不再转化
 
 
@@ -1081,9 +1143,10 @@ def test_fragile_gain_converts_only_if_already_fragile(gdb):
     play(g, 0, BYSH)
     wolf = pb.shikigami[1]
     wolf.base_health = wolf.health = 20       # 撑住转化伤害便于观察净效果
-    g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile")
+    zhen = Ref(player=0, shikigami=IDX)
+    g._change_shield(Ref(player=1, shikigami=1), 3, "test", kind="fragile", source=zhen)
     assert wolf.shield == -3 and wolf.health == 20     # 无破甲者：正常获得，不转化
-    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile")
+    g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile", source=zhen)
     assert wolf.shield == 0 and wolf.health == 15      # 已有破甲：2 破甲 → 2+3 伤害，破甲随受伤清除
 
 

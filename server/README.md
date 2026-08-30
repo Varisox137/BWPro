@@ -11,8 +11,24 @@
   卡组保存于浏览器 localStorage，合法性校验走 HTTP API；
 - **联机对战**：页面本身即 /ws 协议的一个 WebSocket 客户端（client 标识
   沿用 `BWPro-CLI` 前缀软门槛），支持创建/加入房间、准备流程、场况渲染、
-  点击出牌（需目标时点选目标）、拖拽己方式神到敌方区域出击、结束回合、
-  断线凭房间代码+重连令牌恢复。
+  拖拽己方式神到敌方区域出击、结束回合、断线凭房间代码+重连令牌恢复。
+  对局内可操作性与 CLI 基本持平：
+  - **出牌**：点击手牌 → 按服务端 usage 枚举选择使用方式（常规/爆能等，
+    协战牌先选子选项，不合法项灰显附原因）→ 需目标时点选目标，
+    双选择目标卡（target2）依次点选两个目标；
+  - **手牌展示**：实时费用/关键字/数值段（战斗牌力量与护甲、形态身材、
+    增强计数、委托进度）/使用方式列——全部为服务端求值结果
+    （state 附带 `hand_info`，见下），前端不做规则计算；
+  - **结算播放**：对局日志区滚动播放合并时间线（timeline，结算/叙事按真实
+    发生顺序合流，嵌套块层级缩进，与 CLI `format_timeline_lines` 同口径）；
+  - **交互选择**：pending_choice 弹窗作答（检视选牌/弃牌/牌名/召唤幻境/
+    生成入手/委托/灵咒结附），作答键（uid/choice）按 CLI 分支对齐。
+
+state 的 payload 附带 `hand_info`（仅己方手牌，键为 uid 字符串）：
+`{cost, keywords, stats, enhance, quest, playable, usage}`——usage 为
+`Game.usage_options` 枚举原样（`id/label/cost/energy/ok/reason/effect`，
+常规 id=null、协战子选项 id="choice:<i>"）。求值函数与 CLI 同源
+（`client/cli.py hand_cards_info`），在 `server/room.py` 广播/重连补发时注入。
 
 HTTP API：`GET /gui/api/catalog?env=<别名或日期>`（环境目录）、
 `POST /gui/api/validate_deck`、`POST /gui/api/deckcode/import|export`。
