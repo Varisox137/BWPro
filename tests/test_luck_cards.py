@@ -562,7 +562,8 @@ def test_bump_ext_perm_bonus_via_shikigami_ext(gdb, monkeypatch):
 
 def test_repeat_random_damage_stop_on_defeat(gdb, monkeypatch):
     """无羁风弹（repeat_random_damage）：双方其他未气绝式神逐次随机打 2（插入结算），
-    任一式神气绝即停；无人气绝打满 10 次（合计 20 伤、池不含妖狐自身）。"""
+    任一式神气绝即停；无人气绝打满 10 次（合计 20 伤、池不含施放者妖狐自身，
+    敌方妖狐不豁免——维护者修正）。"""
     g, pa, pb = _game(gdb, YH_TEAM, levels={IDX: 2})
     for p in (pa, pb):
         for s in p.shikigami:
@@ -575,6 +576,25 @@ def test_repeat_random_damage_stop_on_defeat(gdb, monkeypatch):
     total_after = sum(max(s.health, 0) for p in (pa, pb) for s in p.shikigami)
     assert total_before - total_after == 20    # 10 次 × 2
     assert pa.shikigami[IDX].health == yaohu_hp
+
+
+def test_repeat_random_damage_exempts_only_caster(gdb, monkeypatch):
+    """无羁风弹目标池仅豁免使用此牌的妖狐自身——敌方妖狐在池可被选中（维护者修正）。"""
+    g, pa, pb = _game(gdb, YH_TEAM, levels={IDX: 2})   # 镜像队：敌方也有妖狐
+    for p in (pa, pb):
+        for s in p.shikigami:
+            s.base_health = s.health = 50
+    _force_dice(monkeypatch, g, [1])
+    pools = []
+    real_choice = g.rng.choice
+    monkeypatch.setattr(g.rng, "choice",
+                        lambda seq: (pools.append(list(seq)), real_choice(seq))[1])
+    play(g, 0, WUJI)
+    assert pools
+    caster = Ref(player=0, shikigami=IDX)
+    enemy_yaohu = Ref(player=1, shikigami=IDX)
+    assert all(caster not in pool for pool in pools)        # 施放者始终豁免
+    assert any(enemy_yaohu in pool for pool in pools)       # 敌方妖狐在池
 
 
 def test_reuse_card_counts_as_second_play(gdb, monkeypatch):

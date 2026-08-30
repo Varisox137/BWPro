@@ -9,21 +9,12 @@ versions:
       level: 3
       form_power: 5
       form_health: 7
-      effects:
-        # "鸩对有破甲的角色造成的破甲效果转化为等量的伤害"：锚点 ext["fragile_to_damage_if"]
-        # （"获得破甲前"转化，_change_shield 读取——仅当受害者本已持有破甲才转化；
-        # 来源须为受伤者敌方的鸩，转化伤害的来源=该鸩——全卡盘点(9)）；
-        # victim 侧标记与"鸩造成的"等价（标记只挂在敌方——鸩不会给己方上此标记；
-        # 牌手沿用任一式神持标记语义）
-        steps:
-          - {op: bump_ext, key: fragile_to_damage_if, target: {kind: all, pool: enemy_shikigami}}
-      abilities:
-        # 形态离场时清除标记
-        - when: on_form_destroyed
-          condition: {target_shikigami: self}
-          steps:
-            - {op: bump_ext, key: fragile_to_damage_if, amount: -1,
-               target: {kind: all, pool: enemy_shikigami}}
+      # "鸩对有破甲的角色造成的破甲效果转化为等量的伤害"：形态 tags 锚点
+      # fragile_to_damage_if——获得破甲事件的来源是结附本形态的鸩、且受害者本已持有
+      # 破甲时，变化量归 0、立即插入等量伤害（engine._change_shield 读取，全卡盘点(9)
+      # +维护者修正：来源必须是结附该形态的鸩）
+      tags: [fragile_to_damage_if]
+      effects: {steps: []}  # 无进场效果——机制在形态 tags 锚点（engine._change_shield 读取）
       text: 鸩对有破甲的角色造成的破甲效果转化为等量的伤害。
     - date: 20200120
       card_type: form
@@ -31,17 +22,8 @@ versions:
       level: 3
       form_power: 5
       form_health: 7
-      effects:
-        # "鸩造成的破甲效果转化为等量的伤害"：锚点 ext["fragile_to_damage"]
-        # （无条件转化；converted=True 防止与毒蚀的伤害→破甲转化来回循环；
-        # 来源须为受伤者敌方的鸩、转化伤害的来源=该鸩——全卡盘点(9)）
-        steps:
-          - {op: bump_ext, key: fragile_to_damage, target: {kind: all, pool: enemy_shikigami}}
-      abilities:
-        # 形态离场时清除标记（形态替换/被消灭/鸩气绝均触发 on_form_destroyed 前的离场清理）
-        - when: on_form_destroyed
-          condition: {target_shikigami: self}
-          steps:
-            - {op: bump_ext, key: fragile_to_damage, amount: -1,
-               target: {kind: all, pool: enemy_shikigami}}
+      # "鸩造成的破甲效果转化为等量的伤害"：形态 tags 锚点 fragile_to_damage——无条件
+      # 转化（同上锚点；converted=True 防止与毒蚀的伤害→破甲转化来回循环）
+      tags: [fragile_to_damage]
+      effects: {steps: []}  # 无进场效果——机制在形态 tags 锚点（engine._change_shield 读取）
       text: 鸩造成的破甲效果转化为等量的伤害。

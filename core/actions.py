@@ -3455,9 +3455,10 @@ def repeat_random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: st
                          max: int = 10, stop_on_defeat: bool = False) -> None:
     """无羁风弹（targets 忽略）：逐次在 pool 随机 1 名造成 amount 点伤害，插入结算。
 
-    pool="all_other_shikigami"：双方所有未气绝式神中妖狐（按式神 id 甄别，双方妖狐均
-    豁免）以外的目标；每次重新求值（已气绝/濒死者不再是合法目标）。妖狐在此牌使用
-    事件中被变形后，变形实体 id 已非妖狐、回到目标池（全卡盘点(14)）。
+    pool="all_other_shikigami"：双方所有未气绝式神中**使用此牌的妖狐自身**（按来源
+    座次甄别——维护者修正：敌方妖狐不豁免、可能受伤）以外的目标；每次重新求值
+    （已气绝/濒死者不再是合法目标）。妖狐在此牌使用事件中被变形后，变形实体
+    id 已非妖狐、回到目标池（全卡盘点(14)）。
     stop_on_defeat=True：任一式神气绝即停——含已结算气绝与延时气绝（濒死/生命≤0
     标记在伤害落地时即置位，气绝事件延后生成的情形同样命中），或有角色（牌手）
     生命≤0；否则满 max 次即停。多次重复是一段连续效果：触发型能力由事件队列在此牌
@@ -3467,14 +3468,18 @@ def repeat_random_damage(game, ctx, *, targets: list[Ref], amount: int, pool: st
         raise ValueError(f"未知 repeat_random_damage 目标池: {pool}")
     from core.engine import _DamageEvent, _YAOHU_SHIKIGAMI  # 避免模块顶层循环引用
 
+    src = ctx.source
+
     def _refs() -> list[Ref]:
         out: list[Ref] = []
         for pi in (0, 1):
             for i, s in enumerate(game.state.players[pi].shikigami):
                 if not s.in_play or s.dying:
                     continue
-                if s.id == _YAOHU_SHIKIGAMI:
-                    continue  # 不含妖狐（双方；变形后的原妖狐不在豁免之列）
+                if (src is not None and src.shikigami is not None
+                        and pi == src.player and i == src.shikigami
+                        and s.id == _YAOHU_SHIKIGAMI):
+                    continue  # 仅豁免使用此牌的妖狐自身（其被变形后回到池中）
                 out.append(Ref(player=pi, shikigami=i))
         return out
 

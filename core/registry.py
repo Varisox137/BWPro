@@ -55,8 +55,6 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     "yaohu_dmg_bonus": ("shikigami", CLEAR_NEVER),            # 聚气永久加成
     "replace_owner": ("shikigami", CLEAR_NEVER),              # 替换物原式神 id
     "energy_life_substitute": ("shikigami", CLEAR_NEVER),     # 能量生命代偿标记
-    "fragile_to_damage": ("shikigami", CLEAR_NEVER),          # 破甲转化标记（bump_ext）
-    "fragile_to_damage_if": ("shikigami", CLEAR_NEVER),
     "coffin_on_defeat": ("shikigami", CLEAR_ANY_TURN_START),  # 不弃旗标："本回合气绝时
     # 替换为棺材"（值 = 棺材实体数据 id，bump_ext 写入；气绝流程末尾消费）
     "defeated_in_combat": ("shikigami", CLEAR_ON_DEFEAT),     # 本次气绝时是否在战斗区

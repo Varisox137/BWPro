@@ -105,8 +105,6 @@ _HEAL_REVERSAL_BLOCK = EffectBlock(steps=[Step(
 # 妖狐——伤害流程按来源 = 妖狐时计数牌手 ext yaohu_damage_count
 _QINGWA_SHIKIGAMI = 100113
 _YAOHU_SHIKIGAMI = 100130
-# 鸩——碧羽散华"获得破甲前"转化锚点按来源过滤（来源须为受伤者敌方的鸩，全卡盘点(9)）
-_ZHEN_SHIKIGAMI = 100128
 # 不夜之火批次引擎直读的式神 id：日和坊——能量免单（在场已觉醒）与生命代偿（在场基础能力）
 _RIHEFANG_SHIKIGAMI = 100205
 
@@ -3027,37 +3025,29 @@ class Game:
         else:
             # 流程 5：获得——先抵消反向值再盈余同向（获得 5 护甲且持有 3 破甲 → 2 护甲）
             if kind == "fragile":
-                # 碧羽散华锚点（"获得护甲/破甲前"即时时机，全卡盘点(9)）：持有
-                # fragile_to_damage 标记的角色，获得**来源为敌方鸩**的破甲时——变化量
-                # 变为 0（本函数直接返回、不发变化事件），立即插入结算"鸩对其造成
-                # 等量伤害"的伤害事件（converted=True 防止与毒蚀的伤害→破甲转化
-                # 来回循环——转化类效果对同一事件链只生效一次）。维护者答复(1)：
-                # 无论式神/牌手——victim 侧标记挂在敌方式神上，牌手沿用"其任一
-                # 式神持标记"语义
-                zhen_src = (source if (source is not None
-                                       and source.shikigami is not None
-                                       and source.player != ref.player
-                                       and self.state.players[source.player]
-                                           .shikigami[source.shikigami].id
-                                       == _ZHEN_SHIKIGAMI)
-                            else None)
+                # 碧羽散华锚点（"获得护甲/破甲前"即时时机，全卡盘点(9)+维护者修正）：
+                # 获得破甲事件的来源是**当前结附了'碧羽散华'形态的鸩**（在场形态 tags
+                # 甄别，与欢愉之音 shield_gain_boost 同型）时——变化量变为 0（本函数
+                # 直接返回、不发变化事件），立即插入结算"该鸩对其造成等量伤害"
+                # （converted=True 防与毒蚀的伤害→破甲转化来回循环）。
+                # tags=fragile_to_damage_if（20191212 版）仅当受害者本已持有破甲才转化。
+                zhen_src = None
+                if source is not None and source.shikigami is not None:
+                    st = self.state.players[source.player].shikigami[source.shikigami]
+                    if st.in_play and st.form is not None:
+                        ftags = self.db.cards[st.form.id].tags
+                        if "fragile_to_damage" in ftags or (
+                                "fragile_to_damage_if" in ftags and old < 0):
+                            zhen_src = source
                 if zhen_src is not None:
+                    name = (self.db.shikigami[holder.id].name
+                            if ref.shikigami is not None else p.name)
+                    self._log(f"{name} 的破甲转化为 {delta} 点伤害（来源鸩）")
                     if ref.shikigami is not None:
-                        s = p.shikigami[ref.shikigami]
-                        # fragile_to_damage_if：20191212 版碧羽散华——仅当受害者本已有
-                        # 破甲（shield < 0）时才转化（"对有破甲的角色"）
-                        if s.ext.get("fragile_to_damage") or (
-                                s.ext.get("fragile_to_damage_if") and old < 0):
-                            self._log(f"{self.db.shikigami[s.id].name} 的破甲转化为 "
-                                      f"{delta} 点伤害（来源鸩）")
-                            self.deal_to_shikigami(ref, delta, zhen_src, converted=True)
-                            return
-                    elif (any(st.ext.get("fragile_to_damage") for st in p.shikigami)
-                            or (old < 0 and any(st.ext.get("fragile_to_damage_if")
-                                                for st in p.shikigami))):
-                        self._log(f"{p.name} 的破甲转化为 {delta} 点伤害（来源鸩）")
+                        self.deal_to_shikigami(ref, delta, zhen_src, converted=True)
+                    else:
                         self.deal_to_player(ref.player, delta, zhen_src, converted=True)
-                        return
+                    return
             # 欢愉之音型光环（"获得护甲/破甲前2"，维护者定案）：在场形态 tags 含
             # shield_gain_boost 时——其控制者方角色获得护甲 +1；其敌方角色获得破甲 +1
             # （获得量增益，先于"抵消反向值"计算；回合开始清除不走本函数，不受影响）

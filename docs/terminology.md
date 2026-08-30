@@ -221,6 +221,7 @@
 | 过量治疗 | `overheal`（on_heal payload 键） | max(0, 治疗量 − 实际治疗量)；海坊主"过量治疗转化护甲"通道——能力块挂 on_heal 以 {overheal_ge: 1} 门控，转化量取 payload overheal（满血治疗 overheal=全额，照常转化） | ✅ |
 | 治疗反转 | `convert_heal_to_damage`（动作）/ `Game._queue_heal_reversal_damage` / `_HEAL_REVERSAL_BLOCK` | 法界唯心（裁决(10)）：形态能力块挂 on_before_heal（即时）{source_side: friendly, target_side: enemy}——op 把事件可变量 box `heal["amount"]` 置 0（0 量治疗：on_heal 照常触发、on_after_heal 不触发），并按原治疗量延时入队同来源伤害事件（目标=事件 target，kind=effect——转化伤害本身不携带暴击属性不翻倍；若来源式神另持 critical/受伤者带 crit_pierce_mark，按 2026-08"暴击属性与类型解耦"裁决照常翻倍）；对己方目标恢复不受影响。原 tags 标记 `heal_reversal` 通道（引擎 heal() 前置短路、`_field_form_has_tag` 扫描）已拆除 | ✅ |
 | 护甲获得增益标记 | `shield_gain_boost`（tags） | 欢愉之音：其控制者在场形态含此标记时，**其控制者方**角色获得护甲量 +1、**其敌方**角色获得破甲量 +1（gain_shield 结算流程内判定，`_field_form_has_tag` 扫描在场形态 tags） | ✅ |
+| 破甲转化锚点 | `fragile_to_damage` / `fragile_to_damage_if`（形态 tags） | 碧羽散华（全卡盘点(9) 修正）：获得破甲时，仅当破甲**来源**为在场且结附该形态（CardDef.tags 含此锚点）的鸩时，变化量归 0、以该鸩为来源插入等量伤害（`Game._change_shield` 源侧读取，`converted=True` 防与毒蚀循环；`_change_shield` source 参数穿线 gain_shield/transfer_fragile/consolidate_shields/伤害转化/蚀刃毒羽 echo）；`fragile_to_damage_if`=20191212 版追加要求受害者本次获得前已带破甲（old<0），`fragile_to_damage`=20200120 版无条件；其他来源的破甲获得正常获得不转化 | ✅ |
 | 气绝前 1 / 气绝前 2 / 气绝后 | `on_before_defeat` / （`check_defeated` 内联）/ `on_shikigami_defeated` | 气绝事件时机分层（裁决(9)，rules.md 第七章）：**气绝前1**=即时时机 `on_before_defeat`（check_defeated 开头 emit）——大部分能力/响应挂此时机（射怪鸟事/破碎之音/不灭之火/不祥之刃/判官能力/英雄无畏后续等）；**气绝前2**=仅解除变形（check_defeated 内联快照还原）+ 替身（未引入）；**气绝后**=延时时机 `on_shikigami_defeated`，不再按优先度细分——跳跳哥哥"将气绝时变为棺材"（不弃/罡身阵/棺封/棺葬）= 气绝前1 触发、气绝后延时生成变形事件（check_defeated 捕获旗标/形态 tag 后把 to_coffin 追加为该气绝事件队列收尾待结算项）；棺击增益挂此时机 | ✅ |
 | 使用手牌前 | `on_before_hand_play` / `on_before_card_play` / `nullify_card_play`（动作） | 双即时时机（全卡盘点(19)）：手牌来源的使用（主动/响应/from_hand 自动使用）先发 `on_before_hand_play`（魔音扰心响应挂点），再发 `on_before_card_play`（任意方式均发；payload 另带 `already_nullified`/`play_from`）；两事件共享同一可变标记，`nullify_card_play` 置位 `nullified` 终止该次使用（牌入墓地、跳过效果与 on_card_played）；"一次性无效化"能力用 `delay_grant(scope="turn", unique=True)` 表达（魔音扰心，[唯一]替换不叠加 + already_nullified 门控不重复消耗） | ✅ |
 | 变为（卡牌） | `transformed`（card_mods/mods 键） | 同名牌视为新牌：打出装配改读 `alt_effects`、关键字减 `alt_remove_keywords`（正义之必胜类"本局每……变为"用 triggers + add_mod(to=persistent, key=transformed) 表达） | ✅ |
@@ -335,8 +336,6 @@
 |---|---|---|
 | `countdown_history` | `PlayerState.ext` | 本局倒计时能力生效序列（归零生效后追加来源 id：基础=式神 id / 觉醒=觉醒牌 id / 形态=形态牌 id；大合奏、风韵雅乐用） |
 | `recorded_card` | `ShikigamiState.ext` | 大天狗记录的法术牌数据 id（`set_countdown(record=True)` 写入；气绝丢失） |
-| `fragile_to_damage` | `ShikigamiState.ext` | 获得破甲转化为等量伤害（"获得破甲前"锚点，`Game._change_shield` 读取；碧羽散华用；答复(1)：牌手获得破甲同样转化——其任一式神持标记即生效；全卡盘点(9)：**仅当破甲来源是受伤者敌方的鸩时才转化**，转化伤害的来源=该鸩——其他来源的破甲获得正常获得不转化；`_change_shield` source 参数穿线 gain_shield/transfer_fragile/consolidate_shields/伤害转化/蚀刃毒羽 echo） |
-| `fragile_to_damage_if` | `ShikigamiState.ext` | 条件破甲转化：仅当受害者当前已带破甲（shield<0）时，本次新获得破甲才转化为等量伤害（20191212 碧羽散华"若目标已有破甲"；锚点同 `fragile_to_damage`，`Game._change_shield` 读取；牌手分支同理） |
 | `feather_used_game` / `feather_used_turn` | `PlayerState.ext` | 黄金羽（tags 标记）牌使用计数：本局累计 / 本回合（己方回合开始清除；黄金羽动态免费与计数触发用） |
 | `zhen_proc` | `ShikigamiState.ext` | 鸩 x：基础+觉醒倒计时能力生效合计（倒计时块内 bump_ext step 累加；气绝不清、跨气绝保留，觉醒后继续累加） |
 | `turn_marks` | `PlayerState.ext` | "每回合合计一次"标记表（turn_mark 写入，任一回合开始双方清除；寂寥心象用） |
@@ -405,7 +404,7 @@
 | 运势门控 | `luck`（EffectBlock） | 触发式块的运势判定门控：`luck: X`（int）= 判定成功才结算块 steps；`luck: {"x": X, "on": "fail"}` = 判定失败才结算（家内安全/和气满满）；判定者默认控制者；并行入队/同步推进由引擎 `_run_luck_events` 负责 | ✅ |
 | 运势事件 | `on_luck_judge` / `on_luck_success` / `on_luck_effect_after` | 判定时（即时，payload 含可变运势事件 dict luck——重投改写其骰点）/ 判定后（延时，成功才发；翻倍标记下各 handler 追加一次，排除翻倍提供者自身能力与响应/临时触发）/ 生效后（延时，预留）。时机序列见 rules.md 第二十七章 | ✅ |
 | 直接获胜 | `win_game`（动作） | 目标牌手获得本局游戏胜利（target=self=控制者胜）：`_set_pending_end(loser=对方)` 走待结束流程，非气绝判负（这把算我赢增强变后） | ✅ |
-| 逐次随机伤害 | `repeat_random_damage`（动作） | 逐次在 pool 随机 1 名造成 amount 点伤害、插入结算、每次重新求值目标池（无羁风弹；pool="all_other_shikigami"=双方未气绝式神中**按式神 id 豁免妖狐**——双方妖狐均不入池，妖狐在事件中被变形后新实体 id 非妖狐、回到目标池，全卡盘点(14)）：停止条件其一——满 max 次 / 有角色（牌手）生命≤0 / stop_on_defeat=True 时任一式神气绝（**含延时气绝**：濒死/生命≤0 标记在伤害落地时即置位、气绝事件延后生成的情形同样命中）；多次重复是一段连续效果，触发式能力由事件队列在整牌结算完后统一排水 | ✅ |
+| 逐次随机伤害 | `repeat_random_damage`（动作） | 逐次在 pool 随机 1 名造成 amount 点伤害、插入结算、每次重新求值目标池（无羁风弹；pool="all_other_shikigami"=双方未气绝式神中**仅豁免施放者妖狐**（按来源座次）——敌方妖狐可被选中，施放者在事件中被变形后新实体 id 非妖狐、回到目标池，全卡盘点(14) 修正）：停止条件其一——满 max 次 / 有角色（牌手）生命≤0 / stop_on_defeat=True 时任一式神气绝（**含延时气绝**：濒死/生命≤0 标记在伤害落地时即置位、气绝事件延后生成的情形同样命中）；多次重复是一段连续效果，触发式能力由事件队列在整牌结算完后统一排水 | ✅ |
 | 再次使用本牌 | `reuse_card`（动作） | 法术→凭空自动使用管线同目标重结算（实例标记 `_reused` 防自循环，恰好两次——叠风斩）；照常 emit on_card_played（triggered=auto，可再触发"使用牌时"能力）。（转运的延时复用已改走 auto_use delayed 通道，见「凭空自动使用」行） | ✅ |
 | 复仇复制 | `echo_event_card`（动作） | 读事件中被用的卡牌，以**监听控制者**身份凭空复制使用（不耗火、不做等级/目标合法性/[条件]检查；目标强制=施法者自身在场式神，中立牌/施法者离场/无 choose 目标则无目标使用）；用后进墓地，照常 emit on_card_played（play_from=void、triggered=auto、带 chosen 载荷）；帷幕再校验与一切卡牌使用一致（记仇；on_card_played payload 新增 `chosen` 字段配套） | ✅ |
 | 条件回手 | `bounce_self`（动作） | 此牌结算完毕在墓地时移回手牌（与 rebound 同走 move_card 统一路径，超上限按爆牌转墓地）；配 step 级条件即"条件回手"（蛇行击 20191212"目标有破甲则移回手上"） | ✅ |

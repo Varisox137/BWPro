@@ -1111,8 +1111,9 @@ def test_lifesteal_condition_after_response_swap(real_game):
 # ---------- 07 碧羽散华：获得破甲→伤害 ----------
 
 def test_fragile_gain_converts_to_damage(real_game):
-    """结附期间：来源为鸩的破甲使敌方式神获得破甲转化为等量伤害；形态离场（替换）
-    后标记清除。（20200120 版无条件转化；默认环境=最新；全卡盘点(9) 来源过滤）"""
+    """结附期间：来源为结附碧羽散华的鸩的获得破甲事件转化为等量伤害；形态离场（替换）
+    后不再转化。（20200120 版无条件转化；默认环境=最新；全卡盘点(9)+维护者修正：
+    来源必须是结附该形态的鸩——形态 tags 锚点）"""
     g, pa, pb = _game(real_game, ZHEN_TEAM, {IDX: 3})
     play(g, 0, BYSH)
     wolf = pb.shikigami[1]
@@ -1123,9 +1124,9 @@ def test_fragile_gain_converts_to_damage(real_game):
     assert pb.shield == 0 and pb.health == 28          # 牌手同样转化（维护者答复(1)）
     g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile",
                      source=Ref(player=0, shikigami=1))
-    assert wolf.shield == -2 and wolf.health == 1      # 非鸩来源（白狼）：不转化
+    assert wolf.shield == -2 and wolf.health == 1      # 来源未结附该形态（白狼）：不转化
     wolf.shield = 0
-    play(g, 0, JLXX)                                   # 替换形态 → 旧形态离场清除标记
+    play(g, 0, JLXX)                                   # 替换形态 → 鸩不再结附碧羽散华
     g._change_shield(Ref(player=1, shikigami=1), 2, "test", kind="fragile", source=zhen)
     assert wolf.shield == -2 and wolf.health == 1      # 不再转化
     h, sh = pb.health, pb.shield

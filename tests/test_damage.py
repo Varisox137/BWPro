@@ -160,22 +160,25 @@ def test_turn_start_clears_both_directions(db, make_game):
 
 
 def test_fragile_to_damage_anchor(db, make_game):
-    """碧羽散华锚点（全卡盘点(9)）：ext 持 fragile_to_damage 标记的式神获得**来源为
-    敌方鸩**的破甲时——变化量变为 0，改为受到等量伤害（伤害来源=鸩）；非鸩来源的
-    破甲不转化。"""
+    """碧羽散华锚点（全卡盘点(9)+维护者修正）：获得破甲事件的来源是**结附了
+    fragile_to_damage 形态（碧羽散华）的式神**时——变化量变为 0，改为受到等量伤害
+    （伤害来源=该形态持有者）；其他来源的破甲照常获得、不转化。"""
+    from core.model import CardInstance
+    cid = 10010155
+    db.cards[cid] = F.card(cid, shikigami=100102, card_type="form", level=1, token=True,
+                           form_power=0, form_health=2, tags=["fragile_to_damage"])
     g, pa, pb = _game(make_game)
     s = pa.shikigami[IDX]
-    s.ext["fragile_to_damage"] = True
-    zhen = Ref(player=1, shikigami=1)
-    db.shikigami[100128] = F.shiki(100128, name="鸩")   # 来源侧鸩（锚点按来源过滤）
-    pb.shikigami[1].id = 100128
+    pb.shikigami[1].level = 1                            # 0 级不在场，升级后在场
+    pb.shikigami[2].level = 1
+    pb.shikigami[1].form = CardInstance(uid=9001, id=cid)   # B 方 1 号位结附该形态
     g._change_shield(Ref(player=0, shikigami=IDX), 3, "test", kind="fragile",
-                     source=zhen)
+                     source=Ref(player=1, shikigami=1))
     assert s.shield == 0             # 未获得破甲
     assert s.health == 1             # 4 - 3 等量伤害
     g._change_shield(Ref(player=0, shikigami=IDX), 2, "test", kind="fragile",
                      source=Ref(player=1, shikigami=2))
-    assert s.shield == -2 and s.health == 1   # 非鸩来源：正常获得破甲
+    assert s.shield == -2 and s.health == 1   # 来源未结附该形态：正常获得破甲
 
 
 # ---------- 治疗管线（治疗事件流程） ----------
