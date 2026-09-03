@@ -13,10 +13,21 @@ versions:
       effects:
         steps: []
       abilities:
-        # 己方式神出击/战斗对敌方牌手造成伤害时抽1（伤害事件 kind=combat 通道，
-        # 白狼/青行灯同类触发先例；"出击"含战斗牌攻击）
-        - when: on_player_damaged
-          condition: {player: opponent, source_side: friendly, kind: combat}
+        # 仅"因出击而发起攻击"时（战斗准备前 origin=assault 门控），该出击式神获得
+        # 延迟能力：其对敌方牌手造成战斗伤害时抽1（scope=turn+uses=99 本回合内不限次、
+        # unique 同卡重复出击替换不叠加；觉醒·鸦天狗移动插入攻击同为该式神的战斗
+        # 伤害同样抽，未觉醒投射为效果伤害不抽——全卡盘点）
+        - when: on_before_battle_prep
+          condition: {attacker_side: friendly, origin: assault}
           steps:
-            - {op: draw, count: 1}
+            - op: delay_grant
+              bind: target
+              target: {kind: context, key: attacker}
+              when: on_player_damaged
+              condition: {player: opponent, kind: combat, source_shikigami: self}
+              scope: turn
+              uses: 99
+              unique: true
+              steps:
+                - {op: draw, count: 1}
       text: "[远程]。当己方式神出击并对敌方牌手造成伤害时，抽一张牌。"

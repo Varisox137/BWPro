@@ -516,10 +516,10 @@
 | 01 追风 | ✅ | [瞬发]；move self（战斗区↔准备区 toggle）+ 抽 1 |
 | 02 正义必胜 | ✅ | 战斗牌；{ext: move_count_turn} 动态数值——本回合移动次数加力量（含本牌移入战斗区的一次） |
 | 03 正义之刺 | ✅ | 战斗 +1/+2 甲；launch_attack shikigami=target（使被选式神立刻攻击，来打我呀先例） |
-| 04 羽迹 | ✅ | move force=true 拉敌方式神入战斗区（过尘缚锁定校验）→ 眩晕之 → move self |
-| 05 群鸦乱舞 | ✅ | 形态 2/8：己方回合结束敌方全式神 1 伤 → heal {memo: last_damage_total} 自回合计（巨浪先例） |
+| 04 羽迹 | ✅ | 整卡 mode=atomic 一段结算（觉醒鸦天狗进出战斗区攻击触发时同段——先敌方移入+眩晕、后己方移入）；第一步 move force=true + into_combat=true 单向移入（目标已在战斗区则不动、不 toggle 移出，过尘缚锁定校验）→ 眩晕之 → 己方移入战斗区 |
+| 05 群鸦乱舞 | ✅ | 形态 2/8：己方回合结束敌方全式神 1 伤（damage parallel=true——全部目标并入同一伤害队列，气绝统一在队列清空后生成，溅射转移计入恢复量合计）→ heal {memo: last_damage_total} 自回合计（巨浪先例） |
 | 06 鸦羽疾走 | ✅ | [响应]挂 on_before_assault：move self ×2（离场再进场）+ cancel_attack（取消整场攻击，不退鬼火/出击次数——维护者定案） |
-| 07 英雄无畏 | ✅ | stun lasting + until_event=[on_card_played, on_before_assault]（"直到鸦天狗使用牌、攻击或气绝"；apply_seq/apply_uid 防施加牌自解除，气绝走现有清理） |
+| 07 英雄无畏 | ✅ | stun lasting + until_event=[on_before_card_play, on_before_battle_prep, on_shikigami_defeated] + 条目级 watch_keys 主体限定（仅事件 payload 所指角色为鸦天狗本人时解除——其他式神用牌/鸦天狗被攻击不解除；"直到鸦天狗使用牌、攻击或气绝"；apply_seq/apply_uid 防施加牌自解除） |
 | 08 觉醒·鸦天狗 | ✅ | +2/+2；进出战斗区改"获得[远程]并攻击"（attack_buff keywords remote + launch_attack self） |
 
 ## 不知火（100202）
@@ -527,14 +527,14 @@
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
 | 基础能力 | ✅ | 己方回合开始鼓舞 +1 战力（basic_boost） |
-| 01 不夜之舞 | ✅ | 形态 4/5：boost_on_combat_card scope=form（玩家级旗标：战斗牌攻击也获得并消耗出击加成，形态离场清除） |
+| 01 不夜之舞 | ✅ | 形态 4/5：boost_on_combat_card scope=form（玩家级旗标：战斗牌攻击也获得并消耗出击加成，形态离场清除）；仅非响应方式消耗——非"（被）攻击时"时机响应战斗牌不消耗（_resolve_combat_card from_response 门控，全卡盘点修复） |
 | 02 真意之歌 | ✅ | 三快照：20200327 reset_assaults 单段 / 20200423 [瞬发]"若出击次数>0 则[鼓舞]+1/+1 否则重置出击次数"（assaults_left_ge/le 两条件 step 分流）/ 20200820 [鼓舞]+1/+1 与重置出击次数均无条件执行（best 保持 20200327） |
 | 03 自由之歌 | ✅ | 双快照：20200327 鼓舞 +3/+3 / 20200820 改"使一个式神获得[迅捷]（any_shikigami 选择授予）+鼓舞+2/+2" |
-| 04 初会之舞 | ✅ | 形态 2/6 [远程]（卡牌级关键字）：对牌手造成伤害时抽 1 |
+| 04 初会之舞 | ✅ | 形态 2/6 [远程]（卡牌级关键字）；能力重写（全卡盘点）：挂 on_before_battle_prep 条件 {attacker_side:friendly, origin:assault}（仅己方出击）→ delay_grant bind=target 授予出击式神延迟能力（scope=turn）：其对敌方牌手造成战斗伤害时抽 1 |
 | 05 觉醒·不知火 | ✅ | 双快照：20200327 +0/+0 / 20200423 +1/+1（best 保持 20200327）；inspire_bonus{1,1}（鼓舞数值额外 +1/+1，玩家级永久旗标、可叠加）+ 基础同款回合开始鼓舞 |
 | 06 星火之歌 | ✅ | 双快照：召唤'烬染不夜'（10020299）；20200820 等级 3→2 |
 | 07 离殇之舞 | ✅ | 形态 5/5：boost_no_consume scope=form（出击加成不消耗旗标） |
-| 08 惊鸿之舞 | ✅ | 形态 SSR 3 级 7/7（date/best=20200327）；on_turn_start（无 condition，双方回合开始均触发）单步 random_branch 19 分支（新 op：逐项求值 condition、通过者均等随机一项、无满足空操作；raw 清单与触发前置括注保留为 yaml 注释）——分支前置新条件键 friendly_defeated_exists/player_health_le/player_missing_health_ge/combat_occupied；分支 19 鼓舞带 keyword_random 随机关键字槽（ext["boost_keyword"]，池=[不屈/吸血/远程/必杀/贯通/连击]）；分支 5/13 highest_power 过滤（并列全保留交 random 均等取）；分支 4 grant_keyword scope="turn"；分支 6 敌方全体 -2 力量=非永久持续减益（跨回合保留、气绝清除）、分支 13/14 多步随机目标经 memo 键复用同次取样（14 加 include_defeated 含气绝——均已定案） |
+| 08 惊鸿之舞 | ✅ | 形态 SSR 3 级 7/7（date/best=20200327）；on_turn_start（无 condition，双方回合开始均触发）单步 random_branch 19 分支（新 op：逐项求值 condition、通过者均等随机一项、无满足空操作；raw 清单与触发前置括注保留为 yaml 注释）——分支前置新条件键 friendly_defeated_exists/player_health_le/player_missing_health_ge/combat_occupied；分支 19 鼓舞带 keyword_random 随机关键字槽（ext["boost_keyword"]，池=[不屈/吸血/远程/必杀/贯通/连击]）；分支 5/13 highest_power 过滤（并列全保留交 random 均等取）；分支 4 grant_keyword scope="turn"；分支 6 敌方全体 -2 力量=非永久持续减益（跨回合保留、气绝清除）、分支 13/14 多步随机目标经 memo 键复用同次取样（14 加 include_defeated 含气绝——均已定案）；全卡盘点补齐分支回合侧门控（active:self/opponent 对齐 raw 括注）与新键 enemy_alive_exists（敌方有未气绝式神前置）/enemy_power_ge（敌方有力量≥n 未气绝式神）/prefer_alive（random 取样优先未气绝式神、不足再补气绝者——分支 14） |
 | 99 烬染不夜 | ✅ | 召唤物 1/1，先天[迅捷]；attack_replace（攻击时改为对两个随机不重复敌方角色造成 力量+战力 效果伤害，无交战不受反击；目标池含牌手、伤害为非战斗伤害 kind=effect 不触发[吸血]——均维护者定案） |
 
 ## 小鹿男（100203）
@@ -557,20 +557,20 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 先天[充能]；on_energy_gained → gain_energy 1 emit_event=false（获得能量时再获得 1，防自连锁） |
 | 01 顽皮鬼 | ✅ | 2 伤；[爆能X]（energy_cost="all"：消耗全部能量追加 {burst_x} 伤害，0 能量不可选） |
-| 02 扑朔迷离 | ✅ | [响应]：summon 分身 inherit_stats + energy_ratio=0.5（复制来源**全部当前身材**快照为静态永久修正——含持续性/光环增益与受伤不满生命，维护者定案；能量 floor 一半） |
+| 02 扑朔迷离 | ✅ | [响应]：summon 分身 inherit_stats + energy_ratio=0.5（复制来源**全部当前身材**快照为静态永久修正——含持续性/光环增益与受伤不满生命，维护者定案；能量 floor 一半；全卡盘点(16)补全：来源已气绝改基础+永久口径满生命进场、照搬来源当前护甲、来源带眩晕时分身获得 until_event=[on_stun_released] watch=来源的同步眩晕——来源解除同步解除、气绝清除不同步） |
 | 03 烟雾升腾 | ✅ | [瞬发]；获得 3 能量 |
 | 04 烟雾缭绕 | ✅ | 形态 2/4：召唤分身 + stat_aura ids_energy_power（分身每有能量 +力量，scope=form） |
 | 05 贪食鬼 | ✅ | 打敌方战斗区 3 + 牌手回 3；[爆能X] 追加 {burst_x} 伤害 |
 | 06 觉醒·烟烟罗 | ✅ | +1/+1；使用获得 2 能量；on_energy_gained → 再获得等量（{event: amount}，emit_event=false） |
-| 07 无孔不入 | ✅ | 形态 3/6：进场与己方回合开始召唤分身 |
+| 07 无孔不入 | ✅ | 形态 3/6：进场与己方回合开始召唤分身（summon inherit_stats 继承口径同 02——含护甲照搬/眩晕同步/来源气绝分支，全卡盘点(16)） |
 | 08 暴躁鬼 | ✅ | 投射 3 + delay_grant（分神气绝时获得 3 能量）；[爆能X] 追加 {burst_x} 伤害 |
-| 99 烟烟罗的分身 | ✅ | 召唤物 2/4，先天[充能]；mirror_spell（复制烟烟罗使用的非觉醒法术——主动/响应/自动使用均触发，mirror_copy 标记防递归不连锁，维护者定案；目标沿用原选否则随机重选） |
+| 99 烟烟罗的分身 | ✅ | 召唤物 2/4，先天[充能]；mirror_spell（复制烟烟罗使用的法术——全卡盘点(9)(10)大修：按原牌**相同使用方式**复制、爆能方式照常支付/免单（爆能X按分身自身能量读，口径挂起 questions.md）、继承原牌实例 mods/灵咒、**觉醒牌可复制**（_awaken_rebind 完整换绑，subtype_not 排除已删）；主动/响应/自动使用均触发，mirror_copy 标记防递归不连锁，维护者定案；目标沿用原选否则随机重选） |
 
 ## 日和坊（100205）
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 先天[充能]；生命代偿引擎硬编码 id 100205（己方支付能量不足时以其生命 1:1 代偿，非伤害、不能降到 0） |
+| 基础能力 | ✅ | 先天[充能]；生命代偿引擎硬编码 id 100205（**仅日和坊本人**支付能量不足时以其生命 1:1 代偿，非伤害、代偿后须余 ≥1 生命——全卡盘点(12)收窄，其他己方角色不再代偿） |
 | 01 沐浴阳光 | ✅ | 双快照：20200327 无[瞬发] / 20200423 加[瞬发]（best 保持 20200327）；heal full=true（恢复至满）+ 各 +1 能量；目标池 friendly_shikigami + TargetSpec keyword=charge 过滤（己方[充能]式神） |
 | 02 祈晴 | ✅ | 形态 1/7：己方回合开始 spend_energy 4 gate → 抽 1 |
 | 03 阳炎 | ✅ | 双快照：20200327 1 级响应带"额外消耗3能量"（energy_ge: 3 门控 + spend_energy 3 gate）/ 20200423 2 级、响应去耗能（best 保持 20200327）；[响应]（on_upgrade）：打升级式神 1 + 眩晕之 |
@@ -584,14 +584,14 @@
 
 | 卡牌 | 状态 | 备注 |
 | --- | --- | --- |
-| 基础能力 | ✅ | 先天[充能]；对牌手造成伤害时 +1 能量 |
+| 基础能力 | ✅ | 先天[充能]；on_player_damaged source_shikigami=self → +1 能量（受伤者不限侧——全卡盘点(15)删 player:opponent 限制：任一牌手为受伤者均触发，含转移给己方牌手的自伤） |
 | 01 三太郎之斧 | ✅ | 战斗 +1/+1 甲；[爆能3]：此牌 +3 力量（方式 effects 追加） |
 | 02 人多势众 | ✅ | 双快照：20200327 形态 4/5 / 20200423 形态 3/5（best 保持 20200327）；stat_aura energy_power{divisor:2}（每 2 能量 +1 力量，scope=form） |
-| 03 声东击西 | ✅ | [响应] 被攻击时自动使用：battle_retarget（交战伤害改向另一个随机敌方角色，可含牌手——维护者定案）+ 本次战斗免疫 |
+| 03 声东击西 | ✅ | 全卡盘点(15)重做：[响应] 被攻击时 = cancel_attack 终止原战斗 + 本战斗战斗伤害免疫（next_battle）+ launch_attack at=other_enemy 对随机另一个敌方角色发起攻击（响应覆盖块分派，罗城门先例）；主动使用保持 battle_retarget（交战伤害改向另一个随机敌方角色，可含牌手）+ 本次战斗免疫，新增 play_condition enemy_alive_exists（无存活敌方式神不可主动使用） |
 | 04 同心协力 | ✅ | [瞬发]；+1 能量 + 复制随机插入牌库不洗牌（generate position=random，"置入牌库"原版语义——维护者定案，原落库底偏差消除）+ 抽 1 |
 | 05 二太郎之戟 | ✅ | 双快照：20200327 +0/+2 甲 [爆能3] / 20200423 +0/+1 [爆能4]（best 保持 20200327）；对敌方角色造成伤害后其获 2 破甲（temp_grants 双挂，含牌手）；use_card_copy 额外使用'三太郎之斧' |
-| 06 同生共死 | ✅ | 形态 4/5：受致死伤害时 spend_energy 3 gate → 消耗式免疫（grant_immunity kind=all scope=once）+ retreat |
-| 07 觉醒·镰鼬 | ✅ | +1/+1；energy_assault{cost:3}（玩家级旗标：鬼火与出击次数都为 0 时耗 3 能量出击） |
+| 06 同生共死 | ✅ | 形态 4/5：全卡盘点(17)重做——挂 on_after_shield 优先级 2（"护甲计算后"：晚于改非伤害 1、早于免疫判定 3，免疫中仍触发），条件 victim_shikigami:self + damage_lethal（护甲后现值 ≥ 当前生命）+ any_of[energy_ge:3 / energy_free_available（觉醒·日和坊免单名额在则不检测能量）]；触发 = spend_energy 3 gate（免单不扣）→ cancel_damage 终止伤害事件（不再授予一次性免疫，消残留 bug）→ retreat |
+| 07 觉醒·镰鼬 | ✅ | +1/+1；能力继承同基础（on_player_damaged 受伤者不限侧，全卡盘点(15)）；energy_assault{cost:3}（玩家级旗标：鬼火与出击次数都为 0 时耗 3 能量出击） |
 | 08 一太郎之棒 | ✅ | 双快照：20200327 [爆能3]/[爆能6] / 20200423 [爆能3]/[爆能7]（best 保持 20200327）；战斗 +2/+2 甲；伤害后眩晕之且本回合力量变 0（power_override scope=turn）；链式 use_card_copy（多档累计） |
 
 ## 铃鹿御前（100207）
@@ -601,10 +601,10 @@
 | 基础能力 | ✅ | 紫岩 3/4；"对一个角色造成伤害时使其获得1破甲"（abilities 双块：on_damage/on_player_damaged {source_shikigami: self} → gain_shield fragile 1，二太郎之戟同管线） |
 | 01 白刃 | ✅ | 战斗 +1/+1 甲；conditional_keywords 新算子 enemy_fragile_ge2（敌方场上存在破甲 ≥2 的角色时此牌得[瞬发]） |
 | 02 霸主 | ✅ | 形态 4/5：grant_immunity 新 kind=fragile_source scope=form（免疫当前持有破甲的敌方式神造成的伤害——牌手来源不免疫、类别不限，维护者定案(5)确认） |
-| 03 光影 | ✅ | 战斗 +1/+1 甲；temp_grants 双块 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + amount_ge:6——单伤害事件触发，维护者定案：贯通两段各<6合计>=6不触发、连击两段各>=6各触发一次）→ 抽 1 + heal {event: amount, half: true}（新数值通道：事件值减半向下取整，与 cap 同修饰位、cap 先截后减）己方牌手 |
+| 03 光影 | ✅ | 战斗 +1/+1 甲；temp_grants 双块 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + pre_pierce_amount_ge:6——单伤害事件触发，全卡盘点新口径：贯通按贯通分配前原始伤害值计（`_DamageEvent.pre_pierce_amount` 快照、payload 恒带回退 amount），原始6→式神4+牌手2 时式神段触发、溢出段不触发；连击两段各>=6各触发一次）→ 抽 1 + heal {event: pre_pierce_amount, half: true} 己方牌手 |
 | 04 冥弓 | ✅ | distribute_damage 4 pool enemy_shikigami（随机分配给所有敌方式神——天狗风乱同管线收窄池，无新机制） |
 | 05 觉醒·铃鹿御前 | ✅ | +0/+1；abilities 双块同基础能力管线：gain_shield fragile {event: amount, cap: 3}（事件引用封顶新形式——维护者定案(3)确认）；20200624 快照使用效果投射 2→1（best 仍 20200520） |
-| 06 无往 | ✅ | 战斗 +0/+2 甲；choose 新目标池 enemy_fragile_or_combat（敌方有破甲的在场式神或敌方战斗区式神，或关系）→ 打 2 |
+| 06 无往 | ✅ | 战斗 +0/+2 甲；choose 新目标池 enemy_fragile_or_combat（敌方有破甲的在场式神或敌方战斗区式神，或关系）→ 打 2；帷幕过滤已有（目标池经 alive_shiki targeted 通道天然排除帷幕式神——全卡盘点实测无洞），test_pool_enemy_fragile_or_combat_veiled 锁定 |
 | 07 归乡 | ✅ | 形态 4/8：on_before_assault {attacker_shikigami: self} 投射 3（生生不息同管线，无能量消耗） |
 | 08 义道 | ✅ | 战斗 -1/+2 甲，keywords [piercing, combo]；新 op double_damage_vs_fragile 为战斗牌专用提取步——按[暴击]时机（扣减生命前2 挂点）：本张战斗牌发起的战斗内、铃鹿御前本人、kind=combat（反击不豁免——2026-08 裁决；实际不可达：反击来源≠登记攻击者）、victim=持破甲式神 ×2，嵌套/插入战斗不继承（维护者定案(2)） |
 

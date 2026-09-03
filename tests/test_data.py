@@ -175,6 +175,114 @@ def test_projectile_insert_retreat_before_defeat(gdb):
     assert pb.combat_index is None
 
 
+# ---------- 02 羽迹 ----------
+
+def test_yuji_atomic_into_combat(gdb):
+    """羽迹（全卡盘点）：整卡一段结算（mode=atomic）+ 单向移入（into_combat）。
+
+    目标已在战斗区：不 toggle 移出、仍被眩晕、己方鸦天狗移入战斗区；目标在准备区
+    且己方鸦天狗觉醒时：移入/眩晕/己方移动全部结算完后触发能力才依次执行——
+    先敌方（其投射命中已进战斗区的己方鸦天狗而非牌手）后己方。"""
+    team = [100104, 100201, 100101, 100102]   # 双方 1 号位鸦天狗
+    g = F.mk_game(gdb, team=team)
+    pa, pb = F.battle_setup(g, {1: 2})
+    pb.shikigami[1].level = 2
+    move(g, 1, 1)                             # B 鸦天狗已在战斗区
+    play(g, 0, 10020104, target=Ref(player=1, shikigami=1))
+    assert pb.combat_index == 1               # 目标不动（无 toggle 移出）
+    assert pb.shikigami[1].stuns              # 仍被眩晕
+    assert pa.combat_index == 1               # 己方鸦天狗移入战斗区
+    assert pb.shikigami[1].health == 5        # 己方鸦天狗基础投射 1（整卡后结算）
+    # 次序例：目标在准备区、己方鸦天狗已觉醒——能力在整卡后先敌方后己方执行
+    g2 = F.mk_game(gdb, team=team)
+    pa2, pb2 = F.battle_setup(g2, {1: 3})
+    pb2.shikigami[1].level = 3
+    play(g2, 0, 10020108)                     # A 鸦天狗觉醒（3/8）
+    n = len(g2.history)
+    play(g2, 0, 10020104, target=Ref(player=1, shikigami=1))
+    assert pb2.combat_index == 1 and pa2.combat_index == 1
+    assert pb2.shikigami[1].stuns
+    assert pa2.health == 30                   # atomic：敌方投射时己方已进战斗区，不打脸
+    assert pa2.shikigami[1].health == 8 - 1   # 敌方基础投射 1 命中己方鸦天狗
+    assert pb2.shikigami[1].health == 6 - 3   # 然后己方觉醒攻击（远程）命中敌方鸦天狗
+    seg = g2.history[n:]
+    assert seg.index("on_damage") < seg.index("on_before_assault")  # 先敌方投射后己方攻击
+
+
+# ---------- 02 英雄无畏 ----------
+
+def test_lasting_stun_release_subject_only(gdb):
+    """英雄无畏（全卡盘点）：持续眩晕解除时机 = 鸦天狗"使用牌前"（on_before_card_play）
+    /"战斗准备前"（on_before_battle_prep）/气绝（on_shikigami_defeated），且解除只看
+    鸦天狗作为事件主体（watch_keys 限定 payload 键）——鸦天狗被攻击不解除、其他
+    式神用牌不解除。"""
+    team = [100104, 100201, 100101, 100102]   # 双方 1 号位鸦天狗
+
+    def _setup():
+        g = F.mk_game(gdb, team=team)
+        pa, pb = F.battle_setup(g, {1: 3})
+        play(g, 0, 10020107, target=Ref(player=1, shikigami=0))
+        assert pb.shikigami[0].stuns
+        return g, pa, pb
+
+    # 使用牌前：鸦天狗用牌即解除；其他式神用牌不解除
+    g, pa, pb = _setup()
+    play(g, 0, 10010401)                      # 大天狗用牌：非看护者
+    assert pb.shikigami[0].stuns
+    play(g, 0, 10020101)                      # 鸦天狗用牌 → 解除
+    assert pb.shikigami[0].stuns == []
+    # 战斗准备前：鸦天狗出击（攻击者主体）→ 解除
+    g, pa, pb = _setup()
+    g.apply({"op": "assault", "index": 1})
+    assert pb.shikigami[0].stuns == []
+    # 气绝：鸦天狗气绝（气绝者主体）→ 其施加在敌方的持续眩晕解除
+    g, pa, pb = _setup()
+    g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
+    g._drain_queue()
+    assert pa.shikigami[1].defeated
+    assert pb.shikigami[0].stuns == []
+    # 鸦天狗被攻击（事件 victim/被攻击者角色）不解除
+    g, pa, pb = _setup()
+    move(g, 0, 1)                             # 鸦天狗入战斗区
+    pass_turns(g, 1)                          # 换 B 回合
+    g.apply({"op": "assault", "index": 2})    # B 白狼攻击战斗区鸦天狗
+    assert pb.shikigami[0].stuns              # 鸦天狗被攻击不解除
+
+
+# ---------- 02 初会之舞 ----------
+
+def test_first_dance_draw_on_assault_only(gdb):
+    """初会之舞（全卡盘点）：仅"因出击而发起攻击"时该出击式神获得"对敌方牌手造成
+    战斗伤害抽1"——未觉醒鸦天狗出击：投射（效果伤害）不抽、出击伤害抽1；觉醒鸦天狗
+    两段攻击各抽1；战斗牌攻击（origin=card）不授予、不抽。"""
+    team = [100202, 100201, 100101, 100103]   # A 0 号位不知火 / 1 号位鸦天狗（红莲+苍叶）
+    # 未觉醒鸦天狗出击（敌方空场）：投射 1（效果伤害）不抽，出击伤害抽 1
+    g = F.mk_game(gdb, team=team)
+    pa, pb = F.battle_setup(g, {0: 2, 1: 1})
+    play(g, 0, 10020204)                      # 不知火结附初会之舞
+    n0 = len(pa.hand)
+    g.apply({"op": "assault", "index": 1})
+    assert pb.health == 30 - 1 - 2            # 投射 1 + 出击 1+1（不知火鼓舞）
+    assert len(pa.hand) == n0 + 1
+    # 觉醒鸦天狗：移动插入攻击与出击战斗各抽 1
+    g = F.mk_game(gdb, team=team)
+    pa, pb = F.battle_setup(g, {0: 2, 1: 3})
+    play(g, 0, 10020204)
+    play(g, 0, 10020108)                      # 觉醒·鸦天狗（3/8）
+    n0 = len(pa.hand)
+    g.apply({"op": "assault", "index": 1})
+    assert pb.health == 30 - 4 - 3            # 移动插入攻击 3+1 鼓舞 + 出击 3（鼓舞已核销）
+    assert len(pa.hand) == n0 + 2
+    # 战斗牌攻击（origin=card）：不授予、不抽（仅入战斗区的投射 1 为效果伤害）
+    g = F.mk_game(gdb, team=team)
+    pa, pb = F.battle_setup(g, {0: 2, 1: 1})
+    play(g, 0, 10020204)
+    n0 = len(pa.hand)
+    play(g, 0, 10020102)                      # 正义必胜直击 1
+    assert pb.health == 30 - 1 - 1            # 投射 1 + 战斗牌直击 1
+    assert len(pa.hand) == n0
+
+
 # ---------- 08 吾即正义 ----------
 
 def test_transform_after_ten_spells(real_game):

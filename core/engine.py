@@ -165,6 +165,9 @@ class _DamageEvent:
     pre_shield_zero: bool = False  # 森罗之阵①贯通分段保护标记（cap_damage
     # to="zero_pre_shield" 在"造成/受到伤害开始时"置位）：本次伤害在"护甲计算前1"
     # 改为 0——贯通修正已预分配（护甲已扣、溢出已生成），仅保护式神本人
+    pre_pierce_amount: int | None = None  # 贯通分配前的原始伤害值（翻倍后口径快照，
+    # 光影"贯通场合按贯通分配前的原始伤害值计"，全卡盘点）：仅贯通分配（溢出截断）时
+    # 记录；on_damage/on_player_damaged payload 恒带同名键（无贯通时回退 = amount）
 
     def __post_init__(self) -> None:
         if self.spell:
@@ -1610,14 +1613,17 @@ class Game:
 
     @staticmethod
     def _energy_life_substitute(s: ShikigamiState) -> bool:
-        """生命代偿提供者：在场日和坊（基础能力，引擎直读 id）或带 energy_life_substitute
-        ext 标记（扩展预留）。"""
+        """生命代偿提供者谓词：在场日和坊（基础能力，引擎直读 id）或带
+        energy_life_substitute ext 标记（扩展预留）。代偿仅当支付方即提供者本人
+        时生效（全卡盘点(12)——_can_pay_energy/_spend_energy 对支付式神调用）。"""
         return s.in_play and (s.id == _RIHEFANG_SHIKIGAMI
                               or bool(s.ext.get("energy_life_substitute")))
 
     def _can_pay_energy(self, p: PlayerState, i: int, n: int) -> bool:
         """能量可支付判定（不变异；_spend_energy 的同谓词预检）：
-        免单名额可用 / 能量足够 / 在场日和坊生命代偿差额（代偿后生命不降到 0）。"""
+        免单名额可用 / 能量足够 / 支付方即日和坊本人时以其生命代偿差额
+        （代偿后生命不降到 0；全卡盘点(12)：代偿仅限日和坊自身耗能，
+        其他己方式神耗能不再以日和坊生命代偿）。"""
         if n <= 0:
             return True
         if self._energy_free_available(self.state.players.index(p)):
@@ -1626,13 +1632,12 @@ class Game:
         if s.energy >= n:
             return True
         lack = n - s.energy
-        return any(self._energy_life_substitute(o) and o.health - lack >= 1
-                   for o in p.shikigami)
+        return self._energy_life_substitute(s) and s.health - lack >= 1
 
     def _spend_energy(self, p: PlayerState, i: int, n: int) -> bool:
-        """支付 n 点能量：免单名额（置 False 消耗）→ 能量足够直扣 → 日和坊生命代偿
-        差额（直扣生命、非伤害、不降到 0）。支付失败返回 False（调用方应先 _can_pay_energy
-        预检，正常不会到此）。"""
+        """支付 n 点能量：免单名额（置 False 消耗）→ 能量足够直扣 → 支付方即日和坊
+        本人时以生命代偿差额（直扣生命、非伤害、不降到 0）。支付失败返回 False
+        （调用方应先 _can_pay_energy 预检，正常不会到此）。"""
         if n <= 0:
             return True
         pi = self.state.players.index(p)
@@ -1649,14 +1654,13 @@ class Game:
             self._refresh_stat_auras()  # 能量变化点：动态能量光环缓存重算
             return True
         lack = n - s.energy
-        for o in p.shikigami:
-            if self._energy_life_substitute(o) and o.health - lack >= 1:
-                s.energy = 0
-                o.health -= lack  # 生命代偿：直扣生命，非伤害（不走伤害管线，不触发伤害事件）
-                self._settle(f"【能量】{self.db.shikigami[o.id].name} 以 {lack} 点生命代偿能量"
-                             f"（剩余生命 {o.health}）")
-                self._refresh_stat_auras()  # 能量变化点：动态能量光环缓存重算
-                return True
+        if self._energy_life_substitute(s) and s.health - lack >= 1:
+            s.energy = 0
+            s.health -= lack  # 生命代偿：直扣生命，非伤害（不走伤害管线，不触发伤害事件）
+            self._settle(f"【能量】{self.db.shikigami[s.id].name} 以 {lack} 点生命代偿能量"
+                         f"（剩余生命 {s.health}）")
+            self._refresh_stat_auras()  # 能量变化点：动态能量光环缓存重算
+            return True
         return False
 
     # ---------- 调度（游戏开始阶段） ----------
@@ -2175,36 +2179,7 @@ class Game:
                 # 替换式神能力 → 法术本身效果 → 觉醒后（延时）→ 永久身材增益
                 awaken_si = si if (cdef.subtype == "awaken" and si is not None) else None
                 if awaken_si is not None:
-                    self.emit("on_before_awaken", player=self.state.active,
-                              shikigami=awaken_si, uid=uid,
-                              target=Ref(player=self.state.active, shikigami=awaken_si))
-                    # 觉醒牌：替换当前式神能力为觉醒能力（rules.md 第十三章；气绝/复活
-                    # 保留觉醒状态）；动态倒计时继承见 _register_ability_countdown(awaken=)
-                    self._clear_ability_card_auras(p, self.state.active, awaken_si)  # 旧能力离场：其 ability 光环移除
-                    p.shikigami[awaken_si].awakened = cdef.id
-                    if "deck_out_burn" in cdef.tags:
-                        # 觉醒·书翁（全卡盘点(16) 裁决）：牌手级永久能力——觉醒时获得、
-                        # 唯一；空库抽牌不判负，"抽牌前"对敌方牌手打 10 并终止该次抽牌
-                        # （书翁气绝/变形/替换后能力仍在；_draw_terminate 读取）
-                        p.ext["deck_out_burn"] = awaken_si
-                    # 能力伪关键字换绑（觉醒替换基础能力）：移除基础式神 def 携带的
-                    # 伪关键字（如 power_if_field）、授予觉醒牌 keywords 携带的（如
-                    # power_per_field）——永久类别，气绝/复活随觉醒状态保留；
-                    # 带冒号参数的伪关键字（replace_action:迟钝）按前缀归入本集合
-                    st_aw = p.shikigami[awaken_si]
-                    base_pseudo = {k for k in self.db.shikigami[st_aw.id].keywords
-                                   if k.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS}
-                    if base_pseudo:
-                        st_aw.perm_keywords = [k for k in st_aw.perm_keywords
-                                               if k not in base_pseudo]
-                    for kw in cdef.keywords:
-                        if (kw.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS
-                                and kw not in st_aw.perm_keywords):
-                            st_aw.perm_keywords.append(kw)
-                    self._register_ability_countdown(self.state.active, awaken_si, awaken=True)
-                    self._log(f"{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒")
-                    self._settle(f"【觉醒】{self.db.shikigami[p.shikigami[awaken_si].id].name} 觉醒"
-                                 f"（永久 {cdef.awaken_power:+d}/{cdef.awaken_health:+d}）")
+                    self._awaken_rebind(p, self.state.active, awaken_si, cdef, card, uid)
                 block = self._played_block(p, cdef, card, method)
                 self._resolve_block(block, ctx)
                 if awaken_si is not None:
@@ -2212,7 +2187,7 @@ class Game:
                               uid=uid,
                               target=Ref(player=self.state.active, shikigami=awaken_si))
                     # 永久身材增益排在"觉醒后"延时监听者之后结算（同批入队）
-                    self._queue_awaken_stats(awaken_si, cdef, card)
+                    self._queue_awaken_stats(self.state.active, awaken_si, cdef, card)
         finally:
             affected = self._affected_stack.pop()["refs"]
             card.mods.pop("burst_x", None)  # 爆能 X 快照仅本次结算有效（弹回回手不残留）
@@ -2420,7 +2395,40 @@ class Game:
                   affected_refs=list(affected or ()), chosen=list(chosen or ()),
                   **(extra or {}))
 
-    def _queue_awaken_stats(self, si: int, cdef: CardDef, card: CardInstance) -> None:
+    def _awaken_rebind(self, p: PlayerState, pi: int, si: int, cdef: CardDef,
+                       card: CardInstance, uid: int) -> None:
+        """觉醒换绑（"觉醒前"即时时机 → 替换式神能力为觉醒能力）：法术觉醒主动使用
+        与分身复制觉醒（mirror_spell，全卡盘点(10)）共用通道。
+        气绝/复活保留觉醒状态；动态倒计时继承见 _register_ability_countdown(awaken=)。"""
+        self.emit("on_before_awaken", player=pi, shikigami=si, uid=uid,
+                  target=Ref(player=pi, shikigami=si))
+        self._clear_ability_card_auras(p, pi, si)  # 旧能力离场：其 ability 光环移除
+        p.shikigami[si].awakened = cdef.id
+        if "deck_out_burn" in cdef.tags:
+            # 觉醒·书翁（全卡盘点(16) 裁决）：牌手级永久能力——觉醒时获得、
+            # 唯一；空库抽牌不判负，"抽牌前"对敌方牌手打 10 并终止该次抽牌
+            # （书翁气绝/变形/替换后能力仍在；_draw_terminate 读取）
+            p.ext["deck_out_burn"] = si
+        # 能力伪关键字换绑（觉醒替换基础能力）：移除基础式神 def 携带的
+        # 伪关键字（如 power_if_field）、授予觉醒牌 keywords 携带的（如
+        # power_per_field）——永久类别，气绝/复活随觉醒状态保留；
+        # 带冒号参数的伪关键字（replace_action:迟钝）按前缀归入本集合
+        st_aw = p.shikigami[si]
+        base_pseudo = {k for k in self.db.shikigami[st_aw.id].keywords
+                       if k.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS}
+        if base_pseudo:
+            st_aw.perm_keywords = [k for k in st_aw.perm_keywords
+                                   if k not in base_pseudo]
+        for kw in cdef.keywords:
+            if (kw.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS
+                    and kw not in st_aw.perm_keywords):
+                st_aw.perm_keywords.append(kw)
+        self._register_ability_countdown(pi, si, awaken=True)
+        self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
+        self._settle(f"【觉醒】{self.db.shikigami[p.shikigami[si].id].name} 觉醒"
+                     f"（永久 {cdef.awaken_power:+d}/{cdef.awaken_health:+d}）")
+
+    def _queue_awaken_stats(self, pi: int, si: int, cdef: CardDef, card: CardInstance) -> None:
         """觉醒牌的永久身材增益（awaken_power/awaken_health）：法术觉醒使用事件流程
         末尾，排在"觉醒后"（on_awakened，延时时机）监听者之后入队结算。"""
         steps: list[Step] = []
@@ -2433,8 +2441,8 @@ class Game:
         if not steps:
             return
         self.queue.append(_Pending(EffectBlock(steps=steps), ExecContext(
-            controller=self.state.active,
-            source=Ref(player=self.state.active, shikigami=si), card=card)))
+            controller=pi,
+            source=Ref(player=pi, shikigami=si), card=card)))
 
     @staticmethod
     def _clear_play_delayed(s: ShikigamiState) -> None:
@@ -2508,12 +2516,15 @@ class Game:
 
     def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
                              cdef: CardDef, method: PlayMethod | None,
-                             chosen: list[Ref] | None = None) -> None:
+                             chosen: list[Ref] | None = None,
+                             from_response: bool = False) -> None:
         """战斗牌完整事件流程：获得战力/护甲、牌移至墓地、战斗（移入战斗区、战斗前、战斗伤害、战斗后）。
 
         战斗牌提供的力量（战力）在战斗后清除；提供的护甲/破甲会保留，并按即时时机
         发出 on_shield_changed 事件。追猎战斗牌以选择目标为战斗目标（有目标的非出击战斗；
         必须选择一名合法敌方式神——无合法目标时该牌不能使用）。
+        from_response=True（响应方式使用，不夜之舞全卡盘点）：仅非响应方式使用战斗牌
+        才消耗出击加成——响应使用跳过 _consume_assault_boosts。
         """
         s = p.shikigami[si]
         defeated_entry = not s.in_play
@@ -2582,8 +2593,10 @@ class Game:
                 return
             # 复活后：战力/护甲按正常战斗牌补齐，随后正常发起战斗（定案(14)）
             self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
-        # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗
-        if any(f.get("kind") == "combat_card" for f in p.ext.get("boost_flags", [])):
+        # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗；
+        # 响应方式使用不消耗（不夜之舞"非响应方式使用战斗牌时"口径，全卡盘点）
+        if not from_response and any(
+                f.get("kind") == "combat_card" for f in p.ext.get("boost_flags", [])):
             self._consume_assault_boosts(p, atk_ref, s)
         rep_inv = self._replace_action_invocation(s)
         if rep_inv is not None:
@@ -3304,6 +3317,13 @@ class Game:
         # ---- 战斗准备前：移除攻击者的激怒（穿刺已移至伤害事件"造成伤害前"批次）----
         self._remove_keyword(attacker, "enraged")
         self._drain_queue()
+        # ---- 战斗准备前（英雄无畏持续眩晕解除挂点：攻击者作为事件主体）----
+        self.emit("on_before_battle_prep", attacker=atk_ref, origin=origin,
+                  battle=self._battle_stack[-1])
+        self._drain_queue()
+        if attacker.defeated or attacker.despawned:
+            self._log("攻击方在战斗准备前气绝/离场，战斗中止")
+            return
         # ---- 战斗准备：移动攻击者（具有远程则不移动）；攻击者气绝则终止 ----
         if move and not remote and p.combat_index != atk_ref.shikigami:
             self._enter_combat(p, atk_ref.shikigami)
@@ -4093,18 +4113,25 @@ class Game:
 
     def _remove_expired_stuns(self, p: PlayerState) -> None:
         """己方回合结束批次（契约 §1）：移除"非本回合施加"的普通眩晕（turn != 当前
-        控制者回合号）；持续眩晕（预留）按 until 回合号移除。式神圣条与牌手 ext 同构。"""
-        for s in p.shikigami:
+        控制者回合号）；持续眩晕（预留）按 until 回合号移除。式神圣条与牌手 ext 同构。
+        实际解除发 on_stun_released（即时时机）——烟烟罗的分身同步眩晕解除挂点。"""
+        pi = self.state.players.index(p)
+        released: list[Ref] = []
+        for i, s in enumerate(p.shikigami):
             kept = [e for e in s.stuns if not self._stun_expired(e, p)]
             if len(kept) != len(s.stuns):
                 s.stuns[:] = kept
                 self._log(f"{self.db.shikigami[s.id].name} 的眩晕解除")
+                released.append(Ref(player=pi, shikigami=i))
         stuns = p.ext.get("stuns")
         if stuns:
             kept = [e for e in stuns if not self._stun_expired(e, p)]
             if len(kept) != len(stuns):
                 p.ext["stuns"] = kept
                 self._log(f"{p.name} 的眩晕解除")
+                released.append(Ref(player=pi))
+        for ref in released:
+            self.emit("on_stun_released", target=ref)
 
     @staticmethod
     def _stun_expired(e: dict, p: PlayerState) -> bool:
@@ -4796,6 +4823,7 @@ class Game:
                 # 新事件加入本队列（start="pre_shield_2"：从"护甲计算前2"开始——
                 # 跳过伤害开始时/贯通修正/翻倍修饰，扣减生命前系列亦不重复执行，
                 # 因此溢出伤害不会再次因[暴击]翻倍，裁决(3)）
+                ev.pre_pierce_amount = ev.amount  # 贯通分配前原始伤害值快照（光影口径）
                 overflow = ev.amount - s.health
                 ev.amount = s.health
                 dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
@@ -4985,6 +5013,8 @@ class Game:
             self._run_damage_inserts(ev)  # 造成伤害后：伤害插入帧立即插入（先于延时批次）
             self.emit("on_damage", victim=ev.victim, amount=ev.amount, source=ev.source,
                       kind=ev.kind, fragile=ev.fragile,
+                      pre_pierce_amount=(ev.pre_pierce_amount
+                                         if ev.pre_pierce_amount is not None else ev.amount),
                       battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
             # 铃鹿山的秘宝（幻境实体关键字 health_floor_one）：生命不会降到 1 以下——
@@ -5010,6 +5040,8 @@ class Game:
             self._run_damage_inserts(ev)  # 受到伤害后：伤害插入帧立即插入（先于延时批次）
             self.emit("on_player_damaged", player=ev.victim.player, amount=ev.amount,
                       source=ev.source, kind=ev.kind,
+                      pre_pierce_amount=(ev.pre_pierce_amount
+                                         if ev.pre_pierce_amount is not None else ev.amount),
                       battle=self._battle_stack[-1] if self._battle_stack else None)
             if p.health <= 0:
                 # 牌手气绝 → "待结束"：已入队的触发能力不再执行，此后非系统操作不再触发
@@ -5767,9 +5799,11 @@ class Game:
     def _release_lasting_stuns(self, name: str, payload: dict, seq: int) -> None:
         """持续眩晕 until_event 解除（英雄无畏"直到鸦天狗用牌/攻击/气绝"类）：
         事件名命中条目的 until_event 列表且事件涉及被看护式神（watch）时移除该眩晕。
-        seq ≤ 条目 apply_seq（施加当时，含施加牌自身的使用事件）不解除。"""
-        for p in self.state.players:
-            for s in p.shikigami:
+        seq ≤ 条目 apply_seq（施加当时，含施加牌自身的使用事件）不解除。
+        实际解除后补发 on_stun_released（收集完再发，避免解除连锁在遍历中改列表）。"""
+        released: list[Ref] = []
+        for pi, p in enumerate(self.state.players):
+            for si, s in enumerate(p.shikigami):
                 if not s.stuns:
                     continue
                 kept = []
@@ -5779,25 +5813,33 @@ class Game:
                         kept.append(e)
                     elif seq <= int(e.get("apply_seq", 0)):
                         kept.append(e)  # 施加当时的事件不解除（apply_seq 见 stun 动作）
-                    elif self._stun_watch_hit(e, payload):
+                    elif self._stun_watch_hit(e, name, payload):
                         self._log(f"{self.db.shikigami[s.id].name} 的持续眩晕解除（{name}）")
+                        released.append(Ref(player=pi, shikigami=si))
                     else:
                         kept.append(e)
                 s.stuns[:] = kept
+        for ref in released:
+            self.emit("on_stun_released", target=ref)
 
     @staticmethod
-    def _stun_watch_hit(e: dict, payload: dict) -> bool:
+    def _stun_watch_hit(e: dict, name: str, payload: dict) -> bool:
         """事件 payload 是否涉及持续眩晕的被看护式神：attacker/victim/target/shikigami/
         source 键中的 Ref 命中 watch=[pi, si]；或 payload.player==watch[0] 且这些键中的
         int 命中 watch 座次/数据 id（on_card_played 的 shikigami 为数据 id，on_form_destroyed
-        的 shikigami 为座次——两种 int 约定都接受）。"""
+        的 shikigami 为座次——两种 int 约定都接受）。
+        条目可带 watch_keys={事件名: [payload 键]}（英雄无畏全卡盘点）：限定该事件
+        参与匹配的键——解除只看看护者作为事件主体（用牌者/攻击者/气绝者），其作为
+        被攻击者（victim）等角色不解除；未列事件沿用默认全键。"""
         watch = e.get("watch")
         if watch is None:
             return False
         if e.get("apply_uid") is not None and payload.get("uid") == e.get("apply_uid"):
             return False  # 施加牌自身的使用事件不解除（"直到来源用牌"指其后的使用）
         watch_id = e.get("watch_id")
-        for key in ("attacker", "victim", "target", "shikigami", "source"):
+        keys = (e.get("watch_keys") or {}).get(
+            name, ("attacker", "victim", "target", "shikigami", "source"))
+        for key in keys:
             v = payload.get(key)
             if isinstance(v, Ref) and [v.player, v.shikigami] == list(watch):
                 return True
@@ -6162,7 +6204,9 @@ class Game:
                 self._apply_response_combat(p, si, ctx.card, cdef)
             else:
                 # 无当前战斗/非攻击时机的响应战斗牌：不能插入，发起一次新战斗
-                self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen)
+                #（响应方式使用：不消耗出击加成，不夜之舞全卡盘点）
+                self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen,
+                                          from_response=True)
             self._account_card_played(p, cdef)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
                                    triggered="response", chosen=ctx.chosen)

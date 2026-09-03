@@ -203,6 +203,36 @@ def test_jieqie_active_play(db, make_game):
     assert any(c.id == JIE_QIE for c in a.graveyard)
 
 
+def test_response_combat_non_attack_timing_keeps_boost(db, make_game):
+    """不夜之舞（全卡盘点）：仅非响应方式使用战斗牌才获得并移除出击加成——
+    非"（被）攻击时"时机的响应战斗牌（发起新战斗管线）不消耗出击加成。"""
+    FLAG = 10010191      # 假不夜之舞旗标
+    RESP = 10010192      # 假偷袭型响应战斗牌（非攻击时机）
+    db.cards[FLAG] = F.card(FLAG, shikigami=BING, token=True,
+                            steps=[F.Step(op="boost_on_combat_card")])
+    db.cards[RESP] = F.card(RESP, shikigami=BING, card_type="combat", cost=1, level=1,
+                            keywords=["trigger"], token=True,
+                            when="on_shikigami_defeated",
+                            block_kw={"condition": {"victim_side": "enemy"}})
+    g = make_game()
+    a, b = g.state.players
+    a.shikigami[BAI_IDX].level = 1
+    pass_turns(g, 1)                     # 换 B 回合
+    b.orb = 9
+    b.shikigami[BING_IDX].level = 1
+    play(g, 1, FLAG)                     # B 登记"战斗牌消耗鼓舞"旗标
+    give(g, 1, RESP)
+    b.assault_boosts = [{"power": 2, "shield": 0}]
+    move(g, 1, BAI_IDX)                  # B0 3/4 入战斗区
+    pass_turns(g, 1)                     # 换 A 回合
+    a.shikigami[BAI_IDX].health = 3      # 反击即气绝
+    g.apply({"op": "assault", "index": 0})   # A0 出击：被反击气绝 → B 响应触发
+    assert a.shikigami[BAI_IDX].defeated
+    assert any(c.id == RESP for c in b.graveyard)   # 响应战斗牌已使用
+    assert a.health == 29                             # B 兵俑 1 力量直击（未获 +2）
+    assert b.assault_boosts == [{"power": 2, "shield": 0}]  # 响应使用不消耗出击加成
+
+
 # ---------- 3. 风符·瞬（响应形态牌插入使用） ----------
 
 def test_response_form_attach_insert(db, make_game):

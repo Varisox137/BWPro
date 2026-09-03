@@ -1569,6 +1569,81 @@ def test_battle_retarget_redirects_strike_to_other_enemy(db, make_game):
     assert total == 3
 
 
+# ---------- 响应终止原战斗并发起新攻击（声东击西响应重做） ----------
+
+SDJX = 10010161  # 假声东击西
+
+
+def _sdjx_card(db):
+    """假声东击西：主动使用 = battle_retarget + 本次战斗免疫；响应覆盖块 =
+    终止原战斗 + 以此牌增益（免疫战斗伤害）对发起攻击者以外的随机未气绝敌方
+    角色发起新攻击。"""
+    db.cards[SDJX] = F.card(
+        SDJX, shikigami=100101, level=1, token=True, card_type="combat",
+        keywords=["trigger"],
+        steps=[F.Step(op="battle_retarget", target=SELF),
+               F.Step(op="battle_immunity", target=SELF)],
+        response=F.block(
+            F.Step(op="cancel_attack"),
+            F.Step(op="grant_immunity", kind="combat_damage", scope="next_battle",
+                   target=SELF),
+            F.Step(op="launch_attack", at="other_enemy"),
+            when="on_before_assault",
+            condition={"victim_side": "friendly", "victim_shikigami": 100101}))
+
+
+def test_response_cancel_then_new_attack_excludes_attacker(db, make_game, monkeypatch):
+    """声东击西响应重做（全卡盘点(16)）：响应使用终止触发响应的原战斗（交战/反击
+    不结算，原战斗不发 on_after_assault/on_battle_end），然后以此牌增益（免疫战斗
+    伤害，next_battle 挂账）对发起攻击者以外的一名未气绝敌方角色发起新攻击。"""
+    _sdjx_card(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pb.shikigami[0].level = 1
+    pb.shikigami[1].level = 1                # B1 在场：新攻击的另一目标候选
+    move(g, 0, 0)                            # A0（3/4，镰鼬位）驻留战斗区
+    pass_turns(g, 1)                         # → B 第 1 回合
+    pa.orb = 2                               # 留火响应
+    give(g, 0, SDJX)
+    monkeypatch.setattr(g.rng, "choice", lambda pool: pool[0])  # 新攻击选定 B1
+    g.history.clear()
+    g.apply({"op": "assault", "index": 0})   # B0 攻击 A0 → 响应
+    a0, b0, b1 = pa.shikigami[0], pb.shikigami[0], pb.shikigami[1]
+    assert pa.graveyard[-1].id == SDJX       # 响应牌已使用
+    assert b0.health == 4                    # 原战斗终止：原攻击者未造成交战伤害
+    assert a0.health == 4                    # 新攻击免疫战斗伤害（B1 反击 3 归零）
+    assert b1.health == b1.max_health - 3    # 新攻击命中 B1（排除原攻击者 B0）
+    assert pb.health == 30
+    # 原战斗不发攻击后/战斗结束后；新战斗正常完成各发一次
+    assert g.history.count("on_after_assault") == 1
+    assert g.history.count("on_battle_end") == 1
+
+
+def test_response_cancel_vs_friendly_attacker(db, make_game):
+    """声东击西响应（全卡盘点(16) 括注）：因敌方效果镰鼬被己方式神攻击时也可响应——
+    原（己方）战斗同样终止，新攻击目标池 = 任一未气绝敌方角色（攻击者为己方，
+    不在敌方池中，排除自然不生效）。"""
+    _sdjx_card(db)
+    g = make_game()
+    pa, pb = g.state.players
+    pa.shikigami[1].level = 1
+    move(g, 0, 0)                            # A0 驻留战斗区
+    pass_turns(g, 1)                         # → B 回合（A 为非回合方可响应）
+    pa.orb = 2
+    give(g, 0, SDJX)
+    for s in pb.shikigami:                   # 敌方全气绝：新攻击目标池只剩 B 牌手
+        s.defeated = True
+    g.history.clear()
+    a1 = pa.shikigami[1]
+    # 合成"因敌方效果被己方式神攻击"：A1 以 A0 为目标发起战斗（B 回合中）
+    g._resolve_combat(Ref(player=0, shikigami=1), a1,
+                      target=Ref(player=0, shikigami=0), origin="effect")
+    assert pa.graveyard[-1].id == SDJX       # 响应牌已使用
+    assert a1.health == a1.max_health        # 原战斗终止：无交战/反击
+    assert pa.shikigami[0].health == 4
+    assert pb.health == 30 - 3               # 新攻击命中 B 牌手
+
+
 # ==========================================================================
 # 铃鹿御前批次：义道破甲双倍（double_damage_vs_fragile）+ 光影战斗伤害记账
 # ==========================================================================
@@ -1630,12 +1705,13 @@ def test_critical_keyword_not_stacking(db, make_game):
 def _yako_combat_card(db, cid, keywords=()):
     """光影型战斗牌（+3 战力）：铃鹿御前造成战斗伤害时，若该次伤害 >=6——
     抽 1 并给己方牌手回该次伤害一半的血（on_damage/on_player_damaged 双块，
-    按单个伤害事件判定；{event: amount, half: true} 数值键=事件值减半向下取整）。"""
+    按单个伤害事件判定；贯通场合按贯通分配前的原始伤害值计——pre_pierce_amount
+    payload 键（无贯通时=amount）；{event: pre_pierce_amount, half: true}=减半向下取整）。"""
     grants = [F.EffectBlock(
         when=w, condition={"kind": "combat", "source_shikigami": "self",
-                           "amount_ge": 6},
+                           "pre_pierce_amount_ge": 6},
         steps=[F.Step(op="draw", count=1),
-               F.Step(op="heal", amount={"event": "amount", "half": True},
+               F.Step(op="heal", amount={"event": "pre_pierce_amount", "half": True},
                       target=T(kind="all", pool="self_player"))])
         for w in ("on_damage", "on_player_damaged")]
     db.cards[cid] = F.card(
@@ -1645,8 +1721,9 @@ def _yako_combat_card(db, cid, keywords=()):
 
 
 def test_battle_damage_per_event_trigger(db, make_game):
-    """光影按单个伤害事件判定（定案）：该次伤害 >=6 才触发——贯通对式神+牌手两段
-    各 <6（合计 >=6）不触发；连击两段各 >=6 各触发一次；回血=该次伤害一半向下取整。"""
+    """光影按单个伤害事件判定：该次伤害 >=6 才触发——贯通场合按贯通分配前的原始
+    伤害值计（原始 6→式神 4+牌手 2：式神段以原始值 6 触发、溢出段 2 不触发）；
+    连击两段各 >=6 各触发一次；回血=该次伤害（贯通时为原始值）一半向下取整。"""
     _yako_combat_card(db, 10010175, keywords=["combo"])
     _yako_combat_card(db, 10010176)
     _yako_combat_card(db, 10010177, keywords=["piercing"])
@@ -1674,7 +1751,8 @@ def test_battle_damage_per_event_trigger(db, make_game):
     assert pb2.shikigami[0].health == 93
     assert len(pa2.zones["deck"]) == deck1 - 1
     assert pa2.health == 23
-    # 贯通：式神段 4（贯通修正按生命截断）+ 牌手段 2——各 <6 不触发（合计 6 也不算）
+    # 贯通：原始 6 → 式神段 4（贯通修正按生命截断）+ 牌手段 2——式神段按原始值 6
+    # 触发（抽 1、回 6//2=3）；溢出段自身原始值 2 <6 不触发
     g3 = make_game()
     pa3, pb3 = g3.state.players
     pa3.orb = 9
@@ -1686,8 +1764,8 @@ def test_battle_damage_per_event_trigger(db, make_game):
     play(g3, 0, 10010177)
     assert pb3.shikigami[0].defeated         # 式神段 4
     assert pb3.health == 28                  # 牌手段溢出 2
-    assert len(pa3.zones["deck"]) == deck2   # 未触发
-    assert pa3.health == 20
+    assert len(pa3.zones["deck"]) == deck2 - 1   # 式神段按原始值 6 触发：抽 1
+    assert pa3.health == 23                  # 回原始值一半 3
 
 
 # ==========================================================================

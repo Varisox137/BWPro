@@ -1399,6 +1399,25 @@ def test_move_force_enemy_and_combat_lock(db, make_game):
     assert "move_count_turn" not in pa.shikigami[2].ext
 
 
+def test_move_into_combat_one_way(db, make_game):
+    """羽迹（move into_combat=True，全卡盘点）：单向移入——目标已在战斗区则无操作
+    （不做 toggle 移出），仅在准备区才移入战斗区。"""
+    INTO_MOVE = 10010190
+    db.cards[INTO_MOVE] = F.card(
+        INTO_MOVE, shikigami=100101, level=1, token=True, target=CHOOSE_ENEMY,
+        steps=[F.Step(op="move", force=True, into_combat=True)])
+    g, pa, pb = _mech_game(make_game)
+    pb.shikigami[0].level = 1
+    pb.combat_index = 0                      # 目标已在战斗区
+    play(g, 0, INTO_MOVE, target=Ref(player=1, shikigami=0))
+    assert pb.combat_index == 0              # 无操作：不被移出
+    assert "move_count_turn" not in pb.shikigami[0].ext
+    g2, pa2, pb2 = _mech_game(make_game)
+    pb2.shikigami[0].level = 1
+    play(g2, 0, INTO_MOVE, target=Ref(player=1, shikigami=0))
+    assert pb2.combat_index == 0             # 准备区 → 移入战斗区
+
+
 # ---------- 持续眩晕 until_event（英雄无畏） ----------
 
 def _stun_game(db, make_game):
@@ -1777,6 +1796,26 @@ def test_fragile_source_immunity_form_scope_cleanup(db, make_game):
     assert not any(e.get("kind") == "fragile_source" for e in s.immunities)
 
 
+def test_fragile_source_immune_vs_piercing_counter(db, make_game):
+    """霸主（全卡盘点）：贯通攻击有破甲的敌方式神——并行战斗伤害中反击先结算，
+    此时来源破甲仍在（破甲只在持有者受伤批次消耗）→ fragile_source 免疫该反击伤害；
+    攻击段随后消耗破甲、正常结算。"""
+    _fragile_source_immunity_spell(db)
+    g, pa, pb = _mech_game(make_game)
+    play(g, 0, 10010184)                           # 0 号位获得"免疫破甲敌方式神的伤害"
+    move(g, 1, 0)                                  # B0 3/4 驻守战斗区
+    b0 = pb.shikigami[0]
+    b0.shield = -2                                 # B0 持破甲
+    b0.health = 99
+    a = pa.shikigami[0]
+    a.keywords.append("piercing")
+    a.health = 30
+    g.apply({"op": "assault", "index": 0})
+    assert a.health == 30                          # 反击 3 被免疫（结算时来源破甲仍在）
+    assert b0.health == 99 - 3                     # 攻击段 3（贯通路径破甲不加伤/不消耗）
+    assert b0.shield == -2                         # 破甲未被消耗
+
+
 def test_enemy_fragile_ge2_keyword(db, make_game):
     """conditional_keywords 算子 enemy_fragile_ge2：敌方场上存在破甲 ≧2 的角色
     （在场式神或牌手）才授予关键字（铃鹿御前型条件瞬发）。"""
@@ -1814,6 +1853,36 @@ def test_pool_enemy_fragile_or_combat(db, make_game):
     assert sorted((r.player, r.shikigami) for r in got) == [(1, 0), (1, 1)]
     pb.shield = -2                                 # 牌手持破甲：牌手入池
     assert Ref(player=1) in g.legal_targets(0, inst)
+
+
+def test_pool_enemy_fragile_or_combat_veiled(db, make_game):
+    """无往帷幕过滤（全卡盘点）：敌方战斗区式神持[帷幕]且无破甲目标时无合法目标、
+    此牌无法使用；持破甲但持[帷幕]的敌方式神同样不可选（牌手无帷幕不受影响）。"""
+    cid = 10010198
+    db.cards[cid] = F.card(cid, token=True, steps=[F.dmg(1)],
+                           target=T(kind="choose", pool="enemy_fragile_or_combat"))
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})
+    move(g, 1, 0)                                  # 战斗区式神持帷幕、无破甲
+    pb.shikigami[0].keywords.append("veil")
+    inst = give(g, 0, cid)
+    assert g.legal_targets(0, inst) == []          # 无合法目标
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": inst.uid,
+                 "target": Ref(player=1, shikigami=0)})   # 帷幕目标出牌报错
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": inst.uid})    # 无目标亦不可用
+    # 持破甲但持帷幕的敌方式神同样不可选
+    g2 = make_game()
+    pa2, pb2 = F.battle_setup(g2, {0: 1})
+    pb2.shikigami[1].level = 1
+    pb2.shikigami[1].shield = -1
+    pb2.shikigami[1].keywords.append("veil")
+    inst2 = give(g2, 0, cid)
+    assert g2.legal_targets(0, inst2) == []
+    # 破甲牌手不受帷幕影响（牌手无帷幕）仍可指定
+    pb2.shield = -1
+    assert g2.legal_targets(0, inst2) == [Ref(player=1)]
 
 
 def test_event_amount_cap(db, make_game):
@@ -1876,6 +1945,49 @@ def test_random_branch_condition_filter(db, make_game):
     assert pa.orb == 1                       # gain_orb 分支未执行
     play(g, 0, cid2)                         # 无满足分支：空操作不报错
     assert len(pa.zones["deck"]) == deck0
+
+
+def test_kanko_enemy_gate_keys(db, make_game):
+    """惊鸿之舞分支新条件键（全卡盘点）：enemy_alive_exists（敌方有未气绝式神）/
+    enemy_power_ge（敌方有力量>=n 的未气绝式神，读 eff_power；气绝者不计）。"""
+    g = make_game()
+    pa, pb = F.battle_setup(g, {0: 1})       # B 全员 1 级在场
+    ev = {}
+    assert g._match({"enemy_alive_exists": True}, ev, 0)
+    assert not g._match({"enemy_power_ge": 6}, ev, 0)      # B 最高力量 3（白狼位）
+    pb.shikigami[0].temp_power = 4                         # 3+4=7
+    assert g._match({"enemy_power_ge": 6}, ev, 0)
+    pb.shikigami[0].defeated = True                        # 气绝者不计入门槛
+    assert not g._match({"enemy_power_ge": 6}, ev, 0)
+    for s in pb.shikigami:
+        s.defeated = True
+    assert not g._match({"enemy_alive_exists": True}, ev, 0)
+
+
+def test_prefer_alive_random_backfill(db, make_game):
+    """惊鸿之舞"优先赋予未气绝的己方式神"（prefer_alive 取样键，全卡盘点）：随机选取
+    先从未气绝子集取样，不足 n 再由气绝者补足。"""
+    cid = 10010193
+    db.cards[cid] = F.card(cid, token=True, steps=[F.Step(
+        op="buff_power", amount=1, perm=True,
+        target=T(kind="all", pool="friendly_shikigami",
+                 include_defeated=True, random=2, prefer_alive=True))])
+    # 未气绝 ≥ 2：只取未气绝（气绝者永不被取）
+    g, pa, pb = _mech_game(make_game)
+    for i in (1, 2, 3):
+        pa.shikigami[i].level = 1
+    pa.shikigami[3].defeated = True
+    play(g, 0, cid)
+    assert pa.shikigami[3].perm_power == 0                 # 气绝者未被取
+    assert sum(s.perm_power for s in pa.shikigami) == 2    # 恰两名未气绝各 +1
+    # 仅 1 名未气绝：取其 + 由气绝者补足第 2 名
+    g2, pa2, pb2 = _mech_game(make_game)
+    for i in (1, 2, 3):
+        pa2.shikigami[i].level = 1
+        pa2.shikigami[i].defeated = True
+    play(g2, 0, cid)
+    assert pa2.shikigami[0].perm_power == 1                # 未气绝者必被取
+    assert sum(s.perm_power for s in pa2.shikigami) == 2   # 第 2 名由气绝者补足
 
 
 def test_kanko_branch_condition_keys(db, make_game):

@@ -18,6 +18,11 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_turn_end",          # 任一玩家回合结束 {player}
     "on_card_played",       # 卡牌使用后 {player, uid}
     "on_before_assault",    # 出击宣言后、伤害结算前 {attacker: Ref, victim: Ref}
+    "on_before_battle_prep",  # 战斗准备前（攻击者即将移入战斗区，全卡盘点——英雄无畏
+    #                       "直到鸦天狗攻击"解除挂点，只在攻击者作为事件主体时命中；
+    #                       origin 键=发起方式 assault/card/effect，初会之舞"因出击而
+    #                       发起攻击"门控）
+    #                       {attacker: Ref, origin, battle}（延时时机）
     "on_after_assault",     # 出击结算完毕 {attacker: Ref}
     "on_battle_end",        # 战斗结束后 {attacker: Ref, battle}（裁决(10)：战斗被取消/过早终止则不发；不入 EVENT_TIMING = 延时队列时机）
     "on_damage",            # 式神受到伤害后 {victim: Ref, amount, source, kind}
@@ -44,6 +49,9 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_form_destroyed",    # 形态牌消灭 {player, shikigami, uid, reason}
     "on_shield_changed",    # 式神/牌手护甲或破甲数值变化后 {target: Ref, old, new, reason}
     "on_stun",              # 角色被眩晕后 {victim: Ref, source}（雪女"当你眩晕敌方式神时"）
+    "on_stun_released",     # 角色的眩晕解除后 {target: Ref}（回合结束批次/持续眩晕
+    #                       until_event 解除发点；气绝清除不算"解除"不发——烟烟罗的
+    # 分身同步眩晕"当己方烟烟罗解除眩晕时移除"挂点，全卡盘点(9)）
     "on_orb_changed",       # 鬼火变化 {player, old, new, reason}
     "on_assaults_changed",  # 出击次数变化 {player, old, new, reason}
     # ---- 伤害事件时点批次（docs/rules.md 第五章；payload 含 damage 可变对象，监听者可改伤害值）----
@@ -113,6 +121,7 @@ EVENT_TIMING: dict[str, str] = {
     "on_after_assault": "insert",    # 攻击后：清除战力等，需即时完成
     "on_shield_changed": "insert",   # 护甲/破甲变化：即时时机，便于插入结算响应
     "on_stun": "insert",             # 被眩晕时：即时时机（同 on_shield_changed 的变化点发）
+    "on_stun_released": "insert",    # 眩晕解除时：即时时机（同 on_stun 的变化点发）
     "on_before_damage": "insert",  # 造成伤害前：即时时机（穿刺生效点）
     "on_damage_start": "insert",     # 造成/受到伤害开始时：即时时机
     "on_pre_shield_1": "insert",     # 护甲计算前1：即时时机（森罗之阵②挂点）

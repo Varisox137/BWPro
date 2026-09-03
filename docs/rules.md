@@ -191,7 +191,7 @@
 
 ## 四、战斗事件完整流程（经测试）
 
-【实现侧（`Game._battle_flow`）：本流程整体已引擎化——战斗准备前（穿刺、激怒移除）、准备（移动/远程）、有目标的战斗（追猎选择目标；发起战斗前目标再校验——有目标的出击目标不合法则不发起战斗、其余改为无目标战斗）、确定目标（确定目标前1直击改牌手；无目标且非直击者随敌方战斗区变更）、**确定战斗目标后求值战斗牌条件授予/战斗免疫**（`_battle_cond_pending` 挂账延迟：鸩羽/致命诱惑"若攻击有破甲的角色"类 Step.condition 在响应结算与被攻击者重读之后求值，全卡盘点(4)(7)——原"战斗开始时"求值作废）、攻击时（**结算后重读攻击方战斗关键字快照与动态身材缓存**——"攻击时获得[先攻]/[贯通]"类授予（on_before_assault 监听）赶上本场战斗的先攻/贯通判定）、先攻/交战阶段（连击/先攻/贯通/远程）、战斗结束后的追加攻击（`followup_attack`，依次结算且不享受原战斗牌加成）、响应战斗牌发起新战斗的嵌套战斗（偷袭）、终止点清理均已实现；战斗结界嵌套战斗、被攻击者气绝后复活不终止尚未实现】
+【实现侧（`Game._battle_flow`）：本流程整体已引擎化——战斗准备前（穿刺、激怒移除、延时事件 on_before_battle_prep——英雄无畏解除/初会之舞授予挂点）、准备（移动/远程）、有目标的战斗（追猎选择目标；发起战斗前目标再校验——有目标的出击目标不合法则不发起战斗、其余改为无目标战斗）、确定目标（确定目标前1直击改牌手；无目标且非直击者随敌方战斗区变更）、**确定战斗目标后求值战斗牌条件授予/战斗免疫**（`_battle_cond_pending` 挂账延迟：鸩羽/致命诱惑"若攻击有破甲的角色"类 Step.condition 在响应结算与被攻击者重读之后求值，全卡盘点(4)(7)——原"战斗开始时"求值作废）、攻击时（**结算后重读攻击方战斗关键字快照与动态身材缓存**——"攻击时获得[先攻]/[贯通]"类授予（on_before_assault 监听）赶上本场战斗的先攻/贯通判定）、先攻/交战阶段（连击/先攻/贯通/远程）、战斗结束后的追加攻击（`followup_attack`，依次结算且不享受原战斗牌加成）、响应战斗牌发起新战斗的嵌套战斗（偷袭）、终止点清理均已实现；战斗结界嵌套战斗、被攻击者气绝后复活不终止尚未实现】
 
 要素：**攻击者，目标**。
 
@@ -202,7 +202,7 @@
 
 ### 一、战斗准备步骤
 
-1. 战斗准备前：【英雄无畏】（未加入）；移除攻击者的"激怒"状态。（穿刺已改为"造成伤害前"生效，见「伤害事件完整流程」批次 1）
+1. 战斗准备前：【英雄无畏】（已实现——发延时事件 `on_before_battle_prep`，payload {attacker, origin, battle}：英雄无畏持续眩晕解除挂点、初会之舞"当你出击时"授予挂点（origin=assault 门控，全卡盘点）；发点后再 drain、攻击者气绝则中止）；移除攻击者的"激怒"状态。（穿刺已改为"造成伤害前"生效，见「伤害事件完整流程」批次 1）
 2. 若发起攻击的式神处于准备区：移动攻击者（具有"远程"则不移动）。
 3. 若发起攻击者气绝：终止战斗流程。
 4. 确定目标前1：攻击者"直击"能力生效（被攻击者改为牌手）。
@@ -242,7 +242,7 @@
 
 ## 五、伤害事件完整流程（经测试）
 
-【实现侧（`Game._run_damage_queue`）：各时点批次事件 on_before_damage / on_damage_start / on_before_shield / on_after_shield / on_before_health（均即时时机，payload 含可变 damage 对象——boost_damage 动作在此类批次改写伤害值，只增）+ 穿刺（批次0，只移除正护甲/屏障，不动破甲，与伤害是否生效无关）+ 贯通修正 + 屏障（批次3）+ 护甲计算（破甲 = 负 shield：移除并增加等量伤害；正护甲吸收）+ 合并 + 不屈（扣减生命）+ 濒死标记（扣减生命至 ≤0 先标 `dying`，再按受伤顺序延时生成气绝事件）+ 吸血（批次 10①，延时优先级 1 锚点）+ on_damage/on_player_damaged（伤害后，延时）+ 按受伤顺序生成气绝事件均已实现。免疫各分支统一在"护甲计算后"批次**优先级 3** 判定（2026-08 修正定案"免疫只看最终受伤者"：改非伤害/伤害转移全部结算完、伤害事件未终止后，对**最终受伤者**判定其全部免疫条目；屏障/护甲计算/贯通修正均先于免疫参与计算）——已落地分支：作用域战斗伤害免疫（kind=combat，含反击）、非战斗伤害免疫（{"kind": "effect", "from": "enemy"}，grant_immunity kind/from_side 参数，觉醒·山童）、破甲来源免疫（{"kind": "fragile_source"}，霸主）、牌手级全伤害免疫（`PlayerState.immunities` 条目 {"kind": "all", "turn": n}，舍生）。伤害管线返回实际伤害合计（按扣减生命口径：护甲吸收不计、过量击杀按面板值计），供块内合计类效果使用（巨浪，memo 键 `last_damage_total`）；子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者再拆。伤害转移/改非伤害已落地——"护甲计算后"批次按 `EffectBlock.priority` 分层：优先级 1=「伤害改为非伤害」类（redirect_to_field，见第三十一章）、优先级 2=「伤害目标转移」类（grant_redirect 挂账/redirect_damage_to_self op）、优先级 3=免疫判定；转移统一语义与转移链定案见步骤 6② 及 terminology「伤害转移（转移链）」行。幻境耐久扣减已落地（扣减生命后立即扣队首幻境等量耐久，见第三十一章）】
+【实现侧（`Game._run_damage_queue`）：各时点批次事件 on_before_damage / on_damage_start / on_before_shield / on_after_shield / on_before_health（均即时时机，payload 含可变 damage 对象——boost_damage 动作在此类批次改写伤害值，只增）+ 穿刺（批次0，只移除正护甲/屏障，不动破甲，与伤害是否生效无关）+ 贯通修正 + 屏障（批次3）+ 护甲计算（破甲 = 负 shield：移除并增加等量伤害；正护甲吸收）+ 合并 + 不屈（扣减生命）+ 濒死标记（扣减生命至 ≤0 先标 `dying`，再按受伤顺序延时生成气绝事件）+ 吸血（批次 10①，延时优先级 1 锚点）+ on_damage/on_player_damaged（伤害后，延时）+ 按受伤顺序生成气绝事件均已实现。damage 动作 `parallel: true`（群鸦乱舞）：全部目标并入同一伤害队列结算，气绝统一在队列清空后生成（溅射转移计入 memo 恢复量合计；与 repeat_on_kill 不组合）。免疫各分支统一在"护甲计算后"批次**优先级 3** 判定（2026-08 修正定案"免疫只看最终受伤者"：改非伤害/伤害转移全部结算完、伤害事件未终止后，对**最终受伤者**判定其全部免疫条目；屏障/护甲计算/贯通修正均先于免疫参与计算）——已落地分支：作用域战斗伤害免疫（kind=combat，含反击）、非战斗伤害免疫（{"kind": "effect", "from": "enemy"}，grant_immunity kind/from_side 参数，觉醒·山童）、破甲来源免疫（{"kind": "fragile_source"}，霸主）、牌手级全伤害免疫（`PlayerState.immunities` 条目 {"kind": "all", "turn": n}，舍生）。伤害管线返回实际伤害合计（按扣减生命口径：护甲吸收不计、过量击杀按面板值计），供块内合计类效果使用（巨浪，memo 键 `last_damage_total`）；子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者再拆。伤害转移/改非伤害已落地——"护甲计算后"批次按 `EffectBlock.priority` 分层：优先级 1=「伤害改为非伤害」类（redirect_to_field，见第三十一章）、优先级 2=「伤害目标转移」类（grant_redirect 挂账/redirect_damage_to_self op）、优先级 3=免疫判定；转移统一语义与转移链定案见步骤 6② 及 terminology「伤害转移（转移链）」行。幻境耐久扣减已落地（扣减生命后立即扣队首幻境等量耐久，见第三十一章）】
 
 要素：**伤害来源，受伤者，是否贯通，伤害值，伤害原因**。
 
@@ -372,8 +372,8 @@
    - **出击前**（即时时机，按优先度）：
      - 0：幻境「千年华」效果；
      - 1：各能力；
-     - 2：出击者获得己方出击加成所对应的战力/能力直到本次出击的战斗后，并获得出击加成相应的护甲/破甲；【已实现（鼓舞）：力量挂攻击后到期强化（该次出击的战斗后核销）、护甲经护甲变化事件获得后保留；战斗牌不消耗出击加成】
-     - 3：移除己方的所有出击加成（产生影响：形态「离殇之舞」效果）。【已实现：出击时清空 `PlayerState.assault_boosts`】
+     - 2：出击者获得己方出击加成所对应的战力/能力直到本次出击的战斗后，并获得出击加成相应的护甲/破甲；【已实现（鼓舞）：力量挂攻击后到期强化（该次出击的战斗后核销）、护甲经护甲变化事件获得后保留；战斗牌不消耗出击加成。**实现侧次序订正（不夜之火全卡盘点）：加成的获得/移除早于各"出击前"时机能力**——`_cmd_assault` 先 `_consume_assault_boosts` 再进 `_resolve_combat`，"战斗准备前"/"（被）攻击时"时机在其后发出】
+     - 3：移除己方的所有出击加成（产生影响：形态「离殇之舞」效果）。【已实现：出击时清空 `PlayerState.assault_boosts`；实现侧与 2 同点、早于时机能力，见上】
    }
 5. 出击者进行战斗（插入结算战斗事件）。  
    **注意**：出击事件本身不展开「战斗结界」，即出击流程中插入结算的战斗事件会立即进行；但出击的战斗事件本身会有「战斗结界」。
@@ -672,7 +672,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 
 所有引擎 `emit()` 产生的事件，例如：
 - `on_game_start`, `on_turn_start`, `on_turn_end`
-- `on_card_played`, `on_before_hand_play`（使用手牌前·更早时机，仅手牌来源）、`on_before_card_play`、`on_before_assault`, `on_after_assault`, `on_battle_end`
+- `on_card_played`, `on_before_hand_play`（使用手牌前·更早时机，仅手牌来源）、`on_before_card_play`、`on_before_battle_prep`（战斗准备前·延时）、`on_before_assault`, `on_after_assault`, `on_battle_end`
 - `on_damage`, `on_shikigami_defeated`, `on_shikigami_revived`
 - `on_upgrade`, `on_form_attached`, `on_form_destroyed`
 - `on_draw`, `on_shuffle`, `on_mulligan`
@@ -749,11 +749,12 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 ## 二十八、眩晕（已实现）
 
 - **「眩晕XX」** = 令 XX 角色获得「眩晕」状态；**「若 XX 角色具有眩晕」** = 该角色具有任意未解除的普通或持续眩晕。
-- **数据**：眩晕条目列表——式神 `ShikigamiState.stuns`、牌手 `PlayerState.ext["stuns"]`（同构）；条目 `{"kind": "normal", "turn": n}`（普通眩晕，记施加时的控制者回合号）或 `{"kind": "lasting", ...}`（持续眩晕，已落地——`until_event` 事件名列表 + `watch` 看护 + `apply_seq`/`apply_uid` 防自解除，英雄无畏；详见术语表「眩晕」「持续眩晕施加」行）。角色眩晕（`is_stunned`）= 列表非空：一名角色需所有（普通/持续）眩晕都消除才算解除。
+- **数据**：眩晕条目列表——式神 `ShikigamiState.stuns`、牌手 `PlayerState.ext["stuns"]`（同构）；条目 `{"kind": "normal", "turn": n}`（普通眩晕，记施加时的控制者回合号）或 `{"kind": "lasting", ...}`（持续眩晕，已落地——`until_event` 事件名列表 + `watch` 看护 + 条目级 `watch_keys={事件名: [payload 键]}` 主体限定（仅事件所指角色为来源式神本人时解除；英雄无畏 until=[on_before_card_play, on_before_battle_prep, on_shikigami_defeated]）+ `apply_seq`/`apply_uid` 防自解除；详见术语表「眩晕」「持续眩晕施加」行）。角色眩晕（`is_stunned`）= 列表非空：一名角色需所有（普通/持续）眩晕都消除才算解除。
 - **门控**：眩晕的式神不能出击、不能主动使用/响应使用其卡牌（化身使用未加入）；眩晕的牌手不能使己方式神出击（全体）。挂点：出击校验、`_cmd_play_card`、响应收集与结算复查（`_collect_responses`）。
 - **解除**：己方回合结束批次（按角色进场顺序）移除「非本回合施加」的普通眩晕（turn ≠ 当前回合号，`Game._remove_expired_stuns`）；持续眩晕按 until 移除；气绝时清除（复活后需重新施加）。
 - **施加**：`stun` 动作（target 可为式神或牌手，kind 默认 normal）。
 - **眩晕事件**：`stun` 施加后发出 `on_stun`（即时时机 insert，payload {victim, source}；同 on_shield_changed 的变化点发出）——雪女"每回合一次，当你[眩晕]敌方式神时"类挂点（每回合一次配 turn_mark 门控）。
+- **眩晕解除事件** `on_stun_released`（即时时机 insert，payload {target}）：普通眩晕己方回合结束批次移除与持续眩晕 until 解除时，按实际解除的角色逐个发出（先全部移除再统一发点，避免遍历中递归改列表）——烟烟罗的分身"与来源同步解除眩晕"挂点（summon inherit_stats 分身获得 until_event=[on_stun_released] 持续眩晕，watch=来源式神）；**气绝时清除不算"解除"**（不发该事件，分身保持眩晕——全卡盘点(16)定案）。
 
 ## 二十九、「已展示」（已实现）
 
@@ -782,17 +783,18 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 - **爆能**：使用方式（PlayMethod）携带 `energy_cost`（int）——选择该方式须额外支付等量能量（使用合法性处校验，不足不可选）；方式的 `effects` **追加**到基础 effects 之后结算；多档并存时各档独立支付、效果累计（爆能3/爆能6——一太郎之棒）。
 - 方式可携带 `keywords`：以该方式使用时临时授予卡牌关键字（森之力爆能档得[瞬发]）。
 - **爆能X**：`energy_cost: "all"`——消耗全部能量（0 能量不可选该方式）；X = 支付时当前能量快照（出牌时写入 `card.mods["burst_x"]`，步骤数值 `{"burst_x": true}` 读取，本次结算后清除）。
-- 爆能支付走 `_spend_energy` 统一入口：吃日和坊生命代偿与觉醒·日和坊免单（爆能X免单时 X 按当前能量读取、实际消耗 0）。
+- 爆能支付走 `_spend_energy` 统一入口：吃日和坊本人生命代偿与觉醒·日和坊免单（爆能X免单时 X 按当前能量读取、实际消耗 0）。
 
 ### 三、日和坊（能量代偿与免单）
 
-- **生命代偿**：日和坊在场时，己方式神支付能量不足可以其生命 1:1 代偿差额（直扣生命、非伤害、不能降到 0；引擎硬编码 id 100205，通用通道 `ext["energy_life_substitute"]`）。
+- **生命代偿**：日和坊在场时，**日和坊本人**支付能量不足可以其生命 1:1 代偿差额（直扣生命、非伤害、代偿后须余 ≥1 生命；引擎硬编码 id 100205，通用通道 `ext["energy_life_substitute"]`；全卡盘点(12)收窄——其他己方角色支付能量不再吃代偿）。
 - **觉醒·日和坊免单**：每回合一次（不分敌我回合，`PlayerState.ext["energy_free_turn"]` 半回合重置），己方式神消耗能量的效果不再消耗能量；判定在 `_spend_energy` 入口，爆能/能量出击/形态气绝使用同通道。
 
 ### 四、移动（[移动]）
 
 - `move` 动作：目标式神战斗区↔准备区 toggle——准备区→进战斗区（复用 `_enter_combat`，尘缚锁定下静默无效）、战斗区→回准备区（复用 `_retreat`，召唤物退回即离场）；气绝/已离场不能移动，眩晕不拦。
 - `force: true`：可强制敌方式神入战斗区（羽迹；仅拉入方向有意义），非强制时敌方目标静默跳过。
+- `into_combat: true`：单向移入——目标已在战斗区则无操作（不 toggle 移出；羽迹整卡改 mode=atomic 一段结算，全卡盘点）。
 - **移动计数**：进/出战斗区各计一次 [移动]（`ShikigamiState.ext["move_count_turn"]`，半回合清除）；召唤物进场算一次、气绝离场不算。
 - 鸦天狗类"进入/离开战斗区时"能力双挂 `on_enter_combat` / `on_leave_combat`。
 
@@ -800,7 +802,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 
 玩家级旗标（`PlayerState.ext["boost_flags"]`；`scope="form"` 绑定来源形态、随形态离场清除，缺省永久）：
 
-- `boost_on_combat_card`（不夜之舞）：使用战斗牌发起的攻击也获得并消耗出击加成（战斗牌攻击结算点调用 `_consume_assault_boosts`）。
+- `boost_on_combat_card`（不夜之舞）：使用战斗牌发起的攻击也获得并消耗出击加成（战斗牌攻击结算点调用 `_consume_assault_boosts`）；**仅非响应方式消耗**——非"（被）攻击时"时机响应战斗牌（`_resolve_combat_card` from_response）不消耗（全卡盘点修复）。
 - `boost_no_consume`（离殇之舞）：出击加成不因出击/战斗牌攻击而消耗（每次攻击照常获得、不清空）。
 - `inspire_bonus{power, shield}`（觉醒·不知火）：[鼓舞]（basic_boost）数值额外 +power/+shield（可叠加，basic_boost 读取时求值）。
 
@@ -808,12 +810,13 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 
 - **取消攻击** `cancel_attack`（鸦羽疾走"自动使用并取消本次攻击"）：响应挂 on_before_assault，置事件取消旗标，战斗流程在响应结算后检查并终止整场战斗；已支付的鬼火/出击次数不退还（维护者定案）。
 - **攻击替换** `attack_replace`（烬染不夜"攻击时改为对两个随机敌方角色造成等同于自身力量与战力之和的伤害"）：响应 on_before_assault 置替换旗标，战斗流程以该效果伤害替换先攻/交战阶段——无交战、不受反击，on_after_assault 照常发出；目标池为随机不重复的两个敌方**角色**（可含牌手——维护者定案）；X = 力量 + 战力（含乏力）；该伤害为**非战斗伤害**（能力造成、非法术——kind=effect，不触发[吸血]，维护者定案）。
-- **交战改向** `battle_retarget`（声东击西"本次的交战目标改为另一个敌方角色"）：登记到当前战斗上下文，目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（随机且可含牌手——维护者定案；排除原交战目标，无另一个敌方角色时该次攻击落空），仅本次战斗有效。
+- **交战改向** `battle_retarget`（声东击西主动方式"本次的交战目标改为另一个敌方角色"）：登记到当前战斗上下文，目标角色的交战伤害（攻击/反击）改向另一个随机敌方角色（随机且可含牌手——维护者定案；排除原交战目标，无另一个敌方角色时该次攻击落空），仅本次战斗有效。
+- **声东击西响应重做**（全卡盘点(15)）：响应方式（on_before_assault"被攻击时"）= `cancel_attack` 终止原整场战斗 → 本战斗战斗伤害免疫（grant_immunity kind=combat_damage scope=next_battle，防插入帧残留）→ `launch_attack at="other_enemy"` 对随机另一个敌方角色发起攻击（enemy_character 池排除原攻击者，rng.choice 随机；与原 battle_retarget 随机通道同口径）；响应覆盖块经 cdef.response 统一分派（罗城门先例）。主动使用保持 battle_retarget + 本次战斗免疫不变，新增 play_condition `enemy_alive_exists`（无存活敌方式神不可主动使用）。
 
 ### 七、复制使用与分身复制法术
 
 - **复制使用** `use_card_copy{card_id}`（爆能"{额外使用'三太郎之斧'}"类）：凭空生成指定牌复制并自动使用——不耗鬼火/瞬发名额/出击次数（维护者定案）；法术牌按基础方式效果结算（`_auto_cast_copy` 共用助手），战斗牌按基础方式走完整战斗流程（来源式神须在场）；用后入墓地，照常 emit on_card_played（play_from=void、triggered=auto）。链式"再额外使用"= 数据侧并列多个 step。
-- **分身复制法术** `mirror_spell`（烟烟罗的分身）：挂 on_card_played，复制持有者使用的法术牌并自动使用一次（基础方式）——**主动/响应/自动使用均触发**（维护者定案；`mirror_copy` 标记防递归，复制自身不连锁）；choose 目标沿用原选（仍合法）否则随机重选。响应对自动使用同样命中（响应收集不过滤 triggered，定案口径）。
+- **分身复制法术** `mirror_spell`（烟烟罗的分身）：挂 on_card_played，复制持有者使用的法术牌并自动使用一次——**按原牌相同使用方式**（PlayMethod 透传：爆能方式复制照常经 `_spend_energy` 支付/免单，爆能X时 X 按分身自身当前能量读取、口径待裁决见 questions.md；全卡盘点(9)(10)）；**继承原牌实例** mods（dict 拷贝，含已展示/临时修饰）与灵咒结附；**觉醒牌可复制**（数据侧 subtype_not: awaken 排除已删——经 `_awaken_rebind` 完整换绑：觉醒能力替换/属性修正队列/on_awakened 照常发出）；**主动/响应/自动使用均触发**（维护者定案；`mirror_copy` 标记防递归，复制自身不连锁）；choose 目标沿用原选（仍合法）否则随机重选。响应对自动使用同样命中（响应收集不过滤 triggered，定案口径）。
 
 ### 八、能力要求结附形态（萤草 20200327）
 
@@ -822,8 +825,13 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 ### 九、破甲来源免疫 / 光影单事件触发 / 破甲双倍（铃鹿御前批次）
 
 - **破甲来源免疫**：grant_immunity 新 kind="fragile_source"（霸主）——免疫当前持有破甲的**敌方式神**造成的任意种类伤害（战斗/效果不限类别；牌手来源不免疫——"有破甲的敌方式神"明文，维护者定案确认）；scope="form" 绑定来源形态、随形态离场清除（`_fragile_source_immune` 在伤害管线免疫判定段）。
-- **光影（单伤害事件触发）**：temp_grants 双块挂 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + amount_ge:6）——按单个伤害事件判定（维护者定案）：贯通对式神+牌手两段各 <6 合计 ≥6 不触发；连击两段各 ≥6 各触发一次；回血=floor(该次伤害/2)，经数值通道 `{"event": "amount", "half": true}`（与 cap 同修饰位、cap 先截后减）。
+- **光影（单伤害事件触发）**：temp_grants 双块挂 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + pre_pierce_amount_ge:6）——按单个伤害事件判定，**贯通场合按贯通分配前的原始伤害值计**（全卡盘点新口径：`_DamageEvent.pre_pierce_amount` 在贯通分配溢出截断时快照原始值，on_damage/on_player_damaged payload 恒带同名键、无贯通时 = amount）：原始 6→式神 4+牌手 2 时式神段以 6 触发、溢出段自身 2 不触发；连击两段各 ≥6 各触发一次；回血=floor(该次伤害/2)（贯通时为原始值一半），经数值通道 `{"event": "pre_pierce_amount", "half": true}`（与 cap 同修饰位、cap 先截后减）。全局 amount_ge 语义不变。
 - **破甲双倍** `double_damage_vs_fragile`（义道"对有破甲的式神造成双倍伤害"）：战斗牌专用提取步——按**[暴击]时机**（伤害事件"扣减生命前2"挂点，`Game._damage_double_modifiers`）：仅本张战斗牌发起的战斗内、攻击者本人（`ev.source==atk`）、kind=combat、victim=持破甲式神才 ×2；反击伤害的来源是被攻击者、天然不命中攻击者判定（2026-08 随[暴击]反击生效裁决删去 is_counter 显式豁免，行为不变）；嵌套/插入战斗按战斗 id 精确匹配不继承（维护者定案）。[暴击]关键字本体（critical）已落地（破魔符/破魔箭 crit_pierce_mark 通道，见第三十六章与 terminology「暴击」条）。
+
+### 十、伤害事件终止（cancel_damage，同生共死重做）
+
+- **伤害事件终止** `cancel_damage`（动作）：伤害时点批次将事件中可变伤害对象归零并终止（改非伤害 1 归零后本块被 emit 循环跳过——故同生共死挂**优先级 2**；免疫判定固定批次内联、概念优先级 3，**免疫中仍触发**，全卡盘点(17)定案）。
+- **同生共死**（镰鼬形态）重做：挂 on_after_shield（"护甲计算后"）priority 2，条件 = victim_shikigami: self + `damage_lethal`（新条件键——事件伤害对象**护甲计算后现值** ≥ 受伤者当前生命；victim_lethal 读面板值不动，两键并存）+ any_of[{energy_ge: 3}, {`energy_free_available`}]（新条件键——`_energy_free_available`：本回合觉醒·日和坊免单名额未用）；触发 = spend_energy 3 gate（免单名额在时不检测、支付经免单不扣能量）→ cancel_damage 终止伤害事件（不再授予一次性免疫，消残留 bug）→ retreat 移回准备区。
 
 ## 三十一、幻境
 

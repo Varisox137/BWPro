@@ -12,11 +12,12 @@ versions:
       effects:
         steps: []
       abilities:
-        # 己方回合结束时若鸦天狗在战斗区：敌方全体 1 伤，鸦天狗恢复等量生命
+        # 己方回合结束时若鸦天狗在战斗区：敌方全体 1 伤（parallel 并行口径——全部
+        # 伤害事件同一队列结算，气绝统一在队列清空后生成），鸦天狗恢复等量生命
         #（恢复量 = 本步实际伤害合计，巨浪 {memo: last_damage_total} 先例）
         - when: on_turn_end
           condition: {active: self, shikigami_in_combat: 100201}
           steps:
-            - {op: damage, amount: 1, target: {kind: all, pool: enemy_shikigami}}
+            - {op: damage, amount: 1, parallel: true, target: {kind: all, pool: enemy_shikigami}}
             - {op: heal, amount: {memo: last_damage_total}, target: {kind: self}}
       text: 己方回合结束时若鸦天狗在战斗区，对敌方所有式神造成1点伤害，鸦天狗恢复等量生命。

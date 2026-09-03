@@ -12,14 +12,21 @@ versions:
       effects:
         steps: []  # 无进场效果
       abilities:
-        # 将受到致死伤害时消耗 3 点能量，免疫本次伤害并移回准备区——on_damage_start
-        # 面板伤害 ≥ 当前生命判定（舍生 10011105/狂啸 10010908 同先例，时机在护甲
-        # 计算前）；energy_ge 门控 + gate 双保险，支付失败则后续不结算；
-        # 免疫 scope=once（命中即移除）；retreat 仅战斗区→准备区（准备区空操作）
-        - when: on_damage_start
-          condition: {victim_shikigami: self, victim_lethal: true, energy_ge: 3}
+        # 镰鼬作为受伤者的伤害事件"护甲计算后"时机（全卡盘点(17)）：伤害值（读
+        # damage 对象现值 = 护甲计算后口径，damage_lethal）>= 当前生命且当前能量 >=3
+        # （本回合觉醒日和坊免单名额未用时（energy_free_available）不检测能量，
+        # 支付走 _spend_energy 免单自然生效）：消耗 3 能量、**终止当前伤害事件**
+        # （cancel_damage 归零终止——非授予免疫，无"护甲归零后一次性免疫残留"
+        # 问题）、移回准备区。priority: 2——晚于改非伤害（1，归零则不触发）、
+        # 早于该批次最晚的免疫判定（3）：镰鼬即便免疫伤害也会触发本形态
+        - when: on_after_shield
+          priority: 2
+          condition:
+            victim_shikigami: self
+            damage_lethal: true
+            any_of: [{energy_ge: 3}, {energy_free_available: true}]
           steps:
             - {op: spend_energy, amount: 3, gate: true}
-            - {op: grant_immunity, kind: all, scope: once, target: {kind: self}}
+            - {op: cancel_damage}
             - {op: retreat, target: {kind: self}}
       text: "当镰鼬将受到致死伤害时，消耗3点能量，免疫本次伤害并移回准备区。"

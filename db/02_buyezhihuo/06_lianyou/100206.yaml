@@ -10,9 +10,10 @@ versions:
       keywords: [charge]
       abilities:
         # 当镰鼬对牌手造成伤害时获得 1 点能量（on_player_damaged：player=受伤牌手、
-        # source=伤害来源 Ref；source_shikigami: self 限定镰鼬为来源）
+        # source=伤害来源 Ref；source_shikigami: self 限定镰鼬为来源；受伤者不限侧——
+        # 全卡盘点(15)：任一牌手为受伤者均触发，含转移给己方牌手的自伤）
         - when: on_player_damaged
-          condition: {player: opponent, source_shikigami: self}
+          condition: {source_shikigami: self}
           steps:
             - {op: gain_energy, amount: 1, target: {kind: self}}
       text: "[充能]。当镰鼬对牌手造成伤害时，获得1点能量。"

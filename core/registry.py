@@ -147,11 +147,18 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     "hand_count_ge",  # 控制者当前手牌数 ≥ n（转运"若手牌>=2"外/内层判定，全卡盘点(6)）
     "deck_ge",  # 控制者牌库张数 ≥ n（明心"若己方牌库有牌"触发门控，全卡盘点(13)）
     "friendly_field_intensity_ge", "field_summon_distinct_ge", "friendly_field",
+    "enemy_alive_exists",  # 对方有未气绝式神（惊鸿之舞敌方减益/伤害项前置，全卡盘点）
+    "enemy_power_ge",  # 对方有力量 ≥ n 的未气绝式神（读 eff_power；惊鸿之舞眩晕项
+    #                  "敌方有力量>=6的未气绝式神"前置，全卡盘点）
     "hand_card_type", "chosen_stunned", "chosen_has_fragile", "chosen_side",
     "combat_opponent_stunned", "kill_count_ge",
     "any_of",  # 子条件列表任一命中（OR 组合；舍生响应"<=伤害值*2 或 <=伤害值"）
     "crit_lethal",  # 伤害事件具[暴击]且无[贯通]且伤害值*2 ≥ victim 当前生命
     #               （裁决(9) 舍生响应，"护甲计算后"时机暴击翻倍预判）
+    "damage_lethal",  # 伤害事件 damage 对象现值 ≥ victim 当前生命（护甲计算后口径；
+    #                 同生共死致死判定——victim_lethal 读 payload 快照为其对照）
+    "energy_free_available",  # 控制者本回合觉醒·日和坊免单名额未用（同生共死
+    #                         免单豁能量门控，配 any_of）
     "quest_count_ge",
     "invocation_on_field", "shikigami_countdown_free",
     "holder_has_invocation",  # 能力持有者结附指定灵咒（棺击"持有'迟钝'期间"门控）
@@ -190,12 +197,18 @@ CONDITION_KEYS: frozenset[str] = frozenset({
     #                     时机无效化（魔音扰心衍生能力门控——已被响应无效化则不再消耗，
     #                     全卡盘点(19)）
     "play_from",  # on_before_card_play payload：使用来源区域（hand/void）等值键
+    "origin",  # 战斗事件发起方式等值键（on_before_battle_prep payload：
+    #          assault 出击 / card 战斗牌 / effect 效果发起——初会之舞"因出击而
+    #          发起攻击"门控，全卡盘点）
     "victim_is_chosen",  # 事件 victim 为选择目标之一（引燃"该伤害事件的受伤者是
     #                    目标式神"——伤害插入帧条件；转移后的新事件受伤者 ≠ 目标则不命中）
     "victim_dying",  # 事件 victim 式神已濒死（生命 ≤ 0；引燃"受伤者生命<=0"——
     #                 扣减生命后、气绝事件前的判定）
     "defender_has_fragile", "victim_has_fragile", "victim_stunned",
     "amount_ge", "overheal_ge", "yaohu_damage_count_ge", "self_damage_taken_ge",
+    "pre_pierce_amount_ge",  # 伤害事件贯通分配前原始伤害值 ≥ n（光影"贯通场合按
+    #                        贯通分配前的原始伤害值计"，全卡盘点；payload 恒带，
+    #                        无贯通时 = amount）
     "amount_le",
 })
 
@@ -224,6 +237,8 @@ TARGET_EXTRA_KEYS: frozenset[str] = frozenset({
     "has_form",  # 仅有形态的式神（神木诅咒"使一个形态变成…"取对象口径）
     "prefer_wounded",  # 候选中优先受伤（生命<上限）或气绝式神：存在则收窄到该子集
                        # （晚樱之意"优先受伤或气绝式神"；配合 include_defeated 纳入气绝者）
+    "prefer_alive",  # 随机取样优先未气绝式神（惊鸿之舞"优先赋予未气绝的己方式神"）：
+                     # 配合 random+include_defeated，先从未气绝子集取样、不足再补气绝者
     "include_player",  # friendly_injured 池追加受伤的己方牌手（"己方受伤角色"含牌手，
                        # 维护者答复(4)；落英缤纷羁绊）
     "has_invocation",  # 结附指定灵咒的式神（值 = 灵咒名，或 {"name": 灵咒名,

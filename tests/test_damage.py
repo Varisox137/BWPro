@@ -777,6 +777,42 @@ def test_damage_total_memo_heal(db, make_game):
     assert s2.health == 7            # 按实际总点数恢复 6（1 + 6）
 
 
+def test_damage_parallel_queue(db, make_game):
+    """并行伤害通道（群鸦乱舞）：parallel=true 的 damage 把全部目标的伤害事件放进
+    同一队列结算——气绝统一在队列清空后生成（顺序通道则是逐目标各起队列、先结算的
+    目标先气绝）；恢复量 = 实际总伤害（含伤害转移后计入、来源原因不变）。"""
+    db.cards[10010155] = F.card(
+        10010155, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=1, parallel=True,
+                      target=T(kind="all", pool="enemy_shikigami")),
+               F.Step(op="heal", amount={"memo": "last_damage_total"},
+                      target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    s.health = 1
+    for i in range(2):
+        pb.shikigami[i].level = 1
+        pb.shikigami[i].health = 1     # 各 1 点即气绝
+    play(g, 0, 10010155)
+    assert pb.shikigami[0].defeated and pb.shikigami[1].defeated
+    assert s.health == 3               # 恢复 = 实际总伤害 2
+    hist = g.history
+    last_dmg = max(i for i, h in enumerate(hist) if h == "on_damage")
+    first_defeat = hist.index("on_shikigami_defeated")
+    assert last_dmg < first_defeat     # 两段伤害扣减生命均先于任一气绝事件
+    # 伤害转移：转移后的伤害计入恢复量（血蝠之盾挂账改转移给牌手）
+    g2, pa2, pb2 = _game(make_game)
+    s2 = pa2.shikigami[IDX]
+    s2.health = 1
+    for i in range(2):
+        pb2.shikigami[i].level = 1
+    pb2.shikigami[0].ext["damage_redirects"] = [{"to": "player"}]
+    play(g2, 0, 10010155)
+    assert pb2.health == 29                                # 转移的 1 点打到牌手
+    assert pb2.shikigami[1].health == pb2.shikigami[1].max_health - 1
+    assert s2.health == 3                                  # 转移后仍计入总量 2
+
+
 def test_side_of_last_heal_pool(db, make_game):
     """side_of_last_heal 池（佛光）：为上一步治疗目标所属方的所有角色恢复。"""
     db.cards[10010155] = F.card(
@@ -1350,3 +1386,101 @@ def test_combat_immunity_nested_scope(db, make_game):
     g._battle_stack.pop()                            # 回到外层战斗
     g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, src, kind="combat")
     assert b.health == 1                             # 本战斗（battle=1）：nested=False 仍免疫
+
+
+# ---------- 伤害事件终止（cancel_damage，同生共死"护甲计算后"重做） ----------
+
+TSD_FORM = 10010185  # 假同生共死形态
+
+
+def _tsd_form(db):
+    """假同生共死：镰鼬受伤的伤害事件"护甲计算后"（priority 2，早于批次最晚的免疫
+    判定），护甲后伤害值 >= 当前生命且可支付 3 能量（免单名额在时不检测）→
+    消耗 3 能量 + 终止伤害事件 + 移回准备区。"""
+    db.cards[TSD_FORM] = F.card(
+        TSD_FORM, shikigami=SID, card_type="form", level=1, token=True,
+        form_power=4, form_health=5,
+        abilities=[F.block(
+            F.Step(op="spend_energy", amount=3, gate=True),
+            F.Step(op="cancel_damage"),
+            F.Step(op="retreat", target=T(kind="self")),
+            when="on_after_shield", priority=2,
+            condition={"victim_shikigami": "self", "damage_lethal": True,
+                       "any_of": [{"energy_ge": 3},
+                                  {"energy_free_available": True}]})])
+
+
+def test_cancel_damage_after_shield_lethal_gate(db, make_game):
+    """同生共死重做（全卡盘点(17)）：致死判定按护甲计算后伤害值（damage_lethal 读
+    damage 现值）——护甲吸收后不达标不白耗能量、破甲增伤后达标不漏触发；触发 =
+    消耗 3 能量 + 终止伤害事件（cancel_damage 归零，无一次性免疫残留）+ 移回准备区；
+    能量不足且无免单名额时不触发。"""
+    _tsd_form(db)
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    play(g, 0, TSD_FORM)
+    s.energy = 5
+    s.shield = 2
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 5, None)
+    g._drain_queue()
+    assert s.energy == 5                     # 护甲后 3 < 5：不触发，不白耗
+    assert s.health == 2                     # 伤害照常结算（形态 5 生命 - 3）
+    s.health = 4
+    s.shield = -2
+    move(g, 0, IDX)                          # 入战斗区以验证移回
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 3, None)
+    g._drain_queue()
+    assert s.energy == 2                     # 破甲后 5 >= 4：触发，耗 3 能量
+    assert s.health == 4 and not s.defeated  # 伤害事件终止
+    assert not s.immunities                  # 终止语义：无一次性免疫残留
+    assert pa.combat_index != IDX            # 移回准备区
+    # 能量不足且无免单名额：不触发，致死伤害照常
+    s.energy = 2
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 4, None)
+    g._drain_queue()
+    assert s.energy == 2 and s.defeated
+
+
+def test_cancel_damage_triggers_even_when_immune(db, make_game):
+    """同生共死（全卡盘点(17)）：免疫类效果固定在"护甲计算后"批次最晚（优先级 3）
+    触发——镰鼬即便免疫伤害，形态仍触发并执行（消耗能量、终止事件、移回准备区）。"""
+    _tsd_form(db)
+    g, pa, pb = _game(make_game)
+    s = pa.shikigami[IDX]
+    play(g, 0, TSD_FORM)
+    move(g, 0, IDX)
+    s.energy = 5
+    s.immunities.append({"kind": "all"})     # 持续免疫所有伤害
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 6, None)
+    g._drain_queue()
+    assert s.energy == 2                     # 免疫中仍触发并耗能
+    assert s.health == 5 and not s.defeated
+    assert pa.combat_index != IDX
+
+
+def test_cancel_damage_energy_free_bypass(db, make_game):
+    """同生共死免单豁免（全卡盘点(17)）：本回合觉醒·日和坊免单名额未用时不检测
+    能量——能量不足 3 也触发；支付经 _spend_energy 免单（名额消耗、能量不扣）。"""
+    db.shikigami[100205] = F.shiki(100205, name="日和坊")
+    for n in range(1, 9):
+        db.cards[100205 * 100 + n] = F.card(100205 * 100 + n, shikigami=100205,
+                                            level=(n - 1) % 3 + 1)
+    db.cards[10020551] = F.card(10020551, shikigami=100205, subtype="awaken",
+                                tags=["awaken"], token=True)
+    _tsd_form(db)
+    g = make_game(team=[SID, 100205, 100103, 100104])
+    pa, pb = g.state.players
+    pa.orb = 9
+    pb.shield = 0
+    rf = pa.shikigami[1]
+    rf.level = 1
+    rf.awakened = 10020551
+    assert pa.ext["energy_free_turn"] is True
+    s = pa.shikigami[IDX]
+    play(g, 0, TSD_FORM)
+    s.energy = 1                             # 不足 3，但免单名额在
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 6, None)  # >= 形态 5 生命：致死
+    g._drain_queue()
+    assert s.health == 5 and not s.defeated  # 触发并终止伤害（形态 5 生命）
+    assert s.energy == 1                     # 免单：能量不扣
+    assert pa.ext["energy_free_turn"] is False  # 名额消耗

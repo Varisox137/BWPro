@@ -20,9 +20,10 @@ versions:
           condition: {target_shikigami: self}
           steps:
             - {op: energy_assault, cost: 3}
-        # 当镰鼬对牌手造成伤害时获得 1 点能量（同基础能力，觉醒替换后保留）
+        # 当镰鼬对牌手造成伤害时获得 1 点能量（同基础能力，觉醒替换后保留；
+        # 受伤者不限侧——全卡盘点(15)）
         - when: on_player_damaged
-          condition: {player: opponent, source_shikigami: self}
+          condition: {source_shikigami: self}
           steps:
             - {op: gain_energy, amount: 1, target: {kind: self}}
       text: "[觉醒]：{[充能]。当镰鼬对牌手造成伤害时，获得1点能量。你鬼火和出击次数都为0时，镰鼬可以消耗3点能量出击。}"

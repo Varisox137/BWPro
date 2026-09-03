@@ -487,7 +487,19 @@ def resolve(game, spec, ctx) -> list[Ref]:
             refs = [r for r in refs if r not in (ctx.chosen or [])]
         if rnd is not None and len(refs) > int(rnd):
             # 随机取 n 个（盛开"随机一个受伤己方式神"；repeat 每轮重新解析重新随机）
-            refs = game.rng.sample(refs, int(rnd))
+            if extra.get("prefer_alive"):
+                # 优先未气绝（惊鸿之舞"优先赋予未气绝的己方式神"，全卡盘点）：
+                # 先从未气绝子集取样，不足 n 再由其余（气绝者）补足
+                alive = [r for r in refs if r.shikigami is not None
+                         and not game.state.players[r.player].shikigami[r.shikigami].defeated]
+                rest = [r for r in refs if r not in alive]
+                picks = game.rng.sample(alive, min(int(rnd), len(alive))) if alive else []
+                if len(picks) < int(rnd) and rest:
+                    picks += game.rng.sample(
+                        rest, min(int(rnd) - len(picks), len(rest)))
+                refs = picks
+            else:
+                refs = game.rng.sample(refs, int(rnd))
         if memo_key is not None and rnd is not None:
             # 块内随机目标复用：首次取样结果存 ctx.memo[key]（惊鸿之舞"同一随机目标"）
             if ctx.memo is None:
@@ -638,6 +650,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       类计数比较）
     - {victim_lethal: true}    ：事件 victim 当前生命 ≤ 事件伤害值 amount（"将受到致命
       伤害"——舍生响应；on_damage_start 时机在护甲计算前，按面板伤害判定）
+    - {damage_lethal: true}    ：同上但读 damage 可变对象现值（护甲计算后口径——同批次
+      前序归零/修正即时不命中；同生共死"护甲计算后"致死判定）
     - {victim_is_chosen: true} ：事件 victim 为选择目标之一（引燃"该伤害事件的受伤者
       是目标式神"——伤害插入帧条件；伤害转移的新事件受伤者 ≠ 原目标则不命中）
     - {victim_dying: true|false} ：事件 victim 式神已濒死（生命 ≤ 0；引燃"受伤者
@@ -649,6 +663,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     - {holder_has_form: true|false} ：能力持有者当前是否结附着形态（萤草 20200327
       能力两项动态要求"萤草结附有形态"才生效）
     - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）
+    - {energy_free_available: true} ：控制者本回合觉醒·日和坊免单名额未用（同生共死
+      配 any_of 绕过能量门控——名额在时不检测能量）
     - {card_in_hand: true}   ：卡牌触发器（CardDef.triggers）专用——控制者手牌中须
       有该卡实例才触发（血怒"此牌伤害+1"类手牌限定触发；由 _collect_card_triggers
       消费，不进本函数的按键循环）
@@ -723,6 +739,19 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             has = any(s.defeated and not s.despawned and s.level >= 1
                       for s in ap.shikigami)
             if has != bool(want):
+                return False
+        elif key == "enemy_alive_exists":
+            # 对方有未气绝式神（在场：存活、未离场、等级 ≥1；惊鸿之舞敌方减益/伤害
+            # 项前置——"敌方有未气绝式神时才可能触发"，全卡盘点）
+            ep = game.state.players[1 - controller]
+            has = any(s.in_play for s in ep.shikigami)
+            if has != bool(want):
+                return False
+        elif key == "enemy_power_ge":
+            # 对方有力量 ≥ n 的未气绝式神（读 eff_power；惊鸿之舞眩晕项前置——
+            # "敌方有力量>=6的未气绝式神时才可能触发"，全卡盘点）
+            ep = game.state.players[1 - controller]
+            if not any(s.in_play and s.eff_power >= int(want) for s in ep.shikigami):
                 return False
         elif key == "player_health_le":
             # 控制者牌手当前生命 ≤ n（惊鸿之舞牌手护甲项前置）
@@ -810,6 +839,18 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             vp = game.state.players[v.player]
             hp = vp.shikigami[v.shikigami].health if v.shikigami is not None else vp.health
             if int(event.get("amount", 0)) < hp:
+                return False
+        elif key == "damage_lethal":
+            # 事件 victim 将受致命伤害（读 damage 可变对象**现值**——护甲计算后口径，
+            # 同批次前序监听者归零/修正后即时不命中；同生共死"护甲计算后伤害值>=当前
+            # 生命"，全卡盘点(17)）；victim_lethal 读 payload 快照（面板口径）是其对照
+            dmg = event.get("damage")
+            v = event.get("victim")
+            if dmg is None or not isinstance(v, Ref):
+                return False
+            vp = game.state.players[v.player]
+            hp = vp.shikigami[v.shikigami].health if v.shikigami is not None else vp.health
+            if int(getattr(dmg, "amount", 0)) < hp:
                 return False
         elif key == "crit_lethal":
             # 暴击致命预判（裁决(9) 舍生响应，挂"护甲计算后"）：伤害事件具[暴击]
@@ -907,6 +948,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if holder is None or holder.shikigami is None:
                 return False
             if game.state.players[holder.player].shikigami[holder.shikigami].energy < int(want):
+                return False
+        elif key == "energy_free_available":
+            # 控制者本回合觉醒·日和坊免单名额未用（同生共死"免单名额未用时不检测
+            # 能量"——配 any_of 绕过 energy_ge 门控，支付经 _spend_energy 免单自然生效）
+            if game._energy_free_available(controller) != bool(want):
                 return False
         elif key == "hand_has":
             # 控制者手牌中有该数据 id 的牌（觉醒·天井下转化步门控）

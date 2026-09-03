@@ -9,8 +9,12 @@ versions:
       level: 2
       target: {kind: choose, pool: enemy_shikigami}
       effects:
+        # 整卡一段结算（atomic：触发能力统一在卡结算完后执行——对敌方觉醒鸦天狗
+        # 使用时两段能力在卡后依次执行，先敌方后己方）；第一步 move 为单向移入
+        #（into_combat：目标已在战斗区则无操作，不做 toggle 移出）
+        mode: atomic
         steps:
-          - {op: move, force: true}
+          - {op: move, force: true, into_combat: true}
           - {op: stun}
           - {op: move, target: {kind: self}}
       text: 将一个敌方式神移入战斗区并使其[眩晕]，然后[移动]鸦天狗。

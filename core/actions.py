@@ -73,7 +73,7 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
            piercing: bool | None = None, amount_ctx: str | None = None,
            amount_ext: str | None = None, amount_ext_source: str | None = None,
            allow_defeated: bool = False, repeat_on_kill: int = 0,
-           insert: dict | None = None) -> None:
+           insert: dict | None = None, parallel: bool = False) -> None:
     """对目标（式神或牌手）造成 amount 点伤害；护甲优先吸收。
 
     实例修饰 damage_boost（鎏金幻羽给手牌黄金羽的"伤害+1"）在卡牌效果伤害上累加。
@@ -99,6 +99,10 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
     携带本步来源/卡牌/选择目标——context 目标键 victim/victim_player 与
     victim_is_chosen/victim_dying 条件键可用）；帧生效期间的气绝事件延后到下一次
     队列排水后统一生成（插入的移动/伤害触发的延时能力先于气绝结算）。
+    parallel=True（群鸦乱舞"对所有敌方式神造成1点伤害……恢复等量生命"并行口径）：
+    全部目标的伤害事件进**同一队列**并行结算（同 random_damage 非 sequential 通道），
+    气绝统一在队列清空后生成；逐目标的即时时机不再互相穿插。与 repeat_on_kill
+    不组合（并行波次内不判新击杀重复）。
     """
     static = not isinstance(amount, dict)
     if static:
@@ -126,8 +130,10 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
             "chosen": list(ctx.chosen or ()), "card": ctx.card,
         })
     try:
-        for _pass in range(1 + int(repeat_on_kill)):  # 首波 + 至多 repeat_on_kill 次重复
-            killed = False
+        if parallel:
+            # 并行伤害：全部目标同一队列结算（气绝在队列清空后统一生成）
+            from core.engine import _DamageEvent  # 避免模块顶层循环引用
+            events: list = []
             for ref in targets:
                 amt = amount if static else _target_amount(game, amount, ref)
                 if ref.shikigami is None:
@@ -139,18 +145,41 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
                     if not s.despawned and s.level >= 1 and (
                             allow_defeated
                             or (kw_convert and ref.player != ctx.controller)):
-                        # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖，仅敌方目标；
-                        # 不再视为伤害）
                         s.revive_countdown += 1
                         game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
                                      f"（现 {s.revive_countdown}，伤害转化）")
-                    continue  # 气绝目标不进伤害管线（未授权时拦截空过），也不计新击杀
-                total += game.deal_to_shikigami(ref, amt, ctx.source, piercing=pierce,
-                                                spell=spell, card=ctx.card)
-                if repeat_on_kill and s.defeated:
-                    killed = True  # 本步造成新气绝（deal 内同队列已结算气绝事件）
-            if not killed:
-                break
+                    continue
+                events.append(_DamageEvent(source=ctx.source, victim=ref, amount=amt,
+                                           kind="effect", piercing=pierce, spell=spell,
+                                           card=ctx.card))
+            if events:
+                total += game._run_damage_queue(events)
+        else:
+            for _pass in range(1 + int(repeat_on_kill)):  # 首波 + 至多 repeat_on_kill 次重复
+                killed = False
+                for ref in targets:
+                    amt = amount if static else _target_amount(game, amount, ref)
+                    if ref.shikigami is None:
+                        total += game.deal_to_player(ref.player, amt, ctx.source, spell=spell,
+                                                     card=ctx.card)
+                        continue
+                    s = game.state.players[ref.player].shikigami[ref.shikigami]
+                    if s.defeated:
+                        if not s.despawned and s.level >= 1 and (
+                                allow_defeated
+                                or (kw_convert and ref.player != ctx.controller)):
+                            # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖，仅敌方目标；
+                            # 不再视为伤害）
+                            s.revive_countdown += 1
+                            game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
+                                         f"（现 {s.revive_countdown}，伤害转化）")
+                        continue  # 气绝目标不进伤害管线（未授权时拦截空过），也不计新击杀
+                    total += game.deal_to_shikigami(ref, amt, ctx.source, piercing=pierce,
+                                                    spell=spell, card=ctx.card)
+                    if repeat_on_kill and s.defeated:
+                        killed = True  # 本步造成新气绝（deal 内同队列已结算气绝事件）
+                if not killed:
+                    break
     finally:
         if insert:
             game._damage_insert_frames.pop()
@@ -391,6 +420,9 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
     orb_cost>0（坐下 20200227"额外消耗1点鬼火，召唤'番茄'"）：效果内嵌费用——
     控制者剩余鬼火不足则本步空过（召唤失败，其余步骤照常），足够则先付再召。
     召唤物为新进场者：entry_order 取本队当前最大值 +1（排本队最后——答复(2)）。
+    inherit_stats：复制来源当前身材（来源已气绝则改复制基础+永久口径），并照搬
+    有符号护甲/破甲；来源眩晕时召唤物获得"来源解除眩晕时移除"的持续眩晕
+    （on_stun_released 挂点——烟烟罗的分身，全卡盘点(9)）。
     stats_memo：召唤物基础力量/生命覆写为块内暂存 ctx.memo[key] 的数值
     （妖怪屋的醒转"使其力量和生命等同于被移除的护甲或破甲"——基础值口径，
     维护者定案：复活后按该基础值保留，非一次性增益）。
@@ -424,9 +456,28 @@ def summon(game, ctx, *, targets: list[Ref], shikigami: int, orb_cost: int = 0,
             # 复制来源当前全部身材（维护者定案：当前力量含临时/光环增益、当前生命上限、
             # 当前生命值含受伤不满）——以一次性永久修正落到实例（静态基值，
             # 不进 dyn 缓存通道，召唤物自身的动态光环重算不丢失继承部分）
-            s.perm_power = src.eff_power - s.base_power
-            s.perm_health = src.max_health - s.base_health
-            s.health = min(src.health, s.max_health)
+            if src.defeated:
+                # 进场时来源已气绝（全卡盘点(9)）：改为复制其基础+永久的力量/生命
+                # （当前生命为 0 不照抄——按该口径的生命上限满值进场）
+                s.perm_power = (src.base_power + src.perm_power) - s.base_power
+                s.perm_health = (src.base_health + src.perm_health) - s.base_health
+                s.health = s.max_health
+            else:
+                s.perm_power = src.eff_power - s.base_power
+                s.perm_health = src.max_health - s.base_health
+                s.health = min(src.health, s.max_health)
+            # 护甲/破甲照搬（有符号直赋，不发 on_shield_changed——非"获得/失去"；
+            # 来源已气绝时其护甲随气绝清零，复制到 0 天然一致）
+            s.shield = src.shield
+            if src.stuns:
+                # 眩晕状态等同（全卡盘点(9) 备注）：分身获得持续眩晕，解除条件 =
+                # 来源式神解除眩晕（on_stun_released 发点：回合结束批次/持续眩晕
+                # until_event 解除；来源气绝清除眩晕不算"解除"，分身保持眩晕）
+                s.stuns.append({"kind": "lasting", "until": None,
+                                "until_event": ["on_stun_released"],
+                                "watch": [ctx.source.player, ctx.source.shikigami],
+                                "watch_id": src.id})
+                game._log(f"{d.name} 同步了 {game.db.shikigami[src.id].name} 的眩晕状态")
         if energy_ratio is not None:
             s.energy = int(src.energy * energy_ratio)  # 能量按比例复制（向下取整）
     if stats_memo is not None:
@@ -1487,7 +1538,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                 secret: bool = False, scope: str | None = None,
                 bind: str = "source", uses: int = 1,
                 unique: bool = False) -> None:
-    """给来源式神登记一个延迟能力（会；targets 忽略）。
+    """给来源式神登记一个延迟能力（会；targets 除 bind="target" 外忽略）。
 
     when/condition/steps 描述延迟触发的效果块；打出时的选择目标（ctx.chosen）
     随条目存储，触发结算时作为效果目标。气绝时清除（变形离场保留——变形未实现）。
@@ -1502,6 +1553,8 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
     （server/room.py sanitize_state）会对敌方视角抹除 chosen；热坐/日志本就不回显目标。
     bind="chosen"：改登记到选择目标式神上（沧海之盾"使一个己方式神获得……当他造成
     战斗伤害时……"——延迟能力的持有者与条件 self 基准均为被选式神）。
+    bind="target"：改登记到本步目标式神上（targets[0]；初会之舞"该出击式神获得"——
+    配 context 目标键 attacker 取自触发事件，全卡盘点）。
     bind="player"：改登记到控制者牌手身上（魔音扰心"己方牌手获得"，裁决③）——
     来源式神气绝/离场不影响该延迟能力；收集时 holder=None，条件不得含 self 基准键；
     过期清除目前仅支持 scope="turn"（己方回合开始）与 uses 耗尽（scope="play"/"battle"
@@ -1513,6 +1566,10 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         if not ctx.chosen or ctx.chosen[0].shikigami is None:
             raise ValueError("delay_grant(bind=chosen) 需要选择目标式神")
         holder_ref: Ref | None = ctx.chosen[0]
+    elif bind == "target":
+        if not targets or targets[0].shikigami is None:
+            raise ValueError("delay_grant(bind=target) 需要目标式神")
+        holder_ref = targets[0]
     elif bind == "player":
         holder_ref = None  # 牌手级：登记到控制者牌手（holders 与条件 self 基准均为牌手）
     else:
@@ -2407,13 +2464,22 @@ def spell_echo(game, ctx, *, targets: list[Ref], sequence: list[int],
 
 def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
                     inherit_chosen: list[Ref] | None = None,
-                    emit_extra: dict | None = None) -> bool:
-    """凭空生成 cdef 的复制并以基础方式自动结算（不耗鬼火/瞬发/替代方式），用后入墓地、
+                    emit_extra: dict | None = None,
+                    method=None,
+                    inherit_inst=None) -> bool:
+    """凭空生成 cdef 的复制并自动结算（不耗鬼火/瞬发/替代方式），用后入墓地、
     发 on_card_played（play_from="void"，triggered="auto"）。
 
     choose 目标：inherit_chosen 仍在合法目标集内则沿用，否则合法目标中随机重选
     （无合法目标则不选）。play_condition 不满足时拒绝结算并返回 False。
     spell_echo_recast / mirror_spell / use_card_copy（法术）共用此管线。
+    method（PlayMethod，无孔不入"以相同使用方式复制"）：按该方式的效果块结算
+    （爆能 effects 追加同主动使用）；复制不支付能量——爆能 X 的 X 口径暂按复制者
+    （source 式神）自身当前能量快照（**口径待裁决，见 questions.md**）。
+    inherit_inst（原牌实例）：复制继承其实例修饰 mods（已展示/不消耗鬼火/
+    rebound_lost 失去弹回等）与结附灵咒（全卡盘点(10)：复制牌带原牌增减益/状态）。
+    觉醒牌复制（subtype=awaken 且 source 为式神）：走完整觉醒换绑
+    （engine._awaken_rebind + on_awakened + 永久身材增益，与主动使用同流程）。
     """
     from core import targets as targets_mod
     from core.model import CardInstance
@@ -2422,6 +2488,14 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
         return False
     inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空生成，不进入任何区
     game.state.next_uid += 1
+    if inherit_inst is not None:
+        inst.mods = dict(inherit_inst.mods)  # 实例修饰照搬（已展示/失去弹回等）
+        inst.invocations = [dict(e) for e in inherit_inst.invocations]  # 结附灵咒照搬
+    if method is not None and method.energy_cost == "all":
+        # 爆能 X 复制：X 按复制者自身当前能量快照（口径待裁决——questions.md）
+        if source is not None and source.shikigami is not None:
+            inst.mods["burst_x"] = \
+                game.state.players[source.player].shikigami[source.shikigami].energy
     chosen: list[Ref] = []
     if cdef.target.kind == "choose":
         pool = targets_mod.spec_pool_refs(game, cdef.target, controller, targeted=True)
@@ -2430,6 +2504,11 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
             chosen = inherited[:1]
         elif pool:
             chosen = [game.rng.choice(pool)]  # 自动使用：合法目标中随机选
+    # 觉醒牌复制：分身获得完整觉醒能力（觉醒前→换绑；效果结算后→觉醒后+永久身材）
+    awaken_si: int | None = None
+    if (cdef.subtype == "awaken" and source is not None
+            and source.shikigami is not None):
+        awaken_si = source.shikigami
     game._affected_stack.append({"controller": controller, "refs": []})
     try:
         marker = game._emit_before_card_play(controller, inst, cdef, "spell",
@@ -2438,14 +2517,23 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
             game._log(f"【{cdef.name}】的使用被无效化")
             game.move_card(p, inst, "graveyard")
             return True
-        game._resolve_block(game._played_block(p, cdef, inst, None), ExecContext(
+        if awaken_si is not None:
+            game._awaken_rebind(p, controller, awaken_si, cdef, inst, inst.uid)
+        game._resolve_block(game._played_block(p, cdef, inst, method), ExecContext(
             controller=controller, source=source, card=inst,
             chosen=chosen, is_ability=True))
+        if awaken_si is not None:
+            game.emit("on_awakened", player=controller, shikigami=awaken_si,
+                      uid=inst.uid,
+                      target=Ref(player=controller, shikigami=awaken_si))
+            game._queue_awaken_stats(controller, awaken_si, cdef, inst)
     finally:
         affected = game._affected_stack.pop()["refs"]
+    inst.mods.pop("burst_x", None)  # 爆能 X 快照仅本次结算有效（同主出牌路径）
     game.move_card(p, inst, "graveyard")  # 凭空生成的幻象牌用后入墓地
     game._emit_card_played(controller, inst.uid, cdef, affected,
-                           play_from="void", triggered="auto", chosen=chosen,
+                           play_from="void", play_method=method.id if method else None,
+                           triggered="auto", chosen=chosen,
                            extra=emit_extra)
     return True
 
@@ -2453,11 +2541,14 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
 @action("mirror_spell")
 def mirror_spell(game, ctx, *, targets: list[Ref]) -> None:
     """复制施法（烟烟罗的分身"会复制她使用的法术牌"）：on_card_played 时机，
-    凭空复制事件中的牌并自动使用一次（基础方式）。
+    凭空复制事件中的牌并自动使用一次（相同使用方式——原事件 play_method 沿用，
+    爆能复制走爆能结算；爆能 X 的 X 暂按分身自身能量，口径待裁决见 questions.md）。
 
     主动/响应/自动使用均触发（维护者定案：并非仅主动使用）——复制自身发出的事件
-    带 mirror_copy 标记，不再触发复制（防递归）；觉醒牌排除由数据侧条件
-    （subtype_not: awaken）表达。choose 目标沿用原选（仍合法）否则随机重选。
+    带 mirror_copy 标记，不再触发复制（防递归）；觉醒牌可复制（全卡盘点(10)：
+    分身获得完整觉醒能力然后获得能量——_auto_cast_copy 觉醒换绑通道）。
+    复制牌继承原牌实例修饰（已展示/不消耗鬼火/失去弹回等）与结附灵咒。
+    choose 目标沿用原选（仍合法）否则随机重选。
     """
     event = ctx.event or {}
     if event.get("name") != "on_card_played" or event.get("mirror_copy"):
@@ -2468,11 +2559,16 @@ def mirror_spell(game, ctx, *, targets: list[Ref]) -> None:
     if played is None:
         return
     cdef = game.db.cards[played.id]
+    method = None
+    pm = event.get("play_method")
+    if pm:
+        method = next((m for m in cdef.methods if m.id == pm), None)
     s = game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
     game._log(f"{game.db.shikigami[s.id].name} 复制并自动使用了「{cdef.name}」")
     _auto_cast_copy(game, ctx.controller, cdef, ctx.source,
                     inherit_chosen=event.get("chosen"),
-                    emit_extra={"mirror_copy": True})
+                    emit_extra={"mirror_copy": True},
+                    method=method, inherit_inst=played)
 
 
 @action("use_card_copy")
@@ -2903,7 +2999,10 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
     at=chosen + at_index=1 取第二目标）；at="event"：战斗目标取触发事件
     payload 的 "shikigami" 字段（鬼斩"反击该式神"——Ref 直接用，int 座次按事件
     player 方解析）；at="targets"：战斗目标取本步已解析目标（配合 step target 的
-    context 键）；缺省为无目标战斗（敌战斗区空则直击牌手）。
+    context 键）；at="other_enemy"：战斗目标取触发事件 attacker 以外的一名
+    未气绝敌方角色（随机，enemy_character 池——含敌方牌手；非主动指定故帷幕
+    不限制；attacker 为己方式神时池 = 任一未气绝敌方角色——声东击西响应，
+    全卡盘点(16)）；缺省为无目标战斗（敌战斗区空则直击牌手）。
     keywords：本次攻击的战斗关键字（影杀三连 [直击]）——发起前经
     ext["next_battle_keywords"] 挂账，战斗开始消费（同 next_battle 通道）。
     ignore_veil=True：战斗目标持帷幕也照常发起（灵咒效果不受帷幕限制，定案(4)，
@@ -2928,6 +3027,7 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
         return  # 气绝/离场/0 级：空操作
     if getattr(game.db.shikigami[s.id], "no_attack", False):
         return  # 不能发动攻击（冰墙）
+    from core import targets as targets_mod  # 参数名 targets 遮蔽模块名，局部别名引入
     combat_target: Ref | None = None
     if at == "chosen" and ctx.chosen:
         i = int(at_index)
@@ -2950,6 +3050,16 @@ def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
             combat_target = targets[0]
         else:
             return  # 无可攻击目标（未出战/气绝/中立牌）：空操作
+    elif at == "other_enemy":
+        # 声东击西响应：发起攻击者以外的一名未气绝敌方角色（随机；敌方牌手入池）。
+        # 发起攻击者为己方式神时其本就不在敌方池——池即"任一未气绝敌方角色"
+        pool = targets_mod.pool_refs(game, "enemy_character", ctx.controller)
+        atk = (ctx.event or {}).get("attacker")
+        if isinstance(atk, Ref):
+            pool = [r for r in pool if r != atk]
+        if not pool:
+            return
+        combat_target = game.rng.choice(pool)
     if keywords:
         s.ext.setdefault("next_battle_keywords", []).extend(
             {"keyword": str(k)} for k in keywords)
@@ -2996,6 +3106,25 @@ def reduce_damage(game, ctx, *, targets: list[Ref], amount: int = 0) -> None:
     if ev is None or amount <= 0:
         return
     ev.amount = max(0, ev.amount - amount)
+
+
+@action("cancel_damage")
+def cancel_damage(game, ctx, *, targets: list[Ref]) -> None:
+    """终止当前伤害事件（同生共死"消耗3能量，终止当前伤害事件"；targets 忽略）：
+    伤害值归零（ev.amount=0）——挂"护甲计算后"批次时，归零断点使原事件在免疫
+    判定前终止（转移/扣减生命/受伤时机均不再结算）。与 grant_immunity scope=once
+    的区别：不授予免疫条目——护甲先把伤害归零的场合无残留（全卡盘点(17) 定案）。
+
+    须挂在伤害时点批次（payload 含 damage 的事件）上，配合致死判定条件
+    （{damage_lethal: true}）使用。
+    """
+    ev = (ctx.event or {}).get("damage")
+    if ev is None:
+        raise ValueError("cancel_damage 须挂伤害事件批次的能力块")
+    if ev.amount <= 0:
+        return
+    ev.amount = 0
+    game._log("本次伤害事件被终止")
 
 
 @action("power_override")
@@ -3223,13 +3352,18 @@ def reattach_form(game, ctx, *, targets: list[Ref]) -> None:
 @action("stun")
 def stun(game, ctx, *, targets: list[Ref], kind: str = "normal",
          until: int | None = None, lasting: bool = False,
-         until_event: str | list[str] | None = None) -> None:
+         until_event: str | list[str] | None = None,
+         watch_keys: dict | None = None) -> None:
     """眩晕目标角色（契约 §1）：普通眩晕记施加时的控制者回合号（己方回合结束批次
     移除非本回合施加者）；持续眩晕（kind="lasting" 或 lasting=True）按 until 回合号
     或 until_event 事件监听移除。
     until_event（英雄无畏"保持眩晕直到鸦天狗使用牌、攻击或气绝"）：事件名列表，
     任一事件涉及施加时来源式神（watch）即解除——匹配见 engine._release_lasting_stuns
     （在 emit 点检查；被眩晕者自身气绝走现有气绝清理）。
+    watch_keys={事件名: [payload 键]}（英雄无畏全卡盘点：解除只看来源式神作为事件
+    主体——用牌者/攻击者/气绝者）：限定各事件参与匹配的 payload 键，缺省事件沿用
+    默认全键匹配（attacker/victim/target/shikigami/source）。如
+    on_before_battle_prep 只匹配 attacker 键——来源被攻击（victim）不解除。
     牌手眩晕条目挂 PlayerState.ext["stuns"]（同构）；眩晕牌手不能使己方式神出击。
     每次实际施加后按即时时机 emit on_stun（雪女"当你眩晕敌方式神时"类监听）。"""
     if lasting:
@@ -3260,6 +3394,8 @@ def stun(game, ctx, *, targets: list[Ref], kind: str = "normal",
                 entry["until_event"] = events
                 entry["watch"] = watch
                 entry["watch_id"] = watch_id
+                if watch_keys:
+                    entry["watch_keys"] = dict(watch_keys)
                 # 施加当时的事件序号与施加牌 uid：施加牌自身的 on_card_played（使用后1
                 # 在效果结算后发出）不把刚施加的眩晕解除——"直到来源用牌"指其后的使用
                 entry["apply_seq"] = game.state.emit_seq
@@ -3805,7 +3941,8 @@ def spend_energy(game, ctx, *, targets: list[Ref], amount: int = 1,
 
 
 @action("move")
-def move(game, ctx, *, targets: list[Ref], force: bool = False) -> None:
+def move(game, ctx, *, targets: list[Ref], force: bool = False,
+         into_combat: bool = False) -> None:
     """[移动]：目标式神战斗区↔准备区移动（追风/鸦羽疾走；targets 默认来源式神）。
 
     在准备区 → 进战斗区（复用 engine._enter_combat；移入会替换被尘缚之阵锁定的
@@ -3814,7 +3951,9 @@ def move(game, ctx, *, targets: list[Ref], force: bool = False) -> None:
     眩晕不影响被移动。进/出战斗区各计一次 [移动]（engine 记账 ext["move_count_turn"]，
     气绝离场与召唤物进场不计）。
     force=True（羽迹"将敌方式神移入战斗区"）：允许移动敌方式神（仅拉入战斗区方向
-    有意义）；非强制时敌方式神目标静默跳过。"""
+    有意义）；非强制时敌方式神目标静默跳过。
+    into_combat=True（羽迹"若目标不在战斗区则将其移入战斗区"单向语义，全卡盘点）：
+    目标已在战斗区则无操作（不做 toggle 移出），仅在准备区才移入。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
@@ -3825,6 +3964,8 @@ def move(game, ctx, *, targets: list[Ref], force: bool = False) -> None:
         if s.defeated or s.despawned:
             continue  # 气绝/离场不能移动
         if p.combat_index == ref.shikigami:
+            if into_combat:
+                continue  # 已在战斗区：无操作
             game._retreat(p, ref.shikigami)  # 在战斗区 → 回准备区
             continue
         if not s.in_play:

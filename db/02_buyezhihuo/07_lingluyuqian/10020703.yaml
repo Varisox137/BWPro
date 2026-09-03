@@ -14,19 +14,20 @@ versions:
           - {op: gain_shield, amount: 1, target: {kind: self}}
       temp_grants:
         # 造成战斗伤害时，若该次伤害>=6：你抽一张牌并获得等同于一半伤害的生命
-        # （定案：按单个伤害事件判定——贯通对式神+牌手两段各<6不触发；连击两段
-        # 各>=6各触发一次；on_damage 式神受害者 / on_player_damaged 牌手受害者
-        # 双块；{event: amount, half: true} 数值键=事件引用值减半向下取整）
+        #（新口径（全卡盘点）：贯通场合按贯通分配前的原始伤害值计——pre_pierce_amount
+        # 快照（payload 恒带、无贯通时=amount）；式神段触发即按原始值抽1+回一半，
+        # 溢出牌手段自身原始值<6不再触发；连击两段各>=6各触发一次；on_damage 式神
+        # 受害者 / on_player_damaged 牌手受害者双块；half 数值键=事件引用值减半向下取整）
         - when: on_damage
-          condition: {kind: combat, source_shikigami: self, amount_ge: 6}
+          condition: {kind: combat, source_shikigami: self, pre_pierce_amount_ge: 6}
           steps:
             - {op: draw, count: 1}
-            - {op: heal, amount: {event: amount, half: true},
+            - {op: heal, amount: {event: pre_pierce_amount, half: true},
                target: {kind: all, pool: self_player}}
         - when: on_player_damaged
-          condition: {kind: combat, source_shikigami: self, amount_ge: 6}
+          condition: {kind: combat, source_shikigami: self, pre_pierce_amount_ge: 6}
           steps:
             - {op: draw, count: 1}
-            - {op: heal, amount: {event: amount, half: true},
+            - {op: heal, amount: {event: pre_pierce_amount, half: true},
                target: {kind: all, pool: self_player}}
       text: "若本次攻击造成的战斗伤害>=6，你抽一张牌并获得等同于一半伤害的生命。"

@@ -10,14 +10,17 @@ versions:
       health: 4
       keywords: [charge]
       # "召唤时具有与烟烟罗相同的力量和生命以及一半的能量"在召唤侧表达（summon
-      # inherit_stats/energy_ratio 参数，见扑朔迷离/烟雾缭绕/无孔不入的 summon 步）
+      # inherit_stats/energy_ratio 参数，见扑朔迷离/烟雾缭绕/无孔不入的 summon 步；
+      # inherit_stats 含：进场时烟烟罗已气绝则改为复制基础+永久身材、护甲/破甲照搬、
+      # 眩晕同步为"己方烟烟罗解除眩晕时移除"的持续眩晕——全卡盘点(9)）
       abilities:
-        # 复制烟烟罗使用的非法觉醒法术牌（mirror_spell：每个在场分身免费使用
-        # 其复制，choose 目标沿用原选（仍合法）否则随机重选；自动使用的法术同样
-        # 触发复制，引擎以 mirror_copy 标记防递归——复制自身不再连锁）
+        # 复制烟烟罗使用的法术牌（mirror_spell：每个在场分身免费使用其复制，
+        # 相同使用方式——爆能复制走爆能结算；复制牌继承原牌实例修饰（已展示/
+        # 失去弹回等）与结附灵咒；觉醒牌可复制——分身走完整觉醒换绑后获得能量；
+        # choose 目标沿用原选（仍合法）否则随机重选；自动使用的法术同样触发复制，
+        # 引擎以 mirror_copy 标记防递归——复制自身不再连锁）
         - when: on_card_played
-          condition: {card_type: spell, shikigami: 100204, player: self,
-                      subtype_not: awaken}
+          condition: {card_type: spell, shikigami: 100204, player: self}
           steps:
             - {op: mirror_spell}
       text: "[充能]。召唤时具有与烟烟罗相同的力量和生命以及一半的能量。"
