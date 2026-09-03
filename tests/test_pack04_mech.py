@@ -882,6 +882,35 @@ def test_coffin_delayed_transform_after_kill_ledger(db, make_game):
     assert "probe" not in c.ext  # 延时能力先于变形执行：探针随状态替换被抹掉
 
 
+def test_coffin_on_defeat_emits_defeat_event_and_kill(db, make_game):
+    """入棺路径裁决（全卡盘点 1(4)）："气绝时改为变形为棺材"不终止原气绝事件——
+    旗标路径照常走完气绝流程（发 on_shikigami_defeated、计入击杀账本
+    kill_total/kill_by），棺材在"气绝后"延时时机变形生成。"""
+    _coffin_def(db)
+    g = make_game()
+    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
+    pa.shikigami[1].ext["coffin_on_defeat"] = 10010199
+    seen: list[dict] = []
+    orig_emit = g.emit
+
+    def spy(name, **kw):
+        if name == "on_shikigami_defeated":
+            seen.append(kw)
+        return orig_emit(name, **kw)
+
+    g.emit = spy
+    kills0 = pb.kill_total
+    s = pa.shikigami[1]
+    s.health = 0
+    g.check_defeated(Ref(player=0, shikigami=1), source=Ref(player=1, shikigami=0))
+    g._drain_queue()
+    assert pb.kill_total == kills0 + 1         # 计入击杀账本
+    assert pb.kill_by.get(100101) == 1         # 按来源实体数据 id 分桶
+    assert seen and seen[0]["victim"] == Ref(player=0, shikigami=1)  # 气绝事件照发
+    c = pa.shikigami[1]
+    assert c.id == 10010199 and not c.defeated  # 气绝后延时变形为棺材
+
+
 def test_coffin_form_tag(db, make_game):
     """罡身阵"跳跳哥哥气绝时，改为将其替换为'棺材'"：形态 tags
     `coffin_on_defeat:<实体id>` 通道（旗标在形态消灭前捕获）。"""

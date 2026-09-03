@@ -12,6 +12,8 @@ versions:
         steps:
           # heal 记录块内暂存 last_heal_targets；side_of_last_heal 池 = 该目标所属方的
           # 所有角色（在场式神 + 牌手）——"为其操控者的所有角色恢复3点生命"
+          # 第二段并行治疗（裁决 2(1)）：全部目标治疗事件同批（_run_heal_queue 两阶段）；
+          # 法界唯心形态下被转化为延时伤害的事件不再并行、经队列依次结算
           - {op: heal, amount: 3}
-          - {op: heal, amount: 3, target: {kind: all, pool: side_of_last_heal}}
+          - {op: heal, amount: 3, parallel: true, target: {kind: all, pool: side_of_last_heal}}
       text: 为一个角色恢复3点生命，然后为其操控者的所有角色恢复3点生命。

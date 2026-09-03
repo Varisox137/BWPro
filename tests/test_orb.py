@@ -23,6 +23,7 @@ TURN_END_ORB_FORM = 10010162  # 假形态：己方回合结束得 1 火（百物
 REPEAT_SPELL = 10010163       # 假吸魂灯：repeat + clear_orb
 PICK_SPELL = 10010164         # 假青灯夜谈：deck_top_pick
 RETURN_FORM = 10010165        # 假不灭之火：on_form_destroyed 返场
+DESTROY_OWN_FORM = 10010167   # 假罡风：消灭自身形态（destroy_form reason="effect"）
 MINGDENG = 10010151           # 假明灯（token）
 LEVEL_SPELL = 10010166        # 假百闻一得
 
@@ -158,8 +159,9 @@ def _return_form(db):
             F.Step(op="revive", target=T(kind="self")),
             F.Step(op="reattach_form"),
             when="on_form_destroyed",
-            # 全卡盘点(3)：触发钉在气绝事件（reason: defeat）——替换离场不触发
-            condition={"target_shikigami": "self", "orb_ge": 1, "reason": "defeat"})])
+            # 全卡盘点(3)：触发钉在气绝/效果消灭（reason defeat/effect）——替换离场不触发
+            condition={"target_shikigami": "self", "orb_ge": 1,
+                       "any_of": [{"reason": "defeat"}, {"reason": "effect"}]})])
     return RETURN_FORM
 
 
@@ -215,6 +217,55 @@ def test_form_replaced_does_not_return(make_game, db):
     assert not s.defeated
     assert pa.orb == 1                               # 未触发：只剩第二张形态的付费
     assert inst in pa.graveyard
+
+
+def test_form_return_stays_in_combat_on_defeat(make_game, db):
+    """不灭之火裁决①（全卡盘点(3)）：气绝者移动回准备区不执行——战斗区气绝触发
+    返场时原地复活（combat_index 保持）；鬼火不足未收集返场块则照常移回准备区。"""
+    _return_form(db)
+    g, pa, pb = _game(make_game)
+    pa.orb = 3
+    inst = give(g, 0, RETURN_FORM)
+    g.apply({"op": "play_card", "uid": inst.uid})   # 付费后 2 火
+    s = pa.shikigami[IDX]
+    pa.combat_index = IDX                            # 气绝时在战斗区
+    s.health = 0
+    g.check_defeated(Ref(player=0, shikigami=IDX))
+    g._drain_queue()
+    assert not s.defeated and s.form is inst         # 复活 + 同一实例重新结附
+    assert pa.combat_index == IDX                    # 原地复活：未移回准备区
+    # 鬼火不足：返场块未收集，气绝者照常移回准备区
+    g2, pa2, _ = _game(make_game)
+    pa2.orb = 1
+    inst2 = give(g2, 0, RETURN_FORM)
+    g2.apply({"op": "play_card", "uid": inst2.uid})  # 付费后 0 火
+    s2 = pa2.shikigami[IDX]
+    pa2.combat_index = IDX
+    s2.health = 0
+    g2.check_defeated(Ref(player=0, shikigami=IDX))
+    g2._drain_queue()
+    assert s2.defeated and s2.form is None
+    assert pa2.combat_index is None                  # 移回准备区
+
+
+def test_form_destroyed_by_effect_returns(make_game, db):
+    """不灭之火裁决②（全卡盘点(3)）：形态被效果消灭（destroy_form reason="effect"，
+    非气绝/替换）也触发返场——消耗鬼火、墓地同一实例重新结附（未气绝 revive 空操作）。"""
+    _return_form(db)
+    db.cards[DESTROY_OWN_FORM] = F.card(
+        DESTROY_OWN_FORM, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="destroy_form", target=T(kind="self"))])
+    g, pa, pb = _game(make_game)
+    pa.orb = 3
+    inst = give(g, 0, RETURN_FORM)
+    g.apply({"op": "play_card", "uid": inst.uid})   # 付费后 2 火
+    s = pa.shikigami[IDX]
+    assert s.form is inst
+    g.apply({"op": "play_card", "uid": give(g, 0, DESTROY_OWN_FORM).uid})  # 付费后 1 火
+    g._drain_queue()
+    assert not s.defeated
+    assert s.form is inst                            # 效果消灭也返场（同一实例）
+    assert pa.orb == 0                               # 消耗 1 点鬼火
 
 
 # ---------- 精确弃牌与等级提升（百闻一得） ----------

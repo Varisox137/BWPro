@@ -5308,8 +5308,17 @@ class Game:
                 if tag.startswith("coffin_on_defeat:"):
                     coffin_into = int(tag.split(":", 1)[1])
                     break
+        # 不灭之火裁决①（全卡盘点(3)）：形态在本次气绝流程中被消灭、且其"被消灭时
+        # 复活本式神"延时块已被收集（条件收集时求值——鬼火不足未收集则不拦截），
+        # 本次气绝者不执行移动回准备区（留在战斗区，原地复活并重新结附）
+        qmark = len(self.queue)
         if s.form is not None:
             self._destroy_form(owner, ref.shikigami, reason="defeat")
+        defeat_revive_stay = any(
+            (pd.ctx.event or {}).get("name") == "on_form_destroyed"
+            and (pd.ctx.event or {}).get("target") == ref
+            and any(st.op == "revive" for st in pd.block.steps)
+            for pd in list(self.queue)[qmark:])
         s.defeated = True
         s.dying = False  # 濒死标记在气绝时清除
         self._clear_countdown(s)  # 气绝清除倒计时能力（大天狗记录的法术随之丢失，复活后不再具有）
@@ -5339,7 +5348,7 @@ class Game:
             self._settle(f"【气绝】{name} 离场（召唤物）")
             self._despawn(owner, ref.shikigami)
         else:
-            if owner.combat_index == ref.shikigami:
+            if owner.combat_index == ref.shikigami and not defeat_revive_stay:
                 owner.combat_index = None  # 气绝者移动至准备区
             s.revive_countdown = self.config.revive_countdown
             s.ext["defeated_in_combat"] = in_combat  # 本次气绝位置记账
@@ -5604,36 +5613,53 @@ class Game:
         "恢复生命时"类能力（青坊主/禅心）挂 on_after_heal——仅实际恢复触发。
         濒死/气绝（未在场）的式神与气绝的牌手不受治疗（早退，不产生任何事件）。
         """
-        p = self.state.players[ref.player]
-        s = p.shikigami[ref.shikigami] if ref.shikigami is not None else None
-        if s is not None and (not s.in_play or s.dying):
-            return
-        if s is None and p.defeated:
-            return
-        holder = s if s is not None else p
-        box = {"amount": int(amount)}
-        self.emit("on_before_heal", target=ref, amount=amount, source=source,
-                  reason=reason, heal=box)
-        amount = box["amount"]
-        healed = min(amount, holder.max_health - holder.health)
-        overheal = max(0, amount - healed)  # 过量治疗量（海坊主转化通道）
-        if healed > 0:
-            holder.health += healed
-            self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
-                         f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
-            # 不写 _log 孪生行：归 settle 通道，避免双通道重复
-        if healed <= 0:
-            # 实际恢复为 0 也明示一行（治疗时时机仍触发；海坊主过量治疗转化可读）
-            self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
-                         f"恢复 0 点生命（治疗量 {amount}，"
-                         f"生命 {holder.health}/{holder.max_health}）")
-            self.emit("on_heal", target=ref, amount=0, overheal=overheal,
+        self._run_heal_queue([(ref, amount, source, reason)])
+
+    def _run_heal_queue(self, items: list[tuple[Ref, int, Ref | None, str]]) -> None:
+        """并行治疗队列（heal 动作 parallel=True——佛光"为其操控者的所有角色"，
+        裁决 2(1)）：多目标治疗事件同批结算，两阶段——
+        阶段 1 逐事件发"治疗前"批次（即时 on_before_heal，可变量 box 收集改写）；
+        阶段 2 统一应用治疗量并发"治疗时/治疗后"延时批次。
+        并行中途转化（法界唯心在治疗前把治疗量置 0 + 入队延时伤害）：被转化的
+        事件不再产出治疗，其衍生伤害事件经延时队列**依次**结算（不再并行）。
+        单目标 heal() 委托本通道（行为与逐项直调一致）。"""
+        pending: list[tuple[Ref, int, Ref | None, str]] = []
+        for ref, amount, source, reason in items:
+            p = self.state.players[ref.player]
+            s = p.shikigami[ref.shikigami] if ref.shikigami is not None else None
+            if s is not None and (not s.in_play or s.dying):
+                continue  # 濒死/气绝（未在场）的式神不受治疗
+            if s is None and p.defeated:
+                continue  # 气绝的牌手不受治疗
+            box = {"amount": int(amount)}
+            self.emit("on_before_heal", target=ref, amount=amount, source=source,
+                      reason=reason, heal=box)
+            pending.append((ref, box["amount"], source, reason))
+        for ref, amount, source, reason in pending:
+            p = self.state.players[ref.player]
+            s = p.shikigami[ref.shikigami] if ref.shikigami is not None else None
+            if s is not None and (not s.in_play or s.dying):
+                continue  # 治疗前批次的插入结算使其濒死/离场：不再受治疗
+            holder = s if s is not None else p
+            healed = min(amount, holder.max_health - holder.health)
+            overheal = max(0, amount - healed)  # 过量治疗量（海坊主转化通道）
+            if healed > 0:
+                holder.health += healed
+                self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
+                             f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
+                # 不写 _log 孪生行：归 settle 通道，避免双通道重复
+            if healed <= 0:
+                # 实际恢复为 0 也明示一行（治疗时时机仍触发；海坊主过量治疗转化可读）
+                self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
+                             f"恢复 0 点生命（治疗量 {amount}，"
+                             f"生命 {holder.health}/{holder.max_health}）")
+                self.emit("on_heal", target=ref, amount=0, overheal=overheal,
+                          source=source, reason=reason)
+                continue  # 实际恢复为 0：治疗时仍触发，治疗后不触发
+            self.emit("on_heal", target=ref, amount=healed, overheal=overheal,
                       source=source, reason=reason)
-            return  # 实际恢复为 0：治疗时仍触发，治疗后不触发
-        self.emit("on_heal", target=ref, amount=healed, overheal=overheal,
-                  source=source, reason=reason)
-        self.emit("on_after_heal", target=ref, amount=healed, overheal=overheal,
-                  source=source, reason=reason)
+            self.emit("on_after_heal", target=ref, amount=healed, overheal=overheal,
+                      source=source, reason=reason)
 
     def _queue_heal_reversal_damage(self, ref: Ref, amount: int, source: Ref | None) -> None:
         """法界唯心（裁决(10)）：on_before_heal 处治疗量被改 0 后，按原治疗量入队一个
@@ -6083,7 +6109,9 @@ class Game:
             cost = self._effective_cost(p, cdef, card=card)
             if p.orb < cost:
                 continue  # 没留住鬼火
-            if not self._match(eb.condition, event, pi):
+            if not self._match(eb.condition, event, pi,
+                               holder=Ref(player=pi, shikigami=si)
+                               if si is not None else None):
                 continue
             # 按所属式神从左往右排序（中立响应牌排在最后）；同式神保持手牌顺序
             order = si if si is not None else len(p.shikigami)
@@ -6124,17 +6152,22 @@ class Game:
         # 收集到结算之间局面可能已变化：响应牌结算时必须复查条件、鬼火、消耗、使用者
         if ctx.card not in p.hand:
             return True
-        resp_blk = self._response_block(cdef)
-        if ctx.event is not None and resp_blk.exec_condition is None and not self._match(
-                resp_blk.condition, ctx.event, ctx.controller):
-            return True
-        # 裁决(7)：声明 exec_condition 的响应牌（生死无常），触发条件只在响应时机
-        # （收集时）判定；结算时不复查触发条件，改为支付后、执行前检查 exec_condition
+        # 持有者基准（裁决 2(4)：响应牌条件的 holder 键——energy_ge 等——以所属式神
+        # 为基准求值，与收集时口径一致）：先解析所属式神座次再复查条件
         si: int | None = None
         if cdef.shikigami is not None:
             si = self._find_card_owner(p, cdef.shikigami)
             if si is None:
                 return True
+        resp_blk = self._response_block(cdef)
+        if ctx.event is not None and resp_blk.exec_condition is None and not self._match(
+                resp_blk.condition, ctx.event, ctx.controller,
+                holder=Ref(player=ctx.controller, shikigami=si)
+                if si is not None else None):
+            return True
+        # 裁决(7)：声明 exec_condition 的响应牌（生死无常），触发条件只在响应时机
+        # （收集时）判定；结算时不复查触发条件，改为支付后、执行前检查 exec_condition
+        if cdef.shikigami is not None:
             s = p.shikigami[si]
             if s.stuns:
                 return True  # 眩晕式神不能响应使用其卡牌

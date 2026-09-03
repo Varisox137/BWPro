@@ -212,10 +212,11 @@ def test_yuji_atomic_into_combat(gdb):
 # ---------- 02 英雄无畏 ----------
 
 def test_lasting_stun_release_subject_only(gdb):
-    """英雄无畏（全卡盘点）：持续眩晕解除时机 = 鸦天狗"使用牌前"（on_before_card_play）
-    /"战斗准备前"（on_before_battle_prep）/气绝（on_shikigami_defeated），且解除只看
-    鸦天狗作为事件主体（watch_keys 限定 payload 键）——鸦天狗被攻击不解除、其他
-    式神用牌不解除。"""
+    """英雄无畏（全卡盘点+裁决 2(2)）：持续眩晕解除时机 = 鸦天狗"使用牌前"
+    （on_before_card_play）/"战斗准备前"（on_before_battle_prep）/气绝事件的
+    "气绝前1"（on_before_defeat——气绝事件点 on_shikigami_defeated 之前即解除），
+    且解除只看鸦天狗作为事件主体（watch_keys 限定 payload 键）——鸦天狗被攻击
+    不解除、其他式神用牌不解除。"""
     team = [100104, 100201, 100101, 100102]   # 双方 1 号位鸦天狗
 
     def _setup():
@@ -235,12 +236,23 @@ def test_lasting_stun_release_subject_only(gdb):
     g, pa, pb = _setup()
     g.apply({"op": "assault", "index": 1})
     assert pb.shikigami[0].stuns == []
-    # 气绝：鸦天狗气绝（气绝者主体）→ 其施加在敌方的持续眩晕解除
+    # 气绝：鸦天狗气绝（气绝者主体）→ 其施加在敌方的持续眩晕解除；
+    # 裁决 2(2) 挂点 = 气绝前1（on_before_defeat）——气绝事件点发出时已解除
     g, pa, pb = _setup()
+    stun_at_defeat: list[bool] = []
+    orig_emit = g.emit
+
+    def spy(name, **kw):
+        if name == "on_shikigami_defeated":
+            stun_at_defeat.append(bool(pb.shikigami[0].stuns))
+        return orig_emit(name, **kw)
+
+    g.emit = spy
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)
     g._drain_queue()
     assert pa.shikigami[1].defeated
     assert pb.shikigami[0].stuns == []
+    assert stun_at_defeat and stun_at_defeat[0] is False  # 气绝后时机前已解除
     # 鸦天狗被攻击（事件 victim/被攻击者角色）不解除
     g, pa, pb = _setup()
     move(g, 0, 1)                             # 鸦天狗入战斗区

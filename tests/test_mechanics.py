@@ -1517,6 +1517,29 @@ def test_reset_stats_restores_base_and_clears_shield(db, make_game):
     assert s.health == s.max_health == 4
 
 
+def test_reset_stats_clears_power_override(db, make_game):
+    """日出有曜移除半光环覆写（裁决 2(5)，山童笨拙/萤草闪烁"力量变为0"类）：
+    reset_stats 清除 ext["power_zero"]/power_zero_turn 覆写层；永久增减益不移除；
+    灵咒结附层（读取时实时合计的光环层）覆写期间照常叠加、覆写移除后与
+    基础+永久层一起正常生效。"""
+    db.cards[RESET_STATS_SPELL] = F.card(
+        RESET_STATS_SPELL, shikigami=100101, level=1, token=True,
+        steps=[F.Step(op="reset_stats", target=T(kind="self"))])
+    g, pa, pb = _mech_game(make_game)
+    s = pa.shikigami[0]                       # 基础 3/4
+    s.perm_power = 2                          # 永久增益：不移除
+    s.temp_power = 1                          # 临时增益：清除
+    # 灵咒结附层当光环探针：eff_power 实时合计、reset 不清、refresh 不动
+    s.invocations.append({"name": "测试灵咒", "player": 0, "source": None,
+                          "uid": 999, "power": 3})
+    s.ext["power_zero"] = True                # 覆写层（power_override 授予）
+    s.ext["power_zero_turn"] = True           # 半回合作用域标记（闪烁 scope=turn）
+    assert s.eff_power == 3                   # 覆写中：仅灵咒层
+    play(g, 0, RESET_STATS_SPELL)
+    assert "power_zero" not in s.ext and "power_zero_turn" not in s.ext
+    assert s.eff_power == 3 + 2 + 3           # 基础 + 永久 + 灵咒层正常生效
+
+
 def test_energy_assault_pays_energy_when_no_orb(db, make_game):
     """觉醒·镰鼬（energy_assault）：鬼火与出击次数都为 0 时，旗标持有者可耗 3 能量
     出击（不耗出击次数）；非持有者或有鬼火时不可用。"""

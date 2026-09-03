@@ -8,6 +8,8 @@ versions:
       rarity: R
       level: 3
       effects:
+        # 并行伤害（裁决 2(1)）：全部目标的伤害事件同一队列结算，气绝统一在队列
+        # 清空后生成（转移互动：承伤者濒死仍转移、转移新事件入口拦截）
         steps:
-          - {op: damage, amount: 3, target: {kind: all, pool: enemy_shikigami}}
+          - {op: damage, amount: 3, parallel: true, target: {kind: all, pool: enemy_shikigami}}
       text: 对所有敌方式神造成3点伤害。

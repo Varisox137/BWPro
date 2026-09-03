@@ -1463,3 +1463,87 @@ def test_response_parallel_events_merged(db, make_game):
     hurt = [s for s in (a.shikigami[BAI_IDX], a.shikigami[BING_IDX])]
     assert all(s.health == s.max_health - 1 for s in hurt)   # 两名受伤者各受 1 伤
     assert sum(1 for s in hurt if s.shield == 2) == 1   # 只有一名受伤者拿到 +2 甲
+
+
+# ---------- energy_ge 响应门控纳入日和坊代偿/免单（裁决 2(4)，阳炎 20200327 型） ----------
+
+RIHEFANG = 100205          # 日和坊（引擎直读 id：基础能力生命代偿 / 觉醒免单）
+RF_AWAKEN = 10020551       # 假觉醒·日和坊
+YANGYAN_FAKE = 10020552    # 假阳炎：on_upgrade 响应 + energy_ge: 3 门控 + 耗 3 能量
+
+
+def _yangyan_game(db, make_game, owner=RIHEFANG, awakened=False):
+    """A 方 1 号位日和坊 + 假阳炎（敌方升级时响应：energy_ge 3 门控 +
+    spend_energy 3 gate）的对局；推进到 B 回合升级前返回。"""
+    db.shikigami[RIHEFANG] = F.shiki(RIHEFANG, name="日和坊")
+    for n in range(1, 9):
+        db.cards[RIHEFANG * 100 + n] = F.card(RIHEFANG * 100 + n, shikigami=RIHEFANG,
+                                              level=(n - 1) % 3 + 1)
+    db.cards[RF_AWAKEN] = F.card(RF_AWAKEN, shikigami=RIHEFANG, subtype="awaken",
+                                 tags=["awaken"], token=True)
+    db.cards[YANGYAN_FAKE] = F.card(
+        YANGYAN_FAKE, shikigami=owner, level=1, cost=1, token=True,
+        keywords=["trigger"],
+        when="on_upgrade",
+        block_kw={"condition": {"player": "opponent", "energy_ge": 3}},
+        steps=[F.Step(op="spend_energy", amount=3, gate=True),
+               F.Step(op="stun", target=T(kind="context", key="target"))])
+    g = make_game(team=[BAI, RIHEFANG, YAO, LIAN], auto_skip_upgrade=False)
+    pa, pb = g.state.players
+    pa.orb = 5
+    rf = pa.shikigami[1]
+    rf.level = 1
+    if awakened:
+        rf.awakened = RF_AWAKEN
+    give(g, 0, YANGYAN_FAKE)
+    g.apply({"op": "upgrade", "index": 2})   # A 升一个 0 级位后进 B 回合
+    g.apply({"op": "end_turn"})
+    return g, pa, pb
+
+
+def test_response_energy_gate_life_substitute(db, make_game):
+    """阳炎裁决 2(4)：energy_ge 响应门控经 _can_pay_energy——持有者为日和坊时
+    能量不足的差额以生命代偿（2 能量 + 代偿 1 生命可响应）；代偿会使生命降到 0
+    则不触发（复查失败不占响应名额）。"""
+    g, pa, pb = _yangyan_game(db, make_game)
+    rf = pa.shikigami[1]
+    rf.energy = 2                            # 不足 3，差额 1 以生命代偿
+    hp = rf.health
+    g.apply({"op": "upgrade", "index": 1})   # B 升级 → A 阳炎响应
+    assert any(c.id == YANGYAN_FAKE for c in pa.graveyard)
+    assert rf.energy == 0 and rf.health == hp - 1   # 能量清零 + 生命代偿 1
+    assert pb.shikigami[1].stuns             # 响应效果结算（眩晕升级者）
+    assert pa.orb == 4                       # 响应鬼火照付
+    # 代偿会使生命降到 0：门控不通过，不触发
+    g2, pa2, pb2 = _yangyan_game(db, make_game)
+    rf2 = pa2.shikigami[1]
+    rf2.energy = 2
+    rf2.health = 1                           # 代偿 1 → 生命 0：不可代偿
+    g2.apply({"op": "upgrade", "index": 1})
+    assert any(c.id == YANGYAN_FAKE for c in pa2.hand)  # 未触发，牌留手
+    assert not pb2.shikigami[1].stuns
+
+
+def test_response_energy_gate_free_quota(db, make_game):
+    """阳炎裁决 2(4)：觉醒·日和坊免单名额在时 0 能量也可响应（支付经
+    _spend_energy 免单：名额消耗、能量不扣）。"""
+    g, pa, pb = _yangyan_game(db, make_game, awakened=True)
+    rf = pa.shikigami[1]
+    rf.energy = 0                            # 免单名额在：0 能量可响应
+    assert pa.ext["energy_free_turn"] is True
+    g.apply({"op": "upgrade", "index": 1})
+    assert any(c.id == YANGYAN_FAKE for c in pa.graveyard)
+    assert rf.energy == 0 and rf.health == rf.max_health  # 免单：能量/生命不动
+    assert pa.ext["energy_free_turn"] is False            # 名额消耗
+    assert pb.shikigami[1].stuns
+
+
+def test_response_energy_gate_no_substitute_for_others(db, make_game):
+    """阳炎裁决 2(4) 连带口径：其他式神持有的 energy_ge 响应门控不被日和坊
+    代偿（支付方非日和坊本人；日和坊在场且生命充足也不放行）。"""
+    g, pa, pb = _yangyan_game(db, make_game, owner=BAI)  # 响应牌属白狼
+    pa.shikigami[BAI_IDX].energy = 2         # 持有者能量不足
+    g.apply({"op": "upgrade", "index": 1})
+    assert any(c.id == YANGYAN_FAKE for c in pa.hand)     # 不触发
+    assert not pb.shikigami[1].stuns
+    assert pa.shikigami[1].health == pa.shikigami[1].max_health  # 日和坊未代偿

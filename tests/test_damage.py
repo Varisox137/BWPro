@@ -1484,3 +1484,129 @@ def test_cancel_damage_energy_free_bypass(db, make_game):
     assert s.health == 5 and not s.defeated  # 触发并终止伤害（形态 5 生命）
     assert s.energy == 1                     # 免单：能量不扣
     assert pa.ext["energy_free_turn"] is False  # 名额消耗
+
+
+# ---------- 并行事件泛化与转移互动（裁决 2(1)：羽刃暴风/佛光/淬毒） ----------
+
+PARALLEL_AOE = 10010191        # 假羽刃暴风：parallel 全体敌方式神 3 伤
+PARALLEL_HEAL = 10010192       # 假佛光二段：parallel 全体角色治疗 3
+REVERSAL_FORM = 10010193       # 假法界唯心：来源己方的对敌治疗反转
+
+
+def _redirect_self_block(exclude_sid):
+    """"每当其他己方式神受伤时改由我承受"转移能力块（同 test_mechanics 转移链测试）。"""
+    return F.block(
+        F.Step(op="redirect_damage_to_self"),
+        when="on_after_shield", priority=2,
+        condition={"victim_side": "friendly", "victim_kind": "shikigami",
+                   "victim_not_shikigami": exclude_sid})
+
+
+def test_damage_parallel_redirect_dying_taker(db, make_game):
+    """并行×转移互动（裁决 2(1)，羽刃暴风式并行 AOE）：被转移到的实际承伤者在
+    本波并行结算中已濒死时，剩余原受伤者的伤害仍被转移（原受伤者不受伤），
+    转移生成的新伤害事件因承伤者濒死在管线入口拦截终止（不再造成伤害）。"""
+    db.cards[PARALLEL_AOE] = F.card(
+        PARALLEL_AOE, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=3, parallel=True,
+                      target=T(kind="all", pool="enemy_shikigami"))])
+    db.shikigami[100102].ability = _redirect_self_block(100102)  # 敌方 1 号位转移能力
+    g, pa, pb = _game(make_game)
+    for i in range(3):
+        pb.shikigami[i].level = 1
+    taker = pb.shikigami[1]
+    taker.health = 6                               # 转移 3 + 自身 3 → 濒死
+    play(g, 0, PARALLEL_AOE)
+    assert pb.shikigami[0].health == pb.shikigami[0].max_health  # 原受伤者不受伤（已转移）
+    assert pb.shikigami[2].health == pb.shikigami[2].max_health  # 承伤者濒死仍转移、新事件拦截
+    assert taker.defeated                          # 转移 3 + 自身伤害 3 → 气绝
+
+
+def test_damage_parallel_deparallelize_on_fragile_conversion(db, make_game):
+    """并行中途转队列（裁决 2(1)，清姬-淬毒）：来源持伤害转化能力
+    （damage_to_fragile——伤害事件变为获得破甲事件）时 parallel 伤害不进并行
+    通道，回退逐目标依次队列结算（先致死目标的气绝事件先于后续目标的破甲
+    转化）；无该能力时为正常并行伤害（气绝统一在队列清空后生成）。"""
+    db.cards[PARALLEL_AOE] = F.card(
+        PARALLEL_AOE, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="damage", amount=2, parallel=True,
+                      target=T(kind="all", pool="enemy_shikigami"))])
+    # 有清姬能力：依次队列结算——座 0（有破甲，吃真伤致死）的气绝先于座 1 转破甲
+    g, pa, pb = _game(make_game)
+    pa.shikigami[IDX].keywords.append("damage_to_fragile")
+    pb.shikigami[0].level = 1
+    pb.shikigami[1].level = 1
+    pb.shikigami[0].shield = -1                    # 已持破甲：不转化，2+1=3 致死
+    pb.shikigami[0].health = 3
+    n = len(g.history)
+    play(g, 0, PARALLEL_AOE)
+    assert pb.shikigami[0].defeated
+    assert pb.shikigami[1].shield == -2 and pb.shikigami[1].health == 6  # 转 2 破甲
+    seg = g.history[n:]
+    assert seg.index("on_shikigami_defeated") < max(
+        i for i, h in enumerate(seg) if h == "on_shield_changed")
+    # 无清姬能力：正常并行——两段伤害扣减生命均先于任一气绝事件
+    g2, pa2, pb2 = _game(make_game)
+    pb2.shikigami[0].level = 1
+    pb2.shikigami[1].level = 1
+    pb2.shikigami[0].health = 2
+    pb2.shikigami[1].health = 2
+    n2 = len(g2.history)
+    play(g2, 0, PARALLEL_AOE)
+    assert pb2.shikigami[0].defeated and pb2.shikigami[1].defeated
+    seg2 = g2.history[n2:]
+    assert max(i for i, h in enumerate(seg2) if h == "on_damage") \
+        < seg2.index("on_shikigami_defeated")
+
+
+def test_heal_parallel_queue(db, make_game):
+    """并行治疗通道（裁决 2(1)，佛光第二段"为其操控者的所有角色"）：parallel
+    治疗全部目标同批结算——治疗前批次（on_before_heal）全部发出后才统一应用
+    治疗（全部 on_before_heal 先于任一 on_heal）。"""
+    db.cards[PARALLEL_HEAL] = F.card(
+        PARALLEL_HEAL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=3, parallel=True,
+                      target=T(kind="all", pool="friendly_character"))])
+    g, pa, pb = _game(make_game)
+    pa.health = 25
+    pa.shikigami[IDX].health = 1
+    pa.shikigami[1].level = 1
+    pa.shikigami[1].health = 2
+    n = len(g.history)
+    play(g, 0, PARALLEL_HEAL)
+    assert pa.shikigami[IDX].health == 4 and pa.shikigami[1].health == 5
+    assert pa.health == 28
+    seg = g.history[n:]
+    assert max(i for i, h in enumerate(seg) if h == "on_before_heal") \
+        < seg.index("on_heal")
+
+
+def test_heal_parallel_converted_to_sequential_damage(db, make_game):
+    """法界唯心下的并行治疗（裁决 2(1)，佛光）：并行治疗在"治疗前"被转化
+    （治疗量置 0 + 入队延时伤害）后不再是并行——衍生伤害事件经延时队列依次
+    结算（致死气绝事件穿插于各伤害之间，而非统一到全部伤害之后）。"""
+    db.cards[REVERSAL_FORM] = F.card(
+        REVERSAL_FORM, shikigami=SID, card_type="form", level=1,
+        form_power=5, form_health=6, token=True,
+        abilities=[F.block(
+            F.Step(op="convert_heal_to_damage"),
+            when="on_before_heal",
+            condition={"source_side": "friendly", "target_side": "enemy"})])
+    db.cards[PARALLEL_HEAL] = F.card(
+        PARALLEL_HEAL, shikigami=SID, level=1, token=True,
+        steps=[F.Step(op="heal", amount=3, parallel=True,
+                      target=T(kind="all", pool="enemy_character"))])
+    g, pa, pb = _game(make_game)
+    play(g, 0, REVERSAL_FORM)                      # 结附反转形态
+    pb.shikigami[0].level = 1
+    pb.shikigami[1].level = 1
+    pb.shikigami[0].health = 3                     # 转 3 伤致死
+    pb.shikigami[1].health = 3                     # 转 3 伤致死
+    pb.health = 25
+    n = len(g.history)
+    play(g, 0, PARALLEL_HEAL)                      # 并行治疗 → 全部转延时伤害
+    assert pb.shikigami[0].defeated and pb.shikigami[1].defeated
+    assert pb.health == 22                         # 牌手亦转 3 伤
+    seg = g.history[n:]
+    assert seg.index("on_shikigami_defeated") < max(
+        i for i, h in enumerate(seg) if h == "on_damage")  # 依次队列结算

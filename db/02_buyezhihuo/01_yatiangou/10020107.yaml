@@ -12,10 +12,12 @@ versions:
         # 持续眩晕直到鸦天狗（施加方）用牌/攻击/气绝——解除只看鸦天狗作为事件主体
         #（watch_keys：使用牌前=用牌者、战斗准备前=攻击者、气绝=气绝者；鸦天狗被攻击
         # 不作 victim 命中解除）；施加牌自身的使用事件经 apply_seq/apply_uid 防自解除
+        # 气绝解除挂点 = 鸦天狗气绝事件的"气绝前1"（on_before_defeat，裁决 2(2)），
+        # 非"气绝后"（on_shikigami_defeated）
         steps:
           - {op: stun, lasting: true,
-             until_event: [on_before_card_play, on_before_battle_prep, on_shikigami_defeated],
+             until_event: [on_before_card_play, on_before_battle_prep, on_before_defeat],
              watch_keys: {on_before_card_play: [shikigami],
                           on_before_battle_prep: [attacker],
-                          on_shikigami_defeated: [victim]}}
+                          on_before_defeat: [victim]}}
       text: 使一个敌方式神保持[眩晕]，直到鸦天狗使用牌、攻击或气绝。

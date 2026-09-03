@@ -17,10 +17,12 @@ versions:
         # 触发（on_form_destroyed 在形态离场前发出、条件收集时求值，延时到气绝流程
         # 后执行——先触发后执行：执行时没有鬼火也照常复活+结附，consume_orb 钳 0）。
         # 返回场上 = 复活后把墓地中的同一实例重新结附（维护者答复 6：不生成新实例）。
-        # 报备：裁决①"气绝者移动回准备区不执行"未实现（复活仍回准备区）；
-        # 形态被效果消灭（非气绝/替换）是否触发裁决未言明，现不触发
+        # 裁决①：气绝者移动回准备区不执行——check_defeated 捕获本延时块已收集时
+        # 拦截移回（战斗区气绝则原地复活）；裁决②：形态被效果消灭（destroy_form
+        # reason="effect"）也触发（any_of 含 defeat/effect，replace 仍不触发）
         - when: on_form_destroyed
-          condition: {target_shikigami: self, orb_ge: 1, reason: defeat}
+          condition: {target_shikigami: self, orb_ge: 1,
+                      any_of: [{reason: defeat}, {reason: effect}]}
           steps:
             - {op: consume_orb, amount: 1}
             - {op: revive, target: {kind: self}}

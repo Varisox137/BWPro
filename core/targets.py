@@ -662,7 +662,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       类能力限定，配合 trigger_when_defeated 使用）
     - {holder_has_form: true|false} ：能力持有者当前是否结附着形态（萤草 20200327
       能力两项动态要求"萤草结附有形态"才生效）
-    - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控）
+    - {energy_ge: n}         ：能力持有者当前能量 ≥ n（阳炎响应"额外消耗3能量"门控；
+      裁决 2(4)：经 _can_pay_energy 语义——日和坊本人可生命代偿、免单名额在直接通过）
     - {energy_free_available: true} ：控制者本回合觉醒·日和坊免单名额未用（同生共死
       配 any_of 绕过能量门控——名额在时不检测能量）
     - {card_in_hand: true}   ：卡牌触发器（CardDef.triggers）专用——控制者手牌中须
@@ -944,10 +945,14 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if want not in ledger:
                 return False
         elif key == "energy_ge":
-            # 能力持有者当前能量 ≥ n（"额外消耗3能量"类响应/触发门控）
+            # 能力持有者当前能量 ≥ n（"额外消耗3能量"类响应/触发门控）——
+            # 裁决 2(4)：纳入日和坊代偿/免单（_can_pay_energy 语义：持有者为
+            # 日和坊本人时能量+生命（代偿后不降到 0）可抵差额；觉醒免单名额在
+            # 直接通过；持有者非日和坊不代偿——与 _spend_energy 支付口径一致）
             if holder is None or holder.shikigami is None:
                 return False
-            if game.state.players[holder.player].shikigami[holder.shikigami].energy < int(want):
+            if not game._can_pay_energy(game.state.players[holder.player],
+                                        holder.shikigami, int(want)):
                 return False
         elif key == "energy_free_available":
             # 控制者本回合觉醒·日和坊免单名额未用（同生共死"免单名额未用时不检测

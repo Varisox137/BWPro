@@ -99,10 +99,16 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
     携带本步来源/卡牌/选择目标——context 目标键 victim/victim_player 与
     victim_is_chosen/victim_dying 条件键可用）；帧生效期间的气绝事件延后到下一次
     队列排水后统一生成（插入的移动/伤害触发的延时能力先于气绝结算）。
-    parallel=True（群鸦乱舞"对所有敌方式神造成1点伤害……恢复等量生命"并行口径）：
+    parallel=True（群鸦乱舞"对所有敌方式神造成1点伤害……恢复等量生命"、羽刃暴风/
+    淬毒并行口径，裁决 2(1)）：
     全部目标的伤害事件进**同一队列**并行结算（同 random_damage 非 sequential 通道），
     气绝统一在队列清空后生成；逐目标的即时时机不再互相穿插。与 repeat_on_kill
     不组合（并行波次内不判新击杀重复）。
+    与转移类效果的互动（裁决 2(1)）：即使被转移到的实际承伤者在本波结算中已濒死，
+    剩余原受伤者的伤害仍被转移（自身不受伤），转移新事件因承伤者状态异常在管线
+    入口拦截终止（engine._spawn_redirect 定案备注）。
+    并行中途转队列：来源持伤害转化能力（清姬 damage_to_fragile——伤害事件变为
+    获得破甲事件）时不进并行通道，回退逐目标依次队列结算。
     """
     static = not isinstance(amount, dict)
     if static:
@@ -130,7 +136,12 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
             "chosen": list(ctx.chosen or ()), "card": ctx.card,
         })
     try:
-        if parallel:
+        # 裁决 2(1) 并行中途转队列：来源持伤害转化能力（清姬先天
+        # damage_to_fragile——伤害事件变为获得破甲事件）时不进并行通道，
+        # 回退逐目标依次队列结算
+        kw_to_fragile = src is not None and src.in_play and (
+            game._has_keyword(src, "damage_to_fragile"))
+        if parallel and not kw_to_fragile:
             # 并行伤害：全部目标同一队列结算（气绝在队列清空后统一生成）
             from core.engine import _DamageEvent  # 避免模块顶层循环引用
             events: list = []
@@ -194,7 +205,8 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
 @action("heal")
 
 def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
-         allow_defeated: bool = False, repeat_on_revive: int = 0) -> None:
+         allow_defeated: bool = False, repeat_on_revive: int = 0,
+         parallel: bool = False) -> None:
     """恢复生命（走 Game.heal 治疗事件流程）：治疗量 = min(amount, 已损失生命)，
     0 终止；濒死/气绝（未在场）式神与气绝牌手不受治疗。
     结算后把本步治疗目标写入块内暂存 ctx.memo["last_heal_targets"]（供佛光
@@ -208,11 +220,43 @@ def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
     能力离场，则无法对己方气绝式神造成恢复并改为减少倒计时"），且仅对**己方**
     气绝式神转化（"可以为己方气绝式神恢复生命"）。
     repeat_on_revive=n：本步结算后若有目标因本步转化而复活，则对原目标列表
-    整体重复，至多 n 次（樱吹雪"若复活式神，重复此效果一次"）。"""
+    整体重复，至多 n 次（樱吹雪"若复活式神，重复此效果一次"）。
+    parallel=True（佛光第二段"为其操控者的所有角色恢复3点生命"并行治疗口径，
+    裁决 2(1)）：全部目标的治疗事件进同一并行通道（engine._run_heal_queue
+    两阶段——治疗前批次全部发出后再统一应用）；被转化为非治疗事件的目标
+    （法界唯心：治疗转延时伤害）不再并行，衍生伤害经队列依次结算。
+    与 repeat_on_revive 不组合。"""
     src = (game.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
            if ctx.source is not None and ctx.source.shikigami is not None else None)
     kw_convert = src is not None and src.in_play and (
         game._has_keyword(src, "heal_defeated_countdown"))
+    if parallel:
+        items: list = []
+        for ref in targets:
+            if ref.shikigami is not None:
+                pl = game.state.players[ref.player]
+                s = pl.shikigami[ref.shikigami]
+                if s.defeated and not s.despawned and s.level >= 1 and (
+                        allow_defeated
+                        or (kw_convert and ref.player == ctx.controller)):
+                    # 对气绝式神的恢复转化：气绝倒计时 -1（非治疗事件，不进并行队列）
+                    s.revive_countdown -= 1
+                    game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 -1"
+                                 f"（现 {s.revive_countdown}，恢复转化）")
+                    if s.revive_countdown <= 0:
+                        game._revive(pl, ref.player, ref.shikigami,
+                                     source=ctx.source, reason="effect")
+                    continue
+            amt = amount
+            if full:
+                pl = game.state.players[ref.player]
+                holder = pl.shikigami[ref.shikigami] if ref.shikigami is not None else pl
+                amt = holder.max_health - holder.health
+            items.append((ref, amt, ctx.source, "heal"))
+        game._run_heal_queue(items)
+        if ctx.memo is not None:
+            ctx.memo["last_heal_targets"] = list(targets)
+        return
     for _pass in range(1 + int(repeat_on_revive)):  # 首波 + 至多 repeat_on_revive 次重复
         revived = False
         for ref in targets:
@@ -4054,6 +4098,8 @@ def reset_stats(game, ctx, *, targets: list[Ref]) -> None:
     """目标式神力量、生命变为基础值（日出有曜 A 选项）：清除非永久力量/生命上限
     增减益（临时修正与攻击后到期挂账、本回合力量通道），清除护甲与破甲，
     然后生命设为变更后上限——直改，不是伤害/治疗事件（不触发任何伤害/治疗时机）。
+    半光环类覆写层一并移除（裁决 2(5)：ext["power_zero"]/power_zero_turn
+    力量覆写——笨拙/闪烁"力量变为指定值"类；永久增减益不移除）。
     动态身材光环（ext dyn 缓存通道）与灵咒身材增减益（invocations 条目光环层）
     不动：读取时求值，清除临时修正后立即继续生效（维护者定案——灵咒类光环）。"""
     for ref in targets:
@@ -4065,6 +4111,8 @@ def reset_stats(game, ctx, *, targets: list[Ref]) -> None:
         s.combat_power = 0
         s.attack_buffs.clear()
         s.ext.pop("turn_power", None)
+        s.ext.pop("power_zero", None)       # 半光环覆写层移除（裁决 2(5)）
+        s.ext.pop("power_zero_turn", None)
         s.shield = 0
         s.health = s.max_health
         game._settle(f"【重置】{game.db.shikigami[s.id].name} 力量/生命变为基础值"
