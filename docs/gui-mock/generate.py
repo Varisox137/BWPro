@@ -64,7 +64,16 @@ def title_bar(d, text, back=True):
     d.text((104, 34), text, font=F28, fill=GOLD, anchor="lm")
 
 def save(img, name):
-    img.save(os.path.join(OUT, name))
+    import time
+    path = os.path.join(OUT, name)
+    for attempt in range(5):
+        try:
+            img.save(path)
+            break
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(0.3)
     print("saved", name)
 
 # ── 对战通用小件 ──────────────────────────────────────────────
@@ -305,6 +314,82 @@ def lobby():
     button(d, (850, 716, 1100, 772), "离开房间", F18, outline=LINE, tfill=DIM)
     save(img, "07_online_lobby.png")
 
+# ───────────────────────── 8. 升级阶段（参照 39_3） ─────────────────────────
+def level_up():
+    img, d = canvas()
+    # 暗化战场示意：敌方一排在上
+    for i in range(4):
+        c = card_img(110, 164, f"敌·式神{i + 1}", "2/5", SEAT[i])
+        paste_tilted(img, c, 500 + i * 150, 130, 0)
+    d_img = ImageDraw.Draw(img)
+    # 我方 4 式神：可升级者金色发光描边 + 头顶等级勾玉
+    for i in range(4):
+        cx = 420 + i * 250
+        can = i in (0, 2)  # 演示：1、3 号位可升级
+        if can:
+            d_img.rounded_rectangle((cx - 78, 358, cx + 78, 582), radius=10,
+                                    outline=GOLD, width=6)
+        c = card_img(140, 200, f"式神{i + 1}", "3/4", SEAT[i])
+        paste_tilted(img, c, cx, 470, 0)
+        # 等级勾玉（圆形太极示意，填派系色）
+        d_img.ellipse((cx - 20, 300, cx + 20, 340), fill=SEAT[i], outline=BG, width=2)
+        d_img.text((cx, 320), str(1 + (i % 2)), font=F16, fill=BG, anchor="mm")
+    # 右侧提示
+    d_img.text((1330, 430), "请选择升级式神", font=F22, fill=PURPLE, anchor="mm")
+    d_img.text((1330, 470), "本回合剩余次数 1", font=F14, fill=DIM, anchor="mm")
+    save(img, "08_level_up.png")
+
+# ───────────────────────── 9. 式神详情面板（参照 40_3） ─────────────────────────
+def shiki_detail():
+    img, d = canvas()
+    d.rectangle((0, 0, W, H), fill=(14, 12, 24))  # 暗化背景
+    # 左侧大面板：增益列表 + 形态卡面 + 能力文本
+    box(d, (40, 40, 620, 860), fill=PANEL, outline=LINE, r=14)
+    ctext(d, 330, 66, "式神详情", F22, GOLD)
+    # 增益列表（带来源小图标）
+    box(d, (70, 100, 590, 250), fill=PANEL2, outline=LINE, r=10)
+    ctext(d, 330, 122, "增益（3）", F16, TEXT)
+    for i, s in enumerate(["永久得 +1/+1（来源：形态·千年之守）",
+                           "得 +1/+1（来源：幻境·神赐之日）",
+                           "额外获得能力：贯通（来源：觉醒能力）"]):
+        d.ellipse((92, 148 + i * 30, 108, 164 + i * 30), fill=SEAT[i % 4])
+        d.text((120, 156 + i * 30), s, font=F14, fill=TEXT, anchor="lm")
+    # 形态卡面 + 身材
+    card(d, (90, 280, 300, 520), "形态·千年之守", "8/11", outline=GOLD)
+    # 能力文本区
+    box(d, (70, 550, 590, 830), fill=PANEL2, outline=LINE, r=10)
+    d.text((90, 576), "基础能力", font=F16, fill=GOLD, anchor="la")
+    d.text((90, 606), "（能力文本占位，多行）", font=F14, fill=TEXT, anchor="la")
+    d.text((90, 660), "觉醒能力", font=F16, fill=GOLD, anchor="la")
+    d.text((90, 690), "（觉醒能力文本占位）", font=F14, fill=TEXT, anchor="la")
+    # 右侧浮动：关键词条解释（可切换标签）
+    box(d, (680, 100, 1180, 480), fill=PANEL, outline=PURPLE, width=2, r=12)
+    for i, kw in enumerate(["贯通", "觉醒", "瞬发"]):
+        button(d, (700 + i * 110, 120, 800 + i * 110, 156), kw, F14,
+               outline=GOLD if i == 0 else LINE)
+    d.text((700, 186), "贯通", font=F18, fill=GOLD, anchor="la")
+    d.text((700, 216), "具有贯通的卡牌主动对式神造成的\n过量伤害会转移给它的牌手。",
+           font=F14, fill=TEXT, anchor="la")
+    save(img, "09_shiki_detail.png")
+
+# ───────────────────────── 10. 幻境队列详情（参照 41_3） ─────────────────────────
+def field_detail():
+    img, d = canvas()
+    d.rectangle((0, 0, W, H), fill=(14, 12, 24))
+    ctext(d, 800, 80, "幻境队列（技能卡详情）", F28, GOLD)
+    # 队列：三张幻境卡，队首标"优先承受伤害"
+    for i in range(3):
+        x = 320 + i * 280
+        card(d, (x, 220, x + 240, 560), f"幻境·卡牌{i + 1}", f"耐久 {11 - i * 5}",
+             outline=GOLD if i == 0 else LINE)
+        if i == 0:
+            ctext(d, x + 120, 600, "「 优先承受伤害 」", F16, GOLD)
+    # 右侧：牌手级能力说明卡
+    card(d, (1200, 220, 1440, 560), "牌手能力", "（文本占位）", outline=PURPLE)
+    # 右上确认
+    diamond(d, 1500, 80, 44, "确认", GOLD)
+    save(img, "10_field_detail.png")
+
 if __name__ == "__main__":
     main_menu()
     deck_list()
@@ -313,3 +398,6 @@ if __name__ == "__main__":
     battle()
     mulligan()
     lobby()
+    level_up()
+    shiki_detail()
+    field_detail()
