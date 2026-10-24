@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, QWidget] = {}
         self.stack.addWidget(self._make_menu())
         for key, title, _sub in MENU_ENTRIES:
-            if key in ("builder", "hotseat"):
+            if key in ("builder", "hotseat", "online"):
                 if db is None:
                     from db.loader import CardDatabase
                     db = CardDatabase.load()
@@ -72,9 +72,12 @@ class MainWindow(QMainWindow):
                 if key == "builder":
                     from client.gui.builder import DeckBuilderView
                     self.pages[key] = DeckBuilderView(db, on_back=self.go_menu, **kwargs)
-                else:
+                elif key == "hotseat":
                     from client.gui.battle import HotseatView
                     self.pages[key] = HotseatView(db, on_back=self.go_menu, **kwargs)
+                else:
+                    from client.gui.online import OnlineView
+                    self.pages[key] = OnlineView(db, on_back=self.go_menu, **kwargs)
             else:
                 self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
@@ -83,7 +86,7 @@ class MainWindow(QMainWindow):
     def set_theme(self, theme: str):
         self.theme = theme
         self.setStyleSheet(qss(theme))
-        for key in ("builder", "hotseat"):
+        for key in ("builder", "hotseat", "online"):
             page = self.pages.get(key)
             if hasattr(page, "apply_theme"):
                 page.apply_theme(theme, THEMES[theme])

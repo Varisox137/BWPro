@@ -507,6 +507,9 @@ class HotseatView(QWidget):
         if state.winner is not None and not self.timeline_queue:
             self._show_result()
 
+    def hand_info(self) -> dict[int, dict]:
+        return cli.hand_cards_info(self.game, self.viewer)
+
     def _render_hand(self) -> None:
         while self.hand_layout.count():
             item = self.hand_layout.takeAt(0)
@@ -516,7 +519,7 @@ class HotseatView(QWidget):
         player = self.game.state.players[self.viewer]
         mulligan = self.game.state.phase == "mulligan"
         cards = list(player.hand) if mulligan else cli.hand_sorted(self.game, player)
-        info = {} if self.game.state.pending_choice else cli.hand_cards_info(self.game, self.viewer)
+        info = {} if self.game.state.pending_choice else self.hand_info()
         self.hand_caption.setText(f"{player.name} 的手牌（{len(cards)} 张）")
         for card in cards:
             definition = self.db.cards[card.id]
