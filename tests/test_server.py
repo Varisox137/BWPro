@@ -885,7 +885,7 @@ def test_http_probe_gets_403_no_server_header(server):
     不用框架默认 404；且不下发 server 响应头（不暴露 uvicorn 指纹）。"""
     import http.client
     conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=5)
-    for path in ("/", "/ws", "/admin"):
+    for path in ("/", "/ws", "/admin", "/gui", "/gui/api/catalog"):
         conn.request("GET", path)
         r = conn.getresponse()
         assert r.status == 403
@@ -1010,3 +1010,29 @@ def test_sanitize_keeps_revealed_hand_cards():
     assert hand[1] == _HIDDEN_CARD                             # 未展示：占位隐藏
     assert view["players"][0]["zones"]["deck"] == [dict(_HIDDEN_CARD)]
     assert payload["players"][0]["zones"]["hand"][1]["id"] == 10010102  # 原状态不变
+
+
+def test_state_hand_info_shape(db):
+    """state 推送附带己方手牌实时信息（hand_info，键 = 手牌 uid 字符串）：
+    使用方式枚举/费用/关键字/数值段/使用条件等引擎求值字段形状；
+    仅含己方手牌，对手手牌仍为占位卡（脱敏不受影响）。"""
+    async def go():
+        _, ws0, ws1 = await _started_room(db)
+        for ws in (ws0, ws1):
+            states = [m for m in ws.messages if m["type"] == "state"]
+            assert states
+            pl = states[-1]["payload"]
+            info = pl["hand_info"]
+            assert info  # 起始手牌非空
+            own = next(p for p in pl["players"]
+                       if {str(c["uid"]) for c in p["zones"]["hand"]} == set(info))
+            other = pl["players"][1 - pl["players"].index(own)]
+            assert all(c["uid"] == 0 for c in other["zones"]["hand"])  # 对手手牌仍脱敏
+            for uid, entry in info.items():
+                assert int(uid) > 0
+                assert {"cost", "keywords", "stats", "enhance", "quest",
+                        "playable", "usage"} <= set(entry)
+                assert entry["usage"], "每张手牌至少有一个使用方式条目"
+                assert {"id", "label", "cost", "energy", "ok",
+                        "reason", "effect"} <= set(entry["usage"][0])
+    run(go())

@@ -13,7 +13,11 @@ from PySide6.QtWidgets import (
 )
 
 from client.deckbuilder import available_shikigami, buildable_cards
-from client.gui.widgets import CardDetailDialog, CardWidget
+from client.gui.portrait import shikigami_portrait
+from client.gui.widgets import (
+    CardDetailDialog, CardWidget, ask_confirmation, polish_dialog_buttons,
+    show_warning,
+)
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, rules_summary, validate_deck
 from db.envs import ENV_ALIASES, env_label, parse_env_input
@@ -71,6 +75,7 @@ class DeckCodeDialog(QDialog):
         buttons.addButton(QDialogButtonBox.Cancel if editable else QDialogButtonBox.Close)
         if editable:
             buttons.addButton(QDialogButtonBox.Ok)
+        polish_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -103,6 +108,7 @@ class ShikigamiDialog(QDialog):
         self.tree.itemDoubleClicked.connect(lambda _item, _col: self.accept())
         layout.addWidget(self.tree, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        polish_dialog_buttons(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -135,11 +141,10 @@ class ShikigamiDialog(QDialog):
 class DeckBuilderView(QWidget):
     """卡组管理列表与编辑器；store_path 可注入以隔离测试数据。"""
 
-    def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None, parent=None):
+    def __init__(self, db, store_path: Path = deckstore.PATH, parent=None):
         super().__init__(parent)
         self.db = db
         self.store_path = Path(store_path)
-        self.on_back = on_back
         self.theme = "light"
         self.decks: list[dict] = []
         self.deck_frames: list[QFrame] = []
@@ -169,10 +174,6 @@ class DeckBuilderView(QWidget):
     def _build_list_page(self) -> None:
         layout = QVBoxLayout(self.list_page)
         top = QHBoxLayout()
-        self.back_button = QPushButton("← 返回主菜单")
-        self.back_button.setObjectName("small")
-        self.back_button.clicked.connect(self._go_back)
-        top.addWidget(self.back_button)
         title = QLabel("卡组构筑")
         title.setObjectName("viewTitle")
         top.addWidget(title)
@@ -228,7 +229,7 @@ class DeckBuilderView(QWidget):
         self.env_combo = QComboBox()
         self.env_combo.setEditable(True)
         self.env_combo.addItem(env_label(None), None)
-        for alias, date in ENV_ALIASES.items():
+        for date in dict.fromkeys(ENV_ALIASES.values()):
             self.env_combo.addItem(env_label(date), date)
         self.env_combo.setMinimumWidth(190)
         self.env_combo.activated.connect(self.change_environment)
@@ -290,6 +291,7 @@ class DeckBuilderView(QWidget):
                 border-radius: 10px;
             }}
             QFrame#deckFrame[standard="true"] {{ border: 3px solid {colors['blue']}; }}
+            QWidget#deckShikiRow, QFrame#deckFrame QLabel {{ background: transparent; border: none; }}
             QFrame#card[selected="true"] {{ border-color: {colors['gold']}; }}
             QLabel#cardName {{ color: {colors['gold']}; font-size: 20px; font-weight: bold; }}
             QLabel#cardLevel, QLabel#cardStats, QLabel#standardStatus {{ color: {colors['blue']}; }}
@@ -302,10 +304,6 @@ class DeckBuilderView(QWidget):
             QListWidget::item:selected {{ background: {colors['gold2']}; color: {colors['text']}; }}
             QPushButton#cardStep {{ padding: 1px; font-size: 16px; text-align: center; }}
         """)
-
-    def _go_back(self) -> None:
-        if self.on_back is not None:
-            self.on_back()
 
     def reload_decks(self) -> None:
         self.decks = deckstore.load_decks(self.db, self.store_path)
@@ -322,12 +320,14 @@ class DeckBuilderView(QWidget):
         self.deck_page_index = max(0, min(self.deck_page_index, pages - 1))
         shown = self.decks[self.deck_page_index * DECK_PAGE_SIZE:
                            (self.deck_page_index + 1) * DECK_PAGE_SIZE]
+        self.deck_layout.addStretch(1)
         for offset, entry in enumerate(shown):
             index = self.deck_page_index * DECK_PAGE_SIZE + offset
             frame = QFrame()
             frame.setObjectName("deckFrame")
             frame.setProperty("standard", bool(entry.get("standard")))
-            frame.setMinimumWidth(220)
+            frame.setMinimumWidth(250)
+            frame.setMaximumWidth(290)
             column = QVBoxLayout(frame)
             name = QLabel(entry["name"])
             name.setObjectName("cardName")
@@ -340,14 +340,31 @@ class DeckBuilderView(QWidget):
             column.addWidget(env)
             ids, _cards = deckstore.entry_deck(entry)
             for sid in ids:
-                label = QLabel(self.db.shikigami[sid].name if sid in self.db.shikigami else str(sid))
-                label.setAlignment(Qt.AlignCenter)
-                column.addWidget(label)
+                definition = self.db.shikigami.get(sid)
+                row = QWidget()
+                row.setObjectName("deckShikiRow")
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(4, 0, 4, 0)
+                row_layout.setSpacing(10)
+                avatar = QLabel()
+                avatar.setObjectName("shikiPortrait")
+                avatar.setFixedSize(72, 72)
+                if definition is not None:
+                    avatar.setPixmap(shikigami_portrait(definition))
+                else:
+                    avatar.setText("◆")
+                    avatar.setAlignment(Qt.AlignCenter)
+                row_layout.addWidget(avatar)
+                label = QLabel(definition.name if definition is not None else str(sid))
+                label.setObjectName("deckShikiName")
+                label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                row_layout.addWidget(label, 1)
+                column.addWidget(row)
             column.addStretch(1)
             edit = QPushButton("编辑")
-            code = QPushButton("码")
-            rename = QPushButton("名")
-            delete = QPushButton("删")
+            code = QPushButton("查看卡组码")
+            rename = QPushButton("重命名")
+            delete = QPushButton("删除")
             for button in (edit, code, rename, delete):
                 button.setObjectName("small")
             edit.clicked.connect(lambda _=False, i=index: self.open_deck(i))
@@ -359,7 +376,7 @@ class DeckBuilderView(QWidget):
             for button in (code, rename, delete):
                 actions.addWidget(button)
             column.addLayout(actions)
-            self.deck_layout.addWidget(frame, 1)
+            self.deck_layout.addWidget(frame)
             self.deck_frames.append(frame)
         self.deck_layout.addStretch(1)
         self.deck_page_label.setText(f"第 {self.deck_page_index + 1}/{pages} 页")
@@ -421,7 +438,7 @@ class DeckBuilderView(QWidget):
         try:
             env = self.current_env()
         except ValueError as error:
-            QMessageBox.warning(self, "环境无效", str(error))
+            show_warning(self, "环境无效", str(error))
             return
         edb = self.db.at_date(env)
         self.team = [sid for sid in self.team if sid in edb.shikigami]
@@ -450,6 +467,7 @@ class DeckBuilderView(QWidget):
         edb = self.db.at_date(self.current_env())
         dialog = ShikigamiDialog(edb, set(self.team), self)
         if dialog.exec() != QDialog.Accepted:
+            self._render_shiki_list()  # 取消后清除“添加式神”行的残留选中态
             return
         if replace_slot is None:
             self.add_shikigami(dialog.selected_id)
@@ -577,7 +595,7 @@ class DeckBuilderView(QWidget):
 
     def save_editor(self) -> bool:
         if not self.team:
-            QMessageBox.warning(self, "无法保存", "请至少选择一名式神；空卡组不能写入本地存储。")
+            show_warning(self, "无法保存", "请至少选择一名式神；空卡组不能写入本地存储。")
             return False
         try:
             env = self.current_env()
@@ -592,7 +610,7 @@ class DeckBuilderView(QWidget):
                 self.decks[self.current_index] = entry
             deckstore.save_decks(self.db, self.decks, self.store_path)
         except (ValueError, OSError) as error:
-            QMessageBox.warning(self, "保存失败", str(error))
+            show_warning(self, "保存失败", str(error))
             return False
         self.reload_decks()
         return True
@@ -606,15 +624,19 @@ class DeckBuilderView(QWidget):
         self.reload_decks()
 
     def ask_rename(self, index: int) -> None:
-        name, ok = QInputDialog.getText(self, "重命名卡组", "卡组名称：",
-                                        text=self.decks[index]["name"])
-        if ok and name.strip():
-            self.rename_deck(index, name)
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("重命名卡组")
+        dialog.setLabelText("卡组名称：")
+        dialog.setTextValue(self.decks[index]["name"])
+        dialog.show()  # QInputDialog 的标准按钮在首次显示时才创建
+        polish_dialog_buttons(dialog)
+        if dialog.exec() == QDialog.Accepted and dialog.textValue().strip():
+            self.rename_deck(index, dialog.textValue())
 
     def delete_deck(self, index: int, confirmed: bool = False) -> bool:
         if not confirmed:
-            answer = QMessageBox.question(self, "删除卡组",
-                                          f"确认删除卡组「{self.decks[index]['name']}」？")
+            answer = ask_confirmation(self, "删除卡组",
+                                      f"确认删除卡组「{self.decks[index]['name']}」？")
             if answer != QMessageBox.Yes:
                 return False
         self.decks.pop(index)
@@ -649,7 +671,7 @@ class DeckBuilderView(QWidget):
         try:
             self.import_code(dialog.code)
         except ValueError as error:
-            QMessageBox.warning(self, "导入失败", str(error))
+            show_warning(self, "导入失败", str(error))
 
     def show_card_detail(self, cdef) -> None:
         CardDetailDialog(cdef, self.db, self).exec()

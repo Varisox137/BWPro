@@ -4,7 +4,7 @@
 
 当前进度：Phase 1（规则引擎 + 正式数据 + CLI 热座 + 卡组构筑）与 Phase 2（FastAPI/WebSocket 联机对战）已完成。
 正式数据：59 式神 524 卡（另 10 个召唤物/变形物/替换物/占位实体，含协战牌），经典/不夜之火/月夜幻响/沧海刀鸣四包完结，
-平衡性数据录入至 20200928；吉运缘结包骨架已登记。测试 1056 个，按机制/主题归组。
+平衡性数据录入至 20200928；吉运缘结包骨架已登记。测试 1114 个，按机制/主题归组。
 
 ## 快速开始
 
@@ -25,8 +25,7 @@ uv run pytest -q tests/              # 运行全部测试
   式神与其全部卡牌同目录，见 `db/packs.py`）、schema、组卡校验（天梯规则，可参数化）、卡组码
 - `client/` — CLI 客户端：`cli.py` 热座 + 卡组构筑；`net.py` 联机（同一 `cmd dict` 协议）；
   `tui.py` TUI 基座（prompt_toolkit 底部输入框 + 常驻状态行，非 TTY 自动回退内置 input）
-- `server/` — authoritative 联机服务端（FastAPI + WebSocket，详见 `server/README.md`）；\r
-  `webgui.py` + `static/webgui/` 提供 `/gui` 网页客户端基础框架
+- `server/` — authoritative 联机服务端（FastAPI + WebSocket，详见 `server/README.md`）
 - `diy/` — 自定义卡牌 DSL（Phase 3） · `docs/` — 规则与术语文档 · `tests/` — 测试
 
 ## 已实现机制
@@ -47,9 +46,6 @@ uv run pytest -q tests/              # 运行全部测试
   token 断线重连、状态按视角脱敏（详见 `server/README.md`）
 - CLI 显示：座次配色、手牌数值实时求值、结算明细按时间线播放（0.3s/条）、
   TTY 底部输入框 + 常驻状态行
-- Web GUI：`/gui` 网页客户端（主菜单/卡组构筑/联机对局渲染、点击查看详情、拖拽出击、
-  协战子选项/使用方式/双目标出牌全流程、手牌数值实时求值、结算时间线展示，
-  无构建步骤 vanilla JS，详见 `server/README.md`）
 - 桌面 GUI：`python -m client.gui`（PySide6，`client/gui/`）——卡组构筑全管理、
   本地热坐与联机对战完整图形化（场况/手牌/使用方式/双目标/结算播放/战斗记录/断线重连）、
   浅深双主题切换；与 CLI 共享 `core/`+`db/`+`client/` 数据层和 `~/.bwpro/decks.json`
@@ -75,7 +71,7 @@ uv run pytest -q tests/              # 运行全部测试
 1. **Phase 1 ✅** 核心规则引擎 + 数据模型 + 正式数据 + CLI 热座 + 卡组构筑
 2. **Phase 2 ✅（初版）** 联机服务端与联机客户端（回放/自动匹配待后续）
 3. **Phase 3** 自定义卡牌 DSL 编译器（`diy/`）
-4. **Phase 4（进行中）** 图形客户端（桌面 GUI 已落地：构筑/热坐/联机全流程；Web GUI 基础框架并存）
+4. **Phase 4（进行中）** 图形客户端（桌面 GUI 已落地：构筑/热坐/联机全流程）
 5. **Phase 5** 进阶机制：持续效果与光环、出击增减益、赐能/起源等
 
 ## 设计文档

@@ -543,7 +543,7 @@ def format_hand_lines(game: Game, p, hand: list, with_usage: bool = True) -> lis
 
 
 def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
-    """联机推送的己方手牌实时信息（webgui 等远程客户端的展示数据——与
+    """联机推送的己方手牌实时信息（桌面 GUI 等远程客户端的展示数据——与
     format_hand_lines 同一批求值函数：usage_options/_card_keywords/_stats_label
     等引擎与本模块展示口径，前端不重复实现规则计算）。
     返回 {uid: {...}}：

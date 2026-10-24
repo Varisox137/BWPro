@@ -7,10 +7,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QPushButton
 
 from client.gui.app import MainWindow
-from client.gui.builder import DeckBuilderView
+from client.gui.builder import DeckBuilderView, DeckCodeDialog, ShikigamiDialog
 from db import deckcode, deckstore
 from tests import factories
 
@@ -41,7 +41,7 @@ def test_builder_page_navigation(qapp, db, tmp_path):
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     win.go("builder")
     assert isinstance(win.pages["builder"], DeckBuilderView)
-    win.pages["builder"].back_button.click()
+    win.back_button.click()
     assert win.stack.currentIndex() == 0
     win.toggle_theme()
     assert win.pages["builder"].theme == "dark"
@@ -131,3 +131,63 @@ def test_deck_code_import_export(qapp, db, view):
     with pytest.raises(ValueError):
         view.import_code("不是卡组码")
     assert len(view.decks) == 1
+
+
+def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
+    deckstore.save_decks(db, [{"name": "主力", "groups": legal_groups(db), "env": None}],
+                         tmp_path / "decks.json")
+    view.reload_decks()
+    frame = view.deck_frames[0]
+    assert frame.maximumWidth() <= 300
+    assert [label.text() for label in frame.findChildren(QLabel, "deckShikiName")] == [
+        db.shikigami[sid].name for sid in factories.TEAM]
+    portraits = frame.findChildren(QLabel, "shikiPortrait")
+    assert len(portraits) == 4
+    assert all(not label.pixmap().isNull() for label in portraits)
+    texts = [button.text() for button in frame.findChildren(QPushButton)]
+    assert all(text in texts for text in ("编辑", "查看卡组码", "重命名", "删除"))
+
+
+def test_environment_options_are_unique(qapp, view):
+    view.new_deck()
+    texts = [view.env_combo.itemText(i) for i in range(view.env_combo.count())]
+    dates = [view.env_combo.itemData(i) for i in range(view.env_combo.count())]
+    assert len(texts) == len(set(texts))
+    assert len(dates) == len(set(dates))
+
+
+def test_cancel_add_restores_shikigami_selection(qapp, view, monkeypatch):
+    view.new_deck()
+    view.add_shikigami(factories.TEAM[0])
+    monkeypatch.setattr("client.gui.builder.ShikigamiDialog.exec", lambda _self: 0)
+    view.shiki_list.setCurrentRow(len(view.team))
+    assert view.shiki_list.currentRow() == 0
+    assert view.selected_sid == factories.TEAM[0]
+
+
+def test_dialog_standard_buttons_are_chinese_and_compact(qapp, db, view):
+    dialog = DeckCodeDialog(editable=True, parent=view)
+    box = dialog.findChild(QDialogButtonBox)
+    assert box.button(QDialogButtonBox.Ok).text() == "确定"
+    assert box.button(QDialogButtonBox.Cancel).text() == "取消"
+    assert all(button.objectName() == "dialogButton" for button in box.buttons())
+    dialog.close()
+    picker = ShikigamiDialog(db, parent=view)
+    picker_box = picker.findChild(QDialogButtonBox)
+    assert picker_box.button(QDialogButtonBox.Ok).text() == "确定"
+    assert picker_box.button(QDialogButtonBox.Cancel).text() == "取消"
+    picker.close()
+
+
+def test_rename_dialog_buttons_are_chinese(qapp, db, view, monkeypatch):
+    view.import_code(deckcode.encode_deck(legal_groups(db)))
+    seen = {}
+
+    def fake_exec(dialog):
+        box = dialog.findChild(QDialogButtonBox)
+        seen["buttons"] = None if box is None else [button.text() for button in box.buttons()]
+        return 0
+
+    monkeypatch.setattr("client.gui.builder.QInputDialog.exec", fake_exec)
+    view.ask_rename(0)
+    assert seen["buttons"] == ["确定", "取消"]

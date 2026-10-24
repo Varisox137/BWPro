@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cli
-from client.gui.widgets import CardDetailDialog
+from client.gui.widgets import CardDetailDialog, polish_dialog_buttons, show_information
 from core import targets
 from core.engine import IllegalAction
 from core.model import Ref
@@ -38,6 +38,7 @@ class DeckSelectDialog(QDialog):
         self.list.itemDoubleClicked.connect(lambda _item: self.accept())
         layout.addWidget(self.list, 1)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        polish_dialog_buttons(self.buttons)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -67,6 +68,7 @@ class UsageDialog(QDialog):
             button.clicked.connect(lambda _=False, oid=option["id"]: self._choose(oid))
             layout.addWidget(button)
         cancel = QDialogButtonBox(QDialogButtonBox.Cancel)
+        polish_dialog_buttons(cancel)
         cancel.rejected.connect(self.reject)
         layout.addWidget(cancel)
 
@@ -235,10 +237,6 @@ class HotseatView(QWidget):
         outer.addWidget(self.stack)
         self.setup_page = QWidget()
         setup = QVBoxLayout(self.setup_page)
-        self.back_button = QPushButton("← 返回主菜单")
-        self.back_button.setObjectName("small")
-        self.back_button.clicked.connect(self.return_to_menu)
-        setup.addWidget(self.back_button, alignment=Qt.AlignLeft)
         setup.addStretch(1)
         title = QLabel("本地热坐")
         title.setObjectName("viewTitle")
@@ -722,6 +720,7 @@ class HotseatView(QWidget):
         label.setWordWrap(True)
         layout.addWidget(label)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        polish_dialog_buttons(buttons)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         dialog.exec()
@@ -731,9 +730,9 @@ class HotseatView(QWidget):
         fields = "\n".join(
             f"{index + 1}. {self.db.cards[field.card_id].name}　耐久 {field.intensity}"
             for index, field in enumerate(player.fields)) or "无幻境"
-        QMessageBox.information(self, player.name,
-                                f"生命 {player.health}/{player.max_health}　护甲 {player.shield}\n"
-                                f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n{fields}")
+        show_information(self, player.name,
+                         f"生命 {player.health}/{player.max_health}　护甲 {player.shield}\n"
+                         f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n{fields}")
 
     def show_card_detail(self, card) -> None:
         CardDetailDialog(self.db.cards[card.id], self.db, self).exec()

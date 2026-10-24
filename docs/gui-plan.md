@@ -32,11 +32,12 @@
 ```
 client/gui/__init__.py        # 包说明
 client/gui/__main__.py        # python -m client.gui 入口：QApplication + 主窗口
-client/gui/app.py             # MainWindow + 视图栈（QStackedWidget）+ 全局样式
+client/gui/app.py             # MainWindow + 视图栈 + 常驻返回/主题开关 + 全局样式
 client/gui/builder.py         # 卡组构筑视图
 client/gui/battle.py          # 对局视图（热坐/联机共用）
-client/gui/widgets.py         # 卡牌控件/式神通槽/详情弹窗/目标选择模式
+client/gui/widgets.py         # 卡牌控件/详情弹窗/通用中文弹窗按钮
 client/gui/online.py          # 联机：大厅视图 + NetBridge（收包线程→Qt 信号）
+client/gui/portrait.py        # BWPDIY 式神头像适配（可选外部渲染，失败回退菱形占位）
 client/gui/cardart.py         # （待补）卡图合成管线——等维护者思路
 tests/test_gui.py             # QT_QPA_PLATFORM=offscreen 冒烟测试
 ```
@@ -94,6 +95,5 @@ tests/test_gui.py             # QT_QPA_PLATFORM=offscreen 冒烟测试
 
 - 动画、音效。
 - 卡图合成管线的具体实现（等维护者思路，见头部状态条）。
-- 服务端 webgui（/gui 页面）保留现状不动，与桌面 GUI 并存。
 - PyInstaller 打包 exe（功能稳定后再做）。
 - 浏览器离线化（Pyodide 路线，已否决）。

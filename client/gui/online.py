@@ -310,10 +310,6 @@ class OnlineView(QWidget):
         self.connect_error = QLabel()
         self.connect_error.setWordWrap(True)
         connect.addRow(self.connect_error)
-        self.connect_back = QPushButton("← 返回主菜单")
-        self.connect_back.setObjectName("small")
-        self.connect_back.clicked.connect(self.leave_to_menu)
-        connect.addRow(self.connect_back)
         self.stack.addWidget(self.connect_page)
 
         self.lobby_page = QWidget()

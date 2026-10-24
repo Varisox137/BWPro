@@ -3,11 +3,54 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QVBoxLayout,
+    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMessageBox,
+    QPushButton, QVBoxLayout,
 )
 
 from client import cardfmt
+
+
+_DIALOG_BUTTON_TEXT = {
+    "Ok": "确定", "Cancel": "取消", "Close": "关闭", "Yes": "是", "No": "否",
+    "Apply": "应用", "Open": "打开", "Save": "保存", "Discard": "不保存",
+    "Reset": "重置", "Retry": "重试", "Ignore": "忽略", "Help": "帮助",
+}
+
+
+def polish_dialog_buttons(owner) -> None:
+    """统一标准按钮中文与紧凑样式；也适用于输入框和 QMessageBox。"""
+    targets = [owner] if isinstance(owner, (QDialogButtonBox, QMessageBox)) \
+        else owner.findChildren(QDialogButtonBox)
+    for target in targets:
+        for name, text in _DIALOG_BUTTON_TEXT.items():
+            enum_type = QDialogButtonBox if isinstance(target, QDialogButtonBox) else QMessageBox
+            button = target.button(getattr(enum_type, name))
+            if button is not None:
+                button.setText(text)
+        for button in target.buttons():
+            button.setObjectName("dialogButton")
+            button.setMinimumWidth(68)
+
+
+def show_message(parent, title: str, text: str, icon=QMessageBox.Information,
+                 buttons=QMessageBox.Ok) -> int:
+    """静态 QMessageBox 的中文按钮替代入口。"""
+    box = QMessageBox(icon, title, text, buttons, parent)
+    polish_dialog_buttons(box)
+    return box.exec()
+
+
+def show_warning(parent, title: str, text: str) -> int:
+    return show_message(parent, title, text, QMessageBox.Warning)
+
+
+def show_information(parent, title: str, text: str) -> int:
+    return show_message(parent, title, text, QMessageBox.Information)
+
+
+def ask_confirmation(parent, title: str, text: str) -> int:
+    return show_message(parent, title, text, QMessageBox.Question,
+                        QMessageBox.Yes | QMessageBox.No)
 
 
 class CardWidget(QFrame):
@@ -99,6 +142,7 @@ class CardDetailDialog(QDialog):
             label.setAlignment(Qt.AlignCenter)
             layout.addWidget(label)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)

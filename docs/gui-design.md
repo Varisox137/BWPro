@@ -7,9 +7,9 @@
 
 **定位差异**：bwpemu 是纯手动沙盒模拟器——抽牌、鬼火增减、生命变动全靠玩家手动按钮，没有规则引擎。BWPro 是权威引擎路线（服务端结算、客户端只渲染+发指令），二者游戏逻辑层无可借鉴之处。
 
-**技术形态**：纯静态单页（vanilla JS + GSAP + socket.io CDN），GitHub Pages 部署前端 + 独立 socket.io 后端，无构建步骤。与我们 `server/webgui.py` + `static/webgui/` 的思路一致。
+**技术形态**：纯静态单页（vanilla JS + GSAP + socket.io CDN），GitHub Pages 部署前端 + 独立 socket.io 后端，无构建步骤。仅作外部项目技术参考，BWPro 不采用其前端架构。
 
-**可借鉴的 UX 模式**（后续 webgui/桌面 GUI 均可参考）：
+**可借鉴的 UX 模式**（桌面 GUI 可参考）：
 
 - 大厅房间列表（免房码直接点入）、房间密码、复制房码按钮
 - 观战模式、断线重连回房间
@@ -26,15 +26,15 @@
 
 接入点（按优先级）：
 
-1. **`client/gui/cardart.py`（桌面 GUI，首选）**：懒加载可选导入 `bwpdiy.render`，按卡牌 id 渲染卡面 PNG，缓存到 `~/.bwpro/cardart/`；导入失败或渲染异常时回退为文字卡面（即现在 mock 的样式）。作为 optional extra，不做硬依赖。
-2. **Phase 3 DIY 联动**：BWPro `diy/` 只读消费 BWPDIY `library/<项目>/` 下的式神/卡牌 yaml——"BWPDIY 做卡、BWPro 打牌"。映射层（BWPDIY yaml → BWPro yaml 口径）只放在 `diy/` 一处。
-3. **server webgui**：后期如需卡图，走同一 render 模块在服务端预渲染到 `static/`，不在浏览器端合成。
+1. **`client/gui/portrait.py`（已落地）**：卡组列表复用 `bwpdiy.render.duo.render_portrait` 绘制带斜方框与派系标的式神头像；按 id/名称读取 BWPDIY 用户库首图与 portrait 变换，缺图时保留空槽，外部仓库/素材异常时回退菱形占位。仓库路径默认 BWPro 同级 `BWPDIY`，可用 `BWP_DIY_ROOT` 覆盖。
+2. **`client/gui/cardart.py`（桌面 GUI，首选）**：懒加载可选导入 `bwpdiy.render`，按卡牌 id 渲染卡面 PNG，缓存到 `~/.bwpro/cardart/`；导入失败或渲染异常时回退为文字卡面（即现在 mock 的样式）。作为 optional extra，不做硬依赖。
+3. **Phase 3 DIY 联动**：BWPro `diy/` 只读消费 BWPDIY `library/<项目>/` 下的式神/卡牌 yaml——"BWPDIY 做卡、BWPro 打牌"。映射层（BWPDIY yaml → BWPro yaml 口径）只放在 `diy/` 一处。
 
 耦合护栏：单向依赖（BWPro → BWPDIY render），映射层单点，资产路径可配置，渲染失败永远可回退文字卡。
 
 ## 3. 界面初稿（docs/gui-mock/，1600×900）
 
-布局参照原版游戏截图与内录视频抽帧（`gui_ref/`，版权原因不入库）。**美术定位：2D 平面布局**——原版对局是 3D 场景（斜俯视牌桌、式神 3D 模型），我们不复刻，只保留其信息层级与版式（上下半场、四角头像、扇形手牌等），卡牌/式神一律 2D 卡面占位。**双主题可切换**：浅色 = BWPDIY 羊皮纸（`#f3efe8` 纸底 / `#fffbe9` 面板 / `#d9b96a` 金 / `#26221c` 正文），深色 = 夜樱紫；主菜单与局内菜单均有主题 toggle，初稿两套分别输出在 `light/`、`dark/`。座次色沿用 CLI 语义：黄/青/紫/红（浅色版加深适配）。卡组列表与卡组编辑支持**左右拖动翻页**（按钮 ‹ › 兜底）；查看/选择单卡的界面（编辑、式神录）**每页 5 卡**（原版亦如此）。
+布局参照原版游戏截图与内录视频抽帧（`gui_ref/`，版权原因不入库）。**美术定位：2D 平面布局**——原版对局是 3D 场景（斜俯视牌桌、式神 3D 模型），我们不复刻，只保留其信息层级与版式（上下半场、四角头像、扇形手牌等），卡牌/式神一律 2D 卡面占位。**双主题可切换**：浅色 = BWPDIY 羊皮纸（`#f3efe8` 纸底 / `#fffbe9` 面板 / `#d9b96a` 金 / `#26221c` 正文），深色 = 夜樱紫；窗口右上角常驻圆形主题 toggle（自绘太阳/月亮），初稿两套分别输出在 `light/`、`dark/`。座次色沿用 CLI 语义：黄/青/紫/红（浅色版加深适配）。卡组列表与卡组编辑支持**左右拖动翻页**（按钮 ‹ › 兜底）；查看/选择单卡的界面（编辑、式神录）**每页 5 卡**（原版亦如此）。
 
 | 图 | 界面 | 要点 |
 |---|---|---|

@@ -89,7 +89,7 @@
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
 | 仅气绝时可用 | `only_when_defeated` | 卡牌字段：硬门控——式神存活时主动使用报错、响应收集直接跳过（心即归处）；需搭配 `playable_when_defeated` | ✅ |
 | 半成品式神 | `wip`（ShikigamiDef） | 仅基础数据/卡牌未齐的式神（当前无）：不进构筑可选池（available_shikigami）与测试卡组（_pick_test_ids） | ✅ |
-| 未加入 | `unreleased` | yaml 顶层第四键（可选，默认 false）：卡牌/式神"未加入游戏"——loader 照常加载、任何环境日期解析不到（resolve_at_date 默认排除，哨兵日期 20251212 仅为占位）、不进构筑池与 validate_deck（报"未加入游戏"）、忘忧的旋律牌名池排除；webgui catalog 仍列出但 buildable=false 供详情查询。当前对象：00 新手包 2 式神 8 卡 + 未正式上线的协战牌 23 张 | ✅ |
+| 未加入 | `unreleased` | yaml 顶层第四键（可选，默认 false）：卡牌/式神"未加入游戏"——loader 照常加载、任何环境日期解析不到（resolve_at_date 默认排除，哨兵日期 20251212 仅为占位）、不进构筑池与 validate_deck（报"未加入游戏"）、忘忧的旋律牌名池排除。当前对象：00 新手包 2 式神 8 卡 + 未正式上线的协战牌 23 张 | ✅ |
 | 实例修饰 | `mods` | CardInstance 级差异（同名卡可不同），目前认识 `cost_delta`/`revealed`（已展示，见「结算与事件」） | ✅ |
 
 ## 关键词

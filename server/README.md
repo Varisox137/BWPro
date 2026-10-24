@@ -2,39 +2,6 @@
 
 基于 FastAPI + WebSocket 的双人联机对战服务端，已实现。
 
-## Web GUI（/gui，基础框架）
-
-启动服务端后浏览器访问 `http://<host>:<port>/gui` 即单页图形界面
-（纯 vanilla JS/HTML/CSS，无构建步骤，静态文件在 `static/webgui/`）：
-
-- **卡组构筑**：选环境 → 选 4 式神 → 每式神配 8 张卡，卡组码导入/导出，
-  卡组保存于浏览器 localStorage，合法性校验走 HTTP API；
-- **联机对战**：页面本身即 /ws 协议的一个 WebSocket 客户端（client 标识
-  沿用 `BWPro-CLI` 前缀软门槛），支持创建/加入房间、准备流程、场况渲染、
-  拖拽己方式神到敌方区域出击、结束回合、断线凭房间代码+重连令牌恢复。
-  对局内可操作性与 CLI 基本持平：
-  - **出牌**：点击手牌 → 按服务端 usage 枚举选择使用方式（常规/爆能等，
-    协战牌先选子选项，不合法项灰显附原因）→ 需目标时点选目标，
-    双选择目标卡（target2）依次点选两个目标；
-  - **手牌展示**：实时费用/关键字/数值段（战斗牌力量与护甲、形态身材、
-    增强计数、委托进度）/使用方式列——全部为服务端求值结果
-    （state 附带 `hand_info`，见下），前端不做规则计算；
-  - **结算播放**：对局日志区滚动播放合并时间线（timeline，结算/叙事按真实
-    发生顺序合流，嵌套块层级缩进，与 CLI `format_timeline_lines` 同口径）；
-  - **交互选择**：pending_choice 弹窗作答（检视选牌/弃牌/牌名/召唤幻境/
-    生成入手/委托/灵咒结附），作答键（uid/choice）按 CLI 分支对齐。
-
-state 的 payload 附带 `hand_info`（仅己方手牌，键为 uid 字符串）：
-`{cost, keywords, stats, enhance, quest, playable, usage}`——usage 为
-`Game.usage_options` 枚举原样（`id/label/cost/energy/ok/reason/effect`，
-常规 id=null、协战子选项 id="choice:<i>"）。求值函数与 CLI 同源
-（`client/cli.py hand_cards_info`），在 `server/room.py` 广播/重连补发时注入。
-
-HTTP API：`GET /gui/api/catalog?env=<别名或日期>`（环境目录）、
-`POST /gui/api/validate_deck`、`POST /gui/api/deckcode/import|export`。
-实现在 `server/webgui.py`（挂载于 `create_app`，须在 403 catch-all 之前；
-不改 protocol/room/manager 任何行为）。测试见 `tests/test_webgui.py`。
-
 ## 运行
 
 ```bash
@@ -84,9 +51,9 @@ ws(s)://.../ws，并在询问玩家名/卡组前先试连，失败则要求重�
   不构成访问控制。
 - **debug 对局门控**：客户端创建 debug 对局需服务端 `--allow-debug-rooms`
   （默认拒绝；公网部署勿开）。debug 指令可任意改对局状态，仅本机调试使用。
-- **HTTP 探针面**：非 WebSocket 的 HTTP 请求（含对 `/ws` 的普通 GET）除
-  `/gui` Web GUI 路由外一律 403 空体，不用框架默认 404；uvicorn 启动关闭
-  `server` 响应头，不暴露应用结构与框架指纹。
+- **HTTP 探针面**：非 WebSocket 的 HTTP 请求（含对 `/ws` 的普通 GET）一律
+  403 空体，不用框架默认 404；uvicorn 启动关闭 `server` 响应头，不暴露
+  应用结构与框架指纹。
 - **滥用防护**：每连接每秒最多 10 条消息（`--rate-limit`）；单条 WS 消息最大
   1MB；输入字段长度上限（名字 32 / 房间 id 16 / 令牌 64 / 卡组码 1024）；
   房间总数上限 1000（`--max-rooms`）。
@@ -101,7 +68,6 @@ server/
   room.py          # Room：封装 Game + 玩家连接 + 调度/回合计时器
   manager.py       # RoomManager：创建/加入/查询/回收房间（内存表，无持久化）
   protocol.py      # 消息信封构造与客户端消息校验
-  webgui.py        # Web GUI（/gui 单页 + /gui/api/* 目录/卡组校验/卡组码）
 ```
 
 - 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交
@@ -167,6 +133,10 @@ server/
 
 `lobby.deadline` 仅一方已准备时非空（未准备方的自动准备截止）；`ready` 为空 =
 双方未准备、不计时。`lobby`/`start` 始终携带 `mode`；`env_date` 为 null 时字段省略（最新数据）。
+
+`state.payload` 附带仅己方手牌的 `hand_info`（键为 uid 字符串）：实时费用、关键字、
+数值段、增强/委托进度、使用条件与 `Game.usage_options` 使用方式枚举；由
+`client/cli.py hand_cards_info` 统一求值，在广播/重连补发时注入，客户端不重复实现规则计算。
 
 心跳使用 WS 协议层 ping/pong（uvicorn `ws_ping_interval=10`，`ws_ping_timeout=5`）。
 

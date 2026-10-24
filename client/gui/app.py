@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QLabel, QMainWindow, QPushButton, QStackedWidget,
+    QApplication, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -25,7 +26,7 @@ THEMES = {
 
 MENU_ENTRIES = [
     ("builder", "卡组构筑", "本地卡组管理 / 卡组码导入导出"),
-    ("codex", "式神录", "查看式神与全部卡牌（单卡样式同构筑）"),
+    ("codex", "式神录", "查看式神与全部卡牌"),
     ("hotseat", "本地热坐", "双人对战 · 同一设备"),
     ("online", "联机对战", "创建 / 加入房间"),
 ]
@@ -50,17 +51,69 @@ def qss(theme: str) -> str:
         padding: 6px 14px; font-size: 14px; text-align: center;
     }}
     QPushButton#small:disabled {{ color: {t['dim']}; border-color: {t['line']}; }}
+    QPushButton#themeToggle {{
+        border: 1px solid {t['gold']}; border-radius: 18px;
+        padding: 0; font-size: 18px; text-align: center;
+    }}
+    QPushButton#dialogButton {{
+        border: 1px solid {t['line']}; border-radius: 6px;
+        padding: 4px 12px; font-size: 14px; text-align: center;
+    }}
     """
+
+
+def _theme_icon(theme: str) -> QIcon:
+    """自绘太阳/月亮，避免不同平台字体缺字导致图标变方框。"""
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    color = QColor(THEMES[theme]["gold"])
+    if theme == "light":
+        painter.setPen(color)
+        for line in ((12, 1, 12, 4), (12, 20, 12, 23), (1, 12, 4, 12),
+                     (20, 12, 23, 12), (4, 4, 6, 6), (18, 18, 20, 20),
+                     (4, 20, 6, 18), (18, 6, 20, 4)):
+            painter.drawLine(*line)
+        painter.setBrush(color)
+        painter.drawEllipse(7, 7, 10, 10)
+    else:
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color)
+        moon = QPainterPath()
+        moon.addEllipse(4, 3, 18, 18)
+        cutout = QPainterPath()
+        cutout.addEllipse(10, 0, 18, 18)
+        painter.drawPath(moon.subtracted(cutout))
+    painter.end()
+    return QIcon(pixmap)
 
 
 class MainWindow(QMainWindow):
     def __init__(self, db=None, store_path=None):
         super().__init__()
-        self.setWindowTitle("百闻牌 BWPro")
+        self.setWindowTitle("BWPro")
         self.resize(1600, 900)
         self.theme = "light"
-        self.stack = QStackedWidget(self)
-        self.setCentralWidget(self.stack)
+        central = QWidget(self)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(18, 12, 18, 18)
+        chrome = QHBoxLayout()
+        self.back_button = QPushButton("← 返回主菜单")
+        self.back_button.setObjectName("small")
+        self.back_button.setFixedSize(116, 36)
+        self.back_button.clicked.connect(self.back)
+        chrome.addWidget(self.back_button, alignment=Qt.AlignLeft)
+        chrome.addStretch(1)
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("themeToggle")
+        self.theme_button.setFixedSize(36, 36)
+        self.theme_button.clicked.connect(self.toggle_theme)
+        chrome.addWidget(self.theme_button, alignment=Qt.AlignRight)
+        outer.addLayout(chrome)
+        self.stack = QStackedWidget()
+        outer.addWidget(self.stack, 1)
+        self.setCentralWidget(central)
         self.pages: dict[str, QWidget] = {}
         self.stack.addWidget(self._make_menu())
         for key, title, _sub in MENU_ENTRIES:
@@ -71,7 +124,7 @@ class MainWindow(QMainWindow):
                 kwargs = {} if store_path is None else {"store_path": store_path}
                 if key == "builder":
                     from client.gui.builder import DeckBuilderView
-                    self.pages[key] = DeckBuilderView(db, on_back=self.go_menu, **kwargs)
+                    self.pages[key] = DeckBuilderView(db, **kwargs)
                 elif key == "hotseat":
                     from client.gui.battle import HotseatView
                     self.pages[key] = HotseatView(db, on_back=self.go_menu, **kwargs)
@@ -81,11 +134,15 @@ class MainWindow(QMainWindow):
             else:
                 self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
+        self.back_button.hide()
         self.set_theme(self.theme)
 
     def set_theme(self, theme: str):
         self.theme = theme
         self.setStyleSheet(qss(theme))
+        self.theme_button.setIcon(_theme_icon(theme))
+        self.theme_button.setIconSize(QSize(20, 20))
+        self.theme_button.setToolTip("切换到深色主题" if theme == "light" else "切换到浅色主题")
         for key in ("builder", "hotseat", "online"):
             page = self.pages.get(key)
             if hasattr(page, "apply_theme"):
@@ -96,22 +153,30 @@ class MainWindow(QMainWindow):
 
     def go(self, key: str):
         self.stack.setCurrentWidget(self.pages[key])
+        self.back_button.show()
+
+    def back(self):
+        """统一返回入口；热坐/联机先执行各自的断线与计时器清理。"""
+        page = self.stack.currentWidget()
+        for hook_name in ("return_to_menu", "leave_to_menu"):
+            hook = getattr(page, hook_name, None)
+            if callable(hook):
+                hook()
+                return
+        self.go_menu()
 
     def go_menu(self):
         self.stack.setCurrentIndex(0)
+        self.back_button.hide()
 
     def _make_menu(self) -> QWidget:
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(60, 60, 60, 40)
-        title = QLabel("百 闻 牌")
+        lay.setContentsMargins(60, 40, 60, 40)
+        title = QLabel("BWPro")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignCenter)
         lay.addWidget(title)
-        sub = QLabel("B W P r o")
-        sub.setObjectName("subtitle")
-        sub.setAlignment(Qt.AlignCenter)
-        lay.addWidget(sub)
         lay.addSpacing(40)
         for key, name, desc in MENU_ENTRIES:
             btn = QPushButton(f"{name}\n{desc}")
@@ -119,10 +184,6 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda _=False, k=key: self.go(k))
             lay.addWidget(btn)
         lay.addStretch(1)
-        theme_btn = QPushButton("主题：浅 / 深")
-        theme_btn.setObjectName("small")
-        theme_btn.clicked.connect(self.toggle_theme)
-        lay.addWidget(theme_btn, alignment=Qt.AlignLeft)
         foot = QLabel("个人学习项目 · 与官方无关 · 素材版权归属原作者")
         foot.setObjectName("subtitle")
         foot.setAlignment(Qt.AlignCenter)
@@ -133,10 +194,6 @@ class MainWindow(QMainWindow):
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(40, 30, 40, 30)
-        back = QPushButton("← 返回主菜单")
-        back.setObjectName("small")
-        back.clicked.connect(self.go_menu)
-        lay.addWidget(back, alignment=Qt.AlignLeft)
         lab = QLabel(f"{title}（建设中）")
         lab.setAlignment(Qt.AlignCenter)
         lay.addWidget(lab)

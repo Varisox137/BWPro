@@ -175,8 +175,10 @@ def test_main_window_hotseat_page_and_theme(qapp, db, tmp_path):
     assert win.stack.currentWidget() is win.pages["hotseat"]
     win.toggle_theme()
     assert win.pages["hotseat"].theme == "dark"
-    win.pages["hotseat"].back_button.click()
+    win.pages["hotseat"].timeline_timer.start()
+    win.back_button.click()
     assert win.stack.currentIndex() == 0
+    assert not win.pages["hotseat"].timeline_timer.isActive()
     win.close()
 
 
