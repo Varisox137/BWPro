@@ -1,6 +1,7 @@
 """BWPDIY 式神头像适配：懒加载外部渲染库，失败时回退为菱形占位。"""
 from __future__ import annotations
 
+import math
 import os
 import sys
 from functools import lru_cache
@@ -37,12 +38,20 @@ def _fallback_pixmap(name: str, faction: str, size: int) -> QPixmap:
     return pixmap
 
 
+MAX_YAML_BYTES = 256 * 1024
+MAX_RENDER_PIXELS = 16_000_000
+
+
 def _artwork_ref(root: Path, sid: int, name: str) -> tuple[dict | None, int | None]:
     """在 BWPDIY 用户库中按 id/名称找式神首图；无匹配或图片缺失时返回空槽。"""
     for path in (root / "library").glob("*/shikigami/*.yaml"):
         try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if path.stat().st_size > MAX_YAML_BYTES:
+                continue
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(data, dict):
             continue
         if str(data.get("id", "")) != str(sid) and data.get("name") != name:
             continue
@@ -63,11 +72,31 @@ def _artwork_ref(root: Path, sid: int, name: str) -> tuple[dict | None, int | No
             return None, data.get("faction_style")
         portrait = data.get("portrait") if isinstance(data.get("portrait"), dict) else {}
         ref = {"path": str(image_path)}
-        for key, default in (("offset_x", 0), ("offset_y", 0), ("scale", 1.0), ("rotate", 0)):
+        for key, default, limit in (("offset_x", 0, 4096), ("offset_y", 0, 4096),
+                                    ("scale", 1.0, 16.0), ("rotate", 0, 36000)):
             value = portrait.get(key, default)
-            ref[key] = value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+            if not isinstance(value, (int, float)) or isinstance(value, bool) \
+                    or not math.isfinite(value):
+                value = default
+            elif key == "scale":
+                value = min(max(value, 0.01), limit)
+            else:
+                value = min(max(value, -limit), limit)
+            ref[key] = value
         return ref, data.get("faction_style")
     return None, None
+
+
+def _preflight_artwork(library, element: dict, art: dict | None) -> None:
+    """在 BWPDIY 分配缩放图前估算尺寸，阻止极端长宽比/缩放耗尽内存。"""
+    if not art:
+        return
+    original, rotated = library.artwork(Path(art["path"]), art.get("rotate", 0))
+    target = max(1, round(float(element.get("back_size", 62)) * 2))
+    cover = max(target / original[0], target / original[1]) * art.get("scale", 1.0)
+    pixels = max(round(rotated.width * cover), 1) * max(round(rotated.height * cover), 1)
+    if pixels > MAX_RENDER_PIXELS:
+        raise ValueError(f"头像缩放后像素超过安全上限：{pixels}")
 
 
 @lru_cache(maxsize=4)
@@ -90,6 +119,7 @@ def _portrait_pixmap(sid: int, name: str, faction: str, root_text: str, size: in
     try:
         root, library, element, render = _renderer(root_text)
         art, faction_style = _artwork_ref(root, sid, name)
+        _preflight_artwork(library, element, art)
         image = render(library, element, art, faction, scale=2,
                        faction_style=faction_style)
         buffer = BytesIO()

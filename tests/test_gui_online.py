@@ -181,9 +181,30 @@ def test_reconnect_restores_pending_choice(qapp, db, make_game):
 
 def test_main_window_online_page_and_theme(qapp, db, tmp_path):
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
-    assert isinstance(win.pages["online"], OnlineView)
+    view = win.pages["online"]
+    assert isinstance(view, OnlineView)
     win.toggle_theme()
-    assert win.pages["online"].theme == "dark"
+    assert view.theme == "dark"
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    view.bridge_factory = FakeBridge
+    view.probe = lambda _url: None
+    sockets = []
+
+    def open_socket(_url):
+        sockets.append(FakeWS())
+        return sockets[-1]
+
+    view.opener = open_socket
+    assert view.connect_server()
+    view.battle.timeline_timer.start()
+    win.go("online")
+    win.back_button.click()
+    assert win.stack.currentIndex() == 0
+    assert sockets[0].closed and view.bridge is None
+    assert not view.clock.isActive()
+    assert not view.battle.timeline_timer.isActive()
+    assert not view.battle.countdown_timer.isActive()
     win.close()
 
 

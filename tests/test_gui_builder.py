@@ -1,7 +1,9 @@
 """桌面 GUI 卡组构筑测试（QT_QPA_PLATFORM=offscreen）。"""
 import os
+from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
@@ -9,6 +11,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QPushButton
 
+from client.gui import portrait
 from client.gui.app import MainWindow
 from client.gui.builder import DeckBuilderView, DeckCodeDialog, ShikigamiDialog
 from db import deckcode, deckstore
@@ -191,3 +194,87 @@ def test_rename_dialog_buttons_are_chinese(qapp, db, view, monkeypatch):
     monkeypatch.setattr("client.gui.builder.QInputDialog.exec", fake_exec)
     view.ask_rename(0)
     assert seen["buttons"] == ["确定", "取消"]
+
+
+def _external_library(root, yaml_text: str):
+    shiki_dir = root / "library" / "项目" / "shikigami"
+    images_dir = root / "library" / "项目" / "images"
+    shiki_dir.mkdir(parents=True)
+    images_dir.mkdir(parents=True)
+    (shiki_dir / "test.yaml").write_text(yaml_text, encoding="utf-8")
+    image_path = images_dir / "art.png"
+    Image.new("RGBA", (2, 2), "#336699").save(image_path)
+    return image_path
+
+
+def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
+    image_path = _external_library(
+        tmp_path,
+        "id: 987654\nname: 测试\nfaction_style: 3\n"
+        "artwork:\n  images:\n    - path: art.png\n"
+        "portrait:\n  offset_x: 3\n  scale: 2\n  rotate: 0\n",
+    )
+    seen = {}
+
+    class Library:
+        def artwork(self, path, rotate=0):
+            return (2, 2), Image.new("RGBA", (2, 2), "#336699")
+
+    def render(_lib, _elem, art, faction, scale, faction_style):
+        seen.update(art=art, faction=faction, scale=scale, faction_style=faction_style)
+        return Image.new("RGBA", (4, 4), "#336699")
+
+    monkeypatch.setattr(portrait, "_renderer",
+                        lambda _root: (tmp_path, Library(), {"back_size": 56}, render))
+    portrait._portrait_pixmap.cache_clear()
+    pixmap = portrait.shikigami_portrait(
+        SimpleNamespace(id=987654, name="测试", faction="苍叶"), root=tmp_path)
+    assert not pixmap.isNull()
+    assert seen["art"]["path"] == str(image_path.resolve())
+    assert seen["art"]["offset_x"] == 3 and seen["art"]["scale"] == 2
+    assert seen["faction"] == "苍叶" and seen["faction_style"] == 3
+    portrait._portrait_pixmap.cache_clear()
+
+
+def test_portrait_external_data_resource_limits(qapp, tmp_path):
+    image_path = _external_library(
+        tmp_path / "clamp",
+        "id: 987653\nname: 限幅\nartwork:\n  images:\n    - path: art.png\n"
+        "portrait:\n  offset_x: .inf\n  scale: 1000000\n  rotate: .nan\n",
+    )
+    ref, _style = portrait._artwork_ref(tmp_path / "clamp", 987653, "限幅")
+    assert ref["path"] == str(image_path.resolve())
+    assert ref["scale"] == 16
+    assert ref["offset_x"] == 0 and ref["rotate"] == 0
+
+    oversized = tmp_path / "oversized"
+    _external_library(
+        oversized,
+        "id: 987652\nname: 超大\nartwork:\n  images:\n    - path: art.png\n# "
+        + "x" * (256 * 1024),
+    )
+    assert portrait._artwork_ref(oversized, 987652, "超大") == (None, None)
+
+    nonmapping = tmp_path / "nonmapping"
+    _external_library(nonmapping, "- 不是映射\n")
+    assert portrait._artwork_ref(nonmapping, 987651, "任意") == (None, None)
+
+    traversal = tmp_path / "traversal"
+    _external_library(
+        traversal,
+        "id: 987650\nname: 越界\nartwork:\n  images:\n    - path: ../outside.png\n",
+    )
+    assert portrait._artwork_ref(traversal, 987650, "越界") == (None, None)
+
+    assert hasattr(portrait, "_preflight_artwork")
+
+    class HugeLibrary:
+        def artwork(self, _path, _rotate=0):
+            image = SimpleNamespace(width=100000, height=100000)
+            return (100, 100), image
+
+    with pytest.raises(ValueError, match="像素"):
+        portrait._preflight_artwork(
+            HugeLibrary(), {"back_size": 56},
+            {"path": "unused", "scale": 16, "rotate": 0},
+        )

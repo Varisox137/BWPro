@@ -599,5 +599,6 @@ class OnlineView(QWidget):
             self.bridge = None
         self.battle.timeline_timer.stop()
         self.battle.countdown_timer.stop()
+        self.clock.stop()
         if self.on_back is not None:
             self.on_back()
