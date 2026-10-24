@@ -64,13 +64,17 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, QWidget] = {}
         self.stack.addWidget(self._make_menu())
         for key, title, _sub in MENU_ENTRIES:
-            if key == "builder":
-                from client.gui.builder import DeckBuilderView
+            if key in ("builder", "hotseat"):
                 if db is None:
                     from db.loader import CardDatabase
                     db = CardDatabase.load()
                 kwargs = {} if store_path is None else {"store_path": store_path}
-                self.pages[key] = DeckBuilderView(db, on_back=self.go_menu, **kwargs)
+                if key == "builder":
+                    from client.gui.builder import DeckBuilderView
+                    self.pages[key] = DeckBuilderView(db, on_back=self.go_menu, **kwargs)
+                else:
+                    from client.gui.battle import HotseatView
+                    self.pages[key] = HotseatView(db, on_back=self.go_menu, **kwargs)
             else:
                 self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
@@ -79,9 +83,10 @@ class MainWindow(QMainWindow):
     def set_theme(self, theme: str):
         self.theme = theme
         self.setStyleSheet(qss(theme))
-        builder = self.pages.get("builder")
-        if hasattr(builder, "apply_theme"):
-            builder.apply_theme(theme, THEMES[theme])
+        for key in ("builder", "hotseat"):
+            page = self.pages.get(key)
+            if hasattr(page, "apply_theme"):
+                page.apply_theme(theme, THEMES[theme])
 
     def toggle_theme(self):
         self.set_theme("dark" if self.theme == "light" else "light")
