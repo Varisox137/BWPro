@@ -54,7 +54,7 @@ def qss(theme: str) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, db=None, store_path=None):
         super().__init__()
         self.setWindowTitle("百闻牌 BWPro")
         self.resize(1600, 900)
@@ -64,13 +64,24 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, QWidget] = {}
         self.stack.addWidget(self._make_menu())
         for key, title, _sub in MENU_ENTRIES:
-            self.pages[key] = self._make_placeholder(title)
+            if key == "builder":
+                from client.gui.builder import DeckBuilderView
+                if db is None:
+                    from db.loader import CardDatabase
+                    db = CardDatabase.load()
+                kwargs = {} if store_path is None else {"store_path": store_path}
+                self.pages[key] = DeckBuilderView(db, on_back=self.go_menu, **kwargs)
+            else:
+                self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
         self.set_theme(self.theme)
 
     def set_theme(self, theme: str):
         self.theme = theme
         self.setStyleSheet(qss(theme))
+        builder = self.pages.get("builder")
+        if hasattr(builder, "apply_theme"):
+            builder.apply_theme(theme, THEMES[theme])
 
     def toggle_theme(self):
         self.set_theme("dark" if self.theme == "light" else "light")

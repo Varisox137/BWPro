@@ -6,6 +6,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 from client.gui.app import MENU_ENTRIES, MainWindow
@@ -15,10 +16,12 @@ from client.gui.app import MENU_ENTRIES, MainWindow
 def qapp():
     app = QApplication.instance() or QApplication([])
     yield app
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
 
 
-def test_menu_navigation_and_theme(qapp):
-    win = MainWindow()
+def test_menu_navigation_and_theme(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     assert win.stack.currentIndex() == 0
     for key, _name, _sub in MENU_ENTRIES:
         win.go(key)
