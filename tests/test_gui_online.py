@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QObject, Signal
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 
 from client import cli
 from client.gui.app import MainWindow
@@ -155,6 +155,24 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     assert battle.viewer == 1
     assert battle.stack.currentWidget() is battle.battle_page
     assert len(battle.hand_frames) == 5
+    slots = dict(battle.shiki_frames)
+    refs = {key: frame.ref for key, frame in slots.items()}
+    assert battle.top_row.isAncestorOf(battle.player_frames[0])
+    assert battle.bottom_row.isAncestorOf(battle.player_frames[1])
+    battle.me = 0
+    battle.refresh()
+    assert not battle._handoff_pending
+    assert battle.handoff_dialog is None
+    assert battle.shiki_frames == slots
+    assert {key: frame.ref for key, frame in battle.shiki_frames.items()} == refs
+    assert battle.top_row.isAncestorOf(battle.player_frames[1])
+    assert battle.bottom_row.isAncestorOf(battle.player_frames[0])
+    battle.show_log()
+    battle.reset_session()
+    assert battle.log_dialog.isHidden()
+    battle.me = 1
+    battle.set_state(payload, timer={"kind": "mulligan", "deadline": time.time() + 30},
+                     log=["开局"], timeline=[])
     uid = game.state.players[1].hand[0].uid
     assert battle.mulligan(uid)
     assert sent[0]["op"] == "mulligan" and sent[0]["player"] == 1
@@ -240,4 +258,49 @@ def test_game_over_waits_for_timeline_playback(qapp, db, make_game):
         battle.play_next_timeline()
     assert not battle.result_banner.isHidden()
     assert "player_left" in battle.result_banner.text()
+    battle.close()
+
+
+def test_online_card_detail_uses_payload_runtime_without_recalculation(
+        qapp, db, make_game, monkeypatch):
+    game = make_game(mulligan=True)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.timeline_timer.setInterval(0)
+    battle.me = 0
+    payload = game.state.model_dump(mode="json")
+    card = game.state.players[0].hand[0]
+    payload["hand_info"] = {
+        str(card.uid): {"cost": 0, "stats": "联机运行时唯一标记", "keywords": [],
+                        "enhance": 0, "quest": None, "playable": True, "usage": []},
+    }
+    battle.set_state(payload, log=[], timeline=[])
+    seen = {}
+
+    def capture_exec(dialog):
+        seen["dialog"] = dialog
+        return QDialog.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", capture_exec)
+    battle.show_card_detail(battle.game.state.players[0].hand[0])
+    assert seen["dialog"].runtime_label.text().find("联机运行时唯一标记") >= 0
+    battle.close()
+
+
+def test_online_missing_hand_info_never_falls_back_to_local_calculation(
+        qapp, db, make_game, monkeypatch):
+    game = make_game(mulligan=True)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.timeline_timer.setInterval(0)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
+    assert battle.hand_info() == {}
+    seen = {}
+
+    def capture_exec(dialog):
+        seen["dialog"] = dialog
+        return QDialog.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", capture_exec)
+    battle.show_card_detail(battle.game.state.players[0].hand[0])
+    assert not hasattr(seen["dialog"], "runtime_label")
     battle.close()

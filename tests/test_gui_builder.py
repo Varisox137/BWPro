@@ -174,6 +174,8 @@ def test_dialog_standard_buttons_are_chinese_and_compact(qapp, db, view):
     assert box.button(QDialogButtonBox.Ok).text() == "确定"
     assert box.button(QDialogButtonBox.Cancel).text() == "取消"
     assert all(button.objectName() == "dialogButton" for button in box.buttons())
+    assert all(button.minimumWidth() == 76 for button in box.buttons())
+    assert all(button.minimumHeight() == 30 for button in box.buttons())
     dialog.close()
     picker = ShikigamiDialog(db, parent=view)
     picker_box = picker.findChild(QDialogButtonBox)

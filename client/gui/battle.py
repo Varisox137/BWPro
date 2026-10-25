@@ -6,12 +6,11 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QListWidgetItem, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from client import cli
-from client.gui.widgets import CardDetailDialog, polish_dialog_buttons, show_information
+from client.gui.widgets import CardDetailDialog, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
 from core.model import Ref
@@ -132,11 +131,14 @@ class ShikiFrame(QFrame):
         self.index = index
         self.ref = Ref(player=pi, shikigami=index)
         self.setObjectName("shikiSlot")
-        self.setMinimumSize(180, 175)
+        self.setFixedSize(148, 108)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 3, 4, 3)
+        layout.setSpacing(1)
         self.name_label = QLabel()
         self.name_label.setObjectName("shikiName")
         self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setWordWrap(True)
         layout.addWidget(self.name_label)
         self.stats_label = QLabel()
         self.stats_label.setAlignment(Qt.AlignCenter)
@@ -145,6 +147,8 @@ class ShikiFrame(QFrame):
         self.status_label.setWordWrap(True)
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
+        for label in (self.name_label, self.stats_label, self.status_label):
+            label.setStyleSheet("background: transparent; font-size: 11px;")
         actions = QHBoxLayout()
         self.detail_button = QPushButton("详情")
         self.assault_button = QPushButton("出击")
@@ -174,7 +178,7 @@ class HandCardFrame(QFrame):
         super().__init__()
         self.card = card
         self.setObjectName("handCard")
-        self.setMinimumSize(170, 210)
+        self.setMinimumSize(170, 190)
         self.setMaximumWidth(220)
         layout = QVBoxLayout(self)
         self.name_label = QLabel()
@@ -223,6 +227,8 @@ class HotseatView(QWidget):
         self.legal_targets: list[Ref] = []
         self.choice_dialog: ChoiceDialog | None = None
         self._choice_key = None
+        self._handoff_pending = False
+        self.handoff_dialog: QDialog | None = None
         self._timeline_seen = 0
         self.timeline_queue: list[tuple[int | None, str]] = []
         self.played_timeline: list[tuple[int | None, str]] = []
@@ -256,12 +262,9 @@ class HotseatView(QWidget):
 
     def _build_battle_page(self) -> None:
         layout = QHBoxLayout(self.battle_page)
-        self.log_list = QListWidget()
-        self.log_list.setObjectName("battleLog")
-        self.log_list.setMinimumWidth(220)
-        self.log_list.setMaximumWidth(320)
-        layout.addWidget(self.log_list)
         main = QVBoxLayout()
+        main.setContentsMargins(0, 0, 0, 0)
+        main.setSpacing(3)
         layout.addLayout(main, 1)
         top = QHBoxLayout()
         self.menu_button = QPushButton("退出对局")
@@ -271,18 +274,45 @@ class HotseatView(QWidget):
         self.phase_label = QLabel()
         self.phase_label.setObjectName("phaseLabel")
         top.addWidget(self.phase_label)
-        self.seat_label = QLabel()
-        top.addWidget(self.seat_label, 1)
-        self.end_turn_button = QPushButton("结束回合")
+        top.addStretch(1)
+        self.log_button = QPushButton("战斗记录")
+        self.log_button.setObjectName("battleSmall")
+        self.log_button.clicked.connect(self.show_log)
+        self.log_sidebar = QWidget()
+        sidebar = QVBoxLayout(self.log_sidebar)
+        sidebar.setContentsMargins(0, 0, 0, 0)
+        sidebar.addStretch(1)
+        sidebar.addWidget(self.log_button, 0, Qt.AlignLeft)
+        sidebar.addStretch(1)
+        layout.insertWidget(0, self.log_sidebar)
+        self.end_turn_button = QPushButton("结束\n回合")
+        self.end_turn_button.setObjectName("endTurnButton")
+        self.end_turn_button.setFixedSize(104, 104)
         self.end_turn_button.clicked.connect(self.end_turn)
-        top.addWidget(self.end_turn_button)
+        self._build_right_sidebar(layout)
         main.addLayout(top)
-        self._build_player_row(main, 1)
-        self.combat_label = QLabel()
-        self.combat_label.setObjectName("combatZone")
-        self.combat_label.setAlignment(Qt.AlignCenter)
-        main.addWidget(self.combat_label)
-        self._build_player_row(main, 0)
+        self.log_dialog = QDialog(self)
+        self.log_dialog.setWindowTitle("战斗记录")
+        self.log_dialog.setModal(False)
+        self.log_dialog.resize(420, 560)
+        log_layout = QVBoxLayout(self.log_dialog)
+        self.log_list = QListWidget()
+        self.log_list.setObjectName("battleLog")
+        log_layout.addWidget(self.log_list)
+        log_buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        polish_dialog_buttons(log_buttons)
+        log_buttons.rejected.connect(self.log_dialog.reject)
+        log_layout.addWidget(log_buttons, alignment=Qt.AlignRight)
+        self._slot_cells = {"top": [], "bottom": []}
+        self._perspective_viewer = None
+        self._build_perspective_row(main, "top")
+        self._build_combat_zone(main)
+        self._build_perspective_row(main, "bottom")
+        for pi in (0, 1):
+            self._build_player_panel(pi)
+            for index in range(4):
+                self._build_shiki_slot(pi, index)
+        self._sync_perspective()
         self.target_label = QLabel()
         self.target_label.setObjectName("targetHint")
         main.addWidget(self.target_label)
@@ -299,7 +329,8 @@ class HotseatView(QWidget):
         main.addWidget(self.hand_caption)
         hand_scroll = QScrollArea()
         hand_scroll.setWidgetResizable(True)
-        hand_scroll.setMaximumHeight(285)
+        hand_scroll.setMinimumHeight(0)
+        hand_scroll.setMaximumHeight(230)
         self.hand_container = QWidget()
         self.hand_layout = QHBoxLayout(self.hand_container)
         hand_scroll.setWidget(self.hand_container)
@@ -321,39 +352,139 @@ class HotseatView(QWidget):
         self.result_back.hide()
         main.addWidget(self.result_back, alignment=Qt.AlignCenter)
 
-    def _build_player_row(self, parent_layout, pi: int) -> None:
-        row = QHBoxLayout()
+    def _build_right_sidebar(self, parent_layout) -> None:
+        self.right_sidebar = QWidget()
+        self.right_sidebar.setFixedWidth(128)
+        sidebar = QVBoxLayout(self.right_sidebar)
+        self.enemy_hand_label = QLabel()
+        self.enemy_hand_label.setObjectName("enemyHandBack")
+        self.enemy_deck_label = QLabel()
+        self.own_deck_label = QLabel()
+        for label in (self.enemy_deck_label, self.own_deck_label):
+            label.setObjectName("deckCount")
+        for label in (self.enemy_hand_label, self.enemy_deck_label, self.own_deck_label):
+            label.setAlignment(Qt.AlignCenter)
+            label.setFixedSize(104, 64)
+        sidebar.addWidget(self.enemy_hand_label, 0, Qt.AlignHCenter)
+        sidebar.addWidget(self.enemy_deck_label, 0, Qt.AlignHCenter)
+        sidebar.addStretch(1)
+        sidebar.addWidget(self.end_turn_button, 0, Qt.AlignHCenter)
+        sidebar.addStretch(1)
+        sidebar.addWidget(self.own_deck_label, 0, Qt.AlignHCenter)
+        parent_layout.addWidget(self.right_sidebar)
+
+    def _build_combat_zone(self, parent_layout) -> None:
+        self.combat_zone = QFrame()
+        self.combat_zone.setObjectName("combatZone")
+        self.combat_zone.setFixedSize(320, 224)
+        zone_layout = QVBoxLayout(self.combat_zone)
+        zone_layout.setContentsMargins(20, 4, 20, 4)
+        self._combat_cells = {}
+        for position in ("top", "bottom"):
+            cell_widget = QWidget()
+            cell = QVBoxLayout(cell_widget)
+            cell.setContentsMargins(0, 0, 0, 0)
+            zone_layout.addWidget(cell_widget, 1)
+            self._combat_cells[position] = cell
+            if position == "top":
+                self.combat_label = QLabel("战斗区\n空")
+                self.combat_label.setAlignment(Qt.AlignCenter)
+                self.combat_label.setStyleSheet("background: transparent;")
+                zone_layout.addWidget(self.combat_label)
+        parent_layout.addWidget(self.combat_zone, 0, Qt.AlignHCenter)
+
+    def _build_perspective_row(self, parent_layout, position: str) -> None:
+        row = QFrame()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addStretch(1)
+        for index in range(4):
+            cell_widget = QWidget()
+            cell_widget.setFixedWidth(148)
+            cell = QVBoxLayout(cell_widget)
+            cell.setContentsMargins(0, 0, 0, 0)
+            row_layout.addWidget(cell_widget)
+            if index == 1:
+                row_layout.addSpacing(64)
+            self._slot_cells[position].append(cell)
+        row_layout.addStretch(1)
+        setattr(self, f"{position}_row", row)
+        parent_layout.addWidget(row)
+
+    def _build_player_panel(self, pi: int) -> None:
         frame = QFrame()
         frame.setObjectName("playerPanel")
         frame.setMinimumWidth(190)
         frame.setMaximumWidth(240)
         column = QVBoxLayout(frame)
+        column.setContentsMargins(4, 2, 4, 2)
+        column.setSpacing(1)
         avatar = QLabel("头像")
         avatar.setAlignment(Qt.AlignCenter)
+        avatar.setFixedHeight(16)
         column.addWidget(avatar)
         label = QLabel()
         label.setWordWrap(True)
+        label.setStyleSheet("font-size: 11px;")
         column.addWidget(label)
         fields = QLabel("幻境：无")
         fields.setWordWrap(True)
+        fields.setStyleSheet("font-size: 11px;")
         column.addWidget(fields)
         detail = QPushButton("牌手详情")
         detail.setObjectName("battleSmall")
+        detail.setFixedHeight(24)
         detail.clicked.connect(lambda _=False, side=pi: self.show_player_detail(side))
         column.addWidget(detail)
         frame.mouseReleaseEvent = lambda event, side=pi: self._player_click(event, side)
         self.player_frames[pi] = frame
         self.player_labels[pi] = label
         self.field_labels[pi] = fields
-        row.addWidget(frame)
-        for index in range(4):
-            slot = ShikiFrame(pi, index)
-            slot.details_requested.connect(self._shiki_clicked)
-            slot.assault_requested.connect(self.assault)
-            slot.upgrade_requested.connect(self.upgrade)
-            self.shiki_frames[(pi, index)] = slot
-            row.addWidget(slot, 1)
-        parent_layout.addLayout(row)
+
+    def _build_shiki_slot(self, pi: int, index: int) -> None:
+        slot = ShikiFrame(pi, index)
+        slot.details_requested.connect(self._shiki_clicked)
+        slot.assault_requested.connect(self.assault)
+        slot.upgrade_requested.connect(self.upgrade)
+        self.shiki_frames[(pi, index)] = slot
+
+    def _sync_perspective(self) -> None:
+        if self._perspective_viewer == self.viewer:
+            return
+        arc = (24, 0, 0, 24)
+        for position, pi in (("top", 1 - self.viewer), ("bottom", self.viewer)):
+            row = getattr(self, f"{position}_row")
+            player_frame = self.player_frames[pi]
+            if player_frame.parentWidget() is not None:
+                player_frame.parentWidget().layout().removeWidget(player_frame)
+            row.layout().insertWidget(0, player_frame)
+            for index, cell in enumerate(self._slot_cells[position]):
+                frame = self.shiki_frames[(pi, index)]
+                if frame.parentWidget() is not None:
+                    frame.parentWidget().layout().removeWidget(frame)
+                cell.addWidget(frame)
+                margin = arc[index]
+                if position == "top":
+                    cell.setContentsMargins(0, 0, 0, margin)
+                else:
+                    cell.setContentsMargins(0, margin, 0, 0)
+        self._perspective_viewer = self.viewer
+
+    def _sync_combat_slots(self) -> None:
+        for position, pi in (("top", 1 - self.viewer), ("bottom", self.viewer)):
+            player = self.game.state.players[pi]
+            for index in range(4):
+                frame = self.shiki_frames[(pi, index)]
+                if player.combat_index == index:
+                    cell = self._combat_cells[position]
+                else:
+                    cell = self._slot_cells[position][index]
+                if frame.parentWidget() is not cell.parentWidget():
+                    if frame.parentWidget() is not None:
+                        frame.parentWidget().layout().removeWidget(frame)
+                    cell.addWidget(frame)
+        self.combat_label.setVisible(
+            all(player.combat_index is None for player in self.game.state.players))
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
@@ -368,7 +499,18 @@ class HotseatView(QWidget):
                 border: 4px solid {colors['gold2']}; background: {colors['panel2']};
             }}
             QLabel#shikiName, QLabel#handName {{ color: {colors['gold']}; font-weight: bold; }}
-            QLabel#combatZone {{ background: {colors['panel2']}; padding: 7px; }}
+            QFrame#combatZone {{
+                background: {colors['panel2']}; border: 2px solid {colors['line']};
+                border-radius: 112px;
+            }}
+            QLabel#enemyHandBack, QLabel#deckCount {{
+                background: {colors['panel']}; border: 2px solid {colors['line']};
+                border-radius: 8px;
+            }}
+            QPushButton#endTurnButton {{
+                background: {colors['panel2']}; border: 3px solid {colors['gold2']};
+                border-radius: 52px; font-size: 18px;
+            }}
             QLabel#targetHint {{ color: {colors['blue']}; }}
             QLabel#battleError {{ color: #c44; }}
             QLabel#resultBanner {{ color: {colors['gold']}; font-size: 34px; padding: 16px; }}
@@ -398,6 +540,9 @@ class HotseatView(QWidget):
         return True
 
     def start_game(self, p1: tuple, p2: tuple, seed: int = 42, **kwargs) -> None:
+        self.timeline_timer.stop()
+        self._close_handoff()
+        self.close_log()
         self.game = new_game(self.db, p1, p2, seed=seed, **kwargs)
         self.viewer = self._current_viewer()
         self.pending_command = None
@@ -429,18 +574,85 @@ class HotseatView(QWidget):
             return
         previous_viewer = self.viewer
         self.viewer = self._current_viewer()
+        if previous_viewer != self.viewer and self.game.state.winner is None:
+            self._begin_handoff()
+        if self._handoff_pending:
+            self._enqueue_timeline()
+            return
+        self._sync_perspective()
         if previous_viewer != self.viewer:
             self._render_log()
         self._render_state()
         self._enqueue_timeline()
         self._sync_pending_choice()
 
+    def _clear_hand(self) -> None:
+        while self.hand_layout.count():
+            item = self.hand_layout.takeAt(0)
+            if item.widget() is not None:
+                widget = item.widget()
+                widget.hide()
+                widget.deleteLater()
+        self.hand_frames = []
+        self.hand_caption.clear()
+
+    def _begin_handoff(self) -> None:
+        self.timeline_timer.stop()
+        self._handoff_pending = True
+        self._clear_hand()
+        self.pending_command = None
+        self.target_specs = []
+        self.legal_targets = []
+        if self.choice_dialog is not None:
+            self.choice_dialog.close()
+            self.choice_dialog = None
+        self._choice_key = None
+        self.close_log()
+        if self.handoff_dialog is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("交接设备")
+            dialog.setModal(True)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(QLabel(f"请将设备交给 {self.game.state.players[self.viewer].name}"))
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+            polish_dialog_buttons(buttons)
+            buttons.accepted.connect(self.confirm_handoff)
+            dialog.rejected.connect(dialog.show)
+            layout.addWidget(buttons, alignment=Qt.AlignRight)
+            self.handoff_dialog = dialog
+        self.handoff_dialog.show()
+        self._update_input_widgets()
+
+    def confirm_handoff(self) -> None:
+        if not self._handoff_pending:
+            return
+        self._handoff_pending = False
+        if self.handoff_dialog is not None:
+            dialog = self.handoff_dialog
+            dialog.hide()
+            dialog.deleteLater()
+            self.handoff_dialog = None
+        self._sync_perspective()
+        self._render_log()
+        self._render_state()
+        self._enqueue_timeline()
+        self._sync_pending_choice()
+
+    def _close_handoff(self) -> None:
+        self._handoff_pending = False
+        if self.handoff_dialog is not None:
+            dialog = self.handoff_dialog
+            dialog.hide()
+            dialog.deleteLater()
+            self.handoff_dialog = None
+
     def _render_state(self) -> None:
+        if self._handoff_pending:
+            return
         game = self.game
         state = game.state
         phase_names = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "对战阶段"}
         self.phase_label.setText(f"{phase_names.get(state.phase, state.phase)}　回合 {state.turn}")
-        self.seat_label.setText(cli.format_seat_line(game, self.viewer))
         for pi, player in enumerate(state.players):
             boosts = player.assault_boosts
             power = sum(item.get("power", 0) for item in boosts)
@@ -460,22 +672,11 @@ class HotseatView(QWidget):
                 frame = self.shiki_frames[(pi, index)]
                 definition = self.db.shikigami[shiki.id]
                 awaken = "觉醒·" if shiki.awakened is not None else ""
-                frame.name_label.setText(f"{index + 1}. {awaken}{definition.name}　Lv.{shiki.level}")
+                frame.name_label.setText(f"{awaken}{definition.name}　Lv.{shiki.level}")
                 frame.stats_label.setText(f"力量 {shiki.eff_power}　生命 {shiki.health}/{shiki.max_health}")
-                statuses = [f"护甲/破甲 {shiki.shield}", f"能量 {shiki.energy}"]
+                statuses = [f"护甲/破甲 {shiki.shield}"]
                 if shiki.countdown is not None:
                     statuses.append(f"倒计时 {shiki.countdown}")
-                if shiki.form is not None:
-                    statuses.append(f"形态 {self.db.cards[shiki.form.id].name}")
-                keywords = shiki.perm_keywords + shiki.keywords + shiki.one_shot_keywords
-                if keywords:
-                    statuses.extend(cli._kw_labels(keywords))
-                if shiki.is_stunned:
-                    statuses.append("眩晕")
-                if shiki.defeated:
-                    statuses.append(f"气绝 {shiki.revive_countdown}")
-                if index == player.combat_index:
-                    statuses.append("战斗区")
                 frame.status_label.setText("　".join(statuses))
                 own_turn = pi == state.active
                 frame.assault_button.setVisible(own_turn and state.phase == "battle")
@@ -488,11 +689,12 @@ class HotseatView(QWidget):
                 if self.colors and index < len(self.colors["seat"]):
                     frame.setStyleSheet(
                         f"QFrame#shikiSlot {{ border-color: {self.colors['seat'][index]}; }}")
-        combat = []
-        for pi, player in enumerate(state.players):
-            if player.combat_index is not None:
-                combat.append(f"{player.name}：{self.db.shikigami[player.shikigami[player.combat_index].id].name}")
-        self.combat_label.setText("战斗区　" + ("　/　".join(combat) if combat else "空"))
+        self._sync_combat_slots()
+        enemy = state.players[1 - self.viewer]
+        own = state.players[self.viewer]
+        self.enemy_hand_label.setText(f"敌方手牌\n{len(enemy.hand)} 张")
+        self.enemy_deck_label.setText(f"敌方牌库\n{len(enemy.deck)} 张")
+        self.own_deck_label.setText(f"己方牌库\n{len(own.deck)} 张")
         self._render_hand()
         inputs = self._inputs_open()
         self.end_turn_button.setEnabled(inputs and state.phase == "battle")
@@ -509,11 +711,7 @@ class HotseatView(QWidget):
         return cli.hand_cards_info(self.game, self.viewer)
 
     def _render_hand(self) -> None:
-        while self.hand_layout.count():
-            item = self.hand_layout.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
-        self.hand_frames = []
+        self._clear_hand()
         player = self.game.state.players[self.viewer]
         mulligan = self.game.state.phase == "mulligan"
         cards = list(player.hand) if mulligan else cli.hand_sorted(self.game, player)
@@ -562,13 +760,13 @@ class HotseatView(QWidget):
         widget.style().polish(widget)
 
     def _inputs_open(self) -> bool:
-        return (self.game is not None and not self.timeline_queue
-                and self.game.state.winner is None
+        return (self.game is not None and not self._handoff_pending
+                and not self.timeline_queue and self.game.state.winner is None
                 and self.game.state.pending_choice is None
                 and self.pending_command is None)
 
     def apply_command(self, command: dict) -> bool:
-        if self.game is None or self.timeline_queue:
+        if self.game is None or self._handoff_pending or self.timeline_queue:
             return False
         try:
             self.game.apply(command)
@@ -704,25 +902,133 @@ class HotseatView(QWidget):
     def show_shiki_detail(self, ref: Ref) -> None:
         shiki = self.game.state.players[ref.player].shikigami[ref.shikigami]
         definition = self.db.shikigami[shiki.id]
+
+        def ref_label(value) -> str | None:
+            if value is None:
+                return None
+            pi = value.get("player") if isinstance(value, dict) else value.player
+            si = value.get("shikigami") if isinstance(value, dict) else value.shikigami
+            if pi is None or not 0 <= pi < len(self.game.state.players):
+                return None
+            player = self.game.state.players[pi]
+            if si is None:
+                return player.name
+            if not 0 <= si < len(player.shikigami):
+                return None
+            source = player.shikigami[si]
+            return f"{player.name}·{self.db.shikigami[source.id].name}"
+
+        def mods(label, power, health=None) -> str:
+            parts = [f"力量 {power:+d}"]
+            if health is not None:
+                parts.append(f"生命 {health:+d}")
+            return f"{label} {'　'.join(parts)}"
+
         dialog = QDialog(self)
         dialog.setWindowTitle(definition.name)
-        dialog.setMinimumSize(480, 460)
+        dialog.setMinimumSize(520, 600)
         layout = QVBoxLayout(dialog)
-        text = [f"等级 {shiki.level}　力量 {shiki.eff_power}　生命 {shiki.health}/{shiki.max_health}",
-                f"派系 {shiki.faction}", definition.text or "（无基础能力文本）"]
+        text = [
+            f"等级 {shiki.level}　力量 {shiki.eff_power}　生命 {shiki.health}/{shiki.max_health}",
+            f"护甲/破甲 {shiki.shield}　能量 {shiki.energy}　派系 {shiki.faction}",
+            mods("永久修正", shiki.perm_power, shiki.perm_health),
+            mods("临时修正", shiki.temp_power, shiki.temp_health),
+            mods("战斗修正", shiki.combat_power),
+        ]
+        dyn_power = int(shiki.ext.get("dyn_power", 0))
+        dyn_health = int(shiki.ext.get("dyn_health", 0))
+        if dyn_power or dyn_health:
+            text.append(mods("动态光环合计", dyn_power, dyn_health))
+        if shiki.ext.get("power_zero"):
+            text.append("力量覆写：0（动态光环与灵咒仍合计）")
+        keywords = cli._kw_labels(
+            shiki.keywords + shiki.one_shot_keywords + shiki.perm_keywords)
+        if keywords:
+            text.append(f"关键字：{'、'.join(keywords)}")
+        for index, buff in enumerate(shiki.attack_buffs, 1):
+            parts = [f"攻击后到期强化 {index}：力量 {buff.get('power', 0):+d}"]
+            labels = cli._kw_labels(kw for kw, _cls in buff.get("keywords", []))
+            if labels:
+                parts.append(f"关键字 {'、'.join(labels)}")
+            text.append("　".join(parts))
+        if shiki.keep_shield:
+            text.append("保留护甲")
+        if shiki.keep_fragile:
+            text.append("保留破甲")
+        for index, immunity in enumerate(shiki.immunities, 1):
+            text.append(f"免疫 {index}：{immunity.get('kind', '未标明类型')}")
+        if shiki.stuns:
+            kinds = "、".join(str(entry.get("kind", "未标明类型")) for entry in shiki.stuns)
+            text.append(f"眩晕：{kinds}")
+        if shiki.dying:
+            text.append("濒死")
+        if shiki.despawned:
+            text.append("已离场")
+        if shiki.defeated:
+            text.append(f"气绝：复活倒计时 {shiki.revive_countdown}")
+        if shiki.countdown is not None:
+            countdown = [f"倒计时 {shiki.countdown}"]
+            if shiki.countdown_initial is not None:
+                countdown.append(f"初始 {shiki.countdown_initial}")
+            countdown.append("一次型" if shiki.countdown_once else "循环型")
+            source = shiki.countdown_source
+            if source in self.db.cards:
+                countdown.append(f"来源 {self.db.cards[source].name}")
+            elif source in self.db.shikigami:
+                countdown.append(f"来源 {self.db.shikigami[source].name}")
+            text.append("　".join(countdown))
+        text.append(definition.text or "（无基础能力文本）")
         if shiki.awakened is not None:
             awaken = self.db.cards[shiki.awakened]
             text.extend([f"觉醒：{awaken.name}", awaken.text or ""])
         if shiki.form is not None:
             form = self.db.cards[shiki.form.id]
             text.extend([f"形态：{form.name}", form.text or ""])
+        for index, delayed in enumerate(shiki.delayed, 1):
+            block = delayed.get("block") or {}
+            when = block.get("when") if isinstance(block, dict) else block.when
+            parts = [f"延迟能力 {index}：类型 {when}", f"次数 {delayed.get('uses', 1)}"]
+            origin = delayed.get("origin")
+            if origin in self.db.cards:
+                parts.append(f"来源 {self.db.cards[origin].name}")
+            chosen = None
+            if not delayed.get("secret") or ref.player == self.viewer:
+                chosen = ref_label(delayed.get("chosen"))
+            if chosen:
+                parts.append(f"目标 {chosen}")
+            text.append("　".join(parts))
+        for index, invocation in enumerate(shiki.invocations, 1):
+            name = invocation.get("name", "")
+            parts = [f"灵咒 {index}：{name}"]
+            source = ref_label(invocation.get("source"))
+            if source:
+                parts.append(f"来源 {source}")
+            elif invocation.get("player") is not None:
+                pi = invocation["player"]
+                if 0 <= pi < len(self.game.state.players):
+                    parts.append(f"来源 {self.game.state.players[pi].name}")
+            text.append("　".join(parts))
+            if invocation.get("power") or invocation.get("health"):
+                text.append(mods("基础", invocation.get("power", 0),
+                                 invocation.get("health", 0)))
+            if invocation.get("bonus"):
+                text.append(f"增强 {invocation['bonus']:+d}")
+            if invocation.get("mod_power") or invocation.get("mod_health"):
+                text.append(mods("修饰", invocation.get("mod_power", 0),
+                                 invocation.get("mod_health", 0)))
+            idef = self.db.invocations.get(name)
+            if idef is not None and idef.text:
+                text.append(idef.text)
         label = QLabel("\n\n".join(text))
         label.setWordWrap(True)
-        layout.addWidget(label)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(label)
+        layout.addWidget(scroll, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+        layout.addWidget(buttons, alignment=Qt.AlignRight)
         dialog.exec()
 
     def show_player_detail(self, pi: int) -> None:
@@ -730,12 +1036,24 @@ class HotseatView(QWidget):
         fields = "\n".join(
             f"{index + 1}. {self.db.cards[field.card_id].name}　耐久 {field.intensity}"
             for index, field in enumerate(player.fields)) or "无幻境"
-        show_information(self, player.name,
-                         f"生命 {player.health}/{player.max_health}　护甲 {player.shield}\n"
-                         f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n{fields}")
+        dialog = QDialog(self)
+        dialog.setWindowTitle(player.name)
+        layout = QVBoxLayout(dialog)
+        label = QLabel(
+            f"生命 {player.health}/{player.max_health}　护甲 {player.shield}\n"
+            f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n{fields}")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        polish_dialog_buttons(buttons)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons, alignment=Qt.AlignRight)
+        dialog.exec()
 
     def show_card_detail(self, card) -> None:
-        CardDetailDialog(self.db.cards[card.id], self.db, self).exec()
+        info = self.hand_info()
+        runtime = info[card.uid] if card.uid in info else None
+        CardDetailDialog(self.db.cards[card.id], self.db, self, runtime=runtime).exec()
 
     def choice_option_label(self, pending: dict, option) -> str:
         kind = pending.get("kind")
@@ -757,6 +1075,8 @@ class HotseatView(QWidget):
         return str(option)
 
     def _sync_pending_choice(self) -> None:
+        if self._handoff_pending:
+            return
         pending = self.game.state.pending_choice
         if pending is None:
             if self.choice_dialog is not None:
@@ -791,18 +1111,39 @@ class HotseatView(QWidget):
         self._timeline_seen = len(self.game.state.timeline)
         for entry in entries:
             self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
-        if self.timeline_queue and not self.timeline_timer.isActive():
+        if (self.timeline_queue and not self._handoff_pending
+                and not self.timeline_timer.isActive()):
             self.timeline_timer.start()
         self._update_input_widgets()
 
     def _render_log(self) -> None:
         self.log_list.clear()
+        mulligan_phase = False
+        opponent_prefix = f"{self.game.state.players[1 - self.viewer].name} "
         for owner, message in self.played_timeline:
-            if owner is None or owner == self.viewer:
+            if message.startswith("对局开始：调度阶段"):
+                mulligan_phase = True
+            elif message == "对局开始":
+                mulligan_phase = False
+            hidden_mulligan = (mulligan_phase and message.startswith(opponent_prefix)
+                               and "调度了一张手牌" in message)
+            if (owner is None or owner == self.viewer) and not hidden_mulligan:
                 self.log_list.addItem(message)
         self.log_list.scrollToBottom()
 
+    def show_log(self) -> None:
+        self.log_dialog.show()
+        self.log_dialog.raise_()
+        self.log_dialog.activateWindow()
+        self.log_list.scrollToBottom()
+
+    def close_log(self) -> None:
+        self.log_dialog.hide()
+
     def play_next_timeline(self) -> None:
+        if self._handoff_pending:
+            self.timeline_timer.stop()
+            return
         if not self.timeline_queue:
             self.timeline_timer.stop()
             self._update_input_widgets()
@@ -839,6 +1180,8 @@ class HotseatView(QWidget):
 
     def return_to_menu(self) -> None:
         self.timeline_timer.stop()
+        self._close_handoff()
+        self.close_log()
         if self.choice_dialog is not None:
             self.choice_dialog.close()
             self.choice_dialog = None

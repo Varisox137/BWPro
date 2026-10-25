@@ -102,6 +102,7 @@ class OnlineBattleView(HotseatView):
         self.timeline_queue.clear()
         self.played_timeline.clear()
         self.log_list.clear()
+        self.close_log()
         self.result_banner.hide()
         self.result_back.hide()
         self.game = None
@@ -120,14 +121,14 @@ class OnlineBattleView(HotseatView):
         return self.me
 
     def hand_info(self) -> dict[int, dict]:
-        if self.payload is not None and "hand_info" in self.payload:
-            return {int(uid): info for uid, info in self.payload["hand_info"].items()}
-        return super().hand_info()
+        info = (self.payload or {}).get("hand_info", {})
+        return {int(uid): detail for uid, detail in info.items()}
 
     def refresh(self) -> None:
         if self.game is None:
             return
         self.viewer = self.me
+        self._sync_perspective()
         self._render_state()
         self._sync_pending_choice()
 

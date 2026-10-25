@@ -29,7 +29,7 @@ def polish_dialog_buttons(owner) -> None:
                 button.setText(text)
         for button in target.buttons():
             button.setObjectName("dialogButton")
-            button.setMinimumWidth(68)
+            button.setMinimumSize(76, 30)
 
 
 def show_message(parent, title: str, text: str, icon=QMessageBox.Information,
@@ -123,7 +123,7 @@ class CardWidget(QFrame):
 class CardDetailDialog(QDialog):
     """完整单卡详情：名称、类型、等级、身材、子类型与效果文本。"""
 
-    def __init__(self, cdef, db=None, parent=None):
+    def __init__(self, cdef, db=None, parent=None, runtime: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle(cdef.name)
         self.setMinimumSize(480, 600)
@@ -141,8 +141,34 @@ class CardDetailDialog(QDialog):
             label.setObjectName("cardMeta")
             label.setAlignment(Qt.AlignCenter)
             layout.addWidget(label)
+        if runtime is not None:
+            current = ["当前状态"]
+            if "cost" in runtime:
+                current.append(f"费用 {runtime['cost']}")
+            if runtime.get("stats"):
+                current.append(f"数值 {runtime['stats']}")
+            if "enhance" in runtime:
+                current.append(f"增强 {runtime['enhance']}")
+            if runtime.get("keywords"):
+                current.append(f"关键字 {'、'.join(runtime['keywords'])}")
+            if runtime.get("quest"):
+                quest = str(runtime["quest"])
+                current.append(quest if quest.startswith("委托") else f"委托 {quest}")
+            if "playable" in runtime:
+                current.append(f"条件：{'满足' if runtime['playable'] else '不满足'}")
+            for option in runtime.get("usage", []):
+                usage = f"使用方式 {option.get('label', option.get('id', ''))}"
+                if option.get("ok"):
+                    current.append(f"{usage}：可用")
+                else:
+                    reason = option.get("reason") or "不可用"
+                    current.append(f"{usage}：{reason}")
+            self.runtime_label = QLabel("\n".join(current))
+            self.runtime_label.setObjectName("cardRuntime")
+            self.runtime_label.setWordWrap(True)
+            layout.addWidget(self.runtime_label)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
-        layout.addWidget(buttons)
+        layout.addWidget(buttons, alignment=Qt.AlignRight)

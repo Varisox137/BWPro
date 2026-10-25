@@ -29,3 +29,8 @@ gui_ref/
 
 # 视频抽帧工具隔离环境（一次性）
 .vidtools/
+
+# BWPDIY 可执行程序及其本地运行产物
+/BWPDIY-v*.exe
+/logs/
+/library/
