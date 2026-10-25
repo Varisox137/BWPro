@@ -142,6 +142,9 @@ def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
     view.reload_decks()
     frame = view.deck_frames[0]
     assert frame.maximumWidth() <= 300
+    deck_name = frame.findChild(QLabel, "cardName")
+    two_lines = deck_name.fontMetrics().lineSpacing() * 2
+    assert deck_name.minimumHeight() == deck_name.maximumHeight() == two_lines
     assert [label.text() for label in frame.findChildren(QLabel, "deckShikiName")] == [
         db.shikigami[sid].name for sid in factories.TEAM]
     portraits = frame.findChildren(QLabel, "shikiPortrait")
@@ -935,6 +938,9 @@ def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, mo
 
     def render(_lib, _elem, art, faction, scale, faction_style):
         del scale, faction, faction_style
+        if art is None:
+            seen.append(None)
+            return Image.new("RGBA", (4, 4), "#112233")
         seen.append(art["offset_x"])
         if art["offset_x"]:
             return Image.new("RGBA", (4, 4), "#993366")
@@ -945,6 +951,8 @@ def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, mo
                         lambda _root: (tmp_path, Library(), {"back_size": 8}, render))
     portrait._portrait_pixmap.cache_clear()
     empty = portrait.shikigami_portrait(definition, size=4, root=tmp_path, library_dir=library_dir)
+    assert empty.toImage().pixelColor(1, 1).name() == "#112233"
+    assert seen[0] is None
     _external_library(
         tmp_path,
         "id: 987654\nname: 测试\nversion_date: 20260720\n"

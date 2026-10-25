@@ -333,6 +333,7 @@ class DeckBuilderView(QWidget):
             name.setObjectName("cardName")
             name.setAlignment(Qt.AlignCenter)
             name.setWordWrap(True)
+            name.setFixedHeight(name.fontMetrics().lineSpacing() * 2)
             column.addWidget(name)
             env = QLabel(env_label(entry.get("env")))
             env.setObjectName("cardMeta")

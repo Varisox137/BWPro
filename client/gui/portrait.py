@@ -183,6 +183,22 @@ def _portrait_pixmap(sid: int, name: str, faction: str, version: int,
     return pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
 
+def _empty_portrait_pixmap(definition, size: int, root: Path) -> QPixmap:
+    """无卡图配置时仍使用 BWPDIY 空槽：斜方框和派系标保留，不画人物。"""
+    try:
+        _root, library, element, render = _renderer(str(root.resolve()))
+        image = render(library, element, None, definition.faction, scale=2,
+                       faction_style=None)
+        buffer = BytesIO()
+        image.save(buffer, "PNG")
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
+            raise ValueError("空头像 PNG 解码失败")
+        return pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    except Exception:
+        return _fallback_pixmap(definition.name, definition.faction, size)
+
+
 def shikigami_portrait(definition, size: int = 72, root: Path | None = None,
                        library_dir: Path | None = None) -> QPixmap:
     """返回带斜方框与派系标的式神头像；渲染资源与项目配置库相互独立。"""
@@ -202,4 +218,4 @@ def shikigami_portrait(definition, size: int = 72, root: Path | None = None,
             str(library_dir.resolve()), size, art_json, faction_style,
             image_stat.st_mtime_ns, image_stat.st_size)
     except Exception:
-        return _fallback_pixmap(definition.name, definition.faction, size)
+        return _empty_portrait_pixmap(definition, size, root)

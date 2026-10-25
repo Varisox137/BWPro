@@ -279,7 +279,7 @@ class HotseatView(QWidget):
         layout = QHBoxLayout(self.battle_page)
         main = QVBoxLayout()
         main.setContentsMargins(0, 0, 0, 0)
-        main.setSpacing(3)
+        main.setSpacing(0)
         layout.addLayout(main, 1)
         top = QHBoxLayout()
         self.menu_button = QPushButton("退出对局")
@@ -345,7 +345,7 @@ class HotseatView(QWidget):
         hand_scroll = QScrollArea()
         hand_scroll.setWidgetResizable(True)
         hand_scroll.setMinimumHeight(0)
-        hand_scroll.setMaximumHeight(230)
+        hand_scroll.setMaximumHeight(240)
         self.hand_container = QWidget()
         self.hand_layout = QHBoxLayout(self.hand_container)
         hand_scroll.setWidget(self.hand_container)
@@ -419,8 +419,6 @@ class HotseatView(QWidget):
             cell = QVBoxLayout(cell_widget)
             cell.setContentsMargins(0, 0, 0, 0)
             row_layout.addWidget(cell_widget)
-            if index == 1:
-                row_layout.addSpacing(64)
             self._slot_cells[position].append(cell)
         row_layout.addStretch(1)
         setattr(self, f"{position}_row", row)
@@ -466,7 +464,7 @@ class HotseatView(QWidget):
     def _sync_perspective(self) -> None:
         if self._perspective_viewer == self.viewer:
             return
-        arc = (24, 0, 0, 24)
+        arc = (36, 0, 0, 36)
         for position, pi in (("top", 1 - self.viewer), ("bottom", self.viewer)):
             row = getattr(self, f"{position}_row")
             player_frame = self.player_frames[pi]
@@ -507,11 +505,13 @@ class HotseatView(QWidget):
         self.setStyleSheet(f"""
             QLabel#viewTitle, QLabel#phaseLabel {{ color: {colors['gold']}; font-size: 24px; }}
             QFrame#playerPanel, QFrame#shikiSlot, QFrame#handCard {{
-                background: {colors['panel']}; border: 2px solid {colors['line']};
-                border-radius: 8px;
+                background: transparent; border: none;
+            }}
+            QFrame#playerPanel QLabel, QFrame#shikiSlot QLabel, QFrame#handCard QLabel {{
+                background: transparent; border: none;
             }}
             QFrame#shikiSlot[targetable="true"], QFrame#playerPanel[targetable="true"] {{
-                border: 4px solid {colors['gold2']}; background: {colors['panel2']};
+                border: 4px solid {colors['gold2']}; background: transparent;
             }}
             QLabel#shikiName, QLabel#handName {{ color: {colors['gold']}; font-weight: bold; }}
             QFrame#combatZone {{
@@ -519,8 +519,7 @@ class HotseatView(QWidget):
                 border-radius: 112px;
             }}
             QLabel#enemyHandBack, QLabel#deckCount {{
-                background: {colors['panel']}; border: 2px solid {colors['line']};
-                border-radius: 8px;
+                background: transparent; border: none;
             }}
             QPushButton#endTurnButton {{
                 background: {colors['panel2']}; border: 3px solid {colors['gold2']};

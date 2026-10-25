@@ -9,7 +9,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel
 
-from client.gui.app import MainWindow
+from client.gui.app import THEMES, MainWindow
 from client.gui.battle import DeckSelectDialog, HotseatView
 from client.gui.widgets import CardDetailDialog
 from core.model import CardInstance, GameConfig, Ref
@@ -131,7 +131,7 @@ def test_startup_only_lists_standard_and_enters_game(qapp, db, tmp_path, view):
     assert len(view.shiki_frames) == 8
 
 
-def test_perspective_reuses_slots_and_reverses_arc(qapp, view):
+def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     start(view, mulligan=False)
     assert not hasattr(view, "seat_label")
     assert len(view.player_frames) == 2 and len(view.shiki_frames) == 8
@@ -141,11 +141,15 @@ def test_perspective_reuses_slots_and_reverses_arc(qapp, view):
     refs = {key: frame.ref for key, frame in slots.items()}
     assert view.top_row.isAncestorOf(view.player_frames[1])
     assert view.bottom_row.isAncestorOf(view.player_frames[0])
-    arc = (24, 0, 0, 24)
+    arc = (36, 0, 0, 36)
     assert [view.shiki_frames[(0, index)].parentWidget().layout().contentsMargins().top()
             for index in range(4)] == list(arc)
     assert [view.shiki_frames[(1, index)].parentWidget().layout().contentsMargins().bottom()
             for index in range(4)] == list(arc)
+    assert view.top_row.layout().spacing() <= 6
+    view.apply_theme("light", THEMES["light"])
+    assert "background: transparent; border: none;" in view.styleSheet()
+    assert "QLabel#enemyHandBack, QLabel#deckCount" in view.styleSheet()
 
     view.game.state.active = 1
     view.refresh()
