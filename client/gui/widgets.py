@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cardfmt
+from client.gui.cardart import card_pixmap
 
 
 _DIALOG_BUTTON_TEXT = {
@@ -54,11 +55,11 @@ def ask_confirmation(parent, title: str, text: str) -> int:
 
 
 class CardWidget(QFrame):
-    """文字卡面：构筑与后续式神录、对局详情共用。"""
+    """静态卡面：有本地卡图时显示全卡，否则回退文字卡。"""
 
     clicked = Signal(object)
 
-    def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None):
+    def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -67,6 +68,10 @@ class CardWidget(QFrame):
         self.setMaximumWidth(260)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 10)
+        self.art_label = QLabel()
+        self.art_label.setObjectName("cardArt")
+        self.art_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.art_label, 1)
         self.level_label = QLabel(f"等级 {cdef.level}")
         self.level_label.setObjectName("cardLevel")
         layout.addWidget(self.level_label)
@@ -90,6 +95,15 @@ class CardWidget(QFrame):
         self.text_label.setWordWrap(True)
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.text_label, 1)
+        pixmap = card_pixmap(cdef, db) if db is not None else None
+        if pixmap is not None and not pixmap.isNull():
+            self.art_label.setPixmap(pixmap.scaled(
+                236, 360, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            for label in (self.level_label, self.name_label, self.type_label,
+                          self.stats_label, self.text_label):
+                label.hide()
+        else:
+            self.art_label.hide()
         footer = QHBoxLayout()
         self.count_label = QLabel(f"已选 {copies}/2")
         self.count_label.setObjectName("cardCount")
@@ -128,7 +142,7 @@ class CardDetailDialog(QDialog):
         self.setWindowTitle(cdef.name)
         self.setMinimumSize(480, 600)
         layout = QVBoxLayout(self)
-        card = CardWidget(cdef)
+        card = CardWidget(cdef, db=db)
         card.setMaximumWidth(420)
         layout.addWidget(card, 1, Qt.AlignCenter)
         details = []

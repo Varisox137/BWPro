@@ -1,9 +1,7 @@
 # 桌面 GUI 客户端实施计划（PySide6）
 
-> 状态：**Step 1-4 已完成**（骨架/构筑/热坐/联机，2026-10 落地，见各 commit）。
-> Step 5 卡图合成管线待维护者给出初步思路后纳入
-> （diy/构筑/对局都会需要；理想功能：给定卡牌本身的各参数、卡图原画、
-> 描述文本，输出合成的卡牌图片）。动画/音效暂不排优先实现。
+> 状态：**Step 1-5 已完成**（骨架/构筑/热坐/联机/本地卡图管线，2026-10 落地，见各 commit）。
+> 卡图使用项目 `library/` 的人工标注与 BWPDIY render 引擎数据合成，按引擎版本匹配并带内容寻址缓存；未配置或渲染失败时保留文字/菱形回退。动画/音效暂不排优先实现。
 > 后续可补：式神录页面（现为占位）、大厅对手卡组名（需服务端 lobby 消息补充）。
 >
 > 界面布局与外部调研见 `docs/gui-design.md`（bwpemu/BWPDIY 结论 + gui-mock 初稿 7 张）。
@@ -18,7 +16,7 @@
 - **异步模型**：**不引入 qasync**。现有 `client/net.py` 是同步阻塞模型（`websockets.sync` + 守护线程 recv_loop）——联机时收包线程通过 Qt 信号（`Signal`）投递到主线程即可，天然契合。
 - **热坐**：`Game` 直接在 GUI 主线程构造与 `apply()`（引擎非线程安全，主线程串行调用即可；结算回放用 `QTimer` 按 0.3s 节奏播 timeline 增量，弃用 `client/settle.py`）。
 - **联机**：沿用"服务端权威 + 本地只读 wrapper 渲染"模式（`net.py:91 wrapper()` 先例）；不照搬 `send_cmd` 的 2s 轮询等待，改为发后即返回、等 state 推送刷新。
-- **卡图**：初版无美术资产（卡牌=带名称/费用/身材/效果文本的样式化控件；点击看详情弹窗）；待维护者给出卡图合成思路后，增加合成管线并替换卡面控件渲染。
+- **卡图**：BWPro 只调用 `bwpdiy.render`，不启动 exe 或服务；exe 仅用于人工标注。默认只读项目 `library/`（`BWP_DIY_LIBRARY` 可覆盖），BWPDIY 渲染资源根用 `BWP_DIY_ROOT` 覆盖。按 id/名称与引擎版本日期精确选择配置，显示数据由引擎合成；缺配置或失败时回退文字卡/菱形头像。
 
 ## 复用清单（勘察已核实，禁止重写）
 
@@ -37,8 +35,8 @@ client/gui/builder.py         # 卡组构筑视图
 client/gui/battle.py          # 对局视图（热坐/联机共用）
 client/gui/widgets.py         # 卡牌控件/详情弹窗/通用中文弹窗按钮
 client/gui/online.py          # 联机：大厅视图 + NetBridge（收包线程→Qt 信号）
-client/gui/portrait.py        # BWPDIY 式神头像适配（可选外部渲染，失败回退菱形占位）
-client/gui/cardart.py         # （待补）卡图合成管线——等维护者思路
+client/gui/portrait.py        # 项目库式神头像（失败回退菱形占位）
+client/gui/cardart.py         # 引擎数据合成、版本匹配、内容寻址缓存与文字回退
 tests/test_gui.py             # QT_QPA_PLATFORM=offscreen 冒烟测试
 ```
 
@@ -80,10 +78,12 @@ tests/test_gui.py             # QT_QPA_PLATFORM=offscreen 冒烟测试
 - NetBridge：收包线程 `recv_loop` → `Signal(dict)` 主线程分发；`peer_left/dissolved/game_over/error/notice` 各消息 → 对应 UI 反馈。
 - 测试：协议层不重测（tests/test_server.py 已覆盖）；offscreen 下 NetBridge 信号转发单测（假 ws 对象）。
 
-### Step 5 — 卡图合成管线（cardart.py，待维护者思路后细化）
-- 输入：卡牌参数（名称/类型/等级/身材/稀有度/关键字/描述文本）+ 卡图原画。
-- 输出：合成卡牌图片；供 diy/构筑/对局三处卡面渲染共用。
-- 细节待维护者给出思路后补充。
+### Step 5 — 本地卡图合成管线（已完成）
+- 输入：当前引擎 `CardDef`/`ShikigamiDef` + 项目 `library/<项目>/` 人工标注配置与原图。配置按 id（兼容名称）及合法 8 位 `version_date` 与引擎快照日期精确匹配，无精确版本即回退。
+- 合成：引擎提供名称、类型、等级、稀有度、所属式神、派系、身材与描述；配置仅补充 artwork、portrait、layout、faction_style。形态、觉醒、幻境、战斗与协战字段在适配层转换。
+- 输出与接入：`card_pixmap` 供构筑、静态/运行时详情、热坐/联机手牌共用；`shikigami_portrait` 供阵容头像使用。运行时费用、增强、关键字与使用条件仍由 GUI 独立显示。
+- 缓存：默认 `~/.bwpro/cardart/<sha256>.png`，键含规范化负载、合并后的实际 layout、配置内容 SHA-256、原图 `mtime_ns`/size、BWPDIY 版本与渲染资源根；另有 256 项内存 LRU。
+- 回退：缺配置、日期不匹配、缺图、资源或渲染异常时，全卡保留文字卡，头像回退菱形，所有操作控件与运行时详情保留。只有实际完成配置的条目才显示卡图，不把管线落地等同于全式神有图。
 
 ### Step 6 — 收尾
 - README 功能板块补 GUI 客户端条目；用户级与项目级 AGENTS.md 进度段更新。
@@ -97,6 +97,5 @@ tests/test_gui.py             # QT_QPA_PLATFORM=offscreen 冒烟测试
 ## 明确不做（本轮）
 
 - 动画、音效。
-- 卡图合成管线的具体实现（等维护者思路，见头部状态条）。
 - PyInstaller 打包 exe（功能稳定后再做）。
 - 浏览器离线化（Pyodide 路线，已否决）。

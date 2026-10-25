@@ -20,17 +20,18 @@
 - 移动端适配（media query 缩放布局；我们桌面优先，后期再说）
 - DIY 卡库：容量上限、对局自动同步、选择性导入导出——与我们 Phase 3 + BWPDIY 联动时的参考
 
-## 2. BWPDIY 卡图渲染工具接入方案（D:/Programming/BWPDIY，v1.5.0）
+## 2. BWPDIY 卡图渲染工具接入（已落地）
 
-**架构红线（对方仓库明示）**：BWPro 只 `import bwpdiy.render`，不拖 FastAPI/web 层。其卡牌 yaml 引擎段已与 BWPro 口径对齐（协战 `shikigami1/2`），属互操作设计；其 M4（HTTP API + BWPro 集成文档）未做。
+**架构红线**：BWPro 运行时不启动、不依赖 BWPDIY exe、FastAPI 或 web 服务，只 `import bwpdiy.render`。BWPDIY exe 仅用于人工标注项目配置与原图，不参与构筑、对局或自动合成调用。
 
-接入点（按优先级）：
+接入点：
 
-1. **`client/gui/portrait.py`（已落地）**：卡组列表复用 `bwpdiy.render.duo.render_portrait` 绘制带斜方框与派系标的式神头像；按 id/名称读取 BWPDIY 用户库首图与 portrait 变换，缺图时保留空槽，外部仓库/素材异常时回退菱形占位。仓库路径默认 BWPro 同级 `BWPDIY`，可用 `BWP_DIY_ROOT` 覆盖。
-2. **`client/gui/cardart.py`（桌面 GUI，首选）**：懒加载可选导入 `bwpdiy.render`，按卡牌 id 渲染卡面 PNG，缓存到 `~/.bwpro/cardart/`；导入失败或渲染异常时回退为文字卡面（即现在 mock 的样式）。作为 optional extra，不做硬依赖。
-3. **Phase 3 DIY 联动**：BWPro `diy/` 只读消费 BWPDIY `library/<项目>/` 下的式神/卡牌 yaml——"BWPDIY 做卡、BWPro 打牌"。映射层（BWPDIY yaml → BWPro yaml 口径）只放在 `diy/` 一处。
+1. **`client/gui/portrait.py`**：卡组列表复用 `bwpdiy.render.duo.render_portrait` 绘制带斜方框与派系标的式神头像。BWPDIY 仓库默认 BWPro 同级 `BWPDIY`，可用 `BWP_DIY_ROOT` 覆盖；项目配置库默认 **BWPro 项目内 `library/`**，可用 `BWP_DIY_LIBRARY` 覆盖，运行时只读。
+2. **`client/gui/cardart.py`**：从 `library/<项目>/{shikigami,cards}/*.yaml` 读取人工标注，按 id（兼容名称）与引擎定义的版本快照日期精确匹配 `version_date`；配置日期必须是合法 8 位日期，不用相邻日期代替。卡牌的名称、类型、等级、稀有度、所属式神、派系、身材与描述等显示数据始终由当前引擎定义合成，项目配置只提供 artwork、portrait、layout 与 faction_style，不让旧配置文本或数值覆盖引擎数据。
+3. **共用卡面**：构筑卡面、静态/运行时卡牌详情、热坐与联机手牌均调用同一 `card_pixmap`。运行时费用、增强、关键字、使用条件等仍由 GUI 详情层显示，不回写静态卡图。
+4. **Phase 3 DIY 联动**：BWPro `diy/` 只读消费 BWPDIY `library/<项目>/` 下的式神/卡牌 yaml——"BWPDIY 做卡、BWPro 打牌"。映射层（BWPDIY yaml → BWPro yaml 口径）只放在 `diy/` 一处。
 
-耦合护栏：单向依赖（BWPro → BWPDIY render），映射层单点，资产路径可配置，渲染失败永远可回退文字卡。
+全卡 PNG 默认缓存到 `~/.bwpro/cardart/<sha256>.png`。缓存键包含规范化引擎负载、合并后的实际 layout、配置 YAML 内容 SHA-256、原图 `mtime_ns` 与 size、BWPDIY 版本及渲染资源根；另保留 256 项有界内存缓存。缺配置、版本不匹配、缺图、资源/渲染失败时不宣称有图：全卡回退原文字卡面，头像回退菱形占位，操作按钮与运行时详情保持可用。当前只有项目库中实际完成配置的式神/卡牌会显示对应美术。
 
 ## 3. 界面初稿（docs/gui-mock/，1600×900）
 
@@ -91,7 +92,7 @@
 1. ~~配色~~ **已定**：与 BWPDIY 一致的羊皮纸浅色主题。
 2. **结算记录**：初稿定为左缘"录"钮开关式覆盖面板（不占常驻布局），可否？需要默认展开吗？
 3. ~~主菜单是否加图鉴入口~~ **已定**：有"式神录"功能，单卡卡面样式与构筑编辑共用（见 13_card_detail）；主菜单加"式神录"入口。
-4. ~~阵容菱形版式~~ **已定**：卡组列表已接入 BWPDIY 斜方框与派系标；无匹配卡图时保留空槽，对局立绘仍用文字卡面占位。
+4. ~~阵容菱形版式~~ **已定**：阵容头像、构筑与对局卡面均已接入项目卡图；未配置或渲染失败时分别回退菱形/文字卡，不表示所有式神均已有图。
 5. **对局界面信息密度**：初稿未画幻境队列/灵咒/倒计时等状态区——计划做在式神卡的角标与牌手头像旁的小图标列（悬停展开），这个方向可否？
 6. **式神详情的增益来源**：09 的增益列表逐条标注来源（形态/幻境/觉醒能力等），需要引擎暴露"加成账本"（每条增减益的数值+来源实体）。目前引擎是否已记录到可枚举的程度？若需补账本，想确认做到什么粒度（仅身材增减益 vs 含关键字获得）。
 7. **关键字解释文案**：09 的关键词条解释面板需要一份"关键字→简明解释"文本表，可否直接从 docs/terminology.md 提取生成，还是单独维护一份面向玩家的简写版？

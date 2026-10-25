@@ -304,3 +304,54 @@ def test_online_missing_hand_info_never_falls_back_to_local_calculation(
     battle.show_card_detail(battle.game.state.players[0].hand[0])
     assert not hasattr(seen["dialog"], "runtime_label")
     battle.close()
+
+
+@pytest.fixture(autouse=True)
+def isolated_cardart_home(tmp_path, monkeypatch):
+    from pathlib import Path
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+
+def test_online_hand_art_keeps_payload_runtime_separate(
+        qapp, db, make_game, tmp_path, monkeypatch):
+    from client.gui import cardart
+    from client.gui.widgets import CardWidget
+    from tests.test_gui_builder import _cardart_config
+
+    game = make_game(mulligan=True)
+    card = game.state.players[0].hand[0]
+    cdef = db.cards[card.id]
+    library_dir = tmp_path / "library"
+    _cardart_config(library_dir, cdef.id, cdef.version, "#336699")
+    monkeypatch.setattr(cardart, "library_root", lambda: library_dir)
+    cardart.clear_cardart_caches()
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    runtime = {"cost": 0, "stats": "联机卡图运行时唯一标记", "keywords": [],
+               "enhance": 0, "quest": None, "playable": True, "usage": []}
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = {str(card.uid): runtime}
+    try:
+        battle.set_state(payload, log=[], timeline=[])
+        frame = next(frame for frame in battle.hand_frames if frame.card.uid == card.uid)
+        assert not frame.art_label.pixmap().isNull()
+        assert frame.name_label.isHidden()
+        assert "联机卡图运行时唯一标记" in frame.info_label.text()
+        assert battle.hand_info() == {card.uid: runtime}
+
+        seen = {}
+
+        def capture_exec(dialog):
+            seen["dialog"] = dialog
+            return QDialog.Rejected
+
+        monkeypatch.setattr(QDialog, "exec", capture_exec)
+        battle.show_card_detail(card)
+        dialog = seen["dialog"]
+        assert "联机卡图运行时唯一标记" in dialog.runtime_label.text()
+        assert not dialog.findChild(CardWidget).art_label.pixmap().isNull()
+        assert cdef.text != runtime["stats"]
+        dialog.close()
+    finally:
+        battle.close()
+        cardart.clear_cardart_caches()

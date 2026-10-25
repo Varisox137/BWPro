@@ -533,7 +533,7 @@ class DeckBuilderView(QWidget):
         shown = cards[self.page_index * CARD_PAGE_SIZE:(self.page_index + 1) * CARD_PAGE_SIZE]
         for cdef in shown:
             copies = self.picks.get(self.selected_sid, {}).get(cdef.id, 0)
-            widget = CardWidget(cdef, copies, editable=True)
+            widget = CardWidget(cdef, copies, editable=True, db=self.db)
             widget.clicked.connect(self.show_card_detail)
             widget.plus_button.clicked.connect(lambda _=False, cid=cdef.id: self.change_card(cid, 1))
             widget.minus_button.clicked.connect(lambda _=False, cid=cdef.id: self.change_card(cid, -1))

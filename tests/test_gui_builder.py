@@ -212,7 +212,7 @@ def _external_library(root, yaml_text: str):
 def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
     image_path = _external_library(
         tmp_path,
-        "id: 987654\nname: 测试\nfaction_style: 3\n"
+        "id: 987654\nname: 测试\nfaction_style: 3\nversion_date: 20260720\n"
         "artwork:\n  images:\n    - path: art.png\n"
         "portrait:\n  offset_x: 3\n  scale: 2\n  rotate: 0\n",
     )
@@ -230,7 +230,8 @@ def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
                         lambda _root: (tmp_path, Library(), {"back_size": 56}, render))
     portrait._portrait_pixmap.cache_clear()
     pixmap = portrait.shikigami_portrait(
-        SimpleNamespace(id=987654, name="测试", faction="苍叶"), root=tmp_path)
+        SimpleNamespace(id=987654, name="测试", faction="苍叶", version=20260720),
+        root=tmp_path, library_dir=tmp_path / "library")
     assert not pixmap.isNull()
     assert seen["art"]["path"] == str(image_path.resolve())
     assert seen["art"]["offset_x"] == 3 and seen["art"]["scale"] == 2
@@ -241,10 +242,12 @@ def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
 def test_portrait_external_data_resource_limits(qapp, tmp_path):
     image_path = _external_library(
         tmp_path / "clamp",
-        "id: 987653\nname: 限幅\nartwork:\n  images:\n    - path: art.png\n"
+        "id: 987653\nname: 限幅\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n"
         "portrait:\n  offset_x: .inf\n  scale: 1000000\n  rotate: .nan\n",
     )
-    ref, _style = portrait._artwork_ref(tmp_path / "clamp", 987653, "限幅")
+    ref, _style = portrait._artwork_ref(
+        tmp_path / "clamp" / "library", 987653, "限幅", 20260720)
     assert ref["path"] == str(image_path.resolve())
     assert ref["scale"] == 16
     assert ref["offset_x"] == 0 and ref["rotate"] == 0
@@ -255,18 +258,18 @@ def test_portrait_external_data_resource_limits(qapp, tmp_path):
         "id: 987652\nname: 超大\nartwork:\n  images:\n    - path: art.png\n# "
         + "x" * (256 * 1024),
     )
-    assert portrait._artwork_ref(oversized, 987652, "超大") == (None, None)
+    assert portrait._artwork_ref(oversized / "library", 987652, "超大") == (None, None)
 
     nonmapping = tmp_path / "nonmapping"
     _external_library(nonmapping, "- 不是映射\n")
-    assert portrait._artwork_ref(nonmapping, 987651, "任意") == (None, None)
+    assert portrait._artwork_ref(nonmapping / "library", 987651, "任意") == (None, None)
 
     traversal = tmp_path / "traversal"
     _external_library(
         traversal,
         "id: 987650\nname: 越界\nartwork:\n  images:\n    - path: ../outside.png\n",
     )
-    assert portrait._artwork_ref(traversal, 987650, "越界") == (None, None)
+    assert portrait._artwork_ref(traversal / "library", 987650, "越界") == (None, None)
 
     assert hasattr(portrait, "_preflight_artwork")
 
@@ -280,3 +283,694 @@ def test_portrait_external_data_resource_limits(qapp, tmp_path):
             HugeLibrary(), {"back_size": 56},
             {"path": "unused", "scale": 16, "rotate": 0},
         )
+
+
+def _cardart_config(library_dir, cid, version_date, color, **extra):
+    import yaml
+
+    cards_dir = library_dir / "项目" / "cards"
+    images_dir = library_dir / "项目" / "images"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    image_name = f"{cid}-{version_date}.png"
+    Image.new("RGBA", (8, 8), color).save(images_dir / image_name)
+    data = {
+        "id": str(cid), "name": "配置旧名", "type": "法术", "level": 1,
+        "rarity": "R", "description": "配置旧文本", "version_date": str(version_date),
+        "artwork": {"images": [{"path": image_name}]}, **extra,
+    }
+    (cards_dir / f"{cid}@{version_date}.yaml").write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
+@pytest.fixture(autouse=True)
+def isolated_cardart_home(tmp_path, monkeypatch):
+    from pathlib import Path
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+
+def test_builder_shared_card_art_and_text_fallback(qapp, db, view, tmp_path, monkeypatch):
+    from client.gui import cardart
+    from client.gui.widgets import CardWidget
+
+    cdef = db.cards[10010101]
+    library_dir = tmp_path / "library"
+    _cardart_config(library_dir, cdef.id, cdef.version, "#336699")
+    monkeypatch.setattr(cardart, "library_root", lambda: library_dir)
+    cardart.clear_cardart_caches()
+    try:
+        view.new_deck()
+        view.add_shikigami(cdef.shikigami)
+        widget = view.card_widgets[0]
+        assert not widget.art_label.pixmap().isNull()
+        assert all(label.isHidden() for label in (
+            widget.name_label, widget.level_label, widget.type_label,
+            widget.stats_label, widget.text_label,
+        ))
+        assert not widget.count_label.isHidden()
+        assert not widget.minus_button.isHidden() and not widget.plus_button.isHidden()
+
+        fallback = view.card_widgets[1]
+        assert fallback.art_label.isHidden()
+        assert all(not label.isHidden() for label in (
+            fallback.name_label, fallback.level_label, fallback.type_label,
+            fallback.stats_label, fallback.text_label,
+        ))
+        legacy = CardWidget(cdef, 2, True)
+        assert legacy.copies == 2 and legacy.plus_button is not None
+        assert legacy.art_label.isHidden() and not legacy.name_label.isHidden()
+        legacy.close()
+    finally:
+        cardart.clear_cardart_caches()
+
+
+def _require_real_cardart_resources():
+    from client.gui import cardart
+
+    renderer_root = portrait.bwpdiy_root()
+    library_dir = cardart.library_root()
+    required = (
+        renderer_root / "bwpdiy" / "render",
+        renderer_root / "assets" / "frames",
+        renderer_root / "assets" / "fonts",
+        library_dir / "经典" / "cards" / "起弓.yaml",
+        library_dir / "经典" / "cards" / "尘刀.yaml",
+        library_dir / "经典" / "shikigami" / "白狼.yaml",
+        library_dir / "经典" / "shikigami" / "兵俑.yaml",
+    )
+    missing = [str(path) for path in required if not path.exists()]
+    if missing:
+        pytest.skip(f"真实卡图集成资源缺失：{missing}")
+    return renderer_root, library_dir
+
+
+def test_cardart_library_root_and_default_project_portrait(qapp, gdb, tmp_path, monkeypatch):
+    from pathlib import Path
+    from PySide6.QtGui import QPixmap
+    from client.gui import cardart
+
+    monkeypatch.delenv("BWP_DIY_LIBRARY", raising=False)
+    expected_root = Path(cardart.__file__).resolve().parents[2] / "library"
+    assert cardart.library_root() == expected_root
+    monkeypatch.setenv("BWP_DIY_LIBRARY", "D:/临时卡图库")
+    assert cardart.library_root() == Path("D:/临时卡图库")
+    monkeypatch.delenv("BWP_DIY_LIBRARY")
+
+    _require_real_cardart_resources()
+    cardart.clear_cardart_caches()
+    monkeypatch.setattr(portrait, "_fallback_pixmap", lambda *_args: QPixmap())
+    pixmap = portrait.shikigami_portrait(gdb.shikigami[100101])
+    empty = portrait.shikigami_portrait(
+        gdb.shikigami[100101], library_dir=tmp_path / "empty-library")
+    assert not pixmap.isNull() and pixmap.toImage() != empty.toImage()
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_pixmap_selects_version_and_falls_back(qapp, tmp_path):
+    from client.gui import cardart
+
+    library_dir = tmp_path / "library"
+    cache_dir = tmp_path / "cache"
+    cid = 10010101
+    _cardart_config(library_dir, cid, 20191212, "#336699")
+    _cardart_config(library_dir, cid, 20200101, "#993366")
+    old = factories.card(cid, card_type="combat").model_copy(update={"version": 20191212})
+    new = factories.card(cid, card_type="combat").model_copy(update={"version": 20200101})
+    database = factories.db_of([factories.shiki(100101)], [old, new])
+
+    cardart.clear_cardart_caches()
+    old_pix = cardart.card_pixmap(old, database, library_dir=library_dir, cache_dir=cache_dir)
+    new_pix = cardart.card_pixmap(new, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert old_pix is not None and not old_pix.isNull()
+    assert new_pix is not None and not new_pix.isNull()
+    assert old_pix.toImage() != new_pix.toImage()
+
+    invalid = factories.card(10010102).model_copy(update={"version": 20200202})
+    _cardart_config(library_dir, invalid.id, 20200230, "#336699")
+    missing_image = factories.card(10010103).model_copy(update={"version": 20200202})
+    _cardart_config(library_dir, missing_image.id, 20200202, "#336699",
+                    artwork={"images": [{"path": "absent.png"}]})
+    traversal = factories.card(10010104).model_copy(update={"version": 20200202})
+    _cardart_config(library_dir, traversal.id, 20200202, "#336699",
+                    artwork={"images": [{"path": "../outside.png"}]})
+    cardart.clear_cardart_caches()
+    assert cardart.card_pixmap(invalid, database, library_dir=library_dir) is None
+    assert cardart.card_pixmap(missing_image, database, library_dir=library_dir) is None
+    assert cardart.card_pixmap(traversal, database, library_dir=library_dir) is None
+    missing = factories.card(10010105).model_copy(update={"version": 20200202})
+    assert cardart.card_pixmap(missing, database, library_dir=library_dir) is None
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_engine_payload_mapping(qapp):
+    from client.gui import cardart
+
+    primary = factories.shiki(100101, name="引擎主式神", faction="红莲")
+    secondary = factories.shiki(100102, name="引擎副式神")
+    combat = factories.card(
+        10010101, name="引擎战斗", card_type="combat", level=3, rarity="SSR",
+        text="[瞬发]获得1点力量、2护甲、3破甲、4能量、5耐久、6战力、7乏力、8赏金与9生命。",
+        steps=[factories.Step(op="buff_power", amount=2),
+               factories.Step(op="buff_power", amount=-1),
+               factories.Step(op="gain_shield", amount=3)])
+    database = factories.db_of([primary, secondary], [combat])
+    config = {"name": "旧名", "description": "旧文本", "level": 1, "rarity": "R",
+              "power+": 99, "shield+": 99, "faction": "紫岩", "faction_style": 3}
+    data = cardart._card_data(combat, database, config)
+    assert data["type"] == "战斗" and data["name"] == "引擎战斗"
+    assert data["level"] == 3 and data["rarity"] == "SSR"
+    assert data["shikigami"] == "引擎主式神" and data["faction"] == "红莲"
+    assert data["power+"] == 1 and data["shield+"] == 3
+    assert data["description"] == ("[[瞬发]]获得1点#ll、2#hj、3#pj、4#nl、5#nj、"
+                                   "6#zl、7#fl、8#sj与9#sm。")
+    assert data["faction_style"] == 3
+    for style in (True, 1.0, 0, 4, "2", None):
+        assert "faction_style" not in cardart._card_data(
+            combat, database, {"faction_style": style})
+
+    form = factories.card(10010102, card_type="form", form_power=2, form_health=5)
+    awaken = factories.card(10010103, card_type="spell", subtype="awaken",
+                            awaken_power=2, awaken_health=-1)
+    field = factories.card(10010104, card_type="field", intensity=6)
+    reinforce = factories.card(10010105, card_type="reinforce", shikigami2=100102)
+    assert cardart._card_data(form, database, {})["power"] == 2
+    assert cardart._card_data(form, database, {})["health"] == 5
+    awaken_data = cardart._card_data(awaken, database, {})
+    assert awaken_data["evolve"] is True
+    assert awaken_data["power+"] == 2 and awaken_data["health+"] == -1
+    assert cardart._card_data(field, database, {})["type"] == "幻境"
+    assert cardart._card_data(field, database, {})["durability"] == 6
+    reinforce_data = cardart._card_data(reinforce, database, {})
+    assert reinforce_data["type"] == "协战"
+    assert reinforce_data["shikigami1"] == "引擎主式神"
+    assert reinforce_data["shikigami2"] == "引擎副式神"
+    shiki_data = cardart._card_data(primary, database, {})
+    assert shiki_data["type"] == "式神"
+    assert shiki_data["power"] == 3 and shiki_data["health"] == 4
+
+
+def test_cardart_combat_amount_uses_static_base(qapp, gdb):
+    from client.gui import cardart
+
+    cdef = gdb.cards[10010204]
+    data = cardart._card_data(cdef, gdb, {})
+    assert cdef.name == "冲撞"
+    assert data["power+"] == 2 and data["shield+"] == 2
+    assert data["description"] == cardart._description(cdef.text)
+
+
+def _cardart_cache_case(tmp_path):
+    library_dir = tmp_path / "library"
+    cache_dir = tmp_path / "cache"
+    cdef = factories.card(10010101)
+    _cardart_config(library_dir, cdef.id, cdef.version, "#336699")
+    database = factories.db_of([factories.shiki(100101)], [cdef])
+    return cdef, database, library_dir, cache_dir
+
+
+def test_cardart_real_library_renders(qapp, gdb, tmp_path):
+    from client.gui import cardart
+
+    _require_real_cardart_resources()
+    cardart.clear_cardart_caches()
+    for cid in (10010101, 10010201):
+        pixmap = cardart.card_pixmap(
+            gdb.cards[cid], gdb, cache_dir=tmp_path / "cardart-cache")
+        assert pixmap is not None and not pixmap.isNull()
+    for sid in (100101, 100102):
+        pixmap = portrait.shikigami_portrait(gdb.shikigami[sid])
+        empty = portrait.shikigami_portrait(
+            gdb.shikigami[sid], library_dir=tmp_path / "empty-library")
+        assert not pixmap.isNull() and pixmap.toImage() != empty.toImage()
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_render_pixel_limit(qapp, tmp_path):
+    from client.gui import cardart
+
+    small_path = tmp_path / "small.png"
+    Image.new("RGBA", (2, 2), "#336699").save(small_path)
+
+    class HugeLibrary:
+        def artwork(self, _path, _rotate=0):
+            image = SimpleNamespace(width=100000, height=100000)
+            return (100, 100), image
+
+    with pytest.raises(ValueError, match="像素"):
+        cardart._preflight_card_artwork(
+            HugeLibrary(), {"path": str(small_path), "scale": 16, "rotate": 0})
+
+    oversized_path = tmp_path / "oversized.png"
+    Image.new("RGB", (4001, 4000), "#336699").save(oversized_path)
+
+    class NoDecodeLibrary:
+        def artwork(self, _path, _rotate=0):
+            raise AssertionError("原图超限时不应进入 library.artwork")
+
+    with pytest.raises(ValueError, match="像素"):
+        cardart._preflight_card_artwork(
+            NoDecodeLibrary(), {"path": str(oversized_path), "scale": 1, "rotate": 0})
+
+
+def test_cardart_disk_cache_hit_and_memory_clear(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None and len(list(cache_dir.glob("*.png"))) == 1
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert second is first and len(list(cache_dir.glob("*.png"))) == 1
+
+    cardart.clear_cardart_caches()
+    assert len(list(cache_dir.glob("*.png"))) == 1
+
+    def unexpected_render(*_args):
+        pytest.fail("有效磁盘缓存不应重新渲染")
+
+    original_render = cardart._render_card_pixmap
+    monkeypatch.setattr(cardart, "_render_card_pixmap", unexpected_render)
+    third = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert third is not None and not third.isNull()
+    assert len(list(cache_dir.glob("*.png"))) == 1
+    assert not list(cache_dir.glob("*.tmp"))
+    monkeypatch.setattr(cardart, "_render_card_pixmap", original_render)
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_config_snapshot_reuse_and_invalidation(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    original_safe_load = cardart.yaml.safe_load
+    parsed = []
+
+    def counted_safe_load(contents):
+        parsed.append(contents)
+        return original_safe_load(contents)
+
+    monkeypatch.setattr(cardart.yaml, "safe_load", counted_safe_load)
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None and second is first
+    assert len(parsed) == 1
+
+    config_path = library_dir / "项目" / "cards" / f"{cdef.id}@{cdef.version}.yaml"
+    config = original_safe_load(config_path.read_bytes())
+    config["layout"] = {"elements": {"name": {"pos": [1, 0]}}, "text_regions": {}}
+    config_path.write_text(
+        cardart.yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    changed = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert changed is not None and changed.toImage() != first.toImage()
+    assert len(parsed) == 2
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is changed
+    assert len(parsed) == 2
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_engine_text_changes_cache_key(qapp, tmp_path):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    changed = cdef.model_copy(update={"text": "引擎文本已变化"})
+    assert cardart.card_pixmap(changed, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert len(list(cache_dir.glob("*.png"))) == 2
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_artwork_and_layout_change_cache_key(qapp, tmp_path):
+    import yaml
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None
+    config_path = library_dir / "项目" / "cards" / f"{cdef.id}@{cdef.version}.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    Image.new("RGBA", (8, 8), "#993366").save(
+        library_dir / "项目" / "images" / "replacement.png")
+    config["artwork"]["images"][0]["path"] = "replacement.png"
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    artwork_changed = cardart.card_pixmap(
+        cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert artwork_changed is not None
+    assert artwork_changed.toImage() != first.toImage()
+    assert len(list(cache_dir.glob("*.png"))) == 2
+
+    config["layout"] = {"elements": {"name": {"pos": [0, 0]}}, "text_regions": {}}
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    layout_changed = cardart.card_pixmap(
+        cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert layout_changed is not None
+    assert layout_changed.toImage() != artwork_changed.toImage()
+    assert len(list(cache_dir.glob("*.png"))) == 3
+    config["layout"]["text_regions"]["unused"] = {"width": 300}
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert len(list(cache_dir.glob("*.png"))) == 4
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_image_metadata_changes_cache_key(qapp, tmp_path):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None
+    image_path = library_dir / "项目" / "images" / f"{cdef.id}-{cdef.version}.png"
+    stat = image_path.stat()
+    os.utime(image_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert len(list(cache_dir.glob("*.png"))) == 2
+    Image.new("RGBA", (12, 8), "#993366").save(image_path)
+    image_changed = cardart.card_pixmap(
+        cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert image_changed is not None
+    assert image_changed.toImage() != first.toImage()
+    assert len(list(cache_dir.glob("*.png"))) == 3
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_same_mtime_image_change_does_not_reuse_artwork(qapp, tmp_path):
+    from PySide6.QtGui import QPixmap
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None
+    old_paths = set(cache_dir.glob("*.png"))
+    image_path = library_dir / "项目" / "images" / f"{cdef.id}-{cdef.version}.png"
+    original_stat = image_path.stat()
+    Image.new("RGBA", (12, 8), "#993366").save(image_path)
+    changed_stat = image_path.stat()
+    assert changed_stat.st_size != original_stat.st_size
+    os.utime(image_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    assert image_path.stat().st_mtime_ns == original_stat.st_mtime_ns
+
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert second is not None and second.toImage() != first.toImage()
+    new_paths = set(cache_dir.glob("*.png")) - old_paths
+    assert len(new_paths) == 1
+    cached = QPixmap(str(new_paths.pop()))
+    assert cached.toImage() == second.toImage()
+    assert cached.toImage() != first.toImage()
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monkeypatch):
+    import json
+    import threading
+    from client.gui import cardart
+
+    cardart.clear_cardart_caches()
+    original_renderer = cardart._renderer
+    original_renderer(str(portrait.bwpdiy_root().resolve()))
+    from bwpdiy.render import pipeline
+
+    original_get_library = pipeline.get_library
+    art_path = tmp_path / "art.png"
+    Image.new("RGBA", (8, 8), "#336699").save(art_path)
+    assets = {"A": tmp_path / "assets-a", "B": tmp_path / "assets-b"}
+    expected = {"A": "#336699", "B": "#993366"}
+    a_enter = threading.Event()
+    b_enter = threading.Event()
+    serialized = threading.Event()
+    allow_a_return = threading.Event()
+    allow_b_return = threading.Event()
+    results = {}
+
+    def render(_payload, assets_dir, layout):
+        del layout
+        key = "A" if assets_dir == assets["A"] else "B"
+        if key == "A":
+            a_enter.set()
+            if not b_enter.wait(0.2):
+                serialized.set()
+            allow_a_return.wait()
+        else:
+            b_enter.set()
+            allow_b_return.wait()
+        library = pipeline.get_library(assets_dir)
+        color = expected["A"] if library.root == assets["A"] else expected["B"]
+        return Image.new("RGBA", (16, 16), color)
+
+    monkeypatch.setattr(cardart, "_renderer",
+                        lambda root: (assets[root], None, render))
+    payload_json = json.dumps({"artwork": {"images": [{"path": str(art_path)}]}})
+
+    def run(key):
+        results[key] = cardart._render_card_pixmap(payload_json, "{}", key)
+
+    first = threading.Thread(target=run, args=("A",))
+    second = threading.Thread(target=run, args=("B",))
+    try:
+        first.start()
+        assert a_enter.wait(2)
+        second.start()
+        assert serialized.wait(1) or b_enter.is_set()
+        allow_a_return.set()
+        first.join(2)
+        allow_b_return.set()
+        second.join(2)
+        assert not first.is_alive() and not second.is_alive()
+        assert results["A"] is not None and results["B"] is not None
+        assert results["A"].toImage().pixelColor(8, 8).name() == expected["A"]
+        assert results["B"].toImage().pixelColor(8, 8).name() == expected["B"]
+        assert pipeline.get_library is original_get_library
+    finally:
+        allow_a_return.set()
+        allow_b_return.set()
+        first.join(2)
+        second.join(2)
+        pipeline.get_library = original_get_library
+        monkeypatch.setattr(cardart, "_renderer", original_renderer)
+        cardart.clear_cardart_caches()
+
+
+def test_cardart_renderer_version_changes_cache_key(qapp, tmp_path, monkeypatch):
+    from PySide6.QtGui import QPixmap
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    root_text = str(portrait.bwpdiy_root().resolve())
+    original_renderer = cardart._renderer
+    real_assets, library, _render = original_renderer(root_text)
+    import bwpdiy
+
+    def render(_payload, _assets, layout):
+        del layout
+        color = "#336699" if bwpdiy.__version__ == "test-v1" else "#993366"
+        return Image.new("RGBA", (16, 16), color)
+
+    monkeypatch.setattr(cardart, "_renderer",
+                        lambda _root: (real_assets, library, render))
+    monkeypatch.setattr(bwpdiy, "__version__", "test-v1")
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None
+    old_paths = set(cache_dir.glob("*.png"))
+    monkeypatch.setattr(bwpdiy, "__version__", "test-v2")
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert second is not None and second.toImage() != first.toImage()
+    new_paths = set(cache_dir.glob("*.png")) - old_paths
+    assert len(new_paths) == 1
+    cached = QPixmap(str(new_paths.pop()))
+    assert cached.toImage() == second.toImage()
+    assert cached.toImage() != first.toImage()
+    monkeypatch.setattr(cardart, "_renderer", original_renderer)
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_default_layout_content_changes_cache_key(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    root_text = str(portrait.bwpdiy_root().resolve())
+    original_renderer = cardart._renderer
+    real_assets, library, _render = original_renderer(root_text)
+    from bwpdiy.render.layout import load_layouts
+
+    assets = tmp_path / "renderer-assets"
+    assets.mkdir()
+    layouts = load_layouts(real_assets)
+    (assets / "layout.json").write_text(
+        json.dumps(layouts, ensure_ascii=False), encoding="utf-8")
+    original_x = layouts["法术"]["elements"]["name"]["pos"][0]
+
+    def render(payload, assets_dir, layout):
+        if layout is None:
+            layout = load_layouts(assets_dir)[payload["type"]]
+        current_x = layout["elements"]["name"]["pos"][0]
+        color = "#336699" if current_x == original_x else "#993366"
+        return Image.new("RGBA", (16, 16), color)
+
+    monkeypatch.setattr(cardart, "_renderer", lambda _root: (assets, library, render))
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None
+    layouts["法术"]["elements"]["name"]["pos"][0] = original_x + 1
+    (assets / "layout.json").write_text(
+        json.dumps(layouts, ensure_ascii=False), encoding="utf-8")
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert second is not None and second.toImage() != first.toImage()
+    assert len(list(cache_dir.glob("*.png"))) == 2
+    monkeypatch.setattr(cardart, "_renderer", original_renderer)
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_truncated_disk_png_is_regenerated(qapp, tmp_path):
+    from PySide6.QtGui import QPixmap
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    png_path = next(cache_dir.glob("*.png"))
+    contents = png_path.read_bytes()
+    png_path.write_bytes(contents[:len(contents) // 2])
+    cardart.clear_cardart_caches()
+    regenerated = cardart.card_pixmap(
+        cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert regenerated is not None and not regenerated.isNull()
+    assert not QPixmap(str(png_path)).isNull()
+    assert len(list(cache_dir.glob("*.png"))) == 1
+    assert not list(cache_dir.glob("*.tmp"))
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_renderer_resources_change_cache_key(qapp, tmp_path, monkeypatch):
+    from pathlib import Path
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    root_text = str(portrait.bwpdiy_root().resolve())
+    original_renderer = cardart._renderer
+    real_assets, library, _render = original_renderer(root_text)
+    assets = tmp_path / "resource-assets"
+    resource = assets / "frames" / "test.txt"
+    resource.parent.mkdir(parents=True)
+    resource.write_text("A", encoding="utf-8")
+
+    def render(_payload, assets_dir, layout):
+        del layout
+        contents = (assets_dir / "frames" / "test.txt").read_text(encoding="utf-8")
+        return Image.new("RGBA", (16, 16), "#336699" if contents == "A" else "#993366")
+
+    monkeypatch.setattr(cardart, "_renderer", lambda _root: (assets, library, render))
+    original_read_bytes = Path.read_bytes
+    resource_reads = []
+
+    def counted_read_bytes(path):
+        if path == resource:
+            resource_reads.append(path)
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counted_read_bytes)
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert first is not None
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is first
+    assert len(resource_reads) == 1
+    resource.write_text("B", encoding="utf-8")
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert second is not None and second.toImage() != first.toImage()
+    assert len(resource_reads) == 2
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is second
+    assert len(resource_reads) == 2
+    assert len(list(cache_dir.glob("*.png"))) == 2
+    monkeypatch.setattr(cardart, "_renderer", original_renderer)
+    cardart.clear_cardart_caches()
+
+
+@pytest.mark.parametrize("layout", [
+    {"elements": {"name": {"font_size": 0}}},
+    {"text_regions": {"desc": {"font_range": [300, 10]}}},
+    {"text_regions": {"desc": {"font_range": [10, 20]}}},
+    {"text_regions": {"desc": {"icon_scale": 17}}},
+    {"elements": {"name": {"pos": [5000, 0]}}},
+    {"elements": {"name": {"pos": [float("inf"), 0]}}},
+], ids=["font-size", "font-range-limit", "font-range-order", "icon-scale", "size", "finite"])
+def test_cardart_rejects_unsafe_layout(qapp, tmp_path, monkeypatch, layout):
+    import yaml
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    root_text = str(portrait.bwpdiy_root().resolve())
+    original_renderer = cardart._renderer
+    real_assets, library, _render = original_renderer(root_text)
+
+    def render(_payload, _assets, layout):
+        del layout
+        return Image.new("RGBA", (16, 16), "#336699")
+
+    monkeypatch.setattr(cardart, "_renderer",
+                        lambda _root: (real_assets, library, render))
+    config_path = library_dir / "项目" / "cards" / f"{cdef.id}@{cdef.version}.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["layout"] = layout
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is None
+    assert not list(cache_dir.glob("*.png"))
+    monkeypatch.setattr(cardart, "_renderer", original_renderer)
+    cardart.clear_cardart_caches()
+
+
+def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, monkeypatch):
+    library_dir = tmp_path / "library"
+    definition = SimpleNamespace(id=987654, name="测试", faction="苍叶", version=20260720)
+    seen = []
+
+    class Library:
+        def artwork(self, path, rotate=0):
+            with Image.open(path) as image:
+                return image.size, image.convert("RGBA")
+
+    def render(_lib, _elem, art, faction, scale, faction_style):
+        del scale, faction, faction_style
+        seen.append(art["offset_x"])
+        if art["offset_x"]:
+            return Image.new("RGBA", (4, 4), "#993366")
+        with Image.open(art["path"]) as image:
+            return image.convert("RGBA").resize((4, 4))
+
+    monkeypatch.setattr(portrait, "_renderer",
+                        lambda _root: (tmp_path, Library(), {"back_size": 8}, render))
+    portrait._portrait_pixmap.cache_clear()
+    empty = portrait.shikigami_portrait(definition, size=4, root=tmp_path, library_dir=library_dir)
+    _external_library(
+        tmp_path,
+        "id: 987654\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n"
+        "portrait:\n  offset_x: 0\n  scale: 1\n  rotate: 0\n",
+    )
+    first = portrait.shikigami_portrait(definition, size=4, root=tmp_path, library_dir=library_dir)
+    assert first.toImage() != empty.toImage()
+
+    config_path = library_dir / "项目" / "shikigami" / "test.yaml"
+    config_path.write_text(
+        "id: 987654\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n"
+        "portrait:\n  offset_x: 1\n  scale: 1\n  rotate: 0\n",
+        encoding="utf-8")
+    second = portrait.shikigami_portrait(definition, size=4, root=tmp_path, library_dir=library_dir)
+    assert second.toImage() != first.toImage()
+    assert seen[-1] == 1
+
+    config_path.write_text(
+        "id: 987654\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n"
+        "portrait:\n  offset_x: 0\n  scale: 1\n  rotate: 0\n",
+        encoding="utf-8")
+    Image.new("RGBA", (2, 2), "#229955").save(library_dir / "项目" / "images" / "art.png")
+    third = portrait.shikigami_portrait(definition, size=4, root=tmp_path, library_dir=library_dir)
+    assert third.toImage() != second.toImage()
+    assert third.toImage().pixelColor(1, 1).name() == "#229955"
+    portrait._portrait_pixmap.cache_clear()

@@ -62,6 +62,55 @@ def start(view, **kwargs):
     settle(view)
 
 
+@pytest.fixture(autouse=True)
+def isolated_cardart_home(tmp_path, monkeypatch):
+    from pathlib import Path
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+
+def test_hand_art_preserves_runtime_and_detail(qapp, view, tmp_path, monkeypatch):
+    from client.gui import cardart
+    from client.gui.widgets import CardWidget
+    from tests.test_gui_builder import _cardart_config
+
+    library_dir = tmp_path / "library"
+    monkeypatch.setattr(cardart, "library_root", lambda: library_dir)
+    cardart.clear_cardart_caches()
+    try:
+        start(view, mulligan=False)
+        card = view.game.state.players[0].hand[0]
+        cdef = view.db.cards[card.id]
+        _cardart_config(library_dir, cdef.id, cdef.version, "#336699")
+        runtime = {"cost": 0, "stats": "手牌运行时唯一标记", "keywords": [],
+                   "enhance": 0, "quest": None, "playable": True, "usage": []}
+        monkeypatch.setattr(view, "hand_info", lambda: {card.uid: runtime})
+        view.refresh()
+        settle(view)
+        frame = next(frame for frame in view.hand_frames if frame.card.uid == card.uid)
+        assert not frame.art_label.pixmap().isNull()
+        assert frame.name_label.isHidden()
+        assert not frame.info_label.isHidden()
+        assert "手牌运行时唯一标记" in frame.info_label.text()
+
+        seen = {}
+
+        def capture_exec(dialog):
+            seen["dialog"] = dialog
+            return QDialog.Rejected
+
+        monkeypatch.setattr(QDialog, "exec", capture_exec)
+        view.show_card_detail(card)
+        dialog = seen["dialog"]
+        assert not dialog.runtime_label.isHidden()
+        assert "手牌运行时唯一标记" in dialog.runtime_label.text()
+        detail_card = dialog.findChild(CardWidget)
+        assert not detail_card.art_label.pixmap().isNull()
+        assert cdef.text != runtime["stats"]
+        dialog.close()
+    finally:
+        cardart.clear_cardart_caches()
+
+
 def test_startup_only_lists_standard_and_enters_game(qapp, db, tmp_path, view):
     groups = deckcode.group_deck(db, F.TEAM, F.deck_of(*F.TEAM))
     deckstore.save_decks(db, [
@@ -128,6 +177,47 @@ def test_battle_window_minimum_height_fits_common_900px_window(qapp, db, tmp_pat
         assert win.minimumSizeHint().height() <= 900
     finally:
         win.close()
+
+
+def test_hand_art_thumbnail_keeps_actions_visible_at_1600x900(
+        qapp, db, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QScrollArea
+    from client.gui import cardart
+    from tests.test_gui_builder import _cardart_config
+
+    library_dir = tmp_path / "library"
+    monkeypatch.setattr(cardart, "library_root", lambda: library_dir)
+    cardart.clear_cardart_caches()
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    try:
+        win.go("hotseat")
+        view = win.pages["hotseat"]
+        start(view, mulligan=False)
+        card = view.game.state.players[0].hand[0]
+        cdef = db.cards[card.id]
+        _cardart_config(library_dir, cdef.id, cdef.version, "#336699")
+        view.refresh()
+        settle(view)
+        win.resize(1600, 900)
+        win.show()
+        qapp.processEvents()
+
+        scroll = view.battle_page.findChild(QScrollArea)
+        assert scroll is not None
+        assert scroll.verticalScrollBar().maximum() == 0
+        viewport_bottom = scroll.viewport().mapToGlobal(
+            scroll.viewport().rect().bottomLeft()).y()
+        for frame in view.hand_frames:
+            for button in (frame.play_button, frame.detail_button, frame.mulligan_button):
+                if button.isVisibleTo(frame):
+                    button_bottom = button.mapToGlobal(button.rect().bottomLeft()).y()
+                    assert button_bottom <= viewport_bottom
+        assert win.height() <= 900 and win.minimumSizeHint().height() <= 900
+        assert view.combat_zone.width() == 320 and view.combat_zone.height() == 224
+        assert view.combat_zone.isVisibleTo(win)
+    finally:
+        win.close()
+        cardart.clear_cardart_caches()
 
 
 def test_shiki_name_and_level_wrap_instead_of_clipping(qapp, view):

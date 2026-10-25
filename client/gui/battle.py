@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cli
+from client.gui.cardart import card_pixmap
 from client.gui.widgets import CardDetailDialog, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
@@ -174,18 +175,32 @@ class HandCardFrame(QFrame):
     detail_requested = Signal(object)
     mulligan_requested = Signal(int)
 
-    def __init__(self, card):
+    def __init__(self, card, db=None):
         super().__init__()
         self.card = card
         self.setObjectName("handCard")
-        self.setMinimumSize(170, 190)
+        self.setMinimumSize(170, 180)
         self.setMaximumWidth(220)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(2)
+        self.art_label = QLabel()
+        self.art_label.setObjectName("handArt")
+        self.art_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.art_label)
         self.name_label = QLabel()
         self.name_label.setObjectName("handName")
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setWordWrap(True)
         layout.addWidget(self.name_label)
+        cdef = db.cards.get(card.id) if db is not None else None
+        pixmap = card_pixmap(cdef, db) if cdef is not None else None
+        if pixmap is not None and not pixmap.isNull():
+            self.art_label.setPixmap(pixmap.scaled(
+                60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.name_label.hide()
+        else:
+            self.art_label.hide()
         self.info_label = QLabel()
         self.info_label.setWordWrap(True)
         layout.addWidget(self.info_label, 1)
@@ -719,7 +734,7 @@ class HotseatView(QWidget):
         self.hand_caption.setText(f"{player.name} 的手牌（{len(cards)} 张）")
         for card in cards:
             definition = self.db.cards[card.id]
-            frame = HandCardFrame(card)
+            frame = HandCardFrame(card, self.db)
             detail = info.get(card.uid, {})
             frame.name_label.setText(definition.name)
             usage = detail.get("usage", [])
