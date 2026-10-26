@@ -41,6 +41,16 @@ def _shikigami_name(db, sid: int | None) -> str | None:
     return definition.name if definition is not None else None
 
 
+_DISPLAY_STAT_KEYS = {"power+", "health+", "shield+", "power", "health", "durability"}
+
+
+def _display_stats(display: dict[str, int] | None) -> dict[str, int]:
+    if not display:
+        return {}
+    return {key: value for key, value in display.items()
+            if key in _DISPLAY_STAT_KEYS and type(value) is int}
+
+
 def _card_data(cdef, db, config: dict) -> dict:
     card_type = getattr(cdef, "card_type", None)
     if card_type is None:
@@ -308,7 +318,8 @@ def _validate_layout(layout: dict) -> None:
 
 
 def card_pixmap(cdef, db, *, library_dir: Path | None = None,
-                cache_dir: Path | None = None) -> QPixmap | None:
+                cache_dir: Path | None = None,
+                display: dict[str, int] | None = None) -> QPixmap | None:
     """按引擎版本选择项目配置并渲染全卡，使用内容寻址磁盘缓存。"""
     library_dir = library_dir or library_root()
     cache_dir = cache_dir or Path.home() / ".bwpro" / "cardart"
@@ -323,6 +334,7 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(cdef, db, selected)
+        payload.update(_display_stats(display))
         payload["_base_dir"] = str(path.parent.parent / "images")
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)

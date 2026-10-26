@@ -29,17 +29,18 @@ def new_room_id(rng: random.Random, length: int = 6) -> str:
     return "".join(rng.choices(ROOM_ID_ALPHABET, k=length))
 
 
-# 占位卡：脱敏后用于替换对手手牌/牌库内容（数量公开，内容保密）
+# 占位卡：牌库完全匿名；对手暗手牌另保留非秘密的稳定 uid/hand_seq。
 _HIDDEN_CARD = {"uid": 0, "id": 0, "mods": {}, "hand_seq": 0}
 
 
 def sanitize_state(payload: dict, viewer: int) -> dict:
-    """按视角脱敏完整状态：对手的手牌与牌库以占位卡替换（张数公开、内容保密），
+    """按视角脱敏完整状态：对手的手牌与牌库抹除卡牌内容（张数公开、内容保密），
+    暗手牌保留稳定 uid/hand_seq 供客户端区分图元与排序，牌库完全匿名。
     对手式神标记 secret 的延迟能力（会）抹除选择目标，防止修改客户端窥探。
     对手的剩余调度次数一并抹除（调度阶段信息隐藏；mulligan_done 状态保留）。
     墓地/计数器等在本游戏中为公开信息，保留。
     例外（"已展示"机制）：对手手牌中 mods.revealed 的卡保留真实内容——
-    牌面本就对该玩家公开，不再替换为占位卡。"""
+    牌面本就对该玩家公开，不再抹除。"""
     import copy
 
     payload = copy.deepcopy(payload)
@@ -49,8 +50,10 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
         if zone not in zones:
             continue
         if zone == "hand":
-            zones[zone] = [c if (c.get("mods") or {}).get("revealed")
-                           else dict(_HIDDEN_CARD) for c in zones[zone]]
+            zones[zone] = [c if (c.get("mods") or {}).get("revealed") else {
+                **_HIDDEN_CARD, "uid": c.get("uid", 0),
+                "hand_seq": c.get("hand_seq", 0),
+            } for c in zones[zone]]
         else:
             zones[zone] = [dict(_HIDDEN_CARD) for _ in zones[zone]]
     opponent["mulligans_left"] = 0  # 调度次数对对手隐藏

@@ -221,49 +221,66 @@ def _live_enhance(p, c) -> int:
 _ENHANCE_OP_CN = {"damage": "伤害", "heal": "治疗", "set_health": "生命变为"}
 
 
-def _stats_label(game: Game, p, c) -> str:
-    """数值段（按实时增强计数求值）：
-    战斗牌力量与一次性护甲、形态身材、觉醒永久身材、增强类效果数值（伤害/治疗/生命变为）。"""
+def _card_render_stats(game: Game, p, c) -> dict[str, int]:
     cd = game.db.cards[c.id]
-    parts: list[str] = []
     live = _live_enhance(p, c)
     if live != int(c.mods.get("enhance", 0)):
-        # 持久计数未装配进实例：用副本求值，不改实例（打出装配语义见 engine._materialize）
         c = c.model_copy(update={"mods": {**c.mods, "enhance": live}})
     if cd.card_type == "combat":
         seat = _seat_map(p).get(cd.shikigami) if cd.shikigami is not None else None
-        s = p.shikigami[seat] if seat is not None else None
-        power, shield = game.combat_card_stats(cd.effects, c, s, p)
-        if power:
-            parts.append(f"力量{power:+d}")
-        if shield:
-            parts.append(f"护甲+{shield}")
-    elif cd.card_type == "form" and cd.form_power is not None:
-        # 动态身材增强（九莲宝灯 dice_distinct）：按骰子历史去重数实时求值
+        shiki = p.shikigami[seat] if seat is not None else None
+        power, shield = game.combat_card_stats(cd.effects, c, shiki, p)
+        return {"power+": power, "shield+": shield}
+    if cd.card_type == "form" and cd.form_power is not None:
         bonus = 0
         if any(isinstance((stp.model_extra or {}).get("amount"), dict)
                and (stp.model_extra or {})["amount"].get("dice_distinct")
                for stp in cd.effects.steps):
             bonus = len(set(p.ext.get("dice_history", [])))
-        parts.append(f"身材{cd.form_power + bonus}/{cd.form_health + bonus}")
+        return {"power": cd.form_power + bonus,
+                "health": cd.form_health + bonus}
+    if cd.subtype == "awaken":
+        power = health = 0
+        for step in cd.effects.steps:
+            extra = step.model_extra or {}
+            if not extra.get("perm") or not isinstance(extra.get("amount"), int):
+                continue
+            if step.op == "buff_power":
+                power += extra["amount"]
+            elif step.op == "buff_health":
+                health += extra["amount"]
+        return {"power+": power, "health+": health}
+    return {}
+
+
+def _stats_label(game: Game, p, c, render=None) -> str:
+    """数值段（按实时增强计数求值）：
+    战斗牌力量与一次性护甲、形态身材、觉醒永久身材、增强类效果数值（伤害/治疗/生命变为）。"""
+    cd = game.db.cards[c.id]
+    parts: list[str] = []
+    render = _card_render_stats(game, p, c) if render is None else render
+    if cd.card_type == "combat":
+        power, shield = render["power+"], render["shield+"]
+        if power:
+            parts.append(f"力量{power:+d}")
+        if shield:
+            parts.append(f"护甲+{shield}")
+    elif cd.card_type == "form" and cd.form_power is not None:
+        parts.append(f"身材{render['power']}/{render['health']}")
     else:
+        live = _live_enhance(p, c)
+        if live != int(c.mods.get("enhance", 0)):
+            # 持久计数未装配进实例：用副本求值，不改实例（打出装配语义见 engine._materialize）
+            c = c.model_copy(update={"mods": {**c.mods, "enhance": live}})
         for stp in cd.effects.steps:
             amt = (stp.model_extra or {}).get("amount")
             if isinstance(amt, dict) and amt.get("enhance") and stp.op in _ENHANCE_OP_CN:
                 val = int(amt.get("base", 0)) + live
                 parts.append(f"{_ENHANCE_OP_CN[stp.op]}{val}")
     if cd.subtype == "awaken":
-        pw = hp = 0
-        for st in cd.effects.steps:
-            extra = st.model_extra or {}
-            if not extra.get("perm") or not isinstance(extra.get("amount"), int):
-                continue
-            if st.op == "buff_power":
-                pw += extra["amount"]
-            elif st.op == "buff_health":
-                hp += extra["amount"]
-        if pw or hp:
-            parts.append(f"觉醒{pw:+d}/{hp:+d}")
+        power, health = render["power+"], render["health+"]
+        if power or health:
+            parts.append(f"觉醒{power:+d}/{health:+d}")
     return " ".join(parts)
 
 
@@ -550,6 +567,7 @@ def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
     - cost     当前费用（含实例修饰 cost_delta）
     - keywords 当前关键字显示名列表（_card_keywords 统一读取点，中文化）
     - stats    数值段文本（战斗牌力量/护甲、形态身材、增强数值等，_stats_label 同口径）
+    - render   BWPDIY 卡面数值负载（战斗力量/护甲、形态身材）
     - enhance  实时增强计数（无 = 0）
     - quest    委托条件进度标签（无 = None）
     - playable 使用条件（play_condition）当前是否满足
@@ -559,10 +577,12 @@ def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
     out: dict[int, dict] = {}
     for c in p.hand:
         cd = game.db.cards[c.id]
+        render = _card_render_stats(game, p, c)
         out[c.uid] = {
             "cost": cd.cost + c.mods.get("cost_delta", 0),
             "keywords": _kw_labels(sorted(game._card_keywords(p, cd, c))),
-            "stats": _stats_label(game, p, c),
+            "stats": _stats_label(game, p, c, render=render),
+            "render": render,
             "enhance": _live_enhance(p, c),
             "quest": _quest_progress(game, p, cd),
             "playable": game._play_condition_met(p, cd, c),

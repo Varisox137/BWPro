@@ -128,7 +128,6 @@ class OnlineBattleView(HotseatView):
         if self.game is None:
             return
         self.viewer = self.me
-        self._sync_perspective()
         self._render_state()
         self._sync_pending_choice()
 

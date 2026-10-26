@@ -141,6 +141,16 @@ def test_lobby_messages_render_ready_environment_and_notices(qapp, db, view):
     assert "等待" in view.lobby_status.text()
 
 
+def test_online_battle_notice_is_visible_until_message_is_cleared(qapp, view):
+    view.stack.setCurrentWidget(view.battle)
+    view.battle.error_label.hide()
+    view.handle_message({"type": "notice", "text": "服务器公告"})
+    assert not view.battle.error_label.isHidden()
+    assert view.battle.error_label.text() == "公告：服务器公告"
+    view.battle.error_label.clear()
+    assert view.battle.error_label.isHidden()
+
+
 def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     game = make_game(mulligan=True)
     sent = []
@@ -154,19 +164,19 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     assert all(isinstance(uid, int) for uid in battle.hand_info())
     assert battle.viewer == 1
     assert battle.stack.currentWidget() is battle.battle_page
-    assert len(battle.hand_frames) == 5
-    slots = dict(battle.shiki_frames)
-    refs = {key: frame.ref for key, frame in slots.items()}
-    assert battle.top_row.isAncestorOf(battle.player_frames[0])
-    assert battle.bottom_row.isAncestorOf(battle.player_frames[1])
+    scene = battle.battle_scene
+    assert len([key for key in scene.cards if key[0] == "hand"
+                and scene.cards[key].player == 1]) == 5
+    slots = {key: item for key, item in scene.cards.items() if key[0] == "shiki"}
+    refs = {key: item.payload for key, item in slots.items()}
+    assert scene.cards[("player", 0)].y() < scene.cards[("player", 1)].y()
     battle.me = 0
     battle.refresh()
     assert not battle._handoff_pending
     assert battle.handoff_dialog is None
-    assert battle.shiki_frames == slots
-    assert {key: frame.ref for key, frame in battle.shiki_frames.items()} == refs
-    assert battle.top_row.isAncestorOf(battle.player_frames[1])
-    assert battle.bottom_row.isAncestorOf(battle.player_frames[0])
+    assert {key: item for key, item in scene.cards.items() if key[0] == "shiki"} == slots
+    assert {key: item.payload for key, item in slots.items()} == refs
+    assert scene.cards[("player", 1)].y() < scene.cards[("player", 0)].y()
     battle.show_log()
     battle.reset_session()
     assert battle.log_dialog.isHidden()
@@ -177,6 +187,42 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     assert battle.mulligan(uid)
     assert sent[0]["op"] == "mulligan" and sent[0]["player"] == 1
     assert game.state.players[1].hand[0].uid == uid  # 本地 state 不被直接修改
+    battle.close()
+
+
+def test_online_sanitized_enemy_hand_keeps_distinct_private_slots(qapp, db, make_game):
+    from server.room import sanitize_state
+
+    game = make_game(mulligan=False)
+    enemy = game.state.players[1]
+    for card, hand_seq in zip(enemy.hand, (50, 10, 40, 20, 30)):
+        card.hand_seq = hand_seq
+    revealed = enemy.hand[1]
+    revealed.mods["revealed"] = True
+    payload = sanitize_state(game.state.model_dump(mode="json"), viewer=0)
+    payload["hand_info"] = json.loads(json.dumps(cli.hand_cards_info(game, 0)))
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(payload, log=[], timeline=[])
+
+    sanitized = battle.game.state.players[1].hand
+    assert len(sanitized) == 5
+    assert [card.hand_seq for card in sorted(sanitized, key=lambda c: c.hand_seq)] == [
+        10, 20, 30, 40, 50]
+    items = [battle.battle_scene.cards[("hand", card.uid)]
+             for card in sorted(sanitized, key=lambda c: c.hand_seq)]
+    assert len({item.key for item in items}) == 5
+    assert [item.x() for item in items] == sorted(item.x() for item in items)
+    assert len({item.x() for item in items}) == 5
+    revealed_item = battle.battle_scene.cards[("hand", revealed.uid)]
+    assert items.index(revealed_item) == 0
+    assert revealed_item.revealed and revealed_item.cdef.id == revealed.id
+    assert revealed_item.payload.id == revealed.id
+    for card, item in zip(sorted(sanitized, key=lambda c: c.hand_seq), items):
+        if card.uid == revealed.uid:
+            continue
+        assert card.id == 0 and card.mods == {}
+        assert item.cdef is None and item.payload is None
     battle.close()
 
 
@@ -333,10 +379,9 @@ def test_online_hand_art_keeps_payload_runtime_separate(
     payload["hand_info"] = {str(card.uid): runtime}
     try:
         battle.set_state(payload, log=[], timeline=[])
-        frame = next(frame for frame in battle.hand_frames if frame.card.uid == card.uid)
-        assert not frame.art_label.pixmap().isNull()
-        assert frame.name_label.isHidden()
-        assert "联机卡图运行时唯一标记" in frame.info_label.text()
+        item = battle.battle_scene.cards[("hand", card.uid)]
+        assert item.pixmap is not None and not item.pixmap.isNull()
+        assert item.cdef is cdef and item.payload.uid == card.uid
         assert battle.hand_info() == {card.uid: runtime}
 
         seen = {}

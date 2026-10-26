@@ -59,7 +59,8 @@ class CardWidget(QFrame):
 
     clicked = Signal(object)
 
-    def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None):
+    def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
+                 display=None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -95,7 +96,7 @@ class CardWidget(QFrame):
         self.text_label.setWordWrap(True)
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.text_label, 1)
-        pixmap = card_pixmap(cdef, db) if db is not None else None
+        pixmap = card_pixmap(cdef, db, display=display) if db is not None else None
         if pixmap is not None and not pixmap.isNull():
             self.art_label.setPixmap(pixmap.scaled(
                 236, 360, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -142,7 +143,7 @@ class CardDetailDialog(QDialog):
         self.setWindowTitle(cdef.name)
         self.setMinimumSize(480, 600)
         layout = QVBoxLayout(self)
-        card = CardWidget(cdef, db=db)
+        card = CardWidget(cdef, db=db, display=(runtime or {}).get("render"))
         card.setMaximumWidth(420)
         layout.addWidget(card, 1, Qt.AlignCenter)
         details = []

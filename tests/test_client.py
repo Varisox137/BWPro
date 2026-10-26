@@ -193,6 +193,32 @@ def test_hand_stats_live_enhance(db, make_game):
     assert all("enhance" not in c.mods for c in p.hand)
 
 
+def test_hand_render_stats_share_runtime_evaluation(db, make_game):
+    from client.cli import hand_cards_info
+
+    game = make_game(mulligan=False)
+    player = game.state.players[0]
+    card = player.hand[0]
+    db.cards[card.id] = db.cards[card.id].model_copy(update={"card_type": "combat"})
+    info = hand_cards_info(game, 0)[card.uid]
+    assert set(info["render"]) == {"power+", "shield+"}
+    assert all(type(value) is int for value in info["render"].values())
+
+
+def test_hand_awaken_render_stats_share_label(db, make_game):
+    from client.cli import hand_cards_info
+
+    db.cards[10010163] = F.card(
+        10010163, subtype="awaken", token=True,
+        steps=[F.Step(op="buff_power", amount=1, perm=True, target=T(kind="self")),
+               F.Step(op="buff_health", amount=-2, perm=True, target=T(kind="self"))])
+    game = make_game(mulligan=False)
+    card = give(game, 0, 10010163)
+    info = hand_cards_info(game, 0)[card.uid]
+    assert info["render"] == {"power+": 1, "health+": -2}
+    assert info["stats"] == "觉醒+1/-2"
+
+
 def test_hand_aura_display_live(db, make_game):
     """手牌光环实时显示：卡牌光环的数值（含 ext 通道求值）与授予关键字
     在手牌数值段/关键字段即时反映（维护者定案）。"""

@@ -994,20 +994,20 @@ def test_room_mode_standard_gates_env(db):
 
 
 def test_sanitize_keeps_revealed_hand_cards():
-    """已展示脱敏例外：对手手牌中 mods.revealed 的卡保留真实内容，
-    未展示手牌与牌库仍占位隐藏；原始 payload 不被修改。"""
+    """已展示脱敏例外：对手手牌中 mods.revealed 的卡保留真实内容；
+    暗牌保留非秘密的稳定身份与顺序，牌库仍完全匿名；原始 payload 不被修改。"""
     from server.room import _HIDDEN_CARD, sanitize_state
     payload = {"players": [
         {"zones": {"hand": [
-            {"uid": 1, "id": 10010101, "mods": {"revealed": True}, "hand_seq": 1},
-            {"uid": 2, "id": 10010102, "mods": {}, "hand_seq": 2},
+            {"uid": 1, "id": 10010101, "mods": {"revealed": True}, "hand_seq": 7},
+            {"uid": 2, "id": 10010102, "mods": {"enhance": 3}, "hand_seq": 9},
         ], "deck": [{"uid": 3, "id": 10010103, "mods": {}, "hand_seq": 0}]}},
         {"zones": {"hand": [], "deck": []}},
     ]}
     view = sanitize_state(payload, 1)  # viewer=1 → 对手为 players[0]
     hand = view["players"][0]["zones"]["hand"]
     assert hand[0]["id"] == 10010101 and hand[0]["uid"] == 1   # 已展示：保留真实内容
-    assert hand[1] == _HIDDEN_CARD                             # 未展示：占位隐藏
+    assert hand[1] == {"uid": 2, "id": 0, "mods": {}, "hand_seq": 9}
     assert view["players"][0]["zones"]["deck"] == [dict(_HIDDEN_CARD)]
     assert payload["players"][0]["zones"]["hand"][1]["id"] == 10010102  # 原状态不变
 
@@ -1015,7 +1015,7 @@ def test_sanitize_keeps_revealed_hand_cards():
 def test_state_hand_info_shape(db):
     """state 推送附带己方手牌实时信息（hand_info，键 = 手牌 uid 字符串）：
     使用方式枚举/费用/关键字/数值段/使用条件等引擎求值字段形状；
-    仅含己方手牌，对手手牌仍为占位卡（脱敏不受影响）。"""
+    仅含己方手牌，对手暗牌只保留稳定身份与顺序。"""
     async def go():
         _, ws0, ws1 = await _started_room(db)
         for ws in (ws0, ws1):
@@ -1027,7 +1027,9 @@ def test_state_hand_info_shape(db):
             own = next(p for p in pl["players"]
                        if {str(c["uid"]) for c in p["zones"]["hand"]} == set(info))
             other = pl["players"][1 - pl["players"].index(own)]
-            assert all(c["uid"] == 0 for c in other["zones"]["hand"])  # 对手手牌仍脱敏
+            hidden = other["zones"]["hand"]
+            assert len({c["uid"] for c in hidden}) == len(hidden)
+            assert all(c["uid"] > 0 and c["id"] == 0 and c["mods"] == {} for c in hidden)
             for uid, entry in info.items():
                 assert int(uid) > 0
                 assert {"cost", "keywords", "stats", "enhance", "quest",

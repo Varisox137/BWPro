@@ -8,7 +8,7 @@ from PIL import Image
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QPushButton
 
 from client.gui import portrait
@@ -137,14 +137,22 @@ def test_deck_code_import_export(qapp, db, view):
 
 
 def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
-    deckstore.save_decks(db, [{"name": "主力", "groups": legal_groups(db), "env": None}],
+    long_name = "一个很长的卡组名称" * 8
+    deckstore.save_decks(db, [{"name": long_name, "groups": legal_groups(db), "env": None}],
                          tmp_path / "decks.json")
+    view.resize(1200, 800)
+    view.show()
     view.reload_decks()
+    qapp.processEvents()
     frame = view.deck_frames[0]
     assert frame.maximumWidth() <= 300
     deck_name = frame.findChild(QLabel, "cardName")
     two_lines = deck_name.fontMetrics().lineSpacing() * 2
-    assert deck_name.minimumHeight() == deck_name.maximumHeight() == two_lines
+    required_height = deck_name.heightForWidth(deck_name.width())
+    assert deck_name.minimumHeight() == two_lines
+    assert required_height > two_lines
+    assert deck_name.height() >= required_height
+    assert deck_name.alignment() & Qt.AlignTop
     assert [label.text() for label in frame.findChildren(QLabel, "deckShikiName")] == [
         db.shikigami[sid].name for sid in factories.TEAM]
     portraits = frame.findChildren(QLabel, "shikiPortrait")
@@ -600,6 +608,25 @@ def test_cardart_engine_text_changes_cache_key(qapp, tmp_path):
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     changed = cdef.model_copy(update={"text": "引擎文本已变化"})
     assert cardart.card_pixmap(changed, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert len(list(cache_dir.glob("*.png"))) == 2
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_display_values_change_render_and_cache(qapp, tmp_path):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cdef = cdef.model_copy(update={"subtype": "awaken"})
+    database = factories.db_of([factories.shiki(100101)], [cdef])
+    cardart.clear_cardart_caches()
+    base = cardart.card_pixmap(cdef, database, library_dir=library_dir,
+                               cache_dir=cache_dir,
+                               display={"power+": 1, "health+": 2})
+    boosted = cardart.card_pixmap(cdef, database, library_dir=library_dir,
+                                  cache_dir=cache_dir,
+                                  display={"power+": 1, "health+": 7})
+    assert base is not None and boosted is not None
+    assert base.toImage() != boosted.toImage()
     assert len(list(cache_dir.glob("*.png"))) == 2
     cardart.clear_cardart_caches()
 
