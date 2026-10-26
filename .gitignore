@@ -6,6 +6,7 @@ __pycache__/
 # IDE / local tooling
 .idea/
 .vscode/
+.worktrees/
 
 # Claude Code local cache
 .tokensave/
