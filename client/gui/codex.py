@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QPushButton, QStackedWidget, QVBoxLayout, QWidget,
+    QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QStackedWidget,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from client.deckbuilder import available_shikigami, buildable_cards
@@ -30,6 +30,7 @@ class ShikigamiCodexView(QWidget):
         self.page_index = 0
         self.page_count = 0
         self.card_widgets: list[CardWidget] = []
+        self.overview_card = None
         self.loading_label = QLabel(self)
         self.loading_label.setObjectName("loadingLabel")
         self.loading_label.setAlignment(Qt.AlignCenter)
@@ -38,8 +39,6 @@ class ShikigamiCodexView(QWidget):
         self.loading = LoadingIndicator("正在加载卡牌", self._set_loading_text, self)
         self._build_ui()
         self._render_shiki_list()
-        if self.selected_sid is not None:
-            self.select_shikigami(self.selected_sid)
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -82,12 +81,21 @@ class ShikigamiCodexView(QWidget):
         self.search_edit.textChanged.connect(self._render_shiki_list)
         filters.addWidget(self.search_edit, 1)
         overview.addLayout(filters)
-        self.shiki_list = QListWidget()
-        self.shiki_list.currentRowChanged.connect(self._select_shiki_row)
-        overview.addWidget(self.shiki_list, 1)
+        browser = QHBoxLayout()
+        tree_column = QVBoxLayout()
+        self.shiki_list = QTreeWidget()
+        self.shiki_list.setHeaderHidden(True)
+        self.shiki_list.currentItemChanged.connect(self._select_shiki_item)
+        tree_column.addWidget(self.shiki_list, 1)
         self.empty_label = QLabel("没有符合筛选条件的式神")
         self.empty_label.setAlignment(Qt.AlignCenter)
-        overview.addWidget(self.empty_label)
+        tree_column.addWidget(self.empty_label)
+        browser.addLayout(tree_column, 1)
+        self.overview_card_container = QWidget()
+        self.overview_card_layout = QVBoxLayout(self.overview_card_container)
+        self.overview_card_layout.setContentsMargins(0, 0, 0, 0)
+        browser.addWidget(self.overview_card_container, 2)
+        overview.addLayout(browser, 1)
 
         home = QVBoxLayout(self.home_page)
         home.setContentsMargins(12, 12, 12, 12)
@@ -141,11 +149,11 @@ class ShikigamiCodexView(QWidget):
             QLabel#viewTitle {{ color: {colors['gold']}; font-size: 28px; }}
             QLabel#shikiStats {{ color: {colors['blue']}; font-size: 18px; }}
             QLabel#shikiAbility {{ color: {colors['text']}; font-size: 16px; }}
-            QLineEdit, QComboBox, QListWidget {{
+            QLineEdit, QComboBox, QTreeWidget {{
                 background: {colors['panel']}; color: {colors['text']};
                 border: 1px solid {colors['line']}; padding: 5px;
             }}
-            QListWidget::item:selected {{ background: {colors['gold2']}; color: {colors['text']}; }}
+            QTreeWidget::item:selected {{ background: {colors['gold2']}; color: {colors['text']}; }}
             QLabel#loadingLabel {{ color: {colors['gold']}; font-size: 28px; }}
         """)
 
@@ -158,13 +166,14 @@ class ShikigamiCodexView(QWidget):
             env = self.current_env()
         except ValueError:
             return
+        show_cards = self.stack.currentWidget() is self.home_page
         self.edb = self.db.at_date(env)
         self.pool = available_shikigami(self.edb)
         if self.selected_sid not in self.edb.shikigami:
             self.selected_sid = self.pool[0].id if self.pool else None
         self._render_shiki_list()
-        if self.selected_sid is not None:
-            self.select_shikigami(self.selected_sid)
+        if show_cards and self.selected_sid is not None:
+            self.show_shikigami_cards()
 
     def _render_shiki_list(self, *_args) -> None:
         pack = self.pack_combo.currentData()
@@ -172,38 +181,55 @@ class ShikigamiCodexView(QWidget):
         query = self.search_edit.text().strip()
         self.shiki_list.blockSignals(True)
         self.shiki_list.clear()
-        shown = []
+        groups = {}
+        selected_item = None
         for definition in self.pool:
-            if pack is not None and str(definition.id)[2:4] != pack:
+            pack_number = str(definition.id)[2:4]
+            if pack is not None and pack_number != pack:
                 continue
             if faction != "全部派系" and definition.faction != faction:
                 continue
             if query and definition.name != query:
                 continue
-            shown.append(definition)
-            item = QListWidgetItem(definition.name, self.shiki_list)
-            item.setData(Qt.UserRole, definition.id)
-        self.empty_label.setVisible(not shown)
-        if shown:
-            row = next((index for index, definition in enumerate(shown)
-                        if definition.id == self.selected_sid), 0)
-            self.shiki_list.setCurrentRow(row)
+            if pack_number not in groups:
+                group = QTreeWidgetItem([PACK_NAMES.get(pack_number, pack_number)])
+                self.shiki_list.addTopLevelItem(group)
+                groups[pack_number] = group
+            item = QTreeWidgetItem([definition.name])
+            item.setData(0, Qt.UserRole, definition.id)
+            groups[pack_number].addChild(item)
+            if definition.id == self.selected_sid:
+                selected_item = item
+        self.empty_label.setVisible(not groups)
+        if selected_item is None and groups:
+            selected_item = next(iter(groups.values())).child(0)
+        self.shiki_list.expandAll()
+        self.shiki_list.setCurrentItem(selected_item)
         self.shiki_list.blockSignals(False)
+        if selected_item is not None:
+            self.select_shikigami(selected_item.data(0, Qt.UserRole))
 
-    def _select_shiki_row(self, row: int) -> None:
-        item = self.shiki_list.item(row)
-        if item is not None:
-            self.select_shikigami(item.data(Qt.UserRole))
+    def _select_shiki_item(self, current, _previous=None) -> None:
+        if current is not None:
+            sid = current.data(0, Qt.UserRole)
+            if sid is not None:
+                self.select_shikigami(sid)
 
     def show_overview(self) -> None:
         self.stack.setCurrentWidget(self.overview_page)
+
+    def show_shikigami_cards(self) -> None:
+        if self.selected_sid not in self.edb.shikigami:
+            return
+        self.stack.setCurrentWidget(self.home_page)
+        self.page_index = 0
+        self._render_cards()
 
     def select_shikigami(self, sid: int) -> None:
         if sid not in self.edb.shikigami:
             return
         self.selected_sid = sid
         definition = self.edb.shikigami[sid]
-        self.stack.setCurrentWidget(self.home_page)
         self.name_label.setText(definition.name)
         self.stats_label.setText(
             f"{definition.faction}　力量 {definition.power}　生命 {definition.health}")
@@ -214,8 +240,15 @@ class ShikigamiCodexView(QWidget):
             self.portrait_label.setFixedSize(pixmap.size())
         else:
             self.portrait_label.setText(f"{definition.name}\n{definition.faction}")
-        self.page_index = 0
-        self._render_cards()
+        while self.overview_card_layout.count():
+            item = self.overview_card_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.overview_card = CardWidget(definition, editable=False, db=self.db)
+        self.overview_card.count_label.hide()
+        self.overview_card.clicked.connect(lambda _cdef: self.show_shikigami_cards())
+        self.overview_card_layout.addWidget(self.overview_card, 1, Qt.AlignCenter)
 
     def _current_cards(self) -> list:
         if self.selected_sid is None:

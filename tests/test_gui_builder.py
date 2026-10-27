@@ -416,6 +416,41 @@ def test_entity_pixmap_uses_shikigami_art_config(qapp, tmp_path):
     assert first.toImage() != empty.toImage()
 
 
+def test_shikigami_card_art_uses_shikigami_config(qapp, tmp_path):
+    from client.gui import cardart
+
+    _external_library(
+        tmp_path,
+        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n",
+    )
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    first = cardart.card_pixmap(definition, database, library_dir=tmp_path / "library")
+    empty = cardart.card_pixmap(definition, database, library_dir=tmp_path / "empty")
+    assert first is not None and empty is not None
+    assert first.toImage() != empty.toImage()
+
+
+def test_entity_art_scales_up_to_cover_window(qapp, tmp_path):
+    from client.gui import cardart
+
+    _external_library(
+        tmp_path,
+        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n      scale: 0.5\n      offset_y: -20\n",
+    )
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=0, eff_power=3,
+                            combat_power=0, health=4, shield=0, ext={})
+    pixmap = cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "library")
+    assert pixmap is not None
+    image = pixmap.toImage()
+    for point in ((48, 20), (48, 110)):
+        assert image.pixelColor(*point).green() > 70
+
+
 def test_entity_power_zero_does_not_subtract_combat_power(qapp, tmp_path, monkeypatch):
     import json
     from client.gui import cardart

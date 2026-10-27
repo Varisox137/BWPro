@@ -998,7 +998,7 @@ def test_drag_visuals_cancel_and_hand_click_detail(qapp, view, monkeypatch):
     assert shiki.opacity() == 1
 
 
-def test_mulligan_click_selects_then_center_button_replaces(qapp, view):
+def test_mulligan_click_selects_then_card_button_replaces(qapp, view):
     start(view)
     scene = view.battle_scene
     card = view.game.current.hand[0]
@@ -1013,8 +1013,10 @@ def test_mulligan_click_selects_then_center_button_replaces(qapp, view):
     assert item.scale() > 1
     assert view.mulligan_button.text() == "替换"
     assert not view.mulligan_button.isHidden()
-    button_pos = scene.mulligan_item.sceneBoundingRect().center()
-    assert abs(button_pos.x() - scene.sceneRect().center().x()) < 100
+    button_rect = scene.mulligan_item.sceneBoundingRect()
+    card_rect = item.sceneBoundingRect()
+    assert abs(button_rect.center().x() - card_rect.center().x()) < 1
+    assert button_rect.top() >= card_rect.bottom()
     view.mulligan_button.click()
     settle(view)
     assert card not in view.game.state.players[0].hand
@@ -1274,14 +1276,20 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     assert view.hand_caption.text() == f"我方手牌 {len(view.game.current.hand)}/12张"
 
 
-def test_deck_backs_are_three_diagonal_cards_and_hide_when_empty(qapp, view):
+def test_deck_backs_are_symmetric_horizontal_cards_and_hide_when_empty(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     assert len(getattr(scene, "deck_backs", {})) == 6
     own = [scene.deck_backs[("deck_back", 0, index)] for index in range(3)]
+    enemy = [scene.deck_backs[("deck_back", 1, index)] for index in range(3)]
+    assert all(item.size.width() > item.size.height() for item in own + enemy)
     assert len({item.x() for item in own}) == 3
     assert len({item.y() for item in own}) == 3
     assert len({item.rotation() for item in own}) == 3
+    for lower, upper in zip(own, enemy):
+        assert lower.x() == upper.x()
+        assert lower.y() + upper.y() + lower.size.height() == 900
+        assert lower.rotation() == -upper.rotation()
     view.game.state.players[0].deck.clear()
     view.refresh()
     settle(view)

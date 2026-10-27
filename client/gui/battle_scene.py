@@ -18,7 +18,7 @@ SCENE_WIDTH = 1600
 SCENE_HEIGHT = 900
 HAND_SIZE = QSizeF(110, 156)
 MULLIGAN_HAND_SIZE = QSizeF(180, 255)
-DECK_BACK_SIZE = QSizeF(80, 112)
+DECK_BACK_SIZE = QSizeF(112, 80)
 SHIKI_SIZE = QSizeF(148, 210)
 PLAYER_SIZE = QSizeF(210, 130)
 HAND_Z = 40
@@ -60,8 +60,8 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         ("log",): QPointF(4, 420),
         ("end_turn",): QPointF(1488, 400),
         ("enemy_hand_label",): QPointF(1240, 190),
-        ("enemy_deck",): QPointF(1488, 222),
-        ("own_deck",): QPointF(1488, 648),
+        ("enemy_deck",): QPointF(1400, 190),
+        ("own_deck",): QPointF(1400, 690),
         ("hand_caption",): QPointF(1130, 696),
         ("ready",): QPointF(1328, 435),
         ("mulligan",): QPointF(730, 610),
@@ -80,7 +80,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         positions[("player_detail", pi)] = QPointF(4, 140 if top else 732)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
-                1400 + index * 24, (292 if top else 536) - index * 6)
+                1400 + index * 18, (220 + index * 4) if top else (600 - index * 4))
     if game is None:
         return positions
 
@@ -646,10 +646,12 @@ class BattleScene(QGraphicsScene):
                     back = BattleCardItem(deck_key, size=DECK_BACK_SIZE)
                     back.revealed = False
                     back.setAcceptedMouseButtons(Qt.NoButton)
+                    back.setTransformOriginPoint(back.boundingRect().center())
                     self.addItem(back)
                     self.deck_backs[deck_key] = back
                 back.setPos(positions[deck_key])
-                back.setRotation(-12 + index * 12)
+                rotation = -15 + index * 5
+                back.setRotation(rotation if pi != viewer else -rotation)
                 back.setZValue(20 + index)
                 back.update()
             ref = Ref(player=pi)

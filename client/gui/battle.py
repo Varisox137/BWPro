@@ -560,8 +560,16 @@ class HotseatView(QWidget):
         return False if uid is None else self.mulligan(uid)
 
     def _sync_mulligan_button(self, _uid=None) -> None:
+        uid = self.battle_scene.mulligan_uid
         visible = bool(self.game is not None and self.game.state.phase == "mulligan"
-                       and self.battle_scene.mulligan_uid is not None and self._inputs_open())
+                       and uid is not None and self._inputs_open())
+        if visible:
+            card = self.battle_scene.cards.get(("hand", uid))
+            if card is not None:
+                rect = card.sceneBoundingRect()
+                self.battle_scene.mulligan_item.setPos(
+                    rect.center().x() - self.battle_scene.mulligan_item.boundingRect().width() / 2,
+                    rect.bottom() + 8)
         self.mulligan_button.setVisible(visible)
 
     def ready(self) -> bool:

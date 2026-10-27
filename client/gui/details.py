@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from client import cli
 from client.gui.cardart import seat_level_color, shikigami_pixmap
+from client.gui.mechanisms import mechanism_panel, shikigami_mechanisms
 from client.gui.widgets import CardWidget, polish_dialog_buttons
 
 
@@ -194,6 +195,10 @@ class ShikigamiDetailDialog(QDialog):
             self.form_card.count_label.hide()
             cards.addWidget(self.form_card)
         layout.addLayout(cards)
+        self.mechanism_panel, self.mechanism_labels = mechanism_panel(
+            shikigami_mechanisms(game, ref), self)
+        if self.mechanism_panel is not None:
+            layout.addWidget(self.mechanism_panel)
         layout.addWidget(scroll, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)

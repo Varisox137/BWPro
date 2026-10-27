@@ -46,9 +46,14 @@ def test_overview_filters_and_shikigami_home(qapp, db, view):
     view.pack_combo.setCurrentIndex(view.pack_combo.findData("01"))
     view.faction_combo.setCurrentText("红莲")
     view.search_edit.setText(db.shikigami[100101].name)
-    assert view.shiki_list.count() == 1
+    assert view.shiki_list.topLevelItemCount() == 1
+    assert view.shiki_list.topLevelItem(0).childCount() == 1
     view.select_shikigami(100101)
+    assert view.stack.currentWidget() is view.overview_page
+    assert view.overview_card.cdef.id == 100101
+    view.show_shikigami_cards()
     definition = db.shikigami[100101]
+    assert view.stack.currentWidget() is view.home_page
     assert definition.name in view.name_label.text()
     assert definition.faction in view.stats_label.text()
     assert f"力量 {definition.power}　生命 {definition.health}" in view.stats_label.text()
@@ -58,6 +63,7 @@ def test_overview_filters_and_shikigami_home(qapp, db, view):
 
 def test_environment_change_reloads_shikigami_and_cards(qapp, db, view):
     view.select_shikigami(100101)
+    view.show_shikigami_cards()
     view.env_combo.setEditText("20260720")
     view.change_environment()
     assert view.current_env() == 20260720
@@ -80,6 +86,8 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     monkeypatch.setattr(view, "_loading_tick", lambda: events.append("tick") or original_tick())
     monkeypatch.setattr(view, "_finish_loading", lambda: events.append("finish") or original_finish())
     view.select_shikigami(100101)
+    assert not events
+    view.show_shikigami_cards()
     assert events[0] == "start" and events[-1] == "finish"
     assert events.count("tick") >= 5
     assert view.loading_label.isHidden()
@@ -106,5 +114,5 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
 def test_theme_and_empty_filter(qapp, view):
     view.apply_theme("dark", THEMES["dark"])
     view.search_edit.setText("不存在的式神")
-    assert view.shiki_list.count() == 0
+    assert view.shiki_list.topLevelItemCount() == 0
     assert not view.empty_label.isHidden()

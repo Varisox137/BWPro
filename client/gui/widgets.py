@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from client import cardfmt
 from client.gui.cardart import card_pixmap
+from client.gui.mechanisms import card_mechanisms, mechanism_panel
 
 
 _DIALOG_BUTTON_TEXT = {
@@ -201,6 +202,10 @@ class CardDetailDialog(QDialog):
             self.runtime_label.setObjectName("cardRuntime")
             self.runtime_label.setWordWrap(True)
             layout.addWidget(self.runtime_label)
+        self.mechanism_panel, self.mechanism_labels = mechanism_panel(
+            card_mechanisms(cdef, runtime), self)
+        if self.mechanism_panel is not None:
+            layout.addWidget(self.mechanism_panel)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)

@@ -177,7 +177,7 @@ def _preflight_card_artwork(library, art: dict) -> None:
 
 def _card_config_fingerprint(library_dir: Path) -> tuple:
     fingerprint = []
-    for path in sorted(library_dir.glob("*/cards/*.yaml")):
+    for path in sorted(library_dir.glob("*/*/*.yaml")):
         try:
             stat = path.stat()
             contents = path.read_bytes()
@@ -312,6 +312,28 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
             try:
                 if not transparent:
                     _preflight_card_artwork(library, art)
+                    # 普通卡面允许缩放后留白；对局小卡必须覆盖整个内窗。
+                    original, rotated = library.artwork(Path(art["path"]), art.get("rotate", 0))
+                    window = layout.get("art_window", entity._DEFAULT_LAYOUT["art_window"])
+                    window_width, window_height = window["width"], window["height"]
+                    ratio = window_width / 512
+                    offset_x = art.get("offset_x", 0) * ratio
+                    offset_y = (art.get("offset_y", 0) * ratio + window["offset_y"]
+                                + window_height * entity.ENTITY_ART_Y_BIAS)
+                    if window["frame_center"]:
+                        frame = entity._normalize_frame(library.frame(
+                            entity.TYPE_FRAME_CODE[payload["type"]],
+                            payload.get("frame_variant", "norm")))
+                        _, frame_cy = entity.frame_art_window_center(frame)
+                        offset_y += (256 - frame_cy) * ratio
+                    cover = max(window_width / original[0], window_height / original[1])
+                    base_width, base_height = rotated.width * cover, rotated.height * cover
+                    required = max(
+                        1.0,
+                        (window_width + 2 * abs(offset_x)) / base_width,
+                        (window_height + 2 * abs(offset_y)) / base_height,
+                    )
+                    state["art_scale"] = max(state["art_scale"], required)
                 options = {} if height is None else {"height": height}
                 image = entity.render_entity(payload, state, assets, layout=layout, **options)
             finally:
