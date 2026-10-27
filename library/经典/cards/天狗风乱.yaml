@@ -1,0 +1,13 @@
+type: 法术
+name: 天狗风乱
+level: 2
+rarity: R
+description: 造成6点伤害，随机分配给所有敌方角色。
+shikigami: 大天狗
+version_date: '20191212'
+id: '10010405'
+artwork:
+  images:
+  - path: 10010405.png
+    scale: 0.747
+    offset_y: -80

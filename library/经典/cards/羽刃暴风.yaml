@@ -1,0 +1,13 @@
+type: 法术
+name: 羽刃暴风
+level: 3
+rarity: R
+description: 对所有敌方式神造成3点伤害。
+shikigami: 大天狗
+version_date: '20191212'
+id: '10010406'
+artwork:
+  images:
+  - path: 10010406.png
+    scale: 0.747
+    offset_y: -96

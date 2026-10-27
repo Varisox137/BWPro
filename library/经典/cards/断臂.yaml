@@ -1,0 +1,13 @@
+type: 法术
+name: 断臂
+level: 2
+rarity: R
+description: 茨木童子的#ll变为本局游戏的最大值。
+shikigami: 茨木童子
+version_date: '20191212'
+id: '10010306'
+artwork:
+  images:
+  - path: 10010306.png
+    scale: 0.784
+    offset_y: -50

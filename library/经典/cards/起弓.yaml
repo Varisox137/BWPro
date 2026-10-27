@@ -1,0 +1,17 @@
+type: 法术
+name: 起弓
+level: 1
+rarity: R
+description: '[[瞬发]]。
+
+  白狼获得[[远程]]直到下一次攻击后。'
+shikigami: 白狼
+version_date: '20191212'
+id: '10010101'
+evolve: false
+artwork:
+  images:
+  - path: 10010101.png
+    offset_y: -85
+    scale: 0.76
+    offset_x: 0

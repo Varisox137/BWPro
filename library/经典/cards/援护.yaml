@@ -1,0 +1,16 @@
+type: 法术
+name: 援护
+level: 2
+rarity: SR
+description: '对敌方战斗区式神造成等同于白狼#ll的伤害。
+
+  [[响应]]：当你的其他式神被攻击时，自动使用此牌。'
+shikigami: 白狼
+version_date: '20191212'
+id: '10010105'
+artwork:
+  images:
+  - path: 10010105.png
+    scale: 0.747
+    offset_x: 1
+    offset_y: -109

@@ -1,0 +1,15 @@
+type: 形态
+name: 罗生门之鬼
+level: 1
+rarity: SSR
+description: '[[增强]]：当茨木童子击杀式神时，此牌随机强化一次。（最多3次）'
+shikigami: 茨木童子
+power: 3
+health: 4
+version_date: '20191212'
+id: '10010303'
+artwork:
+  images:
+  - path: 10010303.png
+    scale: 0.711
+    offset_y: -70

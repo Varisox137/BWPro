@@ -102,13 +102,12 @@ class CardWidget(QFrame):
         self.text_label.setWordWrap(True)
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.text_label, 1)
-        art_options = {"display": display, "level_color": level_color}
+        art_options = {"display": display, "level_color": level_color, "height": 360}
         if art_context is not None:
             art_options["cache_context"] = art_context
         pixmap = card_pixmap(cdef, db, **art_options) if db is not None else None
         if pixmap is not None and not pixmap.isNull():
-            self.art_label.setPixmap(pixmap.scaled(
-                236, 360, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.art_label.setPixmap(pixmap)
             for label in (self.level_label, self.name_label, self.type_label,
                           self.stats_label, self.text_label):
                 label.hide()

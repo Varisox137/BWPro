@@ -1,0 +1,16 @@
+type: 法术
+name: 无我
+level: 3
+rarity: SSR
+description: '[[瞬发]]。
+
+  白狼获得3#ll、[[不屈]]、[[贯通]]、[[迅捷]]直到下一次攻击后。'
+shikigami: 白狼
+version_date: '20191212'
+id: '10010108'
+artwork:
+  images:
+  - path: 10010108.png
+    scale: 0.747
+    offset_x: -1
+    offset_y: -76

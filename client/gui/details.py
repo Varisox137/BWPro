@@ -162,14 +162,12 @@ class ShikigamiDetailDialog(QDialog):
         scroll.setWidget(self.status_label)
 
         cards = QHBoxLayout()
-        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami)
+        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=336)
         self.main_art_label = QLabel()
         self.main_art_label.setAlignment(Qt.AlignCenter)
         if self.main_art_pixmap is not None and not self.main_art_pixmap.isNull():
-            scaled = self.main_art_pixmap.scaled(
-                240, 336, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.main_art_label.setPixmap(scaled)
-            self.main_art_label.setFixedSize(scaled.size())
+            self.main_art_label.setPixmap(self.main_art_pixmap)
+            self.main_art_label.setFixedSize(self.main_art_pixmap.size())
             cards.addWidget(self.main_art_label)
         else:
             main_card = QFrame()

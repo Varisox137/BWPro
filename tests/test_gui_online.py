@@ -396,7 +396,8 @@ def test_online_scene_card_art_uses_payload_render(qapp, db, make_game, monkeypa
     payload["hand_info"] = {str(card.uid): runtime}
     calls = []
 
-    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None):
+    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None,
+                       height=None):
         calls.append((cdef, display, level_color))
         return None
 

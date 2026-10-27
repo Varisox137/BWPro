@@ -1,0 +1,18 @@
+type: 式神
+name: 兵俑
+faction: 紫岩
+power: 1
+health: 6
+description: 己方回合开始时，兵俑获得2#hj。
+version_date: '20191212'
+id: '100102'
+artwork:
+  images:
+  - path: 100102.png
+    scale: 0.677
+    offset_x: -10
+    offset_y: -94
+portrait:
+  scale: 2.529
+  offset_x: -2
+  offset_y: 37

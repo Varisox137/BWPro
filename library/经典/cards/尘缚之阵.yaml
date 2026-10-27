@@ -1,0 +1,16 @@
+type: 形态
+name: 尘缚之阵
+level: 3
+rarity: R
+description: 当兵俑在战斗区时，敌方战斗区式神无法被其他式神替换。
+shikigami: 兵俑
+power: 5
+health: 9
+version_date: '20191212'
+id: '10010208'
+artwork:
+  images:
+  - path: 10010208.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -70

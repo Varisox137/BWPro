@@ -1,0 +1,16 @@
+type: 战斗
+name: 文射
+level: 1
+rarity: R
+description: '[[连击]]'
+shikigami: 白狼
+power+: -2
+shield+: 2
+version_date: '20191212'
+id: '10010103'
+artwork:
+  images:
+  - path: 10010103.png
+    scale: 0.711
+    offset_x: -2
+    offset_y: -68

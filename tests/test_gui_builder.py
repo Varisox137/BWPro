@@ -160,6 +160,7 @@ def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
         db.shikigami[sid].name for sid in factories.TEAM]
     portraits = frame.findChildren(QLabel, "shikiPortrait")
     assert len(portraits) == 4
+    assert all(label.width() == label.height() == 88 for label in portraits)
     assert all(not label.pixmap().isNull() for label in portraits)
     texts = [button.text() for button in frame.findChildren(QPushButton)]
     assert all(text in texts for text in ("编辑", "查看卡组码", "重命名", "删除"))
@@ -193,6 +194,22 @@ def test_cancel_add_restores_shikigami_selection(qapp, view, monkeypatch):
     view.shiki_list.setCurrentRow(len(view.team))
     assert view.shiki_list.currentRow() == 0
     assert view.selected_sid == factories.TEAM[0]
+
+
+def test_editor_loading_feedback_runs_during_card_render(qapp, db, view, monkeypatch):
+    view.import_code(deckcode.encode_deck(legal_groups(db)))
+    assert hasattr(view, "loading_label")
+    events = []
+    original_start = view._start_loading
+    original_tick = view._loading_tick
+    original_finish = view._finish_loading
+    monkeypatch.setattr(view, "_start_loading", lambda: events.append("start") or original_start())
+    monkeypatch.setattr(view, "_loading_tick", lambda: events.append("tick") or original_tick())
+    monkeypatch.setattr(view, "_finish_loading", lambda: events.append("finish") or original_finish())
+    view.edit_deck(0)
+    assert events[0] == "start" and events[-1] == "finish"
+    assert events.count("tick") >= 5
+    assert view.loading_label.isHidden()
 
 
 def test_open_deck_goes_straight_to_editor(qapp, db, view, monkeypatch):
@@ -430,7 +447,7 @@ def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
         def artwork(self, path, rotate=0):
             return (2, 2), Image.new("RGBA", (2, 2), "#336699")
 
-    def render(_lib, _elem, art, faction, scale, faction_style):
+    def render(_lib, _elem, art, faction, scale, faction_style, width=None, height=None):
         seen.update(art=art, faction=faction, scale=scale, faction_style=faction_style)
         return Image.new("RGBA", (4, 4), "#336699")
 
@@ -636,6 +653,85 @@ def test_cardart_description_removes_paired_braces():
         "投射：造成4点伤害。[[增强]]：若满足，此牌伤害翻倍")
 
 
+def test_cardart_native_height_and_size_cache(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    original_renderer = cardart._renderer
+    assets, library, original_render = original_renderer(str(portrait.bwpdiy_root().resolve()))
+    heights = []
+
+    def render(payload, assets_dir, layout=None, height=None, **kwargs):
+        heights.append(height)
+        return original_render(payload, assets_dir, layout=layout, height=height, **kwargs)
+
+    monkeypatch.setattr(cardart, "_renderer", lambda _root: (assets, library, render))
+    first = cardart.card_pixmap(cdef, database, library_dir=library_dir,
+                                cache_dir=cache_dir, height=360)
+    second = cardart.card_pixmap(cdef, database, library_dir=library_dir,
+                                 cache_dir=cache_dir, height=720)
+    shiki = SimpleNamespace(id=cdef.shikigami, awakened=None, level=1, faction="红莲",
+                            perm_power=0, perm_health=0, eff_power=3, health=4)
+    cardart.shikigami_pixmap(shiki, database, height=336)
+    assert heights == [360, 720, 336]
+    assert (first.height(), second.height()) == (360, 720)
+    assert first.width() / first.height() == pytest.approx(second.width() / second.height(), abs=0.002)
+    assert len(list(cache_dir.glob("*.png"))) == 2
+    monkeypatch.setattr(cardart, "_renderer", original_renderer)
+    cardart.clear_cardart_caches()
+
+
+def test_entity_native_height(qapp, tmp_path, monkeypatch):
+    from bwpdiy.render import entity
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=0, eff_power=3,
+                            combat_power=0, health=4, shield=0, ext={})
+    original = entity.render_entity
+    heights = []
+
+    def render(payload, state, assets_dir, layout=None, height=None, **kwargs):
+        heights.append(height)
+        return original(payload, state, assets_dir, layout=layout, height=height, **kwargs)
+
+    monkeypatch.setattr(entity, "render_entity", render)
+    pixmap = cardart.entity_pixmap(shiki, database, height=210)
+    assert heights[0] == 210  # BWPDIY 内部测量调用不传 height
+    assert pixmap is not None and pixmap.height() == 210
+
+
+def test_portrait_native_size(qapp, tmp_path, monkeypatch):
+    from client.gui import portrait
+
+    _external_library(
+        tmp_path,
+        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n",
+    )
+    seen = {}
+
+    class Library:
+        def artwork(self, path, rotate=0):
+            return (2, 2), Image.new("RGBA", (2, 2), "#336699")
+
+    def render(_lib, _elem, art, faction, scale, faction_style, width=None, height=None):
+        seen.update(width=width, height=height)
+        return Image.new("RGBA", (88, 88), "#336699")
+
+    monkeypatch.setattr(portrait, "_renderer",
+                        lambda _root: (tmp_path, Library(), {"back_size": 56}, render))
+    portrait._portrait_pixmap.cache_clear()
+    pixmap = portrait.shikigami_portrait(
+        SimpleNamespace(id=100101, name="测试", faction="苍叶", version=20260720),
+        root=tmp_path, library_dir=tmp_path / "library")
+    assert seen == {"width": 88, "height": 88}
+    assert pixmap.width() == pixmap.height() == 88
+    portrait._portrait_pixmap.cache_clear()
+
+
 def test_cardart_engine_payload_mapping(qapp):
     from client.gui import cardart
 
@@ -693,7 +789,7 @@ def test_shikigami_awaken_payload_has_level_star_and_permanent_stats(qapp, tmp_p
                             perm_power=2, perm_health=3, eff_power=9, health=7)
     seen = {}
 
-    def capture(_cdef, _db, _library_dir, _cache_dir, display, overrides, drop_keys):
+    def capture(_cdef, _db, _library_dir, _cache_dir, display, overrides, drop_keys, height=None):
         seen.update(display=display, overrides=overrides, drop_keys=drop_keys)
 
     monkeypatch.setattr(cardart, "_card_pixmap_impl", capture)
@@ -716,7 +812,7 @@ def test_shikigami_base_payload_has_seat_level_and_color(qapp, tmp_path, monkeyp
                             perm_power=0, perm_health=0, eff_power=3, health=4)
     seen = {}
 
-    def capture(_cdef, _db, _library_dir, _cache_dir, display, overrides, drop_keys):
+    def capture(_cdef, _db, _library_dir, _cache_dir, display, overrides, drop_keys, height=None):
         seen.update(overrides=overrides)
 
     monkeypatch.setattr(cardart, "_card_pixmap_impl", capture)
@@ -754,6 +850,7 @@ def test_card_widget_passes_level_color(qapp, db, monkeypatch):
     monkeypatch.setattr("client.gui.widgets.card_pixmap", capture)
     CardWidget(db.cards[10010101], db=db, level_color="cyan")
     assert seen["level_color"] == "cyan"
+    assert seen["height"] == 360
 
 
 def test_cardart_combat_amount_uses_static_base(qapp, gdb):
@@ -1254,7 +1351,7 @@ def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, mo
             with Image.open(path) as image:
                 return image.size, image.convert("RGBA")
 
-    def render(_lib, _elem, art, faction, scale, faction_style):
+    def render(_lib, _elem, art, faction, scale, faction_style, width=None, height=None):
         del scale, faction, faction_style
         if art is None:
             seen.append(None)

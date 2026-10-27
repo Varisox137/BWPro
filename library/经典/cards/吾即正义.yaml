@@ -1,0 +1,13 @@
+type: 法术
+name: 吾即正义
+level: 3
+rarity: SR
+description: '[[增强]]：本局游戏大天狗若使用过10次法术，则消灭所有敌方式神。'
+shikigami: 大天狗
+version_date: '20191212'
+id: '10010408'
+artwork:
+  images:
+  - path: 10010408.png
+    scale: 0.747
+    offset_y: -68

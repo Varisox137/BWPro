@@ -1,0 +1,16 @@
+type: 形态
+name: 森罗之阵
+level: 2
+rarity: SR
+description: 兵俑拥有#hj时，至多只会受到等于其#hj的伤害。
+shikigami: 兵俑
+power: 4
+health: 7
+version_date: '20191212'
+id: '10010205'
+artwork:
+  images:
+  - path: 10010205.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -62

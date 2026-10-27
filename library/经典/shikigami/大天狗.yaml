@@ -1,0 +1,18 @@
+type: 式神
+name: 大天狗
+faction: 苍叶
+power: 3
+health: 4
+description: 大天狗使用法术后，[[倒计时2]]：再次使用该法术。
+version_date: '20191212'
+id: '100104'
+artwork:
+  images:
+  - path: 100104.png
+    scale: 0.711
+    offset_y: -82
+portrait:
+  scale: 5.794
+  offset_x: -6
+  offset_y: 81
+  rotate: 15

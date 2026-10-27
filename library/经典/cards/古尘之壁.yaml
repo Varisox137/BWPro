@@ -1,0 +1,16 @@
+type: 形态
+name: 古尘之壁
+level: 3
+rarity: SR
+description: 进场时兵俑每有1#hj，己方所有其他式神获得1#sm。
+shikigami: 兵俑
+power: 5
+health: 10
+version_date: '20191212'
+id: '10010207'
+artwork:
+  images:
+  - path: 10010207.png
+    scale: 0.747
+    offset_x: 7
+    offset_y: -54

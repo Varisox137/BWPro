@@ -1,0 +1,13 @@
+type: 法术
+name: 豪拳
+level: 2
+rarity: R
+description: 获得3#ll。
+shikigami: 茨木童子
+version_date: '20191212'
+id: '10010302'
+artwork:
+  images:
+  - path: 10010302.png
+    scale: 0.747
+    offset_y: -72

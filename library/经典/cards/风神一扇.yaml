@@ -1,0 +1,14 @@
+type: 法术
+name: 风神一扇
+level: 1
+rarity: SR
+description: '[[投射]]：造成2点伤害，然后将受到此伤害的式神移回准备区。'
+shikigami: 大天狗
+version_date: '20191212'
+id: '10010402'
+artwork:
+  images:
+  - path: 10010402.png
+    scale: 0.784
+    offset_y: -76
+    offset_x: -8

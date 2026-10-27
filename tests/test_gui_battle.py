@@ -153,7 +153,7 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
         666, 690, 690, 666]
     assert [scene.cards[("shiki", 0, index)].x() for index in range(4)] == [
-        440, 610, 780, 950]
+        400, 590, 780, 970]
     view.apply_theme("light", THEMES["light"])
     assert "QLabel#enemyHandBack, QLabel#deckCount" in view.styleSheet()
 
@@ -437,7 +437,7 @@ def test_shiki_detail_uses_seat_level_color(qapp, view, monkeypatch):
     start(view, mulligan=False)
     seen = {}
 
-    def capture(_shiki, _db, *, seat=None):
+    def capture(_shiki, _db, *, seat=None, height=None):
         seen["seat"] = seat
 
     monkeypatch.setattr("client.gui.details.shikigami_pixmap", capture)
@@ -650,7 +650,7 @@ def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
 
     calls = []
     monkeypatch.setattr(battle_scene, "entity_pixmap",
-                        lambda shiki, db, *, seat, form=None, cache_context=None:
+                        lambda shiki, db, *, seat, form=None, cache_context=None, height=None:
                         calls.append((shiki, seat, form)), raising=False)
     start(view, mulligan=False)
     assert len({id(call[0]) for call in calls}) == 8
@@ -661,6 +661,39 @@ def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
     calls.clear()
     view.refresh()
     assert any(call[2] == form for call in calls)
+
+
+def test_loading_indicator_uses_real_tenths(qapp):
+    from client.gui.loading import LoadingIndicator
+
+    now = [0.0]
+    seen = []
+    indicator = LoadingIndicator("正在准备对局", seen.append, clock=lambda: now[0])
+    indicator.start()
+    assert seen[-1] == "正在准备对局 0.0s"
+    now[0] = 0.19
+    indicator.tick()
+    assert seen[-1] == "正在准备对局 0.1s"
+    now[0] = 0.21
+    indicator.tick()
+    assert seen[-1] == "正在准备对局 0.2s"
+    indicator.stop()
+    now[0] = 1.0
+    indicator.tick()
+    assert seen[-1] == "正在准备对局 0.2s"
+
+
+def test_scene_loading_lifecycle(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    assert not scene.loading_item.isVisible()
+    scene.show_loading("正在准备对局")
+    assert scene.loading_item.isVisible()
+    assert "0.0s" in scene.loading_item.toPlainText()
+    scene.loading_tick()
+    scene.hide_loading()
+    assert not scene.loading_item.isVisible()
+    assert not scene.loading._timer.isActive()
 
 
 def test_opening_and_turn_start_banners(qapp, view):
@@ -887,18 +920,34 @@ def test_scene_assault_playable_follows_combat_zone_lock(qapp, db, view):
     assert view.battle_scene.cards[("shiki", 0, 1)].playable
 
 
+def test_scene_native_render_heights(qapp, view, monkeypatch):
+    from client.gui import battle_scene
+
+    heights = []
+    monkeypatch.setattr(battle_scene, "card_pixmap",
+                        lambda _cdef, _db, **kwargs: heights.append(("card", kwargs.get("height"))))
+    monkeypatch.setattr(battle_scene, "entity_pixmap",
+                        lambda _shiki, _db, **kwargs: heights.append(("entity", kwargs.get("height"))))
+    start(view)
+    assert ("card", 255) in heights and ("entity", 210) in heights
+    heights.clear()
+    start(view, mulligan=False)
+    assert ("card", 156) in heights and ("entity", 210) in heights
+
+
 def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
     from client.gui import battle_scene
 
     calls = []
 
-    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None):
+    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None,
+                       height=None):
         calls.append((cdef, display, level_color))
         return None
 
     entity_calls = []
 
-    def capture_entity(shiki, database, *, seat, form=None, cache_context=None):
+    def capture_entity(shiki, database, *, seat, form=None, cache_context=None, height=None):
         entity_calls.append((shiki, seat, form))
         return None
 
@@ -1213,6 +1262,8 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     assert outer.itemAt(0).widget() is view.battle_view
     assert scene.end_turn_item.widget() is view.end_turn_button
     assert scene.menu_item.widget() is view.menu_button
+    assert scene.menu_item.pos() == QPointF(1352, 16)
+    assert scene.ready_item.pos() == QPointF(1328, 435)
     assert view.end_turn_button.minimumWidth() == view.end_turn_button.maximumWidth()
     assert view.end_turn_button.minimumHeight() == view.end_turn_button.maximumHeight()
     assert view.end_turn_button.minimumWidth() == view.end_turn_button.minimumHeight()
@@ -1309,7 +1360,7 @@ def test_card_detail_passes_structured_render_stats(qapp, db, monkeypatch):
     cdef = db.cards[10010101]
     seen = {}
 
-    def capture_pixmap(card_def, database, *, display=None, level_color=None):
+    def capture_pixmap(card_def, database, *, display=None, level_color=None, height=None):
         seen.update(card_def=card_def, database=database, display=display,
                     level_color=level_color)
         return None

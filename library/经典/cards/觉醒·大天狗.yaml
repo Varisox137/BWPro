@@ -1,0 +1,18 @@
+type: 法术
+name: 觉醒·大天狗
+level: 3
+rarity: SSR
+description: '使大天狗的[[倒计时]]-1。
+
+  [[觉醒]]：大天狗使用法术后，[[倒计时1]]：再次使用该法术。'
+shikigami: 大天狗
+version_date: '20191212'
+id: '10010407'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10010407.png
+    scale: 0.747
+    offset_y: -68

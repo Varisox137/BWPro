@@ -1,0 +1,15 @@
+type: 战斗
+name: 地狱之手
+level: 3
+rarity: SR
+description: 本次战斗中若击杀式神，再次随机攻击一个敌方#sm最低的式神。
+shikigami: 茨木童子
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10010307'
+artwork:
+  images:
+  - path: 10010307.png
+    scale: 0.711
+    offset_y: -68

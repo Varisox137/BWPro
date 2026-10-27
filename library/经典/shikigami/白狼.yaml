@@ -1,0 +1,18 @@
+type: 式神
+name: 白狼
+faction: 苍叶
+power: 3
+health: 4
+description: 己方回合当白狼对敌方式神造成战斗伤害时，对敌方牌手造成2点伤害。
+artwork:
+  images:
+  - path: 100101.png
+    scale: 0.71
+    offset_x: 1
+    offset_y: -103
+id: '100101'
+portrait:
+  scale: 4.11
+  offset_x: 18
+  offset_y: 51
+version_date: '20191212'

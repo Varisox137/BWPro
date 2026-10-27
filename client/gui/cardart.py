@@ -223,7 +223,8 @@ def _card_config_snapshot(library_dir: Path, cdef, fingerprint: tuple | None = N
     return None, None, None
 
 
-def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str) -> QPixmap | None:
+def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
+                        height: int | None = None) -> QPixmap | None:
     try:
         payload = json.loads(payload_json)
         layout = json.loads(layout_json)
@@ -244,7 +245,8 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str) -> 
             try:
                 if not transparent:
                     _preflight_card_artwork(library, art)
-                image = render(payload, assets, layout=layout)
+                options = {} if height is None else {"height": height}
+                image = render(payload, assets, layout=layout, **options)
             finally:
                 pipeline.get_library = original_get_library
                 pipeline.load_card_artwork = original_load_artwork
@@ -259,7 +261,7 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str) -> 
 
 
 def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
-                          root_text: str) -> QPixmap | None:
+                          root_text: str, height: int | None = None) -> QPixmap | None:
     try:
         payload = json.loads(payload_json)
         state = json.loads(state_json)
@@ -281,7 +283,8 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
             try:
                 if not transparent:
                     _preflight_card_artwork(library, art)
-                image = entity.render_entity(payload, state, assets, layout=layout)
+                options = {} if height is None else {"height": height}
+                image = entity.render_entity(payload, state, assets, layout=layout, **options)
             finally:
                 entity.get_library = original_get_library
                 entity.load_card_artwork = original_load_artwork
@@ -297,7 +300,8 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
 
 def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
                     art_path: str, renderer_version: str, renderer_resources: str,
-                    root_text: str, cache_context: dict | None = None) -> str:
+                    root_text: str, cache_context: dict | None = None,
+                    height: int | None = None) -> str:
     if art_path == _TRANSPARENT_ART:
         image_sha256 = "transparent"
     else:
@@ -316,6 +320,7 @@ def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
         "bwpdiy_version": renderer_version,
         "renderer_resources": renderer_resources,
         "renderer_root": root_text,
+        "height": height,
     }
     normalized = json.dumps(key_data, ensure_ascii=False, sort_keys=True,
                             separators=(",", ":"), allow_nan=False)
@@ -341,7 +346,8 @@ def _write_card_png_atomic(pixmap: QPixmap, path: Path) -> None:
 
 @lru_cache(maxsize=256)
 def _cached_card_pixmap(cache_path_text: str, payload_json: str,
-                        layout_json: str, root_text: str) -> QPixmap | None:
+                        layout_json: str, root_text: str,
+                        height: int | None = None) -> QPixmap | None:
     cache_path = Path(cache_path_text)
     try:
         cached = QPixmap(str(cache_path))
@@ -349,7 +355,7 @@ def _cached_card_pixmap(cache_path_text: str, payload_json: str,
             return cached
     except Exception:
         pass
-    pixmap = _render_card_pixmap(payload_json, layout_json, root_text)
+    pixmap = _render_card_pixmap(payload_json, layout_json, root_text, height)
     if pixmap is None:
         return None
     try:
@@ -361,17 +367,19 @@ def _cached_card_pixmap(cache_path_text: str, payload_json: str,
 
 @lru_cache(maxsize=256)
 def _cached_runtime_card_pixmap(cache_key: str, payload_json: str,
-                                layout_json: str, root_text: str) -> QPixmap | None:
+                                layout_json: str, root_text: str,
+                                height: int | None = None) -> QPixmap | None:
     """运行时变体仅驻留有界内存，避免每种实时数值都永久写盘。"""
     del cache_key  # 仅作为 LRU 的身份键，不映射磁盘文件
-    return _render_card_pixmap(payload_json, layout_json, root_text)
+    return _render_card_pixmap(payload_json, layout_json, root_text, height)
 
 
 @lru_cache(maxsize=256)
 def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
-                          layout_json: str, root_text: str) -> QPixmap | None:
+                          layout_json: str, root_text: str,
+                          height: int | None = None) -> QPixmap | None:
     del cache_key
-    return _render_entity_pixmap(payload_json, state_json, layout_json, root_text)
+    return _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
 
 
 def _validate_layout(layout: dict) -> None:
@@ -425,7 +433,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                       display: dict[str, int] | None,
                       payload_overrides: dict | None = None,
                       drop_keys: tuple[str, ...] = (),
-                      cache_context: dict | None = None) -> QPixmap | None:
+                      cache_context: dict | None = None,
+                      height: int | None = None) -> QPixmap | None:
     try:
         if cache_context is None:
             fingerprint = _card_config_fingerprint(library_dir)
@@ -467,13 +476,14 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                                  separators=(",", ":"), allow_nan=False)
         cache_key = _card_cache_key(
             payload_json, layout_json, config_sha256 or "fallback", art["path"],
-            __version__, resources, root_text, cache_context)
+            __version__, resources, root_text, cache_context, height)
+        size_args = () if height is None else (height,)
         if display_stats:
             return _cached_runtime_card_pixmap(
-                cache_key, payload_json, layout_json, root_text)
+                cache_key, payload_json, layout_json, root_text, *size_args)
         cache_path = cache_dir / f"{cache_key}.png"
         return _cached_card_pixmap(
-            str(cache_path), payload_json, layout_json, root_text)
+            str(cache_path), payload_json, layout_json, root_text, *size_args)
     except Exception:
         return None
 
@@ -482,18 +492,20 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 cache_dir: Path | None = None,
                 display: dict[str, int] | None = None,
                 level_color: str | None = None,
-                cache_context: dict | None = None) -> QPixmap | None:
-    """静态卡面使用磁盘缓存；同页可传入临时上下文复用资源校验。"""
+                cache_context: dict | None = None,
+                height: int | None = None) -> QPixmap | None:
+    """按原生高度合成；静态卡面使用磁盘缓存，同页可复用资源校验。"""
     overrides = {"level_color": level_color} if level_color is not None else None
     return _card_pixmap_impl(
         cdef, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,
-        cache_context=cache_context)
+        cache_context=cache_context, height=height)
 
 
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   library_dir: Path | None = None, cache_dir: Path | None = None,
-                  cache_context: dict | None = None) -> QPixmap | None:
+                  cache_context: dict | None = None,
+                  height: int | None = None) -> QPixmap | None:
     """以 BWPDIY render_entity 绘制对局小卡，保留当前战斗状态。"""
     try:
         awakened = shiki.awakened is not None
@@ -546,15 +558,17 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                                  separators=(",", ":"), allow_nan=False)
         cache_key = _card_cache_key(
             payload_json, layout_json, config_sha256 or "fallback", art["path"],
-            __version__, resources, root_text, cache_context)
-        return _cached_entity_pixmap(cache_key, payload_json, state_json, layout_json, root_text)
+            __version__, resources, root_text, cache_context, height)
+        size_args = () if height is None else (height,)
+        return _cached_entity_pixmap(
+            cache_key, payload_json, state_json, layout_json, root_text, *size_args)
     except Exception:
         return None
 
 
 def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = None,
-                     library_dir: Path | None = None,
-                     cache_dir: Path | None = None) -> QPixmap | None:
+                     library_dir: Path | None = None, cache_dir: Path | None = None,
+                     height: int | None = None) -> QPixmap | None:
     """以 DIY 路线绘制基础/觉醒式神；详情用永久值，场上可用当前值。"""
     definition = db.shikigami[shiki.id]
     awakened = shiki.awakened is not None
@@ -570,11 +584,12 @@ def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = Non
         "level": shiki.level or None,
         "level_color": seat_level_color(seat),
     }
+    size_kwargs = {} if height is None else {"height": height}
     return _card_pixmap_impl(
         source, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart",
         {"power": power, "health": health}, overrides,
-        ("rarity", "shikigami", "power+", "health+"))
+        ("rarity", "shikigami", "power+", "health+"), **size_kwargs)
 
 
 def clear_cardart_caches() -> None:

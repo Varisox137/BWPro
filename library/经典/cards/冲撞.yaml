@@ -1,0 +1,16 @@
+type: 战斗
+name: 冲撞
+level: 2
+rarity: SR
+description: '[[增强]]：己方回合开始时若兵俑在战斗区，此牌获得+1#ll与+1#hj。'
+shikigami: 兵俑
+power+: 2
+shield+: 2
+version_date: '20191212'
+artwork:
+  images:
+  - scale: 0.747
+    path: 10010204.png
+    offset_x: 8
+    offset_y: -99
+id: '10010204'

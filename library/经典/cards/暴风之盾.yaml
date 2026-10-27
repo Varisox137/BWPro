@@ -1,0 +1,13 @@
+type: 法术
+name: 暴风之盾
+level: 1
+rarity: R
+description: 使一个己方式神获得2#hj并在下个回合开始时再获得2#hj。[[响应]]：当你战斗区式神被攻击时，自动对其使用。
+shikigami: 大天狗
+version_date: '20191212'
+id: '10010403'
+artwork:
+  images:
+  - path: 10010403.png
+    scale: 0.747
+    offset_y: -60

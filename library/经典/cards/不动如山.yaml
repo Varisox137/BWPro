@@ -1,0 +1,16 @@
+type: 形态
+name: 不动如山
+level: 2
+rarity: R
+description: 己方回合开始时若兵俑在战斗区，则获得3#ll。
+shikigami: 兵俑
+power: 1
+health: 10
+version_date: '20191212'
+id: '10010203'
+artwork:
+  images:
+  - path: 10010203.png
+    scale: 0.711
+    offset_x: -1
+    offset_y: -119

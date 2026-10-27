@@ -1,0 +1,15 @@
+type: 形态
+name: 暴风之主
+level: 2
+rarity: SR
+description: 大天狗使用法术后，对受影响的敌方式神各造成1点伤害。
+shikigami: 大天狗
+power: 4
+health: 6
+version_date: '20191212'
+id: '10010404'
+artwork:
+  images:
+  - path: 10010404.png
+    scale: 0.711
+    offset_y: -70

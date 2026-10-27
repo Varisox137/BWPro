@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·兵俑
+level: 2
+rarity: SSR
+description: '兵俑获得3#hj。
+
+  [[觉醒]]：己方回合开始时，兵俑得2#hj。他的#hj不会在回合开始移除。'
+shikigami: 兵俑
+version_date: '20191212'
+evolve: true
+id: '10010206'
+artwork:
+  images:
+  - path: 10010206.png
+    scale: 0.784
+    offset_x: -1
+    offset_y: -107

@@ -1,0 +1,15 @@
+type: 战斗
+name: 鬼之手
+level: 1
+rarity: SR
+description: 若敌方战斗区没有式神，将一个敌方式神移入战斗区。
+shikigami: 茨木童子
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10010301'
+artwork:
+  images:
+  - path: 10010301.png
+    scale: 0.711
+    offset_y: -100

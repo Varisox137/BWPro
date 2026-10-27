@@ -1,0 +1,15 @@
+type: 形态
+name: 迁怒
+level: 2
+rarity: R
+description: 当茨木童子击杀敌方战斗区式神时，对其准备区式神各造成2点伤害。
+shikigami: 茨木童子
+power: 3
+health: 7
+version_date: '20191212'
+id: '10010305'
+artwork:
+  images:
+  - path: 10010305.png
+    scale: 0.711
+    offset_y: -70

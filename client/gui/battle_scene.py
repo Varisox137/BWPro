@@ -690,7 +690,7 @@ class BattleScene(QGraphicsScene):
                 form = self.db.cards[shiki.form.id] if shiki.form is not None else None
                 item.cdef = form
                 pixmap = entity_pixmap(shiki, self.db, seat=index, form=form,
-                                       cache_context=art_context)
+                                       cache_context=art_context, height=210)
                 item.set_art(pixmap)
                 item.player = pi
                 item.index = index
@@ -722,7 +722,8 @@ class BattleScene(QGraphicsScene):
                 owner_seat = card_owner_seat(game, player, cdef) if cdef is not None else None
                 pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
                                       level_color=seat_level_color(owner_seat),
-                                      cache_context=art_context)
+                                      cache_context=art_context,
+                                      height=255 if game.state.phase == "mulligan" and own else 156)
                           if cdef is not None else None)
                 item = self.cards.get(key)
                 if item is None:

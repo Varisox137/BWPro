@@ -1,0 +1,16 @@
+type: 战斗
+name: 尘刀
+level: 1
+rarity: R
+description: 每有1#hj兵俑便获得1#ll。
+shikigami: 兵俑
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10010201'
+artwork:
+  images:
+  - path: 10010201.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -71

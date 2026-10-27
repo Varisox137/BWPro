@@ -1,0 +1,15 @@
+type: 法术
+name: 觉醒·茨木童子
+level: 3
+rarity: SR
+description: '[[觉醒]]：己方回合开始时茨木童子的#ll翻倍。'
+shikigami: 茨木童子
+version_date: '20191212'
+evolve: true
+health+: 1
+id: '10010308'
+artwork:
+  images:
+  - path: 10010308.png
+    scale: 0.747
+    offset_y: -77

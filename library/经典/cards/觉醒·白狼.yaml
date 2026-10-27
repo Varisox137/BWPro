@@ -1,0 +1,19 @@
+type: 法术
+name: 觉醒·白狼
+level: 3
+rarity: SR
+description: '[[觉醒]]：己方回合当白狼对敌方式神造成伤害时，
+
+  对敌方牌手造成4点伤害。'
+shikigami: 白狼
+version_date: '20191212'
+evolve: true
+power+: 2
+health+: 2
+id: '10010107'
+artwork:
+  images:
+  - path: 10010107.png
+    scale: 0.784
+    offset_x: 5
+    offset_y: -99

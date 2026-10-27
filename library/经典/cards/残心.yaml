@@ -1,0 +1,16 @@
+type: 形态
+name: 残心
+level: 2
+rarity: SR
+description: 白狼的法术强化效果不再因攻击而消失。
+shikigami: 白狼
+power: 4
+health: 5
+version_date: '20191212'
+id: '10010104'
+artwork:
+  images:
+  - path: 10010104.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -80
