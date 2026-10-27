@@ -1,0 +1,20 @@
+type: 式神
+name: 凤凰火
+faction: 红莲
+power: 2
+health: 4
+description: '当凤凰火使用法术牌时，
+
+  [[投射]]：造成1点伤害。'
+version_date: '20191212'
+id: '100105'
+artwork:
+  images:
+  - path: 100105.png
+    scale: 0.747
+    offset_x: -2
+    offset_y: -78
+portrait:
+  scale: 4.767
+  offset_x: -2
+  offset_y: 77

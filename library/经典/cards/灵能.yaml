@@ -1,0 +1,15 @@
+type: 形态
+name: 灵能
+level: 1
+rarity: SR
+description: 当海坊主为牌手恢复#sm时，他恢复等量的#sm。
+shikigami: 海坊主
+power: 3
+health: 6
+version_date: '20191212'
+id: '10010702'
+artwork:
+  images:
+  - path: 10010702.png
+    scale: 0.711
+    offset_y: -108

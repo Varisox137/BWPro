@@ -1,0 +1,16 @@
+type: 法术
+name: 炎舞
+level: 3
+rarity: SSR
+description: '[[贯通]]
+
+  [[投射]]：造成5点伤害。[[增强]]：本局游戏凤凰火每对敌方牌手造成一次伤害，此牌伤害+1。'
+shikigami: 凤凰火
+version_date: '20191212'
+id: '10010507'
+artwork:
+  images:
+  - path: 10010507.png
+    scale: 0.747
+    offset_x: -2
+    offset_y: -70

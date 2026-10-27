@@ -193,6 +193,7 @@ class HotseatView(QWidget):
         self.menu_button.clicked.connect(self.return_to_menu)
         self.battle_scene.menu_item = self.battle_scene.add_control(
             self.menu_button, ("menu",), (120, 34))
+        self.battle_scene.menu_item.hide()
         self.phase_label = QLabel()
         self.phase_label.setObjectName("phaseLabel")
         self.phase_label.setAlignment(Qt.AlignCenter)

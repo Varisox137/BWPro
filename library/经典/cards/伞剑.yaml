@@ -1,0 +1,16 @@
+type: 战斗
+name: 伞剑
+level: 1
+rarity: R
+description: 当其他己方式神攻击后，本回合此牌获得[[瞬发]]。
+shikigami: 姑获鸟
+power+: 1
+shield+: 0
+version_date: '20191212'
+id: '10010601'
+artwork:
+  images:
+  - path: 10010601.png
+    scale: 0.711
+    offset_x: 0
+    offset_y: -71

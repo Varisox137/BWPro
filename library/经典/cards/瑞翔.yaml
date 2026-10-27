@@ -1,0 +1,14 @@
+type: 法术
+name: 瑞翔
+level: 1
+rarity: R
+description: 对所有敌方式神造成1点伤害。
+shikigami: 凤凰火
+version_date: '20191212'
+id: '10010502'
+artwork:
+  images:
+  - path: 10010502.png
+    scale: 0.784
+    offset_x: 0
+    offset_y: -52

@@ -1,0 +1,16 @@
+type: 形态
+name: 慈乌稚子
+level: 3
+rarity: R
+description: 当其他己方式神攻击后，姑获鸟获得[[迅捷]]。
+shikigami: 姑获鸟
+power: 8
+health: 6
+version_date: '20200723'
+id: '10010607'
+artwork:
+  images:
+  - path: 10010607.png
+    scale: 0.711
+    offset_y: -78
+evolve: false

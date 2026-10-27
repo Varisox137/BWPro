@@ -1,0 +1,13 @@
+type: 法术
+name: 水龙卷
+level: 2
+rarity: R
+description: 对一个式神造成3点伤害，海坊主每有1点#hj则伤害+1。
+shikigami: 海坊主
+version_date: '20191212'
+id: '10010704'
+artwork:
+  images:
+  - path: 10010704.png
+    scale: 0.747
+    offset_y: -66

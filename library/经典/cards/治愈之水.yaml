@@ -1,0 +1,15 @@
+type: 法术
+name: 治愈之水
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  为一个角色恢复3点#sm，海坊主每有2点#hj则效果+1。'
+shikigami: 海坊主
+version_date: '20191212'
+id: '10010701'
+artwork:
+  images:
+  - path: 10010701.png
+    scale: 0.747
+    offset_y: -82

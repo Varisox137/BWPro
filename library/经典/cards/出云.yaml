@@ -1,0 +1,16 @@
+type: 形态
+name: 出云
+level: 3
+rarity: SR
+description: 当凤凰火使用法术牌时，[[运势4]]：将一张‘凤火’置入手牌。
+shikigami: 凤凰火
+power: 5
+health: 6
+version_date: '20191212'
+id: '10010508'
+artwork:
+  images:
+  - path: 10010508.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -58

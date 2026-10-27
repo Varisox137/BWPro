@@ -1,0 +1,15 @@
+type: 法术
+name: 强索
+level: 2
+rarity: R
+description: '[[瞬发]]
+
+  调度对手已展示的手牌，抽一张牌。（3次调度次数）'
+shikigami: 觉
+version_date: '20191212'
+id: '10010804'
+artwork:
+  images:
+  - path: 10010804.png
+    scale: 0.747
+    offset_y: -70

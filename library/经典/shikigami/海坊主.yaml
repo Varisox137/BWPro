@@ -1,0 +1,17 @@
+type: 式神
+name: 海坊主
+faction: 青岚
+power: 2
+health: 6
+description: 海坊主对己方造成的过量治疗会转化为#hj。
+version_date: '20191212'
+id: '100107'
+artwork:
+  images:
+  - path: 100107.png
+    scale: 0.711
+    offset_y: -92
+portrait:
+  scale: 3.388
+  offset_x: -1
+  offset_y: 57

@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·姑获鸟
+level: 3
+rarity: SR
+description: 当其他己方式神攻击后，本回合此牌获得[[瞬发]]。[[觉醒]]：[[远程]]。姑获鸟击杀敌方式神时，再发起一次攻击。
+shikigami: 姑获鸟
+version_date: '20200723'
+id: '10010608'
+evolve: true
+power+: 2
+artwork:
+  images:
+  - path: 10010608.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -90

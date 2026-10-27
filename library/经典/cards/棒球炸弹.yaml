@@ -1,0 +1,13 @@
+type: 法术
+name: 棒球炸弹
+level: 1
+rarity: SR
+description: 对一个式神造成2点伤害，该式神每有一张已展示的专属牌，伤害+2。
+shikigami: 觉
+version_date: '20191212'
+id: '10010802'
+artwork:
+  images:
+  - path: 10010802.png
+    scale: 0.747
+    offset_y: -64

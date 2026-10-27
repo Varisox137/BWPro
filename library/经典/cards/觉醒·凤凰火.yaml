@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·凤凰火
+level: 2
+rarity: SR
+description: '[[觉醒]]：当己方式神使用法术牌时，[[投射]]：造成1点伤害。'
+shikigami: 凤凰火
+version_date: '20191212'
+evolve: true
+power+: 1
+health+: 1
+id: '10010506'
+artwork:
+  images:
+  - path: 10010506.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -97

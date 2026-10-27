@@ -1261,8 +1261,7 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     outer = view.battle_page.layout()
     assert outer.itemAt(0).widget() is view.battle_view
     assert scene.end_turn_item.widget() is view.end_turn_button
-    assert scene.menu_item.widget() is view.menu_button
-    assert scene.menu_item.pos() == QPointF(1352, 16)
+    assert not scene.menu_item.isVisible()
     assert scene.ready_item.pos() == QPointF(1328, 435)
     assert view.end_turn_button.minimumWidth() == view.end_turn_button.maximumWidth()
     assert view.end_turn_button.minimumHeight() == view.end_turn_button.maximumHeight()
@@ -1728,11 +1727,14 @@ def test_main_window_hotseat_page_and_theme(qapp, db, tmp_path):
     assert isinstance(win.pages["hotseat"], HotseatView)
     win.go("hotseat")
     assert win.stack.currentWidget() is win.pages["hotseat"]
+    assert not win.game_menu_button.isHidden()
+    assert not win.pages["hotseat"].battle_scene.menu_item.isVisible()
     win.toggle_theme()
     assert win.pages["hotseat"].theme == "dark"
     win.pages["hotseat"].timeline_timer.start()
     win.back_button.click()
     assert win.stack.currentIndex() == 0
+    assert win.game_menu_button.isHidden()
     assert not win.pages["hotseat"].timeline_timer.isActive()
     win.close()
 

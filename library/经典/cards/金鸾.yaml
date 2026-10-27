@@ -1,0 +1,16 @@
+type: 形态
+name: 金鸾
+level: 2
+rarity: R
+description: 当其他己方式神攻击后，本回合此牌获得[[瞬发]]。
+shikigami: 姑获鸟
+power: 6
+health: 4
+version_date: '20191212'
+id: '10010604'
+artwork:
+  images:
+  - path: 10010604.png
+    scale: 0.711
+    offset_x: 0
+    offset_y: -73

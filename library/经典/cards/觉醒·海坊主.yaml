@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·海坊主
+level: 3
+rarity: SSR
+description: '[[觉醒]]：海坊主对己方造成的过量治疗会转化为#ll和#hj。'
+shikigami: 海坊主
+version_date: '20191212'
+evolve: true
+id: '10010708'
+power+: 1
+health+: 3
+artwork:
+  images:
+  - path: 10010708.png
+    scale: 0.747
+    offset_y: -96

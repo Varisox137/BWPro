@@ -202,7 +202,7 @@ def _empty_portrait_pixmap(definition, size: int, root: Path) -> QPixmap:
         return _fallback_pixmap(definition.name, definition.faction, size)
 
 
-def shikigami_portrait(definition, size: int = 88, root: Path | None = None,
+def shikigami_portrait(definition, size: int = 96, root: Path | None = None,
                        library_dir: Path | None = None) -> QPixmap:
     """返回带斜方框与派系标的式神头像；渲染资源与项目配置库相互独立。"""
     root = root or bwpdiy_root()

@@ -1,0 +1,16 @@
+type: 形态
+name: 影翼
+level: 1
+rarity: SR
+description: 姑获鸟每次攻击前获得1#ll。
+shikigami: 姑获鸟
+power: 4
+health: 4
+version_date: '20191212'
+id: '10010602'
+artwork:
+  images:
+  - path: 10010602.png
+    scale: 0.711
+    offset_x: 0
+    offset_y: -63

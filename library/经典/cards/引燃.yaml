@@ -1,0 +1,14 @@
+type: 法术
+name: 引燃
+level: 1
+rarity: SR
+description: 对一个式神造成2点伤害，若击杀则再对它的牌手造成2点伤害。
+shikigami: 凤凰火
+version_date: '20191212'
+id: '10010503'
+artwork:
+  images:
+  - path: 10010503.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -68

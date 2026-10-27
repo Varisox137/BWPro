@@ -160,7 +160,7 @@ def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
         db.shikigami[sid].name for sid in factories.TEAM]
     portraits = frame.findChildren(QLabel, "shikiPortrait")
     assert len(portraits) == 4
-    assert all(label.width() == label.height() == 88 for label in portraits)
+    assert all(label.width() == label.height() == 96 for label in portraits)
     assert all(not label.pixmap().isNull() for label in portraits)
     texts = [button.text() for button in frame.findChildren(QPushButton)]
     assert all(text in texts for text in ("编辑", "查看卡组码", "重命名", "删除"))
@@ -653,6 +653,15 @@ def test_cardart_description_removes_paired_braces():
         "投射：造成4点伤害。[[增强]]：若满足，此牌伤害翻倍")
 
 
+def test_cardart_native_height_supports_stat_layout(qapp, gdb):
+    from client.gui import cardart
+
+    cardart.clear_cardart_caches()
+    pixmap = cardart.card_pixmap(gdb.cards[10010103], gdb, height=255)
+    assert pixmap is not None and not pixmap.isNull()
+    assert pixmap.height() == 255
+
+
 def test_cardart_native_height_and_size_cache(qapp, tmp_path, monkeypatch):
     from client.gui import cardart
 
@@ -719,7 +728,7 @@ def test_portrait_native_size(qapp, tmp_path, monkeypatch):
 
     def render(_lib, _elem, art, faction, scale, faction_style, width=None, height=None):
         seen.update(width=width, height=height)
-        return Image.new("RGBA", (88, 88), "#336699")
+        return Image.new("RGBA", (96, 96), "#336699")
 
     monkeypatch.setattr(portrait, "_renderer",
                         lambda _root: (tmp_path, Library(), {"back_size": 56}, render))
@@ -727,8 +736,8 @@ def test_portrait_native_size(qapp, tmp_path, monkeypatch):
     pixmap = portrait.shikigami_portrait(
         SimpleNamespace(id=100101, name="测试", faction="苍叶", version=20260720),
         root=tmp_path, library_dir=tmp_path / "library")
-    assert seen == {"width": 88, "height": 88}
-    assert pixmap.width() == pixmap.height() == 88
+    assert seen == {"width": 96, "height": 96}
+    assert pixmap.width() == pixmap.height() == 96
     portrait._portrait_pixmap.cache_clear()
 
 

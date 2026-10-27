@@ -1,0 +1,15 @@
+type: 法术
+name: 读心
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  选择一个敌方式神，从对方手牌展示所有该式神的专属牌。'
+shikigami: 觉
+version_date: '20191212'
+id: '10010801'
+artwork:
+  images:
+  - path: 10010801.png
+    scale: 0.747
+    offset_y: -74

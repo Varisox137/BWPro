@@ -1,0 +1,16 @@
+type: 战斗
+name: 偷袭
+level: 2
+rarity: R
+description: '[[响应]]：当敌方战斗区式神气绝时，自动使用此牌。'
+shikigami: 姑获鸟
+power+: 3
+shield+: 0
+version_date: '20191212'
+id: '10010605'
+artwork:
+  images:
+  - path: 10010605.png
+    scale: 0.711
+    offset_x: 0
+    offset_y: -73

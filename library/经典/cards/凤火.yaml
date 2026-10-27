@@ -1,0 +1,14 @@
+type: 法术
+name: 凤火
+level: 2
+rarity: R
+description: 对一个式神造成5点伤害。
+shikigami: 凤凰火
+version_date: '20191212'
+id: '10010505'
+artwork:
+  images:
+  - path: 10010505.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -62

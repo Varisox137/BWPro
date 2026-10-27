@@ -1,0 +1,16 @@
+type: 法术
+name: 凤鸣
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  对敌方牌手造成3点伤害。'
+shikigami: 凤凰火
+version_date: '20191212'
+id: '10010501'
+artwork:
+  images:
+  - path: 10010501.png
+    offset_x: 0
+    offset_y: -100
+    scale: 0.784

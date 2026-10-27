@@ -1,0 +1,16 @@
+type: 战斗
+name: 丛云鹤舞
+level: 2
+rarity: SR
+description: '[[直击]]'
+shikigami: 姑获鸟
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10010603'
+artwork:
+  images:
+  - path: 10010603.png
+    scale: 0.711
+    offset_x: 0
+    offset_y: -67

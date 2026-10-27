@@ -49,6 +49,7 @@ uv run pytest -q tests/              # 运行全部测试
 - 桌面 GUI：`python -m client.gui`（PySide6，`client/gui/`）——卡组构筑全管理、
   本地热坐与联机对战完整图形化（QGraphicsScene 场况、中央调度、拖拽出击/用牌、升级勾玉、先后手/回合开始动画、已展示手牌、结算播放、断线重连）、
   浅深双主题、项目 `library/` 美术配置合成与内容寻址缓存，对局式神使用 BWPDIY `render_entity` 小卡；
+  式神录支持版本包/派系/全名筛选、单式主页、五卡分页与单卡详情；
   `library/` 中由 BWPDIY 编辑器生成的人工卡图/头像配置与图片随项目提交，供 GUI 直接复用；
   与 CLI 共享 `core/`+`db/`+`client/` 数据层和 `~/.bwpro/decks.json`
 

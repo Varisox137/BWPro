@@ -387,7 +387,7 @@ class DeckBuilderView(QWidget):
                 row_layout.setSpacing(10)
                 avatar = QLabel()
                 avatar.setObjectName("shikiPortrait")
-                avatar.setFixedSize(88, 88)
+                avatar.setFixedSize(96, 96)
                 if definition is not None:
                     avatar.setPixmap(shikigami_portrait(definition))
                 else:

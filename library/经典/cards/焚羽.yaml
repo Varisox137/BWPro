@@ -1,0 +1,16 @@
+type: 形态
+name: 焚羽
+level: 2
+rarity: R
+description: 凤凰火造成的所有非战斗伤害+1。
+shikigami: 凤凰火
+power: 4
+health: 6
+version_date: '20191212'
+id: '10010504'
+artwork:
+  images:
+  - path: 10010504.png
+    scale: 0.711
+    offset_x: 0
+    offset_y: -96

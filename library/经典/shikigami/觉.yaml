@@ -1,0 +1,17 @@
+type: 式神
+name: 觉
+faction: 青岚
+power: 2
+health: 5
+description: 己方回合开始时，随机展示一张敌方手牌。
+version_date: '20191212'
+id: '100108'
+artwork:
+  images:
+  - path: 100108.png
+    scale: 0.711
+    offset_y: -95
+portrait:
+  scale: 2.927
+  offset_x: 9
+  offset_y: 38

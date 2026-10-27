@@ -1,0 +1,15 @@
+type: 形态
+name: 蹈海
+level: 3
+rarity: SR
+description: 当海坊主造成战斗伤害时，为己方其他角色恢复等量#sm。
+shikigami: 海坊主
+power: 3
+health: 8
+version_date: '20200520'
+id: '10010707'
+artwork:
+  images:
+  - path: 10010707.png
+    scale: 0.711
+    offset_y: -76

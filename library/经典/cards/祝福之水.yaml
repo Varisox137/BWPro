@@ -1,0 +1,15 @@
+type: 法术
+name: 祝福之水
+level: 2
+rarity: R
+description: '[[瞬发]]
+
+  为所有己方角色恢复3点#sm。'
+shikigami: 海坊主
+version_date: '20191212'
+id: '10010705'
+artwork:
+  images:
+  - path: 10010705.png
+    scale: 0.747
+    offset_y: -88

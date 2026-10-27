@@ -105,6 +105,12 @@ class MainWindow(QMainWindow):
         self.back_button.clicked.connect(self.back)
         chrome.addWidget(self.back_button, alignment=Qt.AlignLeft)
         chrome.addStretch(1)
+        self.game_menu_button = QPushButton("退出对局")
+        self.game_menu_button.setObjectName("small")
+        self.game_menu_button.setFixedSize(120, 36)
+        self.game_menu_button.clicked.connect(self.return_current_game)
+        chrome.addWidget(self.game_menu_button, alignment=Qt.AlignRight)
+        self.game_menu_button.hide()
         self.theme_button = QPushButton()
         self.theme_button.setObjectName("themeToggle")
         self.theme_button.setFixedSize(36, 36)
@@ -117,7 +123,13 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, QWidget] = {}
         self.stack.addWidget(self._make_menu())
         for key, title, _sub in MENU_ENTRIES:
-            if key in ("builder", "hotseat", "online"):
+            if key == "codex":
+                if db is None:
+                    from db.loader import CardDatabase
+                    db = CardDatabase.load()
+                from client.gui.codex import ShikigamiCodexView
+                self.pages[key] = ShikigamiCodexView(db)
+            elif key in ("builder", "hotseat", "online"):
                 if db is None:
                     from db.loader import CardDatabase
                     db = CardDatabase.load()
@@ -154,6 +166,15 @@ class MainWindow(QMainWindow):
     def go(self, key: str):
         self.stack.setCurrentWidget(self.pages[key])
         self.back_button.show()
+        self.game_menu_button.setVisible(key in ("hotseat", "online"))
+
+    def return_current_game(self) -> None:
+        page = self.stack.currentWidget()
+        hook = getattr(page, "return_to_menu", None)
+        if callable(hook):
+            hook()
+        else:
+            self.go_menu()
 
     def back(self):
         """统一返回入口；热坐/联机先执行各自的断线与计时器清理。"""
@@ -170,6 +191,7 @@ class MainWindow(QMainWindow):
     def go_menu(self):
         self.stack.setCurrentIndex(0)
         self.back_button.hide()
+        self.game_menu_button.hide()
 
     def closeEvent(self, event):
         page = self.stack.currentWidget()

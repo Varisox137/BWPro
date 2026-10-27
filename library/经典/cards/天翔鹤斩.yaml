@@ -1,0 +1,17 @@
+type: 战斗
+name: 天翔鹤斩
+level: 2
+rarity: SSR
+description: '[[贯通]]
+
+  本次战斗改为攻击一个敌方准备区式神。'
+shikigami: 姑获鸟
+power+: 3
+shield+: 0
+version_date: '20191212'
+id: '10010606'
+artwork:
+  images:
+  - path: 10010606.png
+    scale: 0.784
+    offset_y: -48

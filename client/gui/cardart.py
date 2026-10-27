@@ -223,6 +223,27 @@ def _card_config_snapshot(library_dir: Path, cdef, fingerprint: tuple | None = N
     return None, None, None
 
 
+def _scale_layout_compat(scale_layout, layout: dict, factor: float) -> dict:
+    scaled = scale_layout(layout, factor)
+    for element in scaled.get("elements", {}).values():
+        if "stroke_width" in element:
+            element["stroke_width"] = max(1, round(element["stroke_width"]))
+        for key in ("_sign_gap", "_digit_gap"):
+            if key in element:
+                element[key] = round(element[key])
+    return scaled
+
+
+def _element_compat(element: dict) -> dict:
+    element = dict(element)
+    if "stroke_width" in element:
+        element["stroke_width"] = max(1, round(element["stroke_width"]))
+    for key in ("_sign_gap", "_digit_gap"):
+        if key in element:
+            element[key] = round(element[key])
+    return element
+
+
 def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
                         height: int | None = None) -> QPixmap | None:
     try:
@@ -238,7 +259,13 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
         with _RENDER_LOCK:
             original_get_library = pipeline.get_library
             original_load_artwork = pipeline.load_card_artwork
+            original_scale_layout = pipeline.scale_layout
+            original_render_element = pipeline.render_element
             pipeline.get_library = lambda _assets: library
+            pipeline.scale_layout = lambda layout, factor: _scale_layout_compat(
+                original_scale_layout, layout, factor)
+            pipeline.render_element = lambda canvas, lib, name, elem, card, ctx=None, **kwargs: (
+                original_render_element(canvas, lib, name, _element_compat(elem), card, ctx, **kwargs))
             if transparent:
                 pipeline.load_card_artwork = lambda _card, _lib: (
                     (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
@@ -250,6 +277,8 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
             finally:
                 pipeline.get_library = original_get_library
                 pipeline.load_card_artwork = original_load_artwork
+                pipeline.scale_layout = original_scale_layout
+                pipeline.render_element = original_render_element
         buffer = BytesIO()
         image.save(buffer, "PNG")
         pixmap = QPixmap()
