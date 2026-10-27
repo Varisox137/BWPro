@@ -95,6 +95,18 @@ def test_assault_costs_orb_and_action(make_game):
         g.apply({"op": "assault", "index": 0})
 
 
+def test_assault_error_query_is_read_only(make_game):
+    g = make_game()
+    before = g.state.model_dump()
+    assert g.assault_error(0, 0) is None
+    assert g.state.model_dump() == before
+
+    g.current.orb = 0
+    before = g.state.model_dump()
+    assert "鬼火" in g.assault_error(0, 0)
+    assert g.state.model_dump() == before
+
+
 def test_upgrade_lowest_rule(make_game):
     g = make_game(auto_skip_upgrade=False)
     g.apply({"op": "debug_skip_upgrade"})

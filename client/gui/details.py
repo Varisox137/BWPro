@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cli
+from client.gui.cardart import seat_level_color, shikigami_pixmap
 from client.gui.widgets import CardWidget, polish_dialog_buttons
 
 
@@ -161,26 +162,37 @@ class ShikigamiDetailDialog(QDialog):
         scroll.setWidget(self.status_label)
 
         cards = QHBoxLayout()
-        main_card = QFrame()
-        main_card.setObjectName("shikigamiMainCard")
-        main_card.setFixedSize(240, 336)
-        main_card.setStyleSheet(
-            "QFrame#shikigamiMainCard {"
-            f"background-color: {'#56466f' if awakened else '#35566b'};"
-            "border: 2px solid #d9b96a; border-radius: 8px; }"
-        )
-        main_layout = QVBoxLayout(main_card)
-        main_label = QLabel(self.main_card_text)
-        main_label.setWordWrap(True)
-        main_label.setAlignment(Qt.AlignCenter)
-        main_label.setStyleSheet("color: #f7f0dc; border: none; background: transparent;")
-        main_layout.addWidget(main_label)
-        cards.addWidget(main_card)
+        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami)
+        self.main_art_label = QLabel()
+        self.main_art_label.setAlignment(Qt.AlignCenter)
+        if self.main_art_pixmap is not None and not self.main_art_pixmap.isNull():
+            scaled = self.main_art_pixmap.scaled(
+                240, 336, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.main_art_label.setPixmap(scaled)
+            self.main_art_label.setFixedSize(scaled.size())
+            cards.addWidget(self.main_art_label)
+        else:
+            main_card = QFrame()
+            main_card.setObjectName("shikigamiMainCard")
+            main_card.setFixedSize(240, 336)
+            main_card.setStyleSheet(
+                "QFrame#shikigamiMainCard {"
+                f"background-color: {'#56466f' if awakened else '#35566b'};"
+                "border: 2px solid #d9b96a; border-radius: 8px; }"
+            )
+            main_layout = QVBoxLayout(main_card)
+            main_label = QLabel(self.main_card_text)
+            main_label.setWordWrap(True)
+            main_label.setAlignment(Qt.AlignCenter)
+            main_label.setStyleSheet("color: #f7f0dc; border: none; background: transparent;")
+            main_layout.addWidget(main_label)
+            cards.addWidget(main_card)
 
         self.form_card = None
         if shiki.form is not None:
             form_def = game.db.cards[shiki.form.id]
-            self.form_card = CardWidget(form_def, db=game.db)
+            self.form_card = CardWidget(form_def, db=game.db,
+                                        level_color=seat_level_color(ref.shikigami))
             self.form_card.count_label.hide()
             cards.addWidget(self.form_card)
         layout.addLayout(cards)

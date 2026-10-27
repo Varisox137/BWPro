@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         self.theme = "light"
         central = QWidget(self)
         outer = QVBoxLayout(central)
-        outer.setContentsMargins(18, 12, 18, 18)
+        outer.setContentsMargins(12, 12, 12, 12)
         chrome = QHBoxLayout()
         self.back_button = QPushButton("← 返回主菜单")
         self.back_button.setObjectName("small")
@@ -161,13 +161,26 @@ class MainWindow(QMainWindow):
         for hook_name in ("return_to_menu", "leave_to_menu"):
             hook = getattr(page, hook_name, None)
             if callable(hook):
-                hook()
+                if hook() is False:
+                    return
+                self.go_menu()
                 return
         self.go_menu()
 
     def go_menu(self):
         self.stack.setCurrentIndex(0)
         self.back_button.hide()
+
+    def closeEvent(self, event):
+        page = self.stack.currentWidget()
+        for hook_name in ("return_to_menu", "leave_to_menu"):
+            hook = getattr(page, hook_name, None)
+            if callable(hook):
+                if hook() is False:
+                    event.ignore()
+                    return
+                break
+        event.accept()
 
     def _make_menu(self) -> QWidget:
         page = QWidget()

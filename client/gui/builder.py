@@ -104,7 +104,11 @@ class ShikigamiDialog(QDialog):
         self.search_edit.textChanged.connect(self.populate)
         layout.addWidget(self.search_edit)
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["式神", "派系", "力量/生命"])
+        self.tree.setHeaderLabels(["式神名", "派系", "力量/生命"])
+        self.tree.setColumnWidth(0, 360)
+        self.tree.setColumnWidth(1, 100)
+        self.tree.setColumnWidth(2, 120)
+        self.tree.setIndentation(12)
         self.tree.itemDoubleClicked.connect(lambda _item, _col: self.accept())
         layout.addWidget(self.tree, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -156,12 +160,13 @@ class DeckBuilderView(QWidget):
         self.team: list[int] = []
         self.picks: dict[int, Counter] = {}
         self.selected_sid: int | None = None
+        self.dirty = False
         self._build_ui()
         self.reload_decks()
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 18, 24, 20)
+        outer.setContentsMargins(0, 0, 0, 0)
         self.stack = QStackedWidget()
         outer.addWidget(self.stack)
         self.list_page = QWidget()
@@ -173,6 +178,7 @@ class DeckBuilderView(QWidget):
 
     def _build_list_page(self) -> None:
         layout = QVBoxLayout(self.list_page)
+        layout.setContentsMargins(0, 0, 0, 0)
         top = QHBoxLayout()
         title = QLabel("卡组构筑")
         title.setObjectName("viewTitle")
@@ -213,14 +219,16 @@ class DeckBuilderView(QWidget):
 
     def _build_editor_page(self) -> None:
         layout = QVBoxLayout(self.editor_page)
+        layout.setContentsMargins(0, 0, 0, 0)
         top = QHBoxLayout()
         self.editor_back = QPushButton("← 卡组列表")
         self.editor_back.setObjectName("small")
-        self.editor_back.clicked.connect(self.show_list)
+        self.editor_back.clicked.connect(self.leave_to_menu)
         top.addWidget(self.editor_back)
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("卡组名称")
         self.name_edit.setMaximumWidth(280)
+        self.name_edit.textChanged.connect(self._mark_dirty)
         top.addWidget(self.name_edit)
         self.code_button = QPushButton("卡组码")
         self.code_button.setObjectName("small")
@@ -246,7 +254,7 @@ class DeckBuilderView(QWidget):
         layout.addWidget(self.standard_label)
         body = QHBoxLayout()
         self.shiki_list = QListWidget()
-        self.shiki_list.setMaximumWidth(230)
+        self.shiki_list.setFixedWidth(180)
         self.shiki_list.currentRowChanged.connect(self._select_shiki_row)
         self.shiki_list.itemDoubleClicked.connect(self._replace_shiki_item)
         body.addWidget(self.shiki_list)
@@ -254,6 +262,8 @@ class DeckBuilderView(QWidget):
         self.card_area = SwipeFrame()
         self.card_area.swiped.connect(self.turn_card_page)
         self.card_layout = QHBoxLayout(self.card_area)
+        self.card_layout.setContentsMargins(0, 0, 0, 0)
+        self.card_layout.setSpacing(4)
         center.addWidget(self.card_area, 1)
         pager = QHBoxLayout()
         self.card_previous = QPushButton("‹")
@@ -286,13 +296,13 @@ class DeckBuilderView(QWidget):
         self.theme = theme
         self.setStyleSheet(f"""
             QLabel#viewTitle {{ color: {colors['gold']}; font-size: 28px; }}
-            QFrame#deckFrame, QFrame#card {{
+            QFrame#deckFrame {{
                 background: {colors['panel']}; border: 2px solid {colors['line']};
                 border-radius: 10px;
             }}
+            QFrame#card {{ background: transparent; border: none; }}
             QFrame#deckFrame[standard="true"] {{ border: 3px solid {colors['blue']}; }}
             QWidget#deckShikiRow, QFrame#deckFrame QLabel {{ background: transparent; border: none; }}
-            QFrame#card[selected="true"] {{ border-color: {colors['gold']}; }}
             QLabel#cardName {{ color: {colors['gold']}; font-size: 20px; font-weight: bold; }}
             QLabel#cardLevel, QLabel#cardStats, QLabel#standardStatus {{ color: {colors['blue']}; }}
             QLabel#cardMeta, QLabel#cardCount, QLabel#rulesHint {{ color: {colors['dim']}; }}
@@ -312,6 +322,26 @@ class DeckBuilderView(QWidget):
     def show_list(self) -> None:
         self.stack.setCurrentWidget(self.list_page)
         self._render_decks()
+
+    def _mark_dirty(self, *_args) -> None:
+        self.dirty = True
+
+    def leave_to_menu(self) -> bool:
+        if self.stack.currentWidget() is self.editor_page and self.dirty:
+            box = QMessageBox(self)
+            box.setWindowTitle("卡组未保存")
+            box.setText("当前卡组有未保存的修改。")
+            box.setInformativeText("保存修改后返回卡组列表，或放弃本次修改。")
+            box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            polish_dialog_buttons(box)
+            answer = box.exec()
+            if answer == QMessageBox.Cancel:
+                return False
+            if answer == QMessageBox.Save and not self.save_editor():
+                return False
+        self.dirty = False
+        self.reload_decks()
+        return True
 
     def _render_decks(self) -> None:
         _clear_layout(self.deck_layout)
@@ -333,7 +363,8 @@ class DeckBuilderView(QWidget):
             name.setObjectName("cardName")
             name.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
             name.setWordWrap(True)
-            name.setMinimumHeight(name.fontMetrics().lineSpacing() * 2)
+            name.setFixedHeight(name.fontMetrics().lineSpacing() * 2)
+            name.setToolTip(entry["name"])
             column.addWidget(name)
             env = QLabel(env_label(entry.get("env")))
             env.setObjectName("cardMeta")
@@ -392,7 +423,6 @@ class DeckBuilderView(QWidget):
             self._render_decks()
 
     def open_deck(self, index: int) -> None:
-        DeckCodeDialog(self.export_code(index), parent=self).exec()
         self.edit_deck(index)
 
     def edit_deck(self, index: int) -> None:
@@ -424,6 +454,7 @@ class DeckBuilderView(QWidget):
         self.selected_sid = self.team[0] if self.team else None
         self.page_index = 0
         self.stack.setCurrentWidget(self.editor_page)
+        self.dirty = False
         self._render_shiki_list()
         self._render_cards()
         self._update_validation()
@@ -451,6 +482,7 @@ class DeckBuilderView(QWidget):
         self._render_shiki_list()
         self._render_cards()
         self._update_validation()
+        self._mark_dirty()
 
     def add_shikigami(self, sid: int) -> bool:
         if len(self.team) >= 4 or sid in self.team or sid not in self.db.at_date(self.current_env()).shikigami:
@@ -462,6 +494,7 @@ class DeckBuilderView(QWidget):
         self._render_shiki_list()
         self._render_cards()
         self._update_validation()
+        self._mark_dirty()
         return True
 
     def choose_shikigami(self, replace_slot: int | None = None) -> None:
@@ -487,6 +520,7 @@ class DeckBuilderView(QWidget):
         self._render_shiki_list()
         self._render_cards()
         self._update_validation()
+        self._mark_dirty()
         return True
 
     def _render_shiki_list(self) -> None:
@@ -496,7 +530,16 @@ class DeckBuilderView(QWidget):
         for sid in self.team:
             definition = edb.shikigami[sid]
             count = sum(self.picks.get(sid, {}).values())
-            QListWidgetItem(f"{definition.name}　{count}/8", self.shiki_list)
+            item = QListWidgetItem(self.shiki_list)
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.addWidget(QLabel(definition.name), 1)
+            count_label = QLabel(f"{count}/8")
+            count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            row_layout.addWidget(count_label)
+            item.setSizeHint(row_widget.sizeHint())
+            self.shiki_list.setItemWidget(item, row_widget)
         if len(self.team) < 4:
             QListWidgetItem("＋ 添加式神", self.shiki_list)
         row = self.team.index(self.selected_sid) if self.selected_sid in self.team else -1
@@ -523,7 +566,8 @@ class DeckBuilderView(QWidget):
     def _current_cards(self) -> list:
         if self.selected_sid is None:
             return []
-        return buildable_cards(self.db.at_date(self.current_env()), self.selected_sid)
+        edb = self.db.at_date(self.current_env())
+        return [edb.shikigami[self.selected_sid]] + buildable_cards(edb, self.selected_sid)
 
     def _render_cards(self) -> None:
         _clear_layout(self.card_layout)
@@ -532,12 +576,20 @@ class DeckBuilderView(QWidget):
         self.page_count = max(1, (len(cards) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE)
         self.page_index = max(0, min(self.page_index, self.page_count - 1))
         shown = cards[self.page_index * CARD_PAGE_SIZE:(self.page_index + 1) * CARD_PAGE_SIZE]
+        art_context = {}
         for cdef in shown:
+            base_shiki = getattr(cdef, "card_type", None) is None
             copies = self.picks.get(self.selected_sid, {}).get(cdef.id, 0)
-            widget = CardWidget(cdef, copies, editable=True, db=self.db)
+            widget = CardWidget(cdef, copies, editable=not base_shiki, db=self.db,
+                                art_context=art_context)
+            if base_shiki:
+                widget.count_label.setText(" ")
+            else:
+                widget.plus_button.clicked.connect(
+                    lambda _=False, cid=cdef.id: self.change_card(cid, 1))
+                widget.minus_button.clicked.connect(
+                    lambda _=False, cid=cdef.id: self.change_card(cid, -1))
             widget.clicked.connect(self.show_card_detail)
-            widget.plus_button.clicked.connect(lambda _=False, cid=cdef.id: self.change_card(cid, 1))
-            widget.minus_button.clicked.connect(lambda _=False, cid=cdef.id: self.change_card(cid, -1))
             self.card_layout.addWidget(widget, 1)
             self.card_widgets.append(widget)
         self.card_layout.addStretch(1)
@@ -577,6 +629,7 @@ class DeckBuilderView(QWidget):
         self._render_cards()
         self._render_shiki_list()
         self._update_validation()
+        self._mark_dirty()
 
     def _editor_groups(self):
         edb = self.db.at_date(self.current_env())
@@ -613,6 +666,7 @@ class DeckBuilderView(QWidget):
         except (ValueError, OSError) as error:
             show_warning(self, "保存失败", str(error))
             return False
+        self.dirty = False
         self.reload_decks()
         return True
 

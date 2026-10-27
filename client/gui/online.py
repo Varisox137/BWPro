@@ -111,6 +111,9 @@ class OnlineBattleView(HotseatView):
         self._awaiting_state = False
         self._pending_game_over = None
         self._choice_key = None
+        self._last_turn_key = None
+        self._opening_banner_pending = True
+        self.battle_scene.hide_banner()
         if self.choice_dialog is not None:
             self.choice_dialog.close()
             self.choice_dialog = None
@@ -294,6 +297,7 @@ class OnlineView(QWidget):
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
         self.stack = QStackedWidget()
         outer.addWidget(self.stack)
         self.connect_page = QWidget()

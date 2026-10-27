@@ -1,4 +1,4 @@
-"""本地项目卡图适配：引擎数据生成 BWPDIY 渲染负载，失败时返回空槽。"""
+"""本地卡图适配：引擎数据生成 BWPDIY 负载，缺插画时仍合成完整卡框。"""
 from __future__ import annotations
 
 import hashlib
@@ -20,7 +20,8 @@ from PySide6.QtGui import QPixmap
 from client.gui import portrait
 from client.gui.portrait import library_root
 
-__all__ = ["library_root", "card_pixmap", "clear_cardart_caches"]
+__all__ = ["library_root", "card_pixmap", "shikigami_pixmap", "entity_pixmap",
+           "seat_level_color", "clear_cardart_caches"]
 
 _TYPE_NAMES = {"combat": "战斗", "spell": "法术", "form": "形态",
                "field": "幻境", "reinforce": "协战"}
@@ -29,9 +30,17 @@ _ICON_NAMES = {"力量": "ll", "生命": "sm", "护甲": "hj", "破甲": "pj",
 _KEYWORD_RE = re.compile(r"\[([^\[\]\n]+)\]")
 _ICON_RE = re.compile("|".join(_ICON_NAMES))
 _RENDER_LOCK = threading.RLock()
+_TRANSPARENT_ART = "__BWPRO_TRANSPARENT__"
+_SEAT_LEVEL_COLORS = ("yellow", "cyan", "purple", "red")
+
+
+def seat_level_color(seat: int | None) -> str:
+    """准备区 1-4 对应的 DIY 勾玉颜色；无座次使用默认黄色。"""
+    return _SEAT_LEVEL_COLORS[seat] if isinstance(seat, int) and 0 <= seat < 4 else "yellow"
 
 
 def _description(text: str) -> str:
+    text = text.replace("{", "").replace("}", "")
     text = _KEYWORD_RE.sub(r"[[\1]]", text)
     return _ICON_RE.sub(lambda match: f"#{_ICON_NAMES[match.group(0)]}", text)
 
@@ -134,8 +143,8 @@ def _renderer_resource_fingerprint(assets: Path) -> tuple:
     return tuple(fingerprint)
 
 
-@lru_cache(maxsize=4)
 def _renderer_resource_digest(root_text: str, fingerprint: tuple) -> str:
+    """资源指纹每次都读取内容，避免同 mtime/大小下的陈旧缓存。"""
     del root_text
     digest = hashlib.sha256()
     for path_text, mtime_ns, size in fingerprint:
@@ -143,6 +152,16 @@ def _renderer_resource_digest(root_text: str, fingerprint: tuple) -> str:
         digest.update(f":{mtime_ns}:{size}\0".encode("ascii"))
         digest.update(Path(path_text).read_bytes())
     return digest.hexdigest()
+
+
+def _renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
+    if cache_context is not None and "renderer_resources" in cache_context:
+        return cache_context["renderer_resources"]
+    resources = _renderer_resource_digest(
+        str(assets.resolve()), _renderer_resource_fingerprint(assets))
+    if cache_context is not None:
+        cache_context["renderer_resources"] = resources
+    return resources
 
 
 def _preflight_card_artwork(library, art: dict) -> None:
@@ -161,9 +180,11 @@ def _card_config_fingerprint(library_dir: Path) -> tuple:
     for path in sorted(library_dir.glob("*/cards/*.yaml")):
         try:
             stat = path.stat()
+            contents = path.read_bytes()
         except OSError:
             continue
-        fingerprint.append((str(path), stat.st_mtime_ns, stat.st_size))
+        fingerprint.append((str(path), stat.st_mtime_ns, stat.st_size,
+                            hashlib.sha256(contents).hexdigest()))
     return tuple(fingerprint)
 
 
@@ -173,7 +194,7 @@ def _card_config_index(root_text: str, fingerprint: tuple) -> tuple:
 
     del root_text
     entries = []
-    for path_text, _mtime_ns, size in fingerprint:
+    for path_text, _mtime_ns, size, _sha256 in fingerprint:
         path = Path(path_text)
         try:
             if size > portrait.MAX_YAML_BYTES:
@@ -189,8 +210,9 @@ def _card_config_index(root_text: str, fingerprint: tuple) -> tuple:
     return tuple(entries)
 
 
-def _card_config_snapshot(library_dir: Path, cdef):
-    fingerprint = _card_config_fingerprint(library_dir)
+def _card_config_snapshot(library_dir: Path, cdef, fingerprint: tuple | None = None):
+    if fingerprint is None:
+        fingerprint = _card_config_fingerprint(library_dir)
     entries = _card_config_index(str(library_dir), fingerprint)
     for config, path, config_sha256 in entries:
         if str(config.get("id", "")) != str(cdef.id) and config.get("name") != cdef.name:
@@ -211,14 +233,21 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str) -> 
 
         library = AssetLibrary(assets)
         art = payload["artwork"]["images"][0]
+        transparent = art["path"] == _TRANSPARENT_ART
         with _RENDER_LOCK:
             original_get_library = pipeline.get_library
+            original_load_artwork = pipeline.load_card_artwork
             pipeline.get_library = lambda _assets: library
+            if transparent:
+                pipeline.load_card_artwork = lambda _card, _lib: (
+                    (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
             try:
-                _preflight_card_artwork(library, art)
+                if not transparent:
+                    _preflight_card_artwork(library, art)
                 image = render(payload, assets, layout=layout)
             finally:
                 pipeline.get_library = original_get_library
+                pipeline.load_card_artwork = original_load_artwork
         buffer = BytesIO()
         image.save(buffer, "PNG")
         pixmap = QPixmap()
@@ -229,16 +258,61 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str) -> 
         return None
 
 
+def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
+                          root_text: str) -> QPixmap | None:
+    try:
+        payload = json.loads(payload_json)
+        state = json.loads(state_json)
+        layout = json.loads(layout_json)
+        assets, _shared_library, _render = _renderer(root_text)
+        from bwpdiy.render import entity
+        from bwpdiy.render.assets import AssetLibrary
+
+        library = AssetLibrary(assets)
+        art = payload["artwork"]["images"][0]
+        transparent = art["path"] == _TRANSPARENT_ART
+        with _RENDER_LOCK:
+            original_get_library = entity.get_library
+            original_load_artwork = entity.load_card_artwork
+            entity.get_library = lambda _assets: library
+            if transparent:
+                entity.load_card_artwork = lambda _card, _lib: (
+                    (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
+            try:
+                if not transparent:
+                    _preflight_card_artwork(library, art)
+                image = entity.render_entity(payload, state, assets, layout=layout)
+            finally:
+                entity.get_library = original_get_library
+                entity.load_card_artwork = original_load_artwork
+        buffer = BytesIO()
+        image.save(buffer, "PNG")
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
+            raise ValueError("式神小卡 PNG 解码失败")
+        return pixmap
+    except Exception:
+        return None
+
+
 def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
                     art_path: str, renderer_version: str, renderer_resources: str,
-                    root_text: str) -> str:
-    image_stat = Path(art_path).stat()
+                    root_text: str, cache_context: dict | None = None) -> str:
+    if art_path == _TRANSPARENT_ART:
+        image_sha256 = "transparent"
+    else:
+        key = ("art_sha256", art_path)
+        if cache_context is not None and key in cache_context:
+            image_sha256 = cache_context[key]
+        else:
+            image_sha256 = hashlib.sha256(Path(art_path).read_bytes()).hexdigest()
+            if cache_context is not None:
+                cache_context[key] = image_sha256
     key_data = {
         "payload": payload_json,
         "layout": layout_json,
         "config_sha256": config_sha256,
-        "image_mtime_ns": image_stat.st_mtime_ns,
-        "image_size": image_stat.st_size,
+        "image_sha256": image_sha256,
         "bwpdiy_version": renderer_version,
         "renderer_resources": renderer_resources,
         "renderer_root": root_text,
@@ -285,7 +359,28 @@ def _cached_card_pixmap(cache_path_text: str, payload_json: str,
     return pixmap
 
 
+@lru_cache(maxsize=256)
+def _cached_runtime_card_pixmap(cache_key: str, payload_json: str,
+                                layout_json: str, root_text: str) -> QPixmap | None:
+    """运行时变体仅驻留有界内存，避免每种实时数值都永久写盘。"""
+    del cache_key  # 仅作为 LRU 的身份键，不映射磁盘文件
+    return _render_card_pixmap(payload_json, layout_json, root_text)
+
+
+@lru_cache(maxsize=256)
+def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
+                          layout_json: str, root_text: str) -> QPixmap | None:
+    del cache_key
+    return _render_entity_pixmap(payload_json, state_json, layout_json, root_text)
+
+
 def _validate_layout(layout: dict) -> None:
+    elements = layout.get("elements", {})
+    if not isinstance(elements, dict) or len(elements) > 64:
+        raise ValueError("layout 元素数量超出安全范围")
+    if any(not isinstance(element, dict) for element in elements.values()):
+        raise ValueError("layout 元素必须为映射")
+
     def visit(value, key=None):
         if isinstance(value, dict):
             for child_key, child in value.items():
@@ -303,12 +398,15 @@ def _validate_layout(layout: dict) -> None:
             return
         if isinstance(value, list):
             for child in value:
-                visit(child)
+                visit(child, key)
             return
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return
         if not math.isfinite(value) or abs(value) > 4096:
             raise ValueError("layout 数值超出安全范围")
+        if key is not None and (key == "size" or key.endswith("_size")
+                                or key in ("width", "height")) and not 0 < value <= 512:
+            raise ValueError("layout 元素尺寸超出 512 画布预算")
         if key == "font_size" and not 1 <= value <= 256:
             raise ValueError("font_size 必须为 1..256")
         if key == "icon_scale" and not 0.01 <= value <= 16:
@@ -317,25 +415,43 @@ def _validate_layout(layout: dict) -> None:
     visit(layout)
 
 
-def card_pixmap(cdef, db, *, library_dir: Path | None = None,
-                cache_dir: Path | None = None,
-                display: dict[str, int] | None = None) -> QPixmap | None:
-    """按引擎版本选择项目配置并渲染全卡，使用内容寻址磁盘缓存。"""
-    library_dir = library_dir or library_root()
-    cache_dir = cache_dir or Path.home() / ".bwpro" / "cardart"
+def _transparent_art() -> dict:
+    """内存占位：无配置/缺图时仍渲染完整牌框，仅插画区域透明。"""
+    return {"path": _TRANSPARENT_ART, "offset_x": 0, "offset_y": 0,
+            "scale": 1.0, "rotate": 0}
+
+
+def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
+                      display: dict[str, int] | None,
+                      payload_overrides: dict | None = None,
+                      drop_keys: tuple[str, ...] = (),
+                      cache_context: dict | None = None) -> QPixmap | None:
     try:
-        config, path, config_sha256 = _card_config_snapshot(library_dir, cdef)
-        if config is None:
-            return None
-        art, faction_style = portrait._artwork_from_config(config, path, cdef.name)
-        if art is None:
-            return None
+        if cache_context is None:
+            fingerprint = _card_config_fingerprint(library_dir)
+        elif "config_fingerprint" not in cache_context:
+            cache_context["config_fingerprint"] = _card_config_fingerprint(library_dir)
+        fingerprint = (cache_context["config_fingerprint"] if cache_context is not None
+                       else fingerprint)
+        config, path, config_sha256 = _card_config_snapshot(
+            library_dir, cdef, fingerprint)
+        config = config or {}
+        art, faction_style = (portrait._artwork_from_config(config, path, cdef.name)
+                              if config else (None, None))
+        fallback_art = art is None
+        art = art or _transparent_art()
         selected = {"artwork": {"images": [art]}}
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(cdef, db, selected)
-        payload.update(_display_stats(display))
-        payload["_base_dir"] = str(path.parent.parent / "images")
+        if payload_overrides:
+            payload.update(payload_overrides)
+        for key in drop_keys:
+            payload.pop(key, None)
+        display_stats = _display_stats(display)
+        payload.update(display_stats)
+        payload["_base_dir"] = (str(cache_dir) if fallback_art or not path
+                                else str(path.parent.parent / "images"))
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)
         from bwpdiy import __version__
@@ -344,15 +460,17 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
         base_layout = get_type_layout(load_layouts(assets), payload["type"])
         layout = merge_card_layout(base_layout, config.get("layout"))
         _validate_layout(layout)
-        resources = _renderer_resource_digest(
-            str(assets.resolve()), _renderer_resource_fingerprint(assets))
+        resources = _renderer_resources(assets, cache_context)
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True,
                                   separators=(",", ":"), allow_nan=False)
         layout_json = json.dumps(layout, ensure_ascii=False, sort_keys=True,
                                  separators=(",", ":"), allow_nan=False)
         cache_key = _card_cache_key(
-            payload_json, layout_json, config_sha256, art["path"], __version__, resources,
-            root_text)
+            payload_json, layout_json, config_sha256 or "fallback", art["path"],
+            __version__, resources, root_text, cache_context)
+        if display_stats:
+            return _cached_runtime_card_pixmap(
+                cache_key, payload_json, layout_json, root_text)
         cache_path = cache_dir / f"{cache_key}.png"
         return _cached_card_pixmap(
             str(cache_path), payload_json, layout_json, root_text)
@@ -360,10 +478,110 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
         return None
 
 
+def card_pixmap(cdef, db, *, library_dir: Path | None = None,
+                cache_dir: Path | None = None,
+                display: dict[str, int] | None = None,
+                level_color: str | None = None,
+                cache_context: dict | None = None) -> QPixmap | None:
+    """静态卡面使用磁盘缓存；同页可传入临时上下文复用资源校验。"""
+    overrides = {"level_color": level_color} if level_color is not None else None
+    return _card_pixmap_impl(
+        cdef, db, library_dir or library_root(),
+        cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,
+        cache_context=cache_context)
+
+
+def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
+                  library_dir: Path | None = None, cache_dir: Path | None = None,
+                  cache_context: dict | None = None) -> QPixmap | None:
+    """以 BWPDIY render_entity 绘制对局小卡，保留当前战斗状态。"""
+    try:
+        awakened = shiki.awakened is not None
+        source = form or (db.cards[shiki.awakened] if awakened else db.shikigami[shiki.id])
+        library_dir = library_dir or library_root()
+        cache_dir = cache_dir or Path.home() / ".bwpro" / "cardart"
+        if form is None and not awakened:
+            config, path = portrait._project_config(
+                library_dir, "shikigami", source.id, source.name, source.version)
+            config_sha256 = (hashlib.sha256(path.read_bytes()).hexdigest()
+                             if config is not None else None)
+        else:
+            config, path, config_sha256 = _card_config_snapshot(library_dir, source)
+        config = config or {}
+        art, faction_style = (portrait._artwork_from_config(config, path, source.name)
+                              if config else (None, None))
+        fallback_art = art is None
+        art = art or _transparent_art()
+        selected = {"artwork": {"images": [art]}}
+        if faction_style is not None:
+            selected["faction_style"] = faction_style
+        payload = _card_data(source, db, selected)
+        payload["type"] = "形态" if form is not None else "式神"
+        payload["evolve"] = awakened
+        payload["_base_dir"] = (str(cache_dir) if fallback_art or not path
+                                else str(path.parent.parent / "images"))
+        state = {
+            "level": shiki.level,
+            "level_color": seat_level_color(seat),
+            "power": (shiki.eff_power if shiki.ext.get("power_zero")
+                      else shiki.eff_power - shiki.combat_power),
+            "health": shiki.health,
+            "combat_power": shiki.combat_power,
+            "shield": shiki.shield,
+            "art_scale": art.get("scale", 1.0),
+        }
+        payload["_entity_state"] = state
+        root_text = str(portrait.bwpdiy_root().resolve())
+        assets, _library, _render = _renderer(root_text)
+        from bwpdiy import __version__
+        from bwpdiy.render.layout import load_layouts
+
+        layout = load_layouts(assets)["对局式神"]
+        resources = _renderer_resources(assets, cache_context)
+        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                                  separators=(",", ":"), allow_nan=False)
+        state_json = json.dumps(state, ensure_ascii=False, sort_keys=True,
+                                separators=(",", ":"), allow_nan=False)
+        layout_json = json.dumps(layout, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":"), allow_nan=False)
+        cache_key = _card_cache_key(
+            payload_json, layout_json, config_sha256 or "fallback", art["path"],
+            __version__, resources, root_text, cache_context)
+        return _cached_entity_pixmap(cache_key, payload_json, state_json, layout_json, root_text)
+    except Exception:
+        return None
+
+
+def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = None,
+                     library_dir: Path | None = None,
+                     cache_dir: Path | None = None) -> QPixmap | None:
+    """以 DIY 路线绘制基础/觉醒式神；详情用永久值，场上可用当前值。"""
+    definition = db.shikigami[shiki.id]
+    awakened = shiki.awakened is not None
+    source = db.cards[shiki.awakened] if awakened else definition
+    power = shiki.eff_power if current else definition.power + (
+        shiki.perm_power if awakened else 0)
+    health = shiki.health if current else definition.health + (
+        shiki.perm_health if awakened else 0)
+    overrides = {
+        "type": "式神", "name": source.name,
+        "description": _description(source.text), "faction": shiki.faction,
+        "power": power, "health": health, "evolve": awakened,
+        "level": shiki.level or None,
+        "level_color": seat_level_color(seat),
+    }
+    return _card_pixmap_impl(
+        source, db, library_dir or library_root(),
+        cache_dir or Path.home() / ".bwpro" / "cardart",
+        {"power": power, "health": health}, overrides,
+        ("rarity", "shikigami", "power+", "health+"))
+
+
 def clear_cardart_caches() -> None:
     _cached_card_pixmap.cache_clear()
+    _cached_runtime_card_pixmap.cache_clear()
+    _cached_entity_pixmap.cache_clear()
     _card_config_index.cache_clear()
-    _renderer_resource_digest.cache_clear()
     _renderer.cache_clear()
     portrait._config_index.cache_clear()
     portrait._portrait_pixmap.cache_clear()

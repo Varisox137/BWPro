@@ -161,6 +161,7 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     payload["hand_info"] = json.loads(json.dumps(cli.hand_cards_info(game, 1)))
     battle.set_state(payload, timer={"kind": "mulligan", "deadline": time.time() + 30},
                      log=["开局"], timeline=[])
+    assert "⏱ 调度 0:" in battle.phase_label.text()
     assert all(isinstance(uid, int) for uid in battle.hand_info())
     assert battle.viewer == 1
     assert battle.stack.currentWidget() is battle.battle_page
@@ -187,6 +188,31 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     assert battle.mulligan(uid)
     assert sent[0]["op"] == "mulligan" and sent[0]["player"] == 1
     assert game.state.players[1].hand[0].uid == uid  # 本地 state 不被直接修改
+    battle.close()
+
+
+def test_online_enemy_turn_blocks_all_active_inputs(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    game.state.active = 1
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 0
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle.set_state(payload, log=[], timeline=[])
+    scene = battle.battle_scene
+    assert not battle._inputs_open()
+    assert not battle.end_turn_button.isEnabled()
+    assert all(not item.playable for key, item in scene.cards.items()
+               if key[0] in ("hand", "shiki") and item.player == 0)
+    hand = scene.cards[("hand", game.state.players[0].hand[0].uid)]
+    shiki = scene.cards[("shiki", 0, 0)]
+    assert not scene.drag_controller.press(hand, hand.scenePos())
+    assert not scene.drag_controller.press(shiki, shiki.scenePos())
+    assert not battle.end_turn()
+    assert not battle.assault(0)
+    assert not battle.play_card(hand.uid)
+    assert sent == []
     battle.close()
 
 
@@ -356,6 +382,30 @@ def test_online_missing_hand_info_never_falls_back_to_local_calculation(
 def isolated_cardart_home(tmp_path, monkeypatch):
     from pathlib import Path
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+
+def test_online_scene_card_art_uses_payload_render(qapp, db, make_game, monkeypatch):
+    from client.gui import battle_scene
+
+    game = make_game(mulligan=True)
+    card = game.state.players[0].hand[0]
+    render = {"power+": 4, "shield+": 2}
+    runtime = {"cost": 1, "stats": "", "keywords": [], "render": render,
+               "enhance": 0, "quest": None, "playable": True, "usage": []}
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = {str(card.uid): runtime}
+    calls = []
+
+    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None):
+        calls.append((cdef, display, level_color))
+        return None
+
+    monkeypatch.setattr(battle_scene, "card_pixmap", capture_pixmap)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(payload, log=[], timeline=[])
+    assert (db.cards[card.id], render, "red") in calls
+    battle.close()
 
 
 def test_online_hand_art_keeps_payload_runtime_separate(

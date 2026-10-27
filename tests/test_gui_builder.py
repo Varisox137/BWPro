@@ -9,10 +9,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QPushButton
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QMessageBox, QPushButton
 
 from client.gui import portrait
-from client.gui.app import MainWindow
+from client.gui.app import THEMES, MainWindow
 from client.gui.builder import DeckBuilderView, DeckCodeDialog, ShikigamiDialog
 from db import deckcode, deckstore
 from tests import factories
@@ -104,9 +104,12 @@ def test_card_page_has_five_and_reinforce_is_last(qapp, db, view):
     view.select_shikigami(sid)
     assert view.page_count == 2
     assert len(view.card_widgets) == 5
-    assert [w.cdef.id for w in view.card_widgets] == list(range(sid * 100 + 1, sid * 100 + 6))
+    assert view.card_widgets[0].cdef.id == sid
+    assert view.card_widgets[0].plus_button is None
+    assert view.card_widgets[0].count_label.text().strip() == ""
+    assert [w.cdef.id for w in view.card_widgets[1:]] == list(range(sid * 100 + 1, sid * 100 + 5))
     view.next_card_page()
-    assert len(view.card_widgets) == 4
+    assert len(view.card_widgets) == 5
     assert view.card_widgets[-1].cdef.id == reinforce.id
     view.next_card_page()
     assert view.page_index == 1
@@ -151,7 +154,7 @@ def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
     required_height = deck_name.heightForWidth(deck_name.width())
     assert deck_name.minimumHeight() == two_lines
     assert required_height > two_lines
-    assert deck_name.height() >= required_height
+    assert deck_name.height() == two_lines
     assert deck_name.alignment() & Qt.AlignTop
     assert [label.text() for label in frame.findChildren(QLabel, "deckShikiName")] == [
         db.shikigami[sid].name for sid in factories.TEAM]
@@ -160,6 +163,19 @@ def test_deck_frame_full_actions_and_portraits(qapp, db, tmp_path, view):
     assert all(not label.pixmap().isNull() for label in portraits)
     texts = [button.text() for button in frame.findChildren(QPushButton)]
     assert all(text in texts for text in ("编辑", "查看卡组码", "重命名", "删除"))
+
+
+def test_deck_short_name_reserves_second_line(qapp, db, tmp_path, view):
+    deckstore.save_decks(db, [{"name": "短名", "groups": legal_groups(db), "env": None}],
+                         tmp_path / "decks.json")
+    view.resize(1200, 800)
+    view.show()
+    view.reload_decks()
+    qapp.processEvents()
+    deck_name = view.deck_frames[0].findChild(QLabel, "cardName")
+    two_lines = deck_name.fontMetrics().lineSpacing() * 2
+    assert deck_name.height() == two_lines
+    assert deck_name.alignment() & Qt.AlignTop
 
 
 def test_environment_options_are_unique(qapp, view):
@@ -179,15 +195,160 @@ def test_cancel_add_restores_shikigami_selection(qapp, view, monkeypatch):
     assert view.selected_sid == factories.TEAM[0]
 
 
+def test_open_deck_goes_straight_to_editor(qapp, db, view, monkeypatch):
+    view.import_code(deckcode.encode_deck(legal_groups(db)))
+
+    def unexpected_exec(_dialog):
+        raise AssertionError("编辑前不应再弹卡组码")
+
+    monkeypatch.setattr("client.gui.builder.DeckCodeDialog.exec", unexpected_exec)
+    view.open_deck(0)
+    assert view.stack.currentWidget() is view.editor_page
+
+
+def test_shikigami_picker_name_column_is_wide(qapp, db):
+    picker = ShikigamiDialog(db)
+    assert picker.tree.headerItem().text(0) == "式神名"
+    assert picker.tree.columnWidth(0) >= 300
+    assert picker.tree.indentation() <= 12
+    picker.close()
+
+
+def test_editor_card_has_no_outer_frame_and_aligned_stepper(qapp, view):
+    view.apply_theme("light", THEMES["light"])
+    view.new_deck()
+    view.add_shikigami(factories.TEAM[0])
+    view.resize(1400, 800)
+    view.show()
+    qapp.processEvents()
+    base, widget = view.card_widgets[:2]
+    assert "QFrame#card { background: transparent; border: none; }" in view.styleSheet()
+    footer = widget.layout().itemAt(widget.layout().count() - 1).layout()
+    assert footer.itemAt(1).widget() is widget.minus_button
+    assert footer.itemAt(3).widget() is widget.count_label
+    assert footer.itemAt(5).widget() is widget.plus_button
+    assert widget.count_label.alignment() & Qt.AlignHCenter
+    assert base.art_label.height() == widget.art_label.height()
+
+
+def test_editor_five_cards_fit_1200px_window_with_aligned_counts(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.resize(1200, 800)
+    win.go("builder")
+    page = win.pages["builder"]
+    page.new_deck()
+    page.add_shikigami(factories.TEAM[0])
+    win.show()
+    qapp.processEvents()
+    assert win.width() == 1200
+    assert len(page.card_widgets) == 5
+    assert page.shiki_list.width() <= 180
+    area = page.card_area
+    assert all(widget.x() >= 0 and widget.x() + widget.width() <= area.width()
+               for widget in page.card_widgets)
+    margins = win.centralWidget().layout().contentsMargins()
+    assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (12, 12, 12, 12)
+    row = page.shiki_list.itemWidget(page.shiki_list.item(0))
+    assert row is not None
+    count = row.findChildren(QLabel)[-1]
+    assert count.text().endswith("/8") and count.alignment() & Qt.AlignRight
+    page.dirty = False
+    win.close()
+
+
+def test_editor_card_batch_checks_art_resources_once(qapp, view, monkeypatch):
+    from client.gui import cardart
+
+    original_digest = cardart._renderer_resource_digest
+    original_fingerprint = cardart._card_config_fingerprint
+    digest_calls = []
+    fingerprint_calls = []
+
+    def counted_digest(*args):
+        digest_calls.append(args)
+        return original_digest(*args)
+
+    def counted_fingerprint(*args):
+        fingerprint_calls.append(args)
+        return original_fingerprint(*args)
+
+    monkeypatch.setattr(cardart, "_renderer_resource_digest", counted_digest)
+    monkeypatch.setattr(cardart, "_card_config_fingerprint", counted_fingerprint)
+    view.new_deck()
+    view.add_shikigami(factories.TEAM[0])
+    assert len(view.card_widgets) == 5
+    assert len(digest_calls) == 1
+    assert len(fingerprint_calls) == 1
+
+
+def test_builder_leave_discard_and_reenter_returns_list(qapp, db, tmp_path, monkeypatch):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.go("builder")
+    page = win.pages["builder"]
+    page.new_deck()
+    page.add_shikigami(factories.TEAM[0])
+    monkeypatch.setattr(QMessageBox, "exec", lambda _box: QMessageBox.Cancel)
+    win.back()
+    assert page.stack.currentWidget() is page.editor_page
+    monkeypatch.setattr(QMessageBox, "exec", lambda _box: QMessageBox.Discard)
+    win.back()
+    assert win.stack.currentIndex() == 0
+    win.go("builder")
+    assert page.stack.currentWidget() is page.list_page
+    win.close()
+
+
+def test_builder_close_event_also_protects_unsaved_changes(qapp, db, tmp_path, monkeypatch):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.go("builder")
+    page = win.pages["builder"]
+    page.new_deck()
+    page.add_shikigami(factories.TEAM[0])
+    win.show()
+    monkeypatch.setattr(QMessageBox, "exec", lambda _box: QMessageBox.Cancel)
+    win.close()
+    assert win.isVisible()
+    monkeypatch.setattr(QMessageBox, "exec", lambda _box: QMessageBox.Discard)
+    win.close()
+    assert not win.isVisible()
+
+
 def test_dialog_standard_buttons_are_chinese_and_compact(qapp, db, view):
+    from PySide6.QtWidgets import QStyle, QStyleOptionButton
+    from client.gui.app import qss
+    from client.gui.widgets import polish_dialog_buttons
+
+    def assert_text_fits(button):
+        option = QStyleOptionButton()
+        button.initStyleOption(option)
+        contents = button.style().subElementRect(QStyle.SE_PushButtonContents, option, button)
+        assert contents.width() >= button.fontMetrics().horizontalAdvance(button.text())
+        assert contents.height() > 0
+
+    view.setStyleSheet(qss("light"))
     dialog = DeckCodeDialog(editable=True, parent=view)
     box = dialog.findChild(QDialogButtonBox)
     assert box.button(QDialogButtonBox.Ok).text() == "确定"
     assert box.button(QDialogButtonBox.Cancel).text() == "取消"
     assert all(button.objectName() == "dialogButton" for button in box.buttons())
-    assert all(button.minimumWidth() == 76 for button in box.buttons())
-    assert all(button.minimumHeight() == 30 for button in box.buttons())
+    for standard in (QDialogButtonBox.Ok, QDialogButtonBox.Cancel):
+        assert box.button(standard).size().width() == 76
+        assert box.button(standard).size().height() == 30
+    dialog.show()
+    qapp.processEvents()
+    for button in box.buttons():
+        assert_text_fits(button)
     dialog.close()
+
+    message = QMessageBox(view)
+    message.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+    polish_dialog_buttons(message)
+    message.show()
+    qapp.processEvents()
+    for button in message.buttons():
+        assert button.size().width() == 76 and button.size().height() == 30
+        assert_text_fits(button)
+    message.close()
     picker = ShikigamiDialog(db, parent=view)
     picker_box = picker.findChild(QDialogButtonBox)
     assert picker_box.button(QDialogButtonBox.Ok).text() == "确定"
@@ -218,6 +379,42 @@ def _external_library(root, yaml_text: str):
     image_path = images_dir / "art.png"
     Image.new("RGBA", (2, 2), "#336699").save(image_path)
     return image_path
+
+
+def test_entity_pixmap_uses_shikigami_art_config(qapp, tmp_path):
+    from client.gui import cardart
+
+    _external_library(
+        tmp_path,
+        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n",
+    )
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=0, eff_power=3,
+                            combat_power=0, health=4, shield=0, ext={})
+    first = cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "library")
+    empty = cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "empty")
+    assert first is not None and empty is not None
+    assert first.toImage() != empty.toImage()
+
+
+def test_entity_power_zero_does_not_subtract_combat_power(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=0, eff_power=0,
+                            combat_power=3, health=4, shield=0, ext={"power_zero": True})
+    seen = {}
+    monkeypatch.setattr(cardart, "_cached_entity_pixmap",
+                        lambda _key, _payload, state, _layout, _root:
+                        seen.update(json.loads(state)))
+    cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "empty")
+    assert seen["level"] == 0
+    assert seen["power"] == 0
+    assert seen["combat_power"] == 3
 
 
 def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
@@ -320,7 +517,7 @@ def isolated_cardart_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
 
 
-def test_builder_shared_card_art_and_text_fallback(qapp, db, view, tmp_path, monkeypatch):
+def test_builder_shared_card_art_and_frame_fallback(qapp, db, view, tmp_path, monkeypatch):
     from client.gui import cardart
     from client.gui.widgets import CardWidget
 
@@ -332,7 +529,7 @@ def test_builder_shared_card_art_and_text_fallback(qapp, db, view, tmp_path, mon
     try:
         view.new_deck()
         view.add_shikigami(cdef.shikigami)
-        widget = view.card_widgets[0]
+        widget = view.card_widgets[1]
         assert not widget.art_label.pixmap().isNull()
         assert all(label.isHidden() for label in (
             widget.name_label, widget.level_label, widget.type_label,
@@ -342,8 +539,8 @@ def test_builder_shared_card_art_and_text_fallback(qapp, db, view, tmp_path, mon
         assert not widget.minus_button.isHidden() and not widget.plus_button.isHidden()
 
         fallback = view.card_widgets[1]
-        assert fallback.art_label.isHidden()
-        assert all(not label.isHidden() for label in (
+        assert not fallback.art_label.pixmap().isNull()
+        assert all(label.isHidden() for label in (
             fallback.name_label, fallback.level_label, fallback.type_label,
             fallback.stats_label, fallback.text_label,
         ))
@@ -425,12 +622,18 @@ def test_cardart_pixmap_selects_version_and_falls_back(qapp, tmp_path):
     _cardart_config(library_dir, traversal.id, 20200202, "#336699",
                     artwork={"images": [{"path": "../outside.png"}]})
     cardart.clear_cardart_caches()
-    assert cardart.card_pixmap(invalid, database, library_dir=library_dir) is None
-    assert cardart.card_pixmap(missing_image, database, library_dir=library_dir) is None
-    assert cardart.card_pixmap(traversal, database, library_dir=library_dir) is None
     missing = factories.card(10010105).model_copy(update={"version": 20200202})
-    assert cardart.card_pixmap(missing, database, library_dir=library_dir) is None
+    for definition in (invalid, missing_image, traversal, missing):
+        pixmap = cardart.card_pixmap(definition, database, library_dir=library_dir)
+        assert pixmap is not None and not pixmap.isNull()
     cardart.clear_cardart_caches()
+
+
+def test_cardart_description_removes_paired_braces():
+    from client.gui import cardart
+
+    assert cardart._description("投射：{造成4点伤害}。[增强]：{若满足，此牌伤害翻倍}") == (
+        "投射：造成4点伤害。[[增强]]：若满足，此牌伤害翻倍")
 
 
 def test_cardart_engine_payload_mapping(qapp):
@@ -478,6 +681,79 @@ def test_cardart_engine_payload_mapping(qapp):
     shiki_data = cardart._card_data(primary, database, {})
     assert shiki_data["type"] == "式神"
     assert shiki_data["power"] == 3 and shiki_data["health"] == 4
+
+
+def test_shikigami_awaken_payload_has_level_star_and_permanent_stats(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    awaken = factories.card(10010107, subtype="awaken")
+    database = factories.db_of([definition], [awaken])
+    shiki = SimpleNamespace(id=100101, awakened=awaken.id, level=2, faction="苍叶",
+                            perm_power=2, perm_health=3, eff_power=9, health=7)
+    seen = {}
+
+    def capture(_cdef, _db, _library_dir, _cache_dir, display, overrides, drop_keys):
+        seen.update(display=display, overrides=overrides, drop_keys=drop_keys)
+
+    monkeypatch.setattr(cardart, "_card_pixmap_impl", capture)
+    cardart.shikigami_pixmap(shiki, database, seat=1,
+                             library_dir=tmp_path, cache_dir=tmp_path)
+    assert seen["overrides"]["evolve"] is True
+    assert seen["overrides"]["level"] == 2
+    assert seen["overrides"]["level_color"] == "cyan"
+    assert "level" not in seen["drop_keys"]
+    assert seen["overrides"]["power"] == 5 and seen["overrides"]["health"] == 7
+    assert seen["display"] == {"power": 5, "health": 7}
+
+
+def test_shikigami_base_payload_has_seat_level_and_color(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=1, faction="苍叶",
+                            perm_power=0, perm_health=0, eff_power=3, health=4)
+    seen = {}
+
+    def capture(_cdef, _db, _library_dir, _cache_dir, display, overrides, drop_keys):
+        seen.update(overrides=overrides)
+
+    monkeypatch.setattr(cardart, "_card_pixmap_impl", capture)
+    cardart.shikigami_pixmap(shiki, database, seat=3,
+                             library_dir=tmp_path, cache_dir=tmp_path)
+    assert seen["overrides"]["level"] == 1
+    assert seen["overrides"]["level_color"] == "red"
+    assert seen["overrides"]["evolve"] is False
+
+
+def test_cardart_transparent_fallback_never_writes_disk(qapp, tmp_path, monkeypatch):
+    from pathlib import Path
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+
+    def fail_mkdir(*_args, **_kwargs):
+        raise OSError("只读缓存目录")
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    pixmap = cardart.card_pixmap(cdef, database, library_dir=tmp_path / "empty-library",
+                                 cache_dir=cache_dir, display={"power+": 1})
+    assert pixmap is not None and not pixmap.isNull()
+    assert not cache_dir.exists()
+
+
+def test_card_widget_passes_level_color(qapp, db, monkeypatch):
+    from client.gui.widgets import CardWidget
+
+    seen = {}
+
+    def capture(_cdef, _db, **kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", capture)
+    CardWidget(db.cards[10010101], db=db, level_color="cyan")
+    assert seen["level_color"] == "cyan"
 
 
 def test_cardart_combat_amount_uses_static_base(qapp, gdb):
@@ -612,7 +888,7 @@ def test_cardart_engine_text_changes_cache_key(qapp, tmp_path):
     cardart.clear_cardart_caches()
 
 
-def test_cardart_display_values_change_render_and_cache(qapp, tmp_path):
+def test_cardart_display_values_use_memory_not_disk_cache(qapp, tmp_path):
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
@@ -627,7 +903,10 @@ def test_cardart_display_values_change_render_and_cache(qapp, tmp_path):
                                   display={"power+": 1, "health+": 7})
     assert base is not None and boosted is not None
     assert base.toImage() != boosted.toImage()
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert cardart.card_pixmap(
+        cdef, database, library_dir=library_dir, cache_dir=cache_dir,
+        display={"power+": 1, "health+": 2}) is base
+    assert not list(cache_dir.glob("*.png"))
     cardart.clear_cardart_caches()
 
 
@@ -665,7 +944,7 @@ def test_cardart_artwork_and_layout_change_cache_key(qapp, tmp_path):
     cardart.clear_cardart_caches()
 
 
-def test_cardart_image_metadata_changes_cache_key(qapp, tmp_path):
+def test_cardart_only_image_content_changes_cache_key(qapp, tmp_path):
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
@@ -676,13 +955,13 @@ def test_cardart_image_metadata_changes_cache_key(qapp, tmp_path):
     stat = image_path.stat()
     os.utime(image_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert len(list(cache_dir.glob("*.png"))) == 1
     Image.new("RGBA", (12, 8), "#993366").save(image_path)
     image_changed = cardart.card_pixmap(
         cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert image_changed is not None
     assert image_changed.toImage() != first.toImage()
-    assert len(list(cache_dir.glob("*.png"))) == 3
+    assert len(list(cache_dir.glob("*.png"))) == 2
     cardart.clear_cardart_caches()
 
 
@@ -697,9 +976,9 @@ def test_cardart_same_mtime_image_change_does_not_reuse_artwork(qapp, tmp_path):
     old_paths = set(cache_dir.glob("*.png"))
     image_path = library_dir / "项目" / "images" / f"{cdef.id}-{cdef.version}.png"
     original_stat = image_path.stat()
-    Image.new("RGBA", (12, 8), "#993366").save(image_path)
+    Image.new("RGBA", (8, 8), "#993366").save(image_path)
     changed_stat = image_path.stat()
-    assert changed_stat.st_size != original_stat.st_size
+    assert changed_stat.st_size == original_stat.st_size
     os.utime(image_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
     assert image_path.stat().st_mtime_ns == original_stat.st_mtime_ns
 
@@ -907,16 +1186,28 @@ def test_cardart_renderer_resources_change_cache_key(qapp, tmp_path, monkeypatch
     first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert first is not None
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is first
-    assert len(resource_reads) == 1
+    assert len(resource_reads) == 2  # 每次调用重新校验内容，防止同元数据陈旧缓存
     resource.write_text("B", encoding="utf-8")
     second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert second is not None and second.toImage() != first.toImage()
-    assert len(resource_reads) == 2
+    assert len(resource_reads) == 3
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is second
-    assert len(resource_reads) == 2
+    assert len(resource_reads) == 4
     assert len(list(cache_dir.glob("*.png"))) == 2
     monkeypatch.setattr(cardart, "_renderer", original_renderer)
     cardart.clear_cardart_caches()
+
+
+@pytest.mark.parametrize("layout", [
+    {"elements": {f"extra_{i}": {} for i in range(65)}},
+    {"elements": {"faction": {"size": 513}}},
+    {"elements": {"faction": {"size": [513, 32]}}},
+], ids=["element-count", "scalar-size", "list-size"])
+def test_cardart_layout_has_render_resource_budget(layout):
+    from client.gui import cardart
+
+    with pytest.raises(ValueError):
+        cardart._validate_layout(layout)
 
 
 @pytest.mark.parametrize("layout", [

@@ -1,6 +1,7 @@
 """BWPDIY 式神头像适配：懒加载外部渲染库，失败时回退为菱形占位。"""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -55,9 +56,11 @@ def _config_fingerprint(root: Path) -> tuple:
     for path in paths:
         try:
             stat = path.stat()
+            contents = path.read_bytes()
         except OSError:
             continue
-        fingerprint.append((str(path), stat.st_mtime_ns, stat.st_size))
+        fingerprint.append((str(path), stat.st_mtime_ns, stat.st_size,
+                            hashlib.sha256(contents).hexdigest()))
     return tuple(fingerprint)
 
 
@@ -67,7 +70,7 @@ def _config_index(root_text: str, fingerprint: tuple) -> tuple[tuple[Path, dict]
 
     del root_text
     entries = []
-    for path_text, _mtime_ns, size in fingerprint:
+    for path_text, _mtime_ns, size, _sha256 in fingerprint:
         path = Path(path_text)
         try:
             if size > MAX_YAML_BYTES:

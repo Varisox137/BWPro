@@ -30,7 +30,12 @@ def polish_dialog_buttons(owner) -> None:
                 button.setText(text)
         for button in target.buttons():
             button.setObjectName("dialogButton")
-            button.setMinimumSize(76, 30)
+            button.setStyleSheet(
+                "QPushButton { padding: 4px 12px; font-size: 14px; text-align: center; }")
+            button.style().unpolish(button)
+            button.style().polish(button)
+            width = max(76, button.fontMetrics().horizontalAdvance(button.text()) + 26)
+            button.setFixedSize(width, 30)
 
 
 def show_message(parent, title: str, text: str, icon=QMessageBox.Information,
@@ -60,7 +65,7 @@ class CardWidget(QFrame):
     clicked = Signal(object)
 
     def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
-                 display=None):
+                 display=None, level_color=None, art_context: dict | None = None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -73,7 +78,8 @@ class CardWidget(QFrame):
         self.art_label.setObjectName("cardArt")
         self.art_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.art_label, 1)
-        self.level_label = QLabel(f"等级 {cdef.level}")
+        level = getattr(cdef, "level", None)
+        self.level_label = QLabel(f"等级 {level}" if level is not None else " ")
         self.level_label.setObjectName("cardLevel")
         layout.addWidget(self.level_label)
         self.name_label = QLabel(cdef.name)
@@ -96,7 +102,10 @@ class CardWidget(QFrame):
         self.text_label.setWordWrap(True)
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.text_label, 1)
-        pixmap = card_pixmap(cdef, db, display=display) if db is not None else None
+        art_options = {"display": display, "level_color": level_color}
+        if art_context is not None:
+            art_options["cache_context"] = art_context
+        pixmap = card_pixmap(cdef, db, **art_options) if db is not None else None
         if pixmap is not None and not pixmap.isNull():
             self.art_label.setPixmap(pixmap.scaled(
                 236, 360, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -108,16 +117,24 @@ class CardWidget(QFrame):
         footer = QHBoxLayout()
         self.count_label = QLabel(f"已选 {copies}/2")
         self.count_label.setObjectName("cardCount")
-        footer.addWidget(self.count_label)
+        self.count_label.setAlignment(Qt.AlignCenter)
+        self.count_label.setFixedHeight(30)
+        footer.addStretch(1)
         if editable:
             self.minus_button = QPushButton("−")
             self.plus_button = QPushButton("＋")
             for button in (self.minus_button, self.plus_button):
                 button.setObjectName("cardStep")
                 button.setFixedSize(32, 30)
-                footer.addWidget(button)
+            footer.addWidget(self.minus_button)
+            footer.addStretch(1)
+            footer.addWidget(self.count_label)
+            footer.addStretch(1)
+            footer.addWidget(self.plus_button)
         else:
             self.minus_button = self.plus_button = None
+            footer.addWidget(self.count_label)
+        footer.addStretch(1)
         layout.addLayout(footer)
         for child in self.findChildren(QLabel):
             child.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -138,18 +155,21 @@ class CardWidget(QFrame):
 class CardDetailDialog(QDialog):
     """完整单卡详情：名称、类型、等级、身材、子类型与效果文本。"""
 
-    def __init__(self, cdef, db=None, parent=None, runtime: dict | None = None):
+    def __init__(self, cdef, db=None, parent=None, runtime: dict | None = None,
+                 level_color=None):
         super().__init__(parent)
         self.setWindowTitle(cdef.name)
         self.setMinimumSize(480, 600)
         layout = QVBoxLayout(self)
-        card = CardWidget(cdef, db=db, display=(runtime or {}).get("render"))
+        card = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
+                          level_color=level_color)
+        card.count_label.hide()
         card.setMaximumWidth(420)
         layout.addWidget(card, 1, Qt.AlignCenter)
         details = []
-        if cdef.subtype:
+        if getattr(cdef, "subtype", None):
             details.append(f"子类型：{cdef.subtype}")
-        if db is not None and cdef.shikigami in db.shikigami:
+        if db is not None and getattr(cdef, "shikigami", None) in db.shikigami:
             details.append(f"所属式神：{db.shikigami[cdef.shikigami].name}")
         if details:
             label = QLabel("　".join(details))

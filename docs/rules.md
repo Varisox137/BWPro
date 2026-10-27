@@ -712,7 +712,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 ### 结算明细显示（2026-08 维护者改进）
 
 - **不在场能力不打印触发**：卡牌触发器（`CardDef.triggers` 游离触发块）结算期间，若其持有式神不在场（未升级/气绝/离场），不产出任何日志/结算明细行（效果本身照常结算）；式神能力在收集处已按在场门控。豁免：带 `trigger_when_defeated`/`trigger_when_not_in_play` 的块、牌手级 `player_aura`、幻境能力、响应牌使用。实现：`Game._display_suppressed`（`core/engine.py`），以结算上下文栈栈顶的游离卡牌触发器 ctx 判定。
-- **非公开信息仅所属方可见**：仅改变己方手牌/牌库的效果行（手牌修饰置位、生成/检索/检视得手牌名、灵咒结附于牌库中哪张牌、灵咒离库移除、梦魇抽到触发、委托视为达成等）由引擎在产出时打 `owner` 标（`Game._log/_settle` 关键字参数；state 层 `log_vis`/`settle_vis` 与 log/settle_log 逐条对齐，timeline 条目带 `"o"` 键）。联机端按视角过滤：增量广播（log/settle/timeline 三通道）、resync 全量补发、state 负载内嵌的完整 log/settle_log/timeline 均过滤（vis 列表本身不下发）；对方调度行为行在负载内嵌 log/timeline 中同样滤除。热坐共享屏维持全见。抽牌/磨牌的数量与事件公开、具体牌名不公开；弃牌/爆牌落入公开墓地，保持公开。
+- **非公开信息仅所属方可见**：仅改变己方手牌/牌库的效果行（手牌修饰置位、生成/检索/检视得手牌名、灵咒结附于牌库中哪张牌、灵咒离库移除、梦魇抽到触发、委托视为达成等）由引擎在产出时打 `owner` 标（`Game._log/_settle` 关键字参数；state 层 `log_vis`/`settle_vis` 与 log/settle_log 逐条对齐，timeline 条目带 `"o"` 键）。联机端按视角过滤：增量广播（log/settle/timeline 三通道）、resync 全量补发、state 负载内嵌的完整 log/settle_log/timeline 均过滤（vis 列表本身不下发）；对方调度行为行在负载内嵌 log/timeline 中同样滤除。CLI 热坐共享屏维持全见；GUI 热坐按当前查看方过滤战斗记录，并隐藏对手调度张数。抽牌/磨牌的数量与事件公开、具体牌名不公开；弃牌/爆牌落入公开墓地，保持公开。
 
 
 ## 二十六、增强与卡牌修饰（部分已实现）
@@ -766,7 +766,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
   - `event`：展示触发事件 payload 中的那张牌——专供"每当一张牌进入敌方手牌时将其展示"类被动（挂 `on_card_enter_hand`）。
 - **入手统一钩子**：一切"进入手牌"路径（抽牌、生成置入手牌、牌库检索、检视挑选、调度换入）经 `_enter_hand` 发出 `on_card_enter_hand`（延时时机 queue，payload {player, uid, card}）；**起始手牌静默不算入手**，爆牌转墓地不视为进入手牌（超出上限的牌直接转墓地，不发该事件）。
 - **调度细则**（第二十一章调度流程落实，`_swap_hand_card`）：换入牌失去"已展示"；换入牌原本已展示，则换出牌获得"已展示"。
-- **信息可见性**：已展示的敌方手牌对对方公开——CLI 按入手顺序（hand_seq）单独列出显示（format_hand_lines 复用）；联机按视角脱敏时对已展示卡放行真实内容（sanitize_state 例外），其余手牌照常脱敏。
+- **信息可见性**：已展示的敌方手牌对对方公开——CLI 按入手顺序（hand_seq）单独列出显示（format_hand_lines 复用）；GUI 敌方及调度手牌按 hand_seq 排列，常态己方仅显示按所属座次/等级/id/hand_seq 排序且不改写底层记录，已展示牌在原位置显示正面。联机 sanitize_state 对已展示卡放行真实内容；暗手牌仅保留稳定 uid/hand_seq 供客户端区分与排序，id=0、mods={}，不泄露卡牌定义；hand_info 仅包含己方手牌。
 - **配套读取点**：on_card_played 载荷 `card_revealed`、TargetSpec 过滤键 `dealt_damage_turn`、动态数值 `enemy_revealed_count`、手牌费用修正 `card_flag`、conditional_keywords 算子 `enemy_hand_all_revealed`——键义均登记见术语表对应行。
 
 ## 三十、能量与爆能·移动·鼓舞扩展（不夜之火批次，已实现）

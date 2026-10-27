@@ -14,12 +14,16 @@ CTYPE_NAMES = {"spell": "法术", "combat": "战斗", "form": "形态",
 
 def ctype_label(cdef) -> str:
     """主类型[子类型] 显示名。"""
+    if getattr(cdef, "card_type", None) is None:
+        return "式神"
     base = CTYPE_NAMES.get(cdef.card_type, cdef.card_type)
     return f"{base}[{cdef.subtype}]" if cdef.subtype else base
 
 
 def static_stats(cdef) -> str:
     """卡牌数值段（静态求值）：形态身材、倒计时、战斗牌力量/护甲、觉醒永久身材。"""
+    if getattr(cdef, "card_type", None) is None:
+        return f"身材{cdef.power}/{cdef.health}"
     parts: list[str] = []
     if cdef.card_type == "form" and cdef.form_power is not None:
         parts.append(f"身材{cdef.form_power}/{cdef.form_health}")

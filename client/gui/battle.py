@@ -4,13 +4,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QRegion
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QPushButton,
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from client import cli
-from client.gui.battle_scene import BattleScene, BattleView, usage_target
+from client.gui.battle_scene import BattleScene, BattleView, card_owner_seat, usage_target
+from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
 from client.gui.widgets import CardDetailDialog, polish_dialog_buttons
 from core import targets
@@ -57,7 +59,6 @@ class UsageDialog(QDialog):
         self.setWindowTitle("选择使用方式")
         self.setMinimumWidth(520)
         self.selected_id = None
-        self._accepted = False
         layout = QVBoxLayout(self)
         for option in options:
             energy = f"　能量 {option['energy']}" if option["energy"] else ""
@@ -75,7 +76,6 @@ class UsageDialog(QDialog):
 
     def _choose(self, option_id) -> None:
         self.selected_id = option_id
-        self._accepted = True
         self.accept()
 
 
@@ -86,7 +86,6 @@ class ChoiceDialog(QDialog):
         super().__init__(view)
         self.setWindowTitle("结算选择")
         self.setModal(False)
-        self.pending = pending
         layout = QVBoxLayout(self)
         kind = pending.get("kind")
         player = view.game.state.players[pending["player"]]
@@ -138,11 +137,11 @@ class HotseatView(QWidget):
         self.store_path = Path(store_path)
         self.on_back = on_back
         self.theme = "light"
-        self.colors: dict = {}
         self.game = None
         self.viewer = 0
-        self.player_labels: dict[int, QLabel] = {}
-        self.field_labels: dict[int, QLabel] = {}
+        self._review_mulligan = False
+        self._last_turn_key = None
+        self._opening_banner_pending = True
         self.pending_command: dict | None = None
         self.target_specs: list[tuple[str, object]] = []
         self.legal_targets: list[Ref] = []
@@ -160,6 +159,7 @@ class HotseatView(QWidget):
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
         self.stack = QStackedWidget()
         outer.addWidget(self.stack)
         self.setup_page = QWidget()
@@ -204,6 +204,7 @@ class HotseatView(QWidget):
             self.log_button, ("log",), (110, 36))
         self.end_turn_button = QPushButton("结束\n回合")
         self.end_turn_button.setObjectName("endTurnButton")
+        self.end_turn_button.setMask(QRegion(0, 0, 104, 104, QRegion.Ellipse))
         self.end_turn_button.clicked.connect(self.end_turn)
         self.battle_scene.end_turn_item = self.battle_scene.add_control(
             self.end_turn_button, ("end_turn",), (104, 104))
@@ -221,16 +222,6 @@ class HotseatView(QWidget):
             label.setObjectName("deckCount")
 
         for pi in (0, 1):
-            label = QLabel()
-            label.setWordWrap(True)
-            label.setStyleSheet("font-size: 11px;")
-            self.player_labels[pi] = label
-            self.battle_scene.add_control(label, ("player_label", pi), (230, 86))
-            fields = QLabel("幻境：无")
-            fields.setWordWrap(True)
-            fields.setStyleSheet("font-size: 11px;")
-            self.field_labels[pi] = fields
-            self.battle_scene.add_control(fields, ("player_fields", pi), (260, 34))
             detail = QPushButton("牌手详情")
             detail.setObjectName("battleSmall")
             detail.clicked.connect(lambda _=False, side=pi: self.show_player_detail(side))
@@ -252,6 +243,23 @@ class HotseatView(QWidget):
         self.ready_button = QPushButton("确认调度")
         self.ready_button.clicked.connect(self.ready)
         self.battle_scene.add_control(self.ready_button, ("ready",), (140, 34))
+        self.mulligan_button = QPushButton("替换")
+        self.mulligan_button.setObjectName("battleSmall")
+        self.mulligan_button.clicked.connect(self.replace_mulligan)
+        self.battle_scene.mulligan_item = self.battle_scene.add_control(
+            self.mulligan_button, ("mulligan",), (140, 44))
+        self.order_label = QLabel()
+        self.order_label.setObjectName("turnOrderLabel")
+        self.order_label.setAlignment(Qt.AlignCenter)
+        self.battle_scene.add_control(self.order_label, ("turn_order",), (300, 90))
+        self.upgrade_label = QLabel("升级阶段")
+        self.upgrade_label.setObjectName("upgradePhaseLabel")
+        self.upgrade_label.setAlignment(Qt.AlignCenter)
+        self.battle_scene.upgrade_item = self.battle_scene.add_control(
+            self.upgrade_label, ("upgrade_phase",), (300, 90))
+        self.battle_scene.upgrade_item.setZValue(90)
+        self.upgrade_label.setVisible(False)
+        self.battle_scene.mulligan_selected.connect(self._sync_mulligan_button)
         self.error_label = BattleErrorLabel()
         self.error_label.setObjectName("battleError")
         self.error_label.setWordWrap(True)
@@ -307,15 +315,18 @@ class HotseatView(QWidget):
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
-        self.colors = colors
         self.setStyleSheet(f"""
             QLabel#viewTitle, QLabel#phaseLabel {{ color: {colors['gold']}; font-size: 24px; }}
+            QLabel#turnOrderLabel, QLabel#upgradePhaseLabel {{
+                color: {colors['gold']}; font-size: 34px; font-weight: 600;
+                background: transparent;
+            }}
             QLabel#enemyHandBack, QLabel#deckCount {{
                 background: transparent; border: none;
             }}
             QPushButton#endTurnButton {{
                 background: {colors['panel2']}; border: 3px solid {colors['gold2']};
-                border-radius: 52px; font-size: 18px;
+                border-radius: 52px; font-size: 18px; text-align: center; padding: 0;
             }}
             QLabel#targetHint {{ color: {colors['blue']}; }}
             QLabel#battleError {{ color: #c44; }}
@@ -323,6 +334,10 @@ class HotseatView(QWidget):
             QListWidget#battleLog {{ background: {colors['panel']}; color: {colors['text']}; }}
             QPushButton#battleSmall {{ padding: 4px; font-size: 12px; text-align: center; }}
         """)
+        for label in (self.enemy_hand_label, self.enemy_deck_label,
+                      self.own_deck_label, self.hand_caption):
+            label.setStyleSheet(
+                f"background: transparent; color: {colors['text']}; font-weight: 600;")
 
     def start_hotseat(self) -> bool:
         first = DeckSelectDialog(self.db, self.store_path, "玩家A", self)
@@ -350,6 +365,10 @@ class HotseatView(QWidget):
         self.close_log()
         self.game = new_game(self.db, p1, p2, seed=seed, **kwargs)
         self.viewer = self._current_viewer()
+        self._review_mulligan = False
+        self._last_turn_key = None
+        self._opening_banner_pending = True
+        self.battle_scene.hide_banner()
         self.pending_command = None
         self.target_specs = []
         self.legal_targets = []
@@ -378,9 +397,15 @@ class HotseatView(QWidget):
         if self.game is None:
             return
         previous_viewer = self.viewer
-        self.viewer = self._current_viewer()
-        if previous_viewer != self.viewer and self.game.state.winner is None:
-            self._begin_handoff()
+        next_viewer = self._current_viewer()
+        if previous_viewer != next_viewer and self.game.state.winner is None:
+            if self._review_mulligan:
+                self.viewer = previous_viewer
+                self._render_state()  # 先展示第三次换牌后的结果，再遮挡操作并交接
+            self.viewer = next_viewer
+            self._begin_handoff(preserve_hand=self._review_mulligan)
+        else:
+            self.viewer = next_viewer
         if self._handoff_pending:
             self._enqueue_timeline()
             return
@@ -394,10 +419,11 @@ class HotseatView(QWidget):
         self.battle_scene.clear_hands()
         self.hand_caption.clear()
 
-    def _begin_handoff(self) -> None:
+    def _begin_handoff(self, preserve_hand: bool = False) -> None:
         self.timeline_timer.stop()
         self._handoff_pending = True
-        self._clear_hand()
+        if not preserve_hand:
+            self._clear_hand()
         self.pending_command = None
         self.target_specs = []
         self.legal_targets = []
@@ -406,18 +432,23 @@ class HotseatView(QWidget):
             self.choice_dialog = None
         self._choice_key = None
         self.close_log()
+        message = (f"调度次数已用完\n请确认本次调度结果，然后交给 "
+                   f"{self.game.state.players[self.viewer].name}" if preserve_hand else
+                   f"请将设备交给 {self.game.state.players[self.viewer].name}")
         if self.handoff_dialog is None:
             dialog = QDialog(self)
             dialog.setWindowTitle("交接设备")
             dialog.setModal(True)
             layout = QVBoxLayout(dialog)
-            layout.addWidget(QLabel(f"请将设备交给 {self.game.state.players[self.viewer].name}"))
+            layout.addWidget(QLabel(message))
             buttons = QDialogButtonBox(QDialogButtonBox.Ok)
             polish_dialog_buttons(buttons)
             buttons.accepted.connect(self.confirm_handoff)
             dialog.rejected.connect(dialog.show)
             layout.addWidget(buttons, alignment=Qt.AlignRight)
             self.handoff_dialog = dialog
+        else:
+            self.handoff_dialog.findChild(QLabel).setText(message)
         self.handoff_dialog.show()
         self._update_input_widgets()
 
@@ -430,6 +461,7 @@ class HotseatView(QWidget):
             dialog.hide()
             dialog.deleteLater()
             self.handoff_dialog = None
+        self._clear_hand()
         self._render_log()
         self._render_state()
         self._enqueue_timeline()
@@ -450,29 +482,28 @@ class HotseatView(QWidget):
         state = game.state
         phase_names = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "对战阶段"}
         self.phase_label.setText(f"{phase_names.get(state.phase, state.phase)}　回合 {state.turn}")
-        for pi, player in enumerate(state.players):
-            boosts = player.assault_boosts
-            power = sum(item.get("power", 0) for item in boosts)
-            shield = sum(item.get("shield", 0) for item in boosts)
-            self.player_labels[pi].setText(
-                f"{player.name}{'（当前）' if pi == self.viewer else ''}\n"
-                f"生命 {player.health}/{player.max_health}　护甲/破甲 {player.shield}\n"
-                f"鬼火 {player.orb}　出击 {player.assaults_left}　鼓舞 +{power}/+{shield}\n"
-                f"手牌 {len(player.hand)}　牌库 {len(player.deck)}　墓地 {len(player.graveyard)}")
-            field_text = " → ".join(
-                f"{self.db.cards[field.card_id].name}(耐久{field.intensity})"
-                for field in player.fields)
-            self.field_labels[pi].setText(f"幻境：{field_text or '无'}")
+        self.order_label.setText("你是先手" if self.viewer == state.active else "你是后手")
+        self.order_label.setVisible(state.phase == "mulligan")
+        self.upgrade_label.setVisible(state.phase == "upgrade")
         enemy = state.players[1 - self.viewer]
         own = state.players[self.viewer]
         self.enemy_hand_label.setText(f"敌方手牌\n{len(enemy.hand)} 张")
         self.enemy_deck_label.setText(f"敌方牌库\n{len(enemy.deck)} 张")
         self.own_deck_label.setText(f"己方牌库\n{len(own.deck)} 张")
-        self.hand_caption.setText(f"{own.name} 的手牌（{len(own.hand)} 张）")
+        self.hand_caption.setText(f"我方手牌 {len(own.hand)}/12张")
         inputs = self._inputs_open()
         self.battle_scene.legal_targets = list(self.legal_targets)
         info = {} if state.pending_choice else self.hand_info()
         self.battle_scene.sync_state(game, self.viewer, info, inputs)
+        turn_key = (state.turn, state.active)
+        if (self._last_turn_key is not None and turn_key != self._last_turn_key
+                and state.phase != "mulligan"):
+            self.battle_scene.show_banner("回合开始")
+        self._last_turn_key = turn_key
+        if self._opening_banner_pending:
+            order_text = "你是先手" if self.viewer == state.active else "你是后手"
+            self.battle_scene.show_banner(order_text, 1200)
+            self._opening_banner_pending = False
         self.end_turn_button.setEnabled(inputs and state.phase == "battle")
         self.ready_button.setVisible(state.phase == "mulligan")
         self.ready_button.setEnabled(inputs and state.phase == "mulligan")
@@ -507,11 +538,24 @@ class HotseatView(QWidget):
         self.pending_command = None
         self.target_specs = []
         self.legal_targets = []
+        player = self.game.state.players[self.viewer]
+        self._review_mulligan = (command.get("op") == "mulligan"
+                                 and player.mulligan_done and player.mulligans_left == 0)
         self.refresh()
+        self._review_mulligan = False
         return True
 
     def mulligan(self, uid: int) -> bool:
         return self.apply_command({"op": "mulligan", "player": self.viewer, "uid": uid})
+
+    def replace_mulligan(self) -> bool:
+        uid = self.battle_scene.mulligan_uid
+        return False if uid is None else self.mulligan(uid)
+
+    def _sync_mulligan_button(self, _uid=None) -> None:
+        visible = bool(self.game is not None and self.game.state.phase == "mulligan"
+                       and self.battle_scene.mulligan_uid is not None and self._inputs_open())
+        self.mulligan_button.setVisible(visible)
 
     def ready(self) -> bool:
         return self.apply_command({"op": "ready", "player": self.viewer})
@@ -633,15 +677,6 @@ class HotseatView(QWidget):
         else:
             self.show_shiki_detail(ref)
 
-    def _player_click(self, event, pi: int) -> None:
-        if event.button() != Qt.LeftButton:
-            return
-        ref = Ref(player=pi)
-        if ref in self.legal_targets:
-            self.choose_target(ref)
-        else:
-            self.show_player_detail(pi)
-
     def show_shiki_detail(self, ref: Ref) -> None:
         ShikigamiDetailDialog(self.game, ref, self.viewer, self).exec()
 
@@ -655,7 +690,8 @@ class HotseatView(QWidget):
         layout = QVBoxLayout(dialog)
         label = QLabel(
             f"生命 {player.health}/{player.max_health}　护甲 {player.shield}\n"
-            f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n{fields}")
+            f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n"
+            f"墓地 {len(player.graveyard)}\n{fields}")
         label.setWordWrap(True)
         layout.addWidget(label)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
@@ -669,7 +705,13 @@ class HotseatView(QWidget):
         runtime = None
         if any(owned.uid == card.uid for owned in viewer_hand):
             runtime = self.hand_info().get(card.uid)
-        CardDetailDialog(self.db.cards[card.id], self.db, self, runtime=runtime).exec()
+        cdef = self.db.cards[card.id]
+        owner = next((player for player in self.game.state.players
+                      if any(owned.uid == card.uid for owned in player.hand)),
+                     self.game.state.players[self.viewer])
+        seat = card_owner_seat(self.game, owner, cdef)
+        CardDetailDialog(cdef, self.db, self, runtime=runtime,
+                         level_color=seat_level_color(seat)).exec()
 
     def choice_option_label(self, pending: dict, option) -> str:
         kind = pending.get("kind")
@@ -780,6 +822,7 @@ class HotseatView(QWidget):
         state = self.game.state
         self.end_turn_button.setEnabled(enabled and state.phase == "battle")
         self.ready_button.setEnabled(enabled and state.phase == "mulligan")
+        self._sync_mulligan_button()
         self.battle_scene.inputs_open = enabled
         if not enabled:
             self.battle_scene.drag_controller.cancel()
@@ -795,6 +838,7 @@ class HotseatView(QWidget):
 
     def return_to_menu(self) -> None:
         self.timeline_timer.stop()
+        self.battle_scene.hide_banner()
         self._close_handoff()
         self.close_log()
         if self.choice_dialog is not None:

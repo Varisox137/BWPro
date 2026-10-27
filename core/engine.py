@@ -3527,6 +3527,42 @@ class Game:
         # 攻击替换（烬染不夜）视为本次攻击未正常完成：不发 on_battle_end（裁决(10)）
         return not replace_marker["active"]
 
+    def assault_error(self, pi: int, index: int, *, check_orb: bool = True) -> str | None:
+        """返回出击合法性错误；不检查阶段与目标，不变更状态。"""
+        p = self.state.players[pi]
+        s = self._own_shikigami(p, index)
+        if not s.in_play:
+            return f"{self.db.shikigami[s.id].name} 未在场（0 级），不能出击"
+        if getattr(self.db.shikigami[s.id], "no_attack", False):
+            return f"{self.db.shikigami[s.id].name} 不能发动攻击"
+        if p.is_stunned:
+            return "牌手眩晕中，己方所有式神不能出击"
+        if s.stuns:
+            return f"{self.db.shikigami[s.id].name} 眩晕中，不能出击"
+        # 能量出击（energy_assault 旗标，不知火类）：无出击次数且无鬼火时可耗能量出击
+        ea = p.ext.get("energy_assault")
+        energy_assault = bool(
+            ea and p.assaults_left < 1 and p.orb < 1
+            and ea.get("holder") == [pi, index]
+            and self._can_pay_energy(p, index, int(ea.get("cost", 3))))
+        if p.assaults_left < 1 and not energy_assault:
+            return "本回合已没有出击次数"
+        # 激怒：己方存在"被激怒且满足出击合法性（在场 + 有出击次数）"的式神时，
+        # 其他无激怒的式神不能出击（简化：不查鬼火/眩晕，rules.md ch4/11）
+        if not self._has_keyword(s, "enraged") and any(
+                self._has_keyword(o, "enraged") and o.in_play
+                for j, o in enumerate(p.shikigami) if j != index):
+            return "激怒：被激怒的式神可以出击时，其他式神不能出击"
+        # 尘缚之阵锁定：准备区式神不能发起不具有远程的战斗
+        if (p.combat_index != index and not self._has_keyword(s, "remote")
+                and self._combat_zone_locked(pi)):
+            return "尘缚之阵：准备区式神不能发起不具有远程的战斗"
+        if check_orb and not energy_assault and not self._has_keyword(s, "haste"):
+            need = 2 if self._has_keyword(s, "extra_orb_cost") else 1
+            if p.orb < need:
+                return f"出击需要 {need} 点鬼火（现有 {p.orb}）"
+        return None
+
     def _cmd_assault(self, cmd: dict) -> None:
         """出击指令：耗 1 鬼火 + 消耗出击次数，将攻击者移入战斗区并发起战斗。
 
@@ -3538,32 +3574,14 @@ class Game:
         p = self.current
         i = cmd.get("index")
         s = self._own_shikigami(p, i)
-        if not s.in_play:
-            raise IllegalAction(f"{self.db.shikigami[s.id].name} 未在场（0 级），不能出击")
-        if getattr(self.db.shikigami[s.id], "no_attack", False):
-            raise IllegalAction(f"{self.db.shikigami[s.id].name} 不能发动攻击")
-        if p.is_stunned:
-            raise IllegalAction("牌手眩晕中，己方所有式神不能出击")
-        if s.stuns:
-            raise IllegalAction(f"{self.db.shikigami[s.id].name} 眩晕中，不能出击")
-        # 能量出击（energy_assault 旗标，不知火类）：无出击次数且无鬼火时可耗能量出击
+        error = self.assault_error(self.state.active, i, check_orb=False)
+        if error is not None:
+            raise IllegalAction(error)
         ea = p.ext.get("energy_assault")
         energy_assault = bool(
             ea and p.assaults_left < 1 and p.orb < 1
             and ea.get("holder") == [self.state.active, i]
             and self._can_pay_energy(p, i, int(ea.get("cost", 3))))
-        if p.assaults_left < 1 and not energy_assault:
-            raise IllegalAction("本回合已没有出击次数")
-        # 激怒：己方存在"被激怒且满足出击合法性（在场 + 有出击次数）"的式神时，
-        # 其他无激怒的式神不能出击（简化：不查鬼火/眩晕，rules.md ch4/11）
-        if not self._has_keyword(s, "enraged") and any(
-                self._has_keyword(o, "enraged") and o.in_play
-                for j, o in enumerate(p.shikigami) if j != i):
-            raise IllegalAction("激怒：被激怒的式神可以出击时，其他式神不能出击")
-        # 尘缚之阵锁定：准备区式神不能发起不具有远程的战斗
-        if (p.combat_index != i and not self._has_keyword(s, "remote")
-                and self._combat_zone_locked(self.state.active)):
-            raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
         # 追猎：持追猎的式神主动出击可任选一名合法敌方式神为战斗目标（不选 = 无目标战斗，
         # 被攻击者按敌方战斗区/直击决定；无追猎不能选择出击目标）
         target: Ref | None = None

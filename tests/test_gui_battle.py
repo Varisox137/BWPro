@@ -6,7 +6,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel
 
@@ -146,6 +146,8 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     slots = {key: item for key, item in scene.cards.items() if key[0] == "shiki"}
     refs = {key: item.payload for key, item in slots.items()}
     assert scene.cards[("player", 1)].y() < scene.cards[("player", 0)].y()
+    assert scene.cards[("player", 1)].pos() == QPointF(4, 4)
+    assert scene.cards[("player", 0)].pos() == QPointF(4, 766)
     assert [scene.cards[("shiki", 1, index)].y() for index in range(4)] == [
         24, 0, 0, 24]
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
@@ -184,6 +186,34 @@ def test_scene_hand_order_reveal_and_overlay(qapp, view):
     assert scene.cards[("hand", own.hand[0].uid)].boundingRect().height() <= 170
 
 
+def test_own_hand_display_sort_preserves_acquisition_sequence(qapp, db, view):
+    neutral = F.card(90000001, shikigami=None, token=True)
+    db.cards[neutral.id] = neutral
+    start(view, mulligan=False)
+    own = view.game.current
+    F.give(view.game, 0, neutral.id)
+    for sequence, card in zip(range(40, 0, -1), own.hand):
+        card.hand_seq = sequence
+    original_sequences = {card.uid: card.hand_seq for card in own.hand}
+    view.refresh()
+    settle(view)
+
+    def sort_key(card):
+        cdef = db.cards[card.id]
+        owners = {sid for sid in (cdef.shikigami, cdef.shikigami2) if sid is not None}
+        seat = next((index for index, shiki in enumerate(own.shikigami)
+                     if shiki.id in owners or (shiki.transform_owner is not None
+                                              and shiki.transform_owner in owners)), 4)
+        return seat, cdef.level or 0, card.id, card.hand_seq
+
+    expected = sorted(own.hand, key=sort_key)
+    items = sorted((item for key, item in view.battle_scene.cards.items()
+                    if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
+    assert [item.uid for item in items] == [card.uid for card in expected]
+    assert items[-1].cdef.shikigami is None
+    assert {card.uid: card.hand_seq for card in own.hand} == original_sequences
+
+
 def test_scene_twelve_hand_cards_overlap_and_shiki_placeholder(qapp, view):
     start(view, mulligan=False)
     player = view.game.state.players[0]
@@ -201,21 +231,20 @@ def test_scene_twelve_hand_cards_overlap_and_shiki_placeholder(qapp, view):
     assert "等级" in shiki.shiki_text
 
 
-def test_scene_missing_hand_and_form_art_stays_transparent(qapp, db, view):
-    def assert_transparent(item):
+def test_scene_missing_hand_and_form_art_renders_full_card(qapp, db, view):
+    def assert_full_card(item):
         image = QImage(item.size.toSize(), QImage.Format_ARGB32)
         image.fill(Qt.transparent)
         painter = QPainter(image)
         item.paint(painter, None)
         painter.end()
-        assert all(image.pixelColor(x, y).alpha() == 0
+        assert any(image.pixelColor(x, y).alpha() > 0
                    for x in range(image.width()) for y in range(image.height()))
 
     start(view, mulligan=False)
     hand = view.battle_scene.cards[("hand", view.game.current.hand[0].uid)]
-    hand.pixmap = None
-    hand.playable = hand.targetable = True
-    assert_transparent(hand)
+    assert hand.pixmap is not None and not hand.pixmap.isNull()
+    assert_full_card(hand)
 
     form_id = 10010151
     db.cards[form_id] = F.card(form_id, name="无图形态", card_type="form")
@@ -223,9 +252,285 @@ def test_scene_missing_hand_and_form_art_stays_transparent(qapp, db, view):
     view.refresh()
     settle(view)
     form = view.battle_scene.cards[("shiki", 0, 0)]
-    assert form.pixmap is None
-    form.targetable = True
-    assert_transparent(form)
+    assert form.pixmap is not None and not form.pixmap.isNull()
+    assert_full_card(form)
+
+
+def test_scene_render_failure_has_visible_text_fallback(qapp, view, monkeypatch):
+    from client.gui import battle_scene
+
+    monkeypatch.setattr(battle_scene, "card_pixmap", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(battle_scene, "entity_pixmap", lambda *_args, **_kwargs: None)
+    start(view, mulligan=False)
+    items = [view.battle_scene.cards[("hand", view.game.current.hand[0].uid)],
+             view.battle_scene.cards[("shiki", 0, 0)]]
+    for item in items:
+        image = QImage(item.size.toSize(), QImage.Format_ARGB32)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        item.paint(painter, None)
+        painter.end()
+        assert any(image.pixelColor(x, y).alpha() > 0
+                   for x in range(image.width()) for y in range(image.height()))
+
+
+def test_scene_render_checks_resources_once_per_sync(qapp, view, monkeypatch):
+    from client.gui import cardart
+
+    start(view, mulligan=False)
+    calls = []
+    original = cardart._renderer_resource_digest
+
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(cardart, "_renderer_resource_digest", counted)
+    view.refresh()
+    assert len(calls) == 1
+
+
+def test_card_owner_seat_handles_dual_owner_and_replacement(qapp, db, view):
+    from client.gui.battle_scene import card_owner_seat
+
+    start(view, mulligan=False)
+    player = view.game.current
+    dual = F.card(10010151, shikigami=999999, shikigami2=100104, card_type="reinforce")
+    assert card_owner_seat(view.game, player, dual) == 3
+    player.shikigami[1].ext["replace_owner"] = 100102
+    assert card_owner_seat(view.game, player, db.cards[10010201]) == 1
+    player.shikigami[2].transform_owner = 100103
+    assert card_owner_seat(view.game, player, db.cards[10010301]) == 2
+
+
+def test_battle_pages_have_no_extra_outer_margin(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    for key in ("hotseat", "online"):
+        margins = win.pages[key].layout().contentsMargins()
+        assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (0, 0, 0, 0)
+    win.close()
+
+
+def test_shiki_card_has_no_extra_stat_text_badge(qapp, view):
+    start(view, mulligan=False)
+    item = view.battle_scene.cards[("shiki", 0, 0)]
+    assert not hasattr(item, "_stat_badge")
+
+
+def test_playable_hand_has_no_blue_frame(qapp, view):
+    start(view, mulligan=False)
+    item = view.battle_scene.cards[("hand", view.game.current.hand[0].uid)]
+    item.playable = True
+    item.targetable = item.dragging = False
+    image = QImage(item.size.toSize(), QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    item.paint(painter, None)
+    painter.end()
+    assert image.pixelColor(2, 2).name() != "#75b9d1"
+
+
+def test_hand_deck_text_contrast_and_tight_outer_margins(qapp, view):
+    start(view, mulligan=False)
+    view.apply_theme("light", THEMES["light"])
+    for label in (view.enemy_hand_label, view.enemy_deck_label,
+                  view.own_deck_label, view.hand_caption):
+        assert f"color: {THEMES['light']['text']}" in label.styleSheet()
+        assert "font-weight: 600" in label.styleSheet()
+    scene = view.battle_scene
+    assert scene.cards[("player", 0)].x() <= 4
+    hand = max((item for key, item in scene.cards.items()
+                if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
+    assert hand.x() + hand.size.width() >= 1596
+
+
+def test_player_item_has_original_avatar_orbs_and_badges(qapp, view):
+    start(view, mulligan=False)
+    player = view.game.current
+    player.assault_boosts.append({"power": 2, "shield": 3})
+    view.refresh()
+    settle(view)
+    item = view.battle_scene.cards[("player", 0)]
+    assert item.avatar_shape == "circle"
+    assert item.health == player.health and item.max_health == player.max_health
+    assert item.orb == player.orb and item.assaults_left == player.assaults_left
+    assert item.inspire_power == 2 and item.inspire_shield == 3
+
+
+def test_card_detail_hides_deck_builder_copy_count(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    seen = {}
+
+    def capture(dialog):
+        seen["dialog"] = dialog
+        return QDialog.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", capture)
+    view.show_card_detail(view.game.current.hand[0])
+    labels = seen["dialog"].findChildren(QLabel, "cardCount")
+    assert labels and all(label.isHidden() for label in labels)
+
+
+def test_scene_card_art_preserves_ratio_and_reduces_outer_margins(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    for key, max_size in ((("hand", view.game.current.hand[0].uid), (110, 156)),
+                          (("shiki", 0, 0), (148, 210))):
+        item = scene.cards[key]
+        pixmap = item.pixmap
+        assert pixmap is not None and not pixmap.isNull()
+        assert item.size.width() / item.size.height() == pytest.approx(
+            pixmap.width() / pixmap.height())
+        assert item.size.width() <= max_size[0]
+        assert item.size.height() <= max_size[1]
+    assert scene.cards[("player", 0)].x() <= 4
+    own_hand = max((item for key, item in scene.cards.items()
+                    if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
+    assert own_hand.x() + own_hand.size.width() >= 1596
+
+
+def test_scene_card_art_geometry_change_is_notified(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    item = view.battle_scene.cards[("hand", view.game.current.hand[0].uid)]
+    called = []
+    monkeypatch.setattr(item, "prepareGeometryChange", lambda: called.append(True))
+    item.set_art(item.pixmap)
+    assert called
+
+
+def test_shiki_detail_uses_diy_card_art(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    seen = {}
+
+    def capture(dialog):
+        seen["dialog"] = dialog
+        return QDialog.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", capture)
+    view.show_shiki_detail(Ref(player=0, shikigami=0))
+    dialog = seen["dialog"]
+    pixmap = dialog.main_art_label.pixmap()
+    assert pixmap is not None and not pixmap.isNull()
+    assert dialog.main_art_label.width() / dialog.main_art_label.height() == pytest.approx(
+        dialog.main_art_pixmap.width() / dialog.main_art_pixmap.height(), abs=0.2)
+
+
+def test_hand_detail_uses_owner_seat_level_color(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    card = next(card for card in view.game.current.hand
+                if view.db.cards[card.id].shikigami == 100102)
+    seen = {}
+
+    class Detail:
+        def __init__(self, *args, level_color=None, **kwargs):
+            seen["level_color"] = level_color
+
+        def exec(self):
+            return QDialog.Rejected
+
+    monkeypatch.setattr("client.gui.battle.CardDetailDialog", Detail)
+    view.show_card_detail(card)
+    assert seen["level_color"] == "cyan"
+
+
+def test_shiki_detail_uses_seat_level_color(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    seen = {}
+
+    def capture(_shiki, _db, *, seat=None):
+        seen["seat"] = seat
+
+    monkeypatch.setattr("client.gui.details.shikigami_pixmap", capture)
+    from client.gui.details import ShikigamiDetailDialog
+    ShikigamiDetailDialog(view.game, Ref(player=0, shikigami=2), 0, view)
+    assert seen["seat"] == 2
+
+
+def test_upgrade_focus_only_highlights_legal_shikigami(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    scene = view.battle_scene
+    legal = set(view.game.legal_upgrade_indices(0))
+    assert legal
+    overlay = scene.focus_overlay
+    assert overlay.isVisible()
+    path = overlay.path()
+    for index in range(4):
+        item = scene.cards[("shiki", 0, index)]
+        center = item.sceneBoundingRect().center()
+        assert item.playable == (index in legal)
+        assert path.contains(center) == (index not in legal)
+    assert path.contains(scene.cards[("player", 0)].sceneBoundingRect().center())
+    assert view.upgrade_label.text() == "升级阶段"
+    assert not view.upgrade_label.isHidden()
+    assert set(scene.upgrade_badges) == legal
+    for index, badge in scene.upgrade_badges.items():
+        shiki = scene.cards[("shiki", 0, index)]
+        assert not badge.pixmap().isNull()
+        assert badge.y() + badge.boundingRect().height() <= shiki.y()
+        assert badge.zValue() > overlay.zValue()
+
+
+def test_upgrade_focus_requires_current_legal_action(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    scene = view.battle_scene
+    assert scene.focus_overlay.isVisible()
+    scene.sync_state(view.game, 0, view.hand_info(), False)
+    assert not scene.focus_overlay.isVisible()
+    scene.sync_state(view.game, 1, {}, True)
+    assert not scene.focus_overlay.isVisible()
+
+
+def test_drag_focus_highlights_source_default_player_and_arrow(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    source = scene.cards[("shiki", 0, 0)]
+    enemy_player = scene.cards[("player", 1)]
+    other = scene.cards[("shiki", 0, 1)]
+    scene.drag_controller.press(source, source.scenePos())
+    scene.drag_controller.move(source.scenePos() + QPointF(180, -90))
+    assert scene.drag_controller.dragged
+    assert source.opacity() == 1
+    path = scene.focus_overlay.path()
+    assert not path.contains(source.sceneBoundingRect().center())
+    assert not path.contains(enemy_player.sceneBoundingRect().center())
+    assert path.contains(other.sceneBoundingRect().center())
+    assert scene.drag_controller.drag_arrow.isVisible()
+    scene.drag_controller.cancel()
+    assert not scene.focus_overlay.isVisible()
+
+
+def test_direct_assault_focus_targets_player_not_combat_shiki(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    source = scene.cards[("shiki", 0, 0)]
+    source.keywords.append("direct")
+    view.game.state.players[1].combat_index = 0
+    scene.focus_for_drag(source)
+    path = scene.focus_overlay.path()
+    assert not path.contains(scene.cards[("player", 1)].sceneBoundingRect().center())
+    assert path.contains(scene.cards[("shiki", 1, 0)].sceneBoundingRect().center())
+    scene.drag_controller.cancel()
+
+
+def test_player_orb_overflow_and_turn_button_stay_bounded(qapp, view):
+    start(view, mulligan=False)
+    view.apply_theme("light", THEMES["light"])
+    player = view.game.current
+    player.orb = 6
+    player.graveyard.extend(list(player.hand[:2])
+                            if isinstance(player.graveyard, list) else [])
+    view.refresh()
+    settle(view)
+    item = view.battle_scene.cards[("player", 0)]
+    assert item.orb_display_count <= 4
+    assert item.orb_overflow == 2
+    assert not hasattr(item, "graveyard_count")
+    assert not hasattr(view, "field_labels")
+    assert view.end_turn_button.width() == view.end_turn_button.height() == 104
+    assert "border-radius: 52px" in view.styleSheet()
+    assert "text-align: center" in view.styleSheet()
+    assert view.end_turn_button.mask().contains(QPoint(52, 52))
+    assert not view.end_turn_button.mask().contains(QPoint(0, 0))
 
 
 def test_battle_window_minimum_height_fits_common_900px_window(qapp, db, tmp_path):
@@ -336,6 +641,45 @@ def test_scene_both_combatants_do_not_overlap_preparation(qapp, view):
                for combatant in (enemy, own) for item in preparation)
     assert scene.sceneRect().contains(enemy.sceneBoundingRect())
     assert scene.sceneRect().contains(own.sceneBoundingRect())
+    assert enemy.pos() == QPointF(726, 220)
+    assert own.pos() == QPointF(726, 460)
+
+
+def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
+    from client.gui import battle_scene
+
+    calls = []
+    monkeypatch.setattr(battle_scene, "entity_pixmap",
+                        lambda shiki, db, *, seat, form=None, cache_context=None:
+                        calls.append((shiki, seat, form)), raising=False)
+    start(view, mulligan=False)
+    assert len({id(call[0]) for call in calls}) == 8
+    assert {call[0].id for call in calls} == set(view.db.shikigami)
+    shiki = view.game.current.shikigami[0]
+    form = view.db.cards[shiki.id * 100 + 1]
+    shiki.form = CardInstance(uid=9999, id=form.id)
+    calls.clear()
+    view.refresh()
+    assert any(call[2] == form for call in calls)
+
+
+def test_opening_and_turn_start_banners(qapp, view):
+    start(view)
+    scene = view.battle_scene
+    assert scene.banner_item.toPlainText() == "你是先手"
+    assert scene.banner_item.isVisible() and scene.banner_timer.isActive()
+    scene.hide_banner()
+    start(view, mulligan=False)
+    scene.hide_banner()
+    view.end_turn()
+    settle(view)
+    assert scene.banner_item.toPlainText() == "回合开始"
+    assert scene.banner_item.isVisible() and scene.banner_timer.isActive()
+    scene.hide_banner()
+    assert not scene.banner_item.isVisible()
+    scene.show_banner("回合开始")
+    view.return_to_menu()
+    assert not scene.banner_timer.isActive() and not scene.banner_item.isVisible()
 
 
 def test_scene_sources_have_independent_legal_targets(qapp, db, view):
@@ -493,6 +837,94 @@ def test_drag_sources_require_current_legal_action(qapp, view):
     assert not shiki.playable
 
 
+def test_scene_assault_playable_allows_energy_payment(qapp, view):
+    start(view, mulligan=False)
+    player = view.game.current
+    shiki_state = player.shikigami[0]
+    player.assaults_left = 0
+    player.orb = 0
+    player.ext["energy_assault"] = {"holder": [0, 0], "cost": 3}
+    shiki_state.energy = 3
+    view.refresh()
+    settle(view)
+    assert view.battle_scene.cards[("shiki", 0, 0)].playable
+
+    shiki_state.energy = 2
+    view.refresh()
+    settle(view)
+    assert not view.battle_scene.cards[("shiki", 0, 0)].playable
+
+
+def test_scene_assault_playable_follows_enraged_attacker(qapp, view):
+    start(view, mulligan=False)
+    player = view.game.current
+    player.shikigami[1].level = 1
+    player.shikigami[1].keywords.append("enraged")
+    view.refresh()
+    settle(view)
+    assert not view.battle_scene.cards[("shiki", 0, 0)].playable
+    assert view.battle_scene.cards[("shiki", 0, 1)].playable
+
+
+def test_scene_assault_playable_follows_combat_zone_lock(qapp, db, view):
+    form_id = 10010151
+    db.cards[form_id] = F.card(
+        form_id, token=True, card_type="form", form_power=3, form_health=5,
+        tags=["combat_lock"])
+    start(view, mulligan=False)
+    own, enemy = view.game.state.players
+    own.shikigami[1].level = 1
+    own.combat_index = 0
+    enemy.combat_index = 0
+    enemy.shikigami[0].form = CardInstance(uid=10000, id=form_id)
+    view.refresh()
+    settle(view)
+    assert not view.battle_scene.cards[("shiki", 0, 1)].playable
+
+    own.shikigami[1].keywords.append("remote")
+    view.refresh()
+    settle(view)
+    assert view.battle_scene.cards[("shiki", 0, 1)].playable
+
+
+def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
+    from client.gui import battle_scene
+
+    calls = []
+
+    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None):
+        calls.append((cdef, display, level_color))
+        return None
+
+    entity_calls = []
+
+    def capture_entity(shiki, database, *, seat, form=None, cache_context=None):
+        entity_calls.append((shiki, seat, form))
+        return None
+
+    monkeypatch.setattr(battle_scene, "card_pixmap", capture_pixmap)
+    monkeypatch.setattr(battle_scene, "entity_pixmap", capture_entity)
+    start(view, mulligan=False)
+    card = next(card for card in view.game.current.hand
+                if view.db.cards[card.id].shikigami == 100103)
+    render = {"power+": 2, "health+": -1}
+    runtime = {"cost": 1, "stats": "", "keywords": [], "render": render,
+               "enhance": 0, "quest": None, "playable": True, "usage": []}
+    monkeypatch.setattr(view, "hand_info", lambda: {card.uid: runtime})
+    form_id = 10010151
+    form = F.card(form_id, token=True, card_type="form", form_power=3, form_health=5)
+    db.cards[form_id] = form
+    shiki = view.game.current.shikigami[2]
+    shiki.form = CardInstance(uid=10000, id=form_id)
+    shiki.perm_power = 2
+    shiki.health = 3
+    calls.clear()
+    view.refresh()
+    settle(view)
+    assert (view.db.cards[card.id], render, "purple") in calls
+    assert (shiki, 2, form) in entity_calls
+
+
 def test_drag_visuals_cancel_and_hand_click_detail(qapp, view, monkeypatch):
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -517,7 +949,7 @@ def test_drag_visuals_cancel_and_hand_click_detail(qapp, view, monkeypatch):
     assert shiki.opacity() == 1
 
 
-def test_mulligan_drag_outside_hand_replaces_card(qapp, view):
+def test_mulligan_click_selects_then_center_button_replaces(qapp, view):
     start(view)
     scene = view.battle_scene
     card = view.game.current.hand[0]
@@ -527,8 +959,48 @@ def test_mulligan_drag_outside_hand_replaces_card(qapp, view):
     scene.drag_controller.press(item, item.scenePos())
     scene.drag_controller.move(drop)
     scene.drag_controller.release(drop)
+    assert card in view.game.state.players[0].hand
+    assert scene.mulligan_uid == card.uid
+    assert item.scale() > 1
+    assert view.mulligan_button.text() == "替换"
+    assert not view.mulligan_button.isHidden()
+    button_pos = scene.mulligan_item.sceneBoundingRect().center()
+    assert abs(button_pos.x() - scene.sceneRect().center().x()) < 100
+    view.mulligan_button.click()
     settle(view)
     assert card not in view.game.state.players[0].hand
+    assert scene.mulligan_uid is None
+
+
+def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
+    start(view)
+    scene = view.battle_scene
+    items = scene_items(view, "hand", player=0)
+    rects = [item.sceneBoundingRect() for item in items]
+    center_x = (min(rect.left() for rect in rects) + max(rect.right() for rect in rects)) / 2
+    assert abs(center_x - scene.sceneRect().center().x()) < 1
+    assert all(rect.center().y() < 600 for rect in rects)
+    assert all(item.default_size.width() >= 170 for item in items)
+    assert getattr(view, "order_label", None) is not None
+    assert view.order_label.text() == "你是先手"
+    assert not view.order_label.isHidden()
+
+
+def test_last_mulligan_reviews_result_before_handoff(qapp, view):
+    start(view)
+    for index in range(3):
+        card = view.game.state.players[0].hand[0]
+        assert view.mulligan(card.uid)
+        if index < 2:
+            settle(view)
+    assert view._handoff_pending
+    assert scene_items(view, "hand", player=0)
+    labels = view.handoff_dialog.findChildren(QLabel)
+    assert any("调度次数已用完" in label.text() for label in labels)
+    view.confirm_handoff()
+    settle(view)
+    assert view.viewer == 1
+    assert scene_items(view, "hand", player=1)
 
 
 def test_scene_commands_apply_through_existing_engine(qapp, view):
@@ -749,6 +1221,22 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
         f"敌方手牌\n{len(view.game.state.players[1].hand)} 张")
     assert view.enemy_deck_label.text() == f"敌方牌库\n{len(view.game.state.players[1].deck)} 张"
     assert view.own_deck_label.text() == f"己方牌库\n{len(view.game.state.players[0].deck)} 张"
+    assert view.hand_caption.text() == f"我方手牌 {len(view.game.current.hand)}/12张"
+
+
+def test_deck_backs_are_three_diagonal_cards_and_hide_when_empty(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    assert len(getattr(scene, "deck_backs", {})) == 6
+    own = [scene.deck_backs[("deck_back", 0, index)] for index in range(3)]
+    assert len({item.x() for item in own}) == 3
+    assert len({item.y() for item in own}) == 3
+    assert len({item.rotation() for item in own}) == 3
+    view.game.state.players[0].deck.clear()
+    view.refresh()
+    settle(view)
+    assert not any(key[0] == "deck_back" and key[1] == 0 for key in scene.deck_backs)
+    assert any(key[0] == "deck_back" and key[1] == 1 for key in scene.deck_backs)
 
 
 def test_shiki_normal_status_only_shows_core_fields(qapp, db, view):
@@ -821,14 +1309,15 @@ def test_card_detail_passes_structured_render_stats(qapp, db, monkeypatch):
     cdef = db.cards[10010101]
     seen = {}
 
-    def capture_pixmap(card_def, database, *, display=None):
-        seen.update(card_def=card_def, database=database, display=display)
+    def capture_pixmap(card_def, database, *, display=None, level_color=None):
+        seen.update(card_def=card_def, database=database, display=display,
+                    level_color=level_color)
         return None
 
     monkeypatch.setattr(widgets, "card_pixmap", capture_pixmap)
     dialog = CardDetailDialog(cdef, db, runtime={"render": {"power+": 1, "health+": -2}})
     assert seen == {"card_def": cdef, "database": db,
-                    "display": {"power+": 1, "health+": -2}}
+                    "display": {"power+": 1, "health+": -2}, "level_color": None}
     dialog.close()
 
 
@@ -1025,7 +1514,7 @@ def test_secret_delayed_target_follows_holder_perspective(qapp, view, monkeypatc
 def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     scene = view.battle_scene
     assert scene.log_item.widget() is view.log_button
-    assert scene.log_item.x() == 20
+    assert scene.log_item.x() == 4
     assert scene.log_item.y() == 420
     assert scene.sceneRect().contains(scene.log_item.sceneBoundingRect())
 
@@ -1307,12 +1796,12 @@ def test_handoff_clears_drag_and_reveals_only_new_viewer_hand(qapp, view):
     origin = item.scenePos()
     scene.drag_controller.press(item, origin)
     scene.drag_controller.move(origin + QPointF(160, -80))
-    assert scene.animation_layer.drag_ghost is not None
+    assert scene.drag_controller.drag_ghost is not None
     view.game.state.active = 1
     view.refresh()
     assert view._handoff_pending
-    assert scene.animation_layer.drag_ghost is None
-    assert scene.animation_layer.drag_arrow is None
+    assert scene.drag_controller.drag_ghost is None
+    assert scene.drag_controller.drag_arrow is None
     assert not any(key[0] == "hand" for key in scene.cards)
     view.confirm_handoff()
     expected = {card.uid for player in view.game.state.players for card in player.hand}
@@ -1320,8 +1809,6 @@ def test_handoff_clears_drag_and_reveals_only_new_viewer_hand(qapp, view):
     assert set(hand_items) == expected
     assert {card.uid for card in view.game.state.players[1].hand} == {
         uid for uid, item in hand_items.items() if item.revealed}
-    assert scene.sceneRect().contains(scene.end_turn_item.sceneBoundingRect())
-    assert scene.sceneRect().contains(scene.menu_item.sceneBoundingRect())
 
 
 def test_scene_visual_review(qapp, view):
@@ -1339,6 +1826,15 @@ def test_scene_visual_review(qapp, view):
     view.show()
     qapp.processEvents()
     assert view.grab().save(str(output / "battle.png"))
+
+    view.game.state.phase = "upgrade"
+    view.refresh()
+    settle(view)
+    qapp.processEvents()
+    assert view.grab().save(str(output / "upgrade.png"))
+    view.game.state.phase = "battle"
+    view.refresh()
+    settle(view)
 
     player = view.game.state.players[0]
     player.hand[:] = [card.model_copy(update={"uid": 2000 + i, "hand_seq": i + 1})
