@@ -578,11 +578,11 @@ class DeckBuilderView(QWidget):
 
     def _set_loading_text(self, text: str) -> None:
         self.loading_label.setText(text)
-        self.loading_label.move((self.width() - self.loading_label.width()) // 2,
-                                (self.height() - self.loading_label.height()) // 2)
+        self.loading_label.setGeometry(0, 0, self.width(), self.height())
 
     def _start_loading(self) -> None:
         self._set_loading_text("正在加载卡组 0.0s")
+        self.stack.hide()
         self.loading_label.show()
         self.loading_label.raise_()
         self.loading.start()
@@ -593,6 +593,7 @@ class DeckBuilderView(QWidget):
     def _finish_loading(self) -> None:
         self.loading.stop()
         self.loading_label.hide()
+        self.stack.show()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

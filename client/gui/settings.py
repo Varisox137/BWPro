@@ -1,0 +1,68 @@
+"""设置：卡图缓存状态与确认后的全量重建。"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+
+from client.gui.loading import LoadingIndicator, LoadingOverlay
+from client.gui.prewarm import MANIFEST_NAME, prewarm_all
+from client.gui.widgets import ask_confirmation
+
+
+class SettingsView(QWidget):
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.cache_dir = Path.home() / ".bwpro" / "cardart"
+        self.loading_overlay = LoadingOverlay(self)
+        self.loading = LoadingIndicator("正在重建卡图", self.loading_overlay.set_text, self)
+        layout = QVBoxLayout(self)
+        title = QLabel("设置")
+        title.setObjectName("viewTitle")
+        layout.addWidget(title)
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+        self.rebuild_button = QPushButton("重新合成全部卡图资源")
+        self.rebuild_button.setObjectName("small")
+        self.rebuild_button.clicked.connect(self.rebuild)
+        layout.addWidget(self.rebuild_button)
+        layout.addStretch(1)
+        self.refresh_status()
+
+    def refresh_status(self) -> None:
+        path = self.cache_dir / MANIFEST_NAME
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            entries = manifest.get("entries", [])
+            updated = manifest.get("updated_at", "未知")
+            self.status_label.setText(f"卡图缓存：{len(entries)} 项\n最近合成：{updated}")
+        except (OSError, ValueError, TypeError):
+            self.status_label.setText("卡图缓存：尚未生成\n启动时会自动检查并合成已配置资源")
+
+    def rebuild(self) -> None:
+        answer = ask_confirmation(self, "重新合成全部卡图资源",
+                                  "将清除现有卡图缓存并重新合成，是否继续？")
+        if answer != QMessageBox.Yes:
+            return
+        self.rebuild_button.setEnabled(False)
+        self.loading.start()
+        self.loading_overlay.show()
+        try:
+            prewarm_all(self.db, clear=True,
+                        on_progress=lambda _current, _total: self.loading.tick())
+        finally:
+            self.loading.stop()
+            self.loading_overlay.hide()
+            self.rebuild_button.setEnabled(True)
+            self.refresh_status()
+
+    def apply_theme(self, theme: str, colors: dict) -> None:
+        self.setStyleSheet(f"""
+            QLabel#viewTitle {{ color: {colors['gold']}; font-size: 28px; }}
+            QLabel#loadingOverlayText {{ color: {colors['gold']}; font-size: 30px; }}
+            LoadingOverlay {{ background: {colors['bg']}; }}
+        """)

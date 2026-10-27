@@ -1,7 +1,13 @@
 type: 法术
 name: 记仇
-level: 1
-rarity: R
-description: ''
+level: 2
+rarity: SR
+description: 下一次对单个己方式神使用的法术，再对施法者自己使用一次。[[响应]]：当敌方对一个己方式神使用法术时，自动使用此牌。
 shikigami: 觉
 version_date: '20191212'
+id: '10010806'
+artwork:
+  images:
+  - path: 10010806.png
+    scale: 0.747
+    offset_y: -74

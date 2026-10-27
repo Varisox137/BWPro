@@ -474,6 +474,12 @@ class BattleScene(QGraphicsScene):
         self.loading_item.setAcceptedMouseButtons(Qt.NoButton)
         self.loading_item.hide()
         self.addItem(self.loading_item)
+        self.loading_background = QGraphicsRectItem(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
+        self.loading_background.setBrush(QColor("#f3efe8"))
+        self.loading_background.setZValue(DRAG_Z + 29)
+        self.loading_background.setAcceptedMouseButtons(Qt.NoButton)
+        self.loading_background.hide()
+        self.addItem(self.loading_background)
         self.loading = LoadingIndicator("正在准备对局", self.loading_item.setPlainText, self)
         self.drag_controller = BattleDragController(self)
 
@@ -511,6 +517,7 @@ class BattleScene(QGraphicsScene):
         rect = self.loading_item.boundingRect()
         self.loading_item.setPos((SCENE_WIDTH - rect.width()) / 2,
                                  (SCENE_HEIGHT - rect.height()) / 2)
+        self.loading_background.show()
         self.loading_item.show()
 
     def loading_tick(self) -> None:
@@ -519,6 +526,7 @@ class BattleScene(QGraphicsScene):
     def hide_loading(self) -> None:
         self.loading.stop()
         self.loading_item.hide()
+        self.loading_background.hide()
 
     def add_control(self, widget, key: tuple, size=None):
         if size is not None:

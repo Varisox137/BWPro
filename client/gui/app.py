@@ -10,6 +10,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from client.gui.loading import LoadingIndicator, LoadingOverlay
+from client.gui.prewarm import prewarm_all
+
 # 与 docs/gui-mock/generate.py 两套配色一致
 THEMES = {
     "light": dict(
@@ -29,6 +32,7 @@ MENU_ENTRIES = [
     ("codex", "式神录", "查看式神与全部卡牌"),
     ("hotseat", "本地热坐", "双人对战 · 同一设备"),
     ("online", "联机对战", "创建 / 加入房间"),
+    ("settings", "设置", "缓存与资源管理"),
 ]
 
 
@@ -123,7 +127,13 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, QWidget] = {}
         self.stack.addWidget(self._make_menu())
         for key, title, _sub in MENU_ENTRIES:
-            if key == "codex":
+            if key == "settings":
+                if db is None:
+                    from db.loader import CardDatabase
+                    db = CardDatabase.load()
+                from client.gui.settings import SettingsView
+                self.pages[key] = SettingsView(db)
+            elif key == "codex":
                 if db is None:
                     from db.loader import CardDatabase
                     db = CardDatabase.load()
@@ -148,6 +158,18 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(self.pages[key])
         self.back_button.hide()
         self.set_theme(self.theme)
+        self.loading_overlay = LoadingOverlay(self)
+        self.loading = LoadingIndicator("正在加载卡图", self.loading_overlay.set_text, self)
+        self.db = db
+
+    def prewarm_resources(self) -> None:
+        self.loading.start()
+        self.loading_overlay.show()
+        try:
+            prewarm_all(self.db, on_progress=lambda _current, _total: self.loading.tick())
+        finally:
+            self.loading.stop()
+            self.loading_overlay.hide()
 
     def set_theme(self, theme: str):
         self.theme = theme
@@ -240,4 +262,5 @@ def main() -> int:
     app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
+    win.prewarm_resources()
     return app.exec()

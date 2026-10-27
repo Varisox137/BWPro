@@ -3,8 +3,29 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QObject, QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+
+class LoadingOverlay(QWidget):
+    """覆盖整个父窗口、只显示加载文本的遮罩。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.label = QLabel(self)
+        self.label.setObjectName("loadingOverlayText")
+        self.label.setAlignment(Qt.AlignCenter)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.label)
+        self.hide()
+
+    def set_text(self, text: str) -> None:
+        self.label.setText(text)
+
+    def showEvent(self, event) -> None:
+        self.resize(self.parentWidget().size())
+        self.raise_()
+        super().showEvent(event)
 
 
 class LoadingIndicator(QObject):

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QRegion
+from PySide6.QtGui import QColor, QRegion
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QPushButton,
     QStackedWidget, QVBoxLayout, QWidget,
@@ -317,6 +317,7 @@ class HotseatView(QWidget):
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
+        self.battle_scene.loading_background.setBrush(QColor(colors["bg"]))
         self.setStyleSheet(f"""
             QLabel#viewTitle, QLabel#phaseLabel {{ color: {colors['gold']}; font-size: 24px; }}
             QLabel#turnOrderLabel, QLabel#upgradePhaseLabel {{

@@ -1,0 +1,18 @@
+type: 法术
+name: 觉醒·觉
+level: 3
+rarity: SR
+description: '展示敌方所有手牌。
+
+  [[觉醒]]：回合开始时，展示敌方所有手牌。当敌方牌手使用已展示的手牌时，觉获得1#ll与1#sm。'
+shikigami: 觉
+version_date: '20200520'
+id: '10010808'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10010808.png
+    scale: 0.747
+    offset_y: -82

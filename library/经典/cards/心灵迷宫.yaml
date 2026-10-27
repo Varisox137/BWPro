@@ -1,0 +1,15 @@
+type: 形态
+name: 心灵迷宫
+level: 3
+rarity: SSR
+description: 对手使用已展示的手牌时需额外消耗一点鬼火。[[增强]]：若敌方手牌全部已展示，此牌获得[[瞬发]]。
+shikigami: 觉
+power: 5
+health: 5
+version_date: '20191212'
+id: '10010807'
+artwork:
+  images:
+  - path: 10010807.png
+    scale: 0.711
+    offset_y: -70
