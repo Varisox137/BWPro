@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.deckbuilder import available_shikigami, buildable_cards
+from client.gui.loading import LoadingIndicator
 from client.gui.portrait import shikigami_portrait
 from client.gui.widgets import (
     CardDetailDialog, CardWidget, ask_confirmation, polish_dialog_buttons,
@@ -161,6 +162,12 @@ class DeckBuilderView(QWidget):
         self.picks: dict[int, Counter] = {}
         self.selected_sid: int | None = None
         self.dirty = False
+        self.loading_label = QLabel(self)
+        self.loading_label.setObjectName("loadingLabel")
+        self.loading_label.setAlignment(Qt.AlignCenter)
+        self.loading_label.setFixedSize(400, 80)
+        self.loading_label.hide()
+        self.loading = LoadingIndicator("正在加载卡组", self._set_loading_text, self)
         self._build_ui()
         self.reload_decks()
 
@@ -380,7 +387,7 @@ class DeckBuilderView(QWidget):
                 row_layout.setSpacing(10)
                 avatar = QLabel()
                 avatar.setObjectName("shikiPortrait")
-                avatar.setFixedSize(72, 72)
+                avatar.setFixedSize(88, 88)
                 if definition is not None:
                     avatar.setPixmap(shikigami_portrait(definition))
                 else:
@@ -569,34 +576,62 @@ class DeckBuilderView(QWidget):
         edb = self.db.at_date(self.current_env())
         return [edb.shikigami[self.selected_sid]] + buildable_cards(edb, self.selected_sid)
 
+    def _set_loading_text(self, text: str) -> None:
+        self.loading_label.setText(text)
+        self.loading_label.move((self.width() - self.loading_label.width()) // 2,
+                                (self.height() - self.loading_label.height()) // 2)
+
+    def _start_loading(self) -> None:
+        self._set_loading_text("正在加载卡组 0.0s")
+        self.loading_label.show()
+        self.loading_label.raise_()
+        self.loading.start()
+
+    def _loading_tick(self) -> None:
+        self.loading.tick()
+
+    def _finish_loading(self) -> None:
+        self.loading.stop()
+        self.loading_label.hide()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self.loading_label.isVisible():
+            self._set_loading_text(self.loading_label.text())
+
     def _render_cards(self) -> None:
-        _clear_layout(self.card_layout)
-        self.card_widgets = []
-        cards = self._current_cards()
-        self.page_count = max(1, (len(cards) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE)
-        self.page_index = max(0, min(self.page_index, self.page_count - 1))
-        shown = cards[self.page_index * CARD_PAGE_SIZE:(self.page_index + 1) * CARD_PAGE_SIZE]
-        art_context = {}
-        for cdef in shown:
-            base_shiki = getattr(cdef, "card_type", None) is None
-            copies = self.picks.get(self.selected_sid, {}).get(cdef.id, 0)
-            widget = CardWidget(cdef, copies, editable=not base_shiki, db=self.db,
-                                art_context=art_context)
-            if base_shiki:
-                widget.count_label.setText(" ")
-            else:
-                widget.plus_button.clicked.connect(
-                    lambda _=False, cid=cdef.id: self.change_card(cid, 1))
-                widget.minus_button.clicked.connect(
-                    lambda _=False, cid=cdef.id: self.change_card(cid, -1))
-            widget.clicked.connect(self.show_card_detail)
-            self.card_layout.addWidget(widget, 1)
-            self.card_widgets.append(widget)
-        self.card_layout.addStretch(1)
-        self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
-        self.card_previous.setEnabled(self.page_index > 0)
-        self.card_next.setEnabled(self.page_index < self.page_count - 1)
-        self._render_selected_bar()
+        self._start_loading()
+        try:
+            _clear_layout(self.card_layout)
+            self.card_widgets = []
+            cards = self._current_cards()
+            self.page_count = max(1, (len(cards) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE)
+            self.page_index = max(0, min(self.page_index, self.page_count - 1))
+            shown = cards[self.page_index * CARD_PAGE_SIZE:(self.page_index + 1) * CARD_PAGE_SIZE]
+            art_context = {}
+            for cdef in shown:
+                base_shiki = getattr(cdef, "card_type", None) is None
+                copies = self.picks.get(self.selected_sid, {}).get(cdef.id, 0)
+                widget = CardWidget(cdef, copies, editable=not base_shiki, db=self.db,
+                                    art_context=art_context)
+                if base_shiki:
+                    widget.count_label.setText(" ")
+                else:
+                    widget.plus_button.clicked.connect(
+                        lambda _=False, cid=cdef.id: self.change_card(cid, 1))
+                    widget.minus_button.clicked.connect(
+                        lambda _=False, cid=cdef.id: self.change_card(cid, -1))
+                widget.clicked.connect(self.show_card_detail)
+                self.card_layout.addWidget(widget, 1)
+                self.card_widgets.append(widget)
+                self._loading_tick()
+            self.card_layout.addStretch(1)
+            self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
+            self.card_previous.setEnabled(self.page_index > 0)
+            self.card_next.setEnabled(self.page_index < self.page_count - 1)
+            self._render_selected_bar()
+        finally:
+            self._finish_loading()
 
     def _render_selected_bar(self) -> None:
         if self.selected_sid is None:

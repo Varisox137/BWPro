@@ -242,7 +242,8 @@ class HotseatView(QWidget):
         self.battle_scene.add_control(self.hand_caption, ("hand_caption",), (280, 28))
         self.ready_button = QPushButton("确认调度")
         self.ready_button.clicked.connect(self.ready)
-        self.battle_scene.add_control(self.ready_button, ("ready",), (140, 34))
+        self.battle_scene.ready_item = self.battle_scene.add_control(
+            self.ready_button, ("ready",), (140, 34))
         self.mulligan_button = QPushButton("替换")
         self.mulligan_button.setObjectName("battleSmall")
         self.mulligan_button.clicked.connect(self.replace_mulligan)
@@ -360,27 +361,31 @@ class HotseatView(QWidget):
         return True
 
     def start_game(self, p1: tuple, p2: tuple, seed: int = 42, **kwargs) -> None:
-        self.timeline_timer.stop()
-        self._close_handoff()
-        self.close_log()
-        self.game = new_game(self.db, p1, p2, seed=seed, **kwargs)
-        self.viewer = self._current_viewer()
-        self._review_mulligan = False
-        self._last_turn_key = None
-        self._opening_banner_pending = True
-        self.battle_scene.hide_banner()
-        self.pending_command = None
-        self.target_specs = []
-        self.legal_targets = []
-        self._timeline_seen = 0
-        self.timeline_queue.clear()
-        self.played_timeline.clear()
-        self.log_list.clear()
-        self.result_banner.hide()
-        self.result_back.hide()
-        self._choice_key = None
-        self.stack.setCurrentWidget(self.battle_page)
-        self.refresh()
+        self.battle_scene.show_loading("正在准备对局")
+        try:
+            self.timeline_timer.stop()
+            self._close_handoff()
+            self.close_log()
+            self.game = new_game(self.db, p1, p2, seed=seed, **kwargs)
+            self.viewer = self._current_viewer()
+            self._review_mulligan = False
+            self._last_turn_key = None
+            self._opening_banner_pending = True
+            self.battle_scene.hide_banner()
+            self.pending_command = None
+            self.target_specs = []
+            self.legal_targets = []
+            self._timeline_seen = 0
+            self.timeline_queue.clear()
+            self.played_timeline.clear()
+            self.log_list.clear()
+            self.result_banner.hide()
+            self.result_back.hide()
+            self._choice_key = None
+            self.stack.setCurrentWidget(self.battle_page)
+            self.refresh()
+        finally:
+            self.battle_scene.hide_loading()
 
     def _current_viewer(self) -> int:
         if self.game is None:
@@ -839,6 +844,7 @@ class HotseatView(QWidget):
     def return_to_menu(self) -> None:
         self.timeline_timer.stop()
         self.battle_scene.hide_banner()
+        self.battle_scene.hide_loading()
         self._close_handoff()
         self.close_log()
         if self.choice_dialog is not None:

@@ -137,26 +137,31 @@ class OnlineBattleView(HotseatView):
     def set_state(self, payload: dict, timer: dict | None = None,
                   log: list[str] | None = None,
                   timeline: list[dict] | None = None) -> None:
-        self.payload = payload
-        self.server_timer = timer
-        self.game = Game(GameState.model_validate(payload), self.db)
-        self.viewer = self.me
-        self.pending_command = None
-        self.target_specs = []
-        self.legal_targets = []
-        self._awaiting_state = False
-        self._timeline_seen = len(self.game.state.timeline)
-        self.stack.setCurrentWidget(self.battle_page)
-        if timeline:
-            for entry in timeline:
-                self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
-            if not self.timeline_timer.isActive():
+        self.timeline_timer.stop()
+        self.battle_scene.show_loading("正在准备对局")
+        try:
+            self.payload = payload
+            self.server_timer = timer
+            self.game = Game(GameState.model_validate(payload), self.db)
+            self.viewer = self.me
+            self.pending_command = None
+            self.target_specs = []
+            self.legal_targets = []
+            self._awaiting_state = False
+            self._timeline_seen = len(self.game.state.timeline)
+            self.stack.setCurrentWidget(self.battle_page)
+            if timeline:
+                for entry in timeline:
+                    self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
+            elif log:
+                self.played_timeline.extend((None, line) for line in log)
+                self._render_log()
+            self.refresh()
+            self._update_countdown()
+        finally:
+            self.battle_scene.hide_loading()
+            if self.timeline_queue and not self.timeline_timer.isActive():
                 self.timeline_timer.start()
-        elif log:
-            self.played_timeline.extend((None, line) for line in log)
-            self._render_log()
-        self.refresh()
-        self._update_countdown()
 
     def _can_send(self, command: dict) -> bool:
         if self.game is None or self._awaiting_state or self.timeline_queue:

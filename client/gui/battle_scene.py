@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
+from client.gui.loading import LoadingIndicator
 from client.gui.portrait import bwpdiy_root
 from core import targets
 from core.model import Ref
@@ -55,14 +56,14 @@ def display_hand(game, pi: int, viewer: int):
 def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     positions = {
         ("phase",): QPointF(4, 180),
-        ("menu",): QPointF(1480, 186),
+        ("menu",): QPointF(1352, 16),
         ("log",): QPointF(4, 420),
         ("end_turn",): QPointF(1488, 400),
         ("enemy_hand_label",): QPointF(1240, 190),
         ("enemy_deck",): QPointF(1488, 222),
         ("own_deck",): QPointF(1488, 648),
         ("hand_caption",): QPointF(1130, 696),
-        ("ready",): QPointF(1420, 120),
+        ("ready",): QPointF(1328, 435),
         ("mulligan",): QPointF(730, 610),
         ("turn_order",): QPointF(4, 230),
         ("target_label",): QPointF(1120, 400),
@@ -90,7 +91,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
             if player.combat_index == index:
                 position = QPointF(726, 220 if top else 460)
             else:
-                position = QPointF(440 + index * 170,
+                position = QPointF(400 + index * 190,
                                    arc[index] if top else (690 - arc[index]))
             positions[("shiki", pi, index)] = position
         cards = display_hand(game, pi, viewer)
@@ -466,6 +467,14 @@ class BattleScene(QGraphicsScene):
         self.banner_timer.setInterval(30)
         self.banner_timer.timeout.connect(self._advance_banner)
         self._banner_frame = self._banner_frames = 0
+        self.loading_item = QGraphicsTextItem()
+        self.loading_item.setFont(QFont("Microsoft YaHei", 32, QFont.Bold))
+        self.loading_item.setDefaultTextColor(QColor("#f3d56b"))
+        self.loading_item.setZValue(DRAG_Z + 30)
+        self.loading_item.setAcceptedMouseButtons(Qt.NoButton)
+        self.loading_item.hide()
+        self.addItem(self.loading_item)
+        self.loading = LoadingIndicator("正在准备对局", self.loading_item.setPlainText, self)
         self.drag_controller = BattleDragController(self)
 
     def show_banner(self, text: str, duration: int = 900) -> None:
@@ -496,6 +505,20 @@ class BattleScene(QGraphicsScene):
         self.banner_timer.stop()
         self._banner_frame = self._banner_frames = 0
         self.banner_item.hide()
+
+    def show_loading(self, prefix: str) -> None:
+        self.loading.start(prefix)
+        rect = self.loading_item.boundingRect()
+        self.loading_item.setPos((SCENE_WIDTH - rect.width()) / 2,
+                                 (SCENE_HEIGHT - rect.height()) / 2)
+        self.loading_item.show()
+
+    def loading_tick(self) -> None:
+        self.loading.tick()
+
+    def hide_loading(self) -> None:
+        self.loading.stop()
+        self.loading_item.hide()
 
     def add_control(self, widget, key: tuple, size=None):
         if size is not None:
@@ -687,6 +710,7 @@ class BattleScene(QGraphicsScene):
                              and index in game.legal_upgrade_indices(pi))))
                 item.setPos(positions[key])
                 item.update()
+                self.loading_tick()
 
         for pi, player in enumerate(game.state.players):
             own = pi == viewer
@@ -744,6 +768,7 @@ class BattleScene(QGraphicsScene):
                 item.setPos(x, positions[key].y())
                 item.setZValue(HAND_Z + order / 1000)
                 item.update()
+                self.loading_tick()
         if self.phase == "mulligan":
             centered_items = [item for key, item in self.cards.items()
                               if key[0] == "hand" and item.player == viewer]
