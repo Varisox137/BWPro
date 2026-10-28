@@ -1,0 +1,17 @@
+type: 式神
+name: 妖刀姬
+faction: 苍叶
+power: 3
+health: 4
+description: 当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合获得[[瞬发]]。
+version_date: '20191212'
+id: '100123'
+artwork:
+  images:
+  - path: 100123.png
+    scale: 0.747
+    offset_y: -61
+portrait:
+  scale: 4.767
+  offset_x: -34
+  offset_y: 76

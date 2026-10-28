@@ -1019,7 +1019,7 @@ def test_cardart_fallback_draws_centered_name_with_theme_color(qapp):
                for y in range(125, 190, 5))
 
 
-def test_card_widget_passes_level_color(qapp, db, monkeypatch):
+def test_card_widget_passes_level_color_and_requests_native_art(qapp, db, monkeypatch):
     from client.gui.widgets import CardWidget
 
     seen = {}
@@ -1030,20 +1030,37 @@ def test_card_widget_passes_level_color(qapp, db, monkeypatch):
     monkeypatch.setattr("client.gui.widgets.card_pixmap", capture)
     CardWidget(db.cards[10010101], db=db, level_color="cyan")
     assert seen["level_color"] == "cyan"
-    assert seen["height"] == 540
+    assert seen["height"] is None
 
 
-def test_card_widget_resize_scales_without_rerender(qapp, db, monkeypatch):
+def test_card_widget_resize_scales_from_native_source_without_rerender(qapp, db, monkeypatch):
     from client.gui.widgets import CardWidget
 
     calls = []
     monkeypatch.setattr("client.gui.widgets.card_pixmap",
-                        lambda *_args, **kwargs: calls.append(kwargs) or QPixmap(100, 100))
+                        lambda *_args, **kwargs: calls.append(kwargs) or QPixmap(263, 512))
     widget = CardWidget(db.cards[10010101], db=db)
     calls.clear()
-    widget.art_label.resize(50, 50)
+    widget.art_label.resize(60, 100)
     widget._fit_art()
     assert calls == []
+    assert (widget._display_art.width(), widget._display_art.height()) == (308, 512)
+    assert widget.art_label.pixmap().height() == 100
+
+
+def test_card_widget_shikigami_and_card_share_display_size(qapp, db, monkeypatch):
+    from client.gui.widgets import CardWidget
+
+    def render(cdef, _db, **_kwargs):
+        return QPixmap(263, 512) if getattr(cdef, "card_type", None) is None else QPixmap(302, 512)
+
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", render)
+    shikigami = CardWidget(db.shikigami[100101], db=db)
+    card = CardWidget(db.cards[10010101], db=db)
+    for widget in (shikigami, card):
+        widget.art_label.resize(120, 200)
+        widget._fit_art()
+    assert shikigami.art_label.pixmap().size() == card.art_label.pixmap().size()
 
 
 def test_cardart_combat_amount_uses_static_base(qapp, gdb):

@@ -1,0 +1,15 @@
+type: 战斗
+name: 雪走
+level: 2
+rarity: SR
+description: '[[眩晕]]战斗区的敌方式神。[[响应]]：当雪童子被攻击时，自动使用此牌。'
+shikigami: 雪童子
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10012204'
+artwork:
+  images:
+  - path: 10012204.png
+    scale: 0.711
+    offset_y: -67

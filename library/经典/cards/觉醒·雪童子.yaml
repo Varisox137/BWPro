@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·雪童子
+level: 3
+rarity: SR
+description: '[[觉醒]]：雪童子攻击[[眩晕]]的敌方角色时获得[[连击]]且免疫战斗伤害。'
+shikigami: 雪童子
+version_date: '20191212'
+evolve: true
+power+: 1
+health+: 2
+id: '10012208'
+artwork:
+  images:
+  - path: 10012208.png
+    scale: 0.747
+    offset_y: -81

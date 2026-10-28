@@ -1,0 +1,15 @@
+type: 战斗
+name: 霜天之织
+level: 2
+rarity: R
+description: '[[增强]]：场上每有一个[[眩晕]]的敌方角色此牌便获得+1#ll。'
+shikigami: 雪童子
+power+: 2
+shield+: 0
+version_date: '20191212'
+id: '10012206'
+artwork:
+  images:
+  - path: 10012206.png
+    scale: 0.73
+    offset_y: -70

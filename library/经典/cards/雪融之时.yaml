@@ -1,0 +1,15 @@
+type: 形态
+name: 雪融之时
+level: 3
+rarity: SSR
+description: 每次至多只会受到3点伤害。[[增强]]：本局游戏每有一个敌人被[[眩晕]]，此牌获得+1#ll。
+shikigami: 雪童子
+power: 5
+health: 7
+version_date: '20191212'
+id: '10012207'
+artwork:
+  images:
+  - path: 10012207.png
+    scale: 0.711
+    offset_y: -83

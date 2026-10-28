@@ -1,0 +1,15 @@
+type: 形态
+name: 雪国之子
+level: 1
+rarity: R
+description: 若场上有[[眩晕]]的敌方角色，此牌获得+2#ll和+2#sm。
+shikigami: 雪童子
+power: 5
+health: 5
+version_date: '20191212'
+id: '10012203'
+artwork:
+  images:
+  - path: 10012203.png
+    scale: 0.711
+    offset_y: -66

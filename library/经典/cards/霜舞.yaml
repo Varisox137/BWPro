@@ -1,0 +1,15 @@
+type: 战斗
+name: 霜舞
+level: 1
+rarity: R
+description: 若场上有[[眩晕]]的敌方角色，此牌获得[[瞬发]]。
+shikigami: 雪童子
+power+: 2
+shield+: 0
+version_date: '20191212'
+id: '10012201'
+artwork:
+  images:
+  - path: 10012201.png
+    scale: 0.711
+    offset_y: -109

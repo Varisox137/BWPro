@@ -61,12 +61,8 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
         config, path = portrait._project_config(
             library_dir, kind, definition.id, definition.name, definition.version)
         config = config or {}
-        if kind == "cards":
-            card_pixmap(definition, db, height=cardart.DETAIL_ART_HEIGHT,
-                        cache_context=art_context)
-        else:
-            card_pixmap(definition, db, height=cardart.DETAIL_ART_HEIGHT,
-                        cache_context=art_context)
+        card_pixmap(definition, db, cache_context=art_context)
+        if kind == "shikigami":
             shiki = SimpleNamespace(
                 id=definition.id, awakened=None, level=0,
                 eff_power=definition.power, combat_power=0,

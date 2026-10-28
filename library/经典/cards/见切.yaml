@@ -1,0 +1,17 @@
+type: 战斗
+name: 见切
+level: 1
+rarity: SR
+description: '免疫战斗伤害。
+
+  [[响应]]：当妖刀姬被攻击时，自动使用该牌。'
+shikigami: 妖刀姬
+power+: 1
+shield+: 0
+version_date: '20191212'
+id: '10012302'
+artwork:
+  images:
+  - path: 10012302.png
+    scale: 0.747
+    offset_y: -76

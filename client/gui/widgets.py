@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from client import cardfmt
-from client.gui.cardart import DETAIL_ART_HEIGHT, card_pixmap
+from client.gui.cardart import card_pixmap
 from client.gui.mechanisms import card_mechanisms, mechanism_panel
 
 
@@ -68,6 +69,21 @@ def fill_card_row(layout, widgets: list["CardWidget"], page_size: int = 5) -> No
         layout.addWidget(QWidget(), 1)
 
 
+def _uniform_art(source: QPixmap) -> QPixmap:
+    """用透明边距统一长宽比，不重采样原生卡图。"""
+    width = max(source.width(), -(-source.height() * 3 // 5))
+    height = max(source.height(), -(-source.width() * 5 // 3))
+    if (width, height) == (source.width(), source.height()):
+        return source
+    canvas = QPixmap(width, height)
+    canvas.fill(Qt.transparent)
+    painter = QPainter(canvas)
+    painter.drawPixmap((width - source.width()) // 2,
+                       (height - source.height()) // 2, source)
+    painter.end()
+    return canvas
+
+
 class CardWidget(QFrame):
     """静态卡面：有本地卡图时显示全卡，否则回退文字卡。"""
 
@@ -116,13 +132,15 @@ class CardWidget(QFrame):
         self._art_options = {"display": display, "level_color": level_color}
         if art_context is not None:
             self._art_options["cache_context"] = art_context
-        pixmap = self._request_art(DETAIL_ART_HEIGHT)
+        pixmap = self._request_art()
         if pixmap is not None and not pixmap.isNull():
-            self.art_label.setPixmap(pixmap)
+            self._display_art = _uniform_art(pixmap)
+            self.art_label.setPixmap(self._display_art)
             for label in (self.level_label, self.name_label, self.type_label,
                           self.stats_label, self.text_label):
                 label.hide()
         else:
+            self._display_art = None
             self.art_label.hide()
         footer = QHBoxLayout()
         self.count_label = QLabel(f"已选 {copies}/2")
@@ -149,14 +167,14 @@ class CardWidget(QFrame):
         for child in self.findChildren(QLabel):
             child.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-    def _request_art(self, height: int):
+    def _request_art(self):
         if self._art_db is None:
             return None
-        return card_pixmap(self.cdef, self._art_db, height=height, **self._art_options)
+        return card_pixmap(self.cdef, self._art_db, height=None, **self._art_options)
 
     def _fit_art(self) -> None:
-        source = self.art_label.pixmap()
-        if source.isNull() or self.art_label.width() <= 0 or self.art_label.height() <= 0:
+        source = self._display_art
+        if source is None or self.art_label.width() <= 0 or self.art_label.height() <= 0:
             return
         self.art_label.setPixmap(source.scaled(
             self.art_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))

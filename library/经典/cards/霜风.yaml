@@ -1,0 +1,15 @@
+type: 战斗
+name: 霜风
+level: 1
+rarity: R
+description: 若敌方战斗区没有式神，[[眩晕]]敌方牌手。
+shikigami: 雪童子
+power+: 1
+shield+: 2
+version_date: '20191212'
+id: '10012202'
+artwork:
+  images:
+  - path: 10012202.png
+    scale: 0.711
+    offset_y: -92

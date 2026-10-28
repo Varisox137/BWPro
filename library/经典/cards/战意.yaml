@@ -1,0 +1,15 @@
+type: 战斗
+name: 战意
+level: 2
+rarity: R
+description: ''
+shikigami: 妖刀姬
+power+: 2
+shield+: 2
+version_date: '20191212'
+id: '10012303'
+artwork:
+  images:
+  - path: 10012303.png
+    scale: 0.711
+    offset_y: -69

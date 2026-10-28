@@ -1,0 +1,15 @@
+type: 战斗
+name: 胧月雪华斩
+level: 2
+rarity: SR
+description: 造成伤害时对所有其他[[眩晕]]的敌方角色造成等量的伤害。
+shikigami: 雪童子
+power+: 2
+shield+: 0
+version_date: '20191212'
+id: '10012205'
+artwork:
+  images:
+  - path: 10012205.png
+    scale: 0.784
+    offset_y: -88

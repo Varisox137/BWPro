@@ -1,0 +1,15 @@
+type: 战斗
+name: 禁锢之刀
+level: 2
+rarity: SR
+description: '[[增强]]：本局游戏妖刀姬每消灭一个式神，此牌获得+2#ll。'
+shikigami: 妖刀姬
+power+: 0
+shield+: 2
+version_date: '20200120'
+id: '10012305'
+artwork:
+  images:
+  - path: 10012305.png
+    scale: 0.711
+    offset_y: -69

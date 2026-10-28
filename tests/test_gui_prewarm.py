@@ -62,7 +62,7 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     assert {call[0] for call in calls} == {"card", "entity", "portrait"}
     big_cards = [call for call in calls if call[0] == "card"]
     assert len(big_cards) == 2
-    assert all(call[2]["height"] == 540 for call in big_cards)
+    assert all("height" not in call[2] for call in big_cards)
     rendered = [call for call in calls if call[0] != "portrait"]
     assert len({id(call[2]["cache_context"]) for call in rendered}) == 1
     assert progress[-1] == (2, 2)

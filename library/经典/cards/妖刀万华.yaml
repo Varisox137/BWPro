@@ -1,0 +1,15 @@
+type: 形态
+name: 妖刀万华
+level: 1
+rarity: R
+description: '[[连击]]'
+shikigami: 妖刀姬
+power: 3
+health: 8
+version_date: '20191212'
+id: '10012306'
+artwork:
+  images:
+  - path: 10012306.png
+    scale: 0.711
+    offset_y: -76

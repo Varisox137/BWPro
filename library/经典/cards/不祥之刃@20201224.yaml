@@ -1,0 +1,15 @@
+type: 战斗
+name: 不祥之刃
+level: 1
+rarity: R
+description: 消灭敌方式神时，抽一张牌。
+shikigami: 妖刀姬
+power+: 0
+shield+: 1
+version_date: '20201224'
+id: '10012301'
+artwork:
+  images:
+  - path: 10012301.png
+    scale: 0.711
+    offset_y: -96

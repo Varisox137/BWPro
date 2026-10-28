@@ -34,7 +34,6 @@ _ICON_RE = re.compile("|".join(_ICON_NAMES))
 _RENDER_LOCK = threading.RLock()
 _TRANSPARENT_ART = "__BWPRO_TRANSPARENT__"
 _SEAT_LEVEL_COLORS = ("yellow", "cyan", "purple", "red")
-DETAIL_ART_HEIGHT = 540
 
 
 def _placeholder_color() -> str:

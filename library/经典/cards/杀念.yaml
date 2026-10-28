@@ -1,0 +1,13 @@
+type: 法术
+name: 杀念
+level: 3
+rarity: SR
+description: 随机将三张妖刀姬的战斗牌置入手牌。
+shikigami: 妖刀姬
+version_date: '20191212'
+id: '10012307'
+artwork:
+  images:
+  - path: 10012307.png
+    scale: 0.747
+    offset_y: -74

@@ -1,0 +1,18 @@
+type: 法术
+name: 觉醒·妖刀姬
+level: 3
+rarity: SSR
+description: '[[觉醒]]：[[迅捷]]。
+
+  当妖刀姬对敌方牌手造成伤害时，她的战斗牌本回合不消耗鬼火。'
+shikigami: 妖刀姬
+version_date: '20191212'
+id: '10012308'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10012308.png
+    scale: 0.784
+    offset_y: -66
