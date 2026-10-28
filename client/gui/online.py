@@ -92,6 +92,8 @@ class OnlineBattleView(HotseatView):
         self.server_timer: dict | None = None
         self._awaiting_state = False
         self._pending_game_over: tuple[int | None, str] | None = None
+        self._state_rendering = False
+        self._deferred_state: tuple | None = None
         super().__init__(db, on_back=on_back, parent=parent)
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
@@ -111,6 +113,7 @@ class OnlineBattleView(HotseatView):
         self.server_timer = None
         self._awaiting_state = False
         self._pending_game_over = None
+        self._deferred_state = None
         self._choice_key = None
         self._last_turn_key = None
         self._opening_banner_pending = True
@@ -138,6 +141,10 @@ class OnlineBattleView(HotseatView):
     def set_state(self, payload: dict, timer: dict | None = None,
                   log: list[str] | None = None,
                   timeline: list[dict] | None = None) -> None:
+        if self._state_rendering:
+            self._deferred_state = (payload, timer, log, timeline)
+            return
+        self._state_rendering = True
         self.timeline_timer.stop()
         self.battle_scene.show_loading("正在准备对局")
         try:
@@ -163,6 +170,11 @@ class OnlineBattleView(HotseatView):
             self.battle_scene.hide_loading()
             if self.timeline_queue and not self.timeline_timer.isActive():
                 self.timeline_timer.start()
+            self._state_rendering = False
+            if self._deferred_state is not None:
+                deferred = self._deferred_state
+                self._deferred_state = None
+                self.set_state(*deferred)
 
     def _can_send(self, command: dict) -> bool:
         if self.game is None or self._awaiting_state or self.timeline_queue:
@@ -182,7 +194,14 @@ class OnlineBattleView(HotseatView):
     def apply_command(self, command: dict) -> bool:
         if not self._can_send(command):
             return False
-        self.send_command(_json_command(command))
+        try:
+            accepted = self.send_command(_json_command(command))
+        except Exception as error:
+            self.receive_error(f"指令发送失败：{error}")
+            return False
+        if accepted is False:
+            self.receive_error("指令发送失败：连接已断开")
+            return False
         self._awaiting_state = True
         self.pending_command = None
         self.target_specs = []
@@ -263,6 +282,9 @@ class OnlineBattleView(HotseatView):
 class OnlineView(QWidget):
     """联机连接页、大厅与联机对局容器。"""
 
+    connection_succeeded = Signal(object, str)
+    connection_failed = Signal(str, str)
+
     def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None,
                  bridge_factory=NetBridge, parent=None):
         super().__init__(parent)
@@ -272,8 +294,9 @@ class OnlineView(QWidget):
         self.on_back = on_back
         self.bridge_factory = bridge_factory
         self.bridge = None
-        self.probe = net.probe_connection
         self.opener = net._open_ws
+        self._connecting = False
+        self._connect_thread: threading.Thread | None = None
         self.server_url = ""
         self.player_name = "玩家"
         self.deck_name = ""
@@ -299,6 +322,8 @@ class OnlineView(QWidget):
         self.clock.setInterval(1000)
         self.clock.timeout.connect(self._render_lobby)
         self.clock.start()
+        self.connection_succeeded.connect(self._connection_succeeded)
+        self.connection_failed.connect(self._connection_failed)
         self.reload_decks()
 
     def _build_ui(self) -> None:
@@ -385,6 +410,11 @@ class OnlineView(QWidget):
         if hasattr(self, "battle"):
             self.battle.apply_theme(theme, colors)
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self.clock.isActive():
+            self.clock.start()
+
     def reload_decks(self) -> None:
         self.entries = [entry for entry in deckstore.load_decks(self.base_db, self.store_path)
                         if entry.get("standard")]
@@ -411,24 +441,60 @@ class OnlineView(QWidget):
         return False
 
     def connect_server(self) -> bool:
-        self.server_url = net.normalize_server_url(self.server_edit.text())
-        error = self.probe(self.server_url)
-        if error is not None:
-            show_warning(self, "连接失败", f"无法连接 {self.server_url}：{error}，请修改后重试")
+        if self._connecting:
             return False
+        url = net.normalize_server_url(self.server_edit.text())
+        self.server_url = url
         self.player_name = self.name_edit.text().strip() or "玩家"
         self._select_deck(self.deck_combo.currentIndex())
-        if not self._open_bridge():
-            return False
-        self.stack.setCurrentWidget(self.lobby_page)
+        self._connecting = True
+        self.connect_button.setEnabled(False)
+        self.connect_button.setText("正在连接……")
+
+        def connect():
+            try:
+                ws = self.opener(url)
+            except Exception as error:
+                self.connection_failed.emit(url, str(error))
+            else:
+                self.connection_succeeded.emit(ws, url)
+
+        self._connect_thread = threading.Thread(target=connect, daemon=True)
+        self._connect_thread.start()
         return True
 
-    def _open_bridge(self) -> bool:
-        try:
-            ws = self.opener(self.server_url)
-        except Exception as error:
-            show_warning(self, "连接失败", str(error))
-            return False
+    def _reset_connect_button(self) -> None:
+        self._connecting = False
+        self._connect_thread = None
+        self.connect_button.setEnabled(True)
+        self.connect_button.setText("连接并进入大厅")
+
+    def _connection_failed(self, url: str, reason: str) -> None:
+        if not self._connecting:
+            return
+        self._reset_connect_button()
+        if not self._expect_close:
+            show_warning(self, "连接失败", f"无法连接 {url}：{reason}，请修改后重试")
+
+    def _connection_succeeded(self, ws, url: str) -> None:
+        if not self._connecting:
+            ws.close()
+            return
+        self._reset_connect_button()
+        if self._expect_close:
+            ws.close()
+            return
+        self.server_url = url
+        if self._open_bridge(ws):
+            self.stack.setCurrentWidget(self.lobby_page)
+
+    def _open_bridge(self, ws=None) -> bool:
+        if ws is None:
+            try:
+                ws = self.opener(self.server_url)
+            except Exception as error:
+                show_warning(self, "连接失败", str(error))
+                return False
         self.bridge = self.bridge_factory(ws)
         self.bridge.message.connect(self.handle_message)
         self.bridge.disconnected.connect(self.on_disconnected)
@@ -498,9 +564,15 @@ class OnlineView(QWidget):
             return
         self.bridge.send({"type": "env", "date": date})
 
-    def send_game_command(self, command: dict) -> None:
-        if self.bridge is not None:
+    def send_game_command(self, command: dict) -> bool:
+        if self.bridge is None:
+            return False
+        try:
             self.bridge.send_cmd(command)
+        except Exception as error:
+            self.lobby_error.setText(f"指令发送失败：{error}")
+            return False
+        return True
 
     def _apply_env(self, date: int | None) -> None:
         if date == self.env_date:
@@ -508,6 +580,7 @@ class OnlineView(QWidget):
         self.env_date = date
         self.db = self.base_db.at_date(date)
         self.battle.db = self.db
+        self.battle.battle_scene.db = self.db
 
     def handle_message(self, msg: dict) -> None:
         kind = msg.get("type")

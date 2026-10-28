@@ -3,7 +3,7 @@ name: 犬神
 faction: 红莲
 power: 2
 health: 5
-description: 犬神升级时，将一张‘羁绊的价值’置入手牌。
+description: 犬神升级时，将一张‘[[羁绊的价值]]’置入手牌。
 version_date: '20191212'
 id: '100115'
 artwork:

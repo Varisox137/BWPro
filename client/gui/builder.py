@@ -158,6 +158,7 @@ class DeckBuilderView(QWidget):
         self.page_index = 0
         self.page_count = 0
         self.current_index: int | None = None
+        self.env: int | None = None
         self.team: list[int] = []
         self.picks: dict[int, Counter] = {}
         self.selected_sid: int | None = None
@@ -467,6 +468,7 @@ class DeckBuilderView(QWidget):
         self._update_validation()
 
     def _set_env(self, env: int | None) -> None:
+        self.env = env
         self.env_combo.setEditText(env_label(env))
 
     def current_env(self) -> int | None:
@@ -477,6 +479,7 @@ class DeckBuilderView(QWidget):
         try:
             env = self.current_env()
         except ValueError as error:
+            self._set_env(self.env)
             show_warning(self, "环境无效", str(error))
             return
         edb = self.db.at_date(env)
@@ -613,7 +616,8 @@ class DeckBuilderView(QWidget):
             for cdef in shown:
                 base_shiki = getattr(cdef, "card_type", None) is None
                 copies = self.picks.get(self.selected_sid, {}).get(cdef.id, 0)
-                widget = CardWidget(cdef, copies, editable=not base_shiki, db=self.db,
+                widget = CardWidget(cdef, copies, editable=not base_shiki,
+                                    db=self.db.at_date(self.current_env()),
                                     art_context=art_context)
                 if base_shiki:
                     widget.count_label.setText(" ")
@@ -764,4 +768,4 @@ class DeckBuilderView(QWidget):
             show_warning(self, "导入失败", str(error))
 
     def show_card_detail(self, cdef) -> None:
-        CardDetailDialog(cdef, self.db, self).exec()
+        CardDetailDialog(cdef, self.db.at_date(self.current_env()), self).exec()

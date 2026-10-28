@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QEventLoop, QObject, Qt, QTimer
 from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 
@@ -17,7 +17,14 @@ class LoadingOverlay(QWidget):
         self.label.setAlignment(Qt.AlignCenter)
         layout = QVBoxLayout(self)
         layout.addWidget(self.label)
+        if parent is not None:
+            parent.installEventFilter(self)
         self.hide()
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.parentWidget() and event.type() == QEvent.Resize and self.isVisible():
+            self.resize(self.parentWidget().size())
+        return super().eventFilter(watched, event)
 
     def set_text(self, text: str) -> None:
         self.label.setText(text)
@@ -59,7 +66,7 @@ class LoadingIndicator(QObject):
             return
         self._last_tenths = tenths
         self.on_text(f"{self.prefix} {tenths / 10:.1f}s")
-        QApplication.processEvents()
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
     def stop(self) -> None:
         self._running = False

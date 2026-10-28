@@ -188,6 +188,39 @@ def test_environment_options_are_unique(qapp, view):
     assert len(dates) == len(set(dates))
 
 
+def test_invalid_environment_restores_last_valid_value(qapp, view, monkeypatch):
+    warnings = []
+    monkeypatch.setattr("client.gui.builder.show_warning",
+                        lambda _parent, title, text: warnings.append((title, text)))
+    view.new_deck()
+    view._set_env(20260720)
+    view.env_combo.setEditText("not-a-date")
+    view.change_environment()
+    assert view.current_env() == 20260720
+    assert "20260720" in view.env_combo.currentText()
+    assert warnings
+    assert view.add_shikigami(factories.TEAM[0])
+
+
+def test_editor_detail_uses_current_environment_database(qapp, view, monkeypatch):
+    seen = {}
+
+    class Detail:
+        def __init__(self, _cdef, db, _parent):
+            seen["db"] = db
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr("client.gui.builder.CardDetailDialog", Detail)
+    view.new_deck()
+    view._set_env(20260720)
+    view.add_shikigami(factories.TEAM[0])
+    view.show_card_detail(view._current_cards()[0])
+    assert seen["db"] is not view.db
+    assert seen["db"].shikigami[factories.TEAM[0]].version == 20260720
+
+
 def test_cancel_add_restores_shikigami_selection(qapp, view, monkeypatch):
     view.new_deck()
     view.add_shikigami(factories.TEAM[0])

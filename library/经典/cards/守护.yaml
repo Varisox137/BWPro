@@ -1,0 +1,15 @@
+type: 战斗
+name: 守护
+level: 2
+rarity: SR
+description: '[[响应]]：当你其他式神被攻击时，自动使用此牌。'
+shikigami: 犬神
+power+: 0
+shield+: 4
+version_date: '20191212'
+id: '10011505'
+artwork:
+  images:
+  - path: 10011505.png
+    scale: 0.711
+    offset_y: -72

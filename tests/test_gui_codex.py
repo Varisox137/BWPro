@@ -67,6 +67,8 @@ def test_environment_change_reloads_shikigami_and_cards(qapp, db, view):
     assert view.current_env() == 20260720
     assert view.selected_sid == 100101
     assert view.card_widgets
+    assert view.overview_card._art_db is view.edb
+    assert all(widget._art_db is view.edb for widget in view.card_widgets)
     view.env_combo.setEditText("not-a-date")
     view.change_environment()
     assert view.edb.shikigami[100101].version == 20260720
@@ -128,7 +130,17 @@ def test_theme_and_empty_filter(qapp, view):
     assert view.shiki_list.indentation() <= 10
     view.apply_theme("light", THEMES["light"])
     assert "#cfe5f7" in view.styleSheet()
+    assert "QTreeWidget::branch:selected" in view.styleSheet()
     view.apply_theme("dark", THEMES["dark"])
     view.search_edit.setText("不存在的式神")
     assert view.shiki_list.topLevelItemCount() == 0
     assert not view.empty_label.isHidden()
+
+
+def test_mainwindow_applies_codex_selection_theme(qapp, db, tmp_path):
+    window = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    try:
+        window.set_theme("light")
+        assert "#cfe5f7" in window.pages["codex"].styleSheet()
+    finally:
+        window.close()

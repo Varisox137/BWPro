@@ -1,0 +1,13 @@
+type: 法术
+name: 心即归处
+level: 2
+rarity: SR
+description: 复活犬神。（仅在犬神气绝时可用）
+shikigami: 犬神
+version_date: '20191212'
+id: '10011503'
+artwork:
+  images:
+  - path: 10011503.png
+    scale: 0.747
+    offset_y: -60

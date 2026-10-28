@@ -192,7 +192,7 @@ class CardWidget(QFrame):
 
 
 class CardDetailDialog(QDialog):
-    """完整单卡详情：名称、类型、等级、身材、子类型与效果文本。"""
+    """左侧大卡图、右侧独立滚动机制栏的单卡详情。"""
 
     def __init__(self, cdef, db=None, parent=None, runtime: dict | None = None,
                  level_color=None):
@@ -200,11 +200,21 @@ class CardDetailDialog(QDialog):
         self.setWindowTitle(cdef.name)
         self.setMinimumSize(480, 600)
         layout = QVBoxLayout(self)
-        card = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
-                          level_color=level_color)
-        card.count_label.hide()
-        card.setMaximumWidth(420)
-        layout.addWidget(card, 1, Qt.AlignCenter)
+        self.detail_top = QHBoxLayout()
+        self.card_widget = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
+                                      level_color=level_color)
+        self.card_widget.count_label.hide()
+        self.card_widget.setFixedWidth(420)
+        self.card_widget.setMinimumHeight(560)
+        self.detail_top.addWidget(self.card_widget, 0, Qt.AlignLeft | Qt.AlignTop)
+        self.mechanism_panel, self.mechanism_labels = mechanism_panel(
+            card_mechanisms(cdef, runtime), self, width=360, font_scale=0.85)
+        if self.mechanism_panel is not None:
+            self.detail_top.addWidget(self.mechanism_panel, 1)
+            self.setMinimumWidth(900)
+        else:
+            self.detail_top.addStretch(1)
+        layout.addLayout(self.detail_top, 1)
         details = []
         if getattr(cdef, "subtype", None):
             details.append(f"子类型：{cdef.subtype}")
@@ -241,12 +251,18 @@ class CardDetailDialog(QDialog):
             self.runtime_label.setObjectName("cardRuntime")
             self.runtime_label.setWordWrap(True)
             layout.addWidget(self.runtime_label)
-        self.mechanism_panel, self.mechanism_labels = mechanism_panel(
-            card_mechanisms(cdef, runtime), self)
-        if self.mechanism_panel is not None:
-            layout.addWidget(self.mechanism_panel)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons, alignment=Qt.AlignRight)
+        self._sync_mechanism_height()
+
+    def _sync_mechanism_height(self) -> None:
+        if self.mechanism_panel is not None:
+            self.mechanism_panel.setMaximumHeight(
+                max(160, round(self.card_widget.height() * 1.1)))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_mechanism_height()

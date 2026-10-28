@@ -1,0 +1,15 @@
+type: 形态
+name: 心剑乱舞
+level: 3
+rarity: SR
+description: 犬神的牌获得[[瞬发]]。
+shikigami: 犬神
+power: 4
+health: 9
+version_date: '20191212'
+id: '10011506'
+artwork:
+  images:
+  - path: 10011506.png
+    scale: 0.711
+    offset_y: -73

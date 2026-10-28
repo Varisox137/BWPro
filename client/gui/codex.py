@@ -139,7 +139,7 @@ class ShikigamiCodexView(QWidget):
                 background: {colors['panel']}; color: {colors['text']};
                 border: 1px solid {colors['line']}; padding: 5px;
             }}
-            QTreeWidget::item:selected {{
+            QTreeWidget::item:selected, QTreeWidget::branch:selected {{
                 background: {selection_bg}; color: {selection_text};
             }}
             QLabel#loadingLabel {{ color: {colors['gold']}; font-size: 28px; }}
@@ -224,7 +224,7 @@ class ShikigamiCodexView(QWidget):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-        self.overview_card = CardWidget(definition, editable=False, db=self.db)
+        self.overview_card = CardWidget(definition, editable=False, db=self.edb)
         self.overview_card.count_label.hide()
         self.overview_card.clicked.connect(lambda _cdef: self.show_shikigami_cards())
         self.overview_card_layout.addWidget(self.overview_card, 1, Qt.AlignCenter)
@@ -254,7 +254,7 @@ class ShikigamiCodexView(QWidget):
                           (self.page_index + 1) * CARD_PAGE_SIZE]
             art_context = {}
             for cdef in shown:
-                widget = CardWidget(cdef, editable=False, db=self.db, art_context=art_context)
+                widget = CardWidget(cdef, editable=False, db=self.edb, art_context=art_context)
                 widget.count_label.hide()
                 widget.clicked.connect(self.show_card_detail)
                 self.card_widgets.append(widget)
@@ -273,7 +273,7 @@ class ShikigamiCodexView(QWidget):
             self._render_cards()
 
     def show_card_detail(self, cdef) -> None:
-        CardDetailDialog(cdef, self.db, self).exec()
+        CardDetailDialog(cdef, self.edb, self).exec()
 
     def _set_loading_text(self, text: str) -> None:
         self.loading_label.setText(text)

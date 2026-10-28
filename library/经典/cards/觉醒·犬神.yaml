@@ -1,0 +1,14 @@
+type: 法术
+name: 觉醒·犬神
+level: 3
+rarity: SSR
+description: '[[觉醒]]：己方回合结束时，复活犬神并永久获得1#ll和1#sm。'
+shikigami: 犬神
+version_date: '20191212'
+id: '10011508'
+evolve: true
+artwork:
+  images:
+  - path: 10011508.png
+    scale: 0.747
+    offset_y: -75

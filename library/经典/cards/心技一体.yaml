@@ -1,0 +1,15 @@
+type: 形态
+name: 心技一体
+level: 3
+rarity: R
+description: '[[增强]]：本局游戏你每使用过一张‘[[羁绊的价值]]’，犬神的战斗牌便额外获得+1#ll与+1#hj。'
+shikigami: 犬神
+power: 4
+health: 9
+version_date: '20191212'
+id: '10011507'
+artwork:
+  images:
+  - path: 10011507.png
+    scale: 0.711
+    offset_y: -78

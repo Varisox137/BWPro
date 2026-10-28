@@ -1,0 +1,15 @@
+type: 战斗
+name: 恶·即·斩
+level: 2
+rarity: R
+description: ''
+shikigami: 犬神
+power+: 4
+shield+: 0
+version_date: '20191212'
+id: '10011504'
+artwork:
+  images:
+  - path: 10011504.png
+    scale: 0.711
+    offset_y: -77

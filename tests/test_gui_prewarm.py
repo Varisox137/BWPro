@@ -88,6 +88,31 @@ def test_builder_loading_shows_only_prompt(qapp, db, tmp_path, monkeypatch):
     view.close()
 
 
+def test_loading_blocks_user_input_and_overlay_tracks_parent_resize(qapp, monkeypatch):
+    from PySide6.QtCore import QEventLoop
+    from PySide6.QtWidgets import QWidget
+    from client.gui.loading import LoadingIndicator, LoadingOverlay
+
+    seen = []
+    process_events = QApplication.processEvents
+    monkeypatch.setattr(QApplication, "processEvents",
+                        lambda flags=QEventLoop.AllEvents: seen.append(flags))
+    indicator = LoadingIndicator("加载", lambda _text: None)
+    indicator._running = True
+    indicator.tick()
+    assert seen == [QEventLoop.ExcludeUserInputEvents]
+
+    parent = QWidget()
+    parent.resize(500, 400)
+    parent.show()
+    overlay = LoadingOverlay(parent)
+    overlay.show()
+    parent.resize(640, 480)
+    process_events()
+    assert overlay.size() == parent.size()
+    parent.close()
+
+
 def test_battle_loading_has_fullscreen_background(qapp, db, tmp_path):
     from client.gui.battle import HotseatView
 

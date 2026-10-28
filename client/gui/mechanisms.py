@@ -127,14 +127,16 @@ def shikigami_mechanisms(game, ref) -> list[dict]:
 
 
 @lru_cache(maxsize=256)
-def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str) -> QPixmap | None:
+def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str,
+                      width: int | None = None, font_scale: float = 1.0) -> QPixmap | None:
     try:
         assets, _library, _render = _renderer(root_text)
         from bwpdiy.render.layout import load_layouts
         from bwpdiy.render.mech import render_mechanism
 
         image = render_mechanism({"name": name, "frame": frame, "text": text}, assets,
-                                 layout=load_layouts(assets).get("机制"))
+                                 layout=load_layouts(assets).get("机制"),
+                                 width=width, font_scale=font_scale)
         buffer = BytesIO()
         image.save(buffer, "PNG")
         pixmap = QPixmap()
@@ -145,13 +147,15 @@ def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str) -> QPixm
         return None
 
 
-def mechanism_panel(mechanisms: list[dict], parent=None):
+def mechanism_panel(mechanisms: list[dict], parent=None, *, width: int | None = None,
+                    font_scale: float = 1.0, max_height: int = 220):
     """生成可滚动的机制框列表；无有效机制时返回 (None, [])。"""
     panel = QScrollArea(parent)
     panel.setWidgetResizable(True)
     panel.setFrameShape(QFrame.NoFrame)
     panel.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-    panel.setMaximumHeight(220)
+    panel.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    panel.setMaximumHeight(max_height)
     content = QWidget()
     layout = QVBoxLayout(content)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -159,7 +163,7 @@ def mechanism_panel(mechanisms: list[dict], parent=None):
     root_text = str(bwpdiy_root().resolve())
     for mechanism in mechanisms:
         pixmap = _mechanism_pixmap(mechanism["name"], mechanism["frame"],
-                                   mechanism["text"], root_text)
+                                   mechanism["text"], root_text, width, font_scale)
         if pixmap is None or pixmap.isNull():
             continue
         label = QLabel()

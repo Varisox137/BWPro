@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
         self.theme_button.setIcon(_theme_icon(theme))
         self.theme_button.setIconSize(QSize(20, 20))
         self.theme_button.setToolTip("切换到深色主题" if theme == "light" else "切换到浅色主题")
-        for key in ("builder", "hotseat", "online"):
+        for key in ("builder", "codex", "hotseat", "online", "settings"):
             page = self.pages.get(key)
             if hasattr(page, "apply_theme"):
                 page.apply_theme(theme, THEMES[theme])

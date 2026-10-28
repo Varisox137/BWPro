@@ -1,6 +1,7 @@
 """桌面 GUI 联机视图与 NetBridge 测试（QT_QPA_PLATFORM=offscreen）。"""
 import json
 import os
+import threading
 import time
 
 import pytest
@@ -100,30 +101,49 @@ def test_net_bridge_forwards_messages_and_sends_without_wait(qapp):
     assert json.loads(ws.sent[0]) == {"type": "cmd", "cmd": {"op": "ready"}}
 
 
-def test_connection_validation_probe_and_enter_lobby(qapp, db, view, monkeypatch):
+def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypatch):
+    def wait_for(predicate):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            qapp.processEvents()
+            time.sleep(0.005)
+        raise AssertionError("等待联机连接结果超时")
+
     view.server_edit.setText("localhost:1037")
     view.name_edit.setText("玩家")
     warnings = []
     monkeypatch.setattr("client.gui.online.show_warning",
                         lambda _parent, title, text: warnings.append((title, text)),
                         raising=False)
-    view.probe = lambda _url: "连接失败"
-    assert not view.connect_server()
-    assert view.stack.currentWidget() is view.connect_page
-    assert warnings[-1][0] == "连接失败" and "连接失败" in warnings[-1][1]
-
-    view.probe = lambda _url: None
-    def reject_socket(_url):
-        raise OSError("拒绝连接")
-    view.opener = reject_socket
-    assert not view.connect_server()
-    assert "拒绝连接" in warnings[-1][1]
-
-    view.opener = lambda _url: FakeWS()
+    view.opener = lambda _url: (_ for _ in ()).throw(OSError("拒绝连接"))
     assert view.connect_server()
+    wait_for(lambda: bool(warnings))
+    assert "拒绝连接" in warnings[-1][1]
+    assert view.connect_button.isEnabled()
+    assert view.stack.currentWidget() is view.connect_page
+
+    started, release = threading.Event(), threading.Event()
+    sockets = []
+
+    def open_socket(_url):
+        started.set()
+        release.wait(2)
+        sockets.append(FakeWS())
+        return sockets[-1]
+
+    view.opener = open_socket
+    assert view.connect_server()
+    assert started.wait(1)
+    assert not view.connect_button.isEnabled()
+    assert not view.connect_server()
+    qapp.processEvents()
+    release.set()
+    wait_for(lambda: isinstance(view.bridge, FakeBridge))
+    assert view.connect_button.isEnabled()
     assert view.server_url == "ws://localhost:1037/ws"
     assert view.stack.currentWidget() is view.lobby_page
-    assert isinstance(view.bridge, FakeBridge)
     assert view.deck_combo.currentIndex() < 0
     assert not view.create_room()
     view.room_edit.setText("ABC123")
@@ -280,6 +300,45 @@ def test_reconnect_restores_pending_choice(qapp, db, make_game):
     battle.close()
 
 
+def test_online_failed_send_does_not_lock_inputs(qapp, db, make_game):
+    game = make_game(mulligan=True)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: False)
+    battle.me = 1
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
+    uid = game.state.players[1].hand[0].uid
+    assert not battle.mulligan(uid)
+    assert not battle._awaiting_state
+    assert not battle.error_label.isHidden()
+    battle.close()
+
+
+def test_online_nested_state_push_keeps_latest_scene(qapp, db, make_game, monkeypatch):
+    old_game = make_game(mulligan=True)
+    new_game = make_game(mulligan=True)
+    new_game.state.players[0].health = 17
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    nested = []
+    monkeypatch.setattr(battle.battle_scene.loading, "tick", lambda: nested.append(1) or (
+        battle.set_state(new_game.state.model_dump(mode="json"), log=[], timeline=[])
+        if len(nested) == 1 else None))
+    battle.set_state(old_game.state.model_dump(mode="json"), log=[], timeline=[])
+    assert battle.game.state.players[0].health == 17
+    assert battle.battle_scene.cards[("player", 0)].health == 17
+    battle.close()
+
+
+def test_online_page_show_restarts_clock_and_environment_updates_scene(qapp, view):
+    view.leave_to_menu()
+    assert not view.clock.isActive()
+    view.show()
+    qapp.processEvents()
+    assert view.clock.isActive()
+    view._apply_env(20191212)
+    assert view.battle.db is view.db
+    assert view.battle.battle_scene.db is view.db
+
+
 def test_main_window_online_page_and_theme(qapp, db, tmp_path):
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     view = win.pages["online"]
@@ -289,7 +348,6 @@ def test_main_window_online_page_and_theme(qapp, db, tmp_path):
     save_standard_deck(db, view.store_path)
     view.reload_decks()
     view.bridge_factory = FakeBridge
-    view.probe = lambda _url: None
     sockets = []
 
     def open_socket(_url):
@@ -298,6 +356,11 @@ def test_main_window_online_page_and_theme(qapp, db, tmp_path):
 
     view.opener = open_socket
     assert view.connect_server()
+    deadline = time.monotonic() + 3
+    while view.bridge is None and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.005)
+    assert isinstance(view.bridge, FakeBridge)
     view.battle.timeline_timer.start()
     win.go("online")
     assert win.game_menu_button.isHidden()

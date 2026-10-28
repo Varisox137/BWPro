@@ -1,0 +1,15 @@
+type: 战斗
+name: 心斩
+level: 1
+rarity: R
+description: ''
+shikigami: 犬神
+power+: 0
+shield+: 2
+version_date: '20191212'
+id: '10011502'
+artwork:
+  images:
+  - path: 10011502.png
+    scale: 0.711
+    offset_y: -108

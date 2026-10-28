@@ -3,7 +3,7 @@ name: 青行灯
 faction: 青岚
 power: 3
 health: 4
-description: 对手回合开始时若你有剩余鬼火，获得一张‘明灯’。
+description: 对手回合开始时若你有剩余鬼火，获得一张‘[[明灯]]’。
 version_date: '20191212'
 id: '100112'
 artwork:

@@ -1,0 +1,13 @@
+type: 法术
+name: 羁绊的价值
+level: 1
+rarity: R
+description: 恢复犬神所有#sm。
+shikigami: 犬神
+version_date: '20200120'
+id: '10011501'
+artwork:
+  images:
+  - path: 10011501.png
+    scale: 0.747
+    offset_y: -76

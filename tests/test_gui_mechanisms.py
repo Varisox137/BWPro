@@ -6,7 +6,8 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
 from client.gui.details import ShikigamiDetailDialog
@@ -34,6 +35,31 @@ def test_card_detail_renders_keyword_mechanisms(qapp):
     assert dialog.mechanism_panel is not None
     assert len(dialog.mechanism_labels) == 2
     assert all(not label.pixmap().isNull() for label in dialog.mechanism_labels)
+    dialog.close()
+
+
+def test_card_detail_places_card_and_scrollable_mechanisms_side_by_side(qapp, monkeypatch):
+    seen = []
+
+    def fake_pixmap(_name, _frame, _text, _root, width=None, font_scale=1.0):
+        seen.append((width, font_scale))
+        return QPixmap(360, 220)
+
+    monkeypatch.setattr("client.gui.mechanisms._mechanism_pixmap", fake_pixmap)
+    cdef = F.card(10010101, text="[瞬发][爆能2][贯通][连击][暴击][吸血]")
+    db = F.db_of([F.shiki(100101)], [cdef])
+    dialog = CardDetailDialog(cdef, db)
+    assert dialog.detail_top.itemAt(0).widget() is dialog.card_widget
+    assert dialog.detail_top.itemAt(1).widget() is dialog.mechanism_panel
+    assert seen and all(args == (360, 0.85) for args in seen)
+    dialog.resize(1000, 800)
+    dialog.show()
+    qapp.processEvents()
+    assert dialog.card_widget.width() >= 400
+    assert dialog.card_widget.height() >= 500
+    assert dialog.mechanism_panel.maximumHeight() <= dialog.card_widget.height() * 1.2
+    assert dialog.mechanism_panel.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
+    assert dialog.mechanism_panel.verticalScrollBar().maximum() > 0
     dialog.close()
 
 

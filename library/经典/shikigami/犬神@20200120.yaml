@@ -1,0 +1,18 @@
+type: 式神
+name: 犬神
+faction: 红莲
+power: 2
+health: 5
+description: 当犬神升级时，将一张‘[[心身炼磨]]’置入手牌。
+version_date: '20200120'
+id: '100115'
+artwork:
+  images:
+  - path: 100115.png
+    scale: 0.711
+    offset_y: -73
+portrait:
+  scale: 3.922
+  offset_x: -7
+  offset_y: 41
+  rotate: -27
