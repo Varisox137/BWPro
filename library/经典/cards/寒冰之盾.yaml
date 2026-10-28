@@ -1,0 +1,15 @@
+type: 法术
+name: 寒冰之盾
+level: 1
+rarity: R
+description: '使一个己方式神获得2#hj且本回合获得‘[[眩晕]]受到其战斗伤害的式神’。
+
+  [[响应]]：当你战斗区式神被攻击时，自动对其使用。'
+shikigami: 雪女
+version_date: '20191212'
+id: '10012101'
+artwork:
+  images:
+  - path: 10012101.png
+    scale: 0.747
+    offset_y: -82

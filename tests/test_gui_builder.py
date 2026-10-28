@@ -516,6 +516,42 @@ def test_entity_power_zero_does_not_subtract_combat_power(qapp, tmp_path, monkey
     assert seen["combat_power"] == 3
 
 
+def test_entity_stat_colors_follow_base_permanent_reference(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    seen = {}
+    monkeypatch.setattr(cardart, "_cached_entity_pixmap",
+                        lambda _key, _payload, state, _layout, _root:
+                        seen.update(json.loads(state)))
+
+    def render(**values):
+        defaults = dict(id=100101, awakened=None, level=1, defeated=False,
+                        perm_power=0, perm_health=0, eff_power=3, combat_power=0,
+                        health=4, max_health=4, shield=2, ext={})
+        defaults.update(values)
+        cardart.entity_pixmap(SimpleNamespace(**defaults), database,
+                              library_dir=tmp_path / "empty")
+        return dict(seen)
+
+    for eff_power, expected in ((2, "red"), (3, None), (4, "green")):
+        state = render(eff_power=eff_power)
+        assert state["power_color"] == expected
+        assert state["combat_power_color"] is None
+        assert state["shield_color"] is None
+    for health, max_health, perm_health, expected in (
+            (3, 4, 0, "red"), (4, 4, 0, None),
+            (5, 5, 0, "green"), (5, 5, 1, None), (3, 3, 0, None)):
+        state = render(health=health, max_health=max_health, perm_health=perm_health)
+        assert state["health_color"] == expected
+    state = render(defeated=True, perm_power=1, perm_health=2,
+                   eff_power=9, health=0, max_health=0)
+    assert state["power_color"] is None
+    assert state["health_color"] is None
+
+
 def test_defeated_entity_uses_base_permanent_stats_and_grayscale_art(qapp, tmp_path, monkeypatch):
     import json
     from client.gui import cardart

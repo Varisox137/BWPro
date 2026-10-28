@@ -1,0 +1,15 @@
+type: 法术
+name: 毒气喷泉
+level: 2
+rarity: SR
+description: '所有敌方式神获得等同于跳跳弟弟#pj的#pj。
+
+  [[增强]]：若己方回合开始你的战斗区有式神，此牌得[[瞬发]]。'
+shikigami: 跳跳弟弟
+version_date: '20191212'
+id: '10012003'
+artwork:
+  images:
+  - path: 10012003.png
+    scale: 0.747
+    offset_y: -87

@@ -1,0 +1,18 @@
+type: 法术
+name: 觉醒·雪女
+level: 3
+rarity: SSR
+description: '[[觉醒]]：[[眩晕]]受到雪女伤害的式神。
+
+  每回合一次，当你[[眩晕]]敌方式神时，将一张‘[[雪球]]’置入手牌。'
+shikigami: 雪女
+version_date: '20191212'
+id: '10012108'
+evolve: true
+power+: 2
+health+: 1
+artwork:
+  images:
+  - path: 10012108.png
+    scale: 0.747
+    offset_y: -95

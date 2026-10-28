@@ -1,0 +1,17 @@
+type: 战斗
+name: 甜蜜的负担
+level: 2
+rarity: R
+description: '[[瞬发]]
+
+  [[响应]]：当你被攻击时，自动使用此牌。'
+shikigami: 跳跳弟弟
+power+: 3
+shield+: 0
+version_date: '20191212'
+id: '10012006'
+artwork:
+  images:
+  - path: 10012006.png
+    scale: 0.711
+    offset_y: -84

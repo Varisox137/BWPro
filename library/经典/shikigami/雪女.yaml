@@ -1,0 +1,18 @@
+type: 式神
+name: 雪女
+faction: 青岚
+power: 2
+health: 4
+description: 每回合一次，当你[[眩晕]]敌方式神时，将一张‘雪球’置入手牌。
+version_date: '20191212'
+id: '100121'
+artwork:
+  images:
+  - path: 100121.png
+    scale: 0.711
+    offset_y: -70
+portrait:
+  scale: 4.54
+  rotate: -21
+  offset_x: 5
+  offset_y: 31

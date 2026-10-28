@@ -1,11 +1,17 @@
 type: 式神
 name: 跳跳弟弟
 faction: 红莲
-power: 3
-health: 4
-description: ''
-version_date: '20261028'
+power: 2
+health: 9
+description: 当跳跳弟弟受到伤害时，获得等量的#pj。
+version_date: '20191212'
 id: '100120'
 artwork:
   images:
   - path: 100120.png
+    scale: 0.711
+    offset_y: -90
+portrait:
+  scale: 2.788
+  offset_x: 0
+  offset_y: 34

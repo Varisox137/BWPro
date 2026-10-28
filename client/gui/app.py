@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from client.gui.loading import LoadingIndicator, LoadingOverlay
 from client.gui.prewarm import prewarm_all
+from core.logging_config import configure_logging
 
 # 与 docs/gui-mock/generate.py 两套配色一致
 THEMES = {
@@ -269,6 +270,7 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    configure_logging("gui")
     app = QApplication(sys.argv)
     win = MainWindow()
     win.show()

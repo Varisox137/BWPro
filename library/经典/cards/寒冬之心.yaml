@@ -1,0 +1,13 @@
+type: 法术
+name: 寒冬之心
+level: 2
+rarity: R
+description: 将两张‘[[雪球]]’置入手牌。本局游戏你所有‘[[雪球]]’的伤害+1。
+shikigami: 雪女
+version_date: '20191212'
+id: '10012104'
+artwork:
+  images:
+  - path: 10012104.png
+    scale: 1.103
+    offset_y: 4

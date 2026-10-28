@@ -1,0 +1,15 @@
+type: 形态
+name: 肿胀体质
+level: 2
+rarity: R
+description: 跳跳弟弟的#pj在己方回合开始时不会清除。
+shikigami: 跳跳弟弟
+power: 3
+health: 14
+version_date: '20191212'
+id: '10012004'
+artwork:
+  images:
+  - path: 10012004.png
+    scale: 0.711
+    offset_y: -72

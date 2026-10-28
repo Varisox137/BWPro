@@ -1,0 +1,13 @@
+type: 法术
+name: 吹雪
+level: 1
+rarity: R
+description: 造成3点伤害，将一张‘[[雪球]]’置入手牌。
+shikigami: 雪女
+version_date: '20191212'
+id: '10012102'
+artwork:
+  images:
+  - path: 10012102.png
+    scale: 0.747
+    offset_y: -72

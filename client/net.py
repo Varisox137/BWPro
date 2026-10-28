@@ -735,6 +735,8 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
 
 
 def main() -> None:
+    from core.logging_config import configure_logging
+    configure_logging("net")
     parser = argparse.ArgumentParser(description="BWPro 联机客户端")
     parser.add_argument("--server", default=os.environ.get(
         "BWP_SERVER", "ws://127.0.0.1:1037/ws"),

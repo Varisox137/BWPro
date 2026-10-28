@@ -1,0 +1,13 @@
+type: 法术
+name: 冰墙
+level: 1
+rarity: SR
+description: 在战斗区召唤一个‘[[冰墙]]’。
+shikigami: 雪女
+version_date: '20191212'
+id: '10012103'
+artwork:
+  images:
+  - path: 10012103.png
+    scale: 0.747
+    offset_y: -96

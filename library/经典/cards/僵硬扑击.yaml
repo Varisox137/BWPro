@@ -1,0 +1,17 @@
+type: 战斗
+name: 僵硬扑击
+level: 3
+rarity: R
+description: '[[瞬发]]，[[贯通]]
+
+  获得等同于自己#pj的#ll。'
+shikigami: 跳跳弟弟
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10012008'
+artwork:
+  images:
+  - path: 10012008.png
+    scale: 0.747
+    offset_y: -70

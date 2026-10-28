@@ -1,0 +1,13 @@
+type: 法术
+name: 崩雪
+level: 2
+rarity: R
+description: 消灭一个[[眩晕]]的式神。
+shikigami: 雪女
+version_date: '20191212'
+id: '10012105'
+artwork:
+  images:
+  - path: 10012105.png
+    scale: 0.747
+    offset_y: -85

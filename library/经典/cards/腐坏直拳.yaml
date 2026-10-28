@@ -1,0 +1,16 @@
+type: 战斗
+name: 腐坏直拳
+level: 1
+rarity: R
+description: 将自己的#pj转移到被攻击的式神上。
+shikigami: 跳跳弟弟
+power+: 0
+shield+: -2
+version_date: '20191212'
+id: '10012001'
+artwork:
+  images:
+  - path: 10012001.png
+    scale: 0.711
+    offset_y: -78
+    offset_x: 7

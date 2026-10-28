@@ -1,0 +1,15 @@
+type: 形态
+name: 瘴疠体质
+level: 1
+rarity: SR
+description: 对跳跳弟弟造成战斗伤害的式神获得3#pj。
+shikigami: 跳跳弟弟
+power: 2
+health: 9
+version_date: '20191212'
+id: '10012002'
+artwork:
+  images:
+  - path: 10012002.png
+    scale: 0.711
+    offset_y: -76

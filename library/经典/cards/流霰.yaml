@@ -1,0 +1,15 @@
+type: 法术
+name: 流霰
+level: 3
+rarity: SR
+description: '[[瞬发]]
+
+  选择一个角色并自动对其使用手牌中所有‘[[雪球]]’。'
+shikigami: 雪女
+version_date: '20191212'
+id: '10012107'
+artwork:
+  images:
+  - path: 10012107.png
+    scale: 0.747
+    offset_y: -66

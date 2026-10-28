@@ -1023,6 +1023,8 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
 
 def main() -> None:
     """一级菜单：卡组构筑 / 本地热坐 / 联机对战。数据为正式 YAML（CardDatabase.load）。"""
+    from core.logging_config import configure_logging
+    configure_logging("cli")
     if os.name == "nt":
         os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
     db = CardDatabase.load()

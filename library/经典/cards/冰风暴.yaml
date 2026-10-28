@@ -1,0 +1,17 @@
+type: 形态
+name: 冰风暴
+level: 2
+rarity: SR
+description: '每当敌方式神攻击后，对其造成1点伤害，
+
+  然后[[眩晕]]受到此伤害的式神。'
+shikigami: 雪女
+power: 2
+health: 4
+version_date: '20191212'
+id: '10012106'
+artwork:
+  images:
+  - path: 10012106.png
+    scale: 0.711
+    offset_y: -72

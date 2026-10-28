@@ -1,0 +1,14 @@
+type: 式神
+name: 冰墙
+faction: 青岚
+power: 0
+health: 2
+description: 不能发动攻击。[[眩晕]]对其造成战斗伤害的式神。
+shikigami: 雪女
+version_date: '20191212'
+id: '10012199'
+artwork:
+  images:
+  - path: 10012199.png
+    scale: 0.747
+    offset_y: -96

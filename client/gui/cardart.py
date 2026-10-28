@@ -641,14 +641,20 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                                 else str(path.parent.parent / "images"))
         defeated = bool(getattr(shiki, "defeated", False))
         payload["_defeated"] = defeated
+        definition = db.shikigami[shiki.id]
+        base_power = definition.power + getattr(shiki, "perm_power", 0)
+        base_health = definition.health + getattr(shiki, "perm_health", 0)
         if defeated:
-            definition = db.shikigami[shiki.id]
-            power = max(0, definition.power + shiki.perm_power)
-            health = max(0, definition.health + shiki.perm_health)
+            power = max(0, base_power)
+            health = max(0, base_health)
         else:
             power = (shiki.eff_power if shiki.ext.get("power_zero")
                      else shiki.eff_power - shiki.combat_power)
             health = shiki.health
+        power_color = "red" if power < base_power else "green" if power > base_power else None
+        current_max_health = health if defeated else getattr(shiki, "max_health", health)
+        health_color = ("red" if health < current_max_health else
+                        None if current_max_health <= base_health else "green")
         state = {
             "level": shiki.level,
             "level_color": seat_level_color(seat),
@@ -656,6 +662,10 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             "health": health,
             "combat_power": 0 if defeated else shiki.combat_power,
             "shield": shiki.shield,
+            "power_color": power_color,
+            "health_color": health_color,
+            "combat_power_color": None,
+            "shield_color": None,
             "art_scale": art.get("scale", 1.0),
         }
         payload["_entity_state"] = state

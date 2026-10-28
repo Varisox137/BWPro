@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·跳跳弟弟
+level: 2
+rarity: SR
+description: '[[觉醒]]：当跳跳弟弟受到伤害时，获得等量的#pj并永久获得1#sm。'
+shikigami: 跳跳弟弟
+version_date: '20191212'
+evolve: true
+power+: 1
+health+: 1
+id: '10012005'
+artwork:
+  images:
+  - path: 10012005.png
+    scale: 0.747
+    offset_y: -94

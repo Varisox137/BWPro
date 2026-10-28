@@ -305,6 +305,8 @@ def _debug_console(manager: RoomManager, loop: asyncio.AbstractEventLoop) -> Non
 
 
 def main() -> None:
+    from core.logging_config import configure_logging
+    configure_logging("server")
     parser = argparse.ArgumentParser(description="BWPro 联机服务端")
     parser.add_argument("--host", default="127.0.0.1",
                         help="监听地址；对外服务（含内网穿透）用 0.0.0.0")
