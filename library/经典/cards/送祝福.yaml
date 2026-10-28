@@ -1,0 +1,13 @@
+type: 法术
+name: 送祝福
+level: 1
+rarity: SR
+description: 使一个式神获得1#ll与1#sm。[[增强]]：本局游戏若你骰子投出三次6点，该式神额外获得2#ll与2#sm。
+shikigami: 山兔
+version_date: '20191212'
+id: '10011702'
+artwork:
+  images:
+  - path: 10011702.png
+    scale: 0.747
+    offset_y: -67

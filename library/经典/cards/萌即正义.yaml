@@ -1,0 +1,15 @@
+type: 形态
+name: 萌即正义
+level: 3
+rarity: SSR
+description: 你投骰子总是会投出6点。[[增强]]：本局游戏你骰子每投出一次6点，此牌便获得+1#ll与+1#sm。
+shikigami: 山兔
+power: 6
+health: 6
+version_date: '20191212'
+id: '10011707'
+artwork:
+  images:
+  - path: 10011707.png
+    scale: 0.711
+    offset_y: -70

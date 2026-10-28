@@ -1,0 +1,17 @@
+type: 形态
+name: 纪行
+level: 1
+rarity: R
+description: '[[迅捷]]
+
+  当书翁对敌方牌手造成伤害时，抽一张牌。'
+shikigami: 书翁
+power: 2
+health: 5
+version_date: '20191212'
+id: '10011801'
+artwork:
+  images:
+  - path: 10011801.png
+    scale: 0.711
+    offset_y: -75

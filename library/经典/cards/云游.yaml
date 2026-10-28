@@ -1,0 +1,15 @@
+type: 法术
+name: 云游
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  调度你的手牌。（3次调度次数）'
+shikigami: 书翁
+version_date: '20191212'
+id: '10011802'
+artwork:
+  images:
+  - path: 10011802.png
+    scale: 0.747
+    offset_y: -71

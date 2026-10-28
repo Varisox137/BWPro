@@ -1,0 +1,17 @@
+type: 战斗
+name: 伺机
+level: 2
+rarity: SR
+description: '被攻击时也会造成[[贯通]]伤害。敌方回合时此牌获得+2#ll。
+
+  [[响应]]：当山童被攻击时，自动使用此牌。'
+shikigami: 山童
+power+: 2
+shield+: 1
+version_date: '20191212'
+id: '10011607'
+artwork:
+  images:
+  - path: 10011607.png
+    scale: 0.711
+    offset_y: -75

@@ -1,0 +1,17 @@
+type: 法术
+name: 桃华灼灼
+level: 3
+rarity: SSR
+description: '若桃花妖未气绝，此牌得[[瞬发]]。
+
+  复活己方所有式神。
+
+  （桃花妖气绝时可用）'
+shikigami: 桃花妖
+version_date: '20191212'
+id: '10011907'
+artwork:
+  images:
+  - path: 10011907.png
+    scale: 1.1
+    offset_y: 0

@@ -1,0 +1,15 @@
+type: 法术
+name: 觉醒·山童
+level: 2
+rarity: SSR
+description: '[[觉醒]]：[[贯通]]。免疫敌方非战斗伤害。'
+shikigami: 山童
+version_date: '20191212'
+evolve: true
+power+: 1
+id: '10011606'
+artwork:
+  images:
+  - path: 10011606.png
+    scale: 0.711
+    offset_y: -70

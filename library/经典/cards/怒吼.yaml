@@ -1,0 +1,13 @@
+type: 法术
+name: 怒吼
+level: 1
+rarity: R
+description: 所有己方式神获得1#ll。
+shikigami: 山童
+version_date: '20191212'
+id: '10011603'
+artwork:
+  images:
+  - path: 10011603.png
+    scale: 0.747
+    offset_y: -96

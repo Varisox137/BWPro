@@ -7,15 +7,15 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QPushButton,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from client import cli
 from client.gui.battle_scene import BattleScene, BattleView, card_owner_seat, usage_target
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
-from client.gui.widgets import CardDetailDialog, polish_dialog_buttons
+from client.gui.widgets import CardDetailDialog, ask_confirmation, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
 from core.model import Ref
@@ -132,6 +132,8 @@ class BattleErrorLabel(QLabel):
 class HotseatView(QWidget):
     """热坐单屏视图；手牌与非公开结算仅显示当前行动/作答方。"""
 
+    exit_confirmation = True
+
     def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None, parent=None):
         super().__init__(parent)
         self.db = db
@@ -198,12 +200,12 @@ class HotseatView(QWidget):
         self.phase_label = QLabel()
         self.phase_label.setObjectName("phaseLabel")
         self.phase_label.setAlignment(Qt.AlignCenter)
-        self.battle_scene.add_control(self.phase_label, ("phase",), (340, 40))
-        self.log_button = QPushButton("战斗记录")
-        self.log_button.setObjectName("battleSmall")
+        self.battle_scene.add_control(self.phase_label, ("phase",), (340, 56))
+        self.log_button = QPushButton("对局\n记录")
+        self.log_button.setObjectName("battleRound")
         self.log_button.clicked.connect(self.show_log)
         self.battle_scene.log_item = self.battle_scene.add_control(
-            self.log_button, ("log",), (110, 36))
+            self.log_button, ("log",), (56, 56))
         self.end_turn_button = QPushButton("结束\n回合")
         self.end_turn_button.setObjectName("endTurnButton")
         self.end_turn_button.clicked.connect(self.end_turn)
@@ -375,6 +377,12 @@ class HotseatView(QWidget):
                         padding: 4px; font-size: 12px; text-align: center; }}
                     QPushButton:hover {{ background: {colors['panel2']}; }}
                 """)
+        self.log_button.setStyleSheet(f"""
+            QPushButton {{ background: {colors['panel']}; color: {colors['text']};
+                border: 1px solid {colors['gold']}; border-radius: 28px;
+                padding: 0; font-size: 12px; text-align: center; }}
+            QPushButton:hover {{ background: {colors['panel2']}; }}
+        """)
         self.end_turn_button.setStyleSheet(f"""
             QPushButton {{ background: {colors['panel2']}; color: {colors['text']};
                 border: 3px solid {colors['gold2']}; border-radius: 52px;
@@ -530,10 +538,10 @@ class HotseatView(QWidget):
             return
         game = self.game
         state = game.state
-        phase_names = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "对战阶段"}
-        self.phase_label.setText(f"{phase_names.get(state.phase, state.phase)}　回合 {state.turn}")
+        active = state.players[state.active]
+        self.phase_label.setText(f"{active.name} 回合{active.turn_count}")
         self.order_label.setText("己方先手" if self.viewer == state.active else "己方后手")
-        self.order_label.setVisible(state.phase == "mulligan")
+        self.order_label.hide()
         self.upgrade_label.setVisible(state.phase == "upgrade")
         enemy = state.players[1 - self.viewer]
         own = state.players[self.viewer]
@@ -894,7 +902,13 @@ class HotseatView(QWidget):
         self.result_banner.show()
         self.result_back.show()
 
-    def return_to_menu(self) -> None:
+    def return_to_menu(self) -> bool:
+        if (self.exit_confirmation and self.game is not None
+                and self.stack.currentWidget() is self.battle_page
+                and self.game.state.winner is None):
+            answer = ask_confirmation(self, "终止对局", "确定结束当前对局并返回主菜单？")
+            if answer != QMessageBox.Yes:
+                return False
         self.timeline_timer.stop()
         self.battle_scene.hide_banner()
         self.battle_scene.hide_loading()
@@ -905,3 +919,4 @@ class HotseatView(QWidget):
             self.choice_dialog = None
         if self.on_back is not None:
             self.on_back()
+        return True

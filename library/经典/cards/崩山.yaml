@@ -1,0 +1,15 @@
+type: 法术
+name: 崩山
+level: 3
+rarity: R
+description: '对敌方战斗区式神造成4点伤害，对准备区式神造成1点伤害。
+
+  [[增强]]：山童每永久提高1#ll，此牌便伤害+1。'
+shikigami: 山童
+version_date: '20191212'
+id: '10011608'
+artwork:
+  images:
+  - path: 10011608.png
+    scale: 0.747
+    offset_y: -85

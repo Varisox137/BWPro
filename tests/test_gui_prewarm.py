@@ -60,10 +60,16 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
                           on_progress=lambda current, total: progress.append((current, total)))
     assert len(entries) == 2
     assert {call[0] for call in calls} == {"card", "entity", "portrait"}
+    big_cards = [call for call in calls if call[0] == "card"]
+    assert len(big_cards) == 2
+    assert all(call[2]["height"] == 540 for call in big_cards)
+    rendered = [call for call in calls if call[0] != "portrait"]
+    assert len({id(call[2]["cache_context"]) for call in rendered}) == 1
     assert progress[-1] == (2, 2)
     manifest = json.loads((tmp_path / "cache" / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["entries"]) == 2
     assert all(entry["config_sha256"] and entry["art_sha256"] for entry in manifest["entries"])
+    assert all(entry["definition_sha256"] for entry in manifest["entries"])
 
     config = tmp_path / "library" / "项目" / "cards" / "card.yaml"
     config.write_text(config.read_text(encoding="utf-8") + "\n# updated\n", encoding="utf-8")
@@ -71,20 +77,27 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     assert updated[0]["config_sha256"] != entries[0]["config_sha256"]
 
 
-def test_builder_loading_shows_only_prompt(qapp, db, tmp_path, monkeypatch):
+def test_builder_loading_covers_only_card_area(qapp, db, tmp_path, monkeypatch):
     view = DeckBuilderView(db, store_path=tmp_path / "decks.json")
     events = []
     original_start = view._start_loading
     original_finish = view._finish_loading
-    monkeypatch.setattr(view, "_start_loading",
-                        lambda: original_start() or events.append(("start", view.stack.isHidden())))
+    monkeypatch.setattr(
+        view, "_start_loading",
+        lambda *args: original_start(*args) or events.append(
+            ("start", view.stack.isHidden(),
+             view.loading_label.geometry() == view.card_area.geometry())))
     monkeypatch.setattr(view, "_finish_loading",
                         lambda: original_finish() or events.append(("finish", view.stack.isHidden())))
     view.new_deck()
     view.add_shikigami(F.TEAM[0])
-    assert events[0] == ("start", True)
+    assert events[0] == ("start", False, True)
     assert events[-1] == ("finish", False)
     assert view.loading_label.isHidden()
+    texts = []
+    view.loading.on_text = texts.append
+    view._render_cards()
+    assert any("（1/" in text for text in texts)
     view.close()
 
 

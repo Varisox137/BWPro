@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·山兔
+level: 2
+rarity: SR
+description: '[[觉醒]]：己方回合开始时，[[运势6]]：其他己方式神的[[倒计时]]-1并获得2#ll，然后重复一次。'
+shikigami: 山兔
+version_date: '20191212'
+evolve: true
+power+: 1
+health+: 1
+id: '10011704'
+artwork:
+  images:
+  - path: 10011704.png
+    scale: 0.75
+    offset_y: -69
+    offset_x: 0

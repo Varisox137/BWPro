@@ -1,0 +1,17 @@
+type: 式神
+name: 书翁
+faction: 青岚
+power: 1
+health: 5
+description: 起始手牌数量+1。
+version_date: '20191212'
+id: '100118'
+artwork:
+  images:
+  - path: 100118.png
+    scale: 0.711
+    offset_y: -76
+portrait:
+  scale: 5.005
+  offset_x: -1
+  offset_y: 75

@@ -167,7 +167,8 @@ class MainWindow(QMainWindow):
         self.loading.start()
         self.loading_overlay.show()
         try:
-            prewarm_all(self.db, on_progress=lambda _current, _total: self.loading.tick())
+            prewarm_all(self.db, on_progress=lambda current, total: (
+                self.loading.set_progress(current, total), self.loading.tick()))
         finally:
             self.loading.stop()
             self.loading_overlay.hide()

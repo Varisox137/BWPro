@@ -1,0 +1,13 @@
+type: 法术
+name: 来打我呀
+level: 2
+rarity: R
+description: 使一个敌方式神立刻发动攻击。[[增强]]：本局游戏你骰子每投出一次6点，本回合该式神便降低1#ll。
+shikigami: 山兔
+version_date: '20191212'
+id: '10011706'
+artwork:
+  images:
+  - path: 10011706.png
+    scale: 0.747
+    offset_y: -80

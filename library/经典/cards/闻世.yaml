@@ -1,0 +1,15 @@
+type: 形态
+name: 闻世
+level: 3
+rarity: SR
+description: 每有一张其它手牌此牌便获得1#ll与1#sm。
+shikigami: 书翁
+power: 1
+health: 1
+version_date: '20191212'
+id: '10011806'
+artwork:
+  images:
+  - path: 10011806.png
+    scale: 0.711
+    offset_y: -88

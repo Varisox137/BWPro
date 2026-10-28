@@ -8,7 +8,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QImage, QPainter
-from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox
 
 from client.gui.app import THEMES, MainWindow
 from client.gui.battle import DeckSelectDialog, HotseatView, UsageDialog
@@ -72,6 +72,11 @@ def start(view, **kwargs):
 def isolated_cardart_home(tmp_path, monkeypatch):
     from pathlib import Path
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+
+@pytest.fixture(autouse=True)
+def accept_exit_confirmation(monkeypatch):
+    monkeypatch.setattr("client.gui.battle.ask_confirmation", lambda *_args: QMessageBox.Yes)
 
 
 def test_hand_art_preserves_runtime_and_detail(qapp, view, tmp_path, monkeypatch):
@@ -551,6 +556,15 @@ def test_battle_window_minimum_height_fits_common_900px_window(qapp, db, tmp_pat
         win.close()
 
 
+def test_battle_view_fills_width_without_letterboxing(qapp, view):
+    start(view, mulligan=False)
+    view.resize(1600, 800)
+    view.show()
+    qapp.processEvents()
+    transform = view.battle_view.transform()
+    assert transform.m11() != pytest.approx(transform.m22())
+
+
 def test_scene_cards_and_controls_fit_1600x900(qapp, db, tmp_path, monkeypatch):
     from client.gui import cardart
     from tests.test_gui_builder import _cardart_config
@@ -713,6 +727,12 @@ def test_loading_indicator_uses_real_tenths(qapp):
     now[0] = 1.0
     indicator.tick()
     assert seen[-1] == "正在准备对局 0.2s"
+    indicator.start(total=12)
+    assert seen[-1] == "正在准备对局（0/12） 0.0s"
+    indicator.set_progress(3, 12)
+    now[0] = 1.21
+    indicator.tick()
+    assert seen[-1] == "正在准备对局（3/12） 0.2s"
 
 
 def test_scene_loading_lifecycle(qapp, view):
@@ -1066,7 +1086,7 @@ def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
     assert all(item.default_size.width() >= 170 for item in items)
     assert getattr(view, "order_label", None) is not None
     assert view.order_label.text() == "己方先手"
-    assert not view.order_label.isHidden()
+    assert view.order_label.isHidden()
 
 
 def test_last_mulligan_reviews_result_before_handoff(qapp, view):
@@ -1665,10 +1685,19 @@ def test_secret_delayed_target_follows_holder_perspective(qapp, view, monkeypatc
 
 
 def test_log_button_is_a_scene_control_on_the_left(qapp, view):
+    start(view, mulligan=False)
     scene = view.battle_scene
     assert scene.log_item.widget() is view.log_button
     assert scene.log_item.x() == 1
-    assert scene.log_item.y() == 470
+    assert scene.log_item.y() == 422
+    assert view.log_button.width() == view.log_button.height() == 56
+    assert view.log_button.text() == "对局\n记录"
+    assert view.phase_label.text() == "玩家A 回合1"
+    phase_proxy = next(item for item in scene.items()
+                       if hasattr(item, "widget") and item.widget() is view.phase_label)
+    assert phase_proxy.x() > scene.log_item.x()
+    assert phase_proxy.y() == scene.log_item.y()
+    assert view.order_label.isHidden()
     assert scene.sceneRect().contains(scene.log_item.sceneBoundingRect())
 
 
@@ -1752,7 +1781,8 @@ def test_mulligan_ready_and_replacement(qapp, view):
 def test_upgrade_assault_and_end_turn(qapp, view):
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
     game = view.game
-    assert view.phase_label.text().startswith("升级")
+    assert view.phase_label.text() == "玩家A 回合1"
+    assert not view.upgrade_label.isHidden()
     assert view.battle_scene.cards[("shiki", 0, 1)].playable
     view.upgrade(1)
     settle(view)
@@ -1810,6 +1840,19 @@ def test_pending_choice_answer(qapp, db, view):
     settle(view)
     assert game.state.pending_choice is None
     assert any(card.uid == uid for card in game.state.players[0].hand)
+
+
+def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
+    returned = []
+    answers = iter((QMessageBox.No, QMessageBox.Yes))
+    monkeypatch.setattr("client.gui.battle.ask_confirmation",
+                        lambda *_args: next(answers))
+    view.on_back = lambda: returned.append(True)
+    start(view, mulligan=False)
+    assert not view.return_to_menu()
+    assert returned == []
+    assert view.return_to_menu()
+    assert returned == [True]
 
 
 def test_game_over_banner_returns_to_menu(qapp, view):

@@ -36,51 +36,59 @@ def _renderer_version() -> str:
     return __version__
 
 
+def _definition_sha256(definition) -> str:
+    payload = json.dumps(definition.model_dump(mode="json"), ensure_ascii=False,
+                         sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = None,
                 on_progress=None, clear: bool = False) -> list[dict]:
+    """为全部已实装定义增量建缓存；未变化内容由 cardart 缓存键直接复用。"""
     library_dir = library_dir or portrait.library_root()
     cache_dir = cache_dir or Path.home() / ".bwpro" / "cardart"
     if clear:
         clear_cardart_cache(cache_dir)
-    fingerprint = portrait._config_fingerprint(library_dir)
-    configs = portrait._config_index(str(library_dir.resolve()), fingerprint)
+    definitions = [
+        (kind, definition)
+        for kind, values in (("cards", db.cards), ("shikigami", db.shikigami))
+        for definition in values.values()
+        if not getattr(definition, "unreleased", False) and not getattr(definition, "wip", False)
+    ]
     entries = []
-    for path, config in configs:
-        kind = path.parent.name
-        if kind not in ("cards", "shikigami"):
-            continue
-        version = int(config["version_date"])
-        definitions = db.cards if kind == "cards" else db.shikigami
-        definition = None
-        for candidate in definitions.values():
-            if ((str(candidate.id) == str(config.get("id", ""))
-                 or candidate.name == config.get("name")) and candidate.version == version):
-                definition = candidate
-                break
-        if definition is None:
-            continue
+    art_context = {}
+    for kind, definition in definitions:
+        config, path = portrait._project_config(
+            library_dir, kind, definition.id, definition.name, definition.version)
+        config = config or {}
         if kind == "cards":
-            card_pixmap(definition, db, height=360)
+            card_pixmap(definition, db, height=cardart.DETAIL_ART_HEIGHT,
+                        cache_context=art_context)
         else:
+            card_pixmap(definition, db, height=cardart.DETAIL_ART_HEIGHT,
+                        cache_context=art_context)
             shiki = SimpleNamespace(
                 id=definition.id, awakened=None, level=0,
                 eff_power=definition.power, combat_power=0,
                 health=definition.health, shield=0, ext={})
-            entity_pixmap(shiki, db, height=210)
+            entity_pixmap(shiki, db, height=210, cache_context=art_context)
             shikigami_portrait(definition, size=96)
         entries.append({
             "id": definition.id,
             "kind": kind,
-            "version": version,
-            "config_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            "art_sha256": _art_sha256(config, path, definition.name),
+            "version": definition.version,
+            "definition_sha256": _definition_sha256(definition),
+            "config_sha256": (hashlib.sha256(path.read_bytes()).hexdigest()
+                              if config and path is not None else ""),
+            "art_sha256": (_art_sha256(config, path, definition.name)
+                           if config and path is not None else ""),
         })
         if on_progress is not None:
-            on_progress(len(entries), len(configs))
+            on_progress(len(entries), len(definitions))
     entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
     cache_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "version": 1,
+        "version": 2,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "renderer_version": _renderer_version(),
         "entries": entries,

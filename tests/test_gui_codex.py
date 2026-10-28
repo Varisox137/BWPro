@@ -51,12 +51,31 @@ def test_overview_filters_and_shikigami_home(qapp, db, view):
     view.select_shikigami(100101)
     assert view.stack.currentWidget() is view.overview_page
     assert view.overview_card.cdef.id == 100101
-    view.show_shikigami_cards()
+    view.resize(1200, 800)
+    view.show()
+    qapp.processEvents()
+    assert view.overview_card.width() >= 400
+    assert view.overview_card.height() >= 500
+    view.overview_card.clicked.emit(db.shikigami[100101])
     definition = db.shikigami[100101]
     assert view.stack.currentWidget() is view.home_page
     assert definition.name in view.name_label.text()
     for attribute in ("home_body", "portrait_label", "stats_label", "ability_label"):
         assert not hasattr(view, attribute)
+
+
+def test_codex_loading_covers_only_card_area(qapp, view, monkeypatch):
+    original = view._start_loading
+    seen = []
+    monkeypatch.setattr(
+        view, "_start_loading",
+        lambda *args: original(*args) or seen.append(
+            (view.stack.isHidden(), view.loading_label.geometry() == view.card_area.geometry())))
+    texts = []
+    view.loading.on_text = texts.append
+    view.show_shikigami_cards()
+    assert seen == [(False, True)]
+    assert any("（1/" in text for text in texts)
 
 
 def test_environment_change_reloads_shikigami_and_cards(qapp, db, view):
@@ -82,7 +101,8 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     original_start = view._start_loading
     original_tick = view._loading_tick
     original_finish = view._finish_loading
-    monkeypatch.setattr(view, "_start_loading", lambda: events.append("start") or original_start())
+    monkeypatch.setattr(view, "_start_loading",
+                        lambda *args: events.append("start") or original_start(*args))
     monkeypatch.setattr(view, "_loading_tick", lambda: events.append("tick") or original_tick())
     monkeypatch.setattr(view, "_finish_loading", lambda: events.append("finish") or original_finish())
     view.select_shikigami(100101)

@@ -1,0 +1,17 @@
+type: 式神
+name: 山童
+faction: 红莲
+power: 3
+health: 4
+description: '[[贯通]]'
+version_date: '20191212'
+id: '100116'
+artwork:
+  images:
+  - path: 100116.png
+    scale: 0.645
+    offset_y: -84
+portrait:
+  scale: 3.388
+  offset_x: 13
+  offset_y: 52

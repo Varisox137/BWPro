@@ -1,0 +1,15 @@
+type: 战斗
+name: 怪力
+level: 1
+rarity: R
+description: 山童永久获得1#ll。
+shikigami: 山童
+power+: 0
+shield+: -1
+version_date: '20200327'
+id: '10011602'
+artwork:
+  images:
+  - path: 10011602.png
+    scale: 0.711
+    offset_y: -75

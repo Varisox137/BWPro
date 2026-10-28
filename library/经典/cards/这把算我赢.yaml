@@ -1,0 +1,13 @@
+type: 法术
+name: 这把算我赢
+level: 3
+rarity: SR
+description: '[[增强]]：本局游戏若你骰子投出十次6点，则你获得本局游戏的胜利。'
+shikigami: 山兔
+version_date: '20191212'
+id: '10011708'
+artwork:
+  images:
+  - path: 10011708.png
+    scale: 0.747
+    offset_y: -78

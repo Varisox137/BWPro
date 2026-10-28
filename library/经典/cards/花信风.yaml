@@ -1,0 +1,15 @@
+type: 法术
+name: 花信风
+level: 1
+rarity: SR
+description: '[[瞬发]]
+
+  选择一个己方式神，从牌库中随机抽一张该式神的牌。'
+shikigami: 桃花妖
+version_date: '20191212'
+id: '10011902'
+artwork:
+  images:
+  - path: 10011902.png
+    scale: 0.747
+    offset_y: -102

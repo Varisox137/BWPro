@@ -1,0 +1,17 @@
+type: 式神
+name: 桃花妖
+faction: 红莲
+power: 1
+health: 6
+description: 桃花妖治疗或复活己方式神时，使该式神获得1#ll。
+version_date: '20191212'
+id: '100119'
+artwork:
+  images:
+  - path: 100119.png
+    scale: 0.711
+    offset_y: -96
+portrait:
+  scale: 3.388
+  offset_x: -23
+  offset_y: 39

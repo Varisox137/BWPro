@@ -44,18 +44,24 @@ class LoadingIndicator(QObject):
         self._started = 0.0
         self._last_tenths = -1
         self._running = False
+        self._progress: tuple[int, int] | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(100)
         self._timer.timeout.connect(self.tick)
 
-    def start(self, prefix: str | None = None) -> None:
+    def start(self, prefix: str | None = None, total: int | None = None) -> None:
         if prefix is not None:
             self.prefix = prefix
+        self._progress = None if total is None else (0, total)
         self._started = self.clock()
         self._last_tenths = -1
         self._running = True
         self.tick()
         self._timer.start()
+
+    def set_progress(self, current: int, total: int) -> None:
+        self._progress = (current, total)
+        self._last_tenths = -1
 
     def tick(self) -> None:
         if not self._running:
@@ -65,7 +71,8 @@ class LoadingIndicator(QObject):
         if tenths == self._last_tenths:
             return
         self._last_tenths = tenths
-        self.on_text(f"{self.prefix} {tenths / 10:.1f}s")
+        progress = f"（{self._progress[0]}/{self._progress[1]}）" if self._progress else ""
+        self.on_text(f"{self.prefix}{progress} {tenths / 10:.1f}s")
         QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
     def stop(self) -> None:

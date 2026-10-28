@@ -1,0 +1,15 @@
+type: 形态
+name: 快来保护我
+level: 2
+rarity: R
+description: '[[增强]]：本局游戏若你骰子投出三次6点，此牌获得[[不屈]]。'
+shikigami: 山兔
+power: 6
+health: 6
+version_date: '20191212'
+id: '10011703'
+artwork:
+  images:
+  - path: 10011703.png
+    scale: 0.711
+    offset_y: -71

@@ -1,0 +1,15 @@
+type: 法术
+name: 万象之书
+level: 3
+rarity: SR
+description: '[[瞬发]]
+
+  随机将其他己方式神的各一张牌置入手牌。'
+shikigami: 书翁
+version_date: '20191212'
+id: '10011807'
+artwork:
+  images:
+  - path: 10011807.png
+    scale: 0.747
+    offset_y: -94

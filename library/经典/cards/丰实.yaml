@@ -1,0 +1,15 @@
+type: 形态
+name: 丰实
+level: 2
+rarity: R
+description: 进场和己方回合开始时，随机为一个己方受伤式神恢复3#sm。
+shikigami: 桃花妖
+power: 3
+health: 7
+version_date: '20191212'
+id: '10011903'
+artwork:
+  images:
+  - path: 10011903.png
+    scale: 0.711
+    offset_y: -66

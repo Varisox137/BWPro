@@ -166,7 +166,7 @@ class DeckBuilderView(QWidget):
         self.loading_label = QLabel(self)
         self.loading_label.setObjectName("loadingLabel")
         self.loading_label.setAlignment(Qt.AlignCenter)
-        self.loading_label.setFixedSize(400, 80)
+        self.loading_label.setMinimumSize(0, 0)
         self.loading_label.hide()
         self.loading = LoadingIndicator("正在加载卡组", self._set_loading_text, self)
         self._build_ui()
@@ -581,22 +581,24 @@ class DeckBuilderView(QWidget):
 
     def _set_loading_text(self, text: str) -> None:
         self.loading_label.setText(text)
-        self.loading_label.setGeometry(0, 0, self.width(), self.height())
+        self.loading_label.setGeometry(self.card_area.geometry())
 
-    def _start_loading(self) -> None:
+    def _start_loading(self, total: int) -> None:
+        self._loading_done = 0
+        self._loading_total = total
         self._set_loading_text("正在加载卡组 0.0s")
-        self.stack.hide()
         self.loading_label.show()
         self.loading_label.raise_()
-        self.loading.start()
+        self.loading.start(total=total)
 
     def _loading_tick(self) -> None:
+        self._loading_done += 1
+        self.loading.set_progress(self._loading_done, self._loading_total)
         self.loading.tick()
 
     def _finish_loading(self) -> None:
         self.loading.stop()
         self.loading_label.hide()
-        self.stack.show()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -604,7 +606,6 @@ class DeckBuilderView(QWidget):
             self._set_loading_text(self.loading_label.text())
 
     def _render_cards(self) -> None:
-        self._start_loading()
         try:
             _clear_layout(self.card_layout)
             self.card_widgets = []
@@ -612,6 +613,7 @@ class DeckBuilderView(QWidget):
             self.page_count = max(1, (len(cards) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE)
             self.page_index = max(0, min(self.page_index, self.page_count - 1))
             shown = cards[self.page_index * CARD_PAGE_SIZE:(self.page_index + 1) * CARD_PAGE_SIZE]
+            self._start_loading(len(shown))
             art_context = {}
             for cdef in shown:
                 base_shiki = getattr(cdef, "card_type", None) is None

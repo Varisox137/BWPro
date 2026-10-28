@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·书翁
+level: 3
+rarity: SSR
+description: '[[觉醒]]：当你抽牌时若牌库里没有牌，则对敌方牌手造成10点伤害。'
+shikigami: 书翁
+version_date: '20191212'
+evolve: true
+power+: 2
+health+: 2
+id: '10011808'
+artwork:
+  images:
+  - path: 10011808.png
+    scale: 0.747
+    offset_y: -69

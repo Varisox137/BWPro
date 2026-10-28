@@ -85,6 +85,8 @@ def _json_command(value):
 class OnlineBattleView(HotseatView):
     """复用热坐场况与操作流程；本地 Game 仅为服务端 state 的只读包装。"""
 
+    exit_confirmation = False
+
     def __init__(self, db, send_command, on_back=None, parent=None):
         self.send_command = send_command
         self.me = 0

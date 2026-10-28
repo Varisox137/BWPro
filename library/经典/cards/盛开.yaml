@@ -1,0 +1,15 @@
+type: 形态
+name: 盛开
+level: 3
+rarity: R
+description: 进场和己方回合开始时，随机为一个己方受伤式神恢复2#sm，将此过程再重复2次。
+shikigami: 桃花妖
+power: 4
+health: 9
+version_date: '20191212'
+id: '10011906'
+artwork:
+  images:
+  - path: 10011906.png
+    scale: 0.711
+    offset_y: -82

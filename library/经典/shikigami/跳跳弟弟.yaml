@@ -1,0 +1,11 @@
+type: 式神
+name: 跳跳弟弟
+faction: 红莲
+power: 3
+health: 4
+description: ''
+version_date: '20261028'
+id: '100120'
+artwork:
+  images:
+  - path: 100120.png

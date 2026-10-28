@@ -1,0 +1,15 @@
+type: 战斗
+name: 碎岩
+level: 2
+rarity: SR
+description: 移除被山童攻击的角色的#hj。
+shikigami: 山童
+power+: 2
+shield+: 2
+version_date: '20191212'
+id: '10011605'
+artwork:
+  images:
+  - path: 10011605.png
+    scale: 0.711
+    offset_y: -67

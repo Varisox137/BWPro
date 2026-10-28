@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·桃花妖
+level: 3
+rarity: SR
+description: '[[觉醒]]：桃花妖治疗或复活己方式神时，使该式神永久获得2#ll及2#sm。'
+shikigami: 桃花妖
+version_date: '20191212'
+id: '10011908'
+evolve: true
+power+: 2
+health+: 1
+artwork:
+  images:
+  - path: 10011908.png
+    scale: 0.747
+    offset_y: -82

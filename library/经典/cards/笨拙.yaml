@@ -1,0 +1,15 @@
+type: 形态
+name: 笨拙
+level: 2
+rarity: R
+description: 敌方回合时山童#ll变为0。
+shikigami: 山童
+power: 6
+health: 9
+version_date: '20191212'
+id: '10011604'
+artwork:
+  images:
+  - path: 10011604.png
+    scale: 0.677
+    offset_y: -85

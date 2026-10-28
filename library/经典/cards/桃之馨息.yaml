@@ -1,0 +1,13 @@
+type: 法术
+name: 桃之馨息
+level: 1
+rarity: R
+description: 为一个角色恢复5#sm。
+shikigami: 桃花妖
+version_date: '20191212'
+id: '10011901'
+artwork:
+  images:
+  - path: 10011901.png
+    scale: 0.747
+    offset_y: -102

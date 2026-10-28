@@ -1,0 +1,13 @@
+type: 法术
+name: 桃语春风
+level: 2
+rarity: R
+description: 复活一个己方式神并使其获得[[迅捷]]。
+shikigami: 桃花妖
+version_date: '20191212'
+id: '10011905'
+artwork:
+  images:
+  - path: 10011905.png
+    scale: 0.747
+    offset_y: -98

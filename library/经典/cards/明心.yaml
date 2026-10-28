@@ -1,0 +1,15 @@
+type: 形态
+name: 明心
+level: 2
+rarity: R
+description: 回合开始的抽牌改为检视牌库顶三张牌然后选择一张置入手牌。
+shikigami: 书翁
+power: 4
+health: 5
+version_date: '20191212'
+id: '10011803'
+artwork:
+  images:
+  - path: 10011803.png
+    scale: 0.711
+    offset_y: -81

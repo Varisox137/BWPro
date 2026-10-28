@@ -1,0 +1,15 @@
+type: 形态
+name: 鲁莽
+level: 1
+rarity: SR
+description: 己方回合开始时，山童自动发起攻击。
+shikigami: 山童
+power: 3
+health: 5
+version_date: '20191212'
+id: '10011601'
+artwork:
+  images:
+  - path: 10011601.png
+    scale: 0.711
+    offset_y: -72

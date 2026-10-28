@@ -1,0 +1,13 @@
+type: 法术
+name: 开卷
+level: 2
+rarity: R
+description: 抽两张牌。
+shikigami: 书翁
+version_date: '20191212'
+id: '10011804'
+artwork:
+  images:
+  - path: 10011804.png
+    scale: 0.747
+    offset_y: -87

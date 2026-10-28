@@ -1,0 +1,14 @@
+type: 式神
+name: 纸人
+faction: 苍叶
+power: 3
+health: 3
+description: 回合结束时变回原式神。
+shikigami: 山兔
+version_date: '20191212'
+id: '10011799'
+artwork:
+  images:
+  - path: 10011799.png
+    scale: 0.677
+    offset_y: -71

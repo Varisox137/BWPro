@@ -1,0 +1,16 @@
+type: 法术
+name: 桃之夭夭
+level: 2
+rarity: SR
+description: '不消耗鬼火。
+
+  [[鼓舞]]：获得+2#ll与+2#hj。'
+shikigami: 桃花妖
+version_date: '20191212'
+id: '10011904'
+artwork:
+  images:
+  - path: 10011904.png
+    scale: 0.711
+    offset_y: -75
+    offset_x: 14

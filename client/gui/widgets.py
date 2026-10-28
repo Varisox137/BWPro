@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cardfmt
-from client.gui.cardart import card_pixmap
+from client.gui.cardart import DETAIL_ART_HEIGHT, card_pixmap
 from client.gui.mechanisms import card_mechanisms, mechanism_panel
 
 
@@ -116,7 +116,7 @@ class CardWidget(QFrame):
         self._art_options = {"display": display, "level_color": level_color}
         if art_context is not None:
             self._art_options["cache_context"] = art_context
-        pixmap = self._request_art(360)
+        pixmap = self._request_art(DETAIL_ART_HEIGHT)
         if pixmap is not None and not pixmap.isNull():
             self.art_label.setPixmap(pixmap)
             for label in (self.level_label, self.name_label, self.type_label,
@@ -156,18 +156,10 @@ class CardWidget(QFrame):
 
     def _fit_art(self) -> None:
         source = self.art_label.pixmap()
-        if source.isNull():
+        if source.isNull() or self.art_label.width() <= 0 or self.art_label.height() <= 0:
             return
-        width, height = self.art_label.width(), self.art_label.height()
-        if width <= 0 or height <= 0:
-            return
-        target_height = max(1, round(source.height() * min(
-            width / source.width(), height / source.height())))
-        if target_height == source.height():
-            return
-        pixmap = self._request_art(target_height)
-        if pixmap is not None and not pixmap.isNull():
-            self.art_label.setPixmap(pixmap)
+        self.art_label.setPixmap(source.scaled(
+            self.art_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self.art_label and event.type() == QEvent.Resize:

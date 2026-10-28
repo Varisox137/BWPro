@@ -237,7 +237,8 @@ def test_editor_loading_feedback_runs_during_card_render(qapp, db, view, monkeyp
     original_start = view._start_loading
     original_tick = view._loading_tick
     original_finish = view._finish_loading
-    monkeypatch.setattr(view, "_start_loading", lambda: events.append("start") or original_start())
+    monkeypatch.setattr(view, "_start_loading",
+                        lambda *args: events.append("start") or original_start(*args))
     monkeypatch.setattr(view, "_loading_tick", lambda: events.append("tick") or original_tick())
     monkeypatch.setattr(view, "_finish_loading", lambda: events.append("finish") or original_finish())
     view.edit_deck(0)
@@ -993,7 +994,20 @@ def test_card_widget_passes_level_color(qapp, db, monkeypatch):
     monkeypatch.setattr("client.gui.widgets.card_pixmap", capture)
     CardWidget(db.cards[10010101], db=db, level_color="cyan")
     assert seen["level_color"] == "cyan"
-    assert seen["height"] == 360
+    assert seen["height"] == 540
+
+
+def test_card_widget_resize_scales_without_rerender(qapp, db, monkeypatch):
+    from client.gui.widgets import CardWidget
+
+    calls = []
+    monkeypatch.setattr("client.gui.widgets.card_pixmap",
+                        lambda *_args, **kwargs: calls.append(kwargs) or QPixmap(100, 100))
+    widget = CardWidget(db.cards[10010101], db=db)
+    calls.clear()
+    widget.art_label.resize(50, 50)
+    widget._fit_art()
+    assert calls == []
 
 
 def test_cardart_combat_amount_uses_static_base(qapp, gdb):

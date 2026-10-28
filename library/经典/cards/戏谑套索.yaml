@@ -1,0 +1,15 @@
+type: 法术
+name: 戏谑套索
+level: 2
+rarity: R
+description: '将敌方战斗区式神变成‘纸人’。[[增强]]：本局游戏若你骰子投出三次6点，改为将其变成‘小纸人’。
+
+  [[响应]]：当山兔被攻击时，自动使用此牌。'
+shikigami: 山兔
+version_date: '20191212'
+id: '10011705'
+artwork:
+  images:
+  - path: 10011705.png
+    scale: 0.747
+    offset_y: -63

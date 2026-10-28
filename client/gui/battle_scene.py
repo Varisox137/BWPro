@@ -55,9 +55,9 @@ def display_hand(game, pi: int, viewer: int):
 
 def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     positions = {
-        ("phase",): QPointF(1, 350),
+        ("phase",): QPointF(65, 422),
         ("menu",): QPointF(1352, 16),
-        ("log",): QPointF(1, 470),
+        ("log",): QPointF(1, 422),
         ("end_turn",): QPointF(1493, 400),
         ("enemy_hand_label",): QPointF(1240, 350),
         ("enemy_deck",): QPointF(1530, 228),
@@ -421,7 +421,7 @@ class BattleView(QGraphicsView):
         self.fit_scene()
 
     def fit_scene(self) -> None:
-        self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
+        self.fitInView(self.scene().sceneRect(), Qt.IgnoreAspectRatio)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -485,6 +485,7 @@ class BattleScene(QGraphicsScene):
         self.loading_background.hide()
         self.addItem(self.loading_background)
         self.loading = LoadingIndicator("正在准备对局", self.loading_item.setPlainText, self)
+        self._loading_done = self._loading_total = 0
         self.drag_controller = BattleDragController(self)
         self.text_color = "#26221c"
 
@@ -534,6 +535,8 @@ class BattleScene(QGraphicsScene):
         self.loading_item.show()
 
     def loading_tick(self) -> None:
+        self._loading_done += 1
+        self.loading.set_progress(self._loading_done, self._loading_total)
         self.loading.tick()
 
     def hide_loading(self) -> None:
@@ -644,6 +647,10 @@ class BattleScene(QGraphicsScene):
         self.drag_controller.cancel()
         positions = layout_positions(game, viewer)
         art_context = {}
+        self._loading_done = 0
+        self._loading_total = sum(len(player.shikigami) + len(player.hand)
+                                  for player in game.state.players)
+        self.loading.set_progress(0, self._loading_total)
         expected = {key for key in positions if key[0] in ("hand", "shiki", "player")}
         for key in set(self.cards) - expected:
             self.removeItem(self.cards.pop(key))

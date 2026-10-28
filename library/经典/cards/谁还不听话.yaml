@@ -1,0 +1,17 @@
+type: 法术
+name: 谁还不听话
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  [[投射]]：造成2点伤害。
+
+  [[增强]]：本局游戏你骰子每投出一次6点，此牌效果+1。'
+shikigami: 山兔
+version_date: '20191212'
+id: '10011701'
+artwork:
+  images:
+  - path: 10011701.png
+    scale: 0.747
+    offset_y: -85
