@@ -2,7 +2,7 @@ type: 法术
 name: 巨浪
 level: 2
 rarity: SR
-description: 对所有敌方式神造成2点伤害，每造成1点伤害，海坊主恢复1点#sm。
+description: 对所有敌方式神造成2点伤害，每造成1点伤害，海坊主恢复1#sm。
 shikigami: 海坊主
 version_date: '20191212'
 id: '10010706'

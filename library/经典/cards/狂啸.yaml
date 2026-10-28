@@ -1,0 +1,14 @@
+type: 法术
+name: 狂啸
+level: 3
+rarity: R
+description: 本回合酒吞童子生命不会降到1以下。[[响应]]：当酒吞童子将受到伤害时，自动使用该牌。
+shikigami: 酒吞童子
+version_date: '20191212'
+id: '10010908'
+evolve: false
+artwork:
+  images:
+  - path: 10010908.png
+    scale: 0.747
+    offset_y: -64

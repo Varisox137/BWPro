@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·酒吞童子
+level: 3
+rarity: SR
+description: '[[觉醒]]：每当酒吞童子受到伤害时，每受1点伤害获得1#ll。'
+shikigami: 酒吞童子
+version_date: '20191212'
+evolve: true
+id: '10010906'
+power+: 1
+health+: 3
+artwork:
+  images:
+  - path: 10010906.png
+    scale: 0.747
+    offset_y: -77

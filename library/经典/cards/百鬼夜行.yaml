@@ -1,0 +1,15 @@
+type: 法术
+name: 百鬼夜行
+level: 3
+rarity: SSR
+description: '[[瞬发]]
+
+  对其他所有式神各造成X点伤害，X为酒吞童子本回合所受伤害之和。'
+shikigami: 酒吞童子
+version_date: '20191212'
+id: '10010907'
+artwork:
+  images:
+  - path: 10010907.png
+    scale: 0.747
+    offset_y: -77

@@ -1,0 +1,13 @@
+type: 法术
+name: 勾诀
+level: 1
+rarity: R
+description: 消灭一个#ll≤2的敌方式神。
+shikigami: 判官
+version_date: '20191212'
+id: '10011002'
+artwork:
+  images:
+  - path: 10011002.png
+    scale: 0.747
+    offset_y: -73

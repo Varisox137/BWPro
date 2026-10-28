@@ -2,7 +2,7 @@ type: 形态
 name: 灵视
 level: 2
 rarity: R
-description: 当敌方牌手使用已展示的手牌时，他受到2点伤害且你恢复2点#sm。
+description: 当敌方牌手使用已展示的手牌时，他受到2点伤害且你恢复2#sm。
 shikigami: 觉
 power: 5
 health: 5

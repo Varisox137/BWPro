@@ -1,0 +1,15 @@
+type: 战斗
+name: 无尽愤怒
+level: 2
+rarity: SR
+description: 若本回合酒吞童子受到过己方伤害，此牌获得+2#ll。
+shikigami: 酒吞童子
+power+: 2
+shield+: 0
+version_date: '20191212'
+id: '10010904'
+artwork:
+  images:
+  - path: 10010904.png
+    scale: 0.711
+    offset_y: -76

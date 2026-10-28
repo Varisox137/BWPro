@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from client import cli, net
 from client.gui.battle import HotseatView
+from client.gui.widgets import show_warning
 from core.engine import Game
 from core.model import GameState, Ref
 from db import deckstore
@@ -309,16 +310,11 @@ class OnlineView(QWidget):
         connect = QFormLayout(self.connect_page)
         self.server_edit = QLineEdit("ws://127.0.0.1:1037/ws")
         self.name_edit = QLineEdit("玩家")
-        self.deck_combo = QComboBox()
         connect.addRow("服务器地址", self.server_edit)
         connect.addRow("玩家名", self.name_edit)
-        connect.addRow("标准卡组", self.deck_combo)
         self.connect_button = QPushButton("连接并进入大厅")
         self.connect_button.clicked.connect(self.connect_server)
         connect.addRow(self.connect_button)
-        self.connect_error = QLabel()
-        self.connect_error.setWordWrap(True)
-        connect.addRow(self.connect_error)
         self.stack.addWidget(self.connect_page)
 
         self.lobby_page = QWidget()
@@ -326,6 +322,12 @@ class OnlineView(QWidget):
         self.room_label = QLabel("房间大厅")
         self.room_label.setObjectName("viewTitle")
         lobby.addWidget(self.room_label)
+        self.deck_combo = QComboBox()
+        self.deck_combo.currentIndexChanged.connect(self._select_deck)
+        deck_row = QHBoxLayout()
+        deck_row.addWidget(QLabel("标准卡组"))
+        deck_row.addWidget(self.deck_combo, 1)
+        lobby.addLayout(deck_row)
         create_row = QHBoxLayout()
         self.room_edit = QLineEdit()
         self.room_edit.setPlaceholderText("自定义 6 位房码（留空随机）")
@@ -389,25 +391,35 @@ class OnlineView(QWidget):
         self.deck_combo.clear()
         for entry in self.entries:
             self.deck_combo.addItem(entry["name"])
+        self._select_deck(self.deck_combo.currentIndex())
+
+    def _select_deck(self, index: int) -> None:
+        if 0 <= index < len(self.entries):
+            entry = self.entries[index]
+            self.deck_name = entry["name"]
+            self.deck_code = deckstore.entry_code(entry)
+        else:
+            self.deck_name = ""
+            self.deck_code = None
+        deck_text = f"　卡组：{self.deck_name}" if self.deck_name else ""
+        self.self_label.setText(f"你：{self.player_name}{deck_text}")
+
+    def _require_deck(self) -> bool:
+        if self.deck_code:
+            return True
+        self.lobby_error.setText("请先选择标准卡组")
+        return False
 
     def connect_server(self) -> bool:
-        if self.deck_combo.currentIndex() < 0:
-            self.connect_error.setText("请先在卡组构筑中创建标准卡组")
-            return False
         self.server_url = net.normalize_server_url(self.server_edit.text())
         error = self.probe(self.server_url)
         if error is not None:
-            self.connect_error.setText(f"无法连接 {self.server_url}：{error}，请修改后重试")
+            show_warning(self, "连接失败", f"无法连接 {self.server_url}：{error}，请修改后重试")
             return False
-        entry = self.entries[self.deck_combo.currentIndex()]
         self.player_name = self.name_edit.text().strip() or "玩家"
-        self.deck_name = entry["name"]
-        self.deck_code = deckstore.entry_code(entry)
-        self.self_label.setText(f"你：{self.player_name}　卡组：{self.deck_name}")
+        self._select_deck(self.deck_combo.currentIndex())
         if not self._open_bridge():
-            self.connect_error.setText("连接失败，请修改地址后重试")
             return False
-        self.connect_error.clear()
         self.stack.setCurrentWidget(self.lobby_page)
         return True
 
@@ -415,7 +427,7 @@ class OnlineView(QWidget):
         try:
             ws = self.opener(self.server_url)
         except Exception as error:
-            self.lobby_error.setText(f"连接失败：{error}")
+            show_warning(self, "连接失败", str(error))
             return False
         self.bridge = self.bridge_factory(ws)
         self.bridge.message.connect(self.handle_message)
@@ -427,6 +439,8 @@ class OnlineView(QWidget):
     def create_room(self) -> bool:
         if self.bridge is None:
             self.lobby_error.setText("请先连接服务器")
+            return False
+        if not self._require_deck():
             return False
         room_id = self.room_edit.text().strip()
         if room_id and not re.fullmatch(r"[A-Za-z0-9]{6}", room_id):
@@ -453,9 +467,11 @@ class OnlineView(QWidget):
         if not re.fullmatch(r"[A-Za-z0-9]{6}", room_id):
             self.lobby_error.setText("请输入 6 位房间代码")
             return False
+        token = self.token_edit.text().strip() or None
+        if token is None and not self._require_deck():
+            return False
         if self.bridge is None and not self._open_bridge():
             return False
-        token = self.token_edit.text().strip() or None
         self.bridge.send({"type": "join", "room_id": room_id, "name": self.player_name,
                           "deck_code": None if token else self.deck_code,
                           "token": token, "client": net.CLIENT_ID})

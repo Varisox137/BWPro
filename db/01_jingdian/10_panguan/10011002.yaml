@@ -11,4 +11,4 @@ versions:
       effects:
         steps:
           - {op: destroy}
-      text: "消灭一个力量<=2的敌方式神。"
+      text: "消灭一个力量≤2的敌方式神。"

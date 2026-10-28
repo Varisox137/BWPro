@@ -16,8 +16,8 @@ from client.deckbuilder import available_shikigami, buildable_cards
 from client.gui.loading import LoadingIndicator
 from client.gui.portrait import shikigami_portrait
 from client.gui.widgets import (
-    CardDetailDialog, CardWidget, ask_confirmation, polish_dialog_buttons,
-    show_warning,
+    CardDetailDialog, CardWidget, ask_confirmation, fill_card_row,
+    polish_dialog_buttons, show_warning,
 )
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, rules_summary, validate_deck
@@ -623,10 +623,9 @@ class DeckBuilderView(QWidget):
                     widget.minus_button.clicked.connect(
                         lambda _=False, cid=cdef.id: self.change_card(cid, -1))
                 widget.clicked.connect(self.show_card_detail)
-                self.card_layout.addWidget(widget, 1)
                 self.card_widgets.append(widget)
                 self._loading_tick()
-            self.card_layout.addStretch(1)
+            fill_card_row(self.card_layout, self.card_widgets)
             self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
             self.card_previous.setEnabled(self.page_index > 0)
             self.card_next.setEnabled(self.page_index < self.page_count - 1)

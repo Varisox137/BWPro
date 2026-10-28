@@ -1,0 +1,15 @@
+type: 法术
+name: 醉里乾坤
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  酒吞童子对自己造成1点伤害，抽一张牌。'
+shikigami: 酒吞童子
+version_date: '20191212'
+id: '10010901'
+artwork:
+  images:
+  - path: 10010901.png
+    scale: 0.747
+    offset_y: -60

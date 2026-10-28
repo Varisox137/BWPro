@@ -1,0 +1,15 @@
+type: 形态
+name: 鬼王
+level: 2
+rarity: R
+description: 进场时对酒吞童子造成3点伤害。
+shikigami: 酒吞童子
+power: 5
+health: 10
+version_date: '20191212'
+id: '10010903'
+artwork:
+  images:
+  - path: 10010903.png
+    scale: 0.711
+    offset_y: -62

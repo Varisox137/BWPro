@@ -8,9 +8,8 @@ from PySide6.QtWidgets import (
 )
 
 from client.deckbuilder import available_shikigami, buildable_cards
-from client.gui.cardart import card_pixmap
 from client.gui.loading import LoadingIndicator
-from client.gui.widgets import CardDetailDialog, CardWidget
+from client.gui.widgets import CardDetailDialog, CardWidget, fill_card_row
 from db.envs import ENV_ALIASES, env_label, parse_env_input
 from db.packs import PACK_NAMES, PACKS
 
@@ -85,6 +84,7 @@ class ShikigamiCodexView(QWidget):
         tree_column = QVBoxLayout()
         self.shiki_list = QTreeWidget()
         self.shiki_list.setHeaderHidden(True)
+        self.shiki_list.setIndentation(10)
         self.shiki_list.currentItemChanged.connect(self._select_shiki_item)
         tree_column.addWidget(self.shiki_list, 1)
         self.empty_label = QLabel("没有符合筛选条件的式神")
@@ -108,25 +108,11 @@ class ShikigamiCodexView(QWidget):
         self.name_label.setObjectName("viewTitle")
         top.addWidget(self.name_label, 1)
         home.addLayout(top)
-        self.home_body = QHBoxLayout()
-        self.portrait_label = QLabel()
-        self.portrait_label.setAlignment(Qt.AlignCenter)
-        self.home_body.addWidget(self.portrait_label)
-        info = QVBoxLayout()
-        self.stats_label = QLabel()
-        self.stats_label.setObjectName("shikiStats")
-        info.addWidget(self.stats_label)
-        self.ability_label = QLabel()
-        self.ability_label.setObjectName("shikiAbility")
-        self.ability_label.setWordWrap(True)
-        info.addWidget(self.ability_label, 1)
-        self.home_body.addLayout(info, 1)
-        home.addLayout(self.home_body, 1)
         self.card_area = QWidget()
         self.card_layout = QHBoxLayout(self.card_area)
         self.card_layout.setContentsMargins(0, 0, 0, 0)
         self.card_layout.setSpacing(4)
-        home.addWidget(self.card_area)
+        home.addWidget(self.card_area, 1)
         pager = QHBoxLayout()
         self.card_previous = QPushButton("‹")
         self.card_next = QPushButton("›")
@@ -145,15 +131,17 @@ class ShikigamiCodexView(QWidget):
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
+        selection_bg = "#cfe5f7" if theme == "light" else "#294c68"
+        selection_text = "#17344d" if theme == "light" else colors["text"]
         self.setStyleSheet(f"""
             QLabel#viewTitle {{ color: {colors['gold']}; font-size: 28px; }}
-            QLabel#shikiStats {{ color: {colors['blue']}; font-size: 18px; }}
-            QLabel#shikiAbility {{ color: {colors['text']}; font-size: 16px; }}
             QLineEdit, QComboBox, QTreeWidget {{
                 background: {colors['panel']}; color: {colors['text']};
                 border: 1px solid {colors['line']}; padding: 5px;
             }}
-            QTreeWidget::item:selected {{ background: {colors['gold2']}; color: {colors['text']}; }}
+            QTreeWidget::item:selected {{
+                background: {selection_bg}; color: {selection_text};
+            }}
             QLabel#loadingLabel {{ color: {colors['gold']}; font-size: 28px; }}
         """)
 
@@ -231,15 +219,6 @@ class ShikigamiCodexView(QWidget):
         self.selected_sid = sid
         definition = self.edb.shikigami[sid]
         self.name_label.setText(definition.name)
-        self.stats_label.setText(
-            f"{definition.faction}　力量 {definition.power}　生命 {definition.health}")
-        self.ability_label.setText(definition.text or "（无基础能力文本）")
-        pixmap = card_pixmap(definition, self.db, height=336)
-        if pixmap is not None and not pixmap.isNull():
-            self.portrait_label.setPixmap(pixmap)
-            self.portrait_label.setFixedSize(pixmap.size())
-        else:
-            self.portrait_label.setText(f"{definition.name}\n{definition.faction}")
         while self.overview_card_layout.count():
             item = self.overview_card_layout.takeAt(0)
             widget = item.widget()
@@ -278,10 +257,9 @@ class ShikigamiCodexView(QWidget):
                 widget = CardWidget(cdef, editable=False, db=self.db, art_context=art_context)
                 widget.count_label.hide()
                 widget.clicked.connect(self.show_card_detail)
-                self.card_layout.addWidget(widget, 1)
                 self.card_widgets.append(widget)
                 self._loading_tick()
-            self.card_layout.addStretch(1)
+            fill_card_row(self.card_layout, self.card_widgets)
             self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
             self.card_previous.setEnabled(self.page_index > 0)
             self.card_next.setEnabled(self.page_index < self.page_count - 1)

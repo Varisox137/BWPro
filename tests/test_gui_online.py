@@ -100,23 +100,34 @@ def test_net_bridge_forwards_messages_and_sends_without_wait(qapp):
     assert json.loads(ws.sent[0]) == {"type": "cmd", "cmd": {"op": "ready"}}
 
 
-def test_connection_validation_probe_and_enter_lobby(qapp, db, view):
-    save_standard_deck(db, view.store_path)
-    view.reload_decks()
+def test_connection_validation_probe_and_enter_lobby(qapp, db, view, monkeypatch):
     view.server_edit.setText("localhost:1037")
     view.name_edit.setText("玩家")
-    view.deck_combo.setCurrentIndex(0)
+    warnings = []
+    monkeypatch.setattr("client.gui.online.show_warning",
+                        lambda _parent, title, text: warnings.append((title, text)),
+                        raising=False)
     view.probe = lambda _url: "连接失败"
     assert not view.connect_server()
     assert view.stack.currentWidget() is view.connect_page
-    assert "连接失败" in view.connect_error.text()
+    assert warnings[-1][0] == "连接失败" and "连接失败" in warnings[-1][1]
 
     view.probe = lambda _url: None
+    def reject_socket(_url):
+        raise OSError("拒绝连接")
+    view.opener = reject_socket
+    assert not view.connect_server()
+    assert "拒绝连接" in warnings[-1][1]
+
     view.opener = lambda _url: FakeWS()
     assert view.connect_server()
     assert view.server_url == "ws://localhost:1037/ws"
     assert view.stack.currentWidget() is view.lobby_page
     assert isinstance(view.bridge, FakeBridge)
+    assert view.deck_combo.currentIndex() < 0
+    assert not view.create_room()
+    view.room_edit.setText("ABC123")
+    assert not view.join_room()
 
 
 def test_lobby_messages_render_ready_environment_and_notices(qapp, db, view):
@@ -289,6 +300,9 @@ def test_main_window_online_page_and_theme(qapp, db, tmp_path):
     assert view.connect_server()
     view.battle.timeline_timer.start()
     win.go("online")
+    assert win.game_menu_button.isHidden()
+    view.stack.setCurrentWidget(view.battle)
+    assert not win.game_menu_button.isHidden()
     win.back_button.click()
     assert win.stack.currentIndex() == 0
     assert sockets[0].closed and view.bridge is None

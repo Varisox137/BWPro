@@ -1276,6 +1276,49 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     assert view.hand_caption.text() == f"我方手牌 {len(view.game.current.hand)}/12张"
 
 
+def test_deck_count_labels_sit_right_of_card_backs(qapp, view):
+    from client.gui.battle_scene import DECK_BACK_SIZE, SCENE_WIDTH, layout_positions
+
+    start(view, mulligan=False)
+    positions = layout_positions(view.game, view.viewer)
+    for player, key in ((0, "own_deck"), (1, "enemy_deck")):
+        right = max(positions[("deck_back", player, index)].x()
+                    for index in range(3)) + DECK_BACK_SIZE.width()
+        label = positions[(key,)]
+        assert label.x() >= right
+        assert label.x() + 68 <= SCENE_WIDTH
+
+
+def test_end_turn_has_distinct_disabled_style(qapp, view):
+    view.apply_theme("light", THEMES["light"])
+    assert "QPushButton#endTurnButton:disabled" in view.styleSheet()
+
+
+def test_hotseat_new_games_use_random_seeds(qapp, view, monkeypatch):
+    from types import SimpleNamespace
+    import client.gui.battle as battle_module
+
+    seeds = iter((42, 43))
+    monkeypatch.setattr(battle_module, "secrets", SimpleNamespace(
+        randbits=lambda _bits: next(seeds)), raising=False)
+    seen = []
+    original = battle_module.new_game
+
+    def record_seed(*args, **kwargs):
+        seen.append(kwargs["seed"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(battle_module, "new_game", record_seed)
+    openings = []
+    for _ in range(2):
+        view.start_game(player_tuple("玩家A"), player_tuple("玩家B"),
+                        first=0, shuffle_team=False)
+        openings.append([card.id for card in view.game.state.players[0].hand])
+        settle(view)
+    assert seen == [42, 43]
+    assert openings[0] != openings[1]
+
+
 def test_deck_backs_are_symmetric_horizontal_cards_and_hide_when_empty(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

@@ -60,8 +60,8 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         ("log",): QPointF(4, 420),
         ("end_turn",): QPointF(1488, 400),
         ("enemy_hand_label",): QPointF(1240, 190),
-        ("enemy_deck",): QPointF(1400, 190),
-        ("own_deck",): QPointF(1400, 690),
+        ("enemy_deck",): QPointF(1528, 228),
+        ("own_deck",): QPointF(1528, 608),
         ("hand_caption",): QPointF(1130, 696),
         ("ready",): QPointF(1328, 435),
         ("mulligan",): QPointF(730, 610),
@@ -80,7 +80,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         positions[("player_detail", pi)] = QPointF(4, 140 if top else 732)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
-                1400 + index * 18, (220 + index * 4) if top else (600 - index * 4))
+                1376 + index * 18, (220 + index * 4) if top else (600 - index * 4))
     if game is None:
         return positions
 

@@ -55,10 +55,8 @@ def test_overview_filters_and_shikigami_home(qapp, db, view):
     definition = db.shikigami[100101]
     assert view.stack.currentWidget() is view.home_page
     assert definition.name in view.name_label.text()
-    assert definition.faction in view.stats_label.text()
-    assert f"力量 {definition.power}　生命 {definition.health}" in view.stats_label.text()
-    assert definition.text in view.ability_label.text()
-    assert not view.portrait_label.pixmap().isNull()
+    for attribute in ("home_body", "portrait_label", "stats_label", "ability_label"):
+        assert not hasattr(view, attribute)
 
 
 def test_environment_change_reloads_shikigami_and_cards(qapp, db, view):
@@ -91,7 +89,22 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     assert events[0] == "start" and events[-1] == "finish"
     assert events.count("tick") >= 5
     assert view.loading_label.isHidden()
+    view.resize(1200, 800)
+    view.show()
+    qapp.processEvents()
     assert len(view.card_widgets) == 5
+    assert all(widget.minimumWidth() == 0 for widget in view.card_widgets)
+    widths = [widget.width() for widget in view.card_widgets]
+    assert max(widths) - min(widths) <= 1
+    margins = view.card_area.layout().contentsMargins()
+    assert view.card_widgets[0].x() == margins.left()
+    assert view.card_widgets[-1].x() + view.card_widgets[-1].width() == (
+        view.card_area.width() - margins.right())
+    for widget in view.card_widgets:
+        pixmap = widget.art_label.pixmap()
+        assert not pixmap.isNull()
+        assert pixmap.width() <= widget.art_label.width() + 1
+        assert pixmap.height() <= widget.art_label.height() + 1
     assert view.card_widgets[0].cdef.id == 100101
     assert view.card_widgets[0].count_label.isHidden()
     assert view.card_widgets[-1].cdef.id != reinforce.id
@@ -112,6 +125,9 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
 
 
 def test_theme_and_empty_filter(qapp, view):
+    assert view.shiki_list.indentation() <= 10
+    view.apply_theme("light", THEMES["light"])
+    assert "#cfe5f7" in view.styleSheet()
     view.apply_theme("dark", THEMES["dark"])
     view.search_edit.setText("不存在的式神")
     assert view.shiki_list.topLevelItemCount() == 0

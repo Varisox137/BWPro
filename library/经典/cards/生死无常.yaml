@@ -1,0 +1,15 @@
+type: 法术
+name: 生死无常
+level: 2
+rarity: R
+description: '消灭己方战斗区的式神，然后消灭敌方战斗区的式神。
+
+  [[响应]]：当己方战斗区式神被攻击时，自动使用此牌。'
+shikigami: 判官
+version_date: '20191212'
+id: '10011003'
+artwork:
+  images:
+  - path: 10011003.png
+    scale: 0.747
+    offset_y: -73

@@ -1,0 +1,17 @@
+type: 式神
+name: 青坊主
+faction: 紫岩
+power: 1
+health: 6
+description: 当你恢复#sm时，随机对两个敌方角色造成1点伤害。
+version_date: '20191212'
+id: '100111'
+artwork:
+  images:
+  - path: 100111.png
+    scale: 0.711
+    offset_y: -67
+portrait:
+  scale: 4.54
+  offset_x: 8
+  offset_y: 74

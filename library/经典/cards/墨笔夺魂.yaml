@@ -1,0 +1,13 @@
+type: 法术
+name: 墨笔夺魂
+level: 1
+rarity: R
+description: 使一个敌方式神降低2#ll与1#sm。
+shikigami: 判官
+version_date: '20191212'
+id: '10011001'
+artwork:
+  images:
+  - path: 10011001.png
+    scale: 0.747
+    offset_y: -66

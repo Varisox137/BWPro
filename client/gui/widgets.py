@@ -1,10 +1,10 @@
 """桌面 GUI 共用卡牌控件与详情弹窗。"""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QVBoxLayout,
+    QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from client import cardfmt
@@ -60,6 +60,14 @@ def ask_confirmation(parent, title: str, text: str) -> int:
                         QMessageBox.Yes | QMessageBox.No)
 
 
+def fill_card_row(layout, widgets: list["CardWidget"], page_size: int = 5) -> None:
+    """按固定列数等宽排卡；不足页用空列保持相同列宽并左对齐。"""
+    for widget in widgets:
+        layout.addWidget(widget, 1)
+    for _ in range(page_size - len(widgets)):
+        layout.addWidget(QWidget(), 1)
+
+
 class CardWidget(QFrame):
     """静态卡面：有本地卡图时显示全卡，否则回退文字卡。"""
 
@@ -71,13 +79,14 @@ class CardWidget(QFrame):
         self.cdef = cdef
         self.copies = copies
         self.setObjectName("card")
-        self.setMinimumSize(190, 330)
-        self.setMaximumWidth(260)
+        self.setMinimumSize(0, 330)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 10)
         self.art_label = QLabel()
         self.art_label.setObjectName("cardArt")
         self.art_label.setAlignment(Qt.AlignCenter)
+        self.art_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.art_label.installEventFilter(self)
         layout.addWidget(self.art_label, 1)
         level = getattr(cdef, "level", None)
         self.level_label = QLabel(f"等级 {level}" if level is not None else " ")
@@ -103,10 +112,11 @@ class CardWidget(QFrame):
         self.text_label.setWordWrap(True)
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.text_label, 1)
-        art_options = {"display": display, "level_color": level_color, "height": 360}
+        self._art_db = db
+        self._art_options = {"display": display, "level_color": level_color}
         if art_context is not None:
-            art_options["cache_context"] = art_context
-        pixmap = card_pixmap(cdef, db, **art_options) if db is not None else None
+            self._art_options["cache_context"] = art_context
+        pixmap = self._request_art(360)
         if pixmap is not None and not pixmap.isNull():
             self.art_label.setPixmap(pixmap)
             for label in (self.level_label, self.name_label, self.type_label,
@@ -138,6 +148,35 @@ class CardWidget(QFrame):
         layout.addLayout(footer)
         for child in self.findChildren(QLabel):
             child.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    def _request_art(self, height: int):
+        if self._art_db is None:
+            return None
+        return card_pixmap(self.cdef, self._art_db, height=height, **self._art_options)
+
+    def _fit_art(self) -> None:
+        source = self.art_label.pixmap()
+        if source.isNull():
+            return
+        width, height = self.art_label.width(), self.art_label.height()
+        if width <= 0 or height <= 0:
+            return
+        target_height = max(1, round(source.height() * min(
+            width / source.width(), height / source.height())))
+        if target_height == source.height():
+            return
+        pixmap = self._request_art(target_height)
+        if pixmap is not None and not pixmap.isNull():
+            self.art_label.setPixmap(pixmap)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.art_label and event.type() == QEvent.Resize:
+            self._fit_art()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_art()
 
     def set_copies(self, copies: int) -> None:
         self.copies = copies

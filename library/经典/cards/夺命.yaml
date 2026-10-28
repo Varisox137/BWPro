@@ -1,0 +1,17 @@
+type: 战斗
+name: 夺命
+level: 2
+rarity: SSR
+description: '[[必杀]]
+
+  [[增强]]：本局游戏若你消灭过13个式神，改为‘消灭受到判官战斗伤害的角色’。'
+shikigami: 判官
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10011006'
+artwork:
+  images:
+  - path: 10011006.png
+    scale: 0.711
+    offset_y: -70

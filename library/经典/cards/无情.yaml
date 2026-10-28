@@ -1,0 +1,15 @@
+type: 形态
+name: 无情
+level: 2
+rarity: SR
+description: 敌方式神进入气绝的[[倒计时]]+1。
+shikigami: 判官
+power: 4
+health: 5
+version_date: '20191212'
+id: '10011004'
+artwork:
+  images:
+  - path: 10011004.png
+    scale: 0.711
+    offset_y: -71

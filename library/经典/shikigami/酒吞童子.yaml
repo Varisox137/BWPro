@@ -1,0 +1,17 @@
+type: 式神
+name: 酒吞童子
+faction: 红莲
+power: 2
+health: 5
+description: 每当酒吞童子受到伤害时，获得1#ll。
+version_date: '20191212'
+id: '100109'
+artwork:
+  images:
+  - path: 100109.png
+    scale: 0.711
+    offset_y: -68
+portrait:
+  scale: 5.518
+  offset_x: 18
+  offset_y: 70

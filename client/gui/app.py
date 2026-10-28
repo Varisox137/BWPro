@@ -156,6 +156,7 @@ class MainWindow(QMainWindow):
             else:
                 self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
+        self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.back_button.hide()
         self.set_theme(self.theme)
         self.loading_overlay = LoadingOverlay(self)
@@ -185,10 +186,17 @@ class MainWindow(QMainWindow):
     def toggle_theme(self):
         self.set_theme("dark" if self.theme == "light" else "light")
 
+    def _sync_game_menu_button(self, *_args) -> None:
+        page = self.stack.currentWidget()
+        online = self.pages["online"]
+        visible = page is self.pages["hotseat"] or (
+            page is online and online.stack.currentWidget() is online.battle)
+        self.game_menu_button.setVisible(visible)
+
     def go(self, key: str):
         self.stack.setCurrentWidget(self.pages[key])
         self.back_button.show()
-        self.game_menu_button.setVisible(key in ("hotseat", "online"))
+        self._sync_game_menu_button()
 
     def return_current_game(self) -> None:
         page = self.stack.currentWidget()

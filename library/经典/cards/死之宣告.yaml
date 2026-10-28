@@ -1,0 +1,13 @@
+type: 法术
+name: 死之宣告
+level: 3
+rarity: SR
+description: 消灭一个式神。
+shikigami: 判官
+version_date: '20191212'
+id: '10011007'
+artwork:
+  images:
+  - path: 10011007.png
+    scale: 0.747
+    offset_y: -75

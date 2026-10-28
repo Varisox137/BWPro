@@ -263,6 +263,18 @@ def test_editor_five_cards_fit_1200px_window_with_aligned_counts(qapp, db, tmp_p
     area = page.card_area
     assert all(widget.x() >= 0 and widget.x() + widget.width() <= area.width()
                for widget in page.card_widgets)
+    assert all(widget.minimumWidth() == 0 for widget in page.card_widgets)
+    widths = [widget.width() for widget in page.card_widgets]
+    assert max(widths) - min(widths) <= 1
+    margins = area.layout().contentsMargins()
+    assert page.card_widgets[0].x() == margins.left()
+    assert page.card_widgets[-1].x() + page.card_widgets[-1].width() == (
+        area.width() - margins.right())
+    for widget in page.card_widgets:
+        pixmap = widget.art_label.pixmap()
+        assert not pixmap.isNull()
+        assert pixmap.width() <= widget.art_label.width() + 1
+        assert pixmap.height() <= widget.art_label.height() + 1
     margins = win.centralWidget().layout().contentsMargins()
     assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (12, 12, 12, 12)
     row = page.shiki_list.itemWidget(page.shiki_list.item(0))

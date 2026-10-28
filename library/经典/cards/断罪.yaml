@@ -1,0 +1,15 @@
+type: 形态
+name: 断罪
+level: 3
+rarity: R
+description: '[[增强]]：本局游戏你每消灭过一个式神，此牌便获得1#ll。'
+shikigami: 判官
+power: 4
+health: 8
+version_date: '20191212'
+id: '10011008'
+artwork:
+  images:
+  - path: 10011008.png
+    scale: 0.711
+    offset_y: -75

@@ -1,0 +1,15 @@
+type: 形态
+name: 神子
+level: 3
+rarity: SR
+description: '[[瞬发]]，[[不屈]]'
+shikigami: 酒吞童子
+power: 6
+health: 8
+version_date: '20191212'
+id: '10010905'
+artwork:
+  images:
+  - path: 10010905.png
+    scale: 0.711
+    offset_y: -70

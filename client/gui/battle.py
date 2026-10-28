@@ -1,6 +1,7 @@
 """桌面 GUI 本地热坐对战：标准卡组开局、场况、操作与结算播放。"""
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -218,7 +219,8 @@ class HotseatView(QWidget):
                            ("enemy_deck", self.enemy_deck_label),
                            ("own_deck", self.own_deck_label)):
             label.setAlignment(Qt.AlignCenter)
-            self.battle_scene.add_control(label, (key,), (130, 64))
+            size = (130, 64) if key == "enemy_hand_label" else (68, 64)
+            self.battle_scene.add_control(label, (key,), size)
         for label in (self.enemy_deck_label, self.own_deck_label):
             label.setObjectName("deckCount")
 
@@ -331,6 +333,10 @@ class HotseatView(QWidget):
                 background: {colors['panel2']}; border: 3px solid {colors['gold2']};
                 border-radius: 52px; font-size: 18px; text-align: center; padding: 0;
             }}
+            QPushButton#endTurnButton:disabled {{
+                background: {colors['bg']}; border-color: {colors['line']};
+                color: {colors['dim']};
+            }}
             QLabel#targetHint {{ color: {colors['blue']}; }}
             QLabel#battleError {{ color: #c44; }}
             QLabel#resultBanner {{ color: {colors['gold']}; font-size: 34px; padding: 16px; }}
@@ -349,7 +355,7 @@ class HotseatView(QWidget):
         second = DeckSelectDialog(self.db, self.store_path, "玩家B", self)
         if second.exec() != QDialog.Accepted:
             return False
-        return self._start_entries(first.selected_entry(), second.selected_entry(), seed=42)
+        return self._start_entries(first.selected_entry(), second.selected_entry())
 
     def start_from_decks(self, first_index: int, second_index: int, **kwargs) -> bool:
         entries = [entry for entry in deckstore.load_decks(self.db, self.store_path)
@@ -362,7 +368,9 @@ class HotseatView(QWidget):
         self.start_game(("玩家A", ids_a, cards_a), ("玩家B", ids_b, cards_b), **kwargs)
         return True
 
-    def start_game(self, p1: tuple, p2: tuple, seed: int = 42, **kwargs) -> None:
+    def start_game(self, p1: tuple, p2: tuple, seed: int | None = None, **kwargs) -> None:
+        if seed is None:
+            seed = secrets.randbits(32)
         self.battle_scene.show_loading("正在准备对局")
         try:
             self.timeline_timer.stop()
