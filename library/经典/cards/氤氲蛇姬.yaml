@@ -1,0 +1,15 @@
+type: 形态
+name: 氤氲蛇姬
+level: 2
+rarity: SR
+description: 敌方回合结束时，敌方战斗区式神获得2#pj。
+shikigami: 清姬
+power: 4
+health: 6
+version_date: '20191212'
+id: '10011404'
+artwork:
+  images:
+  - path: 10011404.png
+    scale: 0.711
+    offset_y: -95

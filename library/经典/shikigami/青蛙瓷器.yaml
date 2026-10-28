@@ -1,0 +1,17 @@
+type: 式神
+name: 青蛙瓷器
+faction: 苍叶
+power: 2
+health: 6
+description: 青蛙瓷器在你[[运势]]判定成功过的回合获得2#ll。
+version_date: '20191212'
+id: '100113'
+artwork:
+  images:
+  - path: 100113.png
+    scale: 0.823
+    offset_y: -60
+portrait:
+  scale: 2.409
+  offset_x: -2
+  offset_y: 29

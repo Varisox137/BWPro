@@ -1,0 +1,15 @@
+type: 法术
+name: 轮回
+level: 3
+rarity: SR
+description: '你的#sm变为10。
+
+  [[增强]]：本局游戏你每被对手攻击过一次，此牌效果+1。'
+shikigami: 青坊主
+version_date: '20191212'
+id: '10011108'
+artwork:
+  images:
+  - path: 10011108.png
+    scale: 0.747
+    offset_y: -68

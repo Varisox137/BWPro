@@ -6,7 +6,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel
 
@@ -146,14 +146,14 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     slots = {key: item for key, item in scene.cards.items() if key[0] == "shiki"}
     refs = {key: item.payload for key, item in slots.items()}
     assert scene.cards[("player", 1)].y() < scene.cards[("player", 0)].y()
-    assert scene.cards[("player", 1)].pos() == QPointF(4, 4)
-    assert scene.cards[("player", 0)].pos() == QPointF(4, 766)
+    assert scene.cards[("player", 1)].pos() == QPointF(1, 4)
+    assert scene.cards[("player", 0)].pos() == QPointF(1, 766)
     assert [scene.cards[("shiki", 1, index)].y() for index in range(4)] == [
-        24, 0, 0, 24]
+        120, 60, 60, 120]
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
-        666, 690, 690, 666]
+        570, 630, 630, 570]
     assert [scene.cards[("shiki", 0, index)].x() for index in range(4)] == [
-        400, 590, 780, 970]
+        276, 501, 951, 1176]
     view.apply_theme("light", THEMES["light"])
     assert "QLabel#enemyHandBack, QLabel#deckCount" in view.styleSheet()
 
@@ -221,10 +221,11 @@ def test_scene_twelve_hand_cards_overlap_and_shiki_placeholder(qapp, view):
                       for i, card in enumerate((player.hand * 3)[:12])]
     view.refresh()
     settle(view)
-    items = [view.battle_scene.cards[("hand", card.uid)]
-             for card in sorted(player.hand, key=lambda card: card.hand_seq)]
+    items = sorted((view.battle_scene.cards[("hand", card.uid)] for card in player.hand),
+                   key=lambda item: item.x())
     assert len(items) == 12
     assert items[1].x() < items[0].x() + items[0].boundingRect().width()
+    assert items[1].x() - items[0].x() == 70
     assert items[-1].x() + items[-1].boundingRect().width() <= 1600
     shiki = view.battle_scene.cards[("shiki", 0, 0)]
     assert "力量" in shiki.shiki_text and "生命" in shiki.shiki_text
@@ -334,14 +335,20 @@ def test_hand_deck_text_contrast_and_tight_outer_margins(qapp, view):
     start(view, mulligan=False)
     view.apply_theme("light", THEMES["light"])
     for label in (view.enemy_hand_label, view.enemy_deck_label,
-                  view.own_deck_label, view.hand_caption):
+                  view.own_deck_label, view.hand_caption, view.phase_label,
+                  view.order_label, view.upgrade_label):
         assert f"color: {THEMES['light']['text']}" in label.styleSheet()
         assert "font-weight: 600" in label.styleSheet()
+    for button in (view.log_button, view.ready_button, view.result_back,
+                   view.end_turn_button):
+        assert button.testAttribute(Qt.WA_TranslucentBackground)
+        assert f"color: {THEMES['light']['text']}" in button.styleSheet()
     scene = view.battle_scene
-    assert scene.cards[("player", 0)].x() <= 4
+    assert scene.cards[("player", 0)].x() <= 1
     hand = max((item for key, item in scene.cards.items()
                 if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
-    assert hand.x() + hand.size.width() >= 1596
+    assert hand.x() + hand.size.width() >= 1598
+    assert scene.end_turn_item.x() + 104 >= 1597
 
 
 def test_player_item_has_original_avatar_orbs_and_badges(qapp, view):
@@ -529,8 +536,7 @@ def test_player_orb_overflow_and_turn_button_stay_bounded(qapp, view):
     assert view.end_turn_button.width() == view.end_turn_button.height() == 104
     assert "border-radius: 52px" in view.styleSheet()
     assert "text-align: center" in view.styleSheet()
-    assert view.end_turn_button.mask().contains(QPoint(52, 52))
-    assert not view.end_turn_button.mask().contains(QPoint(0, 0))
+    assert view.end_turn_button.mask().isNull()
 
 
 def test_battle_window_minimum_height_fits_common_900px_window(qapp, db, tmp_path):
@@ -624,6 +630,32 @@ def test_combat_zone_reuses_items_and_returns_them_to_preparation(qapp, view):
     assert combatant.pos() == origin
 
 
+def test_assault_timer_finishes_and_refreshes_public_state(qapp, view):
+    import time
+
+    start(view, mulligan=False)
+    view.timeline_timer.setInterval(1)
+    enemy = view.game.state.players[1]
+    before = enemy.health + enemy.shield + sum(
+        shiki.health + shiki.shield for shiki in enemy.shikigami)
+    assert view.assault(0)
+    deadline = time.monotonic() + 2
+    while view.timeline_queue and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.005)
+    qapp.processEvents()
+    assert not view.timeline_queue
+    after = enemy.health + enemy.shield + sum(
+        shiki.health + shiki.shield for shiki in enemy.shikigami)
+    assert after < before
+    player_item = view.battle_scene.cards[("player", 1)]
+    assert (player_item.health, player_item.shield) == (enemy.health, enemy.shield)
+    target_text = view.battle_scene.cards[("shiki", 1, 0)].shiki_text
+    assert f"生命 {enemy.shikigami[0].health}/{enemy.shikigami[0].max_health}" in target_text
+    assert any("战斗开始" in message for _owner, message in view.played_timeline)
+    assert view.end_turn_button.isEnabled()
+
+
 def test_scene_both_combatants_do_not_overlap_preparation(qapp, view):
     start(view, mulligan=False)
     view.game.state.players[0].combat_index = 0
@@ -699,7 +731,7 @@ def test_scene_loading_lifecycle(qapp, view):
 def test_opening_and_turn_start_banners(qapp, view):
     start(view)
     scene = view.battle_scene
-    assert scene.banner_item.toPlainText() == "你是先手"
+    assert scene.banner_item.toPlainText() == "己方先手"
     assert scene.banner_item.isVisible() and scene.banner_timer.isActive()
     scene.hide_banner()
     start(view, mulligan=False)
@@ -1033,7 +1065,7 @@ def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
     assert all(rect.center().y() < 600 for rect in rects)
     assert all(item.default_size.width() >= 170 for item in items)
     assert getattr(view, "order_label", None) is not None
-    assert view.order_label.text() == "你是先手"
+    assert view.order_label.text() == "己方先手"
     assert not view.order_label.isHidden()
 
 
@@ -1273,7 +1305,27 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
         f"敌方手牌\n{len(view.game.state.players[1].hand)} 张")
     assert view.enemy_deck_label.text() == f"敌方牌库\n{len(view.game.state.players[1].deck)} 张"
     assert view.own_deck_label.text() == f"己方牌库\n{len(view.game.state.players[0].deck)} 张"
-    assert view.hand_caption.text() == f"我方手牌 {len(view.game.current.hand)}/12张"
+    assert view.hand_caption.text() == f"己方手牌\n{len(view.game.current.hand)}/12 张"
+
+
+def test_preparation_spread_centers_combat_and_symmetric_hand_captions(qapp, view):
+    from client.gui.battle_scene import SCENE_HEIGHT, SCENE_WIDTH, SHIKI_SIZE, layout_positions
+
+    start(view, mulligan=False)
+    positions = layout_positions(view.game, view.viewer)
+    own_x = [positions[("shiki", 0, index)].x() for index in range(4)]
+    assert own_x[0] < 400
+    assert own_x[2] - own_x[1] > own_x[1] - own_x[0]
+    ready_center = (own_x[0] + own_x[-1] + SHIKI_SIZE.width()) / 2
+    combat_center = positions[("shiki", 0, 0)].x() + SHIKI_SIZE.width() / 2
+    view.game.state.players[0].combat_index = 0
+    combat_positions = layout_positions(view.game, view.viewer)
+    combat_center = combat_positions[("shiki", 0, 0)].x() + SHIKI_SIZE.width() / 2
+    assert ready_center == combat_center == SCENE_WIDTH / 2
+    enemy = positions[("enemy_hand_label",)]
+    own = positions[("hand_caption",)]
+    assert own.x() == enemy.x()
+    assert own.y() + enemy.y() + 64 == SCENE_HEIGHT
 
 
 def test_deck_count_labels_sit_right_of_card_backs(qapp, view):
@@ -1559,7 +1611,7 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
     assert f"来源 {db.shikigami[shiki.id].name}" in text
     assert "永久修正 力量 +1　生命 +4" in text
     assert "临时修正 力量 +2　生命 +5" in text
-    assert "战斗修正 力量 +3" in text
+    assert "战斗修正" not in text
     assert "形态：测试形态" in text and "形态原文" in text
     assert "觉醒：测试觉醒" in text and "觉醒原文" in text
     assert "延迟能力" in text and "on_battle_end" in text and "次数 2" in text
@@ -1615,8 +1667,8 @@ def test_secret_delayed_target_follows_holder_perspective(qapp, view, monkeypatc
 def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     scene = view.battle_scene
     assert scene.log_item.widget() is view.log_button
-    assert scene.log_item.x() == 4
-    assert scene.log_item.y() == 420
+    assert scene.log_item.x() == 1
+    assert scene.log_item.y() == 470
     assert scene.sceneRect().contains(scene.log_item.sceneBoundingRect())
 
 

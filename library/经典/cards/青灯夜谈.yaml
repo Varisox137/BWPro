@@ -1,0 +1,13 @@
+type: 法术
+name: 青灯夜谈
+level: 1
+rarity: R
+description: 检视牌库顶三张牌然后选择一张置入手牌。你每有1点鬼火便重复一次。清空你的鬼火。
+shikigami: 青行灯
+version_date: '20191212'
+id: '10011202'
+artwork:
+  images:
+  - path: 10011202.png
+    scale: 0.747
+    offset_y: -66

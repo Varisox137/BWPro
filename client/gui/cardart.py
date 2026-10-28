@@ -14,8 +14,10 @@ from io import BytesIO
 from pathlib import Path
 
 import yaml
-from PIL import Image
-from PySide6.QtGui import QPixmap
+from PIL import Image, ImageOps
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication
 
 from client.gui import portrait
 from client.gui.portrait import library_root
@@ -32,6 +34,41 @@ _ICON_RE = re.compile("|".join(_ICON_NAMES))
 _RENDER_LOCK = threading.RLock()
 _TRANSPARENT_ART = "__BWPRO_TRANSPARENT__"
 _SEAT_LEVEL_COLORS = ("yellow", "cyan", "purple", "red")
+
+
+def _placeholder_color() -> str:
+    app = QApplication.instance()
+    return "#e8e4f0" if app is not None and app.property("bwpro_theme") == "dark" else "#26221c"
+
+
+def _grayscale_artwork(image: Image.Image) -> Image.Image:
+    """仅灰白化插画，保留透明度，不改变牌框和数值组件。"""
+    source = image.convert("RGBA")
+    gray = ImageOps.grayscale(source)
+    gray = Image.blend(gray, Image.new("L", source.size, 235), 0.35)
+    result = gray.convert("RGBA")
+    result.putalpha(source.getchannel("A"))
+    return result
+
+
+def _paint_placeholder_name(pixmap: QPixmap, name: str, color: str, *, entity: bool) -> None:
+    """缺卡图配置时，在透明插画窗中央补上名称。"""
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    rect = (QRectF(pixmap.width() * 0.10, pixmap.height() * 0.12,
+                   pixmap.width() * 0.80, pixmap.height() * 0.58) if entity else
+            QRectF(pixmap.width() * 0.15, pixmap.height() * 0.18,
+                   pixmap.width() * 0.70, pixmap.height() * 0.40))
+    font = QFont("Microsoft YaHei", max(12, round(rect.height() / 5)), QFont.Normal)
+    painter.setFont(font)
+    metrics = painter.fontMetrics()
+    while metrics.horizontalAdvance(name) > rect.width() and font.pointSize() > 8:
+        font.setPointSize(font.pointSize() - 1)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+    painter.setPen(QColor(color))
+    painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, name)
+    painter.end()
 
 
 def seat_level_color(seat: int | None) -> str:
@@ -284,6 +321,9 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
         pixmap = QPixmap()
         if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
             raise ValueError("卡面 PNG 解码失败")
+        if transparent:
+            _paint_placeholder_name(pixmap, payload["name"],
+                                    payload.get("_placeholder_color", "#26221c"), entity=False)
         return pixmap
     except Exception:
         return None
@@ -309,6 +349,14 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
             if transparent:
                 entity.load_card_artwork = lambda _card, _lib: (
                     (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
+            if payload.get("_defeated"):
+                load_artwork = entity.load_card_artwork
+
+                def load_grayscale(card, lib):
+                    original, image = load_artwork(card, lib)
+                    return original, _grayscale_artwork(image)
+
+                entity.load_card_artwork = load_grayscale
             try:
                 if not transparent:
                     _preflight_card_artwork(library, art)
@@ -344,6 +392,9 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
         pixmap = QPixmap()
         if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
             raise ValueError("式神小卡 PNG 解码失败")
+        if transparent:
+            _paint_placeholder_name(pixmap, payload["name"],
+                                    payload.get("_placeholder_color", "#26221c"), entity=True)
         return pixmap
     except Exception:
         return None
@@ -504,6 +555,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(cdef, db, selected)
+        if fallback_art:
+            payload["_placeholder_color"] = _placeholder_color()
         if payload_overrides:
             payload.update(payload_overrides)
         for key in drop_keys:
@@ -579,17 +632,28 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(source, db, selected)
+        if fallback_art:
+            payload["_placeholder_color"] = "#f3efe8"
         payload["type"] = "形态" if form is not None else "式神"
         payload["evolve"] = awakened
         payload["_base_dir"] = (str(cache_dir) if fallback_art or not path
                                 else str(path.parent.parent / "images"))
+        defeated = bool(getattr(shiki, "defeated", False))
+        payload["_defeated"] = defeated
+        if defeated:
+            definition = db.shikigami[shiki.id]
+            power = max(0, definition.power + shiki.perm_power)
+            health = max(0, definition.health + shiki.perm_health)
+        else:
+            power = (shiki.eff_power if shiki.ext.get("power_zero")
+                     else shiki.eff_power - shiki.combat_power)
+            health = shiki.health
         state = {
             "level": shiki.level,
             "level_color": seat_level_color(seat),
-            "power": (shiki.eff_power if shiki.ext.get("power_zero")
-                      else shiki.eff_power - shiki.combat_power),
-            "health": shiki.health,
-            "combat_power": shiki.combat_power,
+            "power": power,
+            "health": health,
+            "combat_power": 0 if defeated else shiki.combat_power,
             "shield": shiki.shield,
             "art_scale": art.get("scale", 1.0),
         }

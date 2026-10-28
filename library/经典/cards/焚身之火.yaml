@@ -1,0 +1,13 @@
+type: 法术
+name: 焚身之火
+level: 3
+rarity: SR
+description: 使一个角色获得2#pj，然后对所有拥有#pj的敌方角色造成3点伤害。
+shikigami: 清姬
+version_date: '20191212'
+id: '10011406'
+artwork:
+  images:
+  - path: 10011406.png
+    scale: 0.747
+    offset_y: -75

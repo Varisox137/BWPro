@@ -1,0 +1,15 @@
+type: 形态
+name: 门前清
+level: 2
+rarity: R
+description: 当青蛙瓷器出击或被攻击时，[[运势4]]：获得2#hj。
+shikigami: 青蛙瓷器
+power: 2
+health: 9
+version_date: '20200423'
+id: '10011306'
+artwork:
+  images:
+  - path: 10011306.png
+    scale: 0.711
+    offset_y: -79

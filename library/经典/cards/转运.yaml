@@ -1,0 +1,15 @@
+type: 战斗
+name: 转运
+level: 3
+rarity: SR
+description: 攻击后[[运势4]]：随机弃两张手牌并再次使用此牌。
+shikigami: 青蛙瓷器
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10011307'
+artwork:
+  images:
+  - path: 10011307.png
+    scale: 0.711
+    offset_y: -62

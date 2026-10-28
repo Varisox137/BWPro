@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QMessageBox, QPushButton
 
 from client.gui import portrait
@@ -481,6 +482,47 @@ def test_entity_power_zero_does_not_subtract_combat_power(qapp, tmp_path, monkey
     assert seen["combat_power"] == 3
 
 
+def test_defeated_entity_uses_base_permanent_stats_and_grayscale_art(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(
+        id=100101, awakened=None, level=0, defeated=True, perm_power=2, perm_health=3,
+        eff_power=9, combat_power=4, health=0, shield=0, ext={})
+    seen = {}
+    monkeypatch.setattr(
+        cardart, "_cached_entity_pixmap",
+        lambda _key, payload, state, _layout, _root: seen.update(
+            payload=json.loads(payload), state=json.loads(state)))
+    cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "empty")
+    assert seen["state"]["power"] == 5
+    assert seen["state"]["health"] == 7
+    assert seen["state"]["combat_power"] == 0
+    assert seen["payload"]["_defeated"] is True
+    artwork = Image.new("RGBA", (2, 2), (180, 40, 20, 127))
+    gray = cardart._grayscale_artwork(artwork)
+    red, green, blue, alpha = gray.getpixel((0, 0))
+    assert red == green == blue and alpha == 127
+    assert red > 40
+
+
+def test_entity_pixmap_renders_combat_power_and_shield(qapp, tmp_path):
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    base = SimpleNamespace(id=100101, awakened=None, level=1, eff_power=3,
+                           combat_power=0, health=4, shield=0, ext={})
+    buffed = SimpleNamespace(id=100101, awakened=None, level=1, eff_power=6,
+                             combat_power=3, health=4, shield=2, ext={})
+    normal = cardart.entity_pixmap(base, database, library_dir=tmp_path / "empty")
+    combat = cardart.entity_pixmap(buffed, database, library_dir=tmp_path / "empty")
+    assert normal is not None and combat is not None
+    assert normal.toImage() != combat.toImage()
+
+
 def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
     image_path = _external_library(
         tmp_path,
@@ -893,6 +935,18 @@ def test_cardart_transparent_fallback_never_writes_disk(qapp, tmp_path, monkeypa
                                  cache_dir=cache_dir, display={"power+": 1})
     assert pixmap is not None and not pixmap.isNull()
     assert not cache_dir.exists()
+
+
+def test_cardart_fallback_draws_centered_name_with_theme_color(qapp):
+    from client.gui import cardart
+
+    assert hasattr(cardart, "_paint_placeholder_name")
+    pixmap = QPixmap(240, 336)
+    pixmap.fill(Qt.transparent)
+    cardart._paint_placeholder_name(pixmap, "占位卡名", "#26221c", entity=False)
+    image = pixmap.toImage()
+    assert any(image.pixelColor(x, y).alpha() for x in range(90, 151, 5)
+               for y in range(125, 190, 5))
 
 
 def test_card_widget_passes_level_color(qapp, db, monkeypatch):

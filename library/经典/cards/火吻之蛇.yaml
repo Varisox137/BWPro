@@ -1,0 +1,15 @@
+type: 形态
+name: 火吻之蛇
+level: 3
+rarity: SR
+description: 敌方回合开始时使所有敌方角色获得1#pj。敌方有#pj的式神降低等于其#pj的#ll。
+shikigami: 清姬
+power: 4
+health: 9
+version_date: '20191212'
+id: '10011408'
+artwork:
+  images:
+  - path: 10011408.png
+    scale: 0.711
+    offset_y: -78

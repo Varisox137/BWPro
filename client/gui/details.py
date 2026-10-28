@@ -44,7 +44,6 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
         f"护甲/破甲 {shiki.shield}　能量 {shiki.energy}　派系 {shiki.faction}",
         mods("永久修正", shiki.perm_power, shiki.perm_health),
         mods("临时修正", shiki.temp_power, shiki.temp_health),
-        mods("战斗修正", shiki.combat_power),
     ]
     dyn_power = int(shiki.ext.get("dyn_power", 0))
     dyn_health = int(shiki.ext.get("dyn_health", 0))

@@ -1,0 +1,15 @@
+type: 法术
+name: 剧毒之盾
+level: 1
+rarity: R
+description: '使一个己方式神获得2#hj且本回合获得‘使受到它战斗伤害的式神获得3#pj’。
+
+  [[响应]]：当你战斗区式神被攻击时，自动对其使用。'
+shikigami: 清姬
+version_date: '20191212'
+id: '10011403'
+artwork:
+  images:
+  - path: 10011403.png
+    scale: 0.747
+    offset_y: -60

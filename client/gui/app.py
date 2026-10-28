@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
 
     def set_theme(self, theme: str):
         self.theme = theme
+        QApplication.instance().setProperty("bwpro_theme", theme)
         self.setStyleSheet(qss(theme))
         self.theme_button.setIcon(_theme_icon(theme))
         self.theme_button.setIconSize(QSize(20, 20))

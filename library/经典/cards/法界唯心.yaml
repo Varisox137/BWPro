@@ -1,0 +1,15 @@
+type: 形态
+name: 法界唯心
+level: 3
+rarity: R
+description: 你对敌方的恢复#sm效果改为伤害效果。
+shikigami: 青坊主
+power: 5
+health: 6
+version_date: '20191212'
+id: '10011106'
+artwork:
+  images:
+  - path: 10011106.png
+    scale: 0.711
+    offset_y: -72

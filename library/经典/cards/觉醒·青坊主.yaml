@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·青坊主
+level: 3
+rarity: SR
+description: '恢复8#sm。
+
+  [[觉醒]]：当你恢复#sm时，对所有敌人造成1点伤害。'
+shikigami: 青坊主
+version_date: '20191212'
+id: '10011107'
+evolve: true
+health+: 2
+artwork:
+  images:
+  - path: 10011107.png
+    scale: 0.747
+    offset_y: -72

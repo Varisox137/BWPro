@@ -1,0 +1,15 @@
+type: 形态
+name: 不灭之火
+level: 3
+rarity: R
+description: 当此牌被消灭时，消耗1点鬼火，返回场上。
+shikigami: 青行灯
+power: 4
+health: 5
+version_date: '20191212'
+id: '10011206'
+artwork:
+  images:
+  - path: 10011206.png
+    scale: 0.711
+    offset_y: -97

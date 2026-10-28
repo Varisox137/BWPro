@@ -1,0 +1,13 @@
+type: 法术
+name: 百闻一得
+level: 2
+rarity: SR
+description: 弃掉一张‘明灯’，使一个己方最低等级的式神等级+1。若其等级已为3则改为抽一张牌。
+shikigami: 青行灯
+version_date: '20191212'
+id: '10011204'
+artwork:
+  images:
+  - path: 10011204.png
+    scale: 0.747
+    offset_y: -96

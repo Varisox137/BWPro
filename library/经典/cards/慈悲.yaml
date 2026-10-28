@@ -1,0 +1,13 @@
+type: 法术
+name: 慈悲
+level: 2
+rarity: R
+description: 使一个己方式神获得[[不屈]]。
+shikigami: 青坊主
+version_date: '20191212'
+id: '10011104'
+artwork:
+  images:
+  - path: 10011104.png
+    scale: 0.677
+    offset_y: -76

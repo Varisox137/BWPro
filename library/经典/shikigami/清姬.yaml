@@ -1,0 +1,17 @@
+type: 式神
+name: 清姬
+faction: 紫岩
+power: 4
+health: 4
+description: 清姬对无#pj角色造成的伤害会转化为等量的#pj。
+version_date: '20191212'
+id: '100114'
+artwork:
+  images:
+  - path: 100114.png
+    scale: 0.711
+    offset_y: -111
+portrait:
+  scale: 3.388
+  offset_x: -3
+  offset_y: 18

@@ -55,59 +55,59 @@ def display_hand(game, pi: int, viewer: int):
 
 def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     positions = {
-        ("phase",): QPointF(4, 180),
+        ("phase",): QPointF(1, 350),
         ("menu",): QPointF(1352, 16),
-        ("log",): QPointF(4, 420),
-        ("end_turn",): QPointF(1488, 400),
-        ("enemy_hand_label",): QPointF(1240, 190),
-        ("enemy_deck",): QPointF(1528, 228),
-        ("own_deck",): QPointF(1528, 608),
-        ("hand_caption",): QPointF(1130, 696),
+        ("log",): QPointF(1, 470),
+        ("end_turn",): QPointF(1493, 400),
+        ("enemy_hand_label",): QPointF(1240, 350),
+        ("enemy_deck",): QPointF(1530, 228),
+        ("own_deck",): QPointF(1530, 608),
+        ("hand_caption",): QPointF(1240, 486),
         ("ready",): QPointF(1328, 435),
         ("mulligan",): QPointF(730, 610),
-        ("turn_order",): QPointF(4, 230),
+        ("turn_order",): QPointF(1, 340),
         ("target_label",): QPointF(1120, 400),
         ("cancel_target",): QPointF(1120, 440),
         ("default_target",): QPointF(1120, 480),
-        ("error",): QPointF(4, 620),
+        ("error",): QPointF(1, 540),
         ("result_banner",): QPointF(500, 350),
         ("result_back",): QPointF(730, 470),
         ("upgrade_phase",): QPointF(650, 360),
     }
     for pi in (0, 1):
         top = pi != viewer
-        positions[("player", pi)] = QPointF(4, 4 if top else 766)
-        positions[("player_detail", pi)] = QPointF(4, 140 if top else 732)
+        positions[("player", pi)] = QPointF(1, 4 if top else 766)
+        positions[("player_detail", pi)] = QPointF(1, 140 if top else 732)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
                 1376 + index * 18, (220 + index * 4) if top else (600 - index * 4))
     if game is None:
         return positions
 
-    arc = (24, 0, 0, 24)
+    arc = (120, 60, 60, 120)
+    ready_x = (276, 501, 951, 1176)
     for pi, player in enumerate(game.state.players):
         top = pi != viewer
         for index, _shiki in enumerate(player.shikigami):
             if player.combat_index == index:
                 position = QPointF(726, 220 if top else 460)
             else:
-                position = QPointF(400 + index * 190,
-                                   arc[index] if top else (690 - arc[index]))
+                position = QPointF(ready_x[index], arc[index] if top else (690 - arc[index]))
             positions[("shiki", pi, index)] = position
         cards = display_hand(game, pi, viewer)
         centered = game.state.phase == "mulligan" and pi == viewer
         if centered:
             width = (len(cards) * MULLIGAN_HAND_SIZE.width()
                      + max(0, len(cards) - 1) * 16)
-        spacing = min(70, 460 / max(len(cards) - 1, 1))
-        right = SCENE_WIDTH - 4
+        spacing = 70
+        right = SCENE_WIDTH - 1
         for order, card in enumerate(cards):
             if centered:
                 x = (SCENE_WIDTH - width) / 2 + order * (MULLIGAN_HAND_SIZE.width() + 16)
                 y = 280
             else:
                 x = right - HAND_SIZE.width() - spacing * (len(cards) - 1 - order)
-                y = 16 if top else 728
+                y = 0 if top else 744
             positions[("hand", card.uid)] = QPointF(x, y)
     return positions
 
@@ -136,6 +136,7 @@ class BattleCardItem(QGraphicsObject):
         self.size = QSizeF(size)
         self.shiki_text = ""
         self.avatar_shape = "circle"
+        self.text_color = QColor("#26221c")
         self.player_name = ""
         self.health = self.max_health = self.shield = 0
         self.orb = self.assaults_left = 0
@@ -177,14 +178,14 @@ class BattleCardItem(QGraphicsObject):
             painter.setPen(QPen(QColor("#d9b96a"), 3))
             painter.setBrush(QColor(45, 55, 65, 220))
             painter.drawRect(rect)
-            painter.setPen(QColor("#f2e4bd"))
+            painter.setPen(self.text_color)
             painter.drawText(rect.adjusted(5, 5, -5, -5),
                              Qt.TextWordWrap | Qt.AlignCenter, self.shiki_text)
         elif self.key[0] == "hand" and self.revealed:
             painter.setPen(QPen(QColor("#d9b96a"), 2))
             painter.setBrush(QColor(45, 55, 65, 220))
             painter.drawRect(rect)
-            painter.setPen(QColor("#f2e4bd"))
+            painter.setPen(self.text_color)
             text = self.cdef.name if self.cdef is not None else "卡牌"
             painter.drawText(rect.adjusted(5, 5, -5, -5),
                              Qt.TextWordWrap | Qt.AlignCenter, text)
@@ -239,6 +240,7 @@ class BattleCardItem(QGraphicsObject):
                              else QColor(35, 40, 45, 180))
             painter.drawEllipse(orb)
         if self.orb_overflow:
+            painter.setPen(self.text_color)
             painter.drawText(QRectF(side_x + 76, avatar.top() + 4, 34, 20),
                              Qt.AlignLeft | Qt.AlignVCenter, f"×{self.orb}")
         attack = QRectF(side_x, avatar.top() + 30, 28, 28)
@@ -250,12 +252,14 @@ class BattleCardItem(QGraphicsObject):
         font.setBold(True)
         painter.setFont(font)
         text = f"鼓舞 +{self.inspire_power}/+{self.inspire_shield}"
-        painter.setPen(QColor(20, 26, 32, 240))
+        outline = QColor("#141121") if self.text_color.lightness() >= 128 else QColor("#f3efe8")
+        painter.setPen(outline)
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             painter.drawText(inspire.translated(dx, dy), Qt.AlignLeft | Qt.AlignVCenter, text)
-        painter.setPen(QColor("#fff4e0"))
+        painter.setPen(self.text_color)
         painter.drawText(inspire, Qt.AlignLeft | Qt.AlignVCenter, text)
         name = QRectF(rect.left(), rect.top() + 104, rect.width(), 22)
+        painter.setPen(self.text_color)
         painter.drawText(name, Qt.AlignLeft | Qt.AlignVCenter, self.player_name)
         painter.restore()
 
@@ -482,6 +486,15 @@ class BattleScene(QGraphicsScene):
         self.addItem(self.loading_background)
         self.loading = LoadingIndicator("正在准备对局", self.loading_item.setPlainText, self)
         self.drag_controller = BattleDragController(self)
+        self.text_color = "#26221c"
+
+    def set_text_color(self, color: str) -> None:
+        self.text_color = color
+        for item in self.cards.values():
+            item.text_color = QColor(color)
+            item.update()
+        for item in (self.banner_item, self.loading_item):
+            item.setDefaultTextColor(QColor(color))
 
     def show_banner(self, text: str, duration: int = 900) -> None:
         self.banner_item.setPlainText(text)
@@ -531,6 +544,8 @@ class BattleScene(QGraphicsScene):
     def add_control(self, widget, key: tuple, size=None):
         if size is not None:
             widget.setFixedSize(*size)
+        widget.setAttribute(Qt.WA_TranslucentBackground)
+        widget.setAutoFillBackground(False)
         if widget.inherits("QLabel"):
             widget.setStyleSheet(widget.styleSheet() + "background: transparent;")
         proxy = self.addWidget(widget)
@@ -789,6 +804,9 @@ class BattleScene(QGraphicsScene):
                 offset = (SCENE_WIDTH - left - right) / 2
                 for item in centered_items:
                     item.setPos(item.x() + offset, item.y())
+        for item in self.cards.values():
+            item.text_color = QColor(self.text_color)
+            item.update()
         own_hand_uids = {card.uid for card in game.state.players[viewer].hand}
         if self.phase != "mulligan" or self.mulligan_uid not in own_hand_uids:
             self.mulligan_uid = None

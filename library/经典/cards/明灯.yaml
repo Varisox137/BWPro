@@ -1,0 +1,15 @@
+type: 法术
+name: 明灯
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  你获得1点鬼火。'
+shikigami: 青行灯
+version_date: '20191212'
+id: '10011201'
+artwork:
+  images:
+  - path: 10011201.png
+    scale: 0.747
+    offset_y: -75

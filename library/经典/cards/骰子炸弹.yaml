@@ -1,0 +1,13 @@
+type: 法术
+name: 骰子炸弹
+level: 2
+rarity: R
+description: '[[运势1]]：对一个敌人造成等同于骰子点数的伤害。'
+shikigami: 青蛙瓷器
+version_date: '20191212'
+id: '10011305'
+artwork:
+  images:
+  - path: 10011305.png
+    scale: 0.747
+    offset_y: -58

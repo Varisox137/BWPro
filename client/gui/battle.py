@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QRegion
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QPushButton,
     QStackedWidget, QVBoxLayout, QWidget,
@@ -206,7 +206,6 @@ class HotseatView(QWidget):
             self.log_button, ("log",), (110, 36))
         self.end_turn_button = QPushButton("结束\n回合")
         self.end_turn_button.setObjectName("endTurnButton")
-        self.end_turn_button.setMask(QRegion(0, 0, 104, 104, QRegion.Ellipse))
         self.end_turn_button.clicked.connect(self.end_turn)
         self.battle_scene.end_turn_item = self.battle_scene.add_control(
             self.end_turn_button, ("end_turn",), (104, 104))
@@ -242,8 +241,10 @@ class HotseatView(QWidget):
         self.cancel_target_button.clicked.connect(self.cancel_targeting)
         self.default_target_button.clicked.connect(self.confirm_default_target)
         self.hand_caption = QLabel()
-        self.battle_scene.add_control(self.hand_caption, ("hand_caption",), (280, 28))
+        self.hand_caption.setAlignment(Qt.AlignCenter)
+        self.battle_scene.add_control(self.hand_caption, ("hand_caption",), (130, 64))
         self.ready_button = QPushButton("确认调度")
+        self.ready_button.setObjectName("battleSmall")
         self.ready_button.clicked.connect(self.ready)
         self.battle_scene.ready_item = self.battle_scene.add_control(
             self.ready_button, ("ready",), (140, 34))
@@ -274,6 +275,7 @@ class HotseatView(QWidget):
         self.battle_scene.add_control(self.result_banner, ("result_banner",), (600, 90))
         self.result_banner.hide()
         self.result_back = QPushButton("返回主菜单")
+        self.result_back.setObjectName("battleSmall")
         self.result_back.clicked.connect(self.return_to_menu)
         self.battle_scene.add_control(self.result_back, ("result_back",), (140, 38))
         self.result_back.hide()
@@ -319,11 +321,16 @@ class HotseatView(QWidget):
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
+        self.battle_scene.set_text_color(colors["text"])
         self.battle_scene.loading_background.setBrush(QColor(colors["bg"]))
         self.setStyleSheet(f"""
-            QLabel#viewTitle, QLabel#phaseLabel {{ color: {colors['gold']}; font-size: 24px; }}
+            QLabel#viewTitle {{ color: {colors['gold']}; font-size: 24px; }}
+            QLabel#phaseLabel {{
+                color: {colors['text']}; font-size: 24px; font-weight: 600;
+                background: transparent;
+            }}
             QLabel#turnOrderLabel, QLabel#upgradePhaseLabel {{
-                color: {colors['gold']}; font-size: 34px; font-weight: 600;
+                color: {colors['text']}; font-size: 34px; font-weight: 600;
                 background: transparent;
             }}
             QLabel#enemyHandBack, QLabel#deckCount {{
@@ -337,16 +344,44 @@ class HotseatView(QWidget):
                 background: {colors['bg']}; border-color: {colors['line']};
                 color: {colors['dim']};
             }}
-            QLabel#targetHint {{ color: {colors['blue']}; }}
-            QLabel#battleError {{ color: #c44; }}
-            QLabel#resultBanner {{ color: {colors['gold']}; font-size: 34px; padding: 16px; }}
+            QLabel#targetHint, QLabel#battleError, QLabel#resultBanner {{
+                color: {colors['text']}; background: transparent; font-weight: 600;
+            }}
+            QLabel#resultBanner {{ font-size: 34px; padding: 16px; }}
             QListWidget#battleLog {{ background: {colors['panel']}; color: {colors['text']}; }}
             QPushButton#battleSmall {{ padding: 4px; font-size: 12px; text-align: center; }}
         """)
         for label in (self.enemy_hand_label, self.enemy_deck_label,
-                      self.own_deck_label, self.hand_caption):
+                      self.own_deck_label, self.hand_caption,
+                      self.target_label, self.error_label):
             label.setStyleSheet(
                 f"background: transparent; color: {colors['text']}; font-weight: 600;")
+        self.phase_label.setStyleSheet(
+            f"background: transparent; color: {colors['text']}; "
+            "font-size: 24px; font-weight: 600;")
+        for label in (self.order_label, self.upgrade_label):
+            label.setStyleSheet(
+                f"background: transparent; color: {colors['text']}; "
+                "font-size: 34px; font-weight: 600;")
+        self.result_banner.setStyleSheet(
+            f"background: transparent; color: {colors['text']}; "
+            "font-size: 34px; font-weight: 600; padding: 16px;")
+        for item in self.battle_scene.items():
+            button = item.widget() if hasattr(item, "widget") else None
+            if isinstance(button, QPushButton) and button.objectName() == "battleSmall":
+                button.setStyleSheet(f"""
+                    QPushButton {{ background: {colors['panel']}; color: {colors['text']};
+                        border: 1px solid {colors['gold']}; border-radius: 6px;
+                        padding: 4px; font-size: 12px; text-align: center; }}
+                    QPushButton:hover {{ background: {colors['panel2']}; }}
+                """)
+        self.end_turn_button.setStyleSheet(f"""
+            QPushButton {{ background: {colors['panel2']}; color: {colors['text']};
+                border: 3px solid {colors['gold2']}; border-radius: 52px;
+                font-size: 18px; text-align: center; padding: 0; }}
+            QPushButton:disabled {{ background: {colors['bg']}; color: {colors['dim']};
+                border-color: {colors['line']}; }}
+        """)
 
     def start_hotseat(self) -> bool:
         first = DeckSelectDialog(self.db, self.store_path, "玩家A", self)
@@ -497,7 +532,7 @@ class HotseatView(QWidget):
         state = game.state
         phase_names = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "对战阶段"}
         self.phase_label.setText(f"{phase_names.get(state.phase, state.phase)}　回合 {state.turn}")
-        self.order_label.setText("你是先手" if self.viewer == state.active else "你是后手")
+        self.order_label.setText("己方先手" if self.viewer == state.active else "己方后手")
         self.order_label.setVisible(state.phase == "mulligan")
         self.upgrade_label.setVisible(state.phase == "upgrade")
         enemy = state.players[1 - self.viewer]
@@ -505,7 +540,7 @@ class HotseatView(QWidget):
         self.enemy_hand_label.setText(f"敌方手牌\n{len(enemy.hand)} 张")
         self.enemy_deck_label.setText(f"敌方牌库\n{len(enemy.deck)} 张")
         self.own_deck_label.setText(f"己方牌库\n{len(own.deck)} 张")
-        self.hand_caption.setText(f"我方手牌 {len(own.hand)}/12张")
+        self.hand_caption.setText(f"己方手牌\n{len(own.hand)}/12 张")
         inputs = self._inputs_open()
         self.battle_scene.legal_targets = list(self.legal_targets)
         info = {} if state.pending_choice else self.hand_info()
@@ -516,7 +551,7 @@ class HotseatView(QWidget):
             self.battle_scene.show_banner("回合开始")
         self._last_turn_key = turn_key
         if self._opening_banner_pending:
-            order_text = "你是先手" if self.viewer == state.active else "你是后手"
+            order_text = "己方先手" if self.viewer == state.active else "己方后手"
             self.battle_scene.show_banner(order_text, 1200)
             self._opening_banner_pending = False
         self.end_turn_button.setEnabled(inputs and state.phase == "battle")

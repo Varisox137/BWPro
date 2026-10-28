@@ -1,0 +1,15 @@
+type: 形态
+name: 禅心
+level: 1
+rarity: SR
+description: 每回合一次，当你恢复#sm时，抽一张牌。
+shikigami: 青坊主
+power: 1
+health: 6
+version_date: '20191212'
+id: '10011102'
+artwork:
+  images:
+  - path: 10011102.png
+    scale: 0.711
+    offset_y: -73

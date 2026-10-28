@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·青蛙瓷器
+level: 3
+rarity: SSR
+description: '[[觉醒]]：青蛙瓷器在你[[运势]]判定成功过的回合获得2#ll。你[[运势]]判定成功后效果触发两次。'
+shikigami: 青蛙瓷器
+version_date: '20191212'
+evolve: true
+power+: 2
+health+: 2
+id: '10011308'
+artwork:
+  images:
+  - path: 10011308.png
+    scale: 0.724
+    offset_y: -75

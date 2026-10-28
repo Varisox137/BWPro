@@ -1,0 +1,13 @@
+type: 法术
+name: 佛光
+level: 2
+rarity: R
+description: 为一个角色恢复3#sm，然后为其操控者的所有角色恢复3#sm。
+shikigami: 青坊主
+version_date: '20191212'
+id: '10011103'
+artwork:
+  images:
+  - path: 10011103.png
+    scale: 0.747
+    offset_y: -62

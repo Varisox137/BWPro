@@ -1,0 +1,15 @@
+type: 法术
+name: 无名之毒
+level: 2
+rarity: R
+description: '[[瞬发]]
+
+  [[投射]]：造成4点伤害。'
+shikigami: 清姬
+version_date: '20191212'
+id: '10011405'
+artwork:
+  images:
+  - path: 10011405.png
+    scale: 0.747
+    offset_y: -62

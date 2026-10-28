@@ -1,0 +1,15 @@
+type: 形态
+name: 岭上开花
+level: 1
+rarity: R
+description: 当你[[运势]]判定成功时，青蛙瓷器获得1#ll。
+shikigami: 青蛙瓷器
+power: 2
+health: 7
+version_date: '20191212'
+id: '10011302'
+artwork:
+  images:
+  - path: 10011302.png
+    scale: 0.711
+    offset_y: -76

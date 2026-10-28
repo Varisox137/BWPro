@@ -1,0 +1,15 @@
+type: 形态
+name: 九莲宝灯
+level: 1
+rarity: SR
+description: '[[增强]]：本局游戏你投骰子每投出过一个1-6中不重复数字时，此牌便获得+1#ll与+1#sm。'
+shikigami: 青蛙瓷器
+power: 3
+health: 3
+version_date: '20191212'
+id: '10011303'
+artwork:
+  images:
+  - path: 10011303.png
+    scale: 0.711
+    offset_y: -70

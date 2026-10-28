@@ -1,0 +1,15 @@
+type: 法术
+name: 蛇行击
+level: 1
+rarity: R
+description: '[[瞬发]]，[[弹回]]
+
+  对一个式神造成2点伤害。'
+shikigami: 清姬
+version_date: '20200624'
+id: '10011401'
+artwork:
+  images:
+  - path: 10011401.png
+    scale: 0.747
+    offset_y: -92

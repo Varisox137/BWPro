@@ -1,0 +1,13 @@
+type: 法术
+name: 淬毒
+level: 1
+rarity: R
+description: 对所有敌方角色造成2点伤害。
+shikigami: 清姬
+version_date: '20191212'
+id: '10011402'
+artwork:
+  images:
+  - path: 10011402.png
+    scale: 0.747
+    offset_y: -82

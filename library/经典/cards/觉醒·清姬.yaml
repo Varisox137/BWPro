@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·清姬
+level: 3
+rarity: SSR
+description: '[[觉醒]]：清姬对无#pj角色造成的伤害会转化为等量的#pj。敌方角色的#pj不会在回合开始时清除。'
+shikigami: 清姬
+version_date: '20191212'
+evolve: true
+power+: 2
+health+: 2
+id: '10011407'
+artwork:
+  images:
+  - path: 10011407.png
+    scale: 0.747
+    offset_y: -69

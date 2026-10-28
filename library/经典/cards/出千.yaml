@@ -1,0 +1,15 @@
+type: 战斗
+name: 出千
+level: 1
+rarity: R
+description: '[[运势4]]：将一张‘出千’置入手牌。'
+shikigami: 青蛙瓷器
+power+: 0
+shield+: 1
+version_date: '20191212'
+id: '10011301'
+artwork:
+  images:
+  - path: 10011301.png
+    scale: 0.711
+    offset_y: -80

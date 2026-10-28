@@ -1,0 +1,15 @@
+type: 法术
+name: 舍生
+level: 2
+rarity: SSR
+description: '[[瞬发]]。牺牲青坊主，本回合你免疫所有伤害。
+
+  [[响应]]：当你将受到致命伤害时，自动使用此牌。'
+shikigami: 青坊主
+version_date: '20191212'
+id: '10011105'
+artwork:
+  images:
+  - path: 10011105.png
+    scale: 0.784
+    offset_y: -64
