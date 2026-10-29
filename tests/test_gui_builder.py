@@ -1521,6 +1521,43 @@ def test_cardart_truncated_disk_png_is_regenerated(qapp, tmp_path):
     cardart.clear_cardart_caches()
 
 
+def test_entity_source_only_invalidates_entity_cache(qapp, tmp_path):
+    from client.gui import cardart
+
+    assets = tmp_path / "assets"
+    source = assets.parent / "bwpdiy" / "render" / "entity.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("A", encoding="utf-8")
+    first = cardart._renderer_resources(assets)
+    first_entity = cardart._entity_renderer_resources(assets)
+    source.write_text("B", encoding="utf-8")
+    assert cardart._renderer_resources(assets) == first
+    assert cardart._entity_renderer_resources(assets) != first_entity
+
+
+def test_unleveled_entity_art_ignores_all_stat_badges(qapp, tmp_path):
+    from client.gui import cardart
+
+    _external_library(
+        tmp_path,
+        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n",
+    )
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+
+    def render(**stats):
+        values = dict(id=100101, awakened=None, level=0, eff_power=3,
+                      combat_power=0, health=4, shield=0, ext={})
+        values.update(stats)
+        pixmap = cardart.entity_pixmap(
+            SimpleNamespace(**values), database, library_dir=tmp_path / "library")
+        assert pixmap is not None
+        return pixmap.toImage()
+
+    assert render() == render(eff_power=99, combat_power=7, health=88, shield=6)
+
+
 def test_cardart_renderer_resources_change_cache_key(qapp, tmp_path, monkeypatch):
     from pathlib import Path
     from client.gui import cardart

@@ -3546,7 +3546,11 @@ class Game:
     def assault_error(self, pi: int, index: int, *, check_orb: bool = True) -> str | None:
         """返回出击合法性错误；不检查阶段与目标，不变更状态。"""
         p = self.state.players[pi]
-        s = self._own_shikigami(p, index)
+        if not 0 <= index < len(p.shikigami):
+            return "式神序号无效"
+        s = p.shikigami[index]
+        if s.defeated or s.despawned:
+            return f"{self.db.shikigami[s.id].name} 无法行动（气绝/已离场）"
         if not s.in_play:
             return f"{self.db.shikigami[s.id].name} 未在场（0 级），不能出击"
         if getattr(self.db.shikigami[s.id], "no_attack", False):

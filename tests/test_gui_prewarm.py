@@ -82,6 +82,7 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     assert len(manifest["entries"]) == 2
     assert all(entry["config_sha256"] and entry["art_sha256"] for entry in manifest["entries"])
     assert all(entry["definition_sha256"] for entry in manifest["entries"])
+    assert manifest["entity_renderer_resources"]
 
     config = tmp_path / "library" / "项目" / "cards" / "card.yaml"
     config.write_text(config.read_text(encoding="utf-8") + "\n# updated\n", encoding="utf-8")

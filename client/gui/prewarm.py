@@ -47,7 +47,8 @@ def _manifest_current(cache_dir: Path, manifest: dict) -> bool:
     except (OSError, ValueError, TypeError):
         return False
     return all(current.get(key) == manifest[key]
-               for key in ("version", "renderer_version", "renderer_resources", "entries"))
+               for key in ("version", "renderer_version", "renderer_resources",
+                           "entity_renderer_resources", "entries"))
 
 
 def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = None,
@@ -70,6 +71,7 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
     root_text = str(portrait.bwpdiy_root().resolve())
     assets, _library, _render = cardart._renderer(root_text)
     renderer_resources = cardart._renderer_resources(assets, art_context)
+    entity_renderer_resources = cardart._entity_renderer_resources(assets, art_context)
     for kind, definition in definitions:
         config, path = portrait._project_config(
             library_dir, kind, definition.id, definition.name, definition.version,
@@ -87,10 +89,11 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
         })
     entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
     manifest = {
-        "version": 3,
+        "version": 4,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "renderer_version": _renderer_version(),
         "renderer_resources": renderer_resources,
+        "entity_renderer_resources": entity_renderer_resources,
         "entries": entries,
     }
     if not clear and _manifest_current(cache_dir, manifest):

@@ -220,6 +220,23 @@ def _renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
     return resources
 
 
+def _entity_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
+    """小卡额外跟踪渲染源码，避免其实现更新牵连普通大卡缓存。"""
+    if cache_context is not None and "entity_renderer_resources" in cache_context:
+        return cache_context["entity_renderer_resources"]
+    digest = hashlib.sha256(_renderer_resources(assets, cache_context).encode("ascii"))
+    for path in sorted((assets.parent / "bwpdiy" / "render").rglob("*.py")):
+        digest.update(str(path).encode("utf-8"))
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            digest.update(b"<unreadable>")
+    resources = digest.hexdigest()
+    if cache_context is not None:
+        cache_context["entity_renderer_resources"] = resources
+    return resources
+
+
 def _preflight_card_artwork(library, art: dict) -> None:
     with Image.open(art["path"]) as image:
         if image.width * image.height > portrait.MAX_RENDER_PIXELS:
@@ -721,7 +738,7 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         from bwpdiy import __version__
 
         layout = _layouts(root_text, _layout_fingerprint(assets))["对局式神"]
-        resources = _renderer_resources(assets, cache_context)
+        resources = _entity_renderer_resources(assets, cache_context)
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True,
                                   separators=(",", ":"), allow_nan=False)
         state_json = json.dumps(state, ensure_ascii=False, sort_keys=True,
