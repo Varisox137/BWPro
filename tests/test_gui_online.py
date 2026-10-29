@@ -222,6 +222,18 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     battle.close()
 
 
+def test_online_actions_remain_available_during_timeline(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[{"m": "结算"}])
+    assert battle.timeline_queue
+    assert battle._can_send({"op": "end_turn"})
+    battle._awaiting_state = True
+    assert not battle._can_send({"op": "end_turn"})
+    battle.close()
+
+
 def test_online_enemy_turn_blocks_all_active_inputs(qapp, db, make_game):
     game = make_game(mulligan=False)
     game.state.active = 1

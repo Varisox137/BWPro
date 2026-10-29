@@ -599,12 +599,12 @@ class HotseatView(QWidget):
 
     def _inputs_open(self) -> bool:
         return (self.game is not None and not self._handoff_pending
-                and not self.timeline_queue and self.game.state.winner is None
+                and self.game.state.winner is None
                 and self.game.state.pending_choice is None
                 and self.pending_command is None)
 
     def apply_command(self, command: dict) -> bool:
-        if self.game is None or self._handoff_pending or self.timeline_queue:
+        if self.game is None or self._handoff_pending:
             return False
         try:
             self.game.apply(command)

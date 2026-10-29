@@ -2016,15 +2016,11 @@ def test_play_method_and_second_target(qapp, db, view):
     assert view.pending_command is None
 
 
-def test_timeline_playback_blocks_new_commands(qapp, view):
-    start(view, mulligan=False)
-    game = view.game
-    assert view.end_turn()
+def test_actions_remain_available_during_timeline(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    view.upgrade(1)
     assert view.timeline_queue
-    assert not view.end_turn_button.isEnabled()
-    assert not view.end_turn()
-    assert game.state.active == 1
-    settle(view)
+    assert view._inputs_open()
     assert view.end_turn_button.isEnabled()
 
 

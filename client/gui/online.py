@@ -186,7 +186,7 @@ class OnlineBattleView(HotseatView):
                 self.set_state(*deferred)
 
     def _can_send(self, command: dict) -> bool:
-        if self.game is None or self._awaiting_state or self.timeline_queue:
+        if self.game is None or self._awaiting_state:
             return False
         state = self.game.state
         op = command.get("op")
