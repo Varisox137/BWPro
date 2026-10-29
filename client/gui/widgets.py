@@ -203,7 +203,7 @@ class CardDetailDialog(QDialog):
         self.card_widget.setMinimumHeight(560)
         self.detail_top.addWidget(self.card_widget, 0, Qt.AlignLeft | Qt.AlignTop)
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
-            card_mechanisms(cdef, runtime), self, width=360, font_scale=0.85)
+            card_mechanisms(cdef, runtime), self, chars_per_line=15, font_scale=0.85)
         if self.mechanism_panel is not None:
             self.detail_top.addWidget(self.mechanism_panel, 1)
             self.setMinimumWidth(900)

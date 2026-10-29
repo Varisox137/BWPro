@@ -41,8 +41,8 @@ def test_card_detail_renders_keyword_mechanisms(qapp):
 def test_card_detail_places_card_and_scrollable_mechanisms_side_by_side(qapp, monkeypatch):
     seen = []
 
-    def fake_pixmap(_name, _frame, _text, _root, width=None, font_scale=1.0):
-        seen.append((width, font_scale))
+    def fake_pixmap(_name, _frame, _text, _root, chars_per_line=None, font_scale=1.0):
+        seen.append((chars_per_line, font_scale))
         return QPixmap(360, 220)
 
     monkeypatch.setattr("client.gui.mechanisms._mechanism_pixmap", fake_pixmap)
@@ -51,7 +51,7 @@ def test_card_detail_places_card_and_scrollable_mechanisms_side_by_side(qapp, mo
     dialog = CardDetailDialog(cdef, db)
     assert dialog.detail_top.itemAt(0).widget() is dialog.card_widget
     assert dialog.detail_top.itemAt(1).widget() is dialog.mechanism_panel
-    assert seen and all(args == (360, 0.85) for args in seen)
+    assert seen and all(args == (15, 0.85) for args in seen)
     dialog.resize(1000, 800)
     dialog.show()
     qapp.processEvents()
