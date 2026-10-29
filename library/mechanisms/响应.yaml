@@ -1,0 +1,5 @@
+name: 响应
+frame: skill
+text: 敌方回合满足条件时，会自动消耗所需鬼火并使用此牌。
+badge: null
+version_date: '20191212'

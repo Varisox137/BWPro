@@ -1,0 +1,5 @@
+name: 运势
+frame: skill
+text: 投出一颗骰子，若骰子点数大于或等于判定值，产生对应效果。
+badge: null
+version_date: '20191212'

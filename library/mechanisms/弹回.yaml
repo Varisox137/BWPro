@@ -1,0 +1,5 @@
+name: 弹回
+frame: skill
+text: 使用后将此牌回手并失去此能力。
+badge: null
+version_date: '20191212'

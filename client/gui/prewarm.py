@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 from client.gui import cardart, portrait
 from client.gui.cardart import card_pixmap, entity_pixmap
-from client.gui.portrait import shikigami_portrait
 
 MANIFEST_NAME = "manifest.json"
 
@@ -42,9 +41,18 @@ def _definition_sha256(definition) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _manifest_current(cache_dir: Path, manifest: dict) -> bool:
+    try:
+        current = json.loads((cache_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    return all(current.get(key) == manifest[key]
+               for key in ("version", "renderer_version", "renderer_resources", "entries"))
+
+
 def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = None,
                 on_progress=None, clear: bool = False) -> list[dict]:
-    """为全部已实装定义增量建缓存；未变化内容由 cardart 缓存键直接复用。"""
+    """内容未变化时直接复用磁盘缓存，否则增量重建全部静态卡图。"""
     library_dir = library_dir or portrait.library_root()
     cache_dir = cache_dir or Path.home() / ".bwpro" / "cardart"
     if clear:
@@ -57,18 +65,16 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
     ]
     entries = []
     art_context = {}
+    config_fingerprint = portrait._config_fingerprint(library_dir)
+    art_context["portrait_config_fingerprint"] = config_fingerprint
+    root_text = str(portrait.bwpdiy_root().resolve())
+    assets, _library, _render = cardart._renderer(root_text)
+    renderer_resources = cardart._renderer_resources(assets, art_context)
     for kind, definition in definitions:
         config, path = portrait._project_config(
-            library_dir, kind, definition.id, definition.name, definition.version)
+            library_dir, kind, definition.id, definition.name, definition.version,
+            fingerprint=config_fingerprint)
         config = config or {}
-        card_pixmap(definition, db, cache_context=art_context)
-        if kind == "shikigami":
-            shiki = SimpleNamespace(
-                id=definition.id, awakened=None, level=0,
-                eff_power=definition.power, combat_power=0,
-                health=definition.health, shield=0, ext={})
-            entity_pixmap(shiki, db, height=210, cache_context=art_context)
-            shikigami_portrait(definition, size=96)
         entries.append({
             "id": definition.id,
             "kind": kind,
@@ -79,16 +85,29 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
             "art_sha256": (_art_sha256(config, path, definition.name)
                            if config and path is not None else ""),
         })
-        if on_progress is not None:
-            on_progress(len(entries), len(definitions))
     entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
-    cache_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "version": 2,
+        "version": 3,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "renderer_version": _renderer_version(),
+        "renderer_resources": renderer_resources,
         "entries": entries,
     }
+    if not clear and _manifest_current(cache_dir, manifest):
+        if on_progress is not None:
+            on_progress(len(entries), len(definitions))
+        return entries
+    for index, (kind, definition) in enumerate(definitions, 1):
+        card_pixmap(definition, db, cache_context=art_context)
+        if kind == "shikigami":
+            shiki = SimpleNamespace(
+                id=definition.id, awakened=None, level=0,
+                eff_power=definition.power, combat_power=0,
+                health=definition.health, shield=0, ext={})
+            entity_pixmap(shiki, db, height=210, cache_context=art_context, disk_cache=True)
+        if on_progress is not None:
+            on_progress(index, len(definitions))
+    cache_dir.mkdir(parents=True, exist_ok=True)
     (cache_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return entries

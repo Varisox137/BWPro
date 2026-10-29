@@ -13,4 +13,4 @@ versions:
         # 不消耗鬼火（cost: 0）。[鼓舞]：{获得+2战力与+2护甲}——basic_boost 出击加成通道
         steps:
           - {op: basic_boost, power: 2, shield: 2}
-      text: "不消耗鬼火。[鼓舞]：{获得+2战力与+2护甲。}"
+      text: "不消耗鬼火。[鼓舞]：{获得+2力量与+2护甲。}"

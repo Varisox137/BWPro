@@ -1,0 +1,5 @@
+name: 穿刺
+frame: skill
+text: 即将造成伤害时，移除目标的护甲和[[屏障]]。
+badge: null
+version_date: '20191212'

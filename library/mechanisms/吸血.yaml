@@ -1,0 +1,5 @@
+name: 吸血
+frame: skill
+text: 具有[[吸血]]的卡牌造成伤害时，其牌手恢复等量的生命。
+badge: null
+version_date: '20261029'

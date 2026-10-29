@@ -162,6 +162,25 @@ def _renderer(root_text: str):
     return assets, AssetLibrary(assets), render_card
 
 
+def _layout_fingerprint(assets: Path) -> tuple:
+    path = assets / "layout.json"
+    try:
+        stat = path.stat()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ()
+    return stat.st_mtime_ns, stat.st_size, digest
+
+
+@lru_cache(maxsize=4)
+def _layouts(root_text: str, fingerprint: tuple):
+    del fingerprint
+    assets, _library, _render = _renderer(root_text)
+    from bwpdiy.render.layout import load_layouts
+
+    return load_layouts(assets)
+
+
 _RESOURCE_DIRS = ("duo", "factions", "fonts", "frames", "icons", "levels",
                   "mech", "rarity", "signs", "stats")
 
@@ -484,6 +503,28 @@ def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
     return _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
 
 
+@lru_cache(maxsize=256)
+def _cached_static_entity_pixmap(cache_path_text: str, payload_json: str, state_json: str,
+                                 layout_json: str, root_text: str,
+                                 height: int | None = None) -> QPixmap | None:
+    """基础小卡可跨进程复用；运行时小卡仍只使用内存缓存。"""
+    cache_path = Path(cache_path_text)
+    try:
+        cached = QPixmap(str(cache_path))
+        if not cached.isNull():
+            return cached
+    except Exception:
+        pass
+    pixmap = _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
+    if pixmap is None:
+        return None
+    try:
+        _write_card_png_atomic(pixmap, cache_path)
+    except Exception:
+        pass
+    return pixmap
+
+
 def _validate_layout(layout: dict) -> None:
     elements = layout.get("elements", {})
     if not isinstance(elements, dict) or len(elements) > 64:
@@ -568,9 +609,9 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)
         from bwpdiy import __version__
-        from bwpdiy.render.layout import get_type_layout, load_layouts, merge_card_layout
+        from bwpdiy.render.layout import get_type_layout, merge_card_layout
 
-        base_layout = get_type_layout(load_layouts(assets), payload["type"])
+        base_layout = get_type_layout(_layouts(root_text, _layout_fingerprint(assets)), payload["type"])
         layout = merge_card_layout(base_layout, config.get("layout"))
         _validate_layout(layout)
         resources = _renderer_resources(assets, cache_context)
@@ -608,8 +649,8 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
 
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   library_dir: Path | None = None, cache_dir: Path | None = None,
-                  cache_context: dict | None = None,
-                  height: int | None = None) -> QPixmap | None:
+                  cache_context: dict | None = None, height: int | None = None,
+                  disk_cache: bool = False) -> QPixmap | None:
     """以 BWPDIY render_entity 绘制对局小卡，保留当前战斗状态。"""
     try:
         awakened = shiki.awakened is not None
@@ -617,8 +658,15 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         library_dir = library_dir or library_root()
         cache_dir = cache_dir or Path.home() / ".bwpro" / "cardart"
         if form is None and not awakened:
+            fingerprint = None
+            if cache_context is not None:
+                if "portrait_config_fingerprint" not in cache_context:
+                    cache_context["portrait_config_fingerprint"] = \
+                        portrait._config_fingerprint(library_dir)
+                fingerprint = cache_context["portrait_config_fingerprint"]
             config, path = portrait._project_config(
-                library_dir, "shikigami", source.id, source.name, source.version)
+                library_dir, "shikigami", source.id, source.name, source.version,
+                fingerprint=fingerprint)
             config_sha256 = (hashlib.sha256(path.read_bytes()).hexdigest()
                              if config is not None else None)
         else:
@@ -671,9 +719,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)
         from bwpdiy import __version__
-        from bwpdiy.render.layout import load_layouts
 
-        layout = load_layouts(assets)["对局式神"]
+        layout = _layouts(root_text, _layout_fingerprint(assets))["对局式神"]
         resources = _renderer_resources(assets, cache_context)
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True,
                                   separators=(",", ":"), allow_nan=False)
@@ -685,6 +732,10 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             payload_json, layout_json, config_sha256 or "fallback", art["path"],
             __version__, resources, root_text, cache_context, height)
         size_args = () if height is None else (height,)
+        if disk_cache:
+            return _cached_static_entity_pixmap(
+                str(cache_dir / f"{cache_key}.png"), payload_json, state_json,
+                layout_json, root_text, *size_args)
         return _cached_entity_pixmap(
             cache_key, payload_json, state_json, layout_json, root_text, *size_args)
     except Exception:
@@ -721,7 +772,9 @@ def clear_cardart_caches() -> None:
     _cached_card_pixmap.cache_clear()
     _cached_runtime_card_pixmap.cache_clear()
     _cached_entity_pixmap.cache_clear()
+    _cached_static_entity_pixmap.cache_clear()
     _card_config_index.cache_clear()
+    _layouts.cache_clear()
     _renderer.cache_clear()
     portrait._config_index.cache_clear()
     portrait._portrait_pixmap.cache_clear()

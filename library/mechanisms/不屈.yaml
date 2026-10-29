@@ -1,0 +1,5 @@
+name: 不屈
+frame: skill
+text: 生命大于1时，至多只会受到使其生命减少为1的伤害。生效后移除。
+badge: null
+version_date: '20191212'

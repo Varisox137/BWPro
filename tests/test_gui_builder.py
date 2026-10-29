@@ -871,6 +871,44 @@ def test_entity_native_height(qapp, tmp_path, monkeypatch):
     assert pixmap is not None and pixmap.height() == 210
 
 
+def test_entity_disk_cache_survives_memory_cache_clear(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=0, faction="红莲",
+                            perm_power=0, perm_health=0, eff_power=3,
+                            combat_power=0, health=4, shield=0, ext={})
+    calls = []
+
+    def render(*args):
+        calls.append(args)
+        return QPixmap(20, 30)
+
+    monkeypatch.setattr(cardart, "_render_entity_pixmap", render)
+    fingerprints = []
+    original_fingerprint = cardart.portrait._config_fingerprint
+
+    def track_fingerprint(root):
+        fingerprints.append(root)
+        return original_fingerprint(root)
+
+    monkeypatch.setattr(cardart.portrait, "_config_fingerprint", track_fingerprint)
+    cache_dir = tmp_path / "cache"
+    art_context = {}
+    first = cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "library",
+                                  cache_dir=cache_dir, cache_context=art_context,
+                                  height=210, disk_cache=True)
+    cardart._cached_static_entity_pixmap.cache_clear()
+    second = cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "library",
+                                   cache_dir=cache_dir, cache_context=art_context,
+                                   height=210, disk_cache=True)
+    assert len(fingerprints) == 1
+    assert len(calls) == 1
+    assert first.toImage() == second.toImage()
+    assert len(list(cache_dir.glob("*.png"))) == 1
+
+
 def test_portrait_native_size(qapp, tmp_path, monkeypatch):
     from client.gui import portrait
 
@@ -1080,6 +1118,28 @@ def _cardart_cache_case(tmp_path):
     _cardart_config(library_dir, cdef.id, cdef.version, "#336699")
     database = factories.db_of([factories.shiki(100101)], [cdef])
     return cdef, database, library_dir, cache_dir
+
+
+def test_cardart_layouts_load_once_across_cache_reads(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    cardart._renderer(str(cardart.portrait.bwpdiy_root().resolve()))
+    from bwpdiy.render import layout
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    calls = []
+    original = layout.load_layouts
+
+    def track(assets):
+        calls.append(assets)
+        return original(assets)
+
+    monkeypatch.setattr(layout, "load_layouts", track)
+    cardart.clear_cardart_caches()
+    cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert len(calls) == 1
+    cardart.clear_cardart_caches()
 
 
 def test_cardart_real_library_renders(qapp, gdb, tmp_path):

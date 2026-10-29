@@ -1,0 +1,5 @@
+name: 连击
+frame: skill
+text: 战斗时额外先造成一次战斗伤害。
+badge: null
+version_date: '20191212'

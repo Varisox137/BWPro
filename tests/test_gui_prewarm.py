@@ -54,17 +54,29 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     monkeypatch.setattr(prewarm, "entity_pixmap",
                         lambda shiki, _db, **kwargs: calls.append(("entity", shiki.id, kwargs)) or QPixmap())
     monkeypatch.setattr(prewarm, "shikigami_portrait",
-                        lambda definition, **kwargs: calls.append(("portrait", definition.id, kwargs)) or QPixmap())
+                        lambda definition, **kwargs: calls.append(("portrait", definition.id, kwargs)) or QPixmap(),
+                        raising=False)
+    fingerprints = []
+    original_fingerprint = prewarm.portrait._config_fingerprint
+
+    def track_fingerprint(root):
+        fingerprints.append(root)
+        return original_fingerprint(root)
+
+    monkeypatch.setattr(prewarm.portrait, "_config_fingerprint", track_fingerprint)
     progress = []
     entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache",
                           on_progress=lambda current, total: progress.append((current, total)))
     assert len(entries) == 2
-    assert {call[0] for call in calls} == {"card", "entity", "portrait"}
+    assert {call[0] for call in calls} == {"card", "entity"}
+    assert len(fingerprints) == 1
     big_cards = [call for call in calls if call[0] == "card"]
     assert len(big_cards) == 2
     assert all("height" not in call[2] for call in big_cards)
-    rendered = [call for call in calls if call[0] != "portrait"]
-    assert len({id(call[2]["cache_context"]) for call in rendered}) == 1
+    small_cards = [call for call in calls if call[0] == "entity"]
+    assert all(call[2]["disk_cache"] for call in small_cards)
+    assert len({id(call[2]["cache_context"]) for call in calls}) == 1
+    assert "portrait_config_fingerprint" in calls[0][2]["cache_context"]
     assert progress[-1] == (2, 2)
     manifest = json.loads((tmp_path / "cache" / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["entries"]) == 2
@@ -75,6 +87,23 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     config.write_text(config.read_text(encoding="utf-8") + "\n# updated\n", encoding="utf-8")
     updated = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     assert updated[0]["config_sha256"] != entries[0]["config_sha256"]
+
+
+def test_prewarm_unchanged_manifest_skips_rendering(qapp, tmp_path, monkeypatch):
+    from client.gui import prewarm
+
+    _configs(tmp_path)
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    calls = []
+    monkeypatch.setattr(prewarm, "card_pixmap",
+                        lambda *_args, **_kwargs: calls.append("card") or QPixmap())
+    monkeypatch.setattr(prewarm, "entity_pixmap",
+                        lambda *_args, **_kwargs: calls.append("entity") or QPixmap())
+    prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    calls.clear()
+    entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    assert len(entries) == 2
+    assert calls == []
 
 
 def test_builder_loading_covers_only_card_area(qapp, db, tmp_path, monkeypatch):

@@ -85,8 +85,10 @@ def _config_index(root_text: str, fingerprint: tuple) -> tuple[tuple[Path, dict]
     return tuple(entries)
 
 
-def _project_config(library_dir: Path, kind: str, sid: int, name: str, version: int | None):
-    fingerprint = _config_fingerprint(library_dir)
+def _project_config(library_dir: Path, kind: str, sid: int, name: str, version: int | None,
+                    fingerprint: tuple | None = None):
+    if fingerprint is None:
+        fingerprint = _config_fingerprint(library_dir)
     for path, data in _config_index(str(library_dir.resolve()), fingerprint):
         if path.parent.name != kind:
             continue

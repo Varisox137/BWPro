@@ -1,0 +1,5 @@
+name: 投射
+frame: skill
+text: 优先以敌方战斗区式神为目标，若无则敌方牌手为目标。
+badge: null
+version_date: '20191212'
