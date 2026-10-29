@@ -2022,6 +2022,8 @@ def test_actions_remain_available_during_timeline(qapp, view):
     assert view.timeline_queue
     assert view._inputs_open()
     assert view.end_turn_button.isEnabled()
+    assert view.end_turn()
+    assert view.game.state.active == 1
 
 
 def test_private_timeline_entries_follow_current_viewer(qapp, view):
