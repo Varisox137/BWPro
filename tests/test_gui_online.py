@@ -436,6 +436,23 @@ def test_online_writes_only_server_trace(qapp, db, make_game, caplog):
     battle.close()
 
 
+def test_online_state_message_forwards_server_trace(qapp, db, make_game, view, caplog):
+    import logging
+
+    game = make_game(mulligan=True)
+    view.me = 0
+    view.battle.me = 0
+    with caplog.at_level(logging.INFO, logger="bwpro.battle"):
+        view.handle_message({
+            "type": "state",
+            "payload": game.state.model_dump(mode="json"),
+            "trace": [{"kind": "event", "message": "state 转发追踪", "owner": 0,
+                       "seq": 7, "summary": "on_turn_start"}],
+        })
+    assert any(record.name == "bwpro.battle" and "state 转发追踪" in record.message
+               and "seq=7" in record.message for record in caplog.records)
+
+
 def test_online_card_detail_uses_payload_runtime_without_recalculation(
         qapp, db, make_game, monkeypatch):
     game = make_game(mulligan=True)
