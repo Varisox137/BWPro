@@ -72,6 +72,7 @@ def new_game(
     first: int | None = None,
     shuffle_team: bool = True,
     mulligan: bool = True,
+    trace_sink=None,
 ) -> Game:
     """p1/p2 = (玩家名, 式神 id 列表, 牌组卡牌 id 列表)。
 
@@ -98,6 +99,6 @@ def new_game(
     b, n2 = build_player(db, *p2, config, uid_start=n1)
     state = GameState(players=[a, b], next_uid=n2, config=config,
                       phase="mulligan" if mulligan else "battle")
-    game = Game(state, db, seed=seed)
+    game = Game(state, db, seed=seed, trace_sink=trace_sink)
     game.start()
     return game

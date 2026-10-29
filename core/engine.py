@@ -21,6 +21,8 @@
 """
 from __future__ import annotations
 
+import json
+import logging
 import random
 from collections import deque
 from dataclasses import dataclass
@@ -186,10 +188,11 @@ class _Pending:
 
 
 class Game:
-    def __init__(self, state: GameState, db, seed: int = 0) -> None:
+    def __init__(self, state: GameState, db, seed: int = 0, trace_sink=None) -> None:
         self.state = state
         self.db = db
         self.rng = random.Random(seed)
+        self.trace_sink = trace_sink
         self.queue: deque[_Pending] = deque()
         self.history: list[str] = []  # 事件名序列（测试/回放用）
         # 响应名额（规则设计评审⑨落地——原版两条规则）：
@@ -1144,6 +1147,17 @@ class Game:
 
     # ==================== 指令入口 ====================
 
+    def _trace(self, kind, message, *, owner=None, seq=None, summary=None):
+        logging.getLogger("bwpro.battle").info(
+            "%s seq=%s owner=%s：%s", kind, seq, owner, message)
+        if self.trace_sink is not None:
+            entry = {"kind": kind, "message": str(message), "owner": owner}
+            if seq is not None:
+                entry["seq"] = seq
+            if summary is not None:
+                entry["summary"] = summary
+            self.trace_sink(entry)
+
     def apply(self, cmd: dict) -> None:
         """校验并执行一条指令，然后清空触发队列。CLI 与将来的网络层共用此入口。
 
@@ -1154,6 +1168,8 @@ class Game:
         if self.state.winner is not None or self.state.pending_end:
             raise IllegalAction("对局已结束")
         op = cmd.get("op", "")
+        self._trace("cmd", json.dumps(cmd, ensure_ascii=False, default=str),
+                    owner=cmd.get("player", self.state.active))
         if op.startswith("debug_"):
             if not self.config.enable_debug_commands:
                 raise IllegalAction("调试指令已禁用")
@@ -5808,9 +5824,17 @@ class Game:
             raise ValueError(f"未声明的事件名: {name}（核心事件见 core/events.py，自定义事件见 db/events.yaml）")
         self._refresh_stat_auras()  # 事件发出前刷新动态身材光环缓存（条件/伤害读取最新值）
         self.history.append(name)
+        owner = payload.get("player")
+        source = payload.get("source")
+        if owner is None and isinstance(source, Ref):
+            owner = source.player
+        message = json.dumps({"name": name, "payload": payload},
+                             ensure_ascii=False, default=str)
         if self.state.winner is not None or self.state.pending_end:
+            self._trace("event", message, owner=owner, summary=name)
             return
         seq = self.state.next_emit_seq()
+        self._trace("event", message, owner=owner, seq=seq, summary=name)
         event = {"name": name, "_emit": seq, **payload}
         self._release_lasting_stuns(name, payload, seq)
         insert_queue: list[_Pending] = []
@@ -6537,6 +6561,16 @@ class Game:
                                                     chosen=ctx.chosen,
                                                     key=num_key,
                                                     field=ctx.field)
+        message = json.dumps({
+            "op": step.op,
+            "params": params,
+            "refs": refs,
+            "controller": ctx.controller,
+            "source": ctx.source,
+            "card_uid": ctx.card.uid if ctx.card is not None else None,
+            "event": ctx.event,
+        }, ensure_ascii=False, default=str)
+        self._trace("op", message, owner=ctx.controller)
         fn(self, ctx, targets=refs, **params)
 
     def _op_params(self, op: str, fn) -> frozenset:
