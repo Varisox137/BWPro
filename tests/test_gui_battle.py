@@ -1850,7 +1850,7 @@ def test_upgrade_with_defeated_shikigami_keeps_hand_usable(qapp, view):
     assert view.battle_scene.cards[("hand", card.uid)].playable
 
 
-def test_battle_timeline_written_to_application_log(qapp, view, caplog):
+def test_battle_timeline_not_duplicated_in_application_log(qapp, view, caplog):
     import logging
 
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))

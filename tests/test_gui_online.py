@@ -410,7 +410,7 @@ def test_game_over_waits_for_timeline_playback(qapp, db, make_game):
     battle.close()
 
 
-def test_online_timeline_written_to_application_log(qapp, db, make_game, caplog):
+def test_online_timeline_not_duplicated_in_application_log(qapp, db, make_game, caplog):
     import logging
 
     game = make_game(mulligan=True)
