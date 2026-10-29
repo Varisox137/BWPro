@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -101,6 +102,12 @@ class OnlineBattleView(HotseatView):
         self.countdown_timer.setInterval(1000)
         self.countdown_timer.timeout.connect(self._update_countdown)
         self.countdown_timer.start()
+
+    def receive_trace(self, entries) -> None:
+        for entry in entries:
+            logging.getLogger("bwpro.battle").info(
+                "服务端 trace %s seq=%s：%s",
+                entry.get("kind"), entry.get("seq"), entry.get("message", ""))
 
     def reset_session(self) -> None:
         self.timeline_timer.stop()
@@ -629,6 +636,7 @@ class OnlineView(QWidget):
             if self.me is None:
                 return
             self._apply_env(self.env_date)
+            self.battle.receive_trace(msg.get("trace") or [])
             self.battle.set_state(msg["payload"], timer=msg.get("timer"),
                                   log=msg.get("log") or [], timeline=msg.get("timeline") or [])
             self.stack.setCurrentWidget(self.battle)

@@ -426,6 +426,16 @@ def test_online_timeline_not_duplicated_in_application_log(qapp, db, make_game, 
     battle.close()
 
 
+def test_online_writes_only_server_trace(qapp, db, make_game, caplog):
+    import logging
+
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    with caplog.at_level(logging.INFO, logger="bwpro.battle"):
+        battle.receive_trace([{"kind": "op", "message": "服务端 op", "owner": 0}])
+    assert any("服务端 op" in record.message for record in caplog.records)
+    battle.close()
+
+
 def test_online_card_detail_uses_payload_runtime_without_recalculation(
         qapp, db, make_game, monkeypatch):
     game = make_game(mulligan=True)
