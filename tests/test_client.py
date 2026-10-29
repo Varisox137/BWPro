@@ -858,13 +858,31 @@ def test_timeline_merges_log_and_settle_in_order(db, make_game):
     pa, pb = F.battle_setup(g)
     pa.shikigami[0].health = 1
     g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
-    kinds = [e["k"] for e in g.state.timeline]
-    msgs = [e["m"] for e in g.state.timeline]
+    text_entries = [e for e in g.state.timeline if e["k"] != "a"]
+    kinds = [e["k"] for e in text_entries]
+    msgs = [e["m"] for e in text_entries]
     assert set(kinds) == {"s", "l"}
+    assert any(e["k"] == "a" for e in g.state.timeline)
     i_use = next(i for i, m in enumerate(msgs) if "使用了【" in m)
     i_heal = next(i for i, m in enumerate(msgs) if m.startswith("【治疗】"))
     assert kinds[i_use] == "l" and kinds[i_heal] == "s"
     assert i_use < i_heal            # 触发行先于其引发的结算行
+
+
+def test_timeline_animation_metadata_skips_cli_output(make_game, capsys):
+    from client.settle import SettlePrinter
+
+    game = make_game()
+    game.state.timeline.clear()
+    game.state.timeline.append({"k": "a", "u": 41, "c": 10010101, "p": 0})
+    printer = SettlePrinter(interval=0)
+    printer.start()
+    try:
+        seen = cli._play_settle(game, 0, printer)
+    finally:
+        printer.stop(flush=True)
+    assert seen == 1
+    assert capsys.readouterr().out == ""
 
 
 def test_result_text_by_viewer():

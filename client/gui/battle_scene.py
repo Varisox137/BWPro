@@ -1,8 +1,11 @@
 """固定坐标对局场景与卡牌图元。"""
 from __future__ import annotations
 
-from PySide6.QtCore import QLineF, QPointF, QRectF, QSizeF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import (
+    QLineF, QPointF, QPropertyAnimation, QRectF, QSizeF, Qt, QTimer,
+    QVariantAnimation, Signal,
+)
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QApplication, QGraphicsObject, QGraphicsPathItem, QGraphicsPixmapItem,
     QGraphicsRectItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView,
@@ -443,7 +446,14 @@ class BattleScene(QGraphicsScene):
     def __init__(self, db):
         super().__init__(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
         self.db = db
+        self.game = None
         self.cards: dict[tuple, BattleCardItem] = {}
+        self._move_animations: dict[BattleCardItem, QPropertyAnimation] = {}
+        self._card_use_animations: list[QVariantAnimation] = []
+        self._card_use_items: dict[QVariantAnimation, BattleCardItem] = {}
+        self._card_use_sources: dict[QVariantAnimation, dict] = {}
+        self._hand_animation_cache: dict[int, tuple] = {}
+        self._animation_timeline: list[dict] | None = None
         self.deck_backs: dict[tuple, BattleCardItem] = {}
         self.upgrade_badges: dict[int, QGraphicsPixmapItem] = {}
         self.phase = None
@@ -633,8 +643,134 @@ class BattleScene(QGraphicsScene):
                 items.append(item)
         self.set_focus(items)
 
+    def _stop_move_animation(self, item: BattleCardItem) -> None:
+        animation = self._move_animations.pop(item, None)
+        if animation is not None:
+            animation.stop()
+            animation.deleteLater()
+
+    def _animate_position(self, item: BattleCardItem, target: QPointF) -> None:
+        self._stop_move_animation(item)
+        start = QPointF(item.pos())
+        if start == target:
+            item.setPos(target)
+            return
+        animation = QPropertyAnimation(item, b"pos", self)
+        animation.setDuration(180)
+        animation.setStartValue(start)
+        animation.setEndValue(QPointF(target))
+        self._move_animations[item] = animation
+        animation.finished.connect(
+            lambda item=item, animation=animation: self._finish_move_animation(item, animation))
+        animation.start()
+
+    def _finish_move_animation(self, item: BattleCardItem, animation) -> None:
+        if self._move_animations.get(item) is animation:
+            del self._move_animations[item]
+            animation.deleteLater()
+
+    def animate_card_use(self, uid: int, card_id: int, player: int) -> None:
+        cdef = self.db.cards[card_id]
+        cached = self._hand_animation_cache.get(uid)
+        if cached is None:
+            source_pos = QPointF(
+                SCENE_WIDTH - HAND_SIZE.width() - 1,
+                0 if player != self.viewer else SCENE_HEIGHT - HAND_SIZE.height())
+            source_pixmap = None
+            source_size = QSizeF(HAND_SIZE)
+        else:
+            source_pos, source_pixmap, source_size = cached
+            source_pos = QPointF(source_pos)
+            source_size = QSizeF(source_size)
+        item = BattleCardItem(("card_use", uid), size=source_size)
+        item.cdef = cdef
+        item.player = player
+        item.text_color = QColor(self.text_color)
+        item.set_art(source_pixmap)
+        item.setAcceptedMouseButtons(Qt.NoButton)
+        item.setZValue(DRAG_Z + 10)
+        item.setPos(source_pos)
+        item.setTransformOriginPoint(item.boundingRect().center())
+        self.addItem(item)
+
+        animation = QVariantAnimation(self)
+        animation.setDuration(900)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        big_size = QSizeF(220, 312)
+        big_pixmap = card_pixmap(cdef, self.db, cache_context={}, height=big_size.height())
+        self._card_use_animations.append(animation)
+        self._card_use_items[animation] = item
+        self._card_use_sources[animation] = {
+            "source_pos": source_pos,
+            "source_size": source_size,
+            "big_pos": QPointF(70, (SCENE_HEIGHT - big_size.height()) / 2),
+            "big_size": big_size,
+            "big_pixmap": big_pixmap,
+            "flipped": False,
+        }
+        animation.valueChanged.connect(
+            lambda value, animation=animation: self._update_card_use(animation, value))
+        animation.finished.connect(
+            lambda animation=animation: self._finish_card_use(animation))
+        animation.start()
+
+    def _update_card_use(self, animation, progress: float) -> None:
+        item = self._card_use_items.get(animation)
+        source = self._card_use_sources.get(animation)
+        if item is None or source is None:
+            return
+        flip_end = 0.28
+        if progress >= flip_end / 2 and not source["flipped"]:
+            source["flipped"] = True
+            item.default_size = QSizeF(source["big_size"])
+            item.set_art(source["big_pixmap"])
+        item.setTransformOriginPoint(item.boundingRect().center())
+        if progress < flip_end:
+            flip = progress / flip_end
+            target = source["big_pos"]
+            item.setPos(source["source_pos"] + (target - source["source_pos"]) * flip)
+            transform = QTransform()
+            transform.scale(max(0.02, abs(1 - 2 * flip)), 1)
+            item.setTransform(transform)
+            item.setOpacity(1)
+        else:
+            item.setPos(source["big_pos"])
+            item.setTransform(QTransform())
+            item.setOpacity(1 if progress < 0.75 else max(0, (1 - progress) / 0.25))
+
+    def _finish_card_use(self, animation) -> None:
+        if animation not in self._card_use_items:
+            return
+        self._card_use_animations.remove(animation)
+        item = self._card_use_items.pop(animation)
+        self._card_use_sources.pop(animation, None)
+        if item.scene() is self:
+            self.removeItem(item)
+        animation.deleteLater()
+
+    def reset_animations(self) -> None:
+        for animation in self._move_animations.values():
+            animation.stop()
+            animation.deleteLater()
+        self._move_animations.clear()
+        for animation in self._card_use_animations:
+            animation.stop()
+            animation.deleteLater()
+        self._card_use_animations.clear()
+        for item in self._card_use_items.values():
+            if item.scene() is self:
+                self.removeItem(item)
+        self._card_use_items.clear()
+        self._card_use_sources.clear()
+        self._hand_animation_cache.clear()
+        self._animation_timeline = None
+        self.inputs_open = False
+        self.game = None
+
     def clear_hands(self) -> None:
         self.drag_controller.cancel()
+        self.reset_animations()
         self.mulligan_uid = None
         self.mulligan_selected.emit(None)
         for key, item in list(self.cards.items()):
@@ -643,12 +779,28 @@ class BattleScene(QGraphicsScene):
                 del self.cards[key]
 
     def sync_state(self, game, viewer, hand_info, inputs_open) -> None:
+        previous_game = self.game
+        if previous_game is not None and viewer != self.viewer:
+            self.reset_animations()
+            previous_game = None
+        previous_timeline = self._animation_timeline
+        timeline = game.state.timeline
+        online_entries = []
+        if (previous_game is not None and previous_game is not game
+                and previous_timeline is not None
+                and timeline[:len(previous_timeline)] == previous_timeline):
+            online_entries = timeline[len(previous_timeline):]
+        self._animation_timeline = list(timeline)
         self.game = game
         self.phase = game.state.phase
         self.viewer = viewer
         self.inputs_open = inputs_open
         self.drag_controller.cancel()
         positions = layout_positions(game, viewer)
+        self._hand_animation_cache = {
+            key[1]: (QPointF(item.pos()), item.pixmap, QSizeF(item.size))
+            for key, item in self.cards.items() if key[0] == "hand"
+        }
         art_context = {}
         self._loading_done = 0
         self._loading_total = sum(len(player.shikigami) + len(player.hand)
@@ -656,7 +808,9 @@ class BattleScene(QGraphicsScene):
         self.loading.set_progress(0, self._loading_total)
         expected = {key for key in positions if key[0] in ("hand", "shiki", "player")}
         for key in set(self.cards) - expected:
-            self.removeItem(self.cards.pop(key))
+            item = self.cards.pop(key)
+            self._stop_move_animation(item)
+            self.removeItem(item)
 
         for pi, player in enumerate(game.state.players):
             for index in range(3):
@@ -708,6 +862,7 @@ class BattleScene(QGraphicsScene):
             for index, shiki in enumerate(player.shikigami):
                 key = ("shiki", pi, index)
                 item = self.cards.get(key)
+                created = item is None
                 if item is None:
                     item = BattleCardItem(key, size=SHIKI_SIZE)
                     self.addItem(item)
@@ -743,7 +898,10 @@ class BattleScene(QGraphicsScene):
                           and game.assault_error(pi, index) is None)
                          or (game.state.phase == "upgrade"
                              and index in game.legal_upgrade_indices(pi))))
-                item.setPos(positions[key])
+                if created or previous_game is None:
+                    item.setPos(positions[key])
+                else:
+                    self._animate_position(item, positions[key])
                 item.update()
                 self.loading_tick()
 
@@ -831,3 +989,6 @@ class BattleScene(QGraphicsScene):
                 item.update()
         self.mulligan_selected.emit(self.mulligan_uid)
         self._sync_focus()
+        for entry in online_entries:
+            if entry.get("k") == "a":
+                self.animate_card_use(entry["u"], entry["c"], entry["p"])

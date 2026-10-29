@@ -90,3 +90,12 @@ def test_command_trace_precedes_validation(make_game, cmd, terminal):
     assert entries[0]["kind"] == "cmd"
     assert entries[0]["owner"] == 0
     assert json.loads(entries[0]["message"]) == cmd
+
+
+def test_card_play_has_public_animation_metadata(make_game):
+    game = make_game(auto_skip_upgrade=False)
+    game.apply({"op": "upgrade", "index": 1})
+    card = F.give(game, 0, 10010201)
+    game.apply({"op": "play_card", "uid": card.uid})
+    entry = next(e for e in game.state.timeline if e.get("k") == "a")
+    assert entry == {"k": "a", "u": card.uid, "c": card.id, "p": 0}

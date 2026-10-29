@@ -47,6 +47,11 @@ def settle(view):
             view.confirm_handoff()
         if view.timeline_queue:
             view.play_next_timeline()
+    scene = view.battle_scene
+    animations = list(scene._move_animations.values()) + list(scene._card_use_animations)
+    for animation in animations:
+        animation.setCurrentTime(animation.duration())
+    QApplication.processEvents()
 
 
 def log_lines(view):
@@ -677,6 +682,7 @@ def test_combat_zone_reuses_items_and_returns_them_to_preparation(qapp, view):
     assert combatant.y() < scene.cards[("shiki", 0, 1)].y()
     view.game.state.players[0].combat_index = None
     view.refresh()
+    settle(view)
     assert scene.cards[("shiki", 0, 0)] is combatant
     assert combatant.pos() == origin
 
@@ -2024,6 +2030,92 @@ def test_actions_remain_available_during_timeline(qapp, view):
     assert view.end_turn_button.isEnabled()
     assert view.end_turn()
     assert view.game.state.active == 1
+
+
+def test_shiki_position_animation_reaches_layout_target(qapp, view):
+    from client.gui.battle_scene import layout_positions
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    key = ("shiki", 0, 0)
+    item = scene.cards[key]
+    old_pos = QPointF(item.pos())
+    assert not scene._move_animations
+
+    view.game.current.combat_index = 0
+    view.refresh()
+    animation = scene._move_animations[item]
+    target = layout_positions(view.game, view.viewer)[key]
+    assert animation.startValue() == old_pos
+    assert animation.endValue() == target
+
+    item.setPos(target)
+    view.game.current.combat_index = None
+    view.refresh()
+    replacement = scene._move_animations[item]
+    assert animation.state() == animation.State.Stopped
+    animation = replacement
+    target = layout_positions(view.game, view.viewer)[key]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert item.pos() == target
+    assert item not in scene._move_animations
+
+
+def test_card_use_animation_for_both_players_is_nonblocking_and_cleans_up(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    played_before = list(view.played_timeline)
+    cards = [view.game.state.players[pi].hand[0] for pi in (0, 1)]
+    old_positions = {card.uid: QPointF(scene.cards[("hand", card.uid)].pos())
+                     for card in cards}
+    view.game.state.timeline.extend(
+        {"k": "a", "u": card.uid, "c": card.id, "p": pi}
+        for pi, card in enumerate(cards))
+    view._enqueue_timeline()
+
+    assert not view.timeline_queue
+    assert view._inputs_open()
+    assert len(scene._card_use_animations) == 2
+    assert [item.cdef.id for item in scene._card_use_items.values()] == [
+        card.id for card in cards]
+    assert [item.player for item in scene._card_use_items.values()] == [0, 1]
+    assert [item.pos() for item in scene._card_use_items.values()] == [
+        old_positions[card.uid] for card in cards]
+
+    for animation in list(scene._card_use_animations):
+        animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert not scene._card_use_animations
+    assert not scene._card_use_items
+    assert view.played_timeline == played_before
+
+
+def test_viewer_handoff_and_restart_clear_animations(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.current.combat_index = 0
+    view.refresh()
+    assert scene._move_animations
+
+    card = view.game.state.players[0].hand[0]
+    view.game.state.timeline.append({"k": "a", "u": card.uid, "c": card.id, "p": 0})
+    view.game.state.active = 1
+    view.refresh()
+    assert view._handoff_pending
+    assert not scene._move_animations
+    assert not scene._card_use_animations
+    view.confirm_handoff()
+    assert not scene._move_animations
+
+    card = view.game.state.players[1].hand[0]
+    view.game.state.timeline.append({"k": "a", "u": card.uid, "c": card.id, "p": 1})
+    view._enqueue_timeline()
+    assert scene._card_use_animations
+    start(view, mulligan=False)
+    assert not scene._move_animations
+    assert not scene._card_use_animations
+    assert not scene._card_use_items
 
 
 def test_private_timeline_entries_follow_current_viewer(qapp, view):

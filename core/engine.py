@@ -2389,6 +2389,7 @@ class Game:
         chosen：该次使用的选择目标（无目标/无选择信息为空列表）——条件
         {chosen_side: friendly} 匹配"对单个己方式神使用的法术"类触发（记仇）。
         """
+        self.state.timeline.append({"k": "a", "u": uid, "c": cdef.id, "p": player})
         played = self._card_by_uid(uid)
         # 委托账本（三目委托机制）：使用牌数（不限主动/响应/自动，定案(3)）/形态牌/
         # 阵容套牌以外/三目使用委托牌。阵容套牌以外口径（定案(5)）：同名牌不在本局

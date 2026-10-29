@@ -234,6 +234,41 @@ def test_online_actions_remain_available_during_timeline(qapp, db, make_game):
     battle.close()
 
 
+def test_online_card_use_animation_for_both_players_is_nonblocking_and_cleans_up(
+        qapp, db, make_game):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle.set_state(payload, log=[], timeline=[])
+    scene = battle.battle_scene
+    assert not scene._card_use_animations
+
+    cards = [game.state.players[pi].hand[0] for pi in (0, 1)]
+    entries = [{"k": "a", "u": card.uid, "c": card.id, "p": pi}
+               for pi, card in enumerate(cards)]
+    for pi, card in enumerate(cards):
+        game.state.players[pi].hand.remove(card)
+    game.state.timeline.extend(entries)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle.set_state(payload, log=[], timeline=entries)
+
+    assert not battle.timeline_queue
+    assert battle._inputs_open()
+    assert len(scene._card_use_animations) == 2
+    assert [item.cdef.id for item in scene._card_use_items.values()] == [
+        card.id for card in cards]
+    for animation in list(scene._card_use_animations):
+        animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert not scene._card_use_animations
+    assert not scene._card_use_items
+    assert not battle.played_timeline
+    battle.close()
+
+
 def test_online_enemy_turn_blocks_all_active_inputs(qapp, db, make_game):
     game = make_game(mulligan=False)
     game.state.active = 1

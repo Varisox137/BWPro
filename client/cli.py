@@ -102,10 +102,13 @@ def format_settle_lines(lines: list[str]) -> list[str]:
 def format_timeline_lines(entries: list[dict]) -> list[str]:
     """合并时间线排版（结算/叙事按真实发生顺序合流）：结算行（k="s"）
     按嵌套块层级缩进（同 format_settle_lines），叙事行（k="l"）以 "| "前缀按当前
-    层级缩进。热坐 _play_settle 与联机 state.timeline 共用，保证两端格式一致。"""
+    层级缩进。动画元数据（k="a"）仅供 GUI，CLI 跳过。热坐 _play_settle 与联机
+    state.timeline 共用，保证两端格式一致。"""
     out: list[str] = []
     depth = 0
     for e in entries:
+        if e.get("k") == "a":
+            continue
         stripped = e["m"].strip()
         if e["k"] == "l":
             out.append("  " * depth + f"| {stripped}" if depth else f"  | {stripped}")

@@ -422,6 +422,7 @@ class HotseatView(QWidget):
     def start_game(self, p1: tuple, p2: tuple, seed: int | None = None, **kwargs) -> None:
         if seed is None:
             seed = secrets.randbits(32)
+        self.battle_scene.reset_animations()
         self.battle_scene.show_loading("正在准备对局")
         try:
             self.timeline_timer.stop()
@@ -487,6 +488,7 @@ class HotseatView(QWidget):
 
     def _begin_handoff(self, preserve_hand: bool = False) -> None:
         self.timeline_timer.stop()
+        self.battle_scene.reset_animations()
         self._handoff_pending = True
         self._handoff_stage = "review" if preserve_hand else "transfer"
         if not preserve_hand:
@@ -556,6 +558,7 @@ class HotseatView(QWidget):
             return
         game = self.game
         state = game.state
+        self.timeline_queue[:] = [entry for entry in self.timeline_queue if entry[1]]
         active = state.players[state.active]
         self.phase_label.setText(f"{active.name} 回合{active.turn_count}")
         self.order_label.setText("己方先手" if self.viewer == state.active else "己方后手")
@@ -854,7 +857,11 @@ class HotseatView(QWidget):
         entries = self.game.state.timeline[self._timeline_seen:]
         self._timeline_seen = len(self.game.state.timeline)
         for entry in entries:
-            self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
+            if entry.get("k") == "a":
+                if not self._handoff_pending:
+                    self.battle_scene.animate_card_use(entry["u"], entry["c"], entry["p"])
+            else:
+                self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
         if (self.timeline_queue and not self._handoff_pending
                 and not self.timeline_timer.isActive()):
             self.timeline_timer.start()
@@ -930,6 +937,7 @@ class HotseatView(QWidget):
             if answer != QMessageBox.Yes:
                 return False
         self.timeline_timer.stop()
+        self.battle_scene.reset_animations()
         self.battle_scene.hide_banner()
         self.battle_scene.hide_loading()
         self._close_handoff()
