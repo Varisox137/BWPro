@@ -126,6 +126,7 @@ class OnlineBattleView(HotseatView):
         self._choice_key = None
         self._last_turn_key = None
         self._opening_banner_pending = True
+        self.battle_scene.reset_animations()
         self.battle_scene.hide_banner()
         if self.choice_dialog is not None:
             self.choice_dialog.close()

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import (
-    QLineF, QPointF, QPropertyAnimation, QRectF, QSizeF, Qt, QTimer,
+    QEasingCurve, QLineF, QPointF, QPropertyAnimation, QRectF, QSizeF, Qt, QTimer,
     QVariantAnimation, Signal,
 )
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QTransform
@@ -185,7 +185,7 @@ class BattleCardItem(QGraphicsObject):
             painter.setPen(self.text_color)
             painter.drawText(rect.adjusted(5, 5, -5, -5),
                              Qt.TextWordWrap | Qt.AlignCenter, self.shiki_text)
-        elif self.key[0] == "hand" and self.revealed:
+        elif self.key[0] in ("hand", "card_use") and self.revealed:
             painter.setPen(QPen(QColor("#d9b96a"), 2))
             painter.setBrush(QColor(45, 55, 65, 220))
             painter.drawRect(rect)
@@ -193,7 +193,7 @@ class BattleCardItem(QGraphicsObject):
             text = self.cdef.name if self.cdef is not None else "卡牌"
             painter.drawText(rect.adjusted(5, 5, -5, -5),
                              Qt.TextWordWrap | Qt.AlignCenter, text)
-        elif self.key[0] in ("hand", "deck_back") and not self.revealed:
+        elif self.key[0] in ("hand", "deck_back", "card_use") and not self.revealed:
             painter.setPen(QPen(QColor("#d9b96a"), 2))
             painter.setBrush(QColor(45, 55, 65, 240))
             painter.drawRect(rect)
@@ -657,6 +657,7 @@ class BattleScene(QGraphicsScene):
             return
         animation = QPropertyAnimation(item, b"pos", self)
         animation.setDuration(180)
+        animation.setEasingCurve(QEasingCurve.Linear)
         animation.setStartValue(start)
         animation.setEndValue(QPointF(target))
         self._move_animations[item] = animation
@@ -678,13 +679,15 @@ class BattleScene(QGraphicsScene):
                 0 if player != self.viewer else SCENE_HEIGHT - HAND_SIZE.height())
             source_pixmap = None
             source_size = QSizeF(HAND_SIZE)
+            source_revealed = player == self.viewer
         else:
-            source_pos, source_pixmap, source_size = cached
+            source_pos, source_pixmap, source_size, source_revealed = cached
             source_pos = QPointF(source_pos)
             source_size = QSizeF(source_size)
         item = BattleCardItem(("card_use", uid), size=source_size)
         item.cdef = cdef
         item.player = player
+        item.revealed = source_revealed
         item.text_color = QColor(self.text_color)
         item.set_art(source_pixmap)
         item.setAcceptedMouseButtons(Qt.NoButton)
@@ -723,6 +726,7 @@ class BattleScene(QGraphicsScene):
         flip_end = 0.28
         if progress >= flip_end / 2 and not source["flipped"]:
             source["flipped"] = True
+            item.revealed = True
             item.default_size = QSizeF(source["big_size"])
             item.set_art(source["big_pixmap"])
         item.setTransformOriginPoint(item.boundingRect().center())
@@ -798,7 +802,7 @@ class BattleScene(QGraphicsScene):
         self.drag_controller.cancel()
         positions = layout_positions(game, viewer)
         self._hand_animation_cache = {
-            key[1]: (QPointF(item.pos()), item.pixmap, QSizeF(item.size))
+            key[1]: (QPointF(item.pos()), item.pixmap, QSizeF(item.size), item.revealed)
             for key, item in self.cards.items() if key[0] == "hand"
         }
         art_context = {}

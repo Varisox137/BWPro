@@ -269,6 +269,40 @@ def test_online_card_use_animation_for_both_players_is_nonblocking_and_cleans_up
     battle.close()
 
 
+def test_online_reset_session_clears_animations_and_reconnect_history(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle.set_state(payload, log=[], timeline=[])
+    scene = battle.battle_scene
+
+    card = game.state.players[0].hand[0]
+    game.state.players[0].hand.remove(card)
+    game.state.players[0].combat_index = 0
+    entry = {"k": "a", "u": card.uid, "c": card.id, "p": 0}
+    game.state.timeline.append(entry)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle.set_state(payload, log=[], timeline=[entry])
+    assert scene._move_animations
+    assert scene._card_use_animations
+    assert scene._animation_timeline
+
+    battle.reset_session()
+    assert not scene._move_animations
+    assert not scene._card_use_animations
+    assert not scene._card_use_items
+    assert scene._animation_timeline is None
+
+    battle.set_state(payload, log=[], timeline=[])
+    assert not scene._move_animations
+    assert not scene._card_use_animations
+    assert not scene._card_use_items
+    battle.close()
+
+
 def test_online_enemy_turn_blocks_all_active_inputs(qapp, db, make_game):
     game = make_game(mulligan=False)
     game.state.active = 1

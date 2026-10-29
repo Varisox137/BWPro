@@ -2033,6 +2033,7 @@ def test_actions_remain_available_during_timeline(qapp, view):
 
 
 def test_shiki_position_animation_reaches_layout_target(qapp, view):
+    from PySide6.QtCore import QEasingCurve
     from client.gui.battle_scene import layout_positions
 
     start(view, mulligan=False)
@@ -2048,6 +2049,7 @@ def test_shiki_position_animation_reaches_layout_target(qapp, view):
     target = layout_positions(view.game, view.viewer)[key]
     assert animation.startValue() == old_pos
     assert animation.endValue() == target
+    assert animation.easingCurve().type() == QEasingCurve.Linear
 
     item.setPos(target)
     view.game.current.combat_index = None
@@ -2089,6 +2091,30 @@ def test_card_use_animation_for_both_players_is_nonblocking_and_cleans_up(qapp, 
     assert not scene._card_use_animations
     assert not scene._card_use_items
     assert view.played_timeline == played_before
+
+
+def test_enemy_card_use_animation_paints_card_back_before_flip(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    card = view.game.state.players[1].hand[0]
+    assert scene.cards[("hand", card.uid)].pixmap is None
+    view.game.state.timeline.append({"k": "a", "u": card.uid, "c": card.id, "p": 1})
+    view._enqueue_timeline()
+    animation = scene._card_use_animations[0]
+    item = scene._card_use_items[animation]
+    animation.setCurrentTime(int(animation.duration() * 0.1))
+
+    image = QImage(item.size.toSize(), QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    item.paint(painter, None)
+    painter.end()
+    assert any(image.pixelColor(x, y).alpha() > 0
+               for x in range(image.width()) for y in range(image.height()))
+    assert not item.revealed
+    animation.setCurrentTime(int(animation.duration() * 0.5))
+    assert item.revealed
+    animation.setCurrentTime(animation.duration())
 
 
 def test_viewer_handoff_and_restart_clear_animations(qapp, view):
