@@ -81,12 +81,14 @@ def start(player_index: int, opponent: str, you_first: bool,
 
 def state(payload: dict, log: list[str], timer: dict | None = None,
           settle: list[str] | None = None,
-          timeline: list[dict] | None = None) -> dict:
+          timeline: list[dict] | None = None,
+          trace: list[dict] | None = None) -> dict:
     """完整对局状态 + 自上次以来的新增日志。
     timer 非空时附带 {"kind", "deadline"}（客户端倒计时显示用，旧客户端忽略该字段）。
     settle 非空时附带结算明细增量（旧客户端忽略）。
     timeline 非空时附带合并时间线增量（[{"k": "s"|"l", "m"}]，结算/叙事按真实发生
-    顺序合流；客户端结算播放以此为准，log/settle 字段保留兼容）。"""
+    顺序合流；客户端结算播放以此为准，log/settle 字段保留兼容）。
+    trace 非空时附带按接收方视角脱敏的运行时追踪增量。"""
     msg = {"type": "state", "payload": payload, "log": log}
     if timer is not None:
         msg["timer"] = timer
@@ -94,6 +96,8 @@ def state(payload: dict, log: list[str], timer: dict | None = None,
         msg["settle"] = settle
     if timeline:
         msg["timeline"] = timeline
+    if trace:
+        msg["trace"] = trace
     return msg
 
 

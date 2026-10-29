@@ -15,7 +15,7 @@ import pytest
 from server import protocol
 from server.main import RateLimiter, _text, create_app
 from server.manager import RoomManager
-from server.room import Room
+from server.room import Room, sanitize_trace
 
 from tests import factories as F
 
@@ -50,6 +50,8 @@ def test_server_message_builders():
     assert "timer" not in st  # 缺省不带计时器字段（旧客户端兼容）
     st2 = protocol.state({"turn": 3}, [], timer={"kind": "turn", "deadline": 1.0})
     assert st2["timer"] == {"kind": "turn", "deadline": 1.0}
+    st3 = protocol.state({"turn": 3}, [], trace=[{"kind": "event"}])
+    assert st3["trace"] == [{"kind": "event"}]
     assert protocol.error("r") == {"type": "error", "reason": "r"}
     assert protocol.notice("t") == {"type": "notice", "text": "t"}
     assert protocol.game_over(0, "player_defeated")["winner"] == 0
@@ -127,6 +129,27 @@ async def _started_room(db, **kw):
     await asyncio.sleep(0.05)  # 开始倒计时（测试 0.01s）结束后开局
     assert room.game is not None
     return room, ws0, ws1
+
+
+def test_trace_sanitized_for_viewer():
+    private = {"kind": "op", "message": "私密伤害牌", "owner": 0}
+    public = {"kind": "event", "message": "完整私有载荷",
+              "summary": "on_damage", "owner": None, "seq": 8}
+    assert sanitize_trace(private, 1) is None
+    assert sanitize_trace(private, 0)["message"] == "私密伤害牌"
+    visible = sanitize_trace(public, 1)
+    assert visible["message"] == "on_damage" and visible["seq"] == 8
+
+
+def test_room_broadcasts_server_trace(db):
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        viewer = room.seat_to_player[0]
+        room.game._trace("op", "服务端原子动作", owner=viewer)
+        await room.broadcast_state()
+        msg = [m for m in ws0.messages if m["type"] == "state"][-1]
+        assert msg["trace"][-1]["message"] == "服务端原子动作"
+    run(go())
 
 
 # ---------- 房间管理 ----------

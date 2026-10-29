@@ -87,6 +87,16 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
     return payload
 
 
+def sanitize_trace(entry, viewer):
+    owner = entry.get("owner")
+    if owner is not None and owner != viewer:
+        return None
+    if owner is None:
+        entry = dict(entry)
+        entry["message"] = entry.get("summary", entry["kind"])
+    return entry
+
+
 def _hide_mulligan_log(lines: list[str], st, viewer: int) -> list[str]:
     """调度阶段信息隐藏（协议层过滤，引擎/state 不动）：对方的调度行为行
     （"X 调度了一张手牌（剩余 N 次）"泄露调度次数）不发给 viewer；
@@ -170,6 +180,7 @@ class Room:
         self._sent_log = 0
         self._sent_settle = 0
         self._sent_timeline = 0
+        self._trace_pending = []
         self._over_sent = False
         # 最近人员变动时刻（join/reconnect/lobby_leave 刷新；纯断线 disconnect
         # 不算人员变动、不刷新）——看门狗据此解散长期无变动的未开局房间
@@ -402,6 +413,7 @@ class Room:
             seed=self.rng.randrange(2**32),
             config=config,
             first=0,  # by_player 已按先手排序，无需 new_game 再换
+            trace_sink=self._trace_pending.append,
         )
         env_note = f"，环境 {self.env_date}" if self.env_date else ""
         self._log(f"对战开始{env_note}：{by_player[0].name}（先手） vs {by_player[1].name}")
@@ -481,6 +493,8 @@ class Room:
         self._sent_settle = len(st.settle_log)
         timeline = st.timeline[self._sent_timeline:]
         self._sent_timeline = len(st.timeline)
+        trace = self._trace_pending[:]
+        self._trace_pending.clear()
         base = st.model_dump(mode="json")
         timer = self._current_timer()
         for c in self.conns:
@@ -490,13 +504,15 @@ class Room:
             vsettle = _visible_lines(settle, settle_vis, viewer)  # 非公开行仅所属方可见
             vtimeline = _visible_entries(
                 _hide_mulligan_timeline(timeline, st, viewer), viewer)
+            vtrace = [v for entry in trace
+                      if (v := sanitize_trace(entry, viewer)) is not None]
             payload = sanitize_state(base, viewer)
             # 己方手牌实时信息（使用方式枚举/数值段等，引擎求值结果随状态下发，
             # 远程客户端不重复实现规则计算；仅含己方手牌，键为 uid）
             payload["hand_info"] = hand_cards_info(self.game, viewer)
             await c.send(protocol.state(payload, vlog,
                                         timer=timer, settle=vsettle,
-                                        timeline=vtimeline))
+                                        timeline=vtimeline, trace=vtrace))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
             self._log(f"对战结束：{st.players[st.winner].name} 获胜")
