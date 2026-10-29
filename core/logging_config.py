@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 from datetime import datetime
 from pathlib import Path
 
-_LOG_PATTERN = "bwpro_*.log"
+_LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
 _MAX_LOG_AGE_SECONDS = 14 * 86400
 _MAX_LOG_FILES = 30
 _original_stdout = None
@@ -66,18 +67,19 @@ def restore_output() -> None:
 def _cleanup_logs(log_dir: Path) -> None:
     now = datetime.now().timestamp()
     candidates = []
-    for path in log_dir.glob(_LOG_PATTERN):
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        if now - stat.st_mtime > _MAX_LOG_AGE_SECONDS:
+    for pattern in _LOG_PATTERNS:
+        for path in log_dir.glob(pattern):
             try:
-                path.unlink()
+                stat = path.stat()
             except OSError:
-                logging.getLogger(__name__).warning("无法清理旧日志：%s", path)
-        else:
-            candidates.append((stat.st_mtime, path))
+                continue
+            if now - stat.st_mtime > _MAX_LOG_AGE_SECONDS:
+                try:
+                    path.unlink()
+                except OSError:
+                    logging.getLogger(__name__).warning("无法清理旧日志：%s", path)
+            else:
+                candidates.append((stat.st_mtime, path))
     for _mtime, path in sorted(candidates, reverse=True)[_MAX_LOG_FILES - 1:]:
         try:
             path.unlink()
@@ -105,14 +107,13 @@ def _thread_exception_logger(logger: logging.Logger):
 
 def configure_logging(component: str, log_dir: Path | None = None) -> Path:
     """初始化进程日志并返回文件路径；重复调用会轮换而非叠加 handler。"""
-    log_dir = log_dir or Path(__file__).resolve().parents[2] / "logs"
+    log_dir = log_dir or Path(__file__).resolve().parents[1] / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     _cleanup_logs(log_dir)
-    safe_component = "".join(char if char.isalnum() or char in "-_" else "_"
-                             for char in component) or "app"
-    path = log_dir / f"bwpro_{datetime.now():%Y%m%d_%H%M%S}_{safe_component}.log"
+    path = log_dir / f"bwpro-{datetime.now():%Y%m%d-%H%M%S}-{os.getpid()}.log"
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
     for handler in list(root.handlers):
         if getattr(handler, "_bwpro_handler", False):
             root.removeHandler(handler)

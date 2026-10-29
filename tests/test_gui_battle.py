@@ -1798,6 +1798,69 @@ def test_upgrade_assault_and_end_turn(qapp, view):
     assert view.viewer == 1
 
 
+def test_newly_upgraded_action_legality(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    game = view.game
+    card = F.give(game, 0, 10010201)
+    view.refresh()
+    settle(view)
+    view.upgrade(1)
+    settle(view)
+    assert game.current.shikigami[1].level == 1
+    assert view.battle_scene.cards[("shiki", 0, 1)].playable
+    assert not view.battle_scene.cards[("shiki", 0, 2)].playable
+    assert game.assault_error(0, 1) is None
+    assert "未在场" in game.assault_error(0, 2)
+    assert view.battle_scene.cards[("hand", card.uid)].playable
+    game.current.orb = 2
+    view.play_card(card.uid)
+    settle(view)
+    assert card not in game.current.hand
+    view.assault(1)
+    settle(view)
+    assert game.current.combat_index == 1
+
+
+def test_extra_upgrade_blocks_actions_until_complete(qapp, view):
+    start(view, mulligan=False,
+          config=GameConfig(auto_skip_upgrade=False, extra_upgrade_turns=(1, 3)))
+    game = view.game
+    assert game.current.upgrades == 2
+    view.upgrade(1)
+    settle(view)
+    assert game.state.phase == "upgrade"
+    assert not view.battle_scene.cards[("shiki", 0, 1)].playable
+    assert view.battle_scene.cards[("shiki", 0, 2)].playable
+    assert all(not item.playable for item in scene_items(view, "hand", player=0))
+    view.upgrade(2)
+    settle(view)
+    assert game.state.phase == "battle"
+    assert view.battle_scene.cards[("shiki", 0, 1)].playable
+
+
+def test_upgrade_with_defeated_shikigami_keeps_hand_usable(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    game = view.game
+    game.current.shikigami[0].defeated = True
+    card = F.give(game, 0, 10010201)
+    view.upgrade(1)
+    settle(view)
+    assert game.state.phase == "battle"
+    assert "气绝" in game.assault_error(0, 0)
+    assert view.battle_scene.cards[("hand", card.uid)].playable
+
+
+def test_battle_timeline_written_to_application_log(qapp, view, caplog):
+    import logging
+
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    with caplog.at_level(logging.INFO, logger="bwpro.battle"):
+        view.upgrade(1)
+        settle(view)
+    assert not any(record.message.startswith("HotseatView")
+                   and "升至 1 级" in record.message for record in caplog.records)
+
+
 def test_play_card_with_target_mode(qapp, db, view):
     cid = 10010151
     db.cards[cid] = F.card(cid, token=True,

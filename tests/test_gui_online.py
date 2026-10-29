@@ -410,6 +410,22 @@ def test_game_over_waits_for_timeline_playback(qapp, db, make_game):
     battle.close()
 
 
+def test_online_timeline_written_to_application_log(qapp, db, make_game, caplog):
+    import logging
+
+    game = make_game(mulligan=True)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.timeline_timer.setInterval(0)
+    with caplog.at_level(logging.INFO, logger="bwpro.battle"):
+        battle.set_state(game.state.model_dump(mode="json"),
+                         timeline=[{"m": "联机结算记录"}])
+        while battle.timeline_queue:
+            battle.play_next_timeline()
+    assert not any(record.message.startswith("OnlineBattleView")
+                   and "联机结算记录" in record.message for record in caplog.records)
+    battle.close()
+
+
 def test_online_card_detail_uses_payload_runtime_without_recalculation(
         qapp, db, make_game, monkeypatch):
     game = make_game(mulligan=True)
