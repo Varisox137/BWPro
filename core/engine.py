@@ -1165,11 +1165,11 @@ class Game:
         该指令触发的所有延时效果。对局已结束时拒绝任何操作。
         以 "debug_" 开头的 op 会路由到 core/debug.py 的调试指令注册表。
         """
-        if self.state.winner is not None or self.state.pending_end:
-            raise IllegalAction("对局已结束")
         op = cmd.get("op", "")
         self._trace("cmd", json.dumps(cmd, ensure_ascii=False, default=str),
                     owner=cmd.get("player", self.state.active))
+        if self.state.winner is not None or self.state.pending_end:
+            raise IllegalAction("对局已结束")
         if op.startswith("debug_"):
             if not self.config.enable_debug_commands:
                 raise IllegalAction("调试指令已禁用")
