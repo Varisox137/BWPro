@@ -221,6 +221,18 @@ def test_editor_detail_uses_current_environment_database(qapp, view, monkeypatch
     assert seen["db"].shikigami[factories.TEAM[0]].version == 20260720
 
 
+def test_shikigami_selection_matches_codex_theme(qapp, view):
+    view.apply_theme("light", THEMES["light"])
+    style = view.styleSheet()
+    assert "QListWidget::item:selected" in style
+    assert "#cfe5f7" in style
+    assert "#17344d" in style
+    assert "border: none;" in style
+    assert "outline: none;" in style
+    view.apply_theme("dark", THEMES["dark"])
+    assert "#294c68" in view.styleSheet()
+
+
 def test_cancel_add_restores_shikigami_selection(qapp, view, monkeypatch):
     view.new_deck()
     view.add_shikigami(factories.TEAM[0])

@@ -210,16 +210,6 @@ class CardDetailDialog(QDialog):
         else:
             self.detail_top.addStretch(1)
         layout.addLayout(self.detail_top, 1)
-        details = []
-        if getattr(cdef, "subtype", None):
-            details.append(f"子类型：{cdef.subtype}")
-        if db is not None and getattr(cdef, "shikigami", None) in db.shikigami:
-            details.append(f"所属式神：{db.shikigami[cdef.shikigami].name}")
-        if details:
-            label = QLabel("　".join(details))
-            label.setObjectName("cardMeta")
-            label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(label)
         if runtime is not None:
             current = ["当前状态"]
             if "cost" in runtime:

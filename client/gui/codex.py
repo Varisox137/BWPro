@@ -139,8 +139,9 @@ class ShikigamiCodexView(QWidget):
                 background: {colors['panel']}; color: {colors['text']};
                 border: 1px solid {colors['line']}; padding: 5px;
             }}
+            QTreeWidget {{ outline: none; }}
             QTreeWidget::item:selected, QTreeWidget::branch:selected {{
-                background: {selection_bg}; color: {selection_text};
+                background: {selection_bg}; color: {selection_text}; border: none;
             }}
             QLabel#loadingLabel {{ color: {colors['gold']}; font-size: 28px; }}
         """)

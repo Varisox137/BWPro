@@ -302,6 +302,8 @@ class DeckBuilderView(QWidget):
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
+        selection_bg = "#cfe5f7" if theme == "light" else "#294c68"
+        selection_text = "#17344d" if theme == "light" else colors["text"]
         self.setStyleSheet(f"""
             QLabel#viewTitle {{ color: {colors['gold']}; font-size: 28px; }}
             QFrame#deckFrame {{
@@ -319,7 +321,10 @@ class DeckBuilderView(QWidget):
                 background: {colors['panel']}; color: {colors['text']};
                 border: 1px solid {colors['line']}; padding: 5px;
             }}
-            QListWidget::item:selected {{ background: {colors['gold2']}; color: {colors['text']}; }}
+            QListWidget {{ outline: none; }}
+            QListWidget::item:selected {{
+                background: {selection_bg}; color: {selection_text}; border: none;
+            }}
             QPushButton#cardStep {{ padding: 1px; font-size: 16px; text-align: center; }}
         """)
 

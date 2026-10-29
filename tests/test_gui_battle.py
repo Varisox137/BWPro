@@ -1497,6 +1497,9 @@ def test_card_runtime_details_and_static_compatibility(qapp, db):
     assert "已 1/2" in text and "条件未满足" in text and "条件：不满足" in text
     assert text.count("委托") == 1
     assert "常规" in text
+    labels = [label.text() for label in dialog.findChildren(QLabel)]
+    assert all(not text.startswith(("所属式神：", "子类型：")) for text in labels)
+    assert dialog.mechanism_panel is not None
     dialog.close()
 
     static = CardDetailDialog(cdef, db)

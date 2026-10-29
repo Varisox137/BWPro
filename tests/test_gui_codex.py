@@ -151,6 +151,8 @@ def test_theme_and_empty_filter(qapp, view):
     view.apply_theme("light", THEMES["light"])
     assert "#cfe5f7" in view.styleSheet()
     assert "QTreeWidget::branch:selected" in view.styleSheet()
+    assert "border: none;" in view.styleSheet()
+    assert "outline: none;" in view.styleSheet()
     view.apply_theme("dark", THEMES["dark"])
     view.search_edit.setText("不存在的式神")
     assert view.shiki_list.topLevelItemCount() == 0
