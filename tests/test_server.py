@@ -48,6 +48,8 @@ def test_server_message_builders():
     st = protocol.state({"turn": 3}, ["x", "y"])
     assert st["payload"]["turn"] == 3 and st["log"] == ["x", "y"]
     assert "timer" not in st  # 缺省不带计时器字段（旧客户端兼容）
+    assert "trace" not in st
+    assert "trace" not in protocol.state({"turn": 3}, [], trace=[])
     st2 = protocol.state({"turn": 3}, [], timer={"kind": "turn", "deadline": 1.0})
     assert st2["timer"] == {"kind": "turn", "deadline": 1.0}
     st3 = protocol.state({"turn": 3}, [], trace=[{"kind": "event"}])
@@ -146,9 +148,18 @@ def test_room_broadcasts_server_trace(db):
         room, ws0, ws1 = await _started_room(db)
         viewer = room.seat_to_player[0]
         room.game._trace("op", "服务端原子动作", owner=viewer)
+        room.game._trace("event", "完整私有载荷", summary="on_damage")
         await room.broadcast_state()
         msg = [m for m in ws0.messages if m["type"] == "state"][-1]
-        assert msg["trace"][-1]["message"] == "服务端原子动作"
+        peer_msg = [m for m in ws1.messages if m["type"] == "state"][-1]
+        assert [e["message"] for e in msg["trace"]] == ["服务端原子动作", "on_damage"]
+        assert [e["message"] for e in peer_msg["trace"]] == ["on_damage"]
+        await room.broadcast_state()
+        msg = [m for m in ws0.messages if m["type"] == "state"][-1]
+        assert "trace" not in msg
+        await room.resync(room.conns[0])
+        msg = [m for m in ws0.messages if m["type"] == "state"][-1]
+        assert "trace" not in msg
     run(go())
 
 
