@@ -38,6 +38,29 @@ def test_card_detail_renders_keyword_mechanisms(qapp):
     dialog.close()
 
 
+def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypatch):
+    from client.gui.mechanisms import card_mechanisms
+
+    cdef = F.card(10010101, text="[贯通][瞬发][贯通][连击]")
+    db = F.db_of([F.shiki(100101)], [cdef])
+    mechanisms = card_mechanisms(cdef, runtime={"keywords": ["瞬发"]})
+    assert [item["name"] for item in mechanisms] == ["贯通", "瞬发", "连击"]
+    assert mechanisms[1]["text"] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
+    assert mechanisms[0]["frame"] == "skill"
+    assert mechanisms[0]["badge"] is None
+    assert mechanisms[0]["version_date"] == "20191212"
+
+    rendered = []
+    monkeypatch.setattr(
+        "client.gui.mechanisms._mechanism_pixmap",
+        lambda name, _frame, text, _root, chars_per_line=None, font_scale=1.0:
+        rendered.append((name, text)) or QPixmap(360, 220))
+    dialog = CardDetailDialog(cdef, db, runtime={"keywords": ["瞬发"]})
+    assert [name for name, _text in rendered] == ["贯通", "瞬发", "连击"]
+    assert rendered[1][1] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
+    dialog.close()
+
+
 def test_card_detail_places_card_and_scrollable_mechanisms_side_by_side(qapp, monkeypatch):
     seen = []
 

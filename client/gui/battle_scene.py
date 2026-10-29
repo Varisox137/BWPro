@@ -5,7 +5,10 @@ from PySide6.QtCore import (
     QEasingCurve, QLineF, QPointF, QPropertyAnimation, QRectF, QSizeF, Qt, QTimer,
     QVariantAnimation, Signal,
 )
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QTransform
+from PySide6.QtGui import (
+    QBrush, QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap, QTransform,
+)
 from PySide6.QtWidgets import (
     QApplication, QGraphicsObject, QGraphicsPathItem, QGraphicsPixmapItem,
     QGraphicsRectItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView,
@@ -171,9 +174,38 @@ class BattleCardItem(QGraphicsObject):
     def boundingRect(self):
         return QRectF(QPointF(0, 0), self.size)
 
+    def _paint_operation_glow(self, painter: QPainter, rect: QRectF) -> None:
+        colors = {"yellow": "#f3d56b", "blue": "#75b9d1", "green": "#78c896"}
+        color = QColor("#f3d56b" if self.dragging or self.targetable
+                       else colors[self.border_color])
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        gradient.setColorAt(0, color.lighter(145))
+        gradient.setColorAt(1, color.darker(115))
+        painter.save()
+        if self.pixmap is not None and not self.pixmap.isNull():
+            source = self.pixmap.toImage().scaled(
+                rect.size().toSize(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            glow = QImage(source.size(), QImage.Format_ARGB32)
+            glow.fill(Qt.transparent)
+            glow_painter = QPainter(glow)
+            glow_painter.fillRect(glow.rect(), gradient)
+            glow_painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+            glow_painter.drawImage(0, 0, source.convertToFormat(QImage.Format_Alpha8))
+            glow_painter.end()
+            for dx, dy in ((-4, 0), (4, 0), (0, -4), (0, 4),
+                           (-3, -3), (-3, 3), (3, -3), (3, 3)):
+                painter.drawImage(rect.topLeft() + QPointF(dx, dy), glow)
+        else:
+            painter.setPen(QPen(QBrush(gradient), 4))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), 8, 8)
+        painter.restore()
+
     def paint(self, painter: QPainter, option, widget=None):
         del option, widget
         rect = self.boundingRect()
+        if self.dragging or self.targetable or self.playable:
+            self._paint_operation_glow(painter, rect)
         if self.pixmap is not None and not self.pixmap.isNull():
             painter.drawPixmap(rect, self.pixmap, QRectF(self.pixmap.rect()))
         elif self.key[0] == "player":
@@ -198,15 +230,6 @@ class BattleCardItem(QGraphicsObject):
             painter.setBrush(QColor(45, 55, 65, 240))
             painter.drawRect(rect)
             painter.drawRect(rect.adjusted(7, 7, -7, -7))
-        else:
-            return
-        if self.dragging or self.targetable or self.playable:
-            colors = {"yellow": "#f3d56b", "blue": "#75b9d1", "green": "#78c896"}
-            color = QColor("#f3d56b" if self.dragging or self.targetable
-                           else colors[self.border_color])
-            painter.setPen(QPen(color, 4))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(rect.adjusted(2, 2, -2, -2))
 
     def _paint_player(self, painter: QPainter, rect: QRectF) -> None:
         painter.save()
@@ -270,15 +293,21 @@ class BattleCardItem(QGraphicsObject):
         painter.restore()
 
     def mousePressEvent(self, event) -> None:
-        self.scene().drag_controller.press(self, event.scenePos())
+        if self.key[0] != "usage":
+            self.scene().drag_controller.press(self, event.scenePos())
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        self.scene().drag_controller.move(event.scenePos())
+        if self.key[0] != "usage":
+            self.scene().drag_controller.move(event.scenePos())
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
-        self.scene().drag_controller.release(event.scenePos())
+        if self.key[0] == "usage":
+            if self.playable:
+                self.scene().usage_selected.emit(self.payload)
+        else:
+            self.scene().drag_controller.release(event.scenePos())
         event.accept()
 
 
@@ -443,6 +472,7 @@ class BattleScene(QGraphicsScene):
     detail_requested = Signal(str, object)
     action_requested = Signal(dict)
     mulligan_selected = Signal(object)
+    usage_selected = Signal(object)
 
     def __init__(self, db):
         super().__init__(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
@@ -455,6 +485,8 @@ class BattleScene(QGraphicsScene):
         self._card_use_sources: dict[QVariantAnimation, dict] = {}
         self._hand_animation_cache: dict[int, tuple] = {}
         self._animation_timeline: list[dict] | None = None
+        self.usage_items: list[BattleCardItem] = []
+        self.usage_labels: list[QGraphicsTextItem] = []
         self.deck_backs: dict[tuple, BattleCardItem] = {}
         self.upgrade_badges: dict[int, QGraphicsPixmapItem] = {}
         self.phase = None
@@ -508,7 +540,7 @@ class BattleScene(QGraphicsScene):
         for item in self.cards.values():
             item.text_color = QColor(color)
             item.update()
-        for item in (self.banner_item, self.loading_item):
+        for item in (self.banner_item, self.loading_item, *self.usage_labels):
             item.setDefaultTextColor(QColor(color))
 
     def show_banner(self, text: str, duration: int = 900) -> None:
@@ -754,7 +786,46 @@ class BattleScene(QGraphicsScene):
             self.removeItem(item)
         animation.deleteLater()
 
+    def show_usage_options(self, options: list[dict], card_defs: list) -> None:
+        self.clear_usage_options()
+        width = (len(options) * MULLIGAN_HAND_SIZE.width()
+                 + max(0, len(options) - 1) * 16)
+        art_context = {}
+        for index, (option, cdef) in enumerate(zip(options, card_defs)):
+            x = (SCENE_WIDTH - width) / 2 + index * (MULLIGAN_HAND_SIZE.width() + 16)
+            item = BattleCardItem(("usage", option["id"]), size=MULLIGAN_HAND_SIZE)
+            item.cdef = cdef
+            item.payload = option["id"]
+            item.playable = option["ok"]
+            item.setOpacity(1 if option["ok"] else 0.6)
+            item.set_art(card_pixmap(cdef, self.db, cache_context=art_context,
+                                     height=MULLIGAN_HAND_SIZE.height()))
+            item.setPos(x, 280)
+            item.setZValue(DRAG_Z + 15)
+            item.text_color = QColor(self.text_color)
+            self.addItem(item)
+            self.usage_items.append(item)
+
+            energy = f"　能量 {option['energy']}" if option["energy"] else ""
+            reason = "" if option["ok"] else f"\n不可用：{option['reason'] or '当前不可用'}"
+            label = QGraphicsTextItem(f"{option['label']}　鬼火 {option['cost']}{energy}{reason}")
+            label.setFont(QFont("Microsoft YaHei", 12))
+            label.setDefaultTextColor(QColor(self.text_color))
+            label.setTextWidth(MULLIGAN_HAND_SIZE.width())
+            label.setPos(x, 280 + MULLIGAN_HAND_SIZE.height() + 8)
+            label.setZValue(DRAG_Z + 16)
+            self.addItem(label)
+            self.usage_labels.append(label)
+
+    def clear_usage_options(self) -> None:
+        for item in (*self.usage_items, *self.usage_labels):
+            if item.scene() is self:
+                self.removeItem(item)
+        self.usage_items.clear()
+        self.usage_labels.clear()
+
     def reset_animations(self) -> None:
+        self.clear_usage_options()
         for animation in self._move_animations.values():
             animation.stop()
             animation.deleteLater()
@@ -939,9 +1010,10 @@ class BattleScene(QGraphicsScene):
                 item.payload = card if revealed else None
                 item.keywords = list(detail.get("keywords", []))
                 usage = detail.get("usage", [])
+                legal_usage = [option for option in usage if option["ok"]]
                 item.border_color = (
-                    "green" if len(usage) > 1 else
-                    "blue" if any(option["ok"] and option["cost"] == 0 for option in usage)
+                    "green" if len(legal_usage) > 1 else
+                    "blue" if len(legal_usage) == 1 and legal_usage[0]["cost"] == 0
                     else "yellow"
                 )
                 target_specs = []

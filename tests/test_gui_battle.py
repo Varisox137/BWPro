@@ -11,7 +11,7 @@ from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox
 
 from client.gui.app import THEMES, MainWindow
-from client.gui.battle import DeckSelectDialog, HotseatView, UsageDialog
+from client.gui.battle import DeckSelectDialog, HotseatView
 from client.gui.widgets import CardDetailDialog
 from core.model import CardInstance, GameConfig, Ref
 from db import deckcode, deckstore
@@ -337,12 +337,59 @@ def test_hand_playable_border_colors(qapp, view):
     game.db.cards[10010152] = F.card(
         10010152, token=True,
         methods=[F.method("free", cost=0), F.method("paid", cost=1)])
+    free_option, paid_option, gated_option = 10010153, 10010154, 10010155
+    game.db.cards[free_option] = F.card(free_option, token=True, cost=0, level=0)
+    game.db.cards[paid_option] = F.card(paid_option, token=True, cost=1, level=0)
+    game.db.cards[gated_option] = F.card(gated_option, token=True, cost=1, level=3)
+    game.db.cards[10010161] = F.card(
+        10010161, token=True, card_type="reinforce", shikigami2=100102,
+        options=[free_option, gated_option])
+    game.db.cards[10010162] = F.card(
+        10010162, token=True, card_type="reinforce", shikigami2=100102,
+        options=[paid_option, gated_option])
     free = F.give(game, 0, 10010151)
     multi = F.give(game, 0, 10010152)
+    single_free = F.give(game, 0, 10010161)
+    single_paid = F.give(game, 0, 10010162)
     view.refresh(); settle(view)
     assert view.battle_scene.cards[("hand", free.uid)].border_color == "blue"
     assert view.battle_scene.cards[("hand", multi.uid)].border_color == "green"
+    assert view.battle_scene.cards[("hand", single_free.uid)].border_color == "blue"
+    assert view.battle_scene.cards[("hand", single_paid.uid)].border_color == "yellow"
     assert view.battle_scene.cards[("shiki", 0, 0)].border_color == "yellow"
+
+
+def test_playable_card_uses_alpha_contour_glow_not_tight_box(qapp):
+    from PySide6.QtCore import QSizeF
+    from PySide6.QtGui import QPixmap
+    from client.gui.battle_scene import BattleCardItem
+
+    pixmap = QPixmap(40, 60)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setBrush(Qt.white)
+    painter.setPen(Qt.NoPen)
+    painter.drawEllipse(8, 4, 24, 52)
+    painter.end()
+    item = BattleCardItem(("hand", 99), size=QSizeF(40, 60))
+    item.set_art(pixmap)
+
+    def render():
+        image = QImage(item.size.toSize(), QImage.Format_ARGB32)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        item.paint(painter, None)
+        painter.end()
+        return image
+
+    item.playable = True
+    glowing = render()
+    assert glowing.pixelColor(2, 2).alpha() == 0
+    assert glowing.pixelColor(5, 30).alpha() > 0
+    item.playable = False
+    plain = render()
+    assert plain.pixelColor(2, 2).alpha() == 0
+    assert plain.pixelColor(5, 30).alpha() == 0
 
 
 def test_phase_label_sits_right_of_turn_label(qapp, view):
@@ -1240,12 +1287,6 @@ def test_drag_method_targets_and_blank_drop_follow_selected_usage(qapp, db, view
     monkeypatch.setattr(view.game, "apply", record_apply)
     selected = ["untargeted"]
 
-    def choose_usage(dialog):
-        dialog.selected_id = selected[0]
-        return QDialog.Accepted
-
-    monkeypatch.setattr(UsageDialog, "exec", choose_usage)
-
     def give_card():
         card = F.give(view.game, 0, card_id)
         view.game.current.orb = 1
@@ -1265,10 +1306,12 @@ def test_drag_method_targets_and_blank_drop_follow_selected_usage(qapp, db, view
     own_player = scene.cards[("player", 0)]
     drag(hand, own_player.scenePos() + QPointF(20, 20))
     assert commands == [] and view.pending_command is None
+    view.cancel_targeting()
 
     selected[0] = "player"
     enemy_player = scene.cards[("player", 1)]
     drag(hand, enemy_player.scenePos() + QPointF(20, 20))
+    scene.usage_selected.emit(selected[0])
     settle(view)
     assert commands == [{"op": "play_card", "uid": card.uid,
                          "play_method": "player", "target": Ref(player=1)}]
@@ -1277,8 +1320,10 @@ def test_drag_method_targets_and_blank_drop_follow_selected_usage(qapp, db, view
     drag(hand, QPointF(20, 450))
     assert len(commands) == 1 and card in view.game.current.hand
     assert view.pending_command is None
+    view.cancel_targeting()
     selected[0] = "untargeted"
     drag(hand, QPointF(20, 450))
+    scene.usage_selected.emit(selected[0])
     settle(view)
     assert commands[-1] == {"op": "play_card", "uid": card.uid,
                             "play_method": "untargeted"}
@@ -1304,12 +1349,6 @@ def test_drag_reinforce_targets_use_selected_subcard(qapp, db, view, monkeypatch
         return real_apply(command)
 
     monkeypatch.setattr(view.game, "apply", record_apply)
-
-    def choose_usage(dialog):
-        dialog.selected_id = "choice:1"
-        return QDialog.Accepted
-
-    monkeypatch.setattr(UsageDialog, "exec", choose_usage)
     card = F.give(view.game, 0, main_id)
     view.game.current.orb = 1
     view.refresh()
@@ -1321,6 +1360,7 @@ def test_drag_reinforce_targets_use_selected_subcard(qapp, db, view, monkeypatch
     scene.drag_controller.press(hand, hand.scenePos())
     scene.drag_controller.move(enemy_player.scenePos() + QPointF(20, 20))
     scene.drag_controller.release(enemy_player.scenePos() + QPointF(20, 20))
+    scene.usage_selected.emit("choice:1")
     settle(view)
     assert commands == [{"op": "play_card", "uid": card.uid,
                          "choice": 1, "target": Ref(player=1)}]
@@ -2036,6 +2076,37 @@ def test_play_method_and_second_target(qapp, db, view):
     settle(view)
     assert double not in game.current.hand
     assert view.pending_command is None
+
+
+def test_usage_options_show_all_central_cards_and_reasons(qapp, db, view):
+    free_option, gated_option = 10010153, 10010154
+    db.cards[free_option] = F.card(free_option, token=True, cost=0, level=0)
+    db.cards[gated_option] = F.card(gated_option, token=True, cost=1, level=3)
+    db.cards[10010161] = F.card(
+        10010161, token=True, card_type="reinforce", shikigami2=100102,
+        options=[free_option, gated_option])
+    start(view, mulligan=False)
+    card = F.give(view.game, 0, 10010161)
+    view.refresh()
+    settle(view)
+    assert view.play_card(card.uid)
+
+    scene = view.battle_scene
+    assert [item.payload for item in scene.usage_items] == ["choice:0", "choice:1"]
+    assert [item.playable for item in scene.usage_items] == [True, False]
+    assert [item.pos() for item in scene.usage_items] == [QPointF(612, 280), QPointF(808, 280)]
+    reason = view.game.usage_options(0, card)[1]["reason"]
+    assert any(reason in label.toPlainText() for label in scene.usage_labels)
+    assert not view._inputs_open()
+
+    view.cancel_targeting()
+    assert not scene.usage_items
+    assert card in view.game.current.hand
+    assert view.play_card(card.uid)
+    scene.usage_selected.emit("choice:0")
+    settle(view)
+    assert not scene.usage_items
+    assert card not in view.game.current.hand
 
 
 def test_actions_remain_available_during_timeline(qapp, view):

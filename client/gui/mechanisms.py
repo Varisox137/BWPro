@@ -4,14 +4,16 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from io import BytesIO
+from pathlib import Path
 
+import yaml
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from client.cli import KEYWORD_CN
 from client.gui.cardart import _renderer
-from client.gui.portrait import bwpdiy_root
+from client.gui.portrait import bwpdiy_root, library_root
 
 MECHANISM_TEXTS = {
     "不屈": "生命大于1时，受到致命伤害会保留1点生命；一次性不屈触发后消耗。",
@@ -73,12 +75,38 @@ def _canonical_name(token: str) -> str:
     return _KEYWORD_IDS.get(token, token)
 
 
+@lru_cache(maxsize=16)
+def _library_mechanisms(root_text: str) -> dict[str, dict]:
+    definitions = {}
+    for path in sorted((Path(root_text) / "mechanisms").glob("*.yaml")):
+        try:
+            data = yaml.safe_load(path.read_bytes())
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(data, dict) or not data.get("name") or not data.get("text"):
+            continue
+        definitions[str(data["name"])] = {
+            field: data.get(field)
+            for field in ("name", "frame", "text", "badge", "version_date")
+        }
+    return definitions
+
+
 def _add_mechanism(mechanisms: list[dict], name: str, *, frame: str = "skill",
                    text: str | None = None) -> None:
-    description = MECHANISM_TEXTS.get(name) if text is None else text
+    definition = _library_mechanisms(str(library_root().resolve())).get(name) \
+        if text is None else None
+    if definition is not None:
+        frame = definition["frame"] or frame
+        description = definition["text"]
+    else:
+        description = MECHANISM_TEXTS.get(name) if text is None else text
     if description and not any(item["name"] == name and item["frame"] == frame
                                for item in mechanisms):
-        mechanisms.append({"name": name, "frame": frame, "text": description})
+        item = {"name": name, "frame": frame, "text": description}
+        if definition is not None:
+            item.update(badge=definition["badge"], version_date=definition["version_date"])
+        mechanisms.append(item)
 
 
 def _add_text(mechanisms: list[dict], text: str | None) -> None:

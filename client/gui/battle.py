@@ -52,34 +52,6 @@ class DeckSelectDialog(QDialog):
         return self.entries[self.list.currentRow()]
 
 
-class UsageDialog(QDialog):
-    """手牌使用方式选择，保留不合法项及原因。"""
-
-    def __init__(self, options: list[dict], parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("选择使用方式")
-        self.setMinimumWidth(520)
-        self.selected_id = None
-        layout = QVBoxLayout(self)
-        for option in options:
-            energy = f"　能量 {option['energy']}" if option["energy"] else ""
-            reason = "" if option["ok"] else f"\n不可用：{option['reason']}"
-            effect = f"\n{option['effect']}" if option["effect"] else ""
-            button = QPushButton(
-                f"{option['label']}　鬼火 {option['cost']}{energy}{effect}{reason}")
-            button.setEnabled(option["ok"])
-            button.clicked.connect(lambda _=False, oid=option["id"]: self._choose(oid))
-            layout.addWidget(button)
-        cancel = QDialogButtonBox(QDialogButtonBox.Cancel)
-        polish_dialog_buttons(cancel)
-        cancel.rejected.connect(self.reject)
-        layout.addWidget(cancel)
-
-    def _choose(self, option_id) -> None:
-        self.selected_id = option_id
-        self.accept()
-
-
 class ChoiceDialog(QDialog):
     """结算中选择：卡牌 uid、卡牌/式神数据 id 与灵咒名统一作答。"""
 
@@ -146,6 +118,7 @@ class HotseatView(QWidget):
         self._last_turn_key = None
         self._opening_banner_pending = True
         self.pending_command: dict | None = None
+        self._usage_pending: tuple[int, Ref | None] | None = None
         self.target_specs: list[tuple[str, object]] = []
         self.legal_targets: list[Ref] = []
         self.choice_dialog: ChoiceDialog | None = None
@@ -298,6 +271,7 @@ class HotseatView(QWidget):
         log_layout.addWidget(log_buttons, alignment=Qt.AlignRight)
         self.battle_scene.action_requested.connect(self._scene_action)
         self.battle_scene.detail_requested.connect(self._scene_detail)
+        self.battle_scene.usage_selected.connect(self._select_usage)
 
     def _scene_action(self, command: dict) -> bool:
         op = command.get("op")
@@ -422,6 +396,7 @@ class HotseatView(QWidget):
     def start_game(self, p1: tuple, p2: tuple, seed: int | None = None, **kwargs) -> None:
         if seed is None:
             seed = secrets.randbits(32)
+        self._clear_usage()
         self.battle_scene.reset_animations()
         self.battle_scene.show_loading("正在准备对局")
         try:
@@ -488,6 +463,7 @@ class HotseatView(QWidget):
 
     def _begin_handoff(self, preserve_hand: bool = False) -> None:
         self.timeline_timer.stop()
+        self._clear_usage()
         self.battle_scene.reset_animations()
         self._handoff_pending = True
         self._handoff_stage = "review" if preserve_hand else "transfer"
@@ -589,7 +565,7 @@ class HotseatView(QWidget):
         self.ready_button.setVisible(state.phase == "mulligan")
         self.ready_button.setEnabled(inputs and state.phase == "mulligan")
         targeting = self.pending_command is not None
-        self.cancel_target_button.setVisible(targeting)
+        self.cancel_target_button.setVisible(targeting or self._usage_pending is not None)
         self.default_target_button.setVisible(targeting and self.pending_command.get("op") == "assault")
         self.target_label.setText("请选择高亮目标" if targeting else "")
         self.target_label.setVisible(targeting)
@@ -604,7 +580,7 @@ class HotseatView(QWidget):
         return (self.game is not None and not self._handoff_pending
                 and self.game.state.winner is None
                 and self.game.state.pending_choice is None
-                and self.pending_command is None)
+                and self.pending_command is None and self._usage_pending is None)
 
     def apply_command(self, command: dict) -> bool:
         if self.game is None or self._handoff_pending:
@@ -676,27 +652,43 @@ class HotseatView(QWidget):
                 return True
         return self.apply_command(command)
 
+    def _clear_usage(self) -> None:
+        self._usage_pending = None
+        self.battle_scene.clear_usage_options()
+
+    def _select_usage(self, usage_id) -> bool:
+        if self._usage_pending is None:
+            return False
+        uid, target = self._usage_pending
+        self._clear_usage()
+        return self.play_card(uid, usage_id=usage_id, target=target)
+
     def play_card(self, uid: int, usage_id=..., target=None, from_drag=False) -> bool:
         if not self._inputs_open() or self.game.state.phase != "battle":
             return False
         card = next((card for card in self.game.current.hand if card.uid == uid), None)
         if card is None:
             return False
+        definition = self.db.cards[card.id]
         options = self.game.usage_options(self.game.state.active, card)
+        if not options:
+            return False
         if usage_id is ...:
             if len(options) == 1:
                 usage_id = options[0]["id"]
             else:
-                dialog = UsageDialog(options, self)
-                if dialog.exec() != QDialog.Accepted:
-                    return False
-                usage_id = dialog.selected_id
+                self._usage_pending = (uid, target)
+                self._render_state()
+                card_defs = ([self.db.cards[cid] for cid in definition.options]
+                             if definition.card_type == "reinforce"
+                             else [definition] * len(options))
+                self.battle_scene.show_usage_options(options, card_defs)
+                return True
         option = next((item for item in options if item["id"] == usage_id), None)
         if option is None or not option["ok"]:
             self.error_label.setText("该使用方式当前不可用")
             return False
         command = {"op": "play_card", "uid": uid}
-        definition = self.db.cards[card.id]
         if isinstance(usage_id, str) and usage_id.startswith("choice:"):
             choice = int(usage_id.split(":", 1)[1])
             command["choice"] = choice
@@ -750,6 +742,7 @@ class HotseatView(QWidget):
         return self.apply_command(command)
 
     def cancel_targeting(self) -> None:
+        self._clear_usage()
         self.pending_command = None
         self.target_specs = []
         self.legal_targets = []
@@ -937,6 +930,7 @@ class HotseatView(QWidget):
             if answer != QMessageBox.Yes:
                 return False
         self.timeline_timer.stop()
+        self._clear_usage()
         self.battle_scene.reset_animations()
         self.battle_scene.hide_banner()
         self.battle_scene.hide_loading()
