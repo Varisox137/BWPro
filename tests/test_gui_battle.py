@@ -598,13 +598,20 @@ def test_battle_window_minimum_height_fits_common_900px_window(qapp, db, tmp_pat
         win.close()
 
 
-def test_battle_view_fills_width_without_letterboxing(qapp, view):
+def test_battle_view_keeps_aspect_ratio_with_letterboxing(qapp, view):
     start(view, mulligan=False)
-    view.resize(1600, 800)
+    view.resize(1000, 1000)
     view.show()
     qapp.processEvents()
-    transform = view.battle_view.transform()
-    assert transform.m11() != pytest.approx(transform.m22())
+    battle_view = view.battle_view
+    transform = battle_view.transform()
+    assert transform.m11() == pytest.approx(transform.m22())
+    mapped = battle_view.mapFromScene(view.battle_scene.sceneRect()).boundingRect()
+    viewport = battle_view.viewport().rect()
+    assert mapped.left() >= viewport.left() - 1
+    assert mapped.top() >= viewport.top() - 1
+    assert mapped.right() <= viewport.right() + 1
+    assert mapped.bottom() <= viewport.bottom() + 1
 
 
 def test_scene_cards_and_controls_fit_1600x900(qapp, db, tmp_path, monkeypatch):
@@ -2061,6 +2068,21 @@ def test_shiki_position_animation_reaches_layout_target(qapp, view):
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
     assert item.pos() == target
+    assert item not in scene._move_animations
+
+
+def test_drag_stops_shiki_position_animation(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.current.combat_index = 0
+    view.refresh()
+    item = scene.cards[("shiki", 0, 0)]
+    animation = scene._move_animations[item]
+    origin = item.scenePos()
+    assert scene.drag_controller.press(item, origin)
+    scene.drag_controller.move(origin + QPointF(160, -80))
+    assert scene.drag_controller.dragged
+    assert animation.state() == animation.State.Stopped
     assert item not in scene._move_animations
 
 

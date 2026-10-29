@@ -393,6 +393,7 @@ class BattleDragController:
 
     def _start_drag(self) -> None:
         item = self.item
+        self.scene._stop_move_animation(item)
         if item.pixmap is not None and not item.pixmap.isNull():
             pixmap = item.pixmap.scaled(item.size.toSize(), Qt.KeepAspectRatio,
                                         Qt.SmoothTransformation)
@@ -427,7 +428,7 @@ class BattleView(QGraphicsView):
         self.fit_scene()
 
     def fit_scene(self) -> None:
-        self.fitInView(self.scene().sceneRect(), Qt.IgnoreAspectRatio)
+        self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
