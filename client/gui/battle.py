@@ -151,6 +151,7 @@ class HotseatView(QWidget):
         self.choice_dialog: ChoiceDialog | None = None
         self._choice_key = None
         self._handoff_pending = False
+        self._handoff_stage = None
         self.handoff_dialog: QDialog | None = None
         self._timeline_seen = 0
         self.timeline_queue: list[tuple[int | None, str]] = []
@@ -200,7 +201,8 @@ class HotseatView(QWidget):
         self.phase_label = QLabel()
         self.phase_label.setObjectName("phaseLabel")
         self.phase_label.setAlignment(Qt.AlignCenter)
-        self.battle_scene.add_control(self.phase_label, ("phase",), (340, 56))
+        self.battle_scene.phase_item = self.battle_scene.add_control(
+            self.phase_label, ("phase",), (340, 56))
         self.log_button = QPushButton("对局\n记录")
         self.log_button.setObjectName("battleRound")
         self.log_button.clicked.connect(self.show_log)
@@ -263,7 +265,7 @@ class HotseatView(QWidget):
         self.upgrade_label.setObjectName("upgradePhaseLabel")
         self.upgrade_label.setAlignment(Qt.AlignCenter)
         self.battle_scene.upgrade_item = self.battle_scene.add_control(
-            self.upgrade_label, ("upgrade_phase",), (300, 90))
+            self.upgrade_label, ("upgrade_phase",), (180, 56))
         self.battle_scene.upgrade_item.setZValue(90)
         self.upgrade_label.setVisible(False)
         self.battle_scene.mulligan_selected.connect(self._sync_mulligan_button)
@@ -331,8 +333,12 @@ class HotseatView(QWidget):
                 color: {colors['text']}; font-size: 24px; font-weight: 600;
                 background: transparent;
             }}
-            QLabel#turnOrderLabel, QLabel#upgradePhaseLabel {{
+            QLabel#turnOrderLabel {{
                 color: {colors['text']}; font-size: 34px; font-weight: 600;
+                background: transparent;
+            }}
+            QLabel#upgradePhaseLabel {{
+                color: {colors['text']}; font-size: 20px; font-weight: 600;
                 background: transparent;
             }}
             QLabel#enemyHandBack, QLabel#deckCount {{
@@ -361,10 +367,12 @@ class HotseatView(QWidget):
         self.phase_label.setStyleSheet(
             f"background: transparent; color: {colors['text']}; "
             "font-size: 24px; font-weight: 600;")
-        for label in (self.order_label, self.upgrade_label):
-            label.setStyleSheet(
-                f"background: transparent; color: {colors['text']}; "
-                "font-size: 34px; font-weight: 600;")
+        self.order_label.setStyleSheet(
+            f"background: transparent; color: {colors['text']}; "
+            "font-size: 34px; font-weight: 600;")
+        self.upgrade_label.setStyleSheet(
+            f"background: transparent; color: {colors['text']}; "
+            "font-size: 20px; font-weight: 600;")
         self.result_banner.setStyleSheet(
             f"background: transparent; color: {colors['text']}; "
             "font-size: 34px; font-weight: 600; padding: 16px;")
@@ -480,6 +488,7 @@ class HotseatView(QWidget):
     def _begin_handoff(self, preserve_hand: bool = False) -> None:
         self.timeline_timer.stop()
         self._handoff_pending = True
+        self._handoff_stage = "review" if preserve_hand else "transfer"
         if not preserve_hand:
             self._clear_hand()
         self.pending_command = None
@@ -493,9 +502,9 @@ class HotseatView(QWidget):
         message = (f"调度次数已用完\n请确认本次调度结果，然后交给 "
                    f"{self.game.state.players[self.viewer].name}" if preserve_hand else
                    f"请将设备交给 {self.game.state.players[self.viewer].name}")
+        title = "调度完毕请确认" if preserve_hand else "准备移交"
         if self.handoff_dialog is None:
             dialog = QDialog(self)
-            dialog.setWindowTitle("交接设备")
             dialog.setModal(True)
             layout = QVBoxLayout(dialog)
             layout.addWidget(QLabel(message))
@@ -507,13 +516,21 @@ class HotseatView(QWidget):
             self.handoff_dialog = dialog
         else:
             self.handoff_dialog.findChild(QLabel).setText(message)
+        self.handoff_dialog.setWindowTitle(title)
         self.handoff_dialog.show()
         self._update_input_widgets()
 
     def confirm_handoff(self) -> None:
         if not self._handoff_pending:
             return
+        if self._handoff_stage == "review":
+            self._handoff_stage = "transfer"
+            self.handoff_dialog.setWindowTitle("准备移交")
+            self.handoff_dialog.findChild(QLabel).setText(
+                f"请将设备交给 {self.game.state.players[self.viewer].name}")
+            return
         self._handoff_pending = False
+        self._handoff_stage = None
         if self.handoff_dialog is not None:
             dialog = self.handoff_dialog
             dialog.hide()
@@ -527,6 +544,7 @@ class HotseatView(QWidget):
 
     def _close_handoff(self) -> None:
         self._handoff_pending = False
+        self._handoff_stage = None
         if self.handoff_dialog is not None:
             dialog = self.handoff_dialog
             dialog.hide()
@@ -542,7 +560,9 @@ class HotseatView(QWidget):
         self.phase_label.setText(f"{active.name} 回合{active.turn_count}")
         self.order_label.setText("己方先手" if self.viewer == state.active else "己方后手")
         self.order_label.hide()
-        self.upgrade_label.setVisible(state.phase == "upgrade")
+        phase_text = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "主要阶段"}
+        self.upgrade_label.setText(phase_text.get(state.phase, ""))
+        self.upgrade_label.setVisible(state.phase in phase_text)
         enemy = state.players[1 - self.viewer]
         own = state.players[self.viewer]
         self.enemy_hand_label.setText(f"敌方手牌\n{len(enemy.hand)} 张")

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QSizePolicy, QVBoxLayout, QWidget,
@@ -69,21 +69,6 @@ def fill_card_row(layout, widgets: list["CardWidget"], page_size: int = 5) -> No
         layout.addWidget(QWidget(), 1)
 
 
-def _uniform_art(source: QPixmap) -> QPixmap:
-    """用透明边距统一长宽比，不重采样原生卡图。"""
-    width = max(source.width(), -(-source.height() * 3 // 5))
-    height = max(source.height(), -(-source.width() * 5 // 3))
-    if (width, height) == (source.width(), source.height()):
-        return source
-    canvas = QPixmap(width, height)
-    canvas.fill(Qt.transparent)
-    painter = QPainter(canvas)
-    painter.drawPixmap((width - source.width()) // 2,
-                       (height - source.height()) // 2, source)
-    painter.end()
-    return canvas
-
-
 class CardWidget(QFrame):
     """静态卡面：有本地卡图时显示全卡，否则回退文字卡。"""
 
@@ -134,7 +119,7 @@ class CardWidget(QFrame):
             self._art_options["cache_context"] = art_context
         pixmap = self._request_art()
         if pixmap is not None and not pixmap.isNull():
-            self._display_art = _uniform_art(pixmap)
+            self._display_art = pixmap
             self.art_label.setPixmap(self._display_art)
             for label in (self.level_label, self.name_label, self.type_label,
                           self.stats_label, self.text_label):

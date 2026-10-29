@@ -72,7 +72,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         ("error",): QPointF(1, 540),
         ("result_banner",): QPointF(500, 350),
         ("result_back",): QPointF(730, 470),
-        ("upgrade_phase",): QPointF(650, 360),
+        ("upgrade_phase",): QPointF(411, 422),
     }
     for pi in (0, 1):
         top = pi != viewer
@@ -150,6 +150,7 @@ class BattleCardItem(QGraphicsObject):
         self.target_required = False
         self.targetable = False
         self.playable = False
+        self.border_color = "yellow"
         self.dragging = False
         self.setAcceptedMouseButtons(Qt.LeftButton)
         self.setZValue(SHIKI_Z if key[0] in ("shiki", "player") else HAND_Z)
@@ -196,8 +197,10 @@ class BattleCardItem(QGraphicsObject):
             painter.drawRect(rect.adjusted(7, 7, -7, -7))
         else:
             return
-        if self.dragging or self.targetable or (self.playable and self.key[0] != "hand"):
-            color = QColor("#f3d56b") if self.dragging or self.targetable else QColor("#75b9d1")
+        if self.dragging or self.targetable or self.playable:
+            colors = {"yellow": "#f3d56b", "blue": "#75b9d1", "green": "#78c896"}
+            color = QColor("#f3d56b" if self.dragging or self.targetable
+                           else colors[self.border_color])
             painter.setPen(QPen(color, 4))
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(rect.adjusted(2, 2, -2, -2))
@@ -773,6 +776,11 @@ class BattleScene(QGraphicsScene):
                 item.payload = card if revealed else None
                 item.keywords = list(detail.get("keywords", []))
                 usage = detail.get("usage", [])
+                item.border_color = (
+                    "green" if len(usage) > 1 else
+                    "blue" if any(option["ok"] and option["cost"] == 0 for option in usage)
+                    else "yellow"
+                )
                 target_specs = []
                 allows_blank = False
                 if (own and pi == game.state.active and cdef is not None

@@ -1071,6 +1071,21 @@ def test_card_widget_passes_level_color_and_requests_native_art(qapp, db, monkey
     assert seen["height"] is None
 
 
+def test_card_art_preserves_source_aspect_ratio(qapp, db, monkeypatch):
+    from client.gui.widgets import CardWidget
+
+    source = QPixmap(400, 240)
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", lambda *_args, **_kwargs: source)
+    widget = CardWidget(db.cards[10010101], db=db)
+    widget.art_label.resize(120, 200)
+    widget._fit_art()
+    displayed = widget.art_label.pixmap()
+    assert widget._display_art.size() == source.size()
+    assert displayed.width() / displayed.height() == pytest.approx(
+        source.width() / source.height())
+    widget.close()
+
+
 def test_card_widget_resize_scales_from_native_source_without_rerender(qapp, db, monkeypatch):
     from client.gui.widgets import CardWidget
 
@@ -1082,23 +1097,8 @@ def test_card_widget_resize_scales_from_native_source_without_rerender(qapp, db,
     widget.art_label.resize(60, 100)
     widget._fit_art()
     assert calls == []
-    assert (widget._display_art.width(), widget._display_art.height()) == (308, 512)
+    assert (widget._display_art.width(), widget._display_art.height()) == (263, 512)
     assert widget.art_label.pixmap().height() == 100
-
-
-def test_card_widget_shikigami_and_card_share_display_size(qapp, db, monkeypatch):
-    from client.gui.widgets import CardWidget
-
-    def render(cdef, _db, **_kwargs):
-        return QPixmap(263, 512) if getattr(cdef, "card_type", None) is None else QPixmap(302, 512)
-
-    monkeypatch.setattr("client.gui.widgets.card_pixmap", render)
-    shikigami = CardWidget(db.shikigami[100101], db=db)
-    card = CardWidget(db.cards[10010101], db=db)
-    for widget in (shikigami, card):
-        widget.art_label.resize(120, 200)
-        widget._fit_art()
-    assert shikigami.art_label.pixmap().size() == card.art_label.pixmap().size()
 
 
 def test_cardart_combat_amount_uses_static_base(qapp, gdb):

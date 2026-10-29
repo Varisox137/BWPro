@@ -42,6 +42,8 @@ def view(qapp, db, tmp_path):
 def settle(view):
     while view._handoff_pending or view.timeline_queue:
         if view._handoff_pending:
+            if view._handoff_stage == "review":
+                break
             view.confirm_handoff()
         if view.timeline_queue:
             view.play_next_timeline()
@@ -321,6 +323,41 @@ def test_shiki_card_has_no_extra_stat_text_badge(qapp, view):
     start(view, mulligan=False)
     item = view.battle_scene.cards[("shiki", 0, 0)]
     assert not hasattr(item, "_stat_badge")
+
+
+def test_hand_playable_border_colors(qapp, view):
+    start(view, mulligan=False)
+    game = view.game
+    game.db.cards[10010151] = F.card(10010151, token=True, cost=0)
+    game.db.cards[10010152] = F.card(
+        10010152, token=True,
+        methods=[F.method("free", cost=0), F.method("paid", cost=1)])
+    free = F.give(game, 0, 10010151)
+    multi = F.give(game, 0, 10010152)
+    view.refresh(); settle(view)
+    assert view.battle_scene.cards[("hand", free.uid)].border_color == "blue"
+    assert view.battle_scene.cards[("hand", multi.uid)].border_color == "green"
+    assert view.battle_scene.cards[("shiki", 0, 0)].border_color == "yellow"
+
+
+def test_phase_label_sits_right_of_turn_label(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    assert view.upgrade_label.text() == "升级阶段"
+    assert view.upgrade_label.isVisible()
+    assert view.battle_scene.upgrade_item.x() > view.battle_scene.phase_item.x()
+
+
+def test_mulligan_handoff_has_review_then_transfer(qapp, view):
+    start(view)
+    for _ in range(3):
+        view.mulligan(view.game.current.hand[0].uid)
+        settle(view)
+    assert view.handoff_dialog.windowTitle() == "调度完毕请确认"
+    assert view.handoff_dialog.isVisible()
+    view.confirm_handoff()
+    assert view.handoff_dialog.windowTitle() == "准备移交"
+    view.confirm_handoff()
+    assert view.viewer == 1
 
 
 def test_playable_hand_has_no_blue_frame(qapp, view):
