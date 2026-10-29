@@ -207,7 +207,7 @@ class HotseatView(QWidget):
         self.log_button.setObjectName("battleRound")
         self.log_button.clicked.connect(self.show_log)
         self.battle_scene.log_item = self.battle_scene.add_control(
-            self.log_button, ("log",), (56, 56))
+            self.log_button, ("log",), (32, 32))
         self.end_turn_button = QPushButton("结束\n回合")
         self.end_turn_button.setObjectName("endTurnButton")
         self.end_turn_button.clicked.connect(self.end_turn)
@@ -387,7 +387,7 @@ class HotseatView(QWidget):
                 """)
         self.log_button.setStyleSheet(f"""
             QPushButton {{ background: {colors['panel']}; color: {colors['text']};
-                border: 1px solid {colors['gold']}; border-radius: 28px;
+                border: 1px solid {colors['gold']}; border-radius: 16px;
                 padding: 0; font-size: 12px; text-align: center; }}
             QPushButton:hover {{ background: {colors['panel2']}; }}
         """)

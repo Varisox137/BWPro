@@ -1743,8 +1743,14 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     assert scene.log_item.widget() is view.log_button
     assert scene.log_item.x() == 1
     assert scene.log_item.y() == 422
-    assert view.log_button.width() == view.log_button.height() == 56
+    assert view.log_button.width() == view.log_button.height() == 32
     assert view.log_button.text() == "对局\n记录"
+    view.apply_theme("light", THEMES["light"])
+    style = view.log_button.styleSheet()
+    assert "border-radius: 16px" in style
+    assert f"background: {THEMES['light']['panel']}" in style
+    assert f"color: {THEMES['light']['text']}" in style
+    assert f"border: 1px solid {THEMES['light']['gold']}" in style
     assert view.phase_label.text() == "玩家A 回合1"
     phase_proxy = next(item for item in scene.items()
                        if hasattr(item, "widget") and item.widget() is view.phase_label)
