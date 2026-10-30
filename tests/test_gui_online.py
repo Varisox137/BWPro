@@ -525,7 +525,7 @@ def test_disconnected_join_reopens_socket_and_sends_token(qapp, db, view):
     assert msg["deck_code"] is None
 
 
-def test_game_over_waits_for_timeline_playback(qapp, db, make_game):
+def test_game_over_is_immediate_during_timeline_playback(qapp, db, make_game, monkeypatch):
     game = make_game(mulligan=True)
     battle = OnlineBattleView(db, send_command=lambda _cmd: None)
     battle.me = 0
@@ -534,11 +534,18 @@ def test_game_over_waits_for_timeline_playback(qapp, db, make_game):
     battle.set_state(payload, timeline=[{"m": "最后结算"}])
     battle.show_game_over(None, "player_left")
     assert battle.timeline_queue
-    assert battle.result_banner.isHidden()
-    while battle.timeline_queue:
-        battle.play_next_timeline()
     assert not battle.result_banner.isHidden()
     assert "player_left" in battle.result_banner.text()
+
+    repeated_shows = []
+    monkeypatch.setattr(battle.result_banner, "show", lambda: repeated_shows.append(True))
+    while battle.timeline_queue:
+        played_count = len(battle.played_timeline)
+        battle.play_next_timeline()
+        assert len(battle.played_timeline) == played_count + 1
+        assert not battle.result_banner.isHidden()
+    assert repeated_shows == []
+    assert [message for _seq, message in battle.played_timeline] == ["最后结算"]
     battle.close()
 
 

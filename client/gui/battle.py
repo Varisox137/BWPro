@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cli
-from client.gui.battle_scene import BattleScene, BattleView, card_owner_seat, usage_target
+from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_seat, usage_target
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
 from client.gui.widgets import CardDetailDialog, ask_confirmation, polish_dialog_buttons
@@ -243,12 +243,16 @@ class HotseatView(QWidget):
         self.result_banner = QLabel()
         self.result_banner.setObjectName("resultBanner")
         self.result_banner.setAlignment(Qt.AlignCenter)
-        self.battle_scene.add_control(self.result_banner, ("result_banner",), (600, 90))
+        self.battle_scene.result_item = self.battle_scene.add_control(
+            self.result_banner, ("result_banner",), (600, 90))
+        self.battle_scene.result_item.setZValue(DRAG_Z + 20)
         self.result_banner.hide()
         self.result_back = QPushButton("返回主菜单")
         self.result_back.setObjectName("battleSmall")
         self.result_back.clicked.connect(self.return_to_menu)
-        self.battle_scene.add_control(self.result_back, ("result_back",), (140, 38))
+        self.battle_scene.result_back_item = self.battle_scene.add_control(
+            self.result_back, ("result_back",), (140, 38))
+        self.battle_scene.result_back_item.setZValue(DRAG_Z + 20)
         self.result_back.hide()
 
         self.log_dialog = QDialog(self)
@@ -564,7 +568,7 @@ class HotseatView(QWidget):
         self.target_label.setText("请选择高亮目标" if targeting else "")
         self.target_label.setVisible(targeting)
         self.error_label.setVisible(bool(self.error_label.text()))
-        if state.winner is not None and not self.timeline_queue:
+        if state.winner is not None:
             self._show_result()
 
     def hand_info(self) -> dict[int, dict]:

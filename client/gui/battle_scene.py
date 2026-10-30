@@ -347,7 +347,10 @@ class BattleDragController:
         self.cancel()
         if item.scene() is not self.scene:
             return False
-        if not self.scene.inputs_open and not item.targetable:
+        readonly_detail = (
+            self.scene.game_over and item.key[0] in ("hand", "shiki", "player")
+            and (item.key[0] != "hand" or item.revealed))
+        if not self.scene.inputs_open and not item.targetable and not readonly_detail:
             return False
         if item.key[0] == "hand" and not item.revealed:
             return False
@@ -501,6 +504,7 @@ class BattleScene(QGraphicsScene):
         self.phase = None
         self.viewer = 0
         self.inputs_open = False
+        self.game_over = False
         self.legal_targets: list[Ref] = []
         self.mulligan_uid = None
         self.menu_item = None
@@ -882,6 +886,7 @@ class BattleScene(QGraphicsScene):
         self.phase = game.state.phase
         self.viewer = viewer
         self.inputs_open = inputs_open
+        self.game_over = game.state.winner is not None
         self.drag_controller.cancel()
         positions = layout_positions(game, viewer)
         self._hand_animation_cache = {

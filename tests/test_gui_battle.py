@@ -2094,6 +2094,31 @@ def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
     assert returned == [True]
 
 
+def test_game_over_is_immediate_and_details_remain_clickable(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    view.timeline_queue[:] = [(0, "尚未播放")]
+    view.game.state.winner = 0
+    view.refresh()
+    assert not view.result_banner.isHidden()
+    assert not view._inputs_open()
+    assert view.battle_scene.result_item.zValue() > 110
+    assert view.battle_scene.result_back_item.zValue() > 110
+    uid = view.game.current.hand[0].uid
+    assert not view.upgrade(0)
+    assert not view.assault(0)
+    assert not view.play_card(uid)
+    assert not view.end_turn()
+
+    seen = []
+    monkeypatch.setattr(view, "show_shiki_detail", seen.append)
+    item = view.battle_scene.cards[("shiki", 0, 0)]
+    view.battle_scene.drag_controller.press(item, item.scenePos())
+    view.battle_scene.drag_controller.release(item.scenePos())
+    assert seen == [item.payload]
+    view.show_log()
+    assert not view.log_dialog.isHidden()
+
+
 def test_game_over_banner_returns_to_menu(qapp, view):
     returned = []
     view.on_back = lambda: returned.append(True)

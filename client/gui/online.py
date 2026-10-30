@@ -94,7 +94,6 @@ class OnlineBattleView(HotseatView):
         self.payload: dict | None = None
         self.server_timer: dict | None = None
         self._awaiting_state = False
-        self._pending_game_over: tuple[int | None, str] | None = None
         self._state_rendering = False
         self._deferred_state: tuple | None = None
         super().__init__(db, on_back=on_back, parent=parent)
@@ -122,7 +121,6 @@ class OnlineBattleView(HotseatView):
         self.payload = None
         self.server_timer = None
         self._awaiting_state = False
-        self._pending_game_over = None
         self._deferred_state = None
         self._choice_key = None
         self._last_turn_key = None
@@ -269,22 +267,12 @@ class OnlineBattleView(HotseatView):
         self.result_back.show()
 
     def show_game_over(self, winner: int | None, reason: str = "") -> None:
-        if self.timeline_queue:
-            self._pending_game_over = (winner, reason)
-            return
         if winner is None:
             self.result_banner.setText(f"对局终止（{reason}）")
             self.result_banner.show()
             self.result_back.show()
         else:
             self._show_result()
-
-    def play_next_timeline(self) -> None:
-        super().play_next_timeline()
-        if not self.timeline_queue and self._pending_game_over is not None:
-            winner, reason = self._pending_game_over
-            self._pending_game_over = None
-            self.show_game_over(winner, reason)
 
     def return_to_menu(self) -> None:
         self.countdown_timer.stop()
