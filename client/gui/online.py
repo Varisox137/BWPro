@@ -130,9 +130,7 @@ class OnlineBattleView(HotseatView):
         self.battle_scene.reset_animations()
         self.battle_scene.game_over = False
         self.battle_scene.hide_banner()
-        if self.choice_dialog is not None:
-            self.choice_dialog.close()
-            self.choice_dialog = None
+        self._close_choice_dialog()
         if not self.countdown_timer.isActive():
             self.countdown_timer.start()
 
@@ -264,6 +262,7 @@ class OnlineBattleView(HotseatView):
         self._awaiting_state = False
         self.error_label.setText(f"服务器：{reason}")
         self._render_state()
+        self._sync_pending_choice()
 
     def _show_result(self) -> None:
         names = [player.name for player in self.game.state.players]

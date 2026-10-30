@@ -446,7 +446,21 @@ def test_online_choice_dialog_click_sends_once_waits_and_reconnects(qapp, db, ma
     payload = game.state.model_dump(mode="json")
     payload["hand_info"] = cli.hand_cards_info(game, 1)
     battle.set_state(payload, log=[], timeline=[])
+    unanswered = battle.choice_dialog
+    unanswered_cards = unanswered.findChildren(CardWidget)
+    destroyed = []
+    unanswered.destroyed.connect(lambda: destroyed.append(True))
+    battle.reset_session()
+    assert unanswered.isHidden()
+    QTest.mouseClick(unanswered_cards[0], Qt.LeftButton)
+    assert sent == []
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    qapp.processEvents()
+    assert destroyed == [True]
+
+    battle.set_state(payload, log=[], timeline=[])
     dialog = battle.choice_dialog
+    assert dialog is not unanswered
     cards = dialog.findChildren(CardWidget)
     assert len(cards) == 1
 
@@ -470,6 +484,33 @@ def test_online_choice_dialog_click_sends_once_waits_and_reconnects(qapp, db, ma
     assert len(restored.findChildren(CardWidget)) == 1
     restored.reject()
     assert not restored.isHidden()
+    battle.close()
+
+
+def test_online_choice_dialog_receive_error_restores_retry(qapp, db, make_game):
+    game = make_game(mulligan=True)
+    field_id = 10010161
+    db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
+    card = F.give(game, 1, field_id)
+    game._open_discard_pick(1, 1, card_type="field")
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 1
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 1)
+    battle.set_state(payload, log=[], timeline=[])
+    first_dialog = battle.choice_dialog
+    QTest.mouseClick(first_dialog.findChildren(CardWidget)[0], Qt.LeftButton)
+    command = {"op": "choose", "player": 1, "uid": card.uid}
+    assert sent == [command]
+
+    battle.receive_error("选择已失效")
+    restored = battle.choice_dialog
+    assert restored is not None and restored is not first_dialog
+    assert not restored.isHidden()
+    assert not battle._awaiting_state
+    QTest.mouseClick(restored.findChildren(CardWidget)[0], Qt.LeftButton)
+    assert sent == [command, command]
     battle.close()
 
 
