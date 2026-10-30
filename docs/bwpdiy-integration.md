@@ -7,8 +7,8 @@
 ## 目标与兼容约束
 
 - 不修改 BWPDIY 的 `render_card`、`render_entity`、`render_portrait`、`render_mechanism` 接口。
-- 保留现有占位图显示策略，但占位图、空 `QPixmap` 和异常都不能计为渲染成功。
-- 保持 `prewarm_all()` 返回全部期望条目，避免改变现有调用方契约。
+- 保留现有占位图显示策略；合法透明占位属于正常渲染结果，`None`、空 `QPixmap` 和异常才不能计为渲染成功。
+- 保持 `prewarm_all()` 返回成功 `entries`（全量缓存命中时返回全部成功条目），避免改变现有调用方契约。
 - 不为诊断功能引入新依赖，不把异常文本直接拼入页面 HTML。
 
 ## 1. 高优先级
@@ -48,14 +48,16 @@ BWP_DIY_LIBRARY='D:/Programming/BWPro/library'
 
 建议每次先构造全部期望条目，再按实际结果写 manifest：
 
+- 缓存与 manifest 依据定义、配置、原图及渲染实现的资源内容指纹判定失效，不以 BWPDIY 版本号判定。
+- 预热仅合成大卡与式神小卡，不包含头像；头像只使用内存 LRU，不写磁盘缓存。
 - 大卡调用必须返回 `pixmap is not None and not pixmap.isNull()`；式神所需的小卡也必须满足同一条件。
 - 一个定义所需图片全部成功，才把该定义条目写入成功 `entries`。
 - 失败定义写入 `failures`，保留 `kind/id/version/reason`；具体异常堆栈由渲染边界日志负责。
-- `stats` 记录本次 `succeeded/failed/skipped`，以定义条目为单位，不把同一式神的大卡和小卡重复计数。
-- 全部期望条目匹配时才跳过预热，并记录 `skipped`；存在失败时，成功 `entries` 与期望清单不同，下次启动自动重试。
-- `prewarm_all()` 仍返回全部期望条目；`on_progress` 继续按实际处理进度回报。
+- `stats` 记录本次 `total/succeeded/failed/skipped`，以定义条目为单位，不把同一式神的大卡和小卡重复计数；全量缓存命中时 `skipped == total`、`failed == 0`。
+- 全部期望条目匹配时才跳过预热，并原子写回统计；存在失败时，成功 `entries` 与期望清单不同，下次启动自动重试。
+- `prewarm_all()` 返回成功 `entries`，不返回失败定义；`on_progress` 继续按实际处理进度回报。
 
-设置页应显示缓存条目数、本次成功/失败/跳过数量和失败摘要。完整失败原因保留在 manifest，并提供 manifest 路径；不能只按 `entries` 数量显示“已生成”。
+设置页应显示缓存条目数、本次成功/失败/跳过数量和最多三条失败摘要。完整失败原因保留在 manifest，并提供 manifest 完整路径；不能只按 `entries` 数量显示“已生成”。
 
 ## 2. 中低优先级
 
@@ -87,7 +89,7 @@ BWP_DIY_LIBRARY='D:/Programming/BWPro/library'
 
 位置：`client/gui/portrait.py` 的 `shikigami_portrait()` 与 `_portrait_pixmap()`。
 
-头像 LRU 当前使用图片路径、mtime 和大小识别更新，建议改为内容 SHA-256，与大卡/小卡一致。这样同路径图片即使保留时间戳且大小不变，替换后仍会生成新缓存项。失败结果仍不得写入磁盘成功缓存。
+头像只使用内存 LRU，不写磁盘缓存。LRU 当前使用图片路径、mtime 和大小识别更新，建议改为内容 SHA-256，与大卡/小卡一致。这样同路径图片即使保留时间戳且大小不变，替换后仍会生成新缓存项。
 
 ## 3. 回归测试清单
 
@@ -104,7 +106,7 @@ BWP_DIY_LIBRARY='D:/Programming/BWPro/library'
 
 - `test_prewarm_forwards_explicit_paths`：非默认临时 `library_dir/cache_dir` 原样传入大卡和小卡调用。
 - `test_prewarm_failure_not_marked_current_and_retries`：返回 `None` 或空 `QPixmap` 的条目不进入成功 `entries`，manifest 记录失败；第二次调用会重试，修复后可生成完整成功清单。
-- `test_prewarm_stats_count_success_failure_and_skip`：成功、失败和全量跳过三种情况的统计口径正确，返回值始终包含全部期望条目。
+- `test_prewarm_stats_count_success_failure_and_skip`：成功、失败和全量跳过三种情况的统计口径正确，返回值为成功 `entries`。
 - `test_settings_show_prewarm_stats_and_failures`：设置页显示三项统计、失败摘要和 manifest 路径，不仅显示条目数。
 
 ### `tests/test_gui_mechanisms.py`

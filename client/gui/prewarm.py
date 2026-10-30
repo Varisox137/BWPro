@@ -91,6 +91,18 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
         "entries": entries,
     }
     if not clear and _manifest_current(cache_dir, manifest):
+        manifest["stats"] = {
+            "total": len(definitions),
+            "succeeded": len(entries),
+            "failed": 0,
+            "skipped": len(definitions),
+        }
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = cache_dir / MANIFEST_NAME
+        temporary_path = manifest_path.with_suffix(".json.tmp")
+        temporary_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary_path.replace(manifest_path)
         yield len(entries), len(definitions)
         return entries
     successful_entries = []
@@ -111,7 +123,12 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
         if all(pixmap is not None and not pixmap.isNull() for pixmap in pixmaps):
             successful_entries.append(entry)
         else:
-            failures.append({"kind": kind, "id": definition.id})
+            failures.append({
+                "kind": kind,
+                "id": definition.id,
+                "version": definition.version,
+                "reason": "渲染返回空图",
+            })
             logger.error("卡图预热失败：%s %s", kind, definition.id)
         yield index, len(definitions)
     successful_entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))

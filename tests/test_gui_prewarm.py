@@ -92,7 +92,7 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     assert updated[0]["config_sha256"] != entries[0]["config_sha256"]
 
 
-def test_prewarm_unchanged_manifest_skips_rendering(qapp, tmp_path, monkeypatch):
+def test_prewarm_stats_record_unchanged_manifest_skip(qapp, tmp_path, monkeypatch):
     from client.gui import prewarm
 
     _configs(tmp_path)
@@ -107,6 +107,8 @@ def test_prewarm_unchanged_manifest_skips_rendering(qapp, tmp_path, monkeypatch)
     entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     assert len(entries) == 2
     assert calls == []
+    manifest = json.loads((tmp_path / "cache" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["stats"] == {"total": 2, "succeeded": 2, "failed": 0, "skipped": 2}
 
 
 def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monkeypatch):
@@ -131,7 +133,7 @@ def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monke
 
 
 @pytest.mark.parametrize("null_pixmap", [False, True])
-def test_prewarm_failure_is_not_a_success_manifest(qapp, tmp_path, monkeypatch, null_pixmap):
+def test_prewarm_failure_summary_is_not_a_success_manifest(qapp, tmp_path, monkeypatch, null_pixmap):
     from client.gui import prewarm
 
     db = F.db_of([F.shiki(100101)], [F.card(10010101)])
@@ -152,7 +154,9 @@ def test_prewarm_failure_is_not_a_success_manifest(qapp, tmp_path, monkeypatch, 
     manifest_path = tmp_path / "cache" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert [entry["id"] for entry in manifest["entries"]] == [100101]
-    assert manifest["failures"] == [{"kind": "cards", "id": 10010101}]
+    assert manifest["failures"] == [{
+        "kind": "cards", "id": 10010101, "version": 20260720, "reason": "渲染返回空图",
+    }]
     assert manifest["stats"] == {"total": 2, "succeeded": 1, "failed": 1, "skipped": 0}
 
     calls.clear()
@@ -217,18 +221,31 @@ def test_prewarm_iter_yields_progress_and_returns_entries(qapp, tmp_path, monkey
 def test_settings_status_displays_failure_stats(qapp, db, tmp_path):
     view = SettingsView(db)
     view.cache_dir = tmp_path
+    failures = [{
+        "kind": "cards", "id": 10010101 + offset,
+        "version": 20260720, "reason": "渲染返回空图",
+    } for offset in range(4)]
     (tmp_path / "manifest.json").write_text(json.dumps({
         "updated_at": "now",
         "entries": [{"id": 100101}, {"id": 100102}],
-        "stats": {"total": 3, "succeeded": 2, "failed": 1, "skipped": 0},
+        "stats": {"total": 6, "succeeded": 2, "failed": 4, "skipped": 0},
+        "failures": failures,
     }), encoding="utf-8")
     view.refresh_status()
-    assert view.status_label.text() == "卡图缓存：共 3 项，成功 2 项，失败 1 项\n最近合成：now"
+    text = view.status_label.text()
+    assert "成功 2 项" in text
+    assert "失败 4 项" in text
+    assert "跳过 0 项" in text
+    assert "10010101" in text
+    assert str(tmp_path / "manifest.json") in text
+    assert text.count("渲染返回空图") == 3
+    assert "10010104" not in text
     (tmp_path / "manifest.json").write_text(json.dumps({
         "updated_at": "old", "entries": [{"id": 100101}, {"id": 100102}],
     }), encoding="utf-8")
     view.refresh_status()
-    assert view.status_label.text() == "卡图缓存：2 项\n最近合成：old"
+    assert view.status_label.text() == (
+        f"卡图缓存：2 项\n最近合成：old\nManifest：{tmp_path / 'manifest.json'}")
     view.close()
 
 

@@ -26,12 +26,12 @@
 
 接入点：
 
-1. **`client/gui/portrait.py`**：卡组列表复用 `bwpdiy.render.duo.render_portrait` 绘制带斜方框与派系标的式神头像。BWPDIY 仓库默认 BWPro 同级 `BWPDIY`，可用 `BWP_DIY_ROOT` 覆盖；项目配置库默认 **BWPro 项目内 `library/`**，可用 `BWP_DIY_LIBRARY` 覆盖，运行时只读。
+1. **`client/gui/portrait.py`**：卡组列表复用 `bwpdiy.render.duo.render_portrait` 绘制带斜方框与派系标的式神头像。BWPDIY 仓库默认 BWPro 同级 `BWPDIY`，可用 `BWP_DIY_ROOT` 覆盖；项目配置库默认 **BWPro 项目内 `library/`**，可用 `BWP_DIY_LIBRARY` 覆盖，运行时只读。editable 安装只解决 Python 导入，不替代渲染资源根定位。
 2. **`client/gui/cardart.py`**：从 `library/<项目>/{shikigami,cards}/*.yaml` 读取人工标注，按 id（兼容名称）与引擎定义的版本快照日期精确匹配 `version_date`；配置日期必须是合法 8 位日期，不用相邻日期代替。卡牌的名称、类型、等级、稀有度、所属式神、派系、身材与描述等显示数据始终由当前引擎定义合成，项目配置只提供 artwork、portrait、layout 与 faction_style，不让旧配置文本或数值覆盖引擎数据。
 3. **共用卡面**：构筑卡面、静态/运行时卡牌详情、热坐与联机手牌均调用同一 `card_pixmap`。`hand_cards_info` 同源生成中文数值段与结构化 `render`，战斗、形态、觉醒等实时身材经 `display` 注入卡面负载和缓存键，不修改引擎定义；费用、增强计数、关键字、使用条件等仍由 GUI 详情层显示。
 4. **Phase 3 DIY 联动**：BWPro `diy/` 只读消费 BWPDIY `library/<项目>/` 下的式神/卡牌 yaml——"BWPDIY 做卡、BWPro 打牌"。映射层（BWPDIY yaml → BWPro yaml 口径）只放在 `diy/` 一处。
 
-静态全卡 PNG 默认缓存到 `~/.bwpro/cardart/<sha256>.png`；含实时 `display` 的变体仅使用 256 项有界内存缓存，不逐值永久写盘。缓存键包含规范化引擎负载、合并后的实际 layout、配置 YAML 内容 SHA-256、原图 `mtime_ns` 与 size 及渲染资源内容摘要；大卡缓存键与 manifest 不依赖 BWPDIY 版本号，版本号或 WebGUI 变化不触发失效，渲染 Python 源码与受跟踪 assets 的内容变化仍会使对应缓存失效。layout 另有 64 个元素、512px 元素尺寸的渲染预算。启动时由 GUI 线程的 `QTimer` 逐项分片消费 `prewarm_iter`，复用有效缓存并合成卡牌、式神小卡与头像，所有 `QPixmap` 创建与使用均留在 GUI 线程；状态栏显示“卡图后台同步 current/total”，不显示模态遮罩，主菜单与页面切换保持可用。重复启动复用同一任务；后台任务活跃时设置页不启动同步全量重建，关闭窗口会停止 timer 并清空 iterator。配置/原图 SHA-256、渲染资源摘要和最近合成时间写入 `~/.bwpro/cardart/manifest.json`；失败项不进入成功清单，设置页显示成功/失败统计，下次启动自动重试，完成后刷新设置页状态。设置页仍可在后台空闲时经确认清除缓存并同步全量重建。缺配置、版本不匹配或缺图时仍调用 DIY 渲染完整卡框与文本，仅插画区域透明；只有渲染器自身失败才回退文字卡面。头像回退带斜方框和派系标的空槽（不绘制人物），操作按钮与运行时详情保持可用。BWPDIY 素材中异常 ICC 配置已无损移除（逐张验证像素不变）。Qt 现代 Windows 样式在空白原生窗口也会输出同类 libpng `iCCP` 警告，已确认与项目素材无关；为保持现有 UI 效果，不替换应用样式。
+静态大卡/小卡 PNG 默认缓存到 `~/.bwpro/cardart/<sha256>.png`，头像仅使用内存 LRU、不写磁盘缓存；含实时 `display` 的变体仅使用 256 项有界内存缓存，不逐值永久写盘。缓存键包含规范化引擎负载、合并后的实际 layout、配置 YAML 内容 SHA-256、原图 `mtime_ns` 与 size 及渲染实现资源内容指纹；大卡缓存键与 manifest 不依赖 BWPDIY 版本号，版本号或 WebGUI 变化不触发失效，渲染 Python 源码与受跟踪 assets 的内容变化仍会使对应缓存失效。layout 另有 64 个元素、512px 元素尺寸的渲染预算。启动时由 GUI 线程的 `QTimer` 逐项分片消费 `prewarm_iter`，复用有效缓存并仅合成大卡与式神小卡，不预热头像；所有 `QPixmap` 创建与使用均留在 GUI 线程，状态栏显示“卡图后台同步 current/total”，不显示模态遮罩，主菜单与页面切换保持可用。重复启动复用同一任务；后台任务活跃时设置页不启动同步全量重建，关闭窗口会停止 timer 并清空 iterator。配置/原图 SHA-256、渲染资源指纹和最近合成时间写入 `~/.bwpro/cardart/manifest.json`；`prewarm_iter`/`prewarm_all` 返回成功 `entries`，失败项不进入成功清单，设置页显示成功/失败/跳过统计、最多三条失败摘要与 manifest 完整路径，下次启动自动重试，完成后刷新设置页状态。设置页仍可在后台空闲时经确认清除缓存并同步全量重建。缺配置、版本不匹配或缺图时仍调用 DIY 渲染完整卡框与文本，仅插画区域透明；透明占位是合法结果，不计渲染失败，只有渲染器自身失败才回退文字卡面。头像回退带斜方框和派系标的空槽（不绘制人物），操作按钮与运行时详情保持可用。BWPDIY 素材中异常 ICC 配置已无损移除（逐张验证像素不变）。Qt 现代 Windows 样式在空白原生窗口也会输出同类 libpng `iCCP` 警告，已确认与项目素材无关；为保持现有 UI 效果，不替换应用样式。
 
 ## 3. 界面初稿（docs/gui-mock/，1600×900）
 
