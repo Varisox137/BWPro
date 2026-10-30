@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget,
@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.gui.loading import LoadingIndicator, LoadingOverlay
-from client.gui.prewarm import prewarm_all
+from client.gui.prewarm import prewarm_iter
 from core.logging_config import configure_logging
 
 # 与 docs/gui-mock/generate.py 两套配色一致
@@ -164,16 +164,30 @@ class MainWindow(QMainWindow):
         self.loading_overlay = LoadingOverlay(self)
         self.loading = LoadingIndicator("正在加载卡图", self.loading_overlay.set_text, self)
         self.db = db
+        self._prewarm_timer = QTimer(self)
+        self._prewarm_timer.setInterval(0)
+        self._prewarm_timer.timeout.connect(self._advance_prewarm)
+        self._prewarm_iterator = None
 
     def prewarm_resources(self) -> None:
-        self.loading.start()
-        self.loading_overlay.show()
+        if self._prewarm_timer.isActive():
+            return
+        self._prewarm_iterator = prewarm_iter(self.db)
+        self._prewarm_timer.start()
+
+    def _advance_prewarm(self) -> None:
         try:
-            prewarm_all(self.db, on_progress=lambda current, total: (
-                self.loading.set_progress(current, total), self.loading.tick()))
-        finally:
-            self.loading.stop()
-            self.loading_overlay.hide()
+            current, total = next(self._prewarm_iterator)
+        except StopIteration:
+            self._finish_prewarm()
+        else:
+            self.statusBar().showMessage(f"卡图后台同步 {current}/{total}")
+
+    def _finish_prewarm(self) -> None:
+        self._prewarm_timer.stop()
+        self._prewarm_iterator = None
+        self.statusBar().clearMessage()
+        self.pages["settings"].refresh_status()
 
     def set_theme(self, theme: str):
         self.theme = theme
@@ -237,6 +251,7 @@ class MainWindow(QMainWindow):
         self._sync_game_menu_button()
 
     def closeEvent(self, event):
+        self._finish_prewarm()
         page = self.stack.currentWidget()
         for hook_name in ("return_to_menu", "leave_to_menu"):
             hook = getattr(page, hook_name, None)

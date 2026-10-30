@@ -9,7 +9,7 @@ import re
 import sys
 import tempfile
 import threading
-from functools import lru_cache
+from functools import lru_cache, wraps
 from io import BytesIO
 from pathlib import Path
 
@@ -220,18 +220,35 @@ def _renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
     return resources
 
 
-def _entity_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
-    """小卡额外跟踪渲染源码，避免其实现更新牵连普通大卡缓存。"""
-    if cache_context is not None and "entity_renderer_resources" in cache_context:
-        return cache_context["entity_renderer_resources"]
-    digest = hashlib.sha256(_renderer_resources(assets, cache_context).encode("ascii"))
+def _renderer_source_digest(assets: Path) -> str:
+    digest = hashlib.sha256()
     for path in sorted((assets.parent / "bwpdiy" / "render").rglob("*.py")):
         digest.update(str(path).encode("utf-8"))
         try:
             digest.update(path.read_bytes())
         except OSError:
             digest.update(b"<unreadable>")
-    resources = digest.hexdigest()
+    return digest.hexdigest()
+
+
+def _card_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
+    if cache_context is not None and "card_renderer_resources" in cache_context:
+        return cache_context["card_renderer_resources"]
+    resources = hashlib.sha256(
+        (_renderer_resources(assets, cache_context)
+         + _renderer_source_digest(assets)).encode("ascii")).hexdigest()
+    if cache_context is not None:
+        cache_context["card_renderer_resources"] = resources
+    return resources
+
+
+def _entity_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
+    """小卡跟踪渲染资源与源码。"""
+    if cache_context is not None and "entity_renderer_resources" in cache_context:
+        return cache_context["entity_renderer_resources"]
+    resources = hashlib.sha256(
+        (_renderer_resources(assets, cache_context)
+         + _renderer_source_digest(assets)).encode("ascii")).hexdigest()
     if cache_context is not None:
         cache_context["entity_renderer_resources"] = resources
     return resources
@@ -437,7 +454,7 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
 
 
 def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
-                    art_path: str, renderer_version: str, renderer_resources: str,
+                    art_path: str, renderer_resources: str,
                     root_text: str, cache_context: dict | None = None,
                     height: int | None = None) -> str:
     if art_path == _TRANSPARENT_ART:
@@ -455,7 +472,6 @@ def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
         "layout": layout_json,
         "config_sha256": config_sha256,
         "image_sha256": image_sha256,
-        "bwpdiy_version": renderer_version,
         "renderer_resources": renderer_resources,
         "renderer_root": root_text,
         "height": height,
@@ -482,7 +498,31 @@ def _write_card_png_atomic(pixmap: QPixmap, path: Path) -> None:
         temp_path.unlink(missing_ok=True)
 
 
-@lru_cache(maxsize=256)
+class _PixmapRenderFailed(Exception):
+    pass
+
+
+def _cache_successful_pixmap(function):
+    @lru_cache(maxsize=256)
+    @wraps(function)
+    def cached(*args, **kwargs):
+        pixmap = function(*args, **kwargs)
+        if pixmap is None:
+            raise _PixmapRenderFailed
+        return pixmap
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        try:
+            return cached(*args, **kwargs)
+        except _PixmapRenderFailed:
+            return None
+
+    wrapper.cache_clear = cached.cache_clear
+    return wrapper
+
+
+@_cache_successful_pixmap
 def _cached_card_pixmap(cache_path_text: str, payload_json: str,
                         layout_json: str, root_text: str,
                         height: int | None = None) -> QPixmap | None:
@@ -520,7 +560,7 @@ def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
     return _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
 
 
-@lru_cache(maxsize=256)
+@_cache_successful_pixmap
 def _cached_static_entity_pixmap(cache_path_text: str, payload_json: str, state_json: str,
                                  layout_json: str, root_text: str,
                                  height: int | None = None) -> QPixmap | None:
@@ -632,20 +672,19 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                                 else str(path.parent.parent / "images"))
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)
-        from bwpdiy import __version__
         from bwpdiy.render.layout import get_type_layout, merge_card_layout
 
         base_layout = get_type_layout(_layouts(root_text, _layout_fingerprint(assets)), payload["type"])
         layout = merge_card_layout(base_layout, config.get("layout"))
         _validate_layout(layout)
-        resources = _renderer_resources(assets, cache_context)
+        resources = _card_renderer_resources(assets, cache_context)
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True,
                                   separators=(",", ":"), allow_nan=False)
         layout_json = json.dumps(layout, ensure_ascii=False, sort_keys=True,
                                  separators=(",", ":"), allow_nan=False)
         cache_key = _card_cache_key(
             payload_json, layout_json, config_sha256 or "fallback", art["path"],
-            __version__, resources, root_text, cache_context, height)
+            resources, root_text, cache_context, height)
         size_args = () if height is None else (height,)
         if display_stats:
             return _cached_runtime_card_pixmap(
@@ -744,7 +783,6 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         payload["_entity_state"] = state
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)
-        from bwpdiy import __version__
 
         layout = _layouts(root_text, _layout_fingerprint(assets))["对局式神"]
         resources = _entity_renderer_resources(assets, cache_context)
@@ -756,7 +794,7 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                                  separators=(",", ":"), allow_nan=False)
         cache_key = _card_cache_key(
             payload_json, layout_json, config_sha256 or "fallback", art["path"],
-            __version__, resources, root_text, cache_context, height)
+            resources, root_text, cache_context, height)
         size_args = () if height is None else (height,)
         if disk_cache:
             return _cached_static_entity_pixmap(

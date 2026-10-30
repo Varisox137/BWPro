@@ -1476,38 +1476,52 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
         cardart.clear_cardart_caches()
 
 
-def test_cardart_renderer_version_changes_cache_key(qapp, tmp_path, monkeypatch):
-    from PySide6.QtGui import QPixmap
+def test_cardart_cache_key_ignores_renderer_version(tmp_path, monkeypatch):
+    import bwpdiy
+    from client.gui import cardart
+
+    art_path = tmp_path / "art.png"
+    art_path.write_bytes(b"art")
+    monkeypatch.setattr(bwpdiy, "__version__", "test-v1")
+    first = cardart._card_cache_key(
+        "payload", "layout", "config", str(art_path), "resources", "root", {}, 256)
+    monkeypatch.setattr(bwpdiy, "__version__", "test-v2")
+    second = cardart._card_cache_key(
+        "payload", "layout", "config", str(art_path), "resources", "root", {}, 256)
+    assert first == second
+
+
+def test_cardart_card_renderer_resources_change_cache_key(qapp, tmp_path, monkeypatch):
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
-    cardart.clear_cardart_caches()
-    root_text = str(portrait.bwpdiy_root().resolve())
-    original_renderer = cardart._renderer
-    real_assets, library, _render = original_renderer(root_text)
-    import bwpdiy
+    resources = iter(("resources-a", "resources-b"))
+    monkeypatch.setattr(cardart, "_card_renderer_resources",
+                        lambda *_args, **_kwargs: next(resources), raising=False)
+    keys = []
+    monkeypatch.setattr(cardart, "_cached_card_pixmap",
+                        lambda key, *_args: keys.append(key))
+    for _ in range(2):
+        cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert len(keys) == 2 and keys[0] != keys[1]
 
-    def render(_payload, _assets, layout):
-        del layout
-        color = "#336699" if bwpdiy.__version__ == "test-v1" else "#993366"
-        return Image.new("RGBA", (16, 16), color)
 
-    monkeypatch.setattr(cardart, "_renderer",
-                        lambda _root: (real_assets, library, render))
-    monkeypatch.setattr(bwpdiy, "__version__", "test-v1")
-    first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert first is not None
-    old_paths = set(cache_dir.glob("*.png"))
-    monkeypatch.setattr(bwpdiy, "__version__", "test-v2")
-    second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert second is not None and second.toImage() != first.toImage()
-    new_paths = set(cache_dir.glob("*.png")) - old_paths
-    assert len(new_paths) == 1
-    cached = QPixmap(str(new_paths.pop()))
-    assert cached.toImage() == second.toImage()
-    assert cached.toImage() != first.toImage()
-    monkeypatch.setattr(cardart, "_renderer", original_renderer)
-    cardart.clear_cardart_caches()
+def test_cardart_source_digest_tracks_render_python_only(tmp_path):
+    from client.gui import cardart
+
+    assets = tmp_path / "assets"
+    pipeline = assets.parent / "bwpdiy" / "render" / "pipeline.py"
+    pipeline.parent.mkdir(parents=True)
+    editor = assets / "editor.html"
+    assets.mkdir()
+    pipeline.write_text("A", encoding="utf-8")
+    editor.write_text("A", encoding="utf-8")
+    first = cardart._renderer_source_digest(assets)
+    pipeline.write_text("B", encoding="utf-8")
+    second = cardart._renderer_source_digest(assets)
+    assert second != first
+    editor.write_text("B", encoding="utf-8")
+    assert cardart._renderer_source_digest(assets) == second
 
 
 def test_cardart_default_layout_content_changes_cache_key(qapp, tmp_path, monkeypatch):
