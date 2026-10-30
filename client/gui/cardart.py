@@ -620,7 +620,14 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         for key in drop_keys:
             payload.pop(key, None)
         display_stats = _display_stats(display)
+        original_stats = {key: payload.get(key) for key in display_stats}
         payload.update(display_stats)
+        for key, original in original_stats.items():
+            current = payload.get(key)
+            if type(original) is int and type(current) is int:
+                payload[f"{key}_color"] = (
+                    "red" if current < original else
+                    "green" if current > original else None)
         payload["_base_dir"] = (str(cache_dir) if fallback_art or not path
                                 else str(path.parent.parent / "images"))
         root_text = str(portrait.bwpdiy_root().resolve())
@@ -706,8 +713,10 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         defeated = bool(getattr(shiki, "defeated", False))
         payload["_defeated"] = defeated
         definition = db.shikigami[shiki.id]
-        base_power = definition.power + getattr(shiki, "perm_power", 0)
-        base_health = definition.health + getattr(shiki, "perm_health", 0)
+        base_power = (form.form_power if form is not None and form.form_power is not None
+                      else definition.power) + getattr(shiki, "perm_power", 0)
+        base_health = (form.form_health if form is not None and form.form_health is not None
+                       else definition.health) + getattr(shiki, "perm_health", 0)
         if defeated:
             power = max(0, base_power)
             health = max(0, base_health)

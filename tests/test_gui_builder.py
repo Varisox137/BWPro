@@ -528,11 +528,34 @@ def test_entity_power_zero_does_not_subtract_combat_power(qapp, tmp_path, monkey
     assert seen["combat_power"] == 3
 
 
+def test_card_runtime_stat_colors_follow_original_values(qapp, tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from client.gui import cardart
+    from tests import factories
+
+    definition = factories.card(
+        10010151, card_type="form", form_power=2, form_health=5)
+    database = factories.db_of([factories.shiki(100101)], [definition])
+    seen = {}
+    monkeypatch.setattr(
+        cardart, "_cached_runtime_card_pixmap",
+        lambda _key, payload, _layout, _root, *_args:
+        seen.update(json.loads(payload)))
+    for key, original in (("power", 2), ("health", 5)):
+        for delta, expected in ((-1, "red"), (0, None), (1, "green")):
+            cardart.card_pixmap(definition, database,
+                                library_dir=tmp_path / "empty",
+                                display={key: original + delta})
+            assert seen[f"{key}_color"] == expected
+
+
 def test_entity_stat_colors_follow_base_permanent_reference(qapp, tmp_path, monkeypatch):
     import json
     from client.gui import cardart
 
     definition = factories.shiki(100101, power=3, health=4)
+    form = factories.card(10010151, card_type="form", form_power=2, form_health=6)
     database = factories.db_of([definition], [])
     seen = {}
     monkeypatch.setattr(cardart, "_cached_entity_pixmap",
@@ -540,11 +563,12 @@ def test_entity_stat_colors_follow_base_permanent_reference(qapp, tmp_path, monk
                         seen.update(json.loads(state)))
 
     def render(**values):
+        form = values.pop("form", None)
         defaults = dict(id=100101, awakened=None, level=1, defeated=False,
                         perm_power=0, perm_health=0, eff_power=3, combat_power=0,
                         health=4, max_health=4, shield=2, ext={})
         defaults.update(values)
-        cardart.entity_pixmap(SimpleNamespace(**defaults), database,
+        cardart.entity_pixmap(SimpleNamespace(**defaults), database, form=form,
                               library_dir=tmp_path / "empty")
         return dict(seen)
 
@@ -562,6 +586,18 @@ def test_entity_stat_colors_follow_base_permanent_reference(qapp, tmp_path, monk
                    eff_power=9, health=0, max_health=0)
     assert state["power_color"] is None
     assert state["health_color"] is None
+
+    database.cards[form.id] = form
+    for eff_power, expected in ((2, "red"), (3, None), (4, "green")):
+        state = render(form=form, perm_power=1, perm_health=2,
+                       eff_power=eff_power, health=8, max_health=8)
+        assert state["power_color"] == expected
+    for max_health, expected in ((7, None), (8, None), (9, "green")):
+        state = render(form=form, perm_power=1, perm_health=2,
+                       health=max_health, max_health=max_health)
+        assert state["health_color"] == expected
+    state = render(form=form, perm_power=1, perm_health=2, health=7, max_health=8)
+    assert state["health_color"] == "red"
 
 
 def test_defeated_entity_uses_base_permanent_stats_and_grayscale_art(qapp, tmp_path, monkeypatch):
