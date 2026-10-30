@@ -10,7 +10,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from client.gui.app import MainWindow
 from client.gui.builder import DeckBuilderView
@@ -294,7 +294,86 @@ def test_battle_loading_has_fullscreen_background(qapp, db, tmp_path):
     assert not scene.loading_item.isVisible()
 
 
-def test_settings_rebuild_and_startup_prewarm(qapp, db, tmp_path, monkeypatch):
+def test_startup_prewarm_runs_in_background_without_blocking(qapp, db, tmp_path, monkeypatch):
+    consumed = []
+
+    def fake_prewarm(db_arg):
+        assert db_arg is db
+        for current in range(1, 4):
+            consumed.append(current)
+            yield current, 3
+        return ["done"]
+
+    monkeypatch.setattr("client.gui.app.prewarm_iter", fake_prewarm, raising=False)
+    monkeypatch.setattr("client.gui.app.prewarm_all",
+                        lambda *_args, **_kwargs: pytest.fail("启动不应同步预热"), raising=False)
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.show()
+    win.prewarm_resources()
+    assert not win.loading_overlay.isVisible()
+    assert win.statusBar().isVisible() or win._prewarm_timer.isActive()
+    first_timer = win._prewarm_timer
+    win.prewarm_resources()
+    assert win._prewarm_timer is first_timer
+    menu_button = next(button for button in win.stack.widget(0).findChildren(QPushButton)
+                       if button.text().startswith("式神录\n"))
+
+    for current in range(1, 4):
+        qapp.processEvents()
+        assert consumed == list(range(1, current + 1))
+        assert win.statusBar().currentMessage() == f"卡图后台同步 {current}/3"
+        if current == 1:
+            menu_button.click()
+            assert win.stack.currentWidget() is win.pages["codex"]
+
+    qapp.processEvents()
+    assert consumed == [1, 2, 3]
+    assert not win._prewarm_timer.isActive()
+    assert win._prewarm_iterator is None
+    assert win.statusBar().currentMessage() == ""
+    win.close()
+
+
+def test_background_prewarm_blocks_manual_rebuild(qapp, db, tmp_path, monkeypatch):
+    from client.gui import settings
+
+    monkeypatch.setattr("client.gui.app.prewarm_iter",
+                        lambda _db: iter([(1, 1)]), raising=False)
+    monkeypatch.setattr("client.gui.app.prewarm_all",
+                        lambda *_args, **_kwargs: pytest.fail("启动不应同步预热"), raising=False)
+    calls = []
+    monkeypatch.setattr(settings, "prewarm_all",
+                        lambda *args, **kwargs: calls.append((args, kwargs)) or [])
+    monkeypatch.setattr(settings, "ask_confirmation",
+                        lambda *_args: pytest.fail("后台预热时不应询问全量重建"))
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.prewarm_resources()
+    first_timer = win._prewarm_timer
+    win.go("settings")
+    page = win.pages["settings"]
+    page.rebuild()
+    assert calls == []
+    assert "后台预热进行中" in page.status_label.text()
+    assert win._prewarm_timer is first_timer
+    assert first_timer.isActive()
+    win.close()
+
+
+def test_background_prewarm_close_stops_timer(qapp, db, tmp_path, monkeypatch):
+    monkeypatch.setattr("client.gui.app.prewarm_iter",
+                        lambda _db: iter([(1, 1)]), raising=False)
+    monkeypatch.setattr("client.gui.app.prewarm_all",
+                        lambda *_args, **_kwargs: pytest.fail("启动不应同步预热"), raising=False)
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.prewarm_resources()
+    timer = win._prewarm_timer
+    assert timer.isActive()
+    win.close()
+    assert not timer.isActive()
+    assert win._prewarm_iterator is None
+
+
+def test_settings_rebuild_when_background_idle(qapp, db, tmp_path, monkeypatch):
     from client.gui import settings
 
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
@@ -306,12 +385,8 @@ def test_settings_rebuild_and_startup_prewarm(qapp, db, tmp_path, monkeypatch):
                         lambda *args, **kwargs: calls.append((args, kwargs)) or [])
     monkeypatch.setattr(settings, "ask_confirmation", lambda *_args: QMessageBox.Yes)
     page.rebuild()
-    assert calls
+    assert len(calls) == 1
+    assert calls[0][1]["clear"] is True
     assert page.rebuild_button.isEnabled()
     assert not page.loading_overlay.isVisible()
-    monkeypatch.setattr("client.gui.app.prewarm_all",
-                        lambda *args, **kwargs: calls.append((args, kwargs)) or [])
-    win.prewarm_resources()
-    assert len(calls) == 2
-    assert not win.loading_overlay.isVisible()
     win.close()
