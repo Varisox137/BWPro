@@ -274,12 +274,16 @@ class OnlineBattleView(HotseatView):
     def show_game_over(self, winner: int | None, reason: str = "") -> None:
         self._game_over = True
         self.battle_scene.game_over = True
-        self._update_input_widgets()
+        self.cancel_targeting()
+        if self.choice_dialog is not None:
+            self.choice_dialog.hide()
+            self.choice_dialog = None
+        self._choice_key = None
         if winner is None:
             self.result_banner.setText(f"对局终止（{reason}）")
             self.result_banner.show()
             self.result_back.show()
-        else:
+        elif self.result_banner.isHidden():
             self._show_result()
 
     def return_to_menu(self) -> None:

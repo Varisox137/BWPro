@@ -530,7 +530,6 @@ def test_entity_power_zero_does_not_subtract_combat_power(qapp, tmp_path, monkey
 
 def test_card_runtime_stat_colors_follow_original_values(qapp, tmp_path, monkeypatch):
     import json
-    from types import SimpleNamespace
     from client.gui import cardart
     from tests import factories
 

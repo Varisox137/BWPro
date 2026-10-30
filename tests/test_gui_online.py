@@ -9,7 +9,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent, QObject, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, Signal
 from PySide6.QtWidgets import QApplication, QDialog
 
 from client import cli
@@ -581,6 +581,85 @@ def test_online_winner_state_blocks_direct_commands(qapp, db, make_game):
     assert not battle.upgrade(0)
     assert not battle.end_turn()
     assert sent == []
+    battle.close()
+
+
+@pytest.mark.parametrize("winner", [None, 0])
+def test_online_game_over_clears_targeting_and_restores_details(
+        qapp, db, make_game, monkeypatch, winner):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
+    scene = battle.battle_scene
+    item = scene.cards[("player", 0)]
+    battle.pending_command = {"op": "play_card", "uid": game.current.hand[0].uid}
+    battle.target_specs = [("target", {})]
+    battle.legal_targets = [item.payload]
+    scene.legal_targets = [item.payload]
+    battle._render_state()
+    assert item.targetable and not battle.cancel_target_button.isHidden()
+
+    if winner is not None:
+        battle.game.state.winner = winner
+    details, targets = [], []
+    monkeypatch.setattr(battle, "show_player_detail", details.append)
+    monkeypatch.setattr(battle, "choose_target", targets.append)
+    battle.show_game_over(winner, "engine_error")
+
+    assert battle.pending_command is None
+    assert battle.target_specs == []
+    assert battle.legal_targets == []
+    assert scene.legal_targets == []
+    assert not item.targetable
+    assert battle.cancel_target_button.isHidden()
+    assert battle.target_label.isHidden()
+    avatar_pos = item.scenePos() + QPointF(50, 50)
+    scene.drag_controller.press(item, avatar_pos)
+    scene.drag_controller.release(avatar_pos)
+    assert details == [0]
+    assert targets == []
+    assert not battle.result_banner.isHidden()
+    battle.close()
+
+
+@pytest.mark.parametrize("winner", [None, 0])
+def test_online_game_over_clears_usage_and_pending_choice(
+        qapp, db, make_game, winner):
+    game = make_game(mulligan=False)
+    db.cards[10010153] = F.card(10010153, token=True, cost=0, level=0)
+    db.cards[10010154] = F.card(10010154, token=True, cost=1, level=3)
+    db.cards[10010161] = F.card(
+        10010161, token=True, card_type="reinforce", shikigami2=100102,
+        options=[10010153, 10010154])
+    card = F.give(game, 0, 10010161)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle.play_card(card.uid)
+    assert battle._usage_pending is not None
+    assert battle.battle_scene.usage_items
+    battle.game.state.pending_choice = {
+        "kind": "deck_top_pick", "player": 0, "remaining": 1,
+        "options": [card.uid for card in battle.game.current.deck[:2]],
+    }
+    battle._sync_pending_choice()
+    dialog = battle.choice_dialog
+    assert dialog is not None and not dialog.isHidden()
+
+    if winner is not None:
+        battle.game.state.winner = winner
+    battle.show_game_over(winner, "engine_error")
+
+    assert battle._usage_pending is None
+    assert not battle.battle_scene.usage_items
+    assert not battle.battle_scene.usage_labels
+    assert battle.choice_dialog is None
+    assert battle._choice_key is None
+    assert dialog.isHidden()
+    assert not battle.result_banner.isHidden()
     battle.close()
 
 
