@@ -96,6 +96,7 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     db.invocations["测试灵咒"] = SimpleNamespace(text="测试灵咒说明。")
     dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
     assert dialog.mechanism_panel is not None
-    assert len(dialog.mechanism_labels) == 2
+    assert len(dialog.mechanism_labels) == 1
     assert all(not label.pixmap().isNull() for label in dialog.mechanism_labels)
+    assert any("测试灵咒说明。" in item["text"] for item in dialog.status_mechanisms)
     dialog.close()

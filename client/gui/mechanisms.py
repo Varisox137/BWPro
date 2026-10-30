@@ -131,8 +131,8 @@ def card_mechanisms(cdef, runtime: dict | None = None) -> list[dict]:
     return mechanisms
 
 
-def shikigami_mechanisms(game, ref) -> list[dict]:
-    """提取式神主卡、形态、当前关键字及结附灵咒的机制说明。"""
+def shikigami_mechanisms(game, ref, status_texts=()) -> list[dict]:
+    """按主卡、形态、额外状态文本及当前关键字顺序提取机制说明。"""
     shiki = game.state.players[ref.player].shikigami[ref.shikigami]
     main_def = (game.db.cards[shiki.awakened] if shiki.awakened is not None
                 else game.db.shikigami[shiki.id])
@@ -140,17 +140,13 @@ def shikigami_mechanisms(game, ref) -> list[dict]:
     if shiki.form is not None:
         for item in card_mechanisms(game.db.cards[shiki.form.id]):
             _add_mechanism(mechanisms, item["name"], frame=item["frame"], text=item["text"])
+    for text in status_texts:
+        _add_text(mechanisms, text)
     for keyword in shiki.keywords + shiki.one_shot_keywords + shiki.perm_keywords:
         _add_mechanism(mechanisms, _canonical_name(keyword))
     for buff in shiki.attack_buffs:
         for keyword, _cls in buff.get("keywords", ()):
             _add_mechanism(mechanisms, _canonical_name(keyword))
-    for invocation in shiki.invocations:
-        name = invocation.get("name", "")
-        definition = game.db.invocations.get(name)
-        if definition is not None:
-            _add_mechanism(mechanisms, name, frame="invocation",
-                           text=definition.text or "（无效果文本）")
     return mechanisms
 
 

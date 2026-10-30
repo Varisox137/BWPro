@@ -1757,10 +1757,16 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
 
     monkeypatch.setattr(QDialog, "exec", capture_exec)
     view.show_shiki_detail(Ref(player=0, shikigami=0))
-    text = seen["dialog"].status_label.text()
-    assert f"力量 {shiki.eff_power}" in text
-    assert f"生命 {shiki.health}/{shiki.max_health}" in text
-    assert "护甲/破甲 4" in text and "能量 3" in text and "派系 青岚" in text
+    dialog = seen["dialog"]
+    assert dialog.column_names == ["main", "form", "status", "mechanisms"]
+    assert dialog.form_card.size() == dialog.main_art_label.size()
+    assert dialog.status_panel.maximumHeight() == 336
+    assert dialog.mechanism_panel.maximumHeight() == 336
+    assert not hasattr(dialog, "status_label")
+    text = "\n".join(item["text"] for item in dialog.status_mechanisms)
+    assert f"力量 {shiki.eff_power}" not in text
+    assert f"生命 {shiki.health}/{shiki.max_health}" not in text
+    assert "护甲/破甲" not in text and "能量 3" not in text and "派系 青岚" not in text
     assert all(word in text for word in ("贯通", "屏障", "迅捷", "免疫", "combat_damage"))
     assert "眩晕" in text and "气绝" in text and "复活倒计时 2" in text
     assert "倒计时 2" in text and "初始 3" in text and "一次型" in text
@@ -1768,8 +1774,8 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
     assert "永久修正 力量 +1　生命 +4" in text
     assert "临时修正 力量 +2　生命 +5" in text
     assert "战斗修正" not in text
-    assert "形态：测试形态" in text and "形态原文" in text
-    assert "觉醒：测试觉醒" in text and "觉醒原文" in text
+    assert "形态：测试形态" not in text and "形态原文" not in text
+    assert "觉醒：测试觉醒" not in text and "觉醒原文" not in text
     assert "延迟能力" in text and "on_battle_end" in text and "次数 2" in text
     assert "玩家B" in text and db.shikigami[view.game.state.players[1].shikigami[0].id].name in text
     assert "灵咒 1：测试灵咒" in text and "灵咒原文" in text
@@ -1791,6 +1797,33 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
                 "攻击后到期", "动态光环", "濒死", "保留护甲"))
 
 
+@pytest.mark.parametrize("empty_column", ["form", "status", "mechanisms"])
+def test_shiki_detail_omits_empty_optional_columns(qapp, view, monkeypatch, empty_column):
+    from client.gui.details import ShikigamiDetailDialog
+
+    start(view, mulligan=False)
+    if empty_column == "status":
+        monkeypatch.setattr("client.gui.details.shiki_status_lines", lambda *_args: [])
+    if empty_column == "mechanisms":
+        monkeypatch.setattr("client.gui.details.shikigami_mechanisms", lambda *_args, **_kwargs: [])
+    dialog = ShikigamiDetailDialog(view.game, Ref(player=0, shikigami=0), 0, view)
+    assert empty_column not in dialog.column_names
+    dialog.close()
+
+
+def test_shikigami_mechanisms_include_extra_status_keywords_in_order(qapp, view):
+    from client.gui.mechanisms import shikigami_mechanisms
+
+    start(view, mulligan=False)
+    shiki = view.game.state.players[0].shikigami[0]
+    shiki.keywords.append("critical")
+    ref = Ref(player=0, shikigami=0)
+    names = [item["name"] for item in shikigami_mechanisms(
+        view.game, ref, status_texts=["获得[吸血]与[暴击]"])]
+    assert names[-2:] == ["吸血", "暴击"]
+    assert names.count("暴击") == 1
+
+
 def test_secret_delayed_target_follows_holder_perspective(qapp, view, monkeypatch):
     start(view, mulligan=False)
     shiki = view.game.state.players[0].shikigami[0]
@@ -1801,7 +1834,7 @@ def test_secret_delayed_target_follows_holder_perspective(qapp, view, monkeypatc
     seen = []
 
     def capture_exec(dialog):
-        seen.append(dialog.status_label.text())
+        seen.append("\n".join(item["text"] for item in dialog.status_mechanisms))
         return QDialog.Rejected
 
     monkeypatch.setattr(QDialog, "exec", capture_exec)

@@ -1,10 +1,9 @@
-"""对局内式神详情与完整状态文本。"""
+"""对局内式神详情、额外状态与机制说明。"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QScrollArea,
-    QVBoxLayout,
+    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout,
 )
 
 from client import cli
@@ -15,7 +14,6 @@ from client.gui.widgets import CardWidget, polish_dialog_buttons
 
 def shiki_status_lines(game, ref, viewer) -> list[str]:
     shiki = game.state.players[ref.player].shikigami[ref.shikigami]
-    definition = game.db.shikigami[shiki.id]
     db = game.db
 
     def ref_label(value) -> str | None:
@@ -39,12 +37,11 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
             parts.append(f"生命 {health:+d}")
         return f"{label} {'　'.join(parts)}"
 
-    text = [
-        f"等级 {shiki.level}　力量 {shiki.eff_power}　生命 {shiki.health}/{shiki.max_health}",
-        f"护甲/破甲 {shiki.shield}　能量 {shiki.energy}　派系 {shiki.faction}",
-        mods("永久修正", shiki.perm_power, shiki.perm_health),
-        mods("临时修正", shiki.temp_power, shiki.temp_health),
-    ]
+    text = []
+    if shiki.perm_power or shiki.perm_health:
+        text.append(mods("永久修正", shiki.perm_power, shiki.perm_health))
+    if shiki.temp_power or shiki.temp_health:
+        text.append(mods("临时修正", shiki.temp_power, shiki.temp_health))
     dyn_power = int(shiki.ext.get("dyn_power", 0))
     dyn_health = int(shiki.ext.get("dyn_health", 0))
     if dyn_power or dyn_health:
@@ -87,13 +84,6 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
         elif source in db.shikigami:
             countdown.append(f"来源 {db.shikigami[source].name}")
         text.append("　".join(countdown))
-    text.append(definition.text or "（无基础能力文本）")
-    if shiki.awakened is not None:
-        awaken = db.cards[shiki.awakened]
-        text.extend([f"觉醒：{awaken.name}", awaken.text or ""])
-    if shiki.form is not None:
-        form = db.cards[shiki.form.id]
-        text.extend([f"形态：{form.name}", form.text or ""])
     for index, delayed in enumerate(shiki.delayed, 1):
         block = delayed.get("block") or {}
         when = block.get("when") if isinstance(block, dict) else block.when
@@ -133,7 +123,7 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
 
 
 class ShikigamiDetailDialog(QDialog):
-    """基础/觉醒主卡、静态形态卡与完整运行时状态。"""
+    """基础/觉醒主卡、同尺寸形态、额外状态与机制说明。"""
 
     def __init__(self, game, ref, viewer, parent=None):
         super().__init__(parent)
@@ -154,14 +144,9 @@ class ShikigamiDetailDialog(QDialog):
         self.setWindowTitle(definition.name)
         self.setMinimumSize(720 if shiki.form is not None else 520, 600)
         layout = QVBoxLayout(self)
-
-        self.status_label = QLabel("\n\n".join(shiki_status_lines(game, ref, viewer)))
-        self.status_label.setWordWrap(True)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(self.status_label)
-
         cards = QHBoxLayout()
+        self.column_names = ["main"]
+
         self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=336)
         self.main_art_label = QLabel()
         self.main_art_label.setAlignment(Qt.AlignCenter)
@@ -173,6 +158,7 @@ class ShikigamiDetailDialog(QDialog):
             main_card = QFrame()
             main_card.setObjectName("shikigamiMainCard")
             main_card.setFixedSize(240, 336)
+            self.main_art_label.setFixedSize(main_card.size())
             main_card.setStyleSheet(
                 "QFrame#shikigamiMainCard {"
                 f"background-color: {'#56466f' if awakened else '#35566b'};"
@@ -192,13 +178,28 @@ class ShikigamiDetailDialog(QDialog):
             self.form_card = CardWidget(form_def, db=game.db,
                                         level_color=seat_level_color(ref.shikigami))
             self.form_card.count_label.hide()
+            self.form_card.setFixedSize(self.main_art_label.size())
             cards.addWidget(self.form_card)
-        layout.addLayout(cards)
+            self.column_names.append("form")
+
+        status_texts = shiki_status_lines(game, ref, viewer)
+        self.status_mechanisms = [
+            {"name": "额外状态", "frame": "skill", "text": line}
+            for line in status_texts
+        ]
+        self.status_panel, self.status_labels = mechanism_panel(
+            self.status_mechanisms, self, max_height=336)
+        if self.status_panel is not None:
+            cards.addWidget(self.status_panel, 1)
+            self.column_names.append("status")
+
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
-            shikigami_mechanisms(game, ref), self)
+            shikigami_mechanisms(game, ref, status_texts=status_texts), self,
+            max_height=336)
         if self.mechanism_panel is not None:
-            layout.addWidget(self.mechanism_panel)
-        layout.addWidget(scroll, 1)
+            cards.addWidget(self.mechanism_panel, 1)
+            self.column_names.append("mechanisms")
+        layout.addLayout(cards)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)
