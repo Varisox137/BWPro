@@ -229,7 +229,7 @@ def test_card_aura_grants_fast_keyword(db, make_game):
 
 
 def test_card_aura_turn_scope_expiry(db, make_game):
-    """妖刀姬能力的光环（scope="turn"）：己方回合开始清除，战斗牌恢复原价。"""
+    """妖刀姬能力的光环（scope="turn"）：所属回合结束清除，战斗牌恢复原价。"""
     _yaodao_base_ability(db)
     combat_cid = 10010164
     db.cards[combat_cid] = F.card(combat_cid, card_type="combat", steps=[], token=True)
@@ -238,9 +238,9 @@ def test_card_aura_turn_scope_expiry(db, make_game):
     g.state.players[1].shield = 0
     g.apply({"op": "assault", "index": 0})
     assert len(pa.card_auras) == 1
-    g.apply({"op": "end_turn"})
-    g.apply({"op": "end_turn"})  # A 第 2 回合开始：光环清除
+    g.apply({"op": "end_turn"})  # A 回合结束：光环立即清除
     assert pa.card_auras == []
+    g.apply({"op": "end_turn"})  # 保留 A 下一回合恢复原价的回归覆盖
     orb0 = pa.orb
     g.apply({"op": "play_card", "uid": give(g, 0, combat_cid).uid})
     assert pa.orb == orb0 - 1  # 恢复 1 费

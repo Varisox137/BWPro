@@ -12,7 +12,7 @@ versions:
           - {op: buff_power, amount: 1, target: {kind: self}}
       triggers:
         # 当其他己方式神攻击后，本回合此牌获得[瞬发]——手牌触发式光环
-        # （keywords 集合语义，多次攻击不叠加；scope=turn 己方回合开始清除）
+        # （keywords 集合语义，多次攻击不叠加；scope=turn 所属回合结束清除）
         - when: on_after_assault
           condition: {attacker_side: friendly, attacker_not_shikigami: 100106}
           steps:

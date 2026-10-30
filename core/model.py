@@ -292,7 +292,7 @@ class PlayerState(BaseModel):
     # offdeck_play"阵容套牌以外"口径以此判定，定案(5)）
     deck_names: set[str] = Field(default_factory=set)
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
-    # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=己方回合开始清除）
+    # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=所属回合结束清除）
     auras: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级持久监听（"本局游戏"类，
     # 豪焰）：{"block": EffectBlock, "once_key": str|None}；事件触发即结算块，跨气绝保留、
     # 回合开始不清除（player_aura 动作写入，emit 时按注册顺序收集）

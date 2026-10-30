@@ -188,6 +188,28 @@ def test_jieqie_response_insert(db, make_game):
     assert g.history.count("on_card_played") == 1
 
 
+@pytest.mark.parametrize("awakened", [False, True], ids=["fast", "cost_zero"])
+def test_card_aura_turn_boundary_response_cost(real_game, awakened):
+    """卡牌光环在所属回合结束失效：妖刀姬的见切在敌方回合恢复 1 费并正常响应。"""
+    g = real_game([100123, 100106, 100101, 100102])
+    pa, pb = F.battle_setup(g, {0: 3 if awakened else 1})
+    if awakened:
+        play(g, 0, 10012308)
+    g.apply({"op": "assault", "index": 0})  # 伤害 B 牌手，登记 fast / cost_zero 光环
+    assert any(a["shikigami"] == 100123 and a.get("cost_zero") == awakened
+               for a in pa.card_auras)
+    card = give(g, 0, 10012302)
+    assert g._effective_cost(pa, g.db.cards[card.id], card) == 0
+    pa.orb = 1
+    g.apply({"op": "end_turn"})
+    assert g._effective_cost(pa, g.db.cards[card.id], card) == 1
+    g.apply({"op": "assault", "index": 0})
+    assert pa.orb == 0
+    assert pa.shikigami[0].health == pa.shikigami[0].max_health  # 免疫战斗伤害
+    assert card in pa.graveyard
+    assert pb.shikigami[0].defeated  # +1 力量反击正常结算
+
+
 def test_jieqie_active_play(db, make_game):
     """见切主动使用：正常战斗牌流程（回归防呆）。"""
     _jie_qie(db)

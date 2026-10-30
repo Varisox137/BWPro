@@ -4124,6 +4124,8 @@ class Game:
             return
         self._remove_expired_stuns(p)  # 己方回合结束批次：解除非本回合施加的眩晕
         self._remove_turn_keyword_grants()  # scope="turn" 关键字授予随本回合结束移除（惊鸿之舞）
+        # "本回合"类卡牌光环（scope="turn"）在所属回合结束失效；其余 scope 条目不受影响
+        p.card_auras[:] = [a for a in p.card_auras if a.get("scope") != "turn"]
         ev = {"name": "on_turn_end", "_emit": self.state.next_emit_seq(),
               "player": self.state.active}
         for pend in self._collect_responses(ev, 1 - self.state.active):
@@ -4217,8 +4219,6 @@ class Game:
         # 扩域同计）
         # 2-15. 按步骤执行回合开始阶段
         self._turn_start_clear_shield(p)
-        # "本回合"类卡牌光环（scope="turn"）在己方回合开始失效；其余 scope 条目不受影响
-        p.card_auras[:] = [a for a in p.card_auras if a.get("scope") != "turn"]
         # "本回合"类牌手级监听（scope="turn"，天邪鬼黄·鼓舞类）同步失效
         p.auras[:] = [a for a in p.auras if a.get("scope") != "turn"]
         # "本回合"类延迟能力（scope="turn"，魔音扰心类）在己方回合开始清除（未消耗时）；

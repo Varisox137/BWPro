@@ -720,7 +720,7 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     self_damage_on_play：命中牌从手牌使用时其控制者受到 N 点无来源伤害（火照之路
     "使用时你受到1点伤害"；出牌管线使用效果结算后结算）。
     turn："self"/"opponent" 限定回合方，仅己方/敌方回合时光环生效（伺机类）。
-    scope 为失效时机："turn" = 己方回合开始清除（"本回合"类）；"form" = 绑定来源式神
+    scope 为失效时机："turn" = 所属回合结束清除（"本回合"类）；"form" = 绑定来源式神
     当前结附的形态，形态离场时移除（心技一体；气绝经 _destroy_form 同路径）；
     "ability" = 绑定来源座次的当前能力，能力离场（气绝/变形/离场/觉醒替换）时移除，
     能力进场（on_ability_enter）重新注册（萤草形态牌光环类）；
