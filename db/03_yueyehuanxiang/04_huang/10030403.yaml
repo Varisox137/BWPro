@@ -11,9 +11,8 @@ versions:
       # 幻境牌才能使用（定案(9)；使用合法性谓词，主动/响应/自动使用同检）
       effects:
         steps:
-          # 「弃一张幻境牌」（随机代替玩家选择，同 search_deck 惯例）；使用后结算前
-          # 手牌中因插入结算不再有幻境牌时弃牌步不处理（discard 空池安全空过），
-          # 「抽三张牌」仍处理——弃牌步失败不中断后续步骤（定案(9)）
-          - {op: discard, shikigami: all, card_type: field, count: 1, random_pick: true}
+          # 「弃一张幻境牌」（交互选择）；使用后结算前手牌中因插入结算不再有
+          # 幻境候选时不挂起，「抽三张牌」仍处理（定案(9)）
+          - {op: discard_pick, card_type: field, count: 1}
           - {op: draw, amount: 3}
       text: "弃一张幻境牌，然后抽三张牌。"

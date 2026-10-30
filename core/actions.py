@@ -4213,11 +4213,12 @@ def purge_copies(game, ctx, *, targets: list[Ref], card_id: int | None = None,
 
 
 @action("discard_pick")
-def discard_pick(game, ctx, *, targets: list[Ref], count: int = 1) -> None:
-    """交互弃牌（意外之喜"弃一张牌"；targets 忽略）：开启结算中交互选择
-    （pending_choice kind="discard_pick"），由控制者从手牌选 count 张弃置
-    （作答/续块见 engine._cmd_choose；无手牌时不挂起，直接跳过）。"""
-    game._open_discard_pick(ctx.controller, int(count))
+def discard_pick(game, ctx, *, targets: list[Ref], count: int = 1,
+                 card_type: str | None = None) -> None:
+    """交互弃牌（意外之喜/余辉；targets 忽略）：开启结算中交互选择
+    （pending_choice kind="discard_pick"），由控制者从手牌选 count 张弃置；
+    card_type 限定候选主类型（作答/续块见 engine._cmd_choose；无候选时不挂起）。"""
+    game._open_discard_pick(ctx.controller, int(count), card_type=card_type)
 
 
 @action("purge_named_card")

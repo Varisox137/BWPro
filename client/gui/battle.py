@@ -500,6 +500,7 @@ class HotseatView(QWidget):
         if not self._handoff_pending:
             return
         if self._handoff_stage == "review":
+            self._clear_hand()
             self._handoff_stage = "transfer"
             self.handoff_dialog.setWindowTitle("准备移交")
             self.handoff_dialog.findChild(QLabel).setText(

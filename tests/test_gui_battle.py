@@ -449,10 +449,15 @@ def test_mulligan_handoff_has_review_then_transfer(qapp, view):
         settle(view)
     assert view.handoff_dialog.windowTitle() == "调度完毕请确认"
     assert view.handoff_dialog.isVisible()
+    old_hand_items = scene_items(view, "hand", player=0)
+    assert old_hand_items and all(item.scene() is not None for item in old_hand_items)
     view.confirm_handoff()
     assert view.handoff_dialog.windowTitle() == "准备移交"
+    assert all(item.scene() is None for item in old_hand_items)
+    assert not scene_items(view, "hand")
     view.confirm_handoff()
     assert view.viewer == 1
+    assert scene_items(view, "hand", player=1)
 
 
 def test_playable_hand_has_no_blue_frame(qapp, view):

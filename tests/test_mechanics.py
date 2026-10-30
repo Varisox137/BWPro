@@ -3556,22 +3556,30 @@ def test_search_deck_field_intensity_boost(db, make_game):
     assert pa.fields[0].intensity == 10             # 牌面 5 + 修饰 5
 
 
-def test_discard_card_type_random_pick(db, make_game):
-    """余辉型：discard(shikigami="all", card_type="field", count=1, random_pick=True)
-    只弃幻境牌（随机代替玩家选择），非幻境牌留手。"""
+def test_discard_pick_card_type_choice(db, make_game):
+    """余辉型：discard_pick(card_type="field") 只让控制者选择幻境牌；
+    作答后该牌入墓地、非幻境牌留手，并续跑后续抽三张。"""
     _field(db, 10010151)
     cid = 10010195
     db.cards[cid] = F.card(cid, token=True, steps=[
-        F.Step(op="discard", shikigami="all", card_type="field", count=1,
-               random_pick=True)])
+        F.Step(op="discard_pick", card_type="field", count=1),
+        F.Step(op="draw", count=3)])
     g = make_game()
     pa, _ = F.battle_setup(g, {0: 1})
     fld = give(g, 0, 10010151)
+    other = give(g, 0, 10010101)
     hand_before = len(pa.hand)
     play(g, 0, cid)
-    assert fld in pa.graveyard                      # 幻境牌被弃
-    assert len(pa.hand) == hand_before - 1          # 弃 1；token 卡给了又用掉互抵
-    assert all(db.cards[c.id].card_type != "field" for c in pa.hand)
+    pend = g.state.pending_choice
+    assert pend is not None and pend["kind"] == "discard_pick"
+    assert pend["options"] == [fld.uid]
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "choose", "uid": other.uid, "player": 0})
+    g.apply({"op": "choose", "uid": fld.uid, "player": 0})
+    assert fld in pa.graveyard
+    assert other in pa.hand
+    assert g.state.pending_choice is None
+    assert len(pa.hand) == hand_before + 2           # 弃 1 后抽 3
 
 
 def test_summon_field_all_and_intensity_override(db, make_game):
@@ -3898,20 +3906,19 @@ def test_hand_card_type_play_condition(db, make_game):
     play(g, 0, cid)                                 # 有了：可用
 
 
-def test_discard_field_step_empty_pool_continues(db, make_game):
-    """余辉结算容错（定案(9)）：使用后结算前手牌中已无幻境牌时，"弃一张幻境牌"
-    不处理（discard 空池安全空过）但"抽三张牌"仍处理——弃牌步失败不中断后续
-    步骤。"""
+def test_discard_pick_empty_pool_continues(db, make_game):
+    """余辉结算容错（定案(9)）：手牌无幻境候选时 discard_pick 不挂起，
+    后续"抽三张牌"仍处理。"""
     cid = 10010151
     db.cards[cid] = F.card(cid, token=True, steps=[
-        F.Step(op="discard", shikigami="all", card_type="field", count=1,
-               random_pick=True),
+        F.Step(op="discard_pick", card_type="field", count=1),
         F.Step(op="draw", count=3)])
     g = make_game()
     pa = g.state.players[0]
     pa.orb = 9
     before = len(pa.hand)
     play(g, 0, cid)                                 # 手牌无幻境牌：弃牌步空过
+    assert g.state.pending_choice is None
     assert len(pa.hand) == before + 3               # 抽三张仍处理
 
 

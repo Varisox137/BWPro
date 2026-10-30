@@ -483,6 +483,50 @@ def test_turn_timeout_pending_choice_random_choose(db):
     run(go())
 
 
+def test_discard_pick_sanitized_and_timeout_random_choose(db):
+    """交互弃牌限类型候选：联机仅作答方可见合法 uid；超时随机作答也只弃
+    合法幻境牌，随后续跑抽牌并走常规回合超时收尾。"""
+    async def go():
+        room, ws0, _ = await _started_room(db, turn_timeout=0.05)
+        g = room.game
+        for pi in (0, 1):
+            g.apply({"op": "ready", "player": pi})
+        while g.state.phase == "upgrade":
+            idx = g.legal_upgrade_indices(0)[0]
+            g.apply({"op": "upgrade", "player": 0, "index": idx})
+        p0 = g.state.players[0]
+        db.cards[10010151] = F.card(10010151, card_type="field", intensity=3)
+        cid = 10010195
+        db.cards[cid] = F.card(cid, token=True, steps=[
+            F.Step(op="discard_pick", card_type="field"),
+            F.Step(op="draw", count=3)])
+        other = p0.hand[0]
+        fld = F.give(g, 0, 10010151)
+        hand_before = len(p0.hand)
+        F.play(g, 0, cid)
+        pend = g.state.pending_choice
+        assert pend is not None and pend["options"] == [fld.uid]
+        from server.room import sanitize_state
+        payload = g.state.model_dump(mode="json")
+        assert sanitize_state(payload, 0)["pending_choice"]["options"] == [fld.uid]
+        assert sanitize_state(payload, 1)["pending_choice"]["options"] == [0]
+        turn = g.state.turn
+        room.reschedule_timer()
+        for _ in range(50):
+            if g.state.active == 1:
+                break
+            await asyncio.sleep(0.02)
+        room._cancel_timer()
+        assert g.state.pending_choice is None
+        assert fld in p0.graveyard
+        assert other in p0.hand
+        assert len(p0.hand) == hand_before + 2
+        assert g.state.active == 1 and g.state.turn > turn
+        assert any(m.get("type") == "notice" and "随机选择" in m.get("text", "")
+                   for m in ws0.messages)
+    run(go())
+
+
 def test_turn_timeout_field_summon_pick_random_choose(db):
     """回合内主动选择（选择召唤幻境，kind="field_summon_pick"）超时：系统自动
     随机选择（随机召唤对应幻境）并结束回合（定案(2)）。"""

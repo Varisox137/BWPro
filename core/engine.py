@@ -1222,8 +1222,8 @@ class Game:
           clear_orb 清空鬼火，并续跑挂起块的剩余步骤（_suspended）。
         - kind="mulligan_pick"（云游击中调度）：uid 给出手牌 → 换该张；uid 缺省/次数
           用尽 → 结束并洗牌库，续跑挂起块。
-        - kind="discard_pick"（意外之喜"弃一张牌"）：uid 给出手牌 → 弃置该张；
-          次数用尽/无手牌 → 结束，续跑挂起块。
+        - kind="discard_pick"（意外之喜/余辉）：uid 给出候选手牌 → 弃置该张；
+          次数用尽/无候选 → 结束，续跑挂起块。
         - kind="card_name"（忘忧的旋律，两级）：stage="shikigami" 时 choice 给出
           敌方式神数据 id → 转 stage="card"（该式神可构筑牌池）；stage="card" 时
           choice 给出卡牌数据 id → 对 target_player 手牌+牌库移除全部同名牌，
@@ -1480,23 +1480,27 @@ class Game:
             self._suspended = None
             self._resolve_block(block, ctx, start)
 
-    def _open_discard_pick(self, pi: int, remaining: int) -> bool:
-        """开启一次交互弃牌（意外之喜）：设置 pending_choice kind="discard_pick"
-        挂起等待 choose 指令；返回是否挂起。无手牌或次数耗尽时不挂起（返回 False，
-        由调用方/作答分支走收尾）。"""
+    def _open_discard_pick(self, pi: int, remaining: int,
+                           card_type: str | None = None) -> bool:
+        """开启一次交互弃牌：设置 pending_choice kind="discard_pick" 挂起等待
+        choose 指令；card_type 限定候选主类型。无候选或次数耗尽时不挂起。"""
         p = self.state.players[pi]
-        if remaining <= 0 or not p.hand:
+        options = [c.uid for c in p.hand
+                   if card_type is None or self.db.cards[c.id].card_type == card_type]
+        if remaining <= 0 or not options:
             return False
         self.state.pending_choice = {
             "kind": "discard_pick", "player": pi, "remaining": remaining,
-            "options": [c.uid for c in p.hand],
+            "options": options,
         }
+        if card_type is not None:
+            self.state.pending_choice["card_type"] = card_type
         self._log(f"{p.name} 选择一张手牌弃置")
         return True
 
     def _cmd_discard_pick_choose(self, cmd: dict, pending: dict) -> None:
         """交互弃牌作答：uid 给出手牌 → 弃置该张（同 discard 的弃牌核心：日志 +
-        移入墓地）；次数用尽/无手牌 → 结束并续跑挂起块（_suspended）。"""
+        移入墓地）；次数用尽/无候选 → 结束并续跑挂起块（_suspended）。"""
         pi = cmd.get("player", self.state.active)
         if pi != pending["player"]:
             raise IllegalAction("不是你的选择（等待对应玩家作答）")
@@ -1510,7 +1514,8 @@ class Game:
         self._log(f"{p.name} 弃掉了【{self.db.cards[card.id].name}】")
         self.move_card(p, card, "graveyard")
         self.state.pending_choice = None
-        if not self._open_discard_pick(pi, pending["remaining"] - 1):
+        if not self._open_discard_pick(pi, pending["remaining"] - 1,
+                                       pending.get("card_type")):
             if self._suspended is not None:
                 block, ctx, start = self._suspended
                 self._suspended = None

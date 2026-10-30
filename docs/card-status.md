@@ -730,7 +730,7 @@
 | 基础能力 | ✅ | on_damage {source_shikigami: self, kind: combat} → field_op pick=all 全幻境 +1 耐久 |
 | 01 星轨 | ✅ | 幻境 耐久4，field_keywords [piercing]（幻境能力伤害贯通——_ability_piercing 并入 ctx.field.keywords）；on_turn_start {active: self} → damage {field_intensity: self} 投射 + field_op self_field destroy 自毁 |
 | 02 荒海 | ✅ | 幻境 耐久1 [瞬发]；on_before_field_destroy {field_self} → field_rebound（回手并失去此能力——一次性回手标记） |
-| 03 余辉 | ✅ | play_condition {hand_card_type: field}（手牌无幻境牌不可用——match_condition 新键）；discard shikigami=all card_type=field count=1 random_pick（空池安全空过）→ draw 3 |
+| 03 余辉 | ✅ | play_condition {hand_card_type: field}（手牌无幻境牌不可用——match_condition 新键）；discard_pick card_type=field count=1（仅幻境候选，空候选不挂起）→ draw 3 |
 | 04 星陨 | ✅ | 幻境 耐久4；on_turn_start {active: self} → repeat count={field_intensity: self} 套 damage 2 随机敌方角色 + field_op self_field destroy 自毁 |
 | 05 星辰之境 | ✅ | 形态；stat_aura kind=field_count_stats power/health 1（每有一个幻境 +1/+1） |
 | 06 觉醒·荒 | ✅ | 觉醒能力双块：基础同款（战斗伤害 → 全幻境 +1）+ on_card_played {card_type: field, player: self} → grant_keyword haste（使用幻境牌时荒得[迅捷]） |
