@@ -2109,12 +2109,46 @@ def test_game_over_is_immediate_and_details_remain_clickable(qapp, view, monkeyp
     assert not view.play_card(uid)
     assert not view.end_turn()
 
+    scene = view.battle_scene
     seen = []
     monkeypatch.setattr(view, "show_shiki_detail", seen.append)
-    item = view.battle_scene.cards[("shiki", 0, 0)]
-    view.battle_scene.drag_controller.press(item, item.scenePos())
-    view.battle_scene.drag_controller.release(item.scenePos())
+    item = scene.cards[("shiki", 0, 0)]
+    scene.drag_controller.press(item, item.scenePos())
+    scene.drag_controller.release(item.scenePos())
     assert seen == [item.payload]
+
+    player_details = []
+    monkeypatch.setattr(view, "show_player_detail", player_details.append)
+    player = scene.cards[("player", 0)]
+    avatar_pos = player.scenePos() + QPointF(50, 50)
+    scene.drag_controller.press(player, avatar_pos)
+    scene.drag_controller.release(avatar_pos)
+    assert player_details == [0]
+
+    card_details = []
+    monkeypatch.setattr(view, "show_card_detail", card_details.append)
+    hand = next(item for key, item in scene.cards.items()
+                if key[0] == "hand" and item.player == view.viewer)
+    assert hand.revealed
+    scene.drag_controller.press(hand, hand.scenePos())
+    scene.drag_controller.release(hand.scenePos())
+    assert card_details == [hand.payload]
+    hidden_hand = next(item for key, item in scene.cards.items()
+                       if key[0] == "hand" and item.player != view.viewer and not item.revealed)
+    assert not scene.drag_controller.press(hidden_hand, hidden_hand.scenePos())
+    scene.drag_controller.release(hidden_hand.scenePos())
+    assert card_details == [hand.payload]
+
+    actions = []
+    scene.action_requested.connect(actions.append)
+    origin = item.scenePos()
+    scene.drag_controller.press(item, origin)
+    scene.drag_controller.move(origin + QPointF(180, 0))
+    assert scene.drag_controller.item is None
+    assert not scene.drag_controller.dragged
+    assert scene.drag_controller.drag_ghost is None
+    scene.drag_controller.release(origin + QPointF(180, 0))
+    assert actions == []
     view.show_log()
     assert not view.log_dialog.isHidden()
 

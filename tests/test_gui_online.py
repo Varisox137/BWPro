@@ -525,6 +525,65 @@ def test_disconnected_join_reopens_socket_and_sends_token(qapp, db, view):
     assert msg["deck_code"] is None
 
 
+@pytest.mark.parametrize("inputs_were_closed", [False, True])
+def test_online_message_game_over_is_read_only_and_resettable(
+        qapp, db, make_game, monkeypatch, inputs_were_closed):
+    game = make_game(mulligan=False)
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 0
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle.set_state(payload, timeline=[{"m": "终局后记录"}])
+    battle._awaiting_state = inputs_were_closed
+    battle._update_input_widgets()
+    assert battle._inputs_open() is not inputs_were_closed
+
+    battle.show_game_over(None, "engine_error")
+    assert not battle._inputs_open()
+    assert not battle.end_turn_button.isEnabled()
+    assert battle.battle_scene.game_over
+    assert not battle._can_send({"op": "upgrade", "index": 0})
+    assert not battle._can_send({"op": "end_turn"})
+    assert not battle.upgrade(0)
+    assert not battle.end_turn()
+    assert sent == []
+
+    details = []
+    monkeypatch.setattr(battle, "show_shiki_detail", details.append)
+    item = battle.battle_scene.cards[("shiki", 0, 0)]
+    battle.battle_scene.drag_controller.press(item, item.scenePos())
+    battle.battle_scene.drag_controller.release(item.scenePos())
+    assert details == [item.payload]
+    while battle.timeline_queue:
+        battle.play_next_timeline()
+    assert battle.battle_scene.game_over
+    assert not battle._inputs_open()
+
+    battle.reset_session()
+    assert not battle.battle_scene.game_over
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle._inputs_open()
+    assert battle._can_send({"op": "end_turn"})
+    battle.close()
+
+
+def test_online_winner_state_blocks_direct_commands(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    game.state.winner = 0
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
+    assert not battle._inputs_open()
+    assert not battle._can_send({"op": "upgrade", "index": 0})
+    assert not battle._can_send({"op": "end_turn"})
+    assert not battle.upgrade(0)
+    assert not battle.end_turn()
+    assert sent == []
+    battle.close()
+
+
 def test_game_over_is_immediate_during_timeline_playback(qapp, db, make_game, monkeypatch):
     game = make_game(mulligan=True)
     battle = OnlineBattleView(db, send_command=lambda _cmd: None)
@@ -546,6 +605,8 @@ def test_game_over_is_immediate_during_timeline_playback(qapp, db, make_game, mo
         assert not battle.result_banner.isHidden()
     assert repeated_shows == []
     assert [message for _seq, message in battle.played_timeline] == ["最后结算"]
+    assert battle.battle_scene.game_over
+    assert not battle._inputs_open()
     battle.close()
 
 

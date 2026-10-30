@@ -94,6 +94,7 @@ class OnlineBattleView(HotseatView):
         self.payload: dict | None = None
         self.server_timer: dict | None = None
         self._awaiting_state = False
+        self._game_over = False
         self._state_rendering = False
         self._deferred_state: tuple | None = None
         super().__init__(db, on_back=on_back, parent=parent)
@@ -121,11 +122,13 @@ class OnlineBattleView(HotseatView):
         self.payload = None
         self.server_timer = None
         self._awaiting_state = False
+        self._game_over = False
         self._deferred_state = None
         self._choice_key = None
         self._last_turn_key = None
         self._opening_banner_pending = True
         self.battle_scene.reset_animations()
+        self.battle_scene.game_over = False
         self.battle_scene.hide_banner()
         if self.choice_dialog is not None:
             self.choice_dialog.close()
@@ -187,7 +190,8 @@ class OnlineBattleView(HotseatView):
                 self.set_state(*deferred)
 
     def _can_send(self, command: dict) -> bool:
-        if self.game is None or self._awaiting_state:
+        if (self.game is None or self._awaiting_state or self._game_over
+                or self.game.state.winner is not None):
             return False
         state = self.game.state
         op = command.get("op")
@@ -221,7 +225,7 @@ class OnlineBattleView(HotseatView):
         return True
 
     def _inputs_open(self) -> bool:
-        if self._awaiting_state or self.game is None:
+        if self._awaiting_state or self._game_over or self.game is None:
             return False
         state = self.game.state
         if state.phase == "mulligan":
@@ -242,6 +246,7 @@ class OnlineBattleView(HotseatView):
 
     def _render_state(self) -> None:
         super()._render_state()
+        self.battle_scene.game_over = self.battle_scene.game_over or self._game_over
         self._update_countdown()
 
     def _update_countdown(self) -> None:
@@ -267,6 +272,9 @@ class OnlineBattleView(HotseatView):
         self.result_back.show()
 
     def show_game_over(self, winner: int | None, reason: str = "") -> None:
+        self._game_over = True
+        self.battle_scene.game_over = True
+        self._update_input_widgets()
         if winner is None:
             self.result_banner.setText(f"对局终止（{reason}）")
             self.result_banner.show()
