@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,17 +23,6 @@ def _art_sha256(config: dict, path: Path, name: str) -> str:
         return ""
 
 
-def _renderer_version() -> str:
-    root = str(portrait.bwpdiy_root())
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    try:
-        from bwpdiy import __version__
-    except ImportError:
-        return "unknown"
-    return __version__
-
-
 def _definition_sha256(definition) -> str:
     payload = json.dumps(definition.model_dump(mode="json"), ensure_ascii=False,
                          sort_keys=True, separators=(",", ":"))
@@ -47,7 +35,7 @@ def _manifest_current(cache_dir: Path, manifest: dict) -> bool:
     except (OSError, ValueError, TypeError):
         return False
     return all(current.get(key) == manifest[key]
-               for key in ("version", "renderer_version", "renderer_resources",
+               for key in ("version", "renderer_resources",
                            "entity_renderer_resources", "entries"))
 
 
@@ -70,7 +58,7 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
     art_context["portrait_config_fingerprint"] = config_fingerprint
     root_text = str(portrait.bwpdiy_root().resolve())
     assets, _library, _render = cardart._renderer(root_text)
-    renderer_resources = cardart._renderer_resources(assets, art_context)
+    renderer_resources = cardart._card_renderer_resources(assets, art_context)
     entity_renderer_resources = cardart._entity_renderer_resources(assets, art_context)
     for kind, definition in definitions:
         config, path = portrait._project_config(
@@ -89,9 +77,8 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
         })
     entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
     manifest = {
-        "version": 4,
+        "version": 5,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "renderer_version": _renderer_version(),
         "renderer_resources": renderer_resources,
         "entity_renderer_resources": entity_renderer_resources,
         "entries": entries,

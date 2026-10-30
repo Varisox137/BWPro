@@ -82,6 +82,8 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     assert len(manifest["entries"]) == 2
     assert all(entry["config_sha256"] and entry["art_sha256"] for entry in manifest["entries"])
     assert all(entry["definition_sha256"] for entry in manifest["entries"])
+    assert "renderer_version" not in manifest
+    assert manifest["renderer_resources"]
     assert manifest["entity_renderer_resources"]
 
     config = tmp_path / "library" / "项目" / "cards" / "card.yaml"
@@ -101,6 +103,27 @@ def test_prewarm_unchanged_manifest_skips_rendering(qapp, tmp_path, monkeypatch)
     monkeypatch.setattr(prewarm, "entity_pixmap",
                         lambda *_args, **_kwargs: calls.append("entity") or QPixmap())
     prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    calls.clear()
+    entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    assert len(entries) == 2
+    assert calls == []
+
+
+def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monkeypatch):
+    from client.gui import prewarm
+
+    _configs(tmp_path)
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    calls = []
+    monkeypatch.setattr(prewarm, "card_pixmap",
+                        lambda *_args, **_kwargs: calls.append("card") or QPixmap())
+    monkeypatch.setattr(prewarm, "entity_pixmap",
+                        lambda *_args, **_kwargs: calls.append("entity") or QPixmap())
+    prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    manifest_path = tmp_path / "cache" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["renderer_version"] = "0.0.0"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     calls.clear()
     entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     assert len(entries) == 2
