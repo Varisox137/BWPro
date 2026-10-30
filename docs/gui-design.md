@@ -27,7 +27,7 @@
 接入点：
 
 1. **`client/gui/portrait.py`**：卡组列表复用 `bwpdiy.render.duo.render_portrait` 绘制带斜方框与派系标的式神头像。BWPDIY 仓库默认 BWPro 同级 `BWPDIY`，可用 `BWP_DIY_ROOT` 覆盖；项目配置库默认 **BWPro 项目内 `library/`**，可用 `BWP_DIY_LIBRARY` 覆盖，运行时只读。editable 安装只解决 Python 导入，不替代渲染资源根定位。
-2. **`client/gui/cardart.py`**：从 `library/<项目>/{shikigami,cards}/*.yaml` 读取人工标注，按 id（兼容名称）与引擎定义的版本快照日期精确匹配 `version_date`；配置日期必须是合法 8 位日期，不用相邻日期代替。卡牌的名称、类型、等级、稀有度、所属式神、派系、身材与描述等显示数据始终由当前引擎定义合成，项目配置只提供 artwork、portrait、layout 与 faction_style，不让旧配置文本或数值覆盖引擎数据。
+2. **`client/gui/cardart.py`**：从 `library/<项目>/{shikigami,cards}/*.yaml` 读取人工标注，按 id（兼容名称）与引擎定义的版本快照日期精确匹配 `version_date`；配置日期必须是合法 8 位日期，不用相邻日期代替。卡牌的名称、类型、等级、稀有度、所属式神、派系、身材与描述等显示数据始终由当前引擎定义合成，项目配置只提供 artwork、portrait、layout、faction_style 与 frame_variant，不让旧配置文本或数值覆盖引擎数据。
 3. **共用卡面**：构筑卡面、静态/运行时卡牌详情、热坐与联机手牌均调用同一 `card_pixmap`。`hand_cards_info` 同源生成中文数值段与结构化 `render`，战斗、形态、觉醒等实时身材经 `display` 注入卡面负载和缓存键，不修改引擎定义；费用、增强计数、关键字、使用条件等仍由 GUI 详情层显示。
 4. **Phase 3 DIY 联动**：BWPro `diy/` 只读消费 BWPDIY `library/<项目>/` 下的式神/卡牌 yaml——"BWPDIY 做卡、BWPro 打牌"。映射层（BWPDIY yaml → BWPro yaml 口径）只放在 `diy/` 一处。
 

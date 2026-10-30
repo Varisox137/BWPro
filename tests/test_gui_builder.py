@@ -1189,7 +1189,7 @@ def test_cardart_frame_variant_enters_payload_and_layout(qapp, tmp_path, monkeyp
         selected["frame_variant"] = frame_variant
         return selected
 
-    def capture(_key, payload, layout, _root, *_args):
+    def capture(_key, payload, layout, _root, *_args, **_kwargs):
         seen.update(payload=json.loads(payload), layout=json.loads(layout))
 
     monkeypatch.setattr(layout_module, "get_type_layout", get_type_layout)
@@ -1589,7 +1589,7 @@ def test_cardart_card_renderer_resources_change_cache_key(qapp, tmp_path, monkey
                         lambda *_args, **_kwargs: next(resources), raising=False)
     keys = []
     monkeypatch.setattr(cardart, "_cached_card_pixmap",
-                        lambda key, *_args: keys.append(key))
+                        lambda key, *_args, **_kwargs: keys.append(key))
     for _ in range(2):
         cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert len(keys) == 2 and keys[0] != keys[1]
@@ -1905,3 +1905,72 @@ def test_cardart_render_failure_log_malformed_yaml_has_config_path(tmp_path, cap
         assert str(config_path) in caplog.text
     finally:
         clear_render_log_dedup()
+
+
+@pytest.mark.parametrize("cache_kind", ["card", "entity"])
+def test_cardart_cache_io_failure_log_has_direction_and_context(
+        qapp, tmp_path, monkeypatch, caplog, cache_kind):
+    import logging
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    rendered = QPixmap(8, 8)
+    rendered.fill(Qt.white)
+
+    def fail_pixmap(_path):
+        raise PermissionError("cache denied")
+
+    monkeypatch.setattr(cardart, "QPixmap", fail_pixmap)
+    cardart.clear_cardart_caches()
+    if cache_kind == "card":
+        monkeypatch.setattr(cardart, "_render_card_pixmap", lambda *_args: rendered)
+        expected_id = cdef.id
+        expected_config = str(library_dir / "项目" / "cards" /
+                              f"{cdef.id}@{cdef.version}.yaml")
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            result = cardart.card_pixmap(
+                cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    else:
+        monkeypatch.setattr(cardart, "_render_entity_pixmap", lambda *_args: rendered)
+        shiki = SimpleNamespace(
+            id=cdef.shikigami, awakened=None, level=1, defeated=False,
+            perm_power=0, perm_health=0, eff_power=3, combat_power=0,
+            health=4, max_health=4, shield=0, ext={})
+        expected_id = shiki.id
+        expected_config = "-"
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            result = cardart.entity_pixmap(
+                shiki, database, library_dir=tmp_path / "empty-library",
+                cache_dir=cache_dir, disk_cache=True)
+
+    assert result is rendered
+    assert "渲染失败" not in caplog.text
+    for expected in (
+            "缓存失败", f"kind={cache_kind}-cache", f"id={expected_id}",
+            f"root={portrait.bwpdiy_root().resolve()}", f"config={expected_config}",
+            "direction=read", "direction=write"):
+        assert expected in caplog.text
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_null_pixmap_retry_with_same_cache_arguments(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    rendered = QPixmap(8, 8)
+    rendered.fill(Qt.white)
+    results = iter((QPixmap(), rendered))
+    calls = []
+
+    def render(*args):
+        calls.append(args)
+        return next(results)
+
+    monkeypatch.setattr(cardart, "_render_card_pixmap", render)
+    cardart._cached_runtime_card_pixmap.cache_clear()
+    args = (str(tmp_path / "runtime-key"), "{}", "{}", str(tmp_path / "BWPDIY"))
+    first = cardart._cached_runtime_card_pixmap(*args)
+    second = cardart._cached_runtime_card_pixmap(*args)
+    assert first is None
+    assert second is rendered
+    assert len(calls) == 2
+    cardart._cached_runtime_card_pixmap.cache_clear()

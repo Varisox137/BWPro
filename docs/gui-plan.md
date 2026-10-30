@@ -82,7 +82,7 @@ tests/test_gui*.py            # 按主窗口/构筑/热坐/联机等主题拆分
 
 ### Step 5 — 本地卡图合成管线（已完成）
 - 输入：当前引擎 `CardDef`/`ShikigamiDef` + 项目 `library/<项目>/` 人工标注配置与原图。配置按 id（兼容名称）及合法 8 位 `version_date` 与引擎快照日期精确匹配，无精确版本即回退。
-- 合成：引擎提供名称、类型、等级、稀有度、所属式神、派系、身材与描述；配置仅补充 artwork、portrait、layout、faction_style。形态、觉醒、幻境、战斗与协战字段在适配层转换。
+- 合成：引擎提供名称、类型、等级、稀有度、所属式神、派系、身材与描述；配置仅补充 artwork、portrait、layout、faction_style、frame_variant。形态、觉醒、幻境、战斗与协战字段在适配层转换。
 - 输出与接入：`card_pixmap` 供构筑、静态/运行时详情、热坐/联机手牌共用；`shikigami_pixmap` 供场上及详情中的基础/觉醒式神；`shikigami_portrait` 供阵容头像使用。`hand_cards_info` 同源提供中文数值段与结构化 `render`（战斗、形态、觉醒等），实时数值直接进入卡面负载和缓存键；费用、增强计数、关键字与使用条件仍由 GUI 独立显示。
 - 缓存：静态大卡/小卡默认写入 `~/.bwpro/cardart/<sha256>.png`，头像仅使用内存 LRU、不写磁盘缓存；键含规范化负载、合并后的实际 layout、配置内容 SHA-256、原图 `mtime_ns`/size 与渲染实现资源内容指纹。大卡缓存键与 manifest 不依赖 BWPDIY 版本号，版本号或 WebGUI 变化不触发失效，渲染 Python 源码与受跟踪 assets 的内容变化仍会使对应缓存失效。含实时 `display` 的变体仅用 256 项内存 LRU，不逐值写盘。layout 元素最多 64 个，尺寸字段最大 512px。
 - 启动预热：GUI 线程以 `QTimer` 每次消费 `prewarm_iter` 的一个定义，仅预热大卡与式神小卡、不含头像，不跨线程创建或使用 `QPixmap`；状态栏显示“卡图后台同步 current/total”，首屏无模态遮罩且菜单可切换。重复启动不新建并发任务，后台活跃时手动重建只提示“后台预热进行中”，关闭窗口停止并清理任务。`manifest.json` 记录配置/图片 SHA-256、渲染资源指纹、最近合成时间及成功/失败/跳过统计；`prewarm_iter`/`prewarm_all` 返回成功 `entries`，失败项不进入成功清单，下次启动自动重试，完成后刷新设置页。设置页显示统计、最多三条失败摘要与 manifest 完整路径；后台空闲时仍支持确认后清缓存并同步全量重建，该手动重建保留全屏遮罩与真实耗时提示。

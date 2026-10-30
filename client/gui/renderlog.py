@@ -18,3 +18,15 @@ def log_render_failure(kind, entity, root, error, config_path=None) -> bool:
     logger.error("渲染失败 kind=%s id=%s root=%s config=%s",
                  kind, entity, root, config_path or "-", exc_info=True)
     return True
+
+
+def log_cache_failure(direction, kind, entity, root, error, config_path=None) -> bool:
+    key = (f"{kind}-{direction}", str(entity), str(root), str(config_path or ""))
+    if key in _seen:
+        return False
+    if len(_seen) >= 128:
+        _seen.clear()
+    _seen.add(key)
+    logger.error("缓存失败 kind=%s id=%s root=%s config=%s direction=%s",
+                 kind, entity, root, config_path or "-", direction, exc_info=True)
+    return True

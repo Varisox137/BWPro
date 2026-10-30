@@ -21,7 +21,8 @@ from PySide6.QtWidgets import QApplication
 
 from client.gui import portrait
 from client.gui.portrait import library_root
-from client.gui.renderlog import clear_render_log_dedup, log_render_failure
+from client.gui.renderlog import (
+    clear_render_log_dedup, log_cache_failure, log_render_failure)
 
 __all__ = ["library_root", "card_pixmap", "shikigami_pixmap", "entity_pixmap",
            "seat_level_color", "clear_cardart_caches"]
@@ -514,7 +515,7 @@ def _cache_successful_pixmap(function):
     @wraps(function)
     def cached(*args, **kwargs):
         pixmap = function(*args, **kwargs)
-        if pixmap is None:
+        if pixmap is None or pixmap.isNull():
             raise _PixmapRenderFailed
         return pixmap
 
@@ -532,21 +533,22 @@ def _cache_successful_pixmap(function):
 @_cache_successful_pixmap
 def _cached_card_pixmap(cache_path_text: str, payload_json: str,
                         layout_json: str, root_text: str,
-                        height: int | None = None) -> QPixmap | None:
+                        height: int | None = None, *, entity="unknown",
+                        config_path=None) -> QPixmap | None:
     cache_path = Path(cache_path_text)
     try:
         cached = QPixmap(str(cache_path))
         if not cached.isNull():
             return cached
-    except Exception:
-        pass
+    except Exception as error:
+        log_cache_failure("read", "card-cache", entity, root_text, error, config_path)
     pixmap = _render_card_pixmap(payload_json, layout_json, root_text, height)
     if pixmap is None:
         return None
     try:
         _write_card_png_atomic(pixmap, cache_path)
-    except Exception:
-        pass
+    except Exception as error:
+        log_cache_failure("write", "card-cache", entity, root_text, error, config_path)
     return pixmap
 
 
@@ -570,22 +572,23 @@ def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
 @_cache_successful_pixmap
 def _cached_static_entity_pixmap(cache_path_text: str, payload_json: str, state_json: str,
                                  layout_json: str, root_text: str,
-                                 height: int | None = None) -> QPixmap | None:
+                                 height: int | None = None, *, entity="unknown",
+                                 config_path=None) -> QPixmap | None:
     """基础小卡可跨进程复用；运行时小卡仍只使用内存缓存。"""
     cache_path = Path(cache_path_text)
     try:
         cached = QPixmap(str(cache_path))
         if not cached.isNull():
             return cached
-    except Exception:
-        pass
+    except Exception as error:
+        log_cache_failure("read", "entity-cache", entity, root_text, error, config_path)
     pixmap = _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
     if pixmap is None:
         return None
     try:
         _write_card_png_atomic(pixmap, cache_path)
-    except Exception:
-        pass
+    except Exception as error:
+        log_cache_failure("write", "entity-cache", entity, root_text, error, config_path)
     return pixmap
 
 
@@ -703,7 +706,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                 cache_key, payload_json, layout_json, root_text, *size_args)
         cache_path = cache_dir / f"{cache_key}.png"
         return _cached_card_pixmap(
-            str(cache_path), payload_json, layout_json, root_text, *size_args)
+            str(cache_path), payload_json, layout_json, root_text, *size_args,
+            entity=cdef.id, config_path=path)
     except Exception as error:
         log_render_failure("card", cdef.id, portrait.bwpdiy_root(), error, path)
         return None
@@ -815,7 +819,7 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         if disk_cache:
             return _cached_static_entity_pixmap(
                 str(cache_dir / f"{cache_key}.png"), payload_json, state_json,
-                layout_json, root_text, *size_args)
+                layout_json, root_text, *size_args, entity=shiki.id, config_path=path)
         return _cached_entity_pixmap(
             cache_key, payload_json, state_json, layout_json, root_text, *size_args)
     except Exception as error:

@@ -2,7 +2,7 @@
 
 日期：2026-10-30
 
-本文记录 BWPro `client/gui` 集成 BWPDIY 时的后续修改建议。当前状态为**待实施**：本文不表示下列代码修改已经完成。真实渲染 API 与最小自检以 BWPDIY 仓库的 `docs/integration.md` 为准。
+本文记录 BWPro `client/gui` 集成 BWPDIY 的设计约束与实施口径。真实渲染 API 与最小自检以 BWPDIY 仓库的 `docs/integration.md` 为准。
 
 ## 目标与兼容约束
 
@@ -17,7 +17,7 @@
 
 位置：`client/gui/portrait.py` 的 `bwpdiy_root()`。
 
-当前固定使用 `parents[3] / "BWPDIY"`，在 `.worktrees/<分支>` 中会错误定位到 `.worktrees/BWPDIY`。建议：
+资源根按以下顺序定位；向上查找同时覆盖普通 checkout 与 `.worktrees/<分支>`，固定层级回退仅在找不到有效资源目录时使用：
 
 1. `BWP_DIY_ROOT` 始终优先。
 2. 未配置时，从 `portrait.py` 的各级祖先目录向上寻找具有同级 `BWPDIY/assets` 的目录。
@@ -38,9 +38,9 @@ BWP_DIY_LIBRARY='D:/Programming/BWPro/library'
 - `client/gui/portrait.py`：头像渲染、空槽回退与式神配置解析；
 - `client/gui/mechanisms.py`：机制框渲染与机制配置解析。
 
-建议在所有返回 `None` 或占位图的异常边界记录：渲染类型、卡牌/式神 id 或名称、资源根、配置路径（适用时）和异常堆栈。磁盘缓存读写失败与真正的渲染失败应使用不同日志上下文。
+在所有返回 `None` 或占位图的异常边界记录：渲染类型、卡牌/式神 id 或名称、资源根、配置路径（适用时）和异常堆栈。磁盘缓存读写失败使用独立的“缓存失败”上下文，并附 `direction=read/write`，不与真正的渲染失败混用。
 
-相同失败可使用有界键去重，键至少包含渲染类型、实体标识、资源根、异常类型和消息，避免 GUI 刷新反复刷日志。`clear_cardart_caches()` 应同时清理去重状态，使用户主动重建后能看到最新失败。不要仅记录固定“渲染失败”文本，也不要静默 `except Exception: return None`。
+相同失败使用有界键去重，键为 `(kind, entity, root, config_path)`；缓存读写方向并入 kind，不包含异常类型和消息，避免 GUI 刷新反复刷日志。`clear_cardart_caches()` 应同时清理去重状态，使用户主动重建后能看到最新失败。不要仅记录固定“渲染失败”文本，也不要静默 `except Exception: return None`。
 
 ### 1.3 预热成功清单与失败重试
 
