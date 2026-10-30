@@ -39,7 +39,13 @@ class SettingsView(QWidget):
             manifest = json.loads(path.read_text(encoding="utf-8"))
             entries = manifest.get("entries", [])
             updated = manifest.get("updated_at", "未知")
-            self.status_label.setText(f"卡图缓存：{len(entries)} 项\n最近合成：{updated}")
+            stats = manifest.get("stats")
+            if stats:
+                status = (f"卡图缓存：共 {stats['total']} 项，成功 {stats['succeeded']} 项，"
+                          f"失败 {stats['failed']} 项")
+            else:
+                status = f"卡图缓存：{len(entries)} 项"
+            self.status_label.setText(f"{status}\n最近合成：{updated}")
         except (OSError, ValueError, TypeError):
             self.status_label.setText("卡图缓存：尚未生成\n启动时会自动检查并合成已配置资源")
 

@@ -50,11 +50,11 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     db = F.db_of([F.shiki(100101)], [F.card(10010101)])
     calls = []
     monkeypatch.setattr(prewarm, "card_pixmap",
-                        lambda cdef, _db, **kwargs: calls.append(("card", cdef.id, kwargs)) or QPixmap())
+                        lambda cdef, _db, **kwargs: calls.append(("card", cdef.id, kwargs)) or QPixmap(2, 2))
     monkeypatch.setattr(prewarm, "entity_pixmap",
-                        lambda shiki, _db, **kwargs: calls.append(("entity", shiki.id, kwargs)) or QPixmap())
+                        lambda shiki, _db, **kwargs: calls.append(("entity", shiki.id, kwargs)) or QPixmap(2, 2))
     monkeypatch.setattr(prewarm, "shikigami_portrait",
-                        lambda definition, **kwargs: calls.append(("portrait", definition.id, kwargs)) or QPixmap(),
+                        lambda definition, **kwargs: calls.append(("portrait", definition.id, kwargs)) or QPixmap(2, 2),
                         raising=False)
     fingerprints = []
     original_fingerprint = prewarm.portrait._config_fingerprint
@@ -99,9 +99,9 @@ def test_prewarm_unchanged_manifest_skips_rendering(qapp, tmp_path, monkeypatch)
     db = F.db_of([F.shiki(100101)], [F.card(10010101)])
     calls = []
     monkeypatch.setattr(prewarm, "card_pixmap",
-                        lambda *_args, **_kwargs: calls.append("card") or QPixmap())
+                        lambda *_args, **_kwargs: calls.append("card") or QPixmap(2, 2))
     monkeypatch.setattr(prewarm, "entity_pixmap",
-                        lambda *_args, **_kwargs: calls.append("entity") or QPixmap())
+                        lambda *_args, **_kwargs: calls.append("entity") or QPixmap(2, 2))
     prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     calls.clear()
     entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
@@ -116,9 +116,9 @@ def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monke
     db = F.db_of([F.shiki(100101)], [F.card(10010101)])
     calls = []
     monkeypatch.setattr(prewarm, "card_pixmap",
-                        lambda *_args, **_kwargs: calls.append("card") or QPixmap())
+                        lambda *_args, **_kwargs: calls.append("card") or QPixmap(2, 2))
     monkeypatch.setattr(prewarm, "entity_pixmap",
-                        lambda *_args, **_kwargs: calls.append("entity") or QPixmap())
+                        lambda *_args, **_kwargs: calls.append("entity") or QPixmap(2, 2))
     prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     manifest_path = tmp_path / "cache" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -128,6 +128,88 @@ def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monke
     entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     assert len(entries) == 2
     assert calls == []
+
+
+@pytest.mark.parametrize("null_pixmap", [False, True])
+def test_prewarm_failure_is_not_a_success_manifest(qapp, tmp_path, monkeypatch, null_pixmap):
+    from client.gui import prewarm
+
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    failed = {10010101}
+    calls = []
+
+    def render_card(cdef, _db, **kwargs):
+        calls.append(("card", cdef.id, kwargs))
+        if cdef.id in failed:
+            return QPixmap() if null_pixmap else None
+        return QPixmap(2, 2)
+
+    monkeypatch.setattr(prewarm, "card_pixmap", render_card)
+    monkeypatch.setattr(prewarm, "entity_pixmap",
+                        lambda shiki, _db, **kwargs: calls.append(("entity", shiki.id, kwargs)) or QPixmap(2, 2))
+    entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    assert [entry["id"] for entry in entries] == [100101]
+    manifest_path = tmp_path / "cache" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert [entry["id"] for entry in manifest["entries"]] == [100101]
+    assert manifest["failures"] == [{"kind": "cards", "id": 10010101}]
+    assert manifest["stats"] == {"total": 2, "succeeded": 1, "failed": 1, "skipped": 0}
+
+    calls.clear()
+    failed.clear()
+    entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    assert len(entries) == 2
+    assert any(call[:2] == ("card", 10010101) for call in calls)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["failures"] == []
+
+
+def test_prewarm_forwards_explicit_paths(qapp, tmp_path, monkeypatch):
+    from client.gui import prewarm
+
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    calls = []
+    monkeypatch.setattr(prewarm, "card_pixmap",
+                        lambda cdef, _db, **kwargs: calls.append(("card", cdef.id, kwargs)) or QPixmap(2, 2))
+    monkeypatch.setattr(prewarm, "entity_pixmap",
+                        lambda shiki, _db, **kwargs: calls.append(("entity", shiki.id, kwargs)) or QPixmap(2, 2))
+    prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    for call in calls:
+        kwargs = call[2]
+        assert kwargs["library_dir"] == tmp_path / "library"
+        assert kwargs["cache_dir"] == tmp_path / "cache"
+
+
+def test_prewarm_iter_yields_progress_and_returns_entries(qapp, tmp_path, monkeypatch):
+    from client.gui import prewarm
+
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    monkeypatch.setattr(prewarm, "card_pixmap", lambda *_args, **_kwargs: QPixmap(2, 2))
+    monkeypatch.setattr(prewarm, "entity_pixmap", lambda *_args, **_kwargs: QPixmap(2, 2))
+    iterator = prewarm.prewarm_iter(db, tmp_path / "library", tmp_path / "cache")
+    assert next(iterator) == (1, 2)
+    assert next(iterator) == (2, 2)
+    with pytest.raises(StopIteration) as stopped:
+        next(iterator)
+    assert [entry["id"] for entry in stopped.value.value] == [10010101, 100101]
+
+
+def test_settings_status_displays_failure_stats(qapp, db, tmp_path):
+    view = SettingsView(db)
+    view.cache_dir = tmp_path
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "updated_at": "now",
+        "entries": [{"id": 100101}, {"id": 100102}],
+        "stats": {"total": 3, "succeeded": 2, "failed": 1, "skipped": 0},
+    }), encoding="utf-8")
+    view.refresh_status()
+    assert view.status_label.text() == "卡图缓存：共 3 项，成功 2 项，失败 1 项\n最近合成：now"
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "updated_at": "old", "entries": [{"id": 100101}, {"id": 100102}],
+    }), encoding="utf-8")
+    view.refresh_status()
+    assert view.status_label.text() == "卡图缓存：2 项\n最近合成：old"
+    view.close()
 
 
 def test_builder_loading_covers_only_card_area(qapp, db, tmp_path, monkeypatch):
