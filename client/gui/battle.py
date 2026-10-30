@@ -180,7 +180,7 @@ class HotseatView(QWidget):
         self.log_button.setObjectName("battleRound")
         self.log_button.clicked.connect(self.show_log)
         self.battle_scene.log_item = self.battle_scene.add_control(
-            self.log_button, ("log",), (32, 32))
+            self.log_button, ("log",), (40, 40))
         self.end_turn_button = QPushButton("结束\n回合")
         self.end_turn_button.setObjectName("endTurnButton")
         self.end_turn_button.clicked.connect(self.end_turn)
@@ -199,12 +199,6 @@ class HotseatView(QWidget):
             self.battle_scene.add_control(label, (key,), size)
         for label in (self.enemy_deck_label, self.own_deck_label):
             label.setObjectName("deckCount")
-
-        for pi in (0, 1):
-            detail = QPushButton("牌手详情")
-            detail.setObjectName("battleSmall")
-            detail.clicked.connect(lambda _=False, side=pi: self.show_player_detail(side))
-            self.battle_scene.add_control(detail, ("player_detail", pi), (110, 28))
 
         self.target_label = QLabel()
         self.target_label.setObjectName("targetHint")
@@ -361,7 +355,7 @@ class HotseatView(QWidget):
                 """)
         self.log_button.setStyleSheet(f"""
             QPushButton {{ background: {colors['panel']}; color: {colors['text']};
-                border: 1px solid {colors['gold']}; border-radius: 16px;
+                border: 1px solid {colors['gold']}; border-radius: 20px;
                 padding: 0; font-size: 12px; text-align: center; }}
             QPushButton:hover {{ background: {colors['panel2']}; }}
         """)

@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QFontMetrics, QImage, QPainter
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox
 
 from client.gui.app import THEMES, MainWindow
@@ -321,6 +321,31 @@ def test_battle_pages_have_no_extra_outer_margin(qapp, db, tmp_path):
     for key in ("hotseat", "online"):
         margins = win.pages[key].layout().contentsMargins()
         assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (0, 0, 0, 0)
+    win.close()
+
+
+def test_battle_page_has_zero_outer_margins(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    hotseat = win.pages["hotseat"]
+    online = win.pages["online"]
+
+    def margins():
+        value = win.centralWidget().layout().contentsMargins()
+        return value.left(), value.top(), value.right(), value.bottom()
+
+    win.go("hotseat")
+    assert margins() == (12, 12, 12, 12)
+    hotseat.stack.setCurrentWidget(hotseat.battle_page)
+    assert margins() == (0, 0, 0, 0)
+    win.go("builder")
+    assert margins() == (12, 12, 12, 12)
+    win.go("online")
+    online.stack.setCurrentWidget(online.battle)
+    assert margins() == (0, 0, 0, 0)
+    online.stack.setCurrentWidget(online.connect_page)
+    assert margins() == (12, 12, 12, 12)
+    win.go_menu()
+    assert margins() == (12, 12, 12, 12)
     win.close()
 
 
@@ -1801,11 +1826,13 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     assert scene.log_item.widget() is view.log_button
     assert scene.log_item.x() == 1
     assert scene.log_item.y() == 422
-    assert view.log_button.width() == view.log_button.height() == 32
+    assert view.log_button.width() == view.log_button.height() == 40
     assert view.log_button.text() == "对局\n记录"
     view.apply_theme("light", THEMES["light"])
+    metrics = QFontMetrics(view.log_button.font())
+    assert metrics.lineSpacing() * 2 < view.log_button.height() - 2
     style = view.log_button.styleSheet()
-    assert "border-radius: 16px" in style
+    assert "border-radius: 20px" in style
     assert f"background: {THEMES['light']['panel']}" in style
     assert f"color: {THEMES['light']['text']}" in style
     assert f"border: 1px solid {THEMES['light']['gold']}" in style
@@ -1865,6 +1892,38 @@ def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
     assert layout.itemAt(layout.count() - 1).widget() is box
     assert layout.itemAt(layout.count() - 1).alignment() == Qt.AlignRight
     dialog.close()
+
+
+def test_player_detail_only_from_avatar_and_legal_target_priority(qapp, view, monkeypatch):
+    from client.gui.battle_scene import layout_positions
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    assert all(("player_detail", pi) not in layout_positions() for pi in (0, 1))
+    assert not [item for item in scene.items()
+                if hasattr(item, "widget") and item.widget() is not None
+                and hasattr(item.widget(), "text")
+                and item.widget().text() == "牌手详情"]
+
+    item = scene.cards[("player", 0)]
+    details, targets = [], []
+    monkeypatch.setattr(view, "show_player_detail", details.append)
+    monkeypatch.setattr(view, "choose_target", targets.append)
+    inside = item.scenePos() + QPointF(50, 50)
+    outside = item.scenePos() + QPointF(150, 50)
+
+    scene.drag_controller.press(item, inside)
+    scene.drag_controller.release(inside)
+    assert details == [0] and targets == []
+    scene.drag_controller.press(item, outside)
+    scene.drag_controller.release(outside)
+    assert details == [0] and targets == []
+
+    scene.legal_targets = view.legal_targets = [item.payload]
+    item.targetable = True
+    scene.drag_controller.press(item, outside)
+    scene.drag_controller.release(outside)
+    assert details == [0] and targets == [item.payload]
 
 
 def test_log_dialog_closes_on_new_game_and_return(qapp, view):
@@ -2235,6 +2294,28 @@ def test_enemy_card_use_animation_paints_card_back_before_flip(qapp, view):
     animation.setCurrentTime(int(animation.duration() * 0.5))
     assert item.revealed
     animation.setCurrentTime(animation.duration())
+
+
+def test_card_use_animation_uses_integer_height_and_keeps_fallback_art(
+        qapp, view, monkeypatch):
+    from PySide6.QtGui import QPixmap
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    card = view.game.state.players[0].hand[0]
+    heights = []
+    monkeypatch.setattr(
+        "client.gui.battle_scene.card_pixmap",
+        lambda *_args, **kwargs: heights.append(kwargs["height"]) or None)
+    scene.animate_card_use(card.uid, card.id, 0)
+    animation = scene._card_use_animations[0]
+    item = scene._card_use_items[animation]
+    fallback = QPixmap(20, 20)
+    item.set_art(fallback)
+    animation.setCurrentTime(int(animation.duration() * 0.2))
+    assert heights == [312]
+    assert type(heights[0]) is int
+    assert not item.pixmap.isNull()
 
 
 def test_viewer_handoff_and_restart_clear_animations(qapp, view):

@@ -83,7 +83,6 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     for pi in (0, 1):
         top = pi != viewer
         positions[("player", pi)] = QPointF(1, 4 if top else 766)
-        positions[("player_detail", pi)] = QPointF(1, 140 if top else 732)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
                 1376 + index * 18, (220 + index * 4) if top else (600 - index * 4))
@@ -398,6 +397,9 @@ class BattleDragController:
                     and item.player == scene.viewer):
                 scene.action_requested.emit({"op": "upgrade", "index": item.index})
             else:
+                if (kind == "player" and item.payload not in scene.legal_targets
+                        and not QRectF(2, 2, 96, 96).contains(item.mapFromScene(scene_pos))):
+                    return
                 scene.detail_requested.emit(kind, item.payload)
             return
         if source_rect.contains(scene_pos):
@@ -741,7 +743,8 @@ class BattleScene(QGraphicsScene):
         animation.setStartValue(0.0)
         animation.setEndValue(1.0)
         big_size = QSizeF(220, 312)
-        big_pixmap = card_pixmap(cdef, self.db, cache_context={}, height=big_size.height())
+        big_pixmap = card_pixmap(
+            cdef, self.db, cache_context={}, height=int(round(big_size.height())))
         self._card_use_animations.append(animation)
         self._card_use_items[animation] = item
         self._card_use_sources[animation] = {
@@ -768,7 +771,8 @@ class BattleScene(QGraphicsScene):
             source["flipped"] = True
             item.revealed = True
             item.default_size = QSizeF(source["big_size"])
-            item.set_art(source["big_pixmap"])
+            if source["big_pixmap"] is not None and not source["big_pixmap"].isNull():
+                item.set_art(source["big_pixmap"])
         item.setTransformOriginPoint(item.boundingRect().center())
         if progress < flip_end:
             flip = progress / flip_end

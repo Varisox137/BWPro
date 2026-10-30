@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         self.resize(1600, 900)
         self.theme = "light"
         central = QWidget(self)
-        outer = QVBoxLayout(central)
+        self.outer = outer = QVBoxLayout(central)
         outer.setContentsMargins(12, 12, 12, 12)
         chrome = QHBoxLayout()
         self.back_button = QPushButton("← 返回主菜单")
@@ -157,6 +157,7 @@ class MainWindow(QMainWindow):
             else:
                 self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
+        self.pages["hotseat"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.back_button.hide()
         self.set_theme(self.theme)
@@ -195,6 +196,15 @@ class MainWindow(QMainWindow):
         visible = page is self.pages["hotseat"] or (
             page is online and online.stack.currentWidget() is online.battle)
         self.game_menu_button.setVisible(visible)
+        in_battle = (
+            page is self.pages["hotseat"]
+            and self.pages["hotseat"].stack.currentWidget()
+                is self.pages["hotseat"].battle_page
+        ) or (
+            page is online and online.stack.currentWidget() is online.battle
+        )
+        margin = 0 if in_battle else 12
+        self.outer.setContentsMargins(margin, margin, margin, margin)
 
     def go(self, key: str):
         self.stack.setCurrentWidget(self.pages[key])
@@ -224,7 +234,7 @@ class MainWindow(QMainWindow):
     def go_menu(self):
         self.stack.setCurrentIndex(0)
         self.back_button.hide()
-        self.game_menu_button.hide()
+        self._sync_game_menu_button()
 
     def closeEvent(self, event):
         page = self.stack.currentWidget()
