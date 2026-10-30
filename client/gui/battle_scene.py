@@ -172,7 +172,14 @@ class BattleCardItem(QGraphicsObject):
             self.size = QSizeF(pixmap.width() * scale, pixmap.height() * scale)
 
     def boundingRect(self):
-        return QRectF(QPointF(0, 0), self.size)
+        rect = QRectF(QPointF(0, 0), self.size)
+        if self.dragging or self.targetable or self.playable:
+            return rect.adjusted(-4, -4, 4, 4)
+        return rect
+
+    def update(self, *args) -> None:
+        self.prepareGeometryChange()
+        super().update(*args)
 
     def _paint_operation_glow(self, painter: QPainter, rect: QRectF) -> None:
         colors = {"yellow": "#f3d56b", "blue": "#75b9d1", "green": "#78c896"}
@@ -203,7 +210,7 @@ class BattleCardItem(QGraphicsObject):
 
     def paint(self, painter: QPainter, option, widget=None):
         del option, widget
-        rect = self.boundingRect()
+        rect = QRectF(QPointF(0, 0), self.size)
         if self.dragging or self.targetable or self.playable:
             self._paint_operation_glow(painter, rect)
         if self.pixmap is not None and not self.pixmap.isNull():

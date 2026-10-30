@@ -392,6 +392,24 @@ def test_playable_card_uses_alpha_contour_glow_not_tight_box(qapp):
     assert plain.pixelColor(5, 30).alpha() == 0
 
 
+def test_operation_glow_bounds_cover_scene_update_region(qapp):
+    from PySide6.QtCore import QRectF, QSizeF
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QGraphicsScene
+    from client.gui.battle_scene import BattleCardItem
+
+    item = BattleCardItem(("hand", 99), size=QSizeF(40, 60))
+    item.set_art(QPixmap(40, 60))
+    scene = QGraphicsScene()
+    scene.addItem(item)
+    item.playable = True
+    scene.update()
+    assert item.boundingRect() == QRectF(-4, -4, 48, 68)
+    item.playable = False
+    item.update()
+    assert item.boundingRect() == QRectF(0, 0, 40, 60)
+
+
 def test_phase_label_sits_right_of_turn_label(qapp, view):
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
     assert view.upgrade_label.text() == "升级阶段"
@@ -721,7 +739,7 @@ def test_shiki_placeholder_contains_name_level_and_stats(qapp, view):
     assert view.db.shikigami[shiki.id].name in item.shiki_text
     assert f"等级 {shiki.level}" in item.shiki_text
     assert f"力量 {shiki.eff_power}" in item.shiki_text
-    assert item.boundingRect().height() == 210
+    assert item.size.height() == 210
 
 
 def test_combat_zone_reuses_items_and_returns_them_to_preparation(qapp, view):

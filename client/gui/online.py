@@ -111,6 +111,7 @@ class OnlineBattleView(HotseatView):
 
     def reset_session(self) -> None:
         self.timeline_timer.stop()
+        self._clear_usage()
         self.timeline_queue.clear()
         self.played_timeline.clear()
         self.log_list.clear()
@@ -162,6 +163,7 @@ class OnlineBattleView(HotseatView):
             self.server_timer = timer
             self.game = Game(GameState.model_validate(payload), self.db)
             self.viewer = self.me
+            self._clear_usage()
             self.pending_command = None
             self.target_specs = []
             self.legal_targets = []

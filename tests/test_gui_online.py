@@ -303,6 +303,57 @@ def test_online_reset_session_clears_animations_and_reconnect_history(qapp, db, 
     battle.close()
 
 
+def test_online_state_push_clears_pending_usage(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    db.cards[10010153] = F.card(10010153, token=True, cost=0, level=0)
+    db.cards[10010154] = F.card(10010154, token=True, cost=1, level=3)
+    db.cards[10010161] = F.card(
+        10010161, token=True, card_type="reinforce", shikigami2=100102,
+        options=[10010153, 10010154])
+    card = F.give(game, 0, 10010161)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle.play_card(card.uid)
+    assert battle._usage_pending is not None
+    assert battle.battle_scene.usage_items
+
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle._usage_pending is None
+    assert not battle.battle_scene.usage_items
+    assert not battle.battle_scene.usage_labels
+    assert battle._inputs_open()
+    battle.close()
+
+
+def test_online_reset_session_clears_pending_usage_before_reconnect(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    db.cards[10010153] = F.card(10010153, token=True, cost=0, level=0)
+    db.cards[10010154] = F.card(10010154, token=True, cost=1, level=3)
+    db.cards[10010161] = F.card(
+        10010161, token=True, card_type="reinforce", shikigami2=100102,
+        options=[10010153, 10010154])
+    card = F.give(game, 0, 10010161)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle.play_card(card.uid)
+    assert battle._usage_pending is not None
+
+    battle.reset_session()
+    assert battle._usage_pending is None
+    assert not battle.battle_scene.usage_items
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle._usage_pending is None
+    assert not battle.battle_scene.usage_items
+    assert battle._inputs_open()
+    battle.close()
+
+
 def test_online_enemy_turn_blocks_all_active_inputs(qapp, db, make_game):
     game = make_game(mulligan=False)
     game.state.active = 1
