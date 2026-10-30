@@ -9,12 +9,14 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent, QObject, QPointF, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, Qt, Signal
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
 
 from client import cli
 from client.gui.app import MainWindow
 from client.gui.online import NetBridge, OnlineBattleView, OnlineView
+from client.gui.widgets import CardWidget
 from db import deckcode, deckstore
 from tests import factories as F
 
@@ -429,6 +431,45 @@ def test_reconnect_restores_pending_choice(qapp, db, make_game):
     assert battle.choice_dialog is not None
     battle.answer_pending(game.state.pending_choice["options"][0])
     assert sent[0]["op"] == "choose"
+    battle.close()
+
+
+def test_online_choice_dialog_click_sends_once_waits_and_reconnects(qapp, db, make_game):
+    game = make_game(mulligan=True)
+    field_id = 10010161
+    db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
+    card = F.give(game, 1, field_id)
+    game._open_discard_pick(1, 1, card_type="field")
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 1
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 1)
+    battle.set_state(payload, log=[], timeline=[])
+    dialog = battle.choice_dialog
+    cards = dialog.findChildren(CardWidget)
+    assert len(cards) == 1
+
+    QTest.mouseClick(cards[0], Qt.LeftButton)
+    assert sent == [{"op": "choose", "player": 1, "uid": card.uid}]
+    assert battle._awaiting_state
+    assert not cards[0].isEnabled()
+    assert dialog.isHidden()
+    assert battle.choice_dialog is None
+    assert battle._choice_key is None
+    battle._sync_pending_choice()
+    QTest.mouseClick(cards[0], Qt.LeftButton)
+    assert len(sent) == 1
+    assert battle.choice_dialog is None
+
+    battle.reset_session()
+    battle.set_state(payload, log=[], timeline=[])
+    restored = battle.choice_dialog
+    assert restored is not None and restored is not dialog
+    assert not restored.isHidden()
+    assert len(restored.findChildren(CardWidget)) == 1
+    restored.reject()
+    assert not restored.isHidden()
     battle.close()
 
 

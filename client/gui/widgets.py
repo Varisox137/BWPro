@@ -5,7 +5,7 @@ from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from client import cardfmt
@@ -184,6 +184,34 @@ class CardWidget(QFrame):
         if event.button() == Qt.LeftButton:
             self.clicked.emit(self.cdef)
         super().mouseReleaseEvent(event)
+
+
+class CardChoiceView(QScrollArea):
+    """横向候选列表：卡牌显示卡图，其他值保留文字按钮。"""
+
+    chosen = Signal(object)
+
+    def __init__(self, options, db=None, parent=None):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget()
+        row = QHBoxLayout(content)
+        self.option_widgets = []
+        for value, cdef, label in options:
+            if cdef is None:
+                widget = QPushButton(label)
+                widget.setMinimumSize(180, 60)
+            else:
+                widget = CardWidget(cdef, db=db)
+                widget.count_label.hide()
+                widget.setFixedSize(180, 390)
+            widget.clicked.connect(lambda _=None, option=value: self.chosen.emit(option))
+            self.option_widgets.append(widget)
+            row.addWidget(widget)
+        row.addStretch(1)
+        self.setWidget(content)
 
 
 class CardDetailDialog(QDialog):

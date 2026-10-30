@@ -15,7 +15,7 @@ from client import cli
 from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_seat, usage_target
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
-from client.gui.widgets import CardDetailDialog, ask_confirmation, polish_dialog_buttons
+from client.gui.widgets import CardChoiceView, CardDetailDialog, ask_confirmation, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
 from core.model import Ref
@@ -73,20 +73,27 @@ class ChoiceDialog(QDialog):
             "invocation_pick": "选择一张灵咒牌结附",
         }
         layout.addWidget(QLabel(f"{player.name}：{titles.get(kind, '请选择一项')}"))
-        for option in pending.get("options", []):
-            button = QPushButton(view.choice_option_label(pending, option))
-            button.clicked.connect(lambda _=False, value=option: self._answer(value))
-            layout.addWidget(button)
+        options = [(option, view.choice_option_def(pending, option),
+                    view.choice_option_label(pending, option))
+                   for option in pending.get("options", [])]
+        self.option_view = CardChoiceView(options, db=view.db)
+        self.option_view.chosen.connect(self._answer)
+        layout.addWidget(self.option_view, 1)
         if kind == "mulligan_pick":
             done = QPushButton("结束调度")
             done.clicked.connect(lambda: self._answer(None))
             layout.addWidget(done)
-        self.resize(560, min(700, 120 + 70 * len(pending.get("options", []))))
+        self.resize(720, 500)
 
     def _answer(self, value) -> None:
+        if not self.isEnabled():
+            return
+        self.setEnabled(False)
         view = self.parent()
-        view.answer_pending(value)
-        self.close()
+        if view.answer_pending(value):
+            view._close_choice_dialog(self)
+        else:
+            self.setEnabled(True)
 
     def reject(self) -> None:
         pass
@@ -794,40 +801,52 @@ class HotseatView(QWidget):
         CardDetailDialog(cdef, self.db, self, runtime=runtime,
                          level_color=seat_level_color(seat)).exec()
 
-    def choice_option_label(self, pending: dict, option) -> str:
+    def choice_option_def(self, pending: dict, option):
         kind = pending.get("kind")
         player = self.game.state.players[pending["player"]]
         if kind in ("deck_top_pick", "mulligan_pick", "discard_pick", "quest_complete_pick"):
             zones = [player.deck] if kind == "deck_top_pick" else [player.hand]
             card = next((card for zone in zones for card in zone if card.uid == option), None)
-            if card is not None:
-                definition = self.db.cards[card.id]
-                return f"{definition.name}\n{definition.text or ''}"
+            return self.db.cards[card.id] if card is not None else None
+        if kind in ("field_summon_pick", "pick_generate") or (
+                kind == "card_name" and pending.get("stage") != "shikigami"):
+            return self.db.cards[option]
+        return None
+
+    def choice_option_label(self, pending: dict, option) -> str:
+        kind = pending.get("kind")
+        definition = self.choice_option_def(pending, option)
+        if definition is not None:
+            return f"{definition.name}\n{definition.text or ''}"
         if kind == "card_name" and pending.get("stage") == "shikigami":
             return self.db.shikigami[option].name
-        if kind in ("card_name", "field_summon_pick", "pick_generate"):
-            definition = self.db.cards[option]
-            return f"{definition.name}\n{definition.text or ''}"
         if kind == "invocation_pick":
             definition = self.db.invocations.get(option)
             return f"{option}\n{definition.text if definition is not None else ''}"
         return str(option)
+
+    def _close_choice_dialog(self, dialog=None) -> None:
+        target = dialog or self.choice_dialog
+        if target is None:
+            self._choice_key = None
+            return
+        if self.choice_dialog is target:
+            self.choice_dialog = None
+            self._choice_key = None
+        target.hide()
+        target.deleteLater()
 
     def _sync_pending_choice(self) -> None:
         if self._handoff_pending:
             return
         pending = self.game.state.pending_choice
         if pending is None:
-            if self.choice_dialog is not None:
-                self.choice_dialog.close()
-                self.choice_dialog = None
-            self._choice_key = None
+            self._close_choice_dialog()
             return
         key = (pending.get("kind"), pending.get("stage"), tuple(pending.get("options", [])))
         if key == self._choice_key and self.choice_dialog is not None:
             return
-        if self.choice_dialog is not None:
-            self.choice_dialog.close()
+        self._close_choice_dialog()
         self.choice_dialog = ChoiceDialog(self, pending)
         self._choice_key = key
         self.choice_dialog.show()

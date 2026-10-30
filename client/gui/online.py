@@ -235,12 +235,12 @@ class OnlineBattleView(HotseatView):
         return own_context and super()._inputs_open()
 
     def _sync_pending_choice(self) -> None:
+        if self._awaiting_state:
+            self._close_choice_dialog()
+            return
         pending = self.game.state.pending_choice if self.game is not None else None
         if pending is not None and pending.get("player") != self.me:
-            if self.choice_dialog is not None:
-                self.choice_dialog.close()
-                self.choice_dialog = None
-            self._choice_key = None
+            self._close_choice_dialog()
             return
         super()._sync_pending_choice()
 

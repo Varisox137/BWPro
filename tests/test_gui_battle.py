@@ -8,11 +8,14 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QFontMetrics, QImage, QPainter
-from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import (
+    QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox, QScrollArea,
+)
 
 from client.gui.app import THEMES, MainWindow
 from client.gui.battle import DeckSelectDialog, HotseatView
-from client.gui.widgets import CardDetailDialog
+from client.gui.widgets import CardDetailDialog, CardWidget
 from core.model import CardInstance, GameConfig, Ref
 from db import deckcode, deckstore
 from db.schema import InvocationDef
@@ -2118,6 +2121,79 @@ def test_pending_choice_answer(qapp, db, view):
     settle(view)
     assert game.state.pending_choice is None
     assert any(card.uid == uid for card in game.state.players[0].hand)
+
+
+def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view):
+    """残阳无影候选使用共用卡图横滚视图；真实点击后作答并销毁旧窗。"""
+    option_ids = [10010161 + index for index in range(6)]
+    for cid in option_ids:
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    game = view.game
+    game._open_field_summon_pick(0, option_ids)
+    view.refresh()
+    dialog = view.choice_dialog
+    cards = dialog.findChildren(CardWidget)
+    assert len(cards) == len(option_ids)
+    scroll = dialog.findChild(QScrollArea)
+    assert scroll is not None
+    dialog.resize(560, 460)
+    qapp.processEvents()
+    assert scroll.widget().sizeHint().width() > scroll.viewport().width()
+    assert scroll.horizontalScrollBar().maximum() > 0
+    dialog.reject()
+    assert not dialog.isHidden()
+
+    destroyed = []
+    dialog.destroyed.connect(lambda: destroyed.append(True))
+    chosen_id = option_ids[2]
+    assert cards[2].cdef.id == chosen_id
+    QTest.mouseClick(cards[2], Qt.LeftButton)
+    assert [field.card_id for field in game.current.fields] == [chosen_id]
+    assert game.state.pending_choice is None
+    assert dialog.isHidden()
+    assert view.choice_dialog is None
+    assert view._choice_key is None
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    qapp.processEvents()
+    assert destroyed == [True]
+
+
+def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, view):
+    """余辉型连续弃牌保留 uid 映射，下一 pending 使用新窗而不复用旧选项。"""
+    field_id = 10010161
+    db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    game = view.game
+    first = F.give(game, 0, field_id)
+    second = F.give(game, 0, field_id)
+    game._open_discard_pick(0, 2, card_type="field")
+    view.refresh()
+    first_dialog = view.choice_dialog
+    first_cards = first_dialog.findChildren(CardWidget)
+    assert len(first_cards) == 2
+    destroyed = []
+    first_dialog.destroyed.connect(lambda: destroyed.append(True))
+
+    QTest.mouseClick(first_cards[0], Qt.LeftButton)
+    assert first.uid in [card.uid for card in game.current.graveyard]
+    assert game.state.pending_choice["options"] == [second.uid]
+    assert first_dialog.isHidden()
+    second_dialog = view.choice_dialog
+    assert second_dialog is not None and second_dialog is not first_dialog
+    assert not second_dialog.isHidden()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    qapp.processEvents()
+    assert destroyed == [True]
+
+    second_cards = second_dialog.findChildren(CardWidget)
+    assert len(second_cards) == 1
+    QTest.mouseClick(second_cards[0], Qt.LeftButton)
+    assert second.uid in [card.uid for card in game.current.graveyard]
+    assert game.state.pending_choice is None
+    assert second_dialog.isHidden()
+    assert view.choice_dialog is None
+    assert view._choice_key is None
 
 
 def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
