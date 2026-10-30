@@ -53,7 +53,7 @@ def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypa
     rendered = []
     monkeypatch.setattr(
         "client.gui.mechanisms._mechanism_pixmap",
-        lambda name, _frame, text, _root, chars_per_line=None, font_scale=1.0:
+        lambda name, _frame, text, _root, chars_per_line=None, font_scale=1.0, badge=None:
         rendered.append((name, text)) or QPixmap(360, 220))
     dialog = CardDetailDialog(cdef, db, runtime={"keywords": ["瞬发"]})
     assert [name for name, _text in rendered] == ["贯通", "瞬发", "连击"]
@@ -64,7 +64,7 @@ def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypa
 def test_card_detail_places_card_and_scrollable_mechanisms_side_by_side(qapp, monkeypatch):
     seen = []
 
-    def fake_pixmap(_name, _frame, _text, _root, chars_per_line=None, font_scale=1.0):
+    def fake_pixmap(_name, _frame, _text, _root, chars_per_line=None, font_scale=1.0, badge=None):
         seen.append((chars_per_line, font_scale))
         return QPixmap(360, 220)
 
@@ -167,3 +167,27 @@ def test_mechanisms_render_failure_log_returns_none(tmp_path, caplog, monkeypatc
         assert f"kind=mechanism id=测试 root={root} config=-" in caplog.text
     finally:
         clear_render_log_dedup()
+
+
+def test_mechanisms_badge_enters_render_and_lru(qapp, tmp_path, monkeypatch):
+    from PIL import Image
+    from client.gui import mechanisms
+    from bwpdiy.render import layout, mech
+
+    seen = []
+    monkeypatch.setattr(mechanisms, "_renderer", lambda _root: (tmp_path, None, None))
+    monkeypatch.setattr(layout, "load_layouts", lambda _assets: {"机制": None})
+
+    def render(mechanism, _assets, **_kwargs):
+        seen.append(mechanism)
+        return Image.new("RGBA", (16, 16), "#336699")
+
+    monkeypatch.setattr(mech, "render_mechanism", render)
+    mechanisms._mechanism_pixmap.cache_clear()
+    args = ("测试", "skill", "说明", str(tmp_path))
+    first = mechanisms._mechanism_pixmap(*args, badge="blue")
+    second = mechanisms._mechanism_pixmap(*args, badge="gold")
+    assert first is not None and not first.isNull()
+    assert second is not None and not second.isNull()
+    assert [mechanism["badge"] for mechanism in seen] == ["blue", "gold"]
+    mechanisms._mechanism_pixmap.cache_clear()

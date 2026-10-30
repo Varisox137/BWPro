@@ -155,13 +155,16 @@ def shikigami_mechanisms(game, ref, status_texts=()) -> list[dict]:
 @lru_cache(maxsize=256)
 def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str,
                       chars_per_line: int | None = None,
-                      font_scale: float = 1.0) -> QPixmap | None:
+                      font_scale: float = 1.0, badge=None) -> QPixmap | None:
     try:
         assets, _library, _render = _renderer(root_text)
         from bwpdiy.render.layout import load_layouts
         from bwpdiy.render.mech import render_mechanism
 
-        image = render_mechanism({"name": name, "frame": frame, "text": text}, assets,
+        mechanism = {"name": name, "frame": frame, "text": text}
+        if badge:
+            mechanism["badge"] = badge
+        image = render_mechanism(mechanism, assets,
                                  layout=load_layouts(assets).get("机制"),
                                  chars_per_line=chars_per_line, font_scale=font_scale)
         buffer = BytesIO()
@@ -191,7 +194,8 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
     root_text = str(bwpdiy_root().resolve())
     for mechanism in mechanisms:
         pixmap = _mechanism_pixmap(mechanism["name"], mechanism["frame"],
-                                   mechanism["text"], root_text, chars_per_line, font_scale)
+                                   mechanism["text"], root_text, chars_per_line, font_scale,
+                                   mechanism.get("badge"))
         if pixmap is None or pixmap.isNull():
             continue
         label = QLabel()

@@ -144,6 +144,8 @@ def _card_data(cdef, db, config: dict) -> dict:
         data["health+"] = cdef.awaken_health
     if "artwork" in config:
         data["artwork"] = config["artwork"]
+    if "frame_variant" in config:
+        data["frame_variant"] = config["frame_variant"]
     faction_style = config.get("faction_style")
     if isinstance(faction_style, int) and not isinstance(faction_style, bool) \
             and faction_style in (1, 2, 3):
@@ -548,7 +550,7 @@ def _cached_card_pixmap(cache_path_text: str, payload_json: str,
     return pixmap
 
 
-@lru_cache(maxsize=256)
+@_cache_successful_pixmap
 def _cached_runtime_card_pixmap(cache_key: str, payload_json: str,
                                 layout_json: str, root_text: str,
                                 height: int | None = None) -> QPixmap | None:
@@ -557,7 +559,7 @@ def _cached_runtime_card_pixmap(cache_key: str, payload_json: str,
     return _render_card_pixmap(payload_json, layout_json, root_text, height)
 
 
-@lru_cache(maxsize=256)
+@_cache_successful_pixmap
 def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
                           layout_json: str, root_text: str,
                           height: int | None = None) -> QPixmap | None:
@@ -656,6 +658,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         fallback_art = art is None
         art = art or _transparent_art()
         selected = {"artwork": {"images": [art]}}
+        if config:
+            selected["frame_variant"] = config.get("frame_variant", "norm")
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(cdef, db, selected)
@@ -680,7 +684,9 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         assets, _library, _render = _renderer(root_text)
         from bwpdiy.render.layout import get_type_layout, merge_card_layout
 
-        base_layout = get_type_layout(_layouts(root_text, _layout_fingerprint(assets)), payload["type"])
+        base_layout = get_type_layout(
+            _layouts(root_text, _layout_fingerprint(assets)),
+            payload["type"], payload.get("frame_variant", "norm"))
         layout = merge_card_layout(base_layout, config.get("layout"))
         _validate_layout(layout)
         resources = _card_renderer_resources(assets, cache_context)
@@ -748,6 +754,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         fallback_art = art is None
         art = art or _transparent_art()
         selected = {"artwork": {"images": [art]}}
+        if config:
+            selected["frame_variant"] = config.get("frame_variant", "norm")
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(source, db, selected)

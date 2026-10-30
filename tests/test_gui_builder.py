@@ -1167,6 +1167,95 @@ def _cardart_cache_case(tmp_path):
     return cdef, database, library_dir, cache_dir
 
 
+def test_cardart_frame_variant_enters_payload_and_layout(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    cardart._renderer(str(cardart.portrait.bwpdiy_root().resolve()))
+    from bwpdiy.render import layout as layout_module
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    config_path = library_dir / "项目" / "cards" / f"{cdef.id}@{cdef.version}.yaml"
+    config = cardart.yaml.safe_load(config_path.read_bytes())
+    config["frame_variant"] = "blue"
+    config_path.write_text(cardart.yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    original = layout_module.get_type_layout
+    variants = []
+    seen = {}
+
+    def get_type_layout(layouts, card_type, frame_variant="norm"):
+        variants.append(frame_variant)
+        selected = dict(original(layouts, card_type, frame_variant))
+        selected["frame_variant"] = frame_variant
+        return selected
+
+    def capture(_key, payload, layout, _root, *_args):
+        seen.update(payload=json.loads(payload), layout=json.loads(layout))
+
+    monkeypatch.setattr(layout_module, "get_type_layout", get_type_layout)
+    monkeypatch.setattr(cardart, "_cached_card_pixmap", capture)
+    cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert seen["payload"]["frame_variant"] == "blue"
+    assert seen["layout"]["frame_variant"] == "blue"
+    assert variants == ["blue"]
+
+
+def test_entity_frame_variant_enters_payload(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    library_dir = tmp_path / "library"
+    cache_dir = tmp_path / "cache"
+    form = factories.card(10010151, card_type="form", form_power=2, form_health=5)
+    _cardart_config(library_dir, form.id, form.version, "#336699")
+    config_path = library_dir / "项目" / "cards" / f"{form.id}@{form.version}.yaml"
+    config = cardart.yaml.safe_load(config_path.read_bytes())
+    config["frame_variant"] = "blue"
+    config_path.write_text(cardart.yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    database = factories.db_of([factories.shiki(100101)], [form])
+    shiki = SimpleNamespace(
+        id=100101, awakened=None, level=1, defeated=False, perm_power=0, perm_health=0,
+        eff_power=3, combat_power=0, health=4, max_health=4, shield=0, ext={})
+    seen = {}
+    monkeypatch.setattr(
+        cardart, "_cached_entity_pixmap",
+        lambda _key, payload, _state, _layout, _root, *_args:
+        seen.update(json.loads(payload)))
+    cardart.entity_pixmap(shiki, database, form=form,
+                          library_dir=library_dir, cache_dir=cache_dir)
+    assert seen["frame_variant"] == "blue"
+
+
+def test_cardart_runtime_failure_retry_card(qapp, monkeypatch):
+    from client.gui import cardart
+
+    results = iter((None, QPixmap(2, 2)))
+    calls = []
+    monkeypatch.setattr(cardart, "_render_card_pixmap",
+                        lambda *args: calls.append(args) or next(results))
+    cardart._cached_runtime_card_pixmap.cache_clear()
+    args = ("runtime-retry-card", "{}", "{}", "root")
+    assert cardart._cached_runtime_card_pixmap(*args) is None
+    assert cardart._cached_runtime_card_pixmap(*args) is not None
+    assert len(calls) == 2
+    cardart._cached_runtime_card_pixmap.cache_clear()
+
+
+def test_cardart_runtime_failure_retry_entity(qapp, monkeypatch):
+    from client.gui import cardart
+
+    results = iter((None, QPixmap(2, 2)))
+    calls = []
+    monkeypatch.setattr(cardart, "_render_entity_pixmap",
+                        lambda *args: calls.append(args) or next(results))
+    cardart._cached_entity_pixmap.cache_clear()
+    args = ("runtime-retry-entity", "{}", "{}", "{}", "root")
+    assert cardart._cached_entity_pixmap(*args) is None
+    assert cardart._cached_entity_pixmap(*args) is not None
+    assert len(calls) == 2
+    cardart._cached_entity_pixmap.cache_clear()
+
+
 def test_cardart_layouts_load_once_across_cache_reads(qapp, tmp_path, monkeypatch):
     from client.gui import cardart
 
