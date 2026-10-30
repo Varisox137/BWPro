@@ -480,7 +480,7 @@ def test_shikigami_card_art_uses_shikigami_config(qapp, tmp_path):
 
     _external_library(
         tmp_path,
-        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "id: 100101\nname: 式神100101\nversion_date: 20260720\n"
         "artwork:\n  images:\n    - path: art.png\n",
     )
     definition = factories.shiki(100101, power=3, health=4)
@@ -726,7 +726,7 @@ def _cardart_config(library_dir, cid, version_date, color, **extra):
     image_name = f"{cid}-{version_date}.png"
     Image.new("RGBA", (8, 8), color).save(images_dir / image_name)
     data = {
-        "id": str(cid), "name": "配置旧名", "type": "法术", "level": 1,
+        "id": str(cid), "name": f"卡{cid}", "type": "法术", "level": 1,
         "rarity": "R", "description": "配置旧文本", "version_date": str(version_date),
         "artwork": {"images": [{"path": image_name}]}, **extra,
     }
@@ -738,6 +738,40 @@ def _cardart_config(library_dir, cid, version_date, color, **extra):
 def isolated_cardart_home(tmp_path, monkeypatch):
     from pathlib import Path
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+
+@pytest.mark.parametrize("config_id, config_name", [
+    (10011705, "异名卡"),
+    (19999999, "戏谑套索"),
+])
+def test_card_config_requires_matching_id_and_name(
+        tmp_path, config_id, config_name):
+    from client.gui import cardart
+
+    library_dir = tmp_path / "library"
+    _cardart_config(library_dir, config_id, 20191212, "#336699", name=config_name)
+    cdef = factories.card(10011705, name="戏谑套索").model_copy(
+        update={"version": 20191212})
+    assert cardart._card_config_snapshot(library_dir, cdef) == (None, None, None)
+
+
+def test_luck_form_hand_border_stays_paid(qapp, gdb, monkeypatch):
+    from client import cli
+    from client.gui.battle_scene import BattleScene
+
+    mengji = next(cdef.id for cdef in gdb.cards.values() if cdef.name == "萌即正义")
+    win = next(cdef.id for cdef in gdb.cards.values() if cdef.name == "这把算我赢")
+    game = factories.mk_game(gdb, team=[100117, 100129, 100102, 100123])
+    pa, _ = factories.battle_setup(game, {0: 3})
+    pa.orb = 9
+    factories.play(game, 0, mengji)
+    cards = [factories.give(game, 0, win), factories.give(game, 0, win)]
+    monkeypatch.setattr("client.gui.battle_scene.card_pixmap", lambda *_a, **_k: None)
+    monkeypatch.setattr("client.gui.battle_scene.entity_pixmap", lambda *_a, **_k: None)
+    scene = BattleScene(gdb)
+    scene.sync_state(game, 0, cli.hand_cards_info(game, 0), True)
+    assert all(scene.cards[("hand", card.uid)].border_color != "blue"
+               for card in cards)
 
 
 def test_builder_shared_card_art_and_frame_fallback(qapp, db, view, tmp_path, monkeypatch):

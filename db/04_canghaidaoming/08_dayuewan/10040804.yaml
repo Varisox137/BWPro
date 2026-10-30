@@ -14,7 +14,7 @@ versions:
       effects:
         steps:
           - {op: gain_shield, amount: 2, target: {kind: choose, chosen_index: 0}}
-          # "并攻击一个敌方式神"：主目标式神发起一次额外攻击（来打我呀 10011707
+          # "并攻击一个敌方式神"：主目标式神发起一次额外攻击（来打我呀 10011706
           # 先例 shikigami=target），战斗目标取第二选择目标（at=chosen+at_index=1）
           - {op: launch_attack, shikigami: target, at: chosen, at_index: 1,
              target: {kind: choose, chosen_index: 0}}

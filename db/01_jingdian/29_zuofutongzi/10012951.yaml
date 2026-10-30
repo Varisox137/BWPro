@@ -20,6 +20,6 @@ versions:
           - {op: random_play_form, target: {kind: all, pool: friendly_shikigami}}
           # 羁绊：山兔在场未气绝时——从牌库检索'这把算我赢'置手
           # （search_deck 的 card_id 精确过滤为契约外扩展，需引擎侧支持）
-          - {op: search_deck, shikigami: 100117, card_id: 10011705,
+          - {op: search_deck, shikigami: 100117, card_id: 10011708,
              condition: {shikigami_active: 100117}}
       text: "己方所有式神随机使用1张他的专属形态牌，生效前[运势4]：{复活己方所有式神}。[羁绊]：{从牌库抽取1张‘这把算我赢’。}"

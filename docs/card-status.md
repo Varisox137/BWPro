@@ -383,10 +383,10 @@
 | 02 送祝福 | ✅ | buff 1/1 + 抽 1；增强{dice_six_ge:3}→ 合并一次性 +3/+3+[迅捷] |
 | 03 快来保护我 | ✅ | 形态 6/6；增强{dice_six_ge:3}→ 获得[不屈] |
 | 04 觉醒·山兔 | ✅ | +1/+1；己方回合开始两次独立 luck:6 → countdown_power_boost{power:2}（两个独立 block） |
-| 05 这把算我赢 | ✅ | [瞬发]；set_dice_modifier{mode:six_once}；增强{dice_six_ge:10}→ alt_effects 变后：失去[瞬发] + win_game（吾即正义先例） |
-| 06 戏谑套索 | ✅ | transform{into:10011799 纸人, 敌方战斗区式神}+抽 1；增强{dice_six_ge:3}→ into:10011798 小纸人；[响应] 山兔被攻击时自动使用 |
-| 07 来打我呀 | ✅ | launch_attack shikigami="target"（使一敌方式神立刻攻击）；增强 = 本回合该式神 -dice_six_count 力量（amount_ext + amount_sign:-1） |
-| 08 萌即正义 | ✅ | 形态 6/6；进场/离场 set_dice_modifier{mode:six}（判定者级必 6 光环，dice_force_six + dice_force_six_holder）；增强 = 进场按 dice_six_count +N/+N |
+| 05 戏谑套索 | ✅ | transform{into:10011799 纸人, 敌方战斗区式神}+抽 1；增强{dice_six_ge:3}→ into:10011798 小纸人；[响应] 山兔被攻击时自动使用 |
+| 06 来打我呀 | ✅ | launch_attack shikigami="target"（使一敌方式神立刻攻击）；增强 = 本回合该式神 -dice_six_count 力量（amount_ext + amount_sign:-1） |
+| 07 萌即正义 | ✅ | 形态 6/6；进场/离场 set_dice_modifier{mode:six}（判定者级必 6 光环，dice_force_six + dice_force_six_holder）；增强 = 进场按 dice_six_count +N/+N |
+| 08 这把算我赢 | ✅ | 等级 3，基础无[瞬发]；set_dice_modifier{mode:six_once}；增强{dice_six_ge:10}→ alt_effects + win_game（吾即正义先例） |
 | 21 福星高照 | ✅ | 协战主牌（山兔&座敷童子，id 10011721）：options [10011751 幸运兔兔, 10012951 鸿运当头] |
 | 51 幸运兔兔 | ✅ | 协战子选项（山兔侧[瞬发]）：增强{dice_six_ge:3}→ cost_delta_player{opponent, +1, next_turn}（[不消耗鬼火]/首张[瞬发]仍免费、非手牌使用不受影响）；羁绊（座敷在场，{shikigami_active:100129}）：luck_roll{x:4} → power_override scope=turn 敌方全式神 |
 | 99 纸人 | ✅ | 变形物 3/3（kind=transform）；己方回合结束 untransform self |

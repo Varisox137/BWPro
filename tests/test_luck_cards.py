@@ -231,10 +231,10 @@ SHUIHAI = 10011701      # 谁还不听话
 SONGZHUFU = 10011702    # 送祝福
 KUILAI = 10011703       # 快来保护我
 ST_AWAKEN = 10011704    # 觉醒·山兔
-ZBSWY = 10011705        # 这把算我赢
-XIEXUE = 10011706       # 戏谑套索
-LAIDA = 10011707        # 来打我呀
-MENGJI = 10011708       # 萌即正义
+XIEXUE = 10011705       # 戏谑套索
+LAIDA = 10011706        # 来打我呀
+MENGJI = 10011707       # 萌即正义
+ZBSWY = 10011708        # 这把算我赢
 FUXING = 10011721       # 福星高照（协战）
 XINGYUN = 10011751      # 幸运兔兔
 ZHIREN = 10011799       # 纸人
@@ -339,16 +339,25 @@ def test_dice_force_six_aura(gdb):
     assert not pa.ext.get("dice_force_six")
 
 
+def test_forced_six_does_not_make_win_card_free(gdb):
+    """萌即正义只强制骰点，不把两张这把算我赢的常规费用变为 0。"""
+    g, pa, pb = _game(gdb, ST_TEAM, levels={IDX: 3})
+    play(g, 0, MENGJI)
+    cards = [give(g, 0, ZBSWY), give(g, 0, ZBSWY)]
+    options = [g.usage_options(0, card) for card in cards]
+    assert [[option["cost"] for option in card_options if option["id"] is None]
+            for card_options in options] == [[1], [1]]
+
+
 def test_alt_win_game_after_ten_six(gdb, monkeypatch):
-    """这把算我赢增强（十次 6）：变为"获得本局游戏胜利"且失去[瞬发]
+    """这把算我赢增强（十次 6）：变为"获得本局游戏胜利"
     （alt_effects + win_game，吾即正义先例）。"""
-    g, pa, pb = _game(gdb, ST_TEAM, levels={IDX: 2})
+    g, pa, pb = _game(gdb, ST_TEAM, levels={IDX: 3})
     pa.ext["dice_six_count"] = 9
     _force_dice(monkeypatch, g, [6])
     pass_turns(g, 2)                           # A 下回合开始：山兔基础能力投出第 10 个 6
     assert pa.ext["dice_six_count"] >= 10
     assert pa.card_mods[ZBSWY].get("transformed")
-    assert "fast" not in g._card_keywords(pa, g.db.cards[ZBSWY])
     pa.orb = 9
     play(g, 0, ZBSWY)
     assert g.state.winner == 0                 # win_game：控制者胜

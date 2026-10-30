@@ -33,6 +33,20 @@ def _game(real_game, team, levels=None):
     return g, pa, pb
 
 
+@pytest.mark.parametrize("cid, expected", [
+    (10011705, ("戏谑套索", "spell", "R", 2, ["trigger"])),
+    (10011706, ("来打我呀", "spell", "R", 2, [])),
+    (10011707, ("萌即正义", "form", "SSR", 3, [])),
+    (10011708, ("这把算我赢", "spell", "SR", 3, [])),
+])
+def test_card_identity_matches_raw(gdb, cid, expected):
+    """山兔 05–08 的 id、名称与 20191212 基础数据一一对应。"""
+    cdef = gdb.cards[cid]
+    assert cdef.version == 20191212
+    assert (cdef.name, cdef.card_type, cdef.rarity, cdef.level,
+            cdef.keywords) == expected
+
+
 # ---------- 萤草测试库注册（gdb 覆盖；供萤草基础能力测试） ----------
 
 YC = 100127       # 萤草（双方 0 号位）

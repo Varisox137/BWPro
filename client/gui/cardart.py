@@ -309,7 +309,7 @@ def _card_config_snapshot(library_dir: Path, cdef, fingerprint: tuple | None = N
         fingerprint = _card_config_fingerprint(library_dir)
     entries = _card_config_index(str(library_dir), fingerprint)
     for config, path, config_sha256 in entries:
-        if str(config.get("id", "")) != str(cdef.id) and config.get("name") != cdef.name:
+        if str(config.get("id", "")) != str(cdef.id) or config.get("name") != cdef.name:
             continue
         if cdef.version is not None and str(config["version_date"]) != str(cdef.version):
             continue
