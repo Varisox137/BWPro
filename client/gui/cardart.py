@@ -9,7 +9,7 @@ import re
 import sys
 import tempfile
 import threading
-from functools import lru_cache
+from functools import lru_cache, wraps
 from io import BytesIO
 from pathlib import Path
 
@@ -498,7 +498,31 @@ def _write_card_png_atomic(pixmap: QPixmap, path: Path) -> None:
         temp_path.unlink(missing_ok=True)
 
 
-@lru_cache(maxsize=256)
+class _PixmapRenderFailed(Exception):
+    pass
+
+
+def _cache_successful_pixmap(function):
+    @lru_cache(maxsize=256)
+    @wraps(function)
+    def cached(*args, **kwargs):
+        pixmap = function(*args, **kwargs)
+        if pixmap is None:
+            raise _PixmapRenderFailed
+        return pixmap
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        try:
+            return cached(*args, **kwargs)
+        except _PixmapRenderFailed:
+            return None
+
+    wrapper.cache_clear = cached.cache_clear
+    return wrapper
+
+
+@_cache_successful_pixmap
 def _cached_card_pixmap(cache_path_text: str, payload_json: str,
                         layout_json: str, root_text: str,
                         height: int | None = None) -> QPixmap | None:
@@ -536,7 +560,7 @@ def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
     return _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
 
 
-@lru_cache(maxsize=256)
+@_cache_successful_pixmap
 def _cached_static_entity_pixmap(cache_path_text: str, payload_json: str, state_json: str,
                                  layout_json: str, root_text: str,
                                  height: int | None = None) -> QPixmap | None:

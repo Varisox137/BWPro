@@ -164,6 +164,26 @@ def test_prewarm_failure_is_not_a_success_manifest(qapp, tmp_path, monkeypatch, 
     assert manifest["failures"] == []
 
 
+def test_prewarm_retries_failed_real_cache_entries(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    db = F.db_of([F.shiki(100101)], [])
+    calls = []
+
+    def fail_once(kind):
+        def render(*_args):
+            calls.append(kind)
+            return None if calls.count(kind) == 1 else QPixmap(2, 2)
+        return render
+
+    monkeypatch.setattr(cardart, "_render_card_pixmap", fail_once("card"))
+    monkeypatch.setattr(cardart, "_render_entity_pixmap", fail_once("entity"))
+    assert prewarm_all(db, tmp_path / "library", tmp_path / "cache") == []
+    entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
+    assert calls == ["card", "entity", "card", "entity"]
+    assert len(entries) == 1
+
+
 def test_prewarm_forwards_explicit_paths(qapp, tmp_path, monkeypatch):
     from client.gui import prewarm
 
