@@ -100,3 +100,70 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     assert all(not label.pixmap().isNull() for label in dialog.mechanism_labels)
     assert any("测试灵咒说明。" in item["text"] for item in dialog.status_mechanisms)
     dialog.close()
+
+
+def test_render_failure_log_dedup_clear_and_context(tmp_path, caplog):
+    import logging
+    from client.gui.renderlog import clear_render_log_dedup, log_render_failure
+
+    root = tmp_path / "BWPDIY"
+    config_path = tmp_path / "card.yaml"
+    clear_render_log_dedup()
+    try:
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            try:
+                raise RuntimeError("render broke")
+            except RuntimeError as error:
+                assert log_render_failure("card", 10010101, root, error, config_path) is True
+                assert log_render_failure("card", 10010101, root, error, config_path) is False
+                assert log_render_failure("card", 10010102, root, error, config_path) is True
+        assert len(caplog.records) == 2
+        for expected in ("kind=card", "id=10010101", f"root={root}", f"config={config_path}"):
+            assert expected in caplog.text
+
+        clear_render_log_dedup()
+        caplog.clear()
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            try:
+                raise RuntimeError("render broke")
+            except RuntimeError as error:
+                assert log_render_failure("card", 10010101, root, error, config_path) is True
+        assert len(caplog.records) == 1
+    finally:
+        clear_render_log_dedup()
+
+
+def test_render_failure_log_dedup_is_bounded(tmp_path, caplog):
+    import logging
+    from client.gui.renderlog import clear_render_log_dedup, log_render_failure
+
+    clear_render_log_dedup()
+    try:
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            for entity in range(128):
+                assert log_render_failure("card", entity, tmp_path, RuntimeError("bad")) is True
+            assert log_render_failure("card", 0, tmp_path, RuntimeError("bad")) is False
+            assert log_render_failure("card", 128, tmp_path, RuntimeError("bad")) is True
+            assert log_render_failure("card", 0, tmp_path, RuntimeError("bad")) is True
+        assert len(caplog.records) == 130
+    finally:
+        clear_render_log_dedup()
+
+
+def test_mechanisms_render_failure_log_returns_none(tmp_path, caplog, monkeypatch):
+    import logging
+    from client.gui import mechanisms
+    from client.gui.renderlog import clear_render_log_dedup
+
+    def fail_renderer(_root):
+        raise RuntimeError("renderer missing")
+
+    root = tmp_path / "BWPDIY"
+    monkeypatch.setattr(mechanisms, "_renderer", fail_renderer)
+    clear_render_log_dedup()
+    try:
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            assert mechanisms._mechanism_pixmap("测试", "skill", "说明", str(root)) is None
+        assert f"kind=mechanism id=测试 root={root} config=-" in caplog.text
+    finally:
+        clear_render_log_dedup()

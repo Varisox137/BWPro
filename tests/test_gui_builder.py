@@ -1765,3 +1765,54 @@ def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, mo
     assert third.toImage() != second.toImage()
     assert third.toImage().pixelColor(1, 1).name() == "#229955"
     portrait._portrait_pixmap.cache_clear()
+
+
+def test_bwpdiy_worktree_root_and_environment_priority(tmp_path, monkeypatch):
+    source = (tmp_path / "BWPro" / ".worktrees" / "feature" /
+              "client" / "gui" / "portrait.py")
+    source.parent.mkdir(parents=True)
+    diy_root = tmp_path / "BWPDIY"
+    (diy_root / "assets").mkdir(parents=True)
+    monkeypatch.setattr(portrait, "__file__", str(source))
+    monkeypatch.delenv("BWP_DIY_ROOT", raising=False)
+    assert portrait.bwpdiy_root() == diy_root
+
+    configured = tmp_path / "configured-diy"
+    monkeypatch.setenv("BWP_DIY_ROOT", str(configured))
+    assert portrait.bwpdiy_root() == configured
+
+
+def test_cardart_render_failure_log_skips_transparent_placeholder(
+        qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+
+    cdef, database, _library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    calls = []
+    monkeypatch.setattr(cardart, "log_render_failure",
+                        lambda *args, **kwargs: calls.append((args, kwargs)), raising=False)
+    cardart.clear_cardart_caches()
+    pixmap = cardart.card_pixmap(
+        cdef, database, library_dir=tmp_path / "empty-library", cache_dir=cache_dir)
+    assert pixmap is not None and not pixmap.isNull()
+    assert calls == []
+    cardart.clear_cardart_caches()
+
+
+def test_cardart_render_failure_log_malformed_yaml_has_config_path(tmp_path, caplog):
+    import logging
+    from client.gui import cardart
+    from client.gui.renderlog import clear_render_log_dedup
+
+    library_dir = tmp_path / "library"
+    config_path = library_dir / "项目" / "cards" / "broken.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("invalid: [", encoding="utf-8")
+    clear_render_log_dedup()
+    try:
+        with caplog.at_level(logging.ERROR, logger="client.gui.renderlog"):
+            entries = cardart._card_config_index(
+                str(library_dir), ((str(config_path), 0, 10, "unused"),))
+        assert entries == ()
+        assert str(config_path) in caplog.text
+    finally:
+        clear_render_log_dedup()

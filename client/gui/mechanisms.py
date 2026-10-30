@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 from client.cli import KEYWORD_CN
 from client.gui.cardart import _renderer
 from client.gui.portrait import bwpdiy_root, library_root
+from client.gui.renderlog import log_render_failure
 
 MECHANISM_TEXTS = {
     "不屈": "生命大于1时，受到致命伤害会保留1点生命；一次性不屈触发后消耗。",
@@ -81,7 +82,8 @@ def _library_mechanisms(root_text: str) -> dict[str, dict]:
     for path in sorted((Path(root_text) / "mechanisms").glob("*.yaml")):
         try:
             data = yaml.safe_load(path.read_bytes())
-        except (OSError, yaml.YAMLError):
+        except (OSError, yaml.YAMLError) as error:
+            log_render_failure("mechanism-config", path.stem, root_text, error, path)
             continue
         if not isinstance(data, dict) or not data.get("name") or not data.get("text"):
             continue
@@ -168,7 +170,8 @@ def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str,
         if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
             return None
         return pixmap
-    except Exception:
+    except Exception as error:
+        log_render_failure("mechanism", name, root_text, error)
         return None
 
 

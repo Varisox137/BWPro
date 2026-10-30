@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication
 
 from client.gui import portrait
 from client.gui.portrait import library_root
+from client.gui.renderlog import clear_render_log_dedup, log_render_failure
 
 __all__ = ["library_root", "card_pixmap", "shikigami_pixmap", "entity_pixmap",
            "seat_level_color", "clear_cardart_caches"]
@@ -282,7 +283,6 @@ def _card_config_fingerprint(library_dir: Path) -> tuple:
 def _card_config_index(root_text: str, fingerprint: tuple) -> tuple:
     from db.schema import check_version_date
 
-    del root_text
     entries = []
     for path_text, _mtime_ns, size, _sha256 in fingerprint:
         path = Path(path_text)
@@ -295,7 +295,8 @@ def _card_config_index(root_text: str, fingerprint: tuple) -> tuple:
                 continue
             check_version_date(config.get("version_date"))
             entries.append((config, path, hashlib.sha256(contents).hexdigest()))
-        except (OSError, yaml.YAMLError, TypeError, ValueError):
+        except (OSError, yaml.YAMLError, TypeError, ValueError) as error:
+            log_render_failure("card-config", path.stem, root_text, error, path)
             continue
     return tuple(entries)
 
@@ -336,6 +337,7 @@ def _element_compat(element: dict) -> dict:
 
 def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
                         height: int | None = None) -> QPixmap | None:
+    payload = {}
     try:
         payload = json.loads(payload_json)
         layout = json.loads(layout_json)
@@ -378,12 +380,14 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
             _paint_placeholder_name(pixmap, payload["name"],
                                     payload.get("_placeholder_color", "#26221c"), entity=False)
         return pixmap
-    except Exception:
+    except Exception as error:
+        log_render_failure("card", payload.get("name") or "unknown", root_text, error)
         return None
 
 
 def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
                           root_text: str, height: int | None = None) -> QPixmap | None:
+    payload = {}
     try:
         payload = json.loads(payload_json)
         state = json.loads(state_json)
@@ -449,7 +453,8 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
             _paint_placeholder_name(pixmap, payload["name"],
                                     payload.get("_placeholder_color", "#26221c"), entity=True)
         return pixmap
-    except Exception:
+    except Exception as error:
+        log_render_failure("entity", payload.get("name") or "unknown", root_text, error)
         return None
 
 
@@ -635,6 +640,7 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                       drop_keys: tuple[str, ...] = (),
                       cache_context: dict | None = None,
                       height: int | None = None) -> QPixmap | None:
+    path = None
     try:
         if cache_context is None:
             fingerprint = _card_config_fingerprint(library_dir)
@@ -692,7 +698,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         cache_path = cache_dir / f"{cache_key}.png"
         return _cached_card_pixmap(
             str(cache_path), payload_json, layout_json, root_text, *size_args)
-    except Exception:
+    except Exception as error:
+        log_render_failure("card", cdef.id, portrait.bwpdiy_root(), error, path)
         return None
 
 
@@ -715,6 +722,7 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   cache_context: dict | None = None, height: int | None = None,
                   disk_cache: bool = False) -> QPixmap | None:
     """以 BWPDIY render_entity 绘制对局小卡，保留当前战斗状态。"""
+    path = None
     try:
         awakened = shiki.awakened is not None
         source = form or (db.cards[shiki.awakened] if awakened else db.shikigami[shiki.id])
@@ -802,7 +810,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                 layout_json, root_text, *size_args)
         return _cached_entity_pixmap(
             cache_key, payload_json, state_json, layout_json, root_text, *size_args)
-    except Exception:
+    except Exception as error:
+        log_render_failure("entity", shiki.id, portrait.bwpdiy_root(), error, path)
         return None
 
 
@@ -843,3 +852,4 @@ def clear_cardart_caches() -> None:
     portrait._config_index.cache_clear()
     portrait._portrait_pixmap.cache_clear()
     portrait._renderer.cache_clear()
+    clear_render_log_dedup()

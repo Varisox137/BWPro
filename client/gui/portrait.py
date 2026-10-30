@@ -14,11 +14,20 @@ import yaml
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap, QPolygonF
 
+from client.gui.renderlog import log_render_failure
+
 
 def bwpdiy_root() -> Path:
     """BWPDIY 仓库位置：可用 BWP_DIY_ROOT 覆盖，默认 BWPro 的同级目录。"""
     configured = os.environ.get("BWP_DIY_ROOT")
-    return Path(configured) if configured else Path(__file__).resolve().parents[3] / "BWPDIY"
+    if configured:
+        return Path(configured)
+    source = Path(__file__).resolve()
+    for anchor in source.parents:
+        candidate = anchor.parent / "BWPDIY"
+        if (candidate / "assets").exists():
+            return candidate
+    return source.parents[3] / "BWPDIY"
 
 
 def library_root() -> Path:
@@ -68,7 +77,6 @@ def _config_fingerprint(root: Path) -> tuple:
 def _config_index(root_text: str, fingerprint: tuple) -> tuple[tuple[Path, dict], ...]:
     from db.schema import check_version_date
 
-    del root_text
     entries = []
     for path_text, _mtime_ns, size, _sha256 in fingerprint:
         path = Path(path_text)
@@ -79,7 +87,8 @@ def _config_index(root_text: str, fingerprint: tuple) -> tuple[tuple[Path, dict]
             if not isinstance(data, dict):
                 continue
             check_version_date(data.get("version_date"))
-        except (OSError, yaml.YAMLError, TypeError, ValueError):
+        except (OSError, yaml.YAMLError, TypeError, ValueError) as error:
+            log_render_failure("portrait-config", path.stem, root_text, error, path)
             continue
         entries.append((path, data))
     return tuple(entries)
@@ -200,7 +209,8 @@ def _empty_portrait_pixmap(definition, size: int, root: Path) -> QPixmap:
         if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
             raise ValueError("空头像 PNG 解码失败")
         return pixmap
-    except Exception:
+    except Exception as error:
+        log_render_failure("portrait-empty", definition.id, root, error)
         return _fallback_pixmap(definition.name, definition.faction, size)
 
 
@@ -213,7 +223,7 @@ def shikigami_portrait(definition, size: int = 96, root: Path | None = None,
         art, faction_style = _artwork_ref(
             library_dir, definition.id, definition.name, getattr(definition, "version", 0))
         if art is None:
-            raise ValueError("头像配置或图片缺失")
+            return _empty_portrait_pixmap(definition, size, root)
         image_stat = Path(art["path"]).stat()
         art_json = json.dumps(art, ensure_ascii=False, sort_keys=True,
                               separators=(",", ":"), allow_nan=False)
@@ -222,5 +232,6 @@ def shikigami_portrait(definition, size: int = 96, root: Path | None = None,
             getattr(definition, "version", 0), str(root.resolve()),
             str(library_dir.resolve()), size, art_json, faction_style,
             image_stat.st_mtime_ns, image_stat.st_size)
-    except Exception:
+    except Exception as error:
+        log_render_failure("portrait", definition.id, root, error)
         return _empty_portrait_pixmap(definition, size, root)
