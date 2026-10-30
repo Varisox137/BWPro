@@ -1766,7 +1766,8 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
     text = "\n".join(item["text"] for item in dialog.status_mechanisms)
     assert f"力量 {shiki.eff_power}" not in text
     assert f"生命 {shiki.health}/{shiki.max_health}" not in text
-    assert "护甲/破甲" not in text and "能量 3" not in text and "派系 青岚" not in text
+    assert "护甲/破甲 4" in text and "能量 3" in text
+    assert "派系 青岚" not in text
     assert all(word in text for word in ("贯通", "屏障", "迅捷", "免疫", "combat_damage"))
     assert "眩晕" in text and "气绝" in text and "复活倒计时 2" in text
     assert "倒计时 2" in text and "初始 3" in text and "一次型" in text

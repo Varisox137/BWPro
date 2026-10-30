@@ -38,6 +38,10 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
         return f"{label} {'　'.join(parts)}"
 
     text = []
+    if shiki.shield:
+        text.append(f"护甲/破甲 {shiki.shield}")
+    if shiki.energy:
+        text.append(f"能量 {shiki.energy}")
     if shiki.perm_power or shiki.perm_health:
         text.append(mods("永久修正", shiki.perm_power, shiki.perm_health))
     if shiki.temp_power or shiki.temp_health:
