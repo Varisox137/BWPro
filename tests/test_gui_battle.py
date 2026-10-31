@@ -412,19 +412,29 @@ def test_battle_page_has_zero_outer_margins(qapp, db, tmp_path):
         value = win.centralWidget().layout().contentsMargins()
         return value.left(), value.top(), value.right(), value.bottom()
 
+    def chrome_margins():
+        value = win.outer.itemAt(0).layout().contentsMargins()
+        return value.left(), value.top(), value.right(), value.bottom()
+
     win.go("hotseat")
     assert margins() == (12, 12, 12, 12)
+    assert chrome_margins() == (0, 0, 0, 0)
     hotseat.stack.setCurrentWidget(hotseat.battle_page)
     assert margins() == (0, 0, 0, 0)
+    assert chrome_margins() == (12, 12, 12, 0)
     win.go("builder")
     assert margins() == (12, 12, 12, 12)
+    assert chrome_margins() == (0, 0, 0, 0)
     win.go("online")
     online.stack.setCurrentWidget(online.battle)
     assert margins() == (0, 0, 0, 0)
+    assert chrome_margins() == (12, 12, 12, 0)
     online.stack.setCurrentWidget(online.connect_page)
     assert margins() == (12, 12, 12, 12)
+    assert chrome_margins() == (0, 0, 0, 0)
     win.go_menu()
     assert margins() == (12, 12, 12, 12)
+    assert chrome_margins() == (0, 0, 0, 0)
     win.close()
 
 
@@ -1592,8 +1602,9 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     assert view.hand_caption.text() == f"己方手牌\n{len(view.game.current.hand)}/12 张"
 
 
-def test_preparation_spread_aligns_combat_and_symmetric_hand_captions(qapp, view):
-    from client.gui.battle_scene import SCENE_HEIGHT, SHIKI_SIZE, layout_positions
+def test_preparation_spread_aligns_combat_and_hand_caption_positions(qapp, view):
+    from PySide6.QtCore import QRectF
+    from client.gui.battle_scene import SHIKI_SIZE, layout_positions
 
     start(view, mulligan=False)
     positions = layout_positions(view.game, view.viewer)
@@ -1607,8 +1618,20 @@ def test_preparation_spread_aligns_combat_and_symmetric_hand_captions(qapp, view
     assert ready_center == combat_center == 720
     enemy = positions[("enemy_hand_label",)]
     own = positions[("hand_caption",)]
-    assert own.x() == enemy.x()
-    assert own.y() + enemy.y() + 64 == SCENE_HEIGHT
+    assert enemy == QPointF(1530, 156)
+    assert own == QPointF(1530, 680)
+    for label in (view.enemy_hand_label, view.hand_caption):
+        assert (label.width(), label.height()) == (68, 64)
+    enemy_rect = QRectF(enemy.x(), enemy.y(), 68, 64)
+    own_rect = QRectF(own.x(), own.y(), 68, 64)
+    enemy_deck = positions[("enemy_deck",)]
+    own_deck = positions[("own_deck",)]
+    enemy_deck_rect = QRectF(enemy_deck.x(), enemy_deck.y(), 68, 64)
+    own_deck_rect = QRectF(own_deck.x(), own_deck.y(), 68, 64)
+    assert enemy_deck_rect.top() - enemy_rect.bottom() == 8
+    assert own_rect.top() - own_deck_rect.bottom() == 8
+    assert not enemy_rect.intersects(enemy_deck_rect)
+    assert not own_rect.intersects(own_deck_rect)
 
 
 def test_deck_count_labels_sit_right_of_card_backs(qapp, view):

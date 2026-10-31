@@ -206,8 +206,7 @@ class HotseatView(QWidget):
                            ("enemy_deck", self.enemy_deck_label),
                            ("own_deck", self.own_deck_label)):
             label.setAlignment(Qt.AlignCenter)
-            size = (130, 64) if key == "enemy_hand_label" else (68, 64)
-            self.battle_scene.add_control(label, (key,), size)
+            self.battle_scene.add_control(label, (key,), (68, 64))
         for label in (self.enemy_deck_label, self.own_deck_label):
             label.setObjectName("deckCount")
 
@@ -224,7 +223,7 @@ class HotseatView(QWidget):
         self.default_target_button.clicked.connect(self.confirm_default_target)
         self.hand_caption = QLabel()
         self.hand_caption.setAlignment(Qt.AlignCenter)
-        self.battle_scene.add_control(self.hand_caption, ("hand_caption",), (130, 64))
+        self.battle_scene.add_control(self.hand_caption, ("hand_caption",), (68, 64))
         self.ready_button = QPushButton("确认调度")
         self.ready_button.setObjectName("battleSmall")
         self.ready_button.clicked.connect(self.ready)

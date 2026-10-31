@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         central = QWidget(self)
         self.outer = outer = QVBoxLayout(central)
         outer.setContentsMargins(12, 12, 12, 12)
-        chrome = QHBoxLayout()
+        self.chrome = chrome = QHBoxLayout()
         self.back_button = QPushButton("← 返回主菜单")
         self.back_button.setObjectName("small")
         self.back_button.setFixedSize(116, 36)
@@ -219,6 +219,8 @@ class MainWindow(QMainWindow):
         )
         margin = 0 if in_battle else 12
         self.outer.setContentsMargins(margin, margin, margin, margin)
+        chrome_margin = 12 if in_battle else 0
+        self.chrome.setContentsMargins(chrome_margin, chrome_margin, chrome_margin, 0)
 
     def go(self, key: str):
         self.stack.setCurrentWidget(self.pages[key])
