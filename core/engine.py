@@ -248,7 +248,7 @@ class Game:
         # 多段攻击登记（二帚流"攻击5次"，multi_strike 动作）：battle id → 交战阶段
         # 攻击段数（缺省 1；反击仍只一段、与首段攻击并行；终止点清除）
         self._battle_strikes: dict[int, int] = {}
-        # 结算中交互选择（青灯夜谈）的挂起块续点：(block, ctx, 下一步下标)；内存态不序列化
+        # 结算中交互选择的挂起续点：(block, ctx, 下一步下标[, 块完收尾])；内存态不序列化
         self._suspended: tuple | None = None
         # 伤害插入帧栈（damage 动作 insert 参数，裁决(7)(9)：风神一扇伤害后插入移动/
         # 引燃伤害后插入牌手伤害）：帧在 damage 步结算期间压栈，伤害事件"造成/受到
@@ -1281,10 +1281,22 @@ class Game:
         if not self._open_deck_top_pick(pi, pending["count"],
                                         pending["remaining"] - 1):
             # 重复结束（或牌库已空无可检视）：续跑挂起块
-            if self._suspended is not None:
-                block, ctx, start = self._suspended
-                self._suspended = None
-                self._resolve_block(block, ctx, start)
+            self._resume_suspended()
+
+    def _resume_suspended(self) -> None:
+        """续跑交互选择挂起块；战斗牌可附带效果结算完毕后的统一收尾。"""
+        if self._suspended is None:
+            return
+        suspended = self._suspended
+        self._suspended = None
+        block, ctx, start = suspended[:3]
+        after = suspended[3] if len(suspended) > 3 else None
+        self._resolve_block(block, ctx, start)
+        if after is not None:
+            if self.state.pending_choice is None:
+                after()
+            elif self._suspended is not None:
+                self._suspended = (*self._suspended, after)
 
     def _open_deck_top_pick(self, pi: int, count: int, remaining: int) -> bool:
         """开启一次牌库顶挑选：设置 pending_choice 挂起等待 choose 指令；返回是否挂起。
@@ -1321,10 +1333,7 @@ class Game:
             if pending.get("shuffle"):
                 self.rng.shuffle(p.deck)
                 self._log(f"{p.name} 洗了牌库")
-            if self._suspended is not None:
-                block, ctx, start = self._suspended
-                self._suspended = None
-                self._resolve_block(block, ctx, start)
+            self._resume_suspended()
 
     def _open_field_summon_pick(self, pi: int, options: list[int], *,
                                 intensity: int | None = None,
@@ -1361,10 +1370,7 @@ class Game:
         self._summon_field(pi, inst, cdef, source, reason="效果召唤",
                            intensity_override=pending.get("intensity"))
         self.state.pending_choice = None
-        if self._suspended is not None:
-            block, ctx, start = self._suspended
-            self._suspended = None
-            self._resolve_block(block, ctx, start)
+        self._resume_suspended()
 
     def _open_pick_generate(self, pi: int, options: list[int],
                             unique_ext: str | None = None) -> bool:
@@ -1401,10 +1407,7 @@ class Game:
         if pending.get("unique_ext"):
             p.ext.setdefault(pending["unique_ext"], []).append(cdef.id)
         self.state.pending_choice = None
-        if self._suspended is not None:
-            block, ctx, start = self._suspended
-            self._suspended = None
-            self._resolve_block(block, ctx, start)
+        self._resume_suspended()
 
     def _open_invocation_pick(self, pi: int, options: list[str],
                               target: Ref | None, source: Ref | None) -> bool:
@@ -1442,10 +1445,7 @@ class Game:
             source=Ref(player=sref[0], shikigami=sref[1]) if sref else None,
             target=Ref(player=tref[0], shikigami=tref[1]))
         self.state.pending_choice = None
-        if self._suspended is not None:
-            block, ctx, start = self._suspended
-            self._suspended = None
-            self._resolve_block(block, ctx, start)
+        self._resume_suspended()
 
     def _open_quest_complete_pick(self, pi: int, options: list[int]) -> bool:
         """开启"使一张紧急委托视为达成"交互（委托整理，kind="quest_complete_pick"）：
@@ -1475,10 +1475,7 @@ class Game:
         self._log(f"{p.name} 的【{self.db.cards[card.id].name}】委托条件视为达成",
                   owner=pi)  # 手牌内部状态变化仅所属方可见（改进②）
         self.state.pending_choice = None
-        if self._suspended is not None:
-            block, ctx, start = self._suspended
-            self._suspended = None
-            self._resolve_block(block, ctx, start)
+        self._resume_suspended()
 
     def _open_discard_pick(self, pi: int, remaining: int,
                            card_type: str | None = None) -> bool:
@@ -1516,10 +1513,7 @@ class Game:
         self.state.pending_choice = None
         if not self._open_discard_pick(pi, pending["remaining"] - 1,
                                        pending.get("card_type")):
-            if self._suspended is not None:
-                block, ctx, start = self._suspended
-                self._suspended = None
-                self._resolve_block(block, ctx, start)
+            self._resume_suspended()
 
     def _open_card_name_pick(self, pi: int) -> bool:
         """开启忘忧的旋律两级选择（kind="card_name"）：stage="shikigami" 列出敌方
@@ -1572,10 +1566,7 @@ class Game:
             self.move_card(tp, c, "exiled")
         self._log(f"{tp.name} 的 {len(copies)} 张【{self.db.cards[cid].name}】被移除")
         self.state.pending_choice = None
-        if self._suspended is not None:
-            block, ctx, start = self._suspended
-            self._suspended = None
-            self._resolve_block(block, ctx, start)
+        self._resume_suspended()
 
     def _clear_orb(self, p: PlayerState, pi: int) -> None:
         """清空玩家鬼火（吸魂灯/青灯夜谈"清空你的鬼火"）；emit on_orb_changed。
@@ -2589,11 +2580,46 @@ class Game:
         convert = any(st.op == "convert_damage" for st in block.steps)
         counter_piercing = any(st.op == "counter_piercing" for st in block.steps)
         double_fragile = any(st.op == "double_damage_vs_fragile" for st in block.steps)
+        def finish() -> None:
+            # rules.md 第十三章战斗牌分支：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
+            self.move_card(p, card, "graveyard")
+            if defeated_entry:
+                if not s.in_play:
+                    # 不玩了啦守卫：卡面效果结算完仍未复活——不发起战斗，正常收场
+                    self._log(f"【{cdef.name}】结算完毕，{self.db.shikigami[s.id].name}"
+                              f"仍未复活，不发起战斗")
+                    return
+                # 复活后：战力/护甲按正常战斗牌补齐，随后正常发起战斗（定案(14)）
+                self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
+            # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗；
+            # 响应方式使用不消耗（不夜之舞"非响应方式使用战斗牌时"口径，全卡盘点）
+            if not from_response and any(
+                    f.get("kind") == "combat_card" for f in p.ext.get("boost_flags", [])):
+                self._consume_assault_boosts(p, atk_ref, s)
+            rep_inv = self._replace_action_invocation(s)
+            if rep_inv is not None:
+                # 跳跳哥哥"使用战斗牌时改为结附'迟钝'"：卡面战力/护甲与其余文本效果
+                # （steps）照常结算（上方已完成），仅战斗本身替换为对自身结附灵咒
+                self._log(f"{self.db.shikigami[s.id].name} 使用【{cdef.name}】改为"
+                          f"结附灵咒【{rep_inv}】")
+                self._settle(f"【替换】{self.db.shikigami[s.id].name} 的战斗牌改为结附"
+                             f"灵咒【{rep_inv}】")
+                self.attach_invocation(rep_inv, player=self.state.players.index(p),
+                                       source=atk_ref, target=atk_ref)
+                s.combat_power = 0
+                return
+            self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
+                                 temp_grants=tuple(cdef.temp_grants), convert=convert,
+                                 counter_piercing=counter_piercing, double_fragile=double_fragile,
+                                 target=hunt_target, origin="card", strikes=strikes)
+            s.combat_power = 0
+
         # 其它效果步（千羽风之舞的"生成金风流羽"为首个）：战力/护甲与上述专用提取步
         # 跳过不重复执行；attack_buff（起弓/离）挂账时机另有一套，同样跳过以保持既有行为
         ctx = ExecContext(controller=self.state.players.index(p), source=atk_ref,
                           card=card, chosen=list(chosen or []))  # 效果步可读选择目标
         # （麓鸣·轰"选择一个己方式神，本次攻击后…"的 delay_grant bind=chosen 通道）
+        effect_steps = []
         for st in block.steps:
             if (st.op in ("buff_power", "gain_shield")
                     and (st.target is None or st.target.kind == "self")
@@ -2604,39 +2630,13 @@ class Game:
                          "counter_piercing", "double_damage_vs_fragile", "attack_buff",
                          "multi_strike"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
-            self._run_step(st, ctx)
-        # rules.md 第十三章战斗牌分支：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
-        self.move_card(p, card, "graveyard")
-        if defeated_entry:
-            if not s.in_play:
-                # 不玩了啦守卫：卡面效果结算完仍未复活——不发起战斗，正常收场
-                self._log(f"【{cdef.name}】结算完毕，{self.db.shikigami[s.id].name}"
-                          f"仍未复活，不发起战斗")
-                return
-            # 复活后：战力/护甲按正常战斗牌补齐，随后正常发起战斗（定案(14)）
-            self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
-        # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗；
-        # 响应方式使用不消耗（不夜之舞"非响应方式使用战斗牌时"口径，全卡盘点）
-        if not from_response and any(
-                f.get("kind") == "combat_card" for f in p.ext.get("boost_flags", [])):
-            self._consume_assault_boosts(p, atk_ref, s)
-        rep_inv = self._replace_action_invocation(s)
-        if rep_inv is not None:
-            # 跳跳哥哥"使用战斗牌时改为结附'迟钝'"：卡面战力/护甲与其余文本效果
-            # （steps）照常结算（上方已完成），仅战斗本身替换为对自身结附灵咒
-            self._log(f"{self.db.shikigami[s.id].name} 使用【{cdef.name}】改为"
-                      f"结附灵咒【{rep_inv}】")
-            self._settle(f"【替换】{self.db.shikigami[s.id].name} 的战斗牌改为结附"
-                         f"灵咒【{rep_inv}】")
-            self.attach_invocation(rep_inv, player=self.state.players.index(p),
-                                   source=atk_ref, target=atk_ref)
-            s.combat_power = 0
+            effect_steps.append(st)
+        self._resolve_block(block.model_copy(update={"steps": effect_steps}), ctx)
+        if self.state.pending_choice is not None:
+            assert self._suspended is not None
+            self._suspended = (*self._suspended, finish)
             return
-        self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
-                             temp_grants=tuple(cdef.temp_grants), convert=convert,
-                             counter_piercing=counter_piercing, double_fragile=double_fragile,
-                             target=hunt_target, origin="card", strikes=strikes)
-        s.combat_power = 0
+        finish()
 
     def _apply_response_combat(self, p: PlayerState, si: int, card: CardInstance,
                                cdef: CardDef) -> None:

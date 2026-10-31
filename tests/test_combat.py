@@ -1416,6 +1416,36 @@ def test_initiative_granted_on_attack_strikes_first(db, make_game):
     assert not a.attack_buffs                    # 先攻随"直到攻击后"核销
 
 
+def test_combat_card_field_summon_choice_precedes_initiative_battle(real_game):
+    """残阳无影的选择召唤属于战斗牌效果：作答并召唤幻境后才入墓、发起一次战斗；
+    觉醒泷夜叉姬因此能在攻击时获得先攻，先击杀高攻目标而不吃反击。"""
+    g = real_game([100302, 100101, 100102, 100123])
+    pa, pb = F.battle_setup(g, {0: 2})
+    play(g, 0, 10030205)                         # 觉醒·泷夜叉姬
+    move(g, 1, 0)
+    defender = pb.shikigami[0]
+    defender.base_power = 5                      # 无先攻时反击足以击杀攻击方
+    played_before = g.history.count("on_card_played")
+
+    play(g, 0, 10030204)                         # 残阳无影
+    pending = g.state.pending_choice
+    assert pending is not None and pending["kind"] == "field_summon_pick"
+    assert not any(c.id == 10030204 for c in pa.graveyard)
+    assert "on_summon_field" not in g.history
+    assert "on_before_assault" not in g.history
+    assert g.history.count("on_card_played") == played_before + 1
+
+    g.apply({"op": "choose", "player": 0, "choice": 10030202})  # 新月之哀：不代受战斗伤害
+    assert g.state.pending_choice is None
+    assert any(c.id == 10030204 for c in pa.graveyard)
+    assert g.history.index("on_summon_field") < g.history.index("on_before_assault")
+    assert g.history.count("on_before_assault") == 1
+    assert g.history.count("on_card_played") == played_before + 1
+    assert defender.defeated
+    assert pa.shikigami[0].in_play
+    assert pa.shikigami[0].health == pa.shikigami[0].max_health
+
+
 def test_dynamic_stat_aura(db, make_game):
     """动态身材光环（stat_aura，ext dyn_power/dyn_health 通道）：
     - 闻世型（self_hand_count）：打出后身材 = 1+手牌数，抽牌即变；形态离场光环移除。
