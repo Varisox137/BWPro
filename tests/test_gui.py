@@ -49,3 +49,11 @@ def test_menu_navigation_and_theme(qapp, db, tmp_path):
     win.set_theme("dark")
     assert "QLabel#viewTitle" in win.pages["settings"].styleSheet()
     win.close()
+
+
+def test_menu_footer_disclaimer_removed(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    text = "\n".join(label.text() for label in win.stack.currentWidget().findChildren(QLabel))
+    for phrase in ("个人学习项目", "与官方无关", "素材版权"):
+        assert phrase not in text
+    win.close()

@@ -224,6 +224,25 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     battle.close()
 
 
+def test_online_phase_countdown_preserves_two_lines(qapp, db, make_game):
+    game = make_game(mulligan=True)
+    battle = OnlineBattleView(db, send_command=lambda _command: None)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"),
+                     timer={"kind": "mulligan", "deadline": time.time() + 30},
+                     log=[], timeline=[])
+    battle._update_countdown()
+    battle._update_countdown()
+    active = game.state.players[game.state.active]
+    assert battle._phase_lines() == (
+        f"{active.name} 回合{active.turn_count}", "调度阶段")
+    text = battle.phase_label.text()
+    assert text.count("⏱") == 1
+    assert f"{active.name} 回合{active.turn_count}" in text
+    assert '<div style="font-size:20px">调度阶段　⏱ 调度 0:' in text
+    battle.close()
+
+
 def test_online_actions_remain_available_during_timeline(qapp, db, make_game):
     game = make_game(mulligan=False)
     battle = OnlineBattleView(db, send_command=lambda _cmd: None)

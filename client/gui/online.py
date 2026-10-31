@@ -255,8 +255,7 @@ class OnlineBattleView(HotseatView):
         left = max(0, int(self.server_timer.get("deadline", 0) - time.time()))
         minutes, seconds = divmod(left, 60)
         prefix = "调度" if self.server_timer.get("kind") == "mulligan" else "回合"
-        base = self.phase_label.text().split("　⏱", 1)[0]
-        self.phase_label.setText(f"{base}　⏱ {prefix} {minutes}:{seconds:02d}")
+        self._update_phase_label(f"{prefix} {minutes}:{seconds:02d}")
 
     def receive_error(self, reason: str) -> None:
         self._awaiting_state = False

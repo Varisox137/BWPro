@@ -438,11 +438,45 @@ def test_operation_glow_bounds_cover_scene_update_region(qapp):
     assert item.boundingRect() == QRectF(0, 0, 40, 60)
 
 
-def test_phase_label_sits_right_of_turn_label(qapp, view):
-    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
-    assert view.upgrade_label.text() == "升级阶段"
-    assert view.upgrade_label.isVisible()
-    assert view.battle_scene.upgrade_item.x() > view.battle_scene.phase_item.x()
+def test_phase_label_shows_two_lines_and_remaining_upgrades(qapp, view):
+    start(view, mulligan=False,
+          config=GameConfig(auto_skip_upgrade=False, extra_upgrade_turns=(1, 3)))
+    game = view.game
+    assert view._phase_lines() == ("玩家A 回合1", "升级阶段·剩余 2 次")
+    assert view.phase_label.textFormat() == Qt.RichText
+    assert "玩家A 回合1" in view.phase_label.text()
+    assert '<div style="font-size:20px">升级阶段·剩余 2 次</div>' in view.phase_label.text()
+    assert not hasattr(view.battle_scene, "upgrade_item")
+    view.upgrade(1)
+    settle(view)
+    assert game.current.upgrades == 1
+    assert view._phase_lines() == ("玩家A 回合1", "升级阶段·剩余 1 次")
+    assert '<div style="font-size:20px">升级阶段·剩余 1 次</div>' in view.phase_label.text()
+
+
+@pytest.mark.parametrize("attribute", ["keywords", "one_shot_keywords", "perm_keywords"])
+def test_haste_assault_border_is_blue_for_all_keyword_sources(qapp, view, attribute):
+    start(view, mulligan=False)
+    shiki = view.game.current.shikigami[0]
+    getattr(shiki, attribute).append("haste")
+    view.refresh()
+    settle(view)
+    item = view.battle_scene.cards[("shiki", 0, 0)]
+    assert item.playable
+    assert item.border_color == "blue"
+
+
+def test_one_shot_haste_border_returns_yellow_after_assault(qapp, view):
+    start(view, mulligan=False)
+    shiki = view.game.current.shikigami[0]
+    shiki.one_shot_keywords.append("haste")
+    view.refresh()
+    settle(view)
+    assert view.battle_scene.cards[("shiki", 0, 0)].border_color == "blue"
+    view.assault(0)
+    settle(view)
+    assert "haste" not in shiki.one_shot_keywords
+    assert view.battle_scene.cards[("shiki", 0, 0)].border_color == "yellow"
 
 
 def test_mulligan_handoff_has_review_then_transfer(qapp, view):
@@ -612,7 +646,7 @@ def test_upgrade_focus_only_highlights_legal_shikigami(qapp, view):
         assert item.playable == (index in legal)
         assert path.contains(center) == (index not in legal)
     assert path.contains(scene.cards[("player", 0)].sceneBoundingRect().center())
-    assert view.upgrade_label.text() == "升级阶段"
+    assert view._phase_lines()[1] == "升级阶段·剩余 1 次"
     assert not view.upgrade_label.isHidden()
     assert set(scene.upgrade_badges) == legal
     for index, badge in scene.upgrade_badges.items():
@@ -1878,7 +1912,7 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     assert f"background: {THEMES['light']['panel']}" in style
     assert f"color: {THEMES['light']['text']}" in style
     assert f"border: 1px solid {THEMES['light']['gold']}" in style
-    assert view.phase_label.text() == "玩家A 回合1"
+    assert view._phase_lines()[0] == "玩家A 回合1"
     phase_proxy = next(item for item in scene.items()
                        if hasattr(item, "widget") and item.widget() is view.phase_label)
     assert phase_proxy.x() > scene.log_item.x()
@@ -1999,7 +2033,7 @@ def test_mulligan_ready_and_replacement(qapp, view):
 def test_upgrade_assault_and_end_turn(qapp, view):
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
     game = view.game
-    assert view.phase_label.text() == "玩家A 回合1"
+    assert view._phase_lines()[0] == "玩家A 回合1"
     assert not view.upgrade_label.isHidden()
     assert view.battle_scene.cards[("shiki", 0, 1)].playable
     view.upgrade(1)

@@ -1,6 +1,7 @@
 """桌面 GUI 本地热坐对战：标准卡组开局、场况、操作与结算播放。"""
 from __future__ import annotations
 
+import html
 import secrets
 from pathlib import Path
 
@@ -181,6 +182,8 @@ class HotseatView(QWidget):
         self.phase_label = QLabel()
         self.phase_label.setObjectName("phaseLabel")
         self.phase_label.setAlignment(Qt.AlignCenter)
+        self.phase_label.setTextFormat(Qt.RichText)
+        self.upgrade_label = self.phase_label
         self.battle_scene.phase_item = self.battle_scene.add_control(
             self.phase_label, ("phase",), (340, 56))
         self.log_button = QPushButton("对局\n记录")
@@ -235,13 +238,6 @@ class HotseatView(QWidget):
         self.order_label.setObjectName("turnOrderLabel")
         self.order_label.setAlignment(Qt.AlignCenter)
         self.battle_scene.add_control(self.order_label, ("turn_order",), (300, 90))
-        self.upgrade_label = QLabel("升级阶段")
-        self.upgrade_label.setObjectName("upgradePhaseLabel")
-        self.upgrade_label.setAlignment(Qt.AlignCenter)
-        self.battle_scene.upgrade_item = self.battle_scene.add_control(
-            self.upgrade_label, ("upgrade_phase",), (180, 56))
-        self.battle_scene.upgrade_item.setZValue(90)
-        self.upgrade_label.setVisible(False)
         self.battle_scene.mulligan_selected.connect(self._sync_mulligan_button)
         self.error_label = BattleErrorLabel()
         self.error_label.setObjectName("battleError")
@@ -316,10 +312,6 @@ class HotseatView(QWidget):
                 color: {colors['text']}; font-size: 34px; font-weight: 600;
                 background: transparent;
             }}
-            QLabel#upgradePhaseLabel {{
-                color: {colors['text']}; font-size: 20px; font-weight: 600;
-                background: transparent;
-            }}
             QLabel#enemyHandBack, QLabel#deckCount {{
                 background: transparent; border: none;
             }}
@@ -349,9 +341,6 @@ class HotseatView(QWidget):
         self.order_label.setStyleSheet(
             f"background: transparent; color: {colors['text']}; "
             "font-size: 34px; font-weight: 600;")
-        self.upgrade_label.setStyleSheet(
-            f"background: transparent; color: {colors['text']}; "
-            "font-size: 20px; font-weight: 600;")
         self.result_banner.setStyleSheet(
             f"background: transparent; color: {colors['text']}; "
             "font-size: 34px; font-weight: 600; padding: 16px;")
@@ -535,19 +524,32 @@ class HotseatView(QWidget):
             dialog.deleteLater()
             self.handoff_dialog = None
 
+    def _phase_lines(self, countdown="") -> tuple[str, str]:
+        state = self.game.state
+        active = state.players[state.active]
+        phase = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "主要阶段"}.get(
+            state.phase, "")
+        if state.phase == "upgrade":
+            phase += f"·剩余 {active.upgrades} 次"
+        if countdown:
+            phase += f"　⏱ {countdown}"
+        return f"{active.name} 回合{active.turn_count}", phase
+
+    def _update_phase_label(self, countdown="") -> None:
+        turn, phase = self._phase_lines(countdown)
+        self.phase_label.setText(
+            f'<div>{html.escape(turn)}</div><div style="font-size:20px">'
+            f'{html.escape(phase)}</div>')
+
     def _render_state(self) -> None:
         if self._handoff_pending:
             return
         game = self.game
         state = game.state
         self.timeline_queue[:] = [entry for entry in self.timeline_queue if entry[1]]
-        active = state.players[state.active]
-        self.phase_label.setText(f"{active.name} 回合{active.turn_count}")
+        self._update_phase_label()
         self.order_label.setText("己方先手" if self.viewer == state.active else "己方后手")
         self.order_label.hide()
-        phase_text = {"mulligan": "调度阶段", "upgrade": "升级阶段", "battle": "主要阶段"}
-        self.upgrade_label.setText(phase_text.get(state.phase, ""))
-        self.upgrade_label.setVisible(state.phase in phase_text)
         enemy = state.players[1 - self.viewer]
         own = state.players[self.viewer]
         self.enemy_hand_label.setText(f"敌方手牌\n{len(enemy.hand)} 张")

@@ -277,10 +277,6 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda _=False, k=key: self.go(k))
             lay.addWidget(btn)
         lay.addStretch(1)
-        foot = QLabel("个人学习项目 · 与官方无关 · 素材版权归属原作者")
-        foot.setObjectName("subtitle")
-        foot.setAlignment(Qt.AlignCenter)
-        lay.addWidget(foot)
         return page
 
     def _make_placeholder(self, title: str) -> QWidget:
