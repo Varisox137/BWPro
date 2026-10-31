@@ -91,7 +91,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     if game is None:
         return positions
 
-    arc = (120, 78, 78, 120)
+    arc = (120, 86, 86, 120)
     ready_x = (196, 421, 871, 1096)
     for pi, player in enumerate(game.state.players):
         top = pi != viewer

@@ -164,9 +164,9 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     assert scene.cards[("player", 1)].pos() == QPointF(1, 4)
     assert scene.cards[("player", 0)].pos() == QPointF(1, 766)
     assert [scene.cards[("shiki", 1, index)].y() for index in range(4)] == [
-        120, 78, 78, 120]
+        120, 86, 86, 120]
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
-        570, 612, 612, 570]
+        570, 604, 604, 570]
     assert [scene.cards[("shiki", 0, index)].x() for index in range(4)] == [
         196, 421, 871, 1096]
     view.apply_theme("light", THEMES["light"])
@@ -286,6 +286,41 @@ def test_hand_spacing_twelve_cards_avoid_shikigami_and_keep_placeholder(qapp, vi
     shiki = view.battle_scene.cards[("shiki", 0, 0)]
     assert "力量" in shiki.shiki_text and "生命" in shiki.shiki_text
     assert "等级" in shiki.shiki_text
+
+
+@pytest.mark.parametrize("auto_skip_upgrade", [True, False], ids=["battle", "upgrade"])
+def test_hand_spacing_highlighted_fallback_cards_avoid_shikigami(
+        qapp, view, auto_skip_upgrade):
+    from client.gui.battle_scene import HAND_SIZE
+
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=auto_skip_upgrade))
+    if auto_skip_upgrade:
+        view.game.current.orb = 1
+    for pi in (1, 0):
+        player = view.game.state.players[pi]
+        player.hand[:] = [card.model_copy(update={"uid": 2000 + pi * 100 + i,
+                                                  "hand_seq": i + 1})
+                          for i, card in enumerate((player.hand * 3)[:12])]
+        if auto_skip_upgrade and pi == 0:
+            player.hand[0] = player.hand[0].model_copy(update={"id": 10010101})
+        view.refresh()
+        settle(view)
+        hands = [view.battle_scene.cards[("hand", card.uid)] for card in player.hand]
+        shikigami = [view.battle_scene.cards[("shiki", pi, index)] for index in range(4)]
+        if pi == 0:
+            assert any(item.playable for item in shikigami)
+            if auto_skip_upgrade:
+                assert any(item.playable for item in hands)
+        for item in hands:
+            item.set_art(None)
+            item.playable = True
+            item.update()
+        for item in shikigami:
+            item.targetable = True
+            item.update()
+        assert all(item.size == HAND_SIZE for item in hands)
+        assert all(not hand.sceneBoundingRect().intersects(shiki.sceneBoundingRect())
+                   for hand in hands for shiki in shikigami)
 
 
 def test_scene_missing_hand_and_form_art_renders_full_card(qapp, db, view):
