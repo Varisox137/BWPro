@@ -179,10 +179,13 @@ def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str,
 
 
 def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int | None = None,
-                    font_scale: float = 1.0, max_height: int = 220):
+                    font_scale: float = 1.0, max_height: int = 220,
+                    width: int | None = None):
     """生成可滚动的机制框列表；无有效机制时返回 (None, [])。"""
     panel = QScrollArea(parent)
     panel.setWidgetResizable(True)
+    if width is not None:
+        panel.setFixedWidth(width)
     panel.setFrameShape(QFrame.NoFrame)
     panel.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
     panel.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)

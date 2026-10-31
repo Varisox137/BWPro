@@ -61,25 +61,35 @@ def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypa
     dialog.close()
 
 
-def test_card_detail_places_card_and_scrollable_mechanisms_side_by_side(qapp, monkeypatch):
-    seen = []
+def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, monkeypatch):
+    mechanism_args = []
+    art_calls = []
 
-    def fake_pixmap(_name, _frame, _text, _root, chars_per_line=None, font_scale=1.0, badge=None):
-        seen.append((chars_per_line, font_scale))
+    def fake_mechanism_pixmap(_name, _frame, _text, _root, chars_per_line=None,
+                              font_scale=1.0, badge=None):
+        mechanism_args.append((chars_per_line, font_scale))
         return QPixmap(360, 220)
 
-    monkeypatch.setattr("client.gui.mechanisms._mechanism_pixmap", fake_pixmap)
+    def fake_card_pixmap(_cdef, _db, **kwargs):
+        art_calls.append(kwargs)
+        return QPixmap(263, 512)
+
+    monkeypatch.setattr("client.gui.mechanisms._mechanism_pixmap", fake_mechanism_pixmap)
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", fake_card_pixmap)
     cdef = F.card(10010101, text="[瞬发][爆能2][贯通][连击][暴击][吸血]")
     db = F.db_of([F.shiki(100101)], [cdef])
     dialog = CardDetailDialog(cdef, db)
     assert dialog.detail_top.itemAt(0).widget() is dialog.card_widget
     assert dialog.detail_top.itemAt(1).widget() is dialog.mechanism_panel
-    assert seen and all(args == (15, 0.85) for args in seen)
+    assert art_calls and all(call["height"] == 512 for call in art_calls)
+    assert mechanism_args and all(args == (12, 1.0) for args in mechanism_args)
     dialog.resize(1000, 800)
     dialog.show()
     qapp.processEvents()
-    assert dialog.card_widget.width() >= 400
     assert dialog.card_widget.height() >= 500
+    assert abs(dialog.card_widget.width() - dialog.mechanism_panel.width()) <= 24
+    displayed = dialog.card_widget.art_label.pixmap()
+    assert displayed.width() / displayed.height() == pytest.approx(263 / 512)
     assert dialog.mechanism_panel.maximumHeight() <= dialog.card_widget.height() * 1.2
     assert dialog.mechanism_panel.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
     assert dialog.mechanism_panel.verticalScrollBar().maximum() > 0

@@ -1152,6 +1152,19 @@ def test_card_widget_passes_level_color_and_requests_native_art(qapp, db, monkey
     assert seen["height"] is None
 
 
+def test_card_widget_detail_art_height_override_preserves_default(qapp, db, monkeypatch):
+    from client.gui.widgets import CardWidget
+
+    calls = []
+    monkeypatch.setattr("client.gui.widgets.card_pixmap",
+                        lambda *_args, **kwargs: calls.append(kwargs))
+    default = CardWidget(db.cards[10010101], db=db)
+    detail = CardWidget(db.cards[10010101], db=db, art_height=512)
+    assert [call["height"] for call in calls] == [None, 512]
+    default.close()
+    detail.close()
+
+
 def test_card_art_preserves_source_aspect_ratio(qapp, db, monkeypatch):
     from client.gui.widgets import CardWidget
 

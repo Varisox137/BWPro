@@ -75,7 +75,8 @@ class CardWidget(QFrame):
     clicked = Signal(object)
 
     def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
-                 display=None, level_color=None, art_context: dict | None = None):
+                 display=None, level_color=None, art_context: dict | None = None,
+                 art_height: int | None = None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -114,6 +115,7 @@ class CardWidget(QFrame):
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.text_label, 1)
         self._art_db = db
+        self._art_height = art_height
         self._art_options = {"display": display, "level_color": level_color}
         if art_context is not None:
             self._art_options["cache_context"] = art_context
@@ -155,7 +157,8 @@ class CardWidget(QFrame):
     def _request_art(self):
         if self._art_db is None:
             return None
-        return card_pixmap(self.cdef, self._art_db, height=None, **self._art_options)
+        return card_pixmap(self.cdef, self._art_db, height=self._art_height,
+                           **self._art_options)
 
     def _fit_art(self) -> None:
         source = self._display_art
@@ -225,13 +228,16 @@ class CardDetailDialog(QDialog):
         layout = QVBoxLayout(self)
         self.detail_top = QHBoxLayout()
         self.card_widget = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
-                                      level_color=level_color)
+                                      level_color=level_color, art_height=512)
         self.card_widget.count_label.hide()
-        self.card_widget.setFixedWidth(420)
+        art_width = (self.card_widget._display_art.width()
+                     if self.card_widget._display_art is not None else 396)
+        self.card_widget.setFixedWidth(art_width + 24)
         self.card_widget.setMinimumHeight(560)
         self.detail_top.addWidget(self.card_widget, 0, Qt.AlignLeft | Qt.AlignTop)
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
-            card_mechanisms(cdef, runtime), self, chars_per_line=15, font_scale=0.85)
+            card_mechanisms(cdef, runtime), self, chars_per_line=12, font_scale=1.0,
+            width=art_width)
         if self.mechanism_panel is not None:
             self.detail_top.addWidget(self.mechanism_panel, 1)
             self.setMinimumWidth(900)
