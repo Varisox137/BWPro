@@ -16,6 +16,7 @@ from client import cli
 from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_seat, usage_target
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
+from client.gui.player_details import PlayerDetailDialog
 from client.gui.widgets import CardChoiceView, CardDetailDialog, ask_confirmation, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
@@ -771,24 +772,7 @@ class HotseatView(QWidget):
         ShikigamiDetailDialog(self.game, ref, self.viewer, self).exec()
 
     def show_player_detail(self, pi: int) -> None:
-        player = self.game.state.players[pi]
-        fields = "\n".join(
-            f"{index + 1}. {self.db.cards[field.card_id].name}　耐久 {field.intensity}"
-            for index, field in enumerate(player.fields)) or "无幻境"
-        dialog = QDialog(self)
-        dialog.setWindowTitle(player.name)
-        layout = QVBoxLayout(dialog)
-        label = QLabel(
-            f"生命 {player.health}/{player.max_health}　护甲 {player.shield}\n"
-            f"鬼火 {player.orb}　出击次数 {player.assaults_left}\n"
-            f"墓地 {len(player.graveyard)}\n{fields}")
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        polish_dialog_buttons(buttons)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons, alignment=Qt.AlignRight)
-        dialog.exec()
+        PlayerDetailDialog(self.game, pi, self.viewer, self).exec()
 
     def show_card_detail(self, card) -> None:
         viewer_hand = self.game.state.players[self.viewer].hand

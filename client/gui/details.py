@@ -12,6 +12,21 @@ from client.gui.mechanisms import mechanism_panel, shikigami_mechanisms
 from client.gui.widgets import CardWidget, polish_dialog_buttons
 
 
+def player_ability_mechanisms(player, player_index: int, viewer: int) -> list[dict]:
+    entries = list(player.auras) + [
+        entry for entry in player.delayed
+        if not entry.get("secret") or player_index == viewer
+    ]
+    return [
+        {
+            "name": entry.get("source_name") or "牌手能力",
+            "frame": "skill",
+            "text": entry.get("text") or "（无能力文本）",
+        }
+        for entry in entries
+    ]
+
+
 def shiki_status_lines(game, ref, viewer) -> list[str]:
     shiki = game.state.players[ref.player].shikigami[ref.shikigami]
     db = game.db

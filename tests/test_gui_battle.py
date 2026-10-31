@@ -2035,6 +2035,8 @@ def test_log_dialog_is_nonmodal_reused_and_preserves_timeline(qapp, view):
 
 
 def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
+    from client.gui.player_details import PlayerDetailDialog
+
     start(view, mulligan=False)
     seen = {}
 
@@ -2045,9 +2047,9 @@ def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
     monkeypatch.setattr(QDialog, "exec", capture_exec)
     assert view.show_player_detail(0) is None
     dialog = seen["dialog"]
-    assert type(dialog) is QDialog
+    assert type(dialog) is PlayerDetailDialog
     assert dialog.windowTitle() == "玩家A"
-    assert "生命" in dialog.findChild(QLabel).text()
+    assert "生命" in dialog.summary_label.text()
     box = dialog.findChild(QDialogButtonBox)
     close = box.button(QDialogButtonBox.Close)
     assert close.text() == "关闭"
@@ -2055,6 +2057,87 @@ def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
     layout = dialog.layout()
     assert layout.itemAt(layout.count() - 1).widget() is box
     assert layout.itemAt(layout.count() - 1).alignment() == Qt.AlignRight
+    dialog.close()
+
+
+def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkeypatch):
+    from client.gui.player_details import PlayerDetailDialog
+    from core.model import FieldState
+
+    start(view, mulligan=False)
+    db = view.game.db
+    for cid, name in ((10010151, "幻境甲"), (10010152, "幻境乙")):
+        db.cards[cid] = F.card(cid, name=name, card_type="field", intensity=9,
+                               text=f"{name}原文。", token=True)
+    player = view.game.state.players[0]
+    player.fields.extend([
+        FieldState(card_id=10010151, intensity=3, shikigami=100101),
+        FieldState(card_id=10010152, intensity=7, shikigami=100101),
+    ])
+    player.auras.append({
+        "block": F.block(when="on_draw"), "once_key": None, "scope": "game",
+        "origin": 10010151, "source_name": "光环来源", "text": "牌手光环原文。",
+    })
+    player.delayed.extend([
+        {"block": F.block(when="on_draw"), "chosen": None, "uses": 1,
+         "secret": False, "scope": "turn", "origin": 10010151,
+         "source_name": "延迟来源", "text": "牌手延迟原文。"},
+        {"block": F.block(when="on_draw"), "chosen": None, "uses": 1,
+         "secret": True, "scope": "turn", "origin": 10010152,
+         "source_name": "秘密来源", "text": "秘密延迟原文。"},
+    ])
+    dialog = PlayerDetailDialog(view.game, 0, 0)
+    assert [widget.cdef.id for widget in dialog.field_widgets] == [10010151, 10010152]
+    assert [widget._art_options["display"]["durability"]
+            for widget in dialog.field_widgets] == [3, 7]
+    assert all(widget._art_height == 512 for widget in dialog.field_widgets)
+    assert [(item["name"], item["text"]) for item in dialog.ability_mechanisms] == [
+        ("光环来源", "牌手光环原文。"),
+        ("延迟来源", "牌手延迟原文。"),
+        ("秘密来源", "秘密延迟原文。"),
+    ]
+
+    seen = []
+
+    class Detail:
+        def __init__(self, cdef, db, parent):
+            seen.append((cdef, db, parent))
+
+        def exec(self):
+            return QDialog.Rejected
+
+    monkeypatch.setattr("client.gui.player_details.CardDetailDialog", Detail)
+    dialog.field_widgets[1].clicked.emit(dialog.field_widgets[1].cdef)
+    assert seen == [(db.cards[10010152], db, dialog)]
+
+    dialog.resize(640, 700)
+    dialog.show()
+    qapp.processEvents()
+    assert dialog.scroll_area.horizontalScrollBarPolicy() == Qt.ScrollBarAsNeeded
+    assert dialog.scroll_area.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+    assert dialog.scroll_area.horizontalScrollBar().maximum() > 0
+    dialog.close()
+
+    enemy = PlayerDetailDialog(view.game, 0, 1)
+    assert [(item["name"], item["text"]) for item in enemy.ability_mechanisms] == [
+        ("光环来源", "牌手光环原文。"),
+        ("延迟来源", "牌手延迟原文。"),
+    ]
+    enemy.close()
+
+
+def test_player_detail_empty_fields_and_legacy_ability_have_no_placeholder(qapp, view):
+    from client.gui.player_details import PlayerDetailDialog
+
+    start(view, mulligan=False)
+    view.game.state.players[0].auras.append({
+        "block": F.block(when="on_draw"), "once_key": None, "scope": "game",
+    })
+    dialog = PlayerDetailDialog(view.game, 0, 0)
+    assert dialog.field_widgets == []
+    assert [item["name"] for item in dialog.ability_mechanisms] == ["牌手能力"]
+    assert dialog.content_layout.count() == 1
+    assert dialog.content_layout.itemAt(0).widget() is dialog.ability_panel
     dialog.close()
 
 

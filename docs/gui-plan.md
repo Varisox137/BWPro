@@ -34,7 +34,8 @@ client/gui/app.py             # MainWindow + 视图栈 + 常驻返回/主题开�
 client/gui/builder.py         # 卡组构筑视图
 client/gui/battle.py          # 对局视图、隐私交接与指令入口（热坐/联机共用）
 client/gui/battle_scene.py    # 固定坐标场景、图元同步与拖拽交互
-client/gui/details.py         # 式神基础/觉醒/形态详情与运行时状态
+client/gui/details.py         # 式神基础/觉醒/形态详情与运行时状态、牌手能力展示元数据适配
+client/gui/player_details.py  # 牌手摘要、横向幻境队列与牌手级能力详情
 client/gui/widgets.py         # 卡牌控件/详情弹窗/通用中文弹窗按钮
 client/gui/online.py          # 联机：大厅视图 + NetBridge（收包线程→Qt 信号）
 client/gui/portrait.py        # 项目库式神头像（失败回退菱形占位）
@@ -70,6 +71,7 @@ tests/test_gui*.py            # 按主窗口/构筑/热坐/联机等主题拆分
 - 热坐交接：查看方变化时暂停 timeline，清空手牌/目标/选择状态与动画并关闭日志，以不可取消绕过的模态确认窗要求交接设备；确认后重绘新视角并恢复结算。第三次调度后先保留旧视角的换牌结果并提示次数用完，确认交接时才清空。终局不额外插入交接。
 - 统一弹窗：`QDialogButtonBox`/`QMessageBox` 按钮统一经 `polish_dialog_buttons` 设置中文与样式；牌手、式神、卡牌、交接等详情/确认采用应用内弹窗。
 - 式神运行时详情同排为**式神主卡、同尺寸形态（如有）、全部额外状态（如有）、机制说明（如有）**，无内容不留空列；第三、四列分别以最大高度 336px 的 BWPDIY 机制框独立滚动。觉醒主卡使用基础身材加永久修正，形态卡保持自身 `form_power/form_health` 基础值。额外状态包含非零护甲/破甲与能量、永久/临时/动态修正、关键字、攻击强化、免疫、眩晕、延迟能力与灵咒等，不重复基础身材、派系和主卡/觉醒/形态原文，秘密延迟目标仍按 viewer 隐藏。第四列按主卡、形态、第三列文本首次出现、当前关键字的次序合并并去重；灵咒原文不再形成独立机制项。当前视角手牌详情带运行时数值，敌方已展示手牌只有静态详情。机制定义加载项目 `library/mechanisms/*.yaml` 的 `name/frame/text/badge/version_date`，说明正文与机制框顺序同步。**逐条增益来源账本尚未实现**，不能把汇总修正视为逐来源审计。
+- 牌手详情：`player_details.py` 保留基础摘要，以整体横向滚动区按队列顺序展示 512px 高幻境卡图和全部可见牌手级 aura/delayed 机制列；`display.durability` 取当前 `FieldState.intensity`，幻境可点击进入单卡详情，空队列不留空列，secret delayed 按 viewer 过滤。来源 `origin/source_name/text` 由 `player_aura` 与 `delay_grant` 授予点统一登记，GUI 只消费元数据，旧条目回退为通用“牌手能力”。
 - 终局：胜负横幅 → 回主菜单；仍可点击已公开手牌、式神与牌手查看同一只读详情，不接受对局操作。
 - 测试：offscreen 下构造对局视图 + 模拟 apply 流程冒烟（用 tests/factories.py 既有 fixture 思路）。
 

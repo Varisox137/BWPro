@@ -748,6 +748,30 @@ def test_player_aura_game_scope(db, make_game):
     assert pa.ext.get("aura_proc") == 5
 
 
+def test_player_aura_and_delayed_source_metadata(db, make_game):
+    """牌手能力携带来源卡 id、名称与原文，GUI 无需从效果 op 反推展示文本。"""
+    aura_cid, _blank_cid = _aura_cards(db)
+    db.cards[aura_cid].name = "测试光环来源"
+    db.cards[aura_cid].text = "测试光环原文。"
+    delayed_cid = 10010175
+    db.cards[delayed_cid] = F.card(
+        delayed_cid, name="测试延迟来源", text="测试延迟原文。", token=True,
+        steps=[F.Step(op="delay_grant", when="on_draw", bind="player", secret=True,
+                      steps=[{"op": "draw", "count": 1}])])
+    g = make_game()
+    pa = g.state.players[0]
+    pa.orb = 9
+    play(g, 0, aura_cid)
+    play(g, 0, delayed_cid)
+    aura = pa.auras[0]
+    assert (aura["origin"], aura["source_name"], aura["text"]) == (
+        aura_cid, "测试光环来源", "测试光环原文。")
+    delayed = pa.delayed[0]
+    assert (delayed["origin"], delayed["source_name"], delayed["text"]) == (
+        delayed_cid, "测试延迟来源", "测试延迟原文。")
+    assert delayed["secret"] is True
+
+
 # ==========================================================================
 # 真实数据：本回合通道（武士之笛/鼓舞）/ 峰值差值（断臂）/ 豪焰牌手光环
 # 队伍派系均 ≤2；0 号位开局自动 1 级（茨木对局开始批次基础能力已 perm+1）。

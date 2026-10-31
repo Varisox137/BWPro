@@ -1576,6 +1576,16 @@ def battle_immunity(game, ctx, *, targets: list[Ref], nested: bool = False,
         s.immunities.append({"kind": kind, "battle": bid, "nested": nested})
 
 
+def _source_display_metadata(game, ctx) -> dict:
+    origin = ctx.card.id if ctx.card is not None else ctx.card_id
+    cdef = game.db.cards.get(origin) if origin is not None else None
+    return {
+        "origin": origin,
+        "source_name": cdef.name if cdef is not None else None,
+        "text": cdef.text if cdef is not None else None,
+    }
+
+
 @action("delay_grant")
 def delay_grant(game, ctx, *, targets: list[Ref], when: str,
                 condition: dict | None = None, steps: list | None = None,
@@ -1631,7 +1641,8 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         hp = game.state.players[ctx.controller]
         delayed = hp.delayed
         holder_name = hp.name
-    origin = ctx.card.id if ctx.card is not None else None
+    source = _source_display_metadata(game, ctx)
+    origin = source["origin"]
     if unique:
         delayed[:] = [e for e in delayed
                       if not (e["block"].when == when and e.get("origin") == origin)]
@@ -1641,7 +1652,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         "uses": int(uses),
         "secret": secret,
         "scope": scope,
-        "origin": origin,  # 来源卡 id（unique 替换口径用）
+        **source,  # origin 兼作 unique 替换口径；source_name/text 仅供详情展示
         # scope="battle"：来源式神（攻击者）座次——该来源下次作为攻击者的战斗
         # 结束时过期清除（engine._resolve_combat 收尾；裁决(10)）
         "watch": ([ctx.source.player, ctx.source.shikigami]
@@ -2041,7 +2052,8 @@ def player_aura(game, ctx, *, targets: list[Ref], when: str,
         return
     block = EffectBlock(when=when, condition=condition,
                         steps=[Step.model_validate(st) for st in (steps or [])])
-    p.auras.append({"block": block, "once_key": once_key, "scope": scope})
+    p.auras.append({"block": block, "once_key": once_key, "scope": scope,
+                    **_source_display_metadata(game, ctx)})
     game._log(f"{p.name} 获得了牌手级能力（{'本回合' if scope == 'turn' else '本局游戏'}）")
 
 

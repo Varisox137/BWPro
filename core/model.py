@@ -294,11 +294,13 @@ class PlayerState(BaseModel):
     card_auras: list[dict[str, Any]] = Field(default_factory=list)  # 卡牌光环注册表：
     # {shikigami, card_type, keywords, cost_zero, scope}；scope 决定失效时机（"turn"=所属回合结束清除）
     auras: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级持久监听（"本局游戏"类，
-    # 豪焰）：{"block": EffectBlock, "once_key": str|None}；事件触发即结算块，跨气绝保留、
-    # 回合开始不清除（player_aura 动作写入，emit 时按注册顺序收集）
+    # 豪焰）：{"block": EffectBlock, "once_key": str|None, "scope": str,
+    # "origin": 来源卡 id, "source_name": 来源卡名, "text": 来源卡面原文}；事件触发即结算块，
+    # 跨气绝保留、回合开始不清除（player_aura 动作写入，emit 时按注册顺序收集）
     delayed: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级延迟能力
     # （delay_grant bind="player"，魔音扰心"己方牌手获得"，裁决③）：结构同
-    # ShikigamiState.delayed；来源式神气绝/离场不清除，scope="turn" 己方回合开始清除
+    # ShikigamiState.delayed，另含 source_name/text 展示元数据；来源式神气绝/离场不清除，
+    # scope="turn" 己方回合开始清除
     assault_boosts: list[dict[str, Any]] = Field(default_factory=list)  # 出击加成（鼓舞）：
     # {"power", "shield"}；下一次出击时全部消耗（力量战后到期、护甲保留；战斗牌不消耗）
     immunities: list[dict[str, Any]] = Field(default_factory=list)  # 牌手级伤害免疫条目
