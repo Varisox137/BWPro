@@ -14,12 +14,12 @@ versions:
         # 每个回合开始时（双方回合），抽一张牌并获得1点鬼火
         - when: on_turn_start
           steps:
-            - {op: draw, amount: 1}
+            - {op: draw, count: 1}
             - {op: gain_orb, amount: 1}
         # 若此牌耐久>=10，效果翻倍（再触发一次）
         - when: on_turn_start
           condition: {field_intensity_ge: 10}
           steps:
-            - {op: draw, amount: 1}
+            - {op: draw, count: 1}
             - {op: gain_orb, amount: 1}
       text: "每个回合开始时，抽一张牌并获得1点鬼火。若此牌耐久>=10，效果翻倍。"

@@ -2364,6 +2364,49 @@ def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view
     assert destroyed == [True]
 
 
+def test_yuhui_real_yaml_discard_pick_click_draws_three_and_closes(qapp, gdb, view):
+    """真实余辉完成弃牌与抽三后，pending 与旧选择窗均关闭。"""
+    view.db = view.battle_scene.db = gdb
+    team = [100304, 100101, 100102, 100103]
+    view.start_game(
+        ("玩家A", team, F.deck_of(*team)),
+        ("玩家B", team, F.deck_of(*team)),
+        seed=7, first=0, shuffle_team=False, mulligan=False, check_deck=False,
+        config=GameConfig(auto_skip_upgrade=True),
+    )
+    settle(view)
+    game = view.game
+    pa, _ = F.battle_setup(game, {0: 2})
+    fld = F.give(game, 0, 10030401)
+    card = F.give(game, 0, 10030403)
+    hand_before = len(pa.hand)
+    view.refresh()
+    settle(view)
+    assert view.play_card(card.uid)
+    settle(view)
+    pending = game.state.pending_choice
+    assert pending["kind"] == "discard_pick"
+    dialog = view.choice_dialog
+    cards = dialog.findChildren(CardWidget)
+    assert len(cards) == len(pending["options"])
+    chosen_index = pending["options"].index(fld.uid)
+    assert cards[chosen_index].cdef.id == 10030401
+    destroyed = []
+    dialog.destroyed.connect(lambda: destroyed.append(True))
+
+    QTest.mouseClick(cards[chosen_index], Qt.LeftButton)
+    settle(view)
+    assert fld in pa.graveyard
+    assert len(pa.hand) == hand_before + 1           # 使用 1、弃 1 后抽 3
+    assert game.state.pending_choice is None
+    assert dialog.isHidden()
+    assert view.choice_dialog is None
+    assert view._choice_key is None
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    qapp.processEvents()
+    assert destroyed == [True]
+
+
 def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, view):
     """余辉型连续弃牌保留 uid 映射，下一 pending 使用新窗而不复用旧选项。"""
     field_id = 10010161

@@ -14,5 +14,5 @@ versions:
           # 「弃一张幻境牌」（交互选择）；使用后结算前手牌中因插入结算不再有
           # 幻境候选时不挂起，「抽三张牌」仍处理（定案(9)）
           - {op: discard_pick, card_type: field, count: 1}
-          - {op: draw, amount: 3}
+          - {op: draw, count: 3}
       text: "弃一张幻境牌，然后抽三张牌。"

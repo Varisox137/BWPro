@@ -3599,23 +3599,18 @@ def test_search_deck_field_intensity_boost(db, make_game):
     assert pa.fields[0].intensity == 10             # 牌面 5 + 修饰 5
 
 
-def test_discard_pick_card_type_choice(db, make_game):
-    """余辉型：discard_pick(card_type="field") 只让控制者选择幻境牌；
-    作答后该牌入墓地、非幻境牌留手，并续跑后续抽三张。"""
-    _field(db, 10010151)
-    cid = 10010195
-    db.cards[cid] = F.card(cid, token=True, steps=[
-        F.Step(op="discard_pick", card_type="field", count=1),
-        F.Step(op="draw", count=3)])
-    g = make_game()
-    pa, _ = F.battle_setup(g, {0: 1})
-    fld = give(g, 0, 10010151)
+def test_yuhui_real_yaml_discard_pick_card_type_choice(real_game):
+    """真实余辉：选择幻境牌弃置后续跑抽三张，并清空 pending_choice。"""
+    g = real_game([100304, 100101, 100102, 100103], check_deck=False)
+    pa, _ = F.battle_setup(g, {0: 2})
+    fld = give(g, 0, 10030401)
     other = give(g, 0, 10010101)
     hand_before = len(pa.hand)
-    play(g, 0, cid)
+    play(g, 0, 10030403)
     pend = g.state.pending_choice
     assert pend is not None and pend["kind"] == "discard_pick"
-    assert pend["options"] == [fld.uid]
+    assert fld.uid in pend["options"]
+    assert other.uid not in pend["options"]
     with pytest.raises(IllegalAction):
         g.apply({"op": "choose", "uid": other.uid, "player": 0})
     g.apply({"op": "choose", "uid": fld.uid, "player": 0})
@@ -3623,6 +3618,21 @@ def test_discard_pick_card_type_choice(db, make_game):
     assert other in pa.hand
     assert g.state.pending_choice is None
     assert len(pa.hand) == hand_before + 2           # 弃 1 后抽 3
+
+
+@pytest.mark.parametrize("intensity, draws", [(5, 1), (10, 2)])
+def test_huiyeji_real_yaml_turn_start_draw_count(real_game, intensity, draws):
+    """真实蓬莱玉枝：普通与耐久翻倍分支均使用正确的抽牌数量参数。"""
+    g = real_game([100303, 100101, 100102, 100103], check_deck=False)
+    pa, _ = F.battle_setup(g, {0: 3})
+    play(g, 0, 10030307)
+    pa.fields[0].intensity = intensity
+    pa.orb = 0
+    hand_before = len(pa.hand)
+    g.emit("on_turn_start", player=0)
+    g._drain_queue()
+    assert len(pa.hand) == hand_before + draws
+    assert pa.orb == draws
 
 
 def test_summon_field_all_and_intensity_override(db, make_game):
