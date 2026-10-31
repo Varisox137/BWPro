@@ -1139,7 +1139,8 @@ def test_server_base_dependencies_exclude_gui_and_standard_extras():
     assert "prompt-toolkit>=3.0.53" in dev
 
 
-def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path):
+@pytest.mark.parametrize("remote", ["origin", "main"])
+def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path, remote):
     """Termux 启动脚本语法有效，本地改动存在时不执行拉取或覆盖。"""
     import os
     import subprocess
@@ -1158,7 +1159,7 @@ def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path):
                    check=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "Test"],
                    check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "main",
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", remote,
                     "https://github.com/Varisox137/BWPro.git"], check=True)
     (tmp_path / "dirty.txt").write_text("local", encoding="utf-8")
     result = subprocess.run(["bash", str(script)],

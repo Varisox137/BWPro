@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR="${BWP_REPO_DIR:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
-REMOTE="${BWP_REMOTE:-main}"
+REMOTE="${BWP_REMOTE:-}"
 BRANCH="${BWP_BRANCH:-master}"
 HOST="${BWP_HOST:-0.0.0.0}"
 PORT="${BWP_PORT:-1037}"
@@ -26,6 +26,15 @@ cd -- "$REPO_DIR" || fail "无法进入仓库：$REPO_DIR"
     || fail "$REPO_DIR 不是 Git 工作区"
 [[ "$(git branch --show-current)" == "$BRANCH" ]] \
     || fail "当前分支不是 $BRANCH"
+if [[ -z "$REMOTE" ]]; then
+    if git remote get-url origin >/dev/null 2>&1; then
+        REMOTE=origin
+    elif git remote get-url main >/dev/null 2>&1; then
+        REMOTE=main
+    else
+        REMOTE=origin
+    fi
+fi
 REMOTE_URL=$(git remote get-url "$REMOTE" 2>/dev/null) \
     || fail "远端不存在：$REMOTE"
 [[ "$REMOTE_URL" == "$EXPECTED_REMOTE" ]] \
