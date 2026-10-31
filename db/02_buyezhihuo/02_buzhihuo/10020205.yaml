@@ -21,7 +21,7 @@ versions:
           condition: {player: self}
           steps:
             - {op: basic_boost, power: 1}
-      text: "[觉醒]：{己方回合开始时，[鼓舞]：{获得+1战力}。你的[鼓舞]效果额外获得+1战力与+1护甲。}"
+      text: "[觉醒]：{己方回合开始时，[鼓舞]：{获得+1力量}。你的[鼓舞]效果额外获得+1力量与+1护甲。}"
     - date: 20200423
       card_type: spell
       subtype: awaken
@@ -42,4 +42,4 @@ versions:
           condition: {player: self}
           steps:
             - {op: basic_boost, power: 1}
-      text: "[觉醒]：{己方回合开始时，[鼓舞]：{获得+1战力}。你的[鼓舞]效果额外获得+1战力与+1护甲。}"
+      text: "[觉醒]：{己方回合开始时，[鼓舞]：{获得+1力量}。你的[鼓舞]效果额外获得+1力量与+1护甲。}"

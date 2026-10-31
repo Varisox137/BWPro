@@ -13,4 +13,4 @@ versions:
         condition: {player: self}
         steps:
           - {op: basic_boost, power: 1}
-      text: 己方回合开始时，[鼓舞]：{获得+1战力。}
+      text: 己方回合开始时，[鼓舞]：{获得+1力量。}
