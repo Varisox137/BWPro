@@ -893,6 +893,27 @@ def test_cardart_description_removes_paired_braces():
         "投射：造成4点伤害。[[增强]]：若满足，此牌伤害翻倍")
 
 
+def test_description_highlights_complete_named_quotes():
+    from types import SimpleNamespace
+    from client.gui import cardart
+    from db.schema import InvocationDef
+    from tests import factories as F
+
+    database = F.db_of(
+        [F.shiki(100101)],
+        [F.card(10010151, name="黄金羽", token=True),
+         F.card(10010152, name="三目·线索", token=True)])
+    database.shikigami[10040299] = SimpleNamespace(name="棺材", kind="replace")
+    database.invocations["测试灵咒"] = InvocationDef(name="测试灵咒", text="")
+    text = ("将『黄金羽』与「测试灵咒」置入手牌，获得『线索』。"
+            "『本回合气绝时，替换为「棺材」』。"
+            "保留『整段能力文本』与[[眩晕]]。")
+    assert cardart._description(text, database) == (
+        "将『[[黄金羽]]』与「[[测试灵咒]]」置入手牌，获得『[[线索]]』。"
+        "『本回合气绝时，替换为「[[棺材]]」』。"
+        "保留『整段能力文本』与[[眩晕]]。")
+
+
 def test_cardart_native_height_supports_stat_layout(qapp, gdb):
     from client.gui import cardart
 

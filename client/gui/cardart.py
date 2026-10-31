@@ -31,7 +31,7 @@ _TYPE_NAMES = {"combat": "战斗", "spell": "法术", "form": "形态",
                "field": "幻境", "reinforce": "协战"}
 _ICON_NAMES = {"力量": "ll", "生命": "sm", "护甲": "hj", "破甲": "pj",
                "能量": "nl", "耐久": "nj", "战力": "zl", "乏力": "fl", "赏金": "sj"}
-_KEYWORD_RE = re.compile(r"\[([^\[\]\n]+)\]")
+_KEYWORD_RE = re.compile(r"(?<!\[)\[([^\[\]\n]+)\](?!\])")
 _ICON_RE = re.compile("|".join(_ICON_NAMES))
 _RENDER_LOCK = threading.RLock()
 _TRANSPARENT_ART = "__BWPRO_TRANSPARENT__"
@@ -78,9 +78,32 @@ def seat_level_color(seat: int | None) -> str:
     return _SEAT_LEVEL_COLORS[seat] if isinstance(seat, int) and 0 <= seat < 4 else "yellow"
 
 
-def _description(text: str) -> str:
+def _highlight_named_quotes(text: str, db) -> str:
+    names = {definition.name for definition in db.cards.values()}
+    names.update(definition.name for definition in db.shikigami.values()
+                 if getattr(definition, "kind", "shikigami") != "shikigami")
+    names.update(getattr(definition, "name", key)
+                 for key, definition in db.invocations.items())
+    names.update(definition.name.rsplit("·", 1)[-1] for definition in db.cards.values()
+                 if getattr(definition, "token", False) and "·" in definition.name)
+
+    def replace(match):
+        content = match.group(1) if match.group(1) is not None else match.group(2)
+        if content not in names or "[[" in content or "]]" in content:
+            return match.group(0)
+        opening, closing = match.group(0)[0], match.group(0)[-1]
+        return f"{opening}[[{content}]]{closing}"
+
+    for pattern in (r"「([^「」]*)」", r"『([^『』]*)』"):
+        text = re.sub(pattern, replace, text)
+    return text
+
+
+def _description(text: str, db=None) -> str:
     text = text.replace("{", "").replace("}", "")
     text = _KEYWORD_RE.sub(r"[[\1]]", text)
+    if db is not None:
+        text = _highlight_named_quotes(text, db)
     return _ICON_RE.sub(lambda match: f"#{_ICON_NAMES[match.group(0)]}", text)
 
 
@@ -114,7 +137,7 @@ def _card_data(cdef, db, config: dict) -> dict:
             data["shikigami2"] = _shikigami_name(db, cdef.shikigami2)
         else:
             data["shikigami"] = _shikigami_name(db, cdef.shikigami)
-    data.update(name=cdef.name, description=_description(cdef.text))
+    data.update(name=cdef.name, description=_description(cdef.text, db))
     if getattr(cdef, "level", None) is not None:
         data["level"] = cdef.level
     if getattr(cdef, "rarity", None) is not None:
@@ -840,7 +863,7 @@ def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = Non
         shiki.perm_health if awakened else 0)
     overrides = {
         "type": "式神", "name": source.name,
-        "description": _description(source.text), "faction": shiki.faction,
+        "description": _description(source.text, db), "faction": shiki.faction,
         "power": power, "health": health, "evolve": awakened,
         "level": shiki.level or None,
         "level_color": seat_level_color(seat),
