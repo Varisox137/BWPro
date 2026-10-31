@@ -14,4 +14,4 @@ versions:
       countdown_effects:
         steps:
           - {op: basic_boost, power: 3, shield: 3}
-      text: "[倒计时2]：{[鼓舞]：{获得+3战力与+3护甲}。}"
+      text: "[倒计时2]：{[鼓舞]：{获得+3力量与+3护甲}。}"

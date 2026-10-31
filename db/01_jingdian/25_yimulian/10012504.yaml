@@ -18,4 +18,4 @@ versions:
         - when: on_turn_end
           steps:
             - {op: destroy_form, target: {kind: self}}
-      text: "[响应]：{当一目连被攻击时，自动使用此牌}。回合结束时此牌自毁。"
+      text: "回合结束时此牌自毁。[响应]：{当一目连被攻击时，自动使用此牌}。"

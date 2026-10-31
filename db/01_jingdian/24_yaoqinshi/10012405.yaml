@@ -12,7 +12,7 @@ versions:
         # 无倒计时能力者空操作（countdown_delta reset=True，20191212 公测版效果）
         steps:
           - {op: countdown_delta, reset: true, target: {kind: all, pool: enemy_shikigami}}
-      text: 重置所有敌方角色的倒计时。
+      text: 重置所有敌方角色的[倒计时]。
     - date: 20200227
       card_type: spell
       rarity: SR
