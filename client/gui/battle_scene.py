@@ -980,7 +980,9 @@ class BattleScene(QGraphicsScene):
                 item.payload = Ref(player=pi, shikigami=index)
                 item.keywords = list(shiki.keywords + shiki.one_shot_keywords
                                      + shiki.perm_keywords)
-                item.border_color = "blue" if "haste" in item.keywords else "yellow"
+                item.border_color = (
+                    "blue" if game.state.phase == "battle" and "haste" in item.keywords
+                    else "yellow")
                 item.legal_targets = (
                     targets.pool_refs(game, "enemy_shikigami", pi, targeted=True)
                     if pi == viewer == game.state.active and "hunt" in item.keywords else [])

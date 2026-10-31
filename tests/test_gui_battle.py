@@ -466,6 +466,17 @@ def test_haste_assault_border_is_blue_for_all_keyword_sources(qapp, view, attrib
     assert item.border_color == "blue"
 
 
+def test_haste_upgrade_border_remains_yellow(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    view.game.current.shikigami[1].one_shot_keywords.append("haste")
+    view.refresh()
+    settle(view)
+    item = view.battle_scene.cards[("shiki", 0, 1)]
+    assert view.game.state.phase == "upgrade"
+    assert item.playable
+    assert item.border_color == "yellow"
+
+
 def test_one_shot_haste_border_returns_yellow_after_assault(qapp, view):
     start(view, mulligan=False)
     shiki = view.game.current.shikigami[0]
