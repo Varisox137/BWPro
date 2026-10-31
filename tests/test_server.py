@@ -1137,3 +1137,33 @@ def test_server_base_dependencies_exclude_gui_and_standard_extras():
     dev = project["dependency-groups"]["dev"]
     assert "pyside6>=6.12.0" in dev and "pillow>=13.0.0" in dev
     assert "prompt-toolkit>=3.0.53" in dev
+
+
+def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path):
+    """Termux 启动脚本语法有效，本地改动存在时不执行拉取或覆盖。"""
+    import os
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).parents[1] / "scripts" / "termux_server.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    text = script.read_text(encoding="utf-8")
+    for required in ("git pull --ff-only", "--locked", "--managed-python",
+                     "--python 3.14", "--no-dev", "--no-sync"):
+        assert required in text
+
+    subprocess.run(["git", "init", "-b", "master", str(tmp_path)], check=True,
+                   capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "test@example.com"],
+                   check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "Test"],
+                   check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "main",
+                    "https://github.com/Varisox137/BWPro.git"], check=True)
+    (tmp_path / "dirty.txt").write_text("local", encoding="utf-8")
+    result = subprocess.run(["bash", str(script)],
+                            env={**os.environ, "BWP_REPO_DIR": str(tmp_path)},
+                            capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode != 0
+    assert "未提交" in result.stderr
+    assert not (tmp_path / ".git" / "FETCH_HEAD").exists()

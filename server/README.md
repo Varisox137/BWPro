@@ -11,6 +11,30 @@ uv run python -m server.main [--host 0.0.0.0] [--port 1037] \
     [--no-require-ua] [--allow-debug-rooms]
 ```
 
+## Termux Debian 更新与启动
+
+服务端基础依赖只有 FastAPI、pydantic、PyYAML、uvicorn、websockets，不安装 PySide6、Pillow 或 uvicorn standard 扩展。准备 `git` 和 `uv`（uv 安装见 https://docs.astral.sh/uv/getting-started/installation/ ），使用独立干净克隆：
+
+```bash
+git clone https://github.com/Varisox137/BWPro.git
+cd BWPro
+chmod +x scripts/termux_server.sh
+./scripts/termux_server.sh
+```
+
+脚本依次检查分支/远端/工作区，`git pull --ff-only main master`，再用
+`uv sync --locked --managed-python --python 3.14 --no-dev` 同步服务端环境并启动。
+存在本地改动时直接中止，不会自动 stash/reset/clean；uv 不存在时也只提示，不自动执行安装脚本。
+launcher 日志写入 `logs/bwpro-launcher-<时间>-<PID>.log`。
+
+```bash
+BWP_HOST=127.0.0.1 BWP_PORT=1038 ./scripts/termux_server.sh
+./scripts/termux_server.sh --turn-timeout 120 --mulligan-timeout 30
+# 非默认部署副本：BWP_REPO_DIR=/path/to/BWPro ./scripts/termux_server.sh
+```
+
+真实 aarch64 环境首次运行需联网下载 uv-managed CPython 3.14；脚本不会静默降级 Python 版本。
+
 客户端：`uv run python -m client.net`（或主菜单 [3] 联机对战），
 `--debug` 创建 debug 对局（房间内允许 debug 指令，需服务端 `--allow-debug-rooms`），
 服务器地址可用 `BWP_SERVER` 环境变量作默认；地址输入接受 ws://、wss://、
