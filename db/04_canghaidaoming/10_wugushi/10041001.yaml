@@ -12,4 +12,4 @@ versions:
       effects:
         steps:
           - {op: attach_invocation, name: 蛊蚀}
-      text: "[弹回]。使一个敌方式神结附一个‘蛊蚀’。"
+      text: "[弹回]。使一个敌方式神结附一个『蛊蚀』。"

@@ -22,4 +22,4 @@ versions:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: {enhance: true, base: 0},
              target: {kind: self}}
-      text: "[增强]：{本回合若敌方抽到过结附‘梦魇’的牌，此牌获得+3护甲并获得[瞬发]。}"
+      text: "[增强]：{本回合若敌方抽到过结附『梦魇』的牌，此牌获得+3护甲并获得[瞬发]。}"

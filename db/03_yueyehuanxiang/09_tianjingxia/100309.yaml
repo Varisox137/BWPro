@@ -18,4 +18,4 @@ versions:
           condition: {active: self, hand_lacks: 10030951}
           steps:
             - {op: generate, card_id: 10030951}
-      text: "己方回合开始或结束时，若你手牌中没有‘妖怪屋·灵力’，将其置入手牌。"
+      text: "己方回合开始或结束时，若你手牌中没有『妖怪屋·灵力』，将其置入手牌。"

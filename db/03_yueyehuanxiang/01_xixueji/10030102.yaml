@@ -22,4 +22,4 @@ versions:
         condition: {victim_side: friendly, victim_kind: shikigami}
         steps:
           - {op: grant_redirect}
-      text: "使一个式神获得‘下一次将受到的伤害改由其牌手承受’。[响应]：{当你的式神被攻击时，自动对其使用。}"
+      text: "使一个式神获得『下一次将受到的伤害改由其牌手承受』。[响应]：{当你的式神被攻击时，自动对其使用。}"

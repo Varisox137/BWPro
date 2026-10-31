@@ -12,4 +12,4 @@ versions:
         # choose——手牌有多张未完成紧急委托时挂起交互选择；无候选安全空过）
         steps:
           - {op: quest_complete}
-      text: "完成你手牌里一张‘紧急委托’。"
+      text: "完成你手牌里一张『紧急委托』。"

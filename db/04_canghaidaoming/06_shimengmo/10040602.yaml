@@ -26,4 +26,4 @@ versions:
           steps:
             - {op: buff_power, amount: -2, scope: turn,
                target: {kind: context, key: card_shikigami}}
-      text: "己方回合结束时，随机使敌方牌库里一张牌结附‘梦魇’。当敌方抽到结附‘梦魇’的牌时，此牌对应的式神本回合得-2力量。"
+      text: "己方回合结束时，随机使敌方牌库里一张牌结附『梦魇』。当敌方抽到结附『梦魇』的牌时，此牌对应的式神本回合得-2力量。"

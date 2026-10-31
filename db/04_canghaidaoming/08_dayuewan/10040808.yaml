@@ -26,4 +26,4 @@ versions:
             steps:
               - {op: attach_invocation, name: 八尺琼曲玉}
               - {op: launch_attack, shikigami: target}
-      text: "选择一个己方式神，本次攻击后将‘八尺琼曲玉’结附于该式神并使其发起攻击。"
+      text: "选择一个己方式神，本次攻击后将『八尺琼曲玉』结附于该式神并使其发起攻击。"

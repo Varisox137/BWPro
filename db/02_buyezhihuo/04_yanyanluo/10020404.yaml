@@ -16,4 +16,4 @@ versions:
         steps:
           - {op: summon, shikigami: 10020499, inherit_stats: true, energy_ratio: 0.5}
           - {op: stat_aura, kind: ids_energy_power, ids: [10020499], scope: form}
-      text: "进场时，在战斗区召唤一个‘烟烟罗的分身’。‘烟烟罗的分身’每有1能量便获得1力量。"
+      text: "进场时，在战斗区召唤一个『烟烟罗的分身』。『烟烟罗的分身』每有1能量便获得1力量。"

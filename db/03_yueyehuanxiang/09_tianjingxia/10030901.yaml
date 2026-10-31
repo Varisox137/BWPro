@@ -19,4 +19,4 @@ versions:
              amount: {memo: stripped_shield}}
           - {op: add_mod, to: hand, card_id: 10030952, key: shield_boost,
              amount: {memo: stripped_shield}}
-      text: "[瞬发]。移除一个角色上的护甲或破甲，使手牌中的‘妖怪屋·灵力’或‘妖怪屋·灵力之泉’增强等量的效果。"
+      text: "[瞬发]。移除一个角色上的护甲或破甲，使手牌中的『妖怪屋·灵力』或『妖怪屋·灵力之泉』增强等量的效果。"

@@ -16,4 +16,4 @@ versions:
             judge: self
             then:
               - {op: generate, card_id: 10011301}
-      text: "[运势4]：{将一张‘出千’置入手牌。}"
+      text: "[运势4]：{将一张『出千』置入手牌。}"

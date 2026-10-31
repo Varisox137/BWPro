@@ -14,7 +14,7 @@ versions:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
       response:
-        # [响应]：当鬼切触发‘友切’时自动使用，且本次攻击若击杀式神，
+        # [响应]：当鬼切触发『友切』时自动使用，且本次攻击若击杀式神，
         # 反制他使用的法术牌（counter_on_kill 挂账 _counter_watches：击杀者须为
         # 鬼切、存在进行中的出牌则无效化，条目消耗——rules.md 第三十七章三）
         when: on_invocation_trigger
@@ -23,4 +23,4 @@ versions:
           - {op: attack_buff, power: 2, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
           - {op: counter_on_kill}
-      text: "[响应]：{当鬼切触发‘友切’时，自动使用且本次攻击若击杀式神，反制他使用的法术牌。}"
+      text: "[响应]：{当鬼切触发『友切』时，自动使用且本次攻击若击杀式神，反制他使用的法术牌。}"

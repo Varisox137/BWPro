@@ -9,7 +9,7 @@ versions:
       level: 1
       effects:
         # +0/+0 无身材步。登记延迟能力（uses=99 持有期间不限次，无 scope 跨回合留存、
-        # 气绝清除）：结附‘迟钝’期间每有一个其他式神气绝（victim_not_shikigami 排除
+        # 气绝清除）：结附『迟钝』期间每有一个其他式神气绝（victim_not_shikigami 排除
         # 持有者自身），持有者永久获得1力量和1生命（perm 增益不提取为战力，正常结算）
         steps:
           - op: delay_grant
@@ -19,4 +19,4 @@ versions:
             steps:
               - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
               - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
-      text: "于跳跳哥哥使用此牌，结附‘迟钝’期间每有一个其他式神气绝，跳跳哥哥便获得1力量和1生命。"
+      text: "于跳跳哥哥使用此牌，结附『迟钝』期间每有一个其他式神气绝，跳跳哥哥便获得1力量和1生命。"

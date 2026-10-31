@@ -19,4 +19,4 @@ versions:
           condition: {active: self}
           steps:
             - {op: generate, card_id: 10040851}
-      text: "进场和己方回合开始时，将一张‘挪移’置入手牌。"
+      text: "进场和己方回合开始时，将一张『挪移』置入手牌。"

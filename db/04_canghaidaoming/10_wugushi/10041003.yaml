@@ -7,9 +7,9 @@ versions:
       card_type: spell
       rarity: SR
       level: 1
-      # "消灭一个结附‘蛊蚀’的式神"：双方任意式神可取（不论结附来源——裁决12）
+      # "消灭一个结附『蛊蚀』的式神"：双方任意式神可取（不论结附来源——裁决12）
       target: {kind: choose, pool: any_shikigami, has_invocation: 蛊蚀}
       effects:
         steps:
           - {op: destroy}
-      text: "消灭一个结附‘蛊蚀’的式神。"
+      text: "消灭一个结附『蛊蚀』的式神。"

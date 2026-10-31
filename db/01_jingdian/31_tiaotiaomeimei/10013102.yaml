@@ -14,4 +14,4 @@ versions:
         steps:
           - {op: summon, shikigami: 10013199}
           - {op: launch_attack, shikigami: 10013199}
-      text: "召唤‘番茄’并使其攻击。"
+      text: "召唤『番茄』并使其攻击。"

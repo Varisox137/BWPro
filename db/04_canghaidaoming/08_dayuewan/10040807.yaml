@@ -13,4 +13,4 @@ versions:
           # grant_keywords [stun]：对该结附条目按实例持续眩晕（挂 stuns 的
           # invocation 条目，不参与回合批次过期清理，该灵咒移除即解除）
           - {op: attach_invocation, name: 八尺琼曲玉, grant_keywords: [stun]}
-      text: "将‘八尺琼曲玉’结附于一个敌方式神，并于结附期间使其持续[眩晕]。"
+      text: "将『八尺琼曲玉』结附于一个敌方式神，并于结附期间使其持续[眩晕]。"

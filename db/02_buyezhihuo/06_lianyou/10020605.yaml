@@ -34,7 +34,7 @@ versions:
           effects:
             steps:
               - {op: use_card_copy, card_id: 10020601}
-      text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能3]：{额外使用‘三太郎之斧’。}"
+      text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能3]：{额外使用『三太郎之斧』。}"
     - date: 20200423
       card_type: combat
       rarity: R
@@ -66,4 +66,4 @@ versions:
           effects:
             steps:
               - {op: use_card_copy, card_id: 10020601}
-      text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能4]：{额外使用‘三太郎之斧’。}"
+      text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能4]：{额外使用『三太郎之斧』。}"

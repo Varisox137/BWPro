@@ -9,10 +9,10 @@ versions:
       level: 2
       target: {kind: choose, pool: any_shikigami}
       effects:
-        # 消灭一个式神；若该式神不是召唤物，将其替换为‘棺材’（to_coffin op 内对召唤物
+        # 消灭一个式神；若该式神不是召唤物，将其替换为『棺材』（to_coffin op 内对召唤物
         # 门控——召唤物被消灭后已离场，天然跳过，无需 step 级 condition）；
         # keep_combat：原式神气绝时在战斗区则棺材进其战斗区
         steps:
           - {op: destroy}
           - {op: to_coffin, into: 10040299, keep_combat: true}
-      text: "消灭一个式神。若该式神不是召唤物，将其替换为‘棺材’。"
+      text: "消灭一个式神。若该式神不是召唤物，将其替换为『棺材』。"

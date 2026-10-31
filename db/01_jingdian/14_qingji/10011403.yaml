@@ -28,4 +28,4 @@ versions:
              condition: {source_shikigami: self, kind: combat},
              steps: [{op: gain_shield, amount: 3, kind: fragile,
                       target: {kind: context, key: victim}}]}
-      text: "使一个己方式神获得2护甲且本回合获得‘使受到它战斗伤害的式神获得3破甲’。[响应]：{当你战斗区式神被攻击时，自动对其使用。}"
+      text: "使一个己方式神获得2护甲且本回合获得『使受到它战斗伤害的式神获得3破甲』。[响应]：{当你战斗区式神被攻击时，自动对其使用。}"

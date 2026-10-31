@@ -1773,7 +1773,7 @@ def test_burst_method_merge_over_inherent(db, make_game):
                           target=T(kind="choose", pool="enemy_shikigami",
                                    battle=True),
                           power=3, shield=1,
-                          text="爆能使用时变为战斗牌‘破魔箭’：+3/+1")])
+                          text="爆能使用时变为战斗牌『破魔箭』：+3/+1")])
     db.shikigami[100101] = F.shiki(100101, abilities=[F.block(
         F.Step(op="card_aura", subtype="talisman", scope="ability",
                grant_method={"id": "burst",
@@ -1788,7 +1788,7 @@ def test_burst_method_merge_over_inherent(db, make_game):
     t.health = 20
     m = next(m for m in g._card_methods(pa, db.cards[10010151]) if m.id == "burst")
     assert (m.energy_cost, m.power, m.shield) == (3, 3, 1)   # 自带方式的键保留
-    assert m.text == "爆能使用时变为战斗牌‘破魔箭’：+3/+1，本次战斗获得免疫战斗伤害"
+    assert m.text == "爆能使用时变为战斗牌『破魔箭』：+3/+1，本次战斗获得免疫战斗伤害"
     assert m.effects is not None and m.effects.steps[0].op == "battle_immunity"
     inst = F.give(g, 0, 10010151)
     g.apply({"op": "play_card", "uid": inst.uid, "play_method": "burst",
@@ -3021,8 +3021,8 @@ def test_real_invocations_pack04_new_loaded(gdb):
     assert m.unique == "none" and m.draw_trigger is not None
     step = m.draw_trigger.steps[0]
     assert step.op == "damage" and step.amount == 3
-    assert m.text == ("当敌方抽到结附‘梦魇’的牌时，对敌方牌手造成3点伤害。"
-                      "当结附‘梦魇’的牌离开牌库时，移除结附于其上的‘梦魇’。")
+    assert m.text == ("当敌方抽到结附『梦魇』的牌时，对敌方牌手造成3点伤害。"
+                      "当结附『梦魇』的牌离开牌库时，移除结附于其上的『梦魇』。")
     z = gdb.invocations["髭切"]
     assert z.unique == "shikigami_unique"
     ab = z.abilities[0]

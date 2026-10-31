@@ -16,4 +16,4 @@ versions:
           - {op: heal,
              amount: {deck_invocation_count: {name: 梦魇, side: enemy}},
              target: {kind: all, pool: self_player}}
-      text: "随机使敌方牌库里三张牌结附‘梦魇’，然后你恢复等同于其牌库中‘梦魇’总数量的生命。"
+      text: "随机使敌方牌库里三张牌结附『梦魇』，然后你恢复等同于其牌库中『梦魇』总数量的生命。"

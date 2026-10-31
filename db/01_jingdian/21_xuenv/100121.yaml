@@ -16,7 +16,7 @@ versions:
         steps:
           - {op: turn_mark, key: snowball}
           - {op: generate, card_id: 10012151}
-      text: "每回合一次，当你[眩晕]敌方式神时，将一张‘雪球’置入手牌。"
+      text: "每回合一次，当你[眩晕]敌方式神时，将一张『雪球』置入手牌。"
     - date: 20200723  # 平衡性调整：身材 2/4→2/5
       faction: 青岚
       power: 2
@@ -29,4 +29,4 @@ versions:
         steps:
           - {op: turn_mark, key: snowball}
           - {op: generate, card_id: 10012151}
-      text: "每回合一次，当你[眩晕]敌方式神时，将一张‘雪球’置入手牌。"
+      text: "每回合一次，当你[眩晕]敌方式神时，将一张『雪球』置入手牌。"

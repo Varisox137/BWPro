@@ -14,4 +14,4 @@ versions:
           # 获得'以其自身的生命造成战斗伤害'（combat_base_health 效果授予伪关键字；
           # 天然持续性类别入列，气绝清除）
           - {op: grant_keyword, keyword: combat_base_health}
-      text: "使一个其他式神获得‘以其自身的生命造成战斗伤害’。"
+      text: "使一个其他式神获得『以其自身的生命造成战斗伤害』。"

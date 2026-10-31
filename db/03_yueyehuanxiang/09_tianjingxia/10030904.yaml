@@ -16,4 +16,4 @@ versions:
         steps:
           - {op: strip_shield}
           - {op: summon, shikigami: 10030999, stats_memo: stripped_shield}
-      text: "移除一个己方角色上的护甲或敌方角色上的破甲，召唤一个‘妖怪屋’并使其力量和生命等同于被移除的护甲或破甲。"
+      text: "移除一个己方角色上的护甲或敌方角色上的破甲，召唤一个『妖怪屋』并使其力量和生命等同于被移除的护甲或破甲。"

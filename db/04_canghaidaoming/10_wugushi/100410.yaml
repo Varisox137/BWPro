@@ -8,10 +8,10 @@ versions:
       power: 1
       health: 4
       abilities:
-        # 当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个‘蛊蚀’
+        # 当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个『蛊蚀』
         # （结附致死检查裁决12：生命上限<=0 即气绝；觉醒后由 10041006 同款块换绑）
         - when: on_damage
           condition: {source_shikigami: self, kind: combat, victim_kind: shikigami}
           steps:
             - {op: attach_invocation, name: 蛊蚀, target: {kind: context, key: victim}}
-      text: "当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个‘蛊蚀’。"
+      text: "当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个『蛊蚀』。"

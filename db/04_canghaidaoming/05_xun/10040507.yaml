@@ -17,4 +17,4 @@ versions:
             key: inv_override
             value: {鸮之守护: {unique: shikigami_unique, attach_all_friendly: true}}
             target: {kind: all, pool: self_player}
-      text: "‘鸮之守护’失去[唯一]但效果不能叠加。本局游戏中当己方式神结附‘鸮之守护’时，改为使己方全体式神结附。"
+      text: "『鸮之守护』失去[唯一]但效果不能叠加。本局游戏中当己方式神结附『鸮之守护』时，改为使己方全体式神结附。"

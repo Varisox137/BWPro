@@ -24,4 +24,4 @@ versions:
           condition: {victim_shikigami: self}
           steps:
             - {op: redirect_deck_invocation, name: 梦魇}
-      text: "敌方牌库中每有一张结附‘梦魇’的牌，此牌便获得1力量与1生命。当食梦貘受到伤害时，改为从敌方牌库移除等量结附‘梦魇’的牌。（最大为3）"
+      text: "敌方牌库中每有一张结附『梦魇』的牌，此牌便获得1力量与1生命。当食梦貘受到伤害时，改为从敌方牌库移除等量结附『梦魇』的牌。（最大为3）"

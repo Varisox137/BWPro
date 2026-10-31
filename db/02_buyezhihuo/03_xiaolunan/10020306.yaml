@@ -24,4 +24,4 @@ versions:
           condition: {shikigami_shikigami: self}
           steps:
             - {op: gain_energy, amount: 2, target: {kind: self}}
-      text: 复活小鹿男。[觉醒]：{[充能]。小鹿男复活时获得2能量，且他的形态牌都获得‘气绝时可消耗3能量使用，复活小鹿男’。}
+      text: 复活小鹿男。[觉醒]：{[充能]。小鹿男复活时获得2能量，且他的形态牌都获得『气绝时可消耗3能量使用，复活小鹿男』。}

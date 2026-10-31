@@ -15,4 +15,4 @@ versions:
         condition: {victim_shikigami: 100131}
         steps:
           - {op: summon, shikigami: 10013199}
-      text: "[瞬发]。召唤‘番茄’。[响应]：{当跳跳妹妹被攻击时，自动使用此牌。}"
+      text: "[瞬发]。召唤『番茄』。[响应]：{当跳跳妹妹被攻击时，自动使用此牌。}"

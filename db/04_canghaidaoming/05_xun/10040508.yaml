@@ -18,4 +18,4 @@ versions:
           - {op: attach_invocation, name: 鸮之守护}
           - {op: stat_aura, kind: friendly_invocation, name: 鸮之守护,
              keywords: [unyielding]}
-      text: "使一个己方式神结附‘鸮之守护’。结附‘鸮之守护’的己方式神获得[不屈]。"
+      text: "使一个己方式神结附『鸮之守护』。结附『鸮之守护』的己方式神获得[不屈]。"

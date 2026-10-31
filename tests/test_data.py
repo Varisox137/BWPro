@@ -12,6 +12,7 @@
 倒计时能力的用例显式调用 g._register_ability_countdown。
 """
 from collections import Counter
+from pathlib import Path
 
 import pytest
 
@@ -23,6 +24,46 @@ from tests import factories as F
 from tests.factories import give, move, pass_turns, play
 
 IDX = 0
+
+
+def test_description_quote_conversion():
+    from db.migrate_quotes import convert_text
+
+    assert convert_text("‘黄金羽’") == "『黄金羽』"
+    assert convert_text("‘本回合气绝时，替换为“棺材”’") == "『本回合气绝时，替换为「棺材」』"
+    unchanged = "20200928：R 1 法术 “其他双引号”\r\n  - {op: damage, amount: 2}\r\n"
+    assert convert_text(unchanged) == unchanged
+
+
+def test_quote_migration_preserves_file_bytes(tmp_path):
+    from db.migrate_quotes import migrate_file
+
+    path = tmp_path / "card.yaml"
+    original = ("id: 10012651\r\n"
+                "versions:\r\n"
+                "  history:\r\n"
+                "    - date: 20200928\r\n"
+                "      text: 将一张‘黄金羽’置入手牌。\r\n"
+                "      methods:\r\n"
+                "        - text: 替换为“棺材”\r\n").encode("utf-8")
+    expected = original.decode("utf-8").replace("‘", "『").replace("’", "』") \
+        .replace("“棺材”", "「棺材」").encode("utf-8")
+    path.write_bytes(original)
+    assert migrate_file(path) is True
+    assert path.read_bytes() == expected
+    assert migrate_file(path) is False
+
+
+def test_description_quotes_migrated_in_raw_and_db():
+    root = Path(__file__).parents[1]
+    paths = [root / "card_data_raw.md", *sorted((root / "db").rglob("*.yaml"))]
+    for path in paths:
+        text = path.read_bytes().decode("utf-8")
+        label = path.relative_to(root)
+        assert "‘" not in text and "’" not in text, label
+        assert "“棺材”" not in text, label
+        assert text.count("『") == text.count("』"), label
+        assert text.count("「") == text.count("」"), label
 
 
 def _game(real_game, team, levels=None):

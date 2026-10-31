@@ -12,4 +12,4 @@ versions:
       effects:
         steps:
           - {op: attach_invocation, name: 八尺琼曲玉}
-      text: "[瞬发]。将‘八尺琼曲玉’结附于一个己方式神。"
+      text: "[瞬发]。将『八尺琼曲玉』结附于一个己方式神。"

@@ -16,7 +16,7 @@ versions:
         steps:
           - {op: card_aura, shikigami: self, card_type: combat,
              power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
-      text: "[增强]：{本局游戏你每使用过一张‘羁绊的价值’，犬神的战斗牌便额外获得+1力量与+1护甲。}"
+      text: "[增强]：{本局游戏你每使用过一张『羁绊的价值』，犬神的战斗牌便额外获得+1力量与+1护甲。}"
     - date: 20200120
       card_type: form
       rarity: R
@@ -28,4 +28,4 @@ versions:
         steps:
           - {op: card_aura, shikigami: self, card_type: combat,
              power_ext: lianmo_used_game, shield_ext: lianmo_used_game, scope: form}
-      text: "[增强]：{本局游戏你每使用过一张‘心身炼磨’，犬神的战斗牌便额外获得+1力量与+1护甲。}"
+      text: "[增强]：{本局游戏你每使用过一张『心身炼磨』，犬神的战斗牌便额外获得+1力量与+1护甲。}"

@@ -11,4 +11,4 @@ versions:
         # 随机使敌方牌库里三张牌结附'梦魇'（未标记牌不足 3 张按实际张数结附）
         steps:
           - {op: attach_deck_invocation, name: 梦魇, count: 3}
-      text: "随机使敌方牌库里三张牌结附‘梦魇’。"
+      text: "随机使敌方牌库里三张牌结附『梦魇』。"

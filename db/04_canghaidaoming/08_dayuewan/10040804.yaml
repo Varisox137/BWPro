@@ -18,4 +18,4 @@ versions:
           # 先例 shikigami=target），战斗目标取第二选择目标（at=chosen+at_index=1）
           - {op: launch_attack, shikigami: target, at: chosen, at_index: 1,
              target: {kind: choose, chosen_index: 0}}
-      text: "使结附‘八尺琼曲玉’的己方式神获得2护甲并攻击一个敌方式神。"
+      text: "使结附『八尺琼曲玉』的己方式神获得2护甲并攻击一个敌方式神。"

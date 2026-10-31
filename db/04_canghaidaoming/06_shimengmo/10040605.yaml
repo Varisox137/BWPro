@@ -19,4 +19,4 @@ versions:
           condition: {player: self, card_type: spell}
           steps:
             - {op: attach_deck_invocation, name: 梦魇, count: 1}
-      text: "当你使用法术牌时，随机使敌方牌库里一张牌结附‘梦魇’。"
+      text: "当你使用法术牌时，随机使敌方牌库里一张牌结附『梦魇』。"

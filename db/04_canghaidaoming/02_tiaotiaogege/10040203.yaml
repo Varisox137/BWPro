@@ -23,4 +23,4 @@ versions:
         steps:
           - {op: bump_ext, key: coffin_on_defeat, value: 10040299,
              target: {kind: context, key: victim}}
-      text: "使一个非召唤物式神获得‘本回合气绝时，替换为“棺材”’。[响应]：{当跳跳哥哥将气绝时，自动对其使用。}"
+      text: "使一个非召唤物式神获得『本回合气绝时，替换为「棺材」』。[响应]：{当跳跳哥哥将气绝时，自动对其使用。}"

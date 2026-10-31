@@ -24,4 +24,4 @@ versions:
           - {op: attach_invocation, name: 八尺琼曲玉, target: {kind: context, key: victim}}
           - {op: grant_immunity, kind: all, scope: once,
              target: {kind: context, key: victim}}
-      text: "将‘八尺琼曲玉’结附于一个己方式神，并使其免疫下一次伤害。[响应]：{当己方式神被攻击时，自动对其使用此牌。}"
+      text: "将『八尺琼曲玉』结附于一个己方式神，并使其免疫下一次伤害。[响应]：{当己方式神被攻击时，自动对其使用此牌。}"

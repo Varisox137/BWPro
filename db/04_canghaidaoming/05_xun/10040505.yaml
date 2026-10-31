@@ -15,4 +15,4 @@ versions:
         steps:
           - {op: stat_aura, kind: friendly_invocation, name: 鸮之守护,
              keywords: [veil]}
-      text: "结附‘鸮之守护’的己方式神获得[帷幕]。"
+      text: "结附『鸮之守护』的己方式神获得[帷幕]。"

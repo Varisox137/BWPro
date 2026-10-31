@@ -14,4 +14,4 @@ versions:
         # 光环，不限结附来源；scope=form 默认绑定来源形态，形态离场移除）
         steps:
           - {op: stat_aura, kind: friendly_invocation, name: 鸮之守护, power: 2}
-      text: "结附‘鸮之守护’的己方式神获得2力量。"
+      text: "结附『鸮之守护』的己方式神获得2力量。"

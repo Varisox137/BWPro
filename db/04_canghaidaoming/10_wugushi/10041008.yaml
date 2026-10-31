@@ -10,11 +10,11 @@ versions:
       intensity: 10
       effects:
         steps:
-          # 进场时对敌方所有结附‘蛊蚀’的式神造成1点伤害
+          # 进场时对敌方所有结附『蛊蚀』的式神造成1点伤害
           - {op: damage, amount: 1,
              target: {kind: all, pool: enemy_shikigami, has_invocation: 蛊蚀}}
       abilities:
-        # 所有式神受到的伤害都改为结附等量的‘蛊蚀’（伤害事件"护甲计算后"批次，
+        # 所有式神受到的伤害都改为结附等量的『蛊蚀』（伤害事件"护甲计算后"批次，
         # 优先级 1="伤害改为非伤害"类，redirect_to_field 同挂点；双方式神受影响、
         # 终止伤害事件——裁决15；首个同名幻境生效）
         - when: on_after_shield
@@ -26,4 +26,4 @@ versions:
         - when: on_turn_end
           steps:
             - {op: destroy, target: {kind: all, pool: any_shikigami, power_eq: 0}}
-      text: "进场时对敌方所有结附‘蛊蚀’的式神造成1点伤害。所有式神受到的伤害都改为结附等量的‘蛊蚀’。每个回合结束时，消灭所有力量为0的式神。"
+      text: "进场时对敌方所有结附『蛊蚀』的式神造成1点伤害。所有式神受到的伤害都改为结附等量的『蛊蚀』。每个回合结束时，消灭所有力量为0的式神。"

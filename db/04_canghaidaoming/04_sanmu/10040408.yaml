@@ -30,4 +30,4 @@ versions:
           steps:
             - {op: card_aura, shikigami: self, subtype: quest, cost_zero: true,
                scope: ability}
-      text: "选择一张‘线索’置入手牌。（不可重复）[觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌。三目所有的委托牌不消耗鬼火。}"
+      text: "选择一张『线索』置入手牌。（不可重复）[觉醒]：{三目使用紧急委托时，随机将一张紧急委托置入手牌。三目所有的委托牌不消耗鬼火。}"

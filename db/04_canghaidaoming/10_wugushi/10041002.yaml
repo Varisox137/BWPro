@@ -12,10 +12,10 @@ versions:
       effects:
         steps: []
       abilities:
-        # 当一个结附‘蛊蚀’的敌方式神气绝时，你抽一张牌
-        # （victim_invocation = 气绝移除前灵咒快照含‘蛊蚀’，不论结附来源敌我）
+        # 当一个结附『蛊蚀』的敌方式神气绝时，你抽一张牌
+        # （victim_invocation = 气绝移除前灵咒快照含『蛊蚀』，不论结附来源敌我）
         - when: on_shikigami_defeated
           condition: {victim_side: enemy, victim_invocation: 蛊蚀}
           steps:
             - {op: draw, count: 1}
-      text: "当一个结附‘蛊蚀’的敌方式神气绝时，你抽一张牌。"
+      text: "当一个结附『蛊蚀』的敌方式神气绝时，你抽一张牌。"
