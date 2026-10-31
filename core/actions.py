@@ -1642,7 +1642,7 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         delayed = hp.delayed
         holder_name = hp.name
     source = _source_display_metadata(game, ctx)
-    origin = source["origin"]
+    origin = ctx.card.id if ctx.card is not None else None
     if unique:
         delayed[:] = [e for e in delayed
                       if not (e["block"].when == when and e.get("origin") == origin)]
@@ -1652,7 +1652,8 @@ def delay_grant(game, ctx, *, targets: list[Ref], when: str,
         "uses": int(uses),
         "secret": secret,
         "scope": scope,
-        **source,  # origin 兼作 unique 替换口径；source_name/text 仅供详情展示
+        **source,
+        "origin": origin,  # unique 规则口径不回退 ctx.card_id；展示来源由 source_name/text 独立携带
         # scope="battle"：来源式神（攻击者）座次——该来源下次作为攻击者的战斗
         # 结束时过期清除（engine._resolve_combat 收尾；裁决(10)）
         "watch": ([ctx.source.player, ctx.source.shikigami]

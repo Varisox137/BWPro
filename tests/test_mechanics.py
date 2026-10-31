@@ -772,6 +772,25 @@ def test_player_aura_and_delayed_source_metadata(db, make_game):
     assert delayed["secret"] is True
 
 
+def test_player_delayed_card_id_only_keeps_legacy_unique_origin(db, make_game):
+    """card_id-only 上下文仅补展示来源，不把展示回退用于 unique 的规则 origin。"""
+    from core.model import ExecContext
+
+    first_cid, second_cid = 10010176, 10010177
+    db.cards[first_cid] = F.card(first_cid, name="首个游离来源", text="首段原文。", token=True)
+    db.cards[second_cid] = F.card(second_cid, name="后续游离来源", text="后续原文。", token=True)
+    g = make_game()
+    pa = g.state.players[0]
+    step = F.Step(op="delay_grant", when="on_draw", bind="player", unique=True,
+                  steps=[{"op": "draw", "count": 1}])
+    g._run_step(step, ExecContext(controller=0, card_id=first_cid))
+    g._run_step(step, ExecContext(controller=0, card_id=second_cid))
+    assert len(pa.delayed) == 1
+    delayed = pa.delayed[0]
+    assert delayed["origin"] is None
+    assert (delayed["source_name"], delayed["text"]) == ("后续游离来源", "后续原文。")
+
+
 # ==========================================================================
 # 真实数据：本回合通道（武士之笛/鼓舞）/ 峰值差值（断臂）/ 豪焰牌手光环
 # 队伍派系均 ≤2；0 号位开局自动 1 级（茨木对局开始批次基础能力已 perm+1）。
