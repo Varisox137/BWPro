@@ -1116,3 +1116,24 @@ def test_state_hand_info_shape(db):
                 assert {"id", "label", "cost", "energy", "ok",
                         "reason", "effect"} <= set(entry["usage"][0])
     run(go())
+
+
+def test_server_base_dependencies_exclude_gui_and_standard_extras():
+    """服务端部署仅安装网络/数据依赖，不拉取桌面 GUI 或非必需扩展。"""
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).parents[1]
+    with (root / "pyproject.toml").open("rb") as stream:
+        project = tomllib.load(stream)
+    dependencies = project["project"]["dependencies"]
+    assert dependencies == [
+        "pydantic>=2.13", "pyyaml>=6.0", "fastapi>=0.115",
+        "uvicorn>=0.30", "websockets>=12.0",
+    ]
+    extras = project["project"]["optional-dependencies"]
+    assert extras["gui"] == ["pyside6>=6.12.0", "pillow>=13.0.0"]
+    assert extras["cli"] == ["prompt-toolkit>=3.0.53"]
+    dev = project["dependency-groups"]["dev"]
+    assert "pyside6>=6.12.0" in dev and "pillow>=13.0.0" in dev
+    assert "prompt-toolkit>=3.0.53" in dev

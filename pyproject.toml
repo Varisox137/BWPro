@@ -6,10 +6,17 @@ dependencies = [
     "pydantic>=2.13",
     "pyyaml>=6.0",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "prompt-toolkit>=3.0.53",
+    "uvicorn>=0.30",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+gui = [
     "pyside6>=6.12.0",
     "pillow>=13.0.0",
+]
+cli = [
+    "prompt-toolkit>=3.0.53",
 ]
 
 [dependency-groups]
@@ -17,6 +24,9 @@ dev = [
     "httpx2>=2.12.0",
     "pytest>=8.0",
     "pytest-xdist>=3.8.0",
+    "pyside6>=6.12.0",
+    "pillow>=13.0.0",
+    "prompt-toolkit>=3.0.53",
 ]
 
 [tool.pytest.ini_options]
