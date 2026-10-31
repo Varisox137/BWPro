@@ -164,11 +164,11 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     assert scene.cards[("player", 1)].pos() == QPointF(1, 4)
     assert scene.cards[("player", 0)].pos() == QPointF(1, 766)
     assert [scene.cards[("shiki", 1, index)].y() for index in range(4)] == [
-        120, 60, 60, 120]
+        120, 78, 78, 120]
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
-        570, 630, 630, 570]
+        570, 612, 612, 570]
     assert [scene.cards[("shiki", 0, index)].x() for index in range(4)] == [
-        276, 501, 951, 1176]
+        196, 421, 871, 1096]
     view.apply_theme("light", THEMES["light"])
     assert "QLabel#enemyHandBack, QLabel#deckCount" in view.styleSheet()
 
@@ -229,19 +229,60 @@ def test_own_hand_display_sort_preserves_acquisition_sequence(qapp, db, view):
     assert {card.uid: card.hand_seq for card in own.hand} == original_sequences
 
 
-def test_scene_twelve_hand_cards_overlap_and_shiki_placeholder(qapp, view):
+def test_hand_layout_spacing_and_half_height(qapp, view):
+    from client.gui.battle_scene import HAND_SIZE, layout_positions
+
     start(view, mulligan=False)
-    player = view.game.state.players[0]
-    player.hand[:] = [card.model_copy(update={"uid": 1000 + i, "hand_seq": i + 1})
-                      for i, card in enumerate((player.hand * 3)[:12])]
-    view.refresh()
-    settle(view)
-    items = sorted((view.battle_scene.cards[("hand", card.uid)] for card in player.hand),
-                   key=lambda item: item.x())
-    assert len(items) == 12
-    assert items[1].x() < items[0].x() + items[0].boundingRect().width()
-    assert items[1].x() - items[0].x() == 70
-    assert items[-1].x() + items[-1].boundingRect().width() <= 1600
+    enemy = view.game.state.players[1]
+    for count, spacing in ((8, 70), (9, 490 / 8), (12, 490 / 11)):
+        enemy.hand[:] = [card.model_copy(update={"uid": 1000 + i, "hand_seq": i + 1})
+                         for i, card in enumerate((enemy.hand * 3)[:count])]
+        positions = layout_positions(view.game, view.viewer)
+        points = [positions[("hand", card.uid)] for card in enemy.hand]
+        assert [points[i + 1].x() - points[i].x() for i in range(count - 1)] == pytest.approx(
+            [spacing] * (count - 1))
+        assert points[-1].x() + HAND_SIZE.width() == 1599
+        assert points[-1].x() - points[0].x() + HAND_SIZE.width() == 600
+        assert all(point.y() == -78 for point in points)
+
+    own_points = [layout_positions(view.game, view.viewer)[("hand", card.uid)]
+                  for card in view.game.state.players[0].hand]
+    assert all(point.y() == 822 for point in own_points)
+    view.game.state.phase = "mulligan"
+    mulligan_points = [layout_positions(view.game, view.viewer)[("hand", card.uid)]
+                       for card in view.game.state.players[0].hand]
+    assert all(point.y() == 280 for point in mulligan_points)
+
+
+def test_hand_layout_shifts_shikigami_slots_left(qapp, view):
+    from client.gui.battle_scene import layout_positions
+
+    start(view, mulligan=False)
+    positions = layout_positions(view.game, view.viewer)
+    assert [positions[("shiki", 0, index)].x() for index in range(4)] == [
+        196, 421, 871, 1096]
+    view.game.state.players[0].combat_index = 0
+    assert layout_positions(view.game, view.viewer)[("shiki", 0, 0)].x() == 646
+
+
+def test_hand_spacing_twelve_cards_avoid_shikigami_and_keep_placeholder(qapp, view):
+    start(view, mulligan=False)
+    for pi in (1, 0):
+        player = view.game.state.players[pi]
+        player.hand[:] = [card.model_copy(update={"uid": 1000 + pi * 100 + i,
+                                                  "hand_seq": i + 1})
+                          for i, card in enumerate((player.hand * 3)[:12])]
+        view.refresh()
+        settle(view)
+        items = sorted((view.battle_scene.cards[("hand", card.uid)] for card in player.hand),
+                       key=lambda item: item.x())
+        assert len(items) == 12
+        assert items[1].x() < items[0].x() + items[0].boundingRect().width()
+        assert items[1].x() - items[0].x() == pytest.approx(490 / 11)
+        assert items[-1].x() + items[-1].boundingRect().width() <= 1600
+        shiki_items = [view.battle_scene.cards[("shiki", pi, index)] for index in range(4)]
+        assert all(not hand.sceneBoundingRect().intersects(shiki.sceneBoundingRect())
+                   for hand in items for shiki in shiki_items)
     shiki = view.battle_scene.cards[("shiki", 0, 0)]
     assert "力量" in shiki.shiki_text and "生命" in shiki.shiki_text
     assert "等级" in shiki.shiki_text
@@ -757,7 +798,7 @@ def test_battle_view_keeps_aspect_ratio_with_letterboxing(qapp, view):
     assert mapped.bottom() <= viewport.bottom() + 1
 
 
-def test_scene_cards_and_controls_fit_1600x900(qapp, db, tmp_path, monkeypatch):
+def test_scene_hand_and_controls_fit_horizontally_1600x900(qapp, db, tmp_path, monkeypatch):
     from client.gui import cardart
     from tests.test_gui_builder import _cardart_config
 
@@ -781,7 +822,9 @@ def test_scene_cards_and_controls_fit_1600x900(qapp, db, tmp_path, monkeypatch):
         scene = view.battle_scene
         assert view.battle_view.scene() is scene
         for item in scene_items(view, "hand"):
-            assert scene.sceneRect().contains(item.sceneBoundingRect())
+            rect = item.sceneBoundingRect()
+            assert scene.sceneRect().left() <= rect.left()
+            assert rect.right() <= scene.sceneRect().right()
         for proxy in (scene.menu_item, scene.log_item, scene.end_turn_item):
             assert scene.sceneRect().contains(proxy.sceneBoundingRect())
         assert scene.cards[("hand", card.uid)].pixmap is not None
@@ -880,8 +923,8 @@ def test_scene_both_combatants_do_not_overlap_preparation(qapp, view):
                for combatant in (enemy, own) for item in preparation)
     assert scene.sceneRect().contains(enemy.sceneBoundingRect())
     assert scene.sceneRect().contains(own.sceneBoundingRect())
-    assert enemy.pos() == QPointF(726, 220)
-    assert own.pos() == QPointF(726, 460)
+    assert enemy.pos() == QPointF(646, 220)
+    assert own.pos() == QPointF(646, 460)
 
 
 def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
@@ -1514,8 +1557,8 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     assert view.hand_caption.text() == f"己方手牌\n{len(view.game.current.hand)}/12 张"
 
 
-def test_preparation_spread_centers_combat_and_symmetric_hand_captions(qapp, view):
-    from client.gui.battle_scene import SCENE_HEIGHT, SCENE_WIDTH, SHIKI_SIZE, layout_positions
+def test_preparation_spread_aligns_combat_and_symmetric_hand_captions(qapp, view):
+    from client.gui.battle_scene import SCENE_HEIGHT, SHIKI_SIZE, layout_positions
 
     start(view, mulligan=False)
     positions = layout_positions(view.game, view.viewer)
@@ -1523,11 +1566,10 @@ def test_preparation_spread_centers_combat_and_symmetric_hand_captions(qapp, vie
     assert own_x[0] < 400
     assert own_x[2] - own_x[1] > own_x[1] - own_x[0]
     ready_center = (own_x[0] + own_x[-1] + SHIKI_SIZE.width()) / 2
-    combat_center = positions[("shiki", 0, 0)].x() + SHIKI_SIZE.width() / 2
     view.game.state.players[0].combat_index = 0
     combat_positions = layout_positions(view.game, view.viewer)
     combat_center = combat_positions[("shiki", 0, 0)].x() + SHIKI_SIZE.width() / 2
-    assert ready_center == combat_center == SCENE_WIDTH / 2
+    assert ready_center == combat_center == 720
     enemy = positions[("enemy_hand_label",)]
     own = positions[("hand_caption",)]
     assert own.x() == enemy.x()
@@ -2489,6 +2531,17 @@ def test_card_use_animation_for_both_players_is_nonblocking_and_cleans_up(qapp, 
     assert not scene._card_use_animations
     assert not scene._card_use_items
     assert view.played_timeline == played_before
+
+
+def test_card_use_animation_without_cache_uses_hand_layout_anchor(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene._hand_animation_cache.clear()
+    cards = [view.game.state.players[pi].hand[0] for pi in (0, 1)]
+    for pi, card in enumerate(cards):
+        scene.animate_card_use(card.uid, card.id, pi)
+    assert [item.pos() for item in scene._card_use_items.values()] == [
+        QPointF(1489, 822), QPointF(1489, -78)]
 
 
 def test_enemy_card_use_animation_paints_card_back_before_flip(qapp, view):

@@ -31,6 +31,8 @@ HAND_Z = 40
 SHIKI_Z = 10
 FOCUS_Z = 80
 DRAG_Z = 100
+ENEMY_HAND_Y = -78
+OWN_HAND_Y = 822
 
 
 def card_owner_seat(game, player, cdef) -> int | None:
@@ -89,13 +91,13 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     if game is None:
         return positions
 
-    arc = (120, 60, 60, 120)
-    ready_x = (276, 501, 951, 1176)
+    arc = (120, 78, 78, 120)
+    ready_x = (196, 421, 871, 1096)
     for pi, player in enumerate(game.state.players):
         top = pi != viewer
         for index, _shiki in enumerate(player.shikigami):
             if player.combat_index == index:
-                position = QPointF(726, 220 if top else 460)
+                position = QPointF(646, 220 if top else 460)
             else:
                 position = QPointF(ready_x[index], arc[index] if top else (690 - arc[index]))
             positions[("shiki", pi, index)] = position
@@ -104,7 +106,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         if centered:
             width = (len(cards) * MULLIGAN_HAND_SIZE.width()
                      + max(0, len(cards) - 1) * 16)
-        spacing = 70
+        spacing = 70 if len(cards) <= 8 else 490 / (len(cards) - 1)
         right = SCENE_WIDTH - 1
         for order, card in enumerate(cards):
             if centered:
@@ -112,7 +114,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
                 y = 280
             else:
                 x = right - HAND_SIZE.width() - spacing * (len(cards) - 1 - order)
-                y = 0 if top else 744
+                y = ENEMY_HAND_Y if top else OWN_HAND_Y
             positions[("hand", card.uid)] = QPointF(x, y)
     return positions
 
@@ -722,7 +724,7 @@ class BattleScene(QGraphicsScene):
         if cached is None:
             source_pos = QPointF(
                 SCENE_WIDTH - HAND_SIZE.width() - 1,
-                0 if player != self.viewer else SCENE_HEIGHT - HAND_SIZE.height())
+                ENEMY_HAND_Y if player != self.viewer else OWN_HAND_Y)
             source_pixmap = None
             source_size = QSizeF(HAND_SIZE)
             source_revealed = player == self.viewer
