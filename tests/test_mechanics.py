@@ -3599,7 +3599,7 @@ def test_search_deck_field_intensity_boost(db, make_game):
     assert pa.fields[0].intensity == 10             # 牌面 5 + 修饰 5
 
 
-def test_yuhui_real_yaml_discard_pick_card_type_choice(real_game):
+def test_real_yaml_discard_pick_card_type_choice(real_game):
     """真实余辉：选择幻境牌弃置后续跑抽三张，并清空 pending_choice。"""
     g = real_game([100304, 100101, 100102, 100103], check_deck=False)
     pa, _ = F.battle_setup(g, {0: 2})
@@ -3621,7 +3621,7 @@ def test_yuhui_real_yaml_discard_pick_card_type_choice(real_game):
 
 
 @pytest.mark.parametrize("intensity, draws", [(5, 1), (10, 2)])
-def test_huiyeji_real_yaml_turn_start_draw_count(real_game, intensity, draws):
+def test_real_yaml_turn_start_draw_count(real_game, intensity, draws):
     """真实蓬莱玉枝：普通与耐久翻倍分支均使用正确的抽牌数量参数。"""
     g = real_game([100303, 100101, 100102, 100103], check_deck=False)
     pa, _ = F.battle_setup(g, {0: 3})

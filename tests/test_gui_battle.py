@@ -2387,7 +2387,7 @@ def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view
     assert destroyed == [True]
 
 
-def test_yuhui_real_yaml_discard_pick_click_draws_three_and_closes(qapp, gdb, view):
+def test_real_yaml_discard_pick_click_draws_three_and_closes(qapp, gdb, view):
     """真实余辉完成弃牌与抽三后，pending 与旧选择窗均关闭。"""
     view.db = view.battle_scene.db = gdb
     team = [100304, 100101, 100102, 100103]
