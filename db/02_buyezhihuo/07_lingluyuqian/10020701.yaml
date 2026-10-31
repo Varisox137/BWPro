@@ -15,4 +15,4 @@ versions:
       conditional_keywords:
         # [增强]：若敌方有破甲>=2 的角色，此牌获得[瞬发]
         - {keyword: fast, enemy_fragile_ge2: true}
-      text: "[增强]：{若敌方有破甲>=2的角色，此牌获得[瞬发]。}"
+      text: "[增强]：{若敌方有破甲≥2的角色，此牌获得[瞬发]。}"

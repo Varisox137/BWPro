@@ -30,4 +30,4 @@ versions:
             - {op: draw, count: 1}
             - {op: heal, amount: {event: pre_pierce_amount, half: true},
                target: {kind: all, pool: self_player}}
-      text: "若本次攻击造成的战斗伤害>=6，你抽一张牌并获得等同于一半伤害的生命。"
+      text: "若本次攻击造成的战斗伤害≥6，你抽一张牌并获得等同于一半伤害的生命。"
