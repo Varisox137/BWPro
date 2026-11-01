@@ -1152,6 +1152,8 @@ def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path, remote):
     for required in ("git pull --ff-only", "--locked", "--managed-python",
                      "--python 3.14", "--no-dev", "--no-sync"):
         assert required in text
+    assert 'UV_LINK_MODE="${UV_LINK_MODE:-copy}"' in text
+    assert "export UV_LINK_MODE" in text
 
     subprocess.run(["git", "init", "-b", "master", str(tmp_path)], check=True,
                    capture_output=True)

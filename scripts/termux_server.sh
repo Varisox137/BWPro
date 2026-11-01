@@ -57,5 +57,6 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 printf '更新 %s/%s，日志：%s\n' "$REMOTE" "$BRANCH" "$LOG_FILE"
 git pull --ff-only "$REMOTE" "$BRANCH"
+export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 uv sync --locked --managed-python --python 3.14 --no-dev
 exec uv run --no-sync python -m server.main --host "$HOST" --port "$PORT" "$@"
