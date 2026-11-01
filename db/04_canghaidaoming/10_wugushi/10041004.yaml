@@ -18,4 +18,4 @@ versions:
           - {op: inv_count_mod, name: 蛊蚀, add: 1,
              target: {kind: all, pool: enemy_shikigami, has_invocation: 蛊蚀,
                       exclude_chosen: true}}
-      text: "使一个敌方式神结附两个『蛊蚀』，然后使其他结附『蛊蚀』敌方式神上的『蛊蚀』数量+1。"
+      text: "使一个敌方式神结附两个‘蛊蚀’，然后使其他结附‘蛊蚀’敌方式神上的‘蛊蚀’数量+1。"

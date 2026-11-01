@@ -23,4 +23,4 @@ versions:
           - {op: delay_grant, bind: chosen, scope: turn, uses: 99, when: on_player_damaged,
              condition: {source_shikigami: self, kind: combat},
              steps: [{op: heal, amount: {event: amount}, target: {kind: all, pool: self_player}}]}
-      text: "[瞬发]。对一个式神造成1点伤害，它本回合获得『造成战斗伤害时为其牌手恢复等量生命』。"
+      text: "[瞬发]。对一个式神造成1点伤害，它本回合获得‘造成战斗伤害时为其牌手恢复等量生命’。"

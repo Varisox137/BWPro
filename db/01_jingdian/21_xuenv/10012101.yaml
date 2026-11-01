@@ -27,4 +27,4 @@ versions:
           - {op: delay_grant, bind: chosen, scope: turn, uses: 99, when: on_damage,
              condition: {source_shikigami: self, kind: combat, victim_kind: shikigami},
              steps: [{op: stun, target: {kind: context, key: victim}}]}
-      text: "使一个己方式神获得2护甲且本回合获得『[眩晕]受到其战斗伤害的式神』。[响应]：{当你战斗区式神被攻击时，自动对其使用。}"
+      text: "使一个己方式神获得2护甲且本回合获得‘[眩晕]受到其战斗伤害的式神’。[响应]：{当你战斗区式神被攻击时，自动对其使用。}"

@@ -22,4 +22,4 @@ versions:
           condition: {player: opponent, invocation: 梦魇}
           steps:
             - {op: destroy, target: {kind: context, key: card_shikigami}}
-      text: "己方回合结束时，随机使敌方牌库里一张牌结附『梦魇』。当敌方抽到结附『梦魇』的牌时，消灭此牌对应的式神。"
+      text: "己方回合结束时，随机使敌方牌库里一张牌结附‘梦魇’。当敌方抽到结附‘梦魇’的牌时，消灭此牌对应的式神。"

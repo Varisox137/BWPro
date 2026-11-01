@@ -16,4 +16,4 @@ versions:
           condition: {target_shikigami: self}
           steps:
             - {op: inv_mod, name: 八尺琼曲玉, shikigami: 100408, add: 1}
-      text: "『八尺琼曲玉』结附于大岳丸时效果+1。"
+      text: "‘八尺琼曲玉’结附于大岳丸时效果+1。"

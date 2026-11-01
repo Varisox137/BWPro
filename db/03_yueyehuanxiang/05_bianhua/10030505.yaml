@@ -17,4 +17,4 @@ versions:
           condition: {field_self: true, amount_le: -1}
           steps:
             - {op: basic_boost, power: 2, shield: 2}
-      text: "当此牌的耐久降低时，[鼓舞]：{+2战力和+2护甲。}"
+      text: "当此牌的耐久降低时，[鼓舞]：{+2力量和+2护甲。}"

@@ -21,4 +21,4 @@ versions:
           condition: {player: self, target_shikigami: self}
           steps:
             - {op: countdown_delta, amount: -3, target: {kind: self}}
-      text: "[倒计时3]：{为所有己方角色恢复3点生命}。当你使用妖琴师的觉醒法术牌时，使妖琴师的[倒计时]-3。"
+      text: "[倒计时3]：{为所有己方角色恢复3点生命}。"

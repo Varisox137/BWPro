@@ -19,4 +19,4 @@ versions:
             steps:
               - {op: random_damage, amount: 3, pool: enemy_character,
                  exclude_victim: true}
-      text: "召唤『番茄』并使其永久得『攻击造成伤害时随机对另一个敌方角色造成3点伤害』。（效果可以叠加）"
+      text: "召唤‘番茄’并使其永久得‘攻击造成伤害时随机对另一个敌方角色造成3点伤害’。（效果可以叠加）"

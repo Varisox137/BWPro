@@ -27,4 +27,4 @@ versions:
           - {op: bump_ext, key: no_damage_vs_inv, value: 鸮之守护,
              host: controller, append: true, with_ref: true,
              target: {kind: context, key: attacker}}
-      text: "对一个式神造成1点伤害并使其本回合不能对结附『鸮之守护』的式神造成伤害。[响应]：{当敌方式神攻击你结附『鸮之守护』的式神时，自动对其使用。}"
+      text: "对一个式神造成1点伤害并使其本回合不能对结附‘鸮之守护’的式神造成伤害。[响应]：{当敌方式神攻击你结附‘鸮之守护’的式神时，自动对其使用。}"

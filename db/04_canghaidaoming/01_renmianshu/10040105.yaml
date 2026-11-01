@@ -19,4 +19,4 @@ versions:
             condition: {active: self}
             steps:
               - {op: damage, amount: {health_of: self}, target: {kind: self}}
-      text: "使一个式神获得『在他下个回合结束时，对自己造成等同于其生命的伤害』。"
+      text: "使一个式神获得‘在他下个回合结束时，对自己造成等同于其生命的伤害’。"

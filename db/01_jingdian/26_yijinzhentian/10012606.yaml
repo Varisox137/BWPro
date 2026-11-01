@@ -19,4 +19,4 @@ versions:
           condition: {player: self, golden_feather: true}
           steps:
             - {op: grant_immunity, target: {kind: self}, unique: true}
-      text: 本回合若使用过『黄金羽』，以津真天免疫战斗伤害。
+      text: "本回合若使用过‘黄金羽’，以津真天免疫战斗伤害。"

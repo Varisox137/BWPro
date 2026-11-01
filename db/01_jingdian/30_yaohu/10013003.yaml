@@ -17,7 +17,7 @@ versions:
           condition: {player: self}
           steps:
             - {op: generate, card_id: 10013001}
-      text: "己方回合开始时，将一张『风刃』置入手牌。"
+      text: "己方回合开始时，将一张‘风刃’置入手牌。"
     - date: 20200227
       card_type: form
       rarity: SR
@@ -31,4 +31,4 @@ versions:
           condition: {player: self}
           steps:
             - {op: generate, card_id: 10013001}
-      text: "己方回合开始时，将一张『风刃』置入手牌。"
+      text: "己方回合开始时，将一张‘风刃’置入手牌。"

@@ -15,4 +15,4 @@ versions:
           # 20191212 公测版：手牌中一张黄金羽原位变成金风流羽（无匹配空操作）
           - {op: transform_card, card_id: 10012651, into: 10012605, count: 1,
              condition: {player_ext: feather_used_turn}}
-      text: "本回合若使用过『黄金羽』，将你手牌中一张『黄金羽』变成『金风流羽』。"
+      text: "本回合若使用过‘黄金羽’，将你手牌中一张‘黄金羽’变成‘金风流羽’。"

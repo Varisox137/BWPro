@@ -25,4 +25,4 @@ versions:
           condition: {source_shikigami: self, kind: combat, player: opponent}
           steps:
             - {op: attach_deck_invocation, name: 梦魇, count: 3}
-      text: "[觉醒]：{[贯通]。当食梦貘对敌方牌手造成战斗伤害时，随机使敌方牌库里三张牌结附『梦魇』。}"
+      text: "[觉醒]：{[贯通]。当食梦貘对敌方牌手造成战斗伤害时，随机使敌方牌库里三张牌结附‘梦魇’。}"

@@ -12,4 +12,4 @@ versions:
       effects:
         steps:
           - {op: destroy}
-      text: "消灭一个结附『蛊蚀』的式神。"
+      text: "消灭一个结附‘蛊蚀’的式神。"

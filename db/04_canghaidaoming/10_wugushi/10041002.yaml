@@ -18,4 +18,4 @@ versions:
           condition: {victim_side: enemy, victim_invocation: 蛊蚀}
           steps:
             - {op: draw, count: 1}
-      text: "当一个结附『蛊蚀』的敌方式神气绝时，你抽一张牌。"
+      text: "当一个结附‘蛊蚀’的敌方式神气绝时，你抽一张牌。"

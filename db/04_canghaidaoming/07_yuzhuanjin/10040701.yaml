@@ -27,4 +27,4 @@ versions:
         # test_defeat_on_damage_mark 同型）
         steps:
           - {op: bump_ext, key: defeat_on_damage, value: 1}
-      text: "使一个有形态的敌方式神获得『本回合受到伤害时使其气绝』。"
+      text: "使一个有形态的敌方式神获得‘本回合受到伤害时使其气绝’。"

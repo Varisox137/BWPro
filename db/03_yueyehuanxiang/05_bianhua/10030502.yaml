@@ -18,4 +18,4 @@ versions:
           steps:
             - {op: card_aura, level: 1, keywords: [fast], self_damage_on_play: 1,
                scope: field}
-      text: "你手牌中的等级为1的牌获得[瞬发]与『使用时你受到1点伤害』。"
+      text: "你手牌中的等级为1的牌获得[瞬发]与‘使用时你受到1点伤害’。"

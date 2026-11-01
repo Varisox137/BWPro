@@ -23,4 +23,4 @@ versions:
           - {op: attack_buff, power: 2, target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
           - {op: counter_on_kill}
-      text: "[响应]：{当鬼切触发『友切』时，自动使用且本次攻击若击杀式神，反制他使用的法术牌。}"
+      text: "[响应]：{当鬼切触发‘友切’时，自动使用且本次攻击若击杀式神，反制他使用的法术牌。}"

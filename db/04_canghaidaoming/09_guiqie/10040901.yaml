@@ -21,4 +21,4 @@ versions:
         steps:
           - {op: attack_buff, power: 2, keywords: [lethal], target: {kind: self}}
           - {op: gain_shield, amount: 1, target: {kind: self}}
-      text: "[响应]：{当鬼切触发『髭切』时，自动使用并使鬼切本次战斗获得[必杀]。}"
+      text: "[响应]：{当鬼切触发‘髭切’时，自动使用并使鬼切本次战斗获得[必杀]。}"

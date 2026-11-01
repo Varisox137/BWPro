@@ -14,4 +14,4 @@ versions:
           condition: {source_shikigami: self, kind: combat, victim_kind: shikigami}
           steps:
             - {op: attach_invocation, name: 蛊蚀, target: {kind: context, key: victim}}
-      text: "当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个『蛊蚀』。"
+      text: "当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个‘蛊蚀’。"

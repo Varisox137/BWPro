@@ -22,4 +22,4 @@ versions:
           steps:
             - {op: attach_invocation, name: 鸮之守护,
                target: {kind: context, key: attacker}}
-      text: "[觉醒]：{当你的式神攻击时，结附『鸮之守护』。}"
+      text: "[觉醒]：{当你的式神攻击时，结附‘鸮之守护’。}"

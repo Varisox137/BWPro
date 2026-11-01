@@ -64,4 +64,4 @@ versions:
                   condition: {source_shikigami: 100103}
                   steps:
                     - {op: damage, amount: 3, target: {kind: all, pool: enemy_player}}
-      text: "若本次战斗击杀敌方式神，则本局游戏茨木童子随机获得一个不重复的『豪焰』效果。[羁绊]：{酒吞童子对自己造成1点伤害，使茨木童子获得2护甲。}"
+      text: "若本次战斗击杀敌方式神，则本局游戏茨木童子随机获得一个不重复的‘豪焰’效果。[羁绊]：{酒吞童子对自己造成1点伤害，使茨木童子获得2护甲。}"

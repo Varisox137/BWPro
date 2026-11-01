@@ -15,4 +15,4 @@ versions:
         steps:
           - {op: destroy}
           - {op: to_coffin, into: 10040299, keep_combat: true}
-      text: "消灭一个式神。若该式神不是召唤物，将其替换为『棺材』。"
+      text: "消灭一个式神。若该式神不是召唤物，将其替换为‘棺材’。"

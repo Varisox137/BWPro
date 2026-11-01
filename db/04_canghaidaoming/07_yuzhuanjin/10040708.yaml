@@ -27,7 +27,7 @@ versions:
         # tests/test_pack04_mech.py test_crit_pierce_mark_damage_start 同型）
         steps:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}
-      text: "使一个敌方式神本回合获得『对其造成伤害的式神或卡牌获得[暴击]和[贯通]』。"
+      text: "使一个敌方式神本回合获得‘对其造成伤害的式神或卡牌获得[暴击]和[贯通]’。"
     - date: 20201015  # 平衡性调整：爆能转化战斗牌加成 +3/+1→+1/+1（raw 该条无
       # 引号文本行，仅调整说明；重构后转化身材数据在本卡自带 methods 中，本快照
       # 只改方式 power——100407/10040706 能力侧同日期快照已随重构删除；text 沿用）
@@ -47,4 +47,4 @@ versions:
       effects:
         steps:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}
-      text: "使一个敌方式神本回合获得『对其造成伤害的式神或卡牌获得[暴击]和[贯通]』。"
+      text: "使一个敌方式神本回合获得‘对其造成伤害的式神或卡牌获得[暴击]和[贯通]’。"

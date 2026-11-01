@@ -16,4 +16,4 @@ versions:
         steps:
           - {op: auto_use, card_id: 10012151, from_hand: true, inherit_target: true,
              target: {kind: self}}
-      text: "[瞬发]。选择一个角色并自动对其使用手牌中所有『雪球』。"
+      text: "[瞬发]。选择一个角色并自动对其使用手牌中所有‘雪球’。"

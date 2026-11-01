@@ -18,4 +18,4 @@ versions:
           condition: {player: opponent, source_shikigami: self, kind: combat}
           steps:
             - {op: generate, card_id: 10011201, zone: hand}
-      text: 当青行灯对敌方牌手造成战斗伤害时，获得一张『明灯』。
+      text: "当青行灯对敌方牌手造成战斗伤害时，获得一张‘明灯’。"

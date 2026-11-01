@@ -31,4 +31,4 @@ versions:
               - {op: launch_attack, keywords: [direct]}
               - {op: attack_buff, power: 2, target: {kind: self}}
               - {op: launch_attack, keywords: [direct]}
-      text: "[直击]。[响应]：{当鬼切触发『狮子之子』时，自动使用并复制两次。}"
+      text: "[直击]。[响应]：{当鬼切触发‘狮子之子’时，自动使用并复制两次。}"

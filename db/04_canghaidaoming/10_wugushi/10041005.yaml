@@ -19,4 +19,4 @@ versions:
           steps:
             - {op: heal, amount: {victim_invocation_count: 蛊蚀, per: 2},
                target: {kind: all, pool: self_player}}
-      text: "当一个结附『蛊蚀』的敌方式神气绝时，其上每有一个『蛊蚀』，为你恢复2点生命。"
+      text: "当一个结附‘蛊蚀’的敌方式神气绝时，其上每有一个‘蛊蚀’，为你恢复2点生命。"

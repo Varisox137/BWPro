@@ -18,4 +18,4 @@ versions:
           luck: 4
           steps:
             - {op: generate, card_id: 10010505, zone: hand}
-      text: 当凤凰火使用法术牌时，[运势4]：{将一张『凤火』置入手牌。}
+      text: "当凤凰火使用法术牌时，[运势4]：{将一张‘凤火’置入手牌。}"

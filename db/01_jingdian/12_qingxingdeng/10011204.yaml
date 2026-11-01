@@ -21,4 +21,4 @@ versions:
           # 等级 +1 不走升级次数；已为 3 级改为抽一张牌（overflow_draw）
           - {op: level_up, amount: 1, overflow_draw: true,
              condition: {memo_ge: {key: discarded_count, ge: 1}}}
-      text: 弃掉一张『明灯』，使一个己方最低等级的式神等级+1。若其等级已为3则改为抽一张牌。
+      text: "弃掉一张‘明灯’，使一个己方最低等级的式神等级+1。若其等级已为3则改为抽一张牌。"

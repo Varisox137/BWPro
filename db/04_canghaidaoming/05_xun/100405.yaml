@@ -16,4 +16,4 @@ versions:
           steps:
             - {op: attach_invocation, name: 鸮之守护,
                target: {kind: context, key: last_attacker}}
-      text: "己方回合结束时，使你本回合最后一个攻击的式神结附『鸮之守护』。"
+      text: "己方回合结束时，使你本回合最后一个攻击的式神结附‘鸮之守护’。"
