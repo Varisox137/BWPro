@@ -905,13 +905,13 @@ def test_description_highlights_complete_named_quotes():
          F.card(10010152, name="三目·线索", token=True)])
     database.shikigami[10040299] = SimpleNamespace(name="棺材", kind="replace")
     database.invocations["测试灵咒"] = InvocationDef(name="测试灵咒", text="")
-    text = ("将『黄金羽』与「测试灵咒」置入手牌，获得『线索』。"
+    text = ("将『黄金羽』与「测试灵咒」置入手牌，获得‘线索’。"
             "『本回合气绝时，替换为「棺材」』。"
             "保留『整段能力文本』与[[眩晕]]。")
     assert cardart._description(text, database) == (
-        "将『[[黄金羽]]』与「[[测试灵咒]]」置入手牌，获得『[[线索]]』。"
+        "将「[[黄金羽]]」与「[[测试灵咒]]」置入手牌，获得「[[线索]]」。"
         "『本回合气绝时，替换为「[[棺材]]」』。"
-        "保留『整段能力文本』与[[眩晕]]。")
+        "保留「整段能力文本」与[[眩晕]]。")
 
 
 def test_cardart_native_height_supports_stat_layout(qapp, gdb):
@@ -1059,8 +1059,7 @@ def test_cardart_engine_payload_mapping(qapp):
     assert data["level"] == 3 and data["rarity"] == "SSR"
     assert data["shikigami"] == "引擎主式神" and data["faction"] == "红莲"
     assert data["power+"] == 1 and data["shield+"] == 3
-    assert data["description"] == ("[[瞬发]]获得1点#ll、2#hj、3#pj、4#nl、5#nj、"
-                                   "6#zl、7#fl、8#sj与9#sm。")
+    assert data["description"] == "旧文本"
     assert data["faction_style"] == 3
     for style in (True, 1.0, 0, 4, "2", None):
         assert "faction_style" not in cardart._card_data(
@@ -1264,6 +1263,7 @@ def test_cardart_frame_variant_enters_payload_and_layout(qapp, tmp_path, monkeyp
     monkeypatch.setattr(cardart, "_cached_card_pixmap", capture)
     cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert seen["payload"]["frame_variant"] == "blue"
+    assert seen["payload"]["description"] == "配置旧文本"
     assert seen["layout"]["frame_variant"] == "blue"
     assert variants == ["blue"]
 
@@ -1447,7 +1447,7 @@ def test_cardart_config_snapshot_reuse_and_invalidation(qapp, tmp_path, monkeypa
     cardart.clear_cardart_caches()
 
 
-def test_cardart_engine_text_changes_cache_key(qapp, tmp_path):
+def test_cardart_library_description_overrides_engine_text_in_cache(qapp, tmp_path):
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
@@ -1455,7 +1455,7 @@ def test_cardart_engine_text_changes_cache_key(qapp, tmp_path):
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     changed = cdef.model_copy(update={"text": "引擎文本已变化"})
     assert cardart.card_pixmap(changed, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert len(list(cache_dir.glob("*.png"))) == 1
     cardart.clear_cardart_caches()
 
 
@@ -1634,8 +1634,10 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
 
 
 def test_cardart_cache_key_ignores_renderer_version(tmp_path, monkeypatch):
-    import bwpdiy
     from client.gui import cardart
+
+    cardart._renderer(str(cardart.portrait.bwpdiy_root().resolve()))
+    import bwpdiy
 
     art_path = tmp_path / "art.png"
     art_path.write_bytes(b"art")

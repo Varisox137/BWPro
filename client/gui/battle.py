@@ -80,6 +80,7 @@ class ChoiceDialog(QDialog):
                    for option in pending.get("options", [])]
         self.option_view = CardChoiceView(options, db=view.db)
         self.option_view.chosen.connect(self._answer)
+        self.option_view.detail_clicked.connect(view.show_card_detail)
         layout.addWidget(self.option_view, 1)
         if kind == "mulligan_pick":
             done = QPushButton("结束调度")
@@ -271,8 +272,17 @@ class HotseatView(QWidget):
         log_buttons.rejected.connect(self.log_dialog.reject)
         log_layout.addWidget(log_buttons, alignment=Qt.AlignRight)
         self.battle_scene.action_requested.connect(self._scene_action)
-        self.battle_scene.detail_requested.connect(self._scene_detail)
+        self.battle_scene.target_requested.connect(self._scene_target)
+        self.battle_scene.read_detail_requested.connect(self._scene_read_detail)
         self.battle_scene.usage_selected.connect(self._select_usage)
+
+    def _scene_read_detail(self, kind: str, payload) -> None:
+        if kind == "shiki":
+            self.show_shiki_detail(payload)
+        elif kind == "player":
+            self.show_player_detail(payload.player)
+        elif kind == "hand":
+            self.show_card_detail(payload)
 
     def _scene_action(self, command: dict) -> bool:
         op = command.get("op")
@@ -287,16 +297,9 @@ class HotseatView(QWidget):
                                   from_drag=True)
         return False
 
-    def _scene_detail(self, kind: str, payload) -> None:
-        if kind == "shiki":
-            self._shiki_clicked(payload)
-        elif kind == "player":
-            if payload in self.legal_targets:
-                self.choose_target(payload)
-            else:
-                self.show_player_detail(payload.player)
-        elif kind == "hand":
-            self.show_card_detail(payload)
+    def _scene_target(self, _kind: str, payload) -> None:
+        if payload in self.legal_targets:
+            self.choose_target(payload)
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
@@ -471,7 +474,7 @@ class HotseatView(QWidget):
             self.choice_dialog = None
         self._choice_key = None
         self.close_log()
-        message = (f"调度次数已用完\n请确认本次调度结果，然后交给 "
+        message = (f"调度完毕\n请确认本次调度结果，然后交给 "
                    f"{self.game.state.players[self.viewer].name}" if preserve_hand else
                    f"请将设备交给 {self.game.state.players[self.viewer].name}")
         title = "调度完毕请确认" if preserve_hand else "准备移交"
@@ -559,7 +562,8 @@ class HotseatView(QWidget):
         inputs = self._inputs_open()
         self.battle_scene.legal_targets = list(self.legal_targets)
         info = {} if state.pending_choice else self.hand_info()
-        self.battle_scene.sync_state(game, self.viewer, info, inputs)
+        self.battle_scene.sync_state(game, self.viewer, info, inputs,
+                                     center_hand=self._review_mulligan)
         turn_key = (state.turn, state.active)
         if (self._last_turn_key is not None and turn_key != self._last_turn_key
                 and state.phase != "mulligan"):
@@ -604,8 +608,9 @@ class HotseatView(QWidget):
         self.target_specs = []
         self.legal_targets = []
         player = self.game.state.players[self.viewer]
-        self._review_mulligan = (command.get("op") == "mulligan"
-                                 and player.mulligan_done and player.mulligans_left == 0)
+        op = command.get("op")
+        self._review_mulligan = (op in ("mulligan", "ready") and player.mulligan_done
+                                 and (op == "ready" or player.mulligans_left == 0))
         self.refresh()
         self._review_mulligan = False
         return True
@@ -760,12 +765,6 @@ class HotseatView(QWidget):
         if self.pending_command is not None and self.pending_command.get("op") == "assault":
             command = self.pending_command
             self.apply_command(command)
-
-    def _shiki_clicked(self, ref: Ref) -> None:
-        if ref in self.legal_targets:
-            self.choose_target(ref)
-        else:
-            self.show_shiki_detail(ref)
 
     def show_shiki_detail(self, ref: Ref) -> None:
         ShikigamiDetailDialog(self.game, ref, self.viewer, self).exec()

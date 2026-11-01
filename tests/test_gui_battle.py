@@ -576,22 +576,28 @@ def test_one_shot_haste_border_returns_yellow_after_assault(qapp, view):
     assert view.battle_scene.cards[("shiki", 0, 0)].border_color == "yellow"
 
 
-def test_mulligan_handoff_has_review_then_transfer(qapp, view):
+@pytest.mark.parametrize("replace_all", [False, True], ids=["ready", "third-replacement"])
+def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all):
     start(view)
-    for _ in range(3):
-        view.mulligan(view.game.current.hand[0].uid)
-        settle(view)
-    assert view.handoff_dialog.windowTitle() == "调度完毕请确认"
-    assert view.handoff_dialog.isVisible()
-    old_hand_items = scene_items(view, "hand", player=0)
-    assert old_hand_items and all(item.scene() is not None for item in old_hand_items)
-    view.confirm_handoff()
-    assert view.handoff_dialog.windowTitle() == "准备移交"
-    assert all(item.scene() is None for item in old_hand_items)
-    assert not scene_items(view, "hand")
-    view.confirm_handoff()
-    assert view.viewer == 1
-    assert scene_items(view, "hand", player=1)
+    for pi in (0, 1):
+        if replace_all:
+            for _ in range(3):
+                view.mulligan(view.game.state.players[view.viewer].hand[0].uid)
+                settle(view)
+        else:
+            view.ready()
+        assert view.battle_scene.viewer == pi
+        assert view._handoff_stage == "review"
+        assert view.handoff_dialog.windowTitle() == "调度完毕请确认"
+        assert view.handoff_dialog.isVisible()
+        old_hand_items = scene_items(view, "hand", player=pi)
+        assert old_hand_items and all(item.y() == 280 for item in old_hand_items)
+        view.confirm_handoff()
+        assert view.handoff_dialog.windowTitle() == "准备移交"
+        assert all(item.scene() is None for item in old_hand_items)
+        assert not scene_items(view, "hand")
+        view.confirm_handoff()
+    assert view.game.state.phase != "mulligan"
 
 
 def test_playable_hand_has_no_blue_frame(qapp, view):
@@ -1108,7 +1114,7 @@ def test_drag_click_and_return_to_source_cancel(qapp, view, monkeypatch):
     origin = item.scenePos()
     scene.drag_controller.press(item, origin)
     scene.drag_controller.release(origin)
-    assert details == [Ref(player=0, shikigami=0)] and calls == []
+    assert details == [] and calls == []
     scene.drag_controller.press(item, origin)
     scene.drag_controller.move(origin + QPointF(180, 0))
     scene.drag_controller.release(origin)
@@ -1308,7 +1314,7 @@ def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
     assert (shiki, 2, form) in entity_calls
 
 
-def test_drag_visuals_cancel_and_hand_click_detail(qapp, view, monkeypatch):
+def test_drag_visuals_cancel_and_hand_left_click_has_no_detail(qapp, view, monkeypatch):
     start(view, mulligan=False)
     scene = view.battle_scene
     card = view.game.current.hand[0]
@@ -1317,7 +1323,7 @@ def test_drag_visuals_cancel_and_hand_click_detail(qapp, view, monkeypatch):
     hand = scene.cards[("hand", card.uid)]
     scene.drag_controller.press(hand, hand.scenePos())
     scene.drag_controller.release(hand.scenePos())
-    assert details == [card]
+    assert details == []
 
     shiki = scene.cards[("shiki", 0, 0)]
     scene.drag_controller.press(shiki, shiki.scenePos())
@@ -1381,7 +1387,7 @@ def test_last_mulligan_reviews_result_before_handoff(qapp, view):
     assert view._handoff_pending
     assert scene_items(view, "hand", player=0)
     labels = view.handoff_dialog.findChildren(QLabel)
-    assert any("调度次数已用完" in label.text() for label in labels)
+    assert any("调度完毕" in label.text() for label in labels)
     view.confirm_handoff()
     settle(view)
     assert view.viewer == 1
@@ -1847,15 +1853,19 @@ def test_revealed_enemy_hand_detail_is_static(qapp, view, monkeypatch):
 
 
 def test_hidden_enemy_hand_has_no_detail_signal(qapp, view):
+    from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+
     start(view, mulligan=False)
     scene = view.battle_scene
     card = view.game.state.players[1].hand[0]
     item = scene.cards[("hand", card.uid)]
     details = []
-    scene.detail_requested.connect(lambda kind, payload: details.append((kind, payload)))
+    scene.read_detail_requested.connect(lambda kind, payload: details.append((kind, payload)))
+    event = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseRelease)
+    event.setButton(Qt.RightButton)
+    event.setScenePos(item.scenePos())
+    item.mouseReleaseEvent(event)
     assert item.cdef is None
-    assert not scene.drag_controller.press(item, item.scenePos())
-    scene.drag_controller.release(item.scenePos())
     assert details == []
 
 
@@ -2158,7 +2168,7 @@ def test_player_detail_empty_fields_and_legacy_ability_have_no_placeholder(qapp,
     dialog.close()
 
 
-def test_player_detail_only_from_avatar_and_legal_target_priority(qapp, view, monkeypatch):
+def test_player_left_click_only_selects_legal_target(qapp, view, monkeypatch):
     from client.gui.battle_scene import layout_positions
 
     start(view, mulligan=False)
@@ -2178,16 +2188,16 @@ def test_player_detail_only_from_avatar_and_legal_target_priority(qapp, view, mo
 
     scene.drag_controller.press(item, inside)
     scene.drag_controller.release(inside)
-    assert details == [0] and targets == []
+    assert details == [] and targets == []
     scene.drag_controller.press(item, outside)
     scene.drag_controller.release(outside)
-    assert details == [0] and targets == []
+    assert details == [] and targets == []
 
     scene.legal_targets = view.legal_targets = [item.payload]
     item.targetable = True
     scene.drag_controller.press(item, outside)
     scene.drag_controller.release(outside)
-    assert details == [0] and targets == [item.payload]
+    assert details == [] and targets == [item.payload]
 
 
 def test_log_dialog_closes_on_new_game_and_return(qapp, view):
@@ -2208,10 +2218,12 @@ def test_mulligan_ready_and_replacement(qapp, view):
     settle(view)
     assert old_uid not in {card.uid for card in game.state.players[0].hand}
     view.ready()
+    view.confirm_handoff()
     settle(view)
     assert game.state.players[0].mulligan_done
     assert view.viewer == 1
     view.ready()
+    view.confirm_handoff()
     settle(view)
     assert game.state.phase == "battle"
     assert view.viewer == 0
@@ -2474,7 +2486,9 @@ def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
     assert returned == [True]
 
 
-def test_game_over_is_immediate_and_details_remain_clickable(qapp, view, monkeypatch):
+def test_game_over_is_immediate_and_right_click_details_remain_available(qapp, view, monkeypatch):
+    from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+
     start(view, mulligan=False)
     view.timeline_queue[:] = [(0, "尚未播放")]
     view.game.state.winner = 0
@@ -2490,19 +2504,23 @@ def test_game_over_is_immediate_and_details_remain_clickable(qapp, view, monkeyp
     assert not view.end_turn()
 
     scene = view.battle_scene
+
+    def right_click(item, pos):
+        event = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseRelease)
+        event.setButton(Qt.RightButton)
+        event.setScenePos(pos)
+        item.mouseReleaseEvent(event)
+
     seen = []
     monkeypatch.setattr(view, "show_shiki_detail", seen.append)
     item = scene.cards[("shiki", 0, 0)]
-    scene.drag_controller.press(item, item.scenePos())
-    scene.drag_controller.release(item.scenePos())
+    right_click(item, item.scenePos())
     assert seen == [item.payload]
 
     player_details = []
     monkeypatch.setattr(view, "show_player_detail", player_details.append)
     player = scene.cards[("player", 0)]
-    avatar_pos = player.scenePos() + QPointF(50, 50)
-    scene.drag_controller.press(player, avatar_pos)
-    scene.drag_controller.release(avatar_pos)
+    right_click(player, player.scenePos() + QPointF(50, 50))
     assert player_details == [0]
 
     card_details = []
@@ -2510,13 +2528,11 @@ def test_game_over_is_immediate_and_details_remain_clickable(qapp, view, monkeyp
     hand = next(item for key, item in scene.cards.items()
                 if key[0] == "hand" and item.player == view.viewer)
     assert hand.revealed
-    scene.drag_controller.press(hand, hand.scenePos())
-    scene.drag_controller.release(hand.scenePos())
+    right_click(hand, hand.scenePos())
     assert card_details == [hand.payload]
     hidden_hand = next(item for key, item in scene.cards.items()
                        if key[0] == "hand" and item.player != view.viewer and not item.revealed)
-    assert not scene.drag_controller.press(hidden_hand, hidden_hand.scenePos())
-    scene.drag_controller.release(hidden_hand.scenePos())
+    right_click(hidden_hand, hidden_hand.scenePos())
     assert card_details == [hand.payload]
 
     actions = []
@@ -2999,6 +3015,7 @@ def test_mulligan_log_hides_opponent_counts_only_during_startup(qapp, view):
     assert own_message in log_lines(view)
 
     assert view.ready()
+    view.confirm_handoff()
     settle(view)
     assert own_message not in log_lines(view)
     other_uid = view.game.state.players[1].hand[0].uid
@@ -3008,6 +3025,7 @@ def test_mulligan_log_hides_opponent_counts_only_during_startup(qapp, view):
     assert other_message in log_lines(view)
 
     assert view.ready()
+    view.confirm_handoff()
     settle(view)
     assert view.game.state.phase == "battle"
     assert other_message not in log_lines(view)
@@ -3018,9 +3036,11 @@ def test_mulligan_log_hides_opponent_counts_only_during_startup(qapp, view):
 
 
 def test_right_click_opens_public_details_without_actions(qapp, view, monkeypatch):
-    from PySide6.QtWidgets import QGraphicsSceneMouseEvent
-
+    monkeypatch.setattr(QDialog, "exec", lambda _dialog: QDialog.Rejected)
     start(view, mulligan=False)
+    view.resize(1600, 900)
+    view.show()
+    qapp.processEvents()
     scene = view.battle_scene
     scene.inputs_open = False
     calls = []
@@ -3028,28 +3048,22 @@ def test_right_click_opens_public_details_without_actions(qapp, view, monkeypatc
     actions = []
     scene.action_requested.connect(actions.append)
 
-    def right_click(item, pos):
-        press = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMousePress)
-        press.setButton(Qt.RightButton)
-        press.setScenePos(pos)
-        item.mousePressEvent(press)
-        release = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseRelease)
-        release.setButton(Qt.RightButton)
-        release.setScenePos(pos)
-        item.mouseReleaseEvent(release)
+    def right_click(item, offset):
+        pos = view.battle_view.mapFromScene(item.scenePos() + offset)
+        QTest.mouseClick(view.battle_view.viewport(), Qt.RightButton, pos=pos)
 
     hand = scene.cards[("hand", view.game.current.hand[0].uid)]
-    right_click(hand, hand.scenePos())
+    right_click(hand, QPointF(55, 78))
     shiki = scene.cards[("shiki", 0, 0)]
-    right_click(shiki, shiki.scenePos())
+    right_click(shiki, QPointF(74, 105))
     player = scene.cards[("player", 0)]
-    right_click(player, player.scenePos() + QPointF(48, 48))
-    assert len(calls) == 3
+    right_click(player, QPointF(48, 48))
+    assert calls == ["hand", "shiki", "player"]
     assert actions == []
 
     hidden = scene.cards[("hand", view.game.state.players[1].hand[0].uid)]
-    right_click(hidden, hidden.scenePos())
-    assert len(calls) == 3
+    right_click(hidden, QPointF(55, 100))
+    assert calls == ["hand", "shiki", "player"]
 
 
 def test_battle_controls_use_reduced_edge_padding(qapp, view):
@@ -3064,3 +3078,21 @@ def test_battle_controls_use_reduced_edge_padding(qapp, view):
     ordered = display_hand(view.game, view.viewer, view.viewer)
     hand = positions[("hand", ordered[-1].uid)]
     assert hand.x() + 110 == SCENE_WIDTH + 12
+
+
+def test_battle_view_uses_extra_width_instead_of_side_letterbox(qapp, view):
+    from client.gui.battle_scene import SCENE_HEIGHT
+
+    start(view, mulligan=False)
+    view.resize(1800, 900)
+    view.show()
+    qapp.processEvents()
+    scene = view.battle_scene
+    viewport = view.battle_view.viewport()
+    expected_width = SCENE_HEIGHT * viewport.width() / viewport.height()
+    assert scene.layout_width == pytest.approx(expected_width)
+    assert scene.sceneRect().width() == pytest.approx(expected_width)
+    left = view.battle_view.mapFromScene(QPointF(0, 0)).x()
+    right = view.battle_view.mapFromScene(QPointF(scene.sceneRect().width(), 0)).x()
+    assert left == pytest.approx(0, abs=5)
+    assert right == pytest.approx(viewport.width(), abs=5)

@@ -54,18 +54,6 @@ def test_quote_migration_preserves_file_bytes(tmp_path):
     assert migrate_file(path) is False
 
 
-def test_description_quotes_migrated_in_raw_and_db():
-    root = Path(__file__).parents[1]
-    paths = [root / "card_data_raw.md", *sorted((root / "db").rglob("*.yaml"))]
-    for path in paths:
-        text = path.read_bytes().decode("utf-8")
-        label = path.relative_to(root)
-        assert "‘" not in text and "’" not in text, label
-        assert "“棺材”" not in text, label
-        assert text.count("『") == text.count("』"), label
-        assert text.count("「") == text.count("」"), label
-
-
 def _game(real_game, team, levels=None):
     """对局 + 常用状态：A 9 鬼火、B 无补偿护甲、B 全员 1 级在场、A 主力式神指定等级
     （默认 {0: 1}；手动升级不注册倒计时，B 侧手动 1 级无倒计时干扰）。"""

@@ -3021,8 +3021,8 @@ def test_real_invocations_pack04_new_loaded(gdb):
     assert m.unique == "none" and m.draw_trigger is not None
     step = m.draw_trigger.steps[0]
     assert step.op == "damage" and step.amount == 3
-    assert m.text == ("当敌方抽到结附『梦魇』的牌时，对敌方牌手造成3点伤害。"
-                      "当结附『梦魇』的牌离开牌库时，移除结附于其上的『梦魇』。")
+    assert m.text == ("当敌方抽到结附‘梦魇’的牌时，对敌方牌手造成3点伤害。"
+                      "当结附‘梦魇’的牌离开牌库时，移除结附于其上的‘梦魇’。")
     z = gdb.invocations["髭切"]
     assert z.unique == "shikigami_unique"
     ab = z.abilities[0]

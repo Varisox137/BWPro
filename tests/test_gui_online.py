@@ -11,7 +11,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QObject, QPointF, Qt, Signal
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QGraphicsSceneMouseEvent
 
 from client import cli
 from client.gui.app import MainWindow
@@ -666,8 +666,10 @@ def test_online_message_game_over_is_read_only_and_resettable(
     details = []
     monkeypatch.setattr(battle, "show_shiki_detail", details.append)
     item = battle.battle_scene.cards[("shiki", 0, 0)]
-    battle.battle_scene.drag_controller.press(item, item.scenePos())
-    battle.battle_scene.drag_controller.release(item.scenePos())
+    event = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseRelease)
+    event.setButton(Qt.RightButton)
+    event.setScenePos(item.scenePos())
+    item.mouseReleaseEvent(event)
     assert details == [item.payload]
     while battle.timeline_queue:
         battle.play_next_timeline()
@@ -729,8 +731,10 @@ def test_online_game_over_clears_targeting_and_restores_details(
     assert battle.cancel_target_button.isHidden()
     assert battle.target_label.isHidden()
     avatar_pos = item.scenePos() + QPointF(50, 50)
-    scene.drag_controller.press(item, avatar_pos)
-    scene.drag_controller.release(avatar_pos)
+    event = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseRelease)
+    event.setButton(Qt.RightButton)
+    event.setScenePos(avatar_pos)
+    item.mouseReleaseEvent(event)
     assert details == [0]
     assert targets == []
     assert not battle.result_banner.isHidden()

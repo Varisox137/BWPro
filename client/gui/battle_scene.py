@@ -61,33 +61,36 @@ def display_hand(game, pi: int, viewer: int):
     return sorted(player.hand, key=sort_key)
 
 
-def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
+def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
+                     scene_width: float = SCENE_WIDTH) -> dict[tuple, QPointF]:
+    extra = scene_width - SCENE_WIDTH
+    center_shift = extra / 2
     positions = {
         ("phase",): QPointF(65, 422),
-        ("menu",): QPointF(1352, 16),
+        ("menu",): QPointF(1352 + extra, 16),
         ("log",): QPointF(-12, 422),
-        ("end_turn",): QPointF(1505, 400),
-        ("enemy_hand_label",): QPointF(1530, 156),
-        ("enemy_deck",): QPointF(1530, 228),
-        ("own_deck",): QPointF(1530, 608),
-        ("hand_caption",): QPointF(1530, 680),
-        ("ready",): QPointF(1328, 435),
-        ("mulligan",): QPointF(730, 610),
+        ("end_turn",): QPointF(1505 + extra, 400),
+        ("enemy_hand_label",): QPointF(1530 + extra, 156),
+        ("enemy_deck",): QPointF(1530 + extra, 228),
+        ("own_deck",): QPointF(1530 + extra, 608),
+        ("hand_caption",): QPointF(1530 + extra, 680),
+        ("ready",): QPointF(1328 + extra, 435),
+        ("mulligan",): QPointF(730 + center_shift, 610),
         ("turn_order",): QPointF(1, 340),
-        ("target_label",): QPointF(1120, 400),
-        ("cancel_target",): QPointF(1120, 440),
-        ("default_target",): QPointF(1120, 480),
+        ("target_label",): QPointF(1120 + extra, 400),
+        ("cancel_target",): QPointF(1120 + extra, 440),
+        ("default_target",): QPointF(1120 + extra, 480),
         ("error",): QPointF(1, 540),
-        ("result_banner",): QPointF(500, 350),
-        ("result_back",): QPointF(730, 470),
-        ("upgrade_phase",): QPointF(411, 422),
+        ("result_banner",): QPointF(500 + center_shift, 350),
+        ("result_back",): QPointF(730 + center_shift, 470),
+        ("upgrade_phase",): QPointF(411 + center_shift, 422),
     }
     for pi in (0, 1):
         top = pi != viewer
         positions[("player", pi)] = QPointF(-12, 4 if top else 766)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
-                1376 + index * 18, (220 + index * 4) if top else (600 - index * 4))
+                1376 + extra + index * 18, (220 + index * 4) if top else (600 - index * 4))
     if game is None:
         return positions
 
@@ -97,20 +100,21 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
         top = pi != viewer
         for index, _shiki in enumerate(player.shikigami):
             if player.combat_index == index:
-                position = QPointF(646, 220 if top else 460)
+                position = QPointF(646 + center_shift, 220 if top else 460)
             else:
-                position = QPointF(ready_x[index], arc[index] if top else (690 - arc[index]))
+                position = QPointF(ready_x[index] + center_shift,
+                                   arc[index] if top else (690 - arc[index]))
             positions[("shiki", pi, index)] = position
         cards = display_hand(game, pi, viewer)
-        centered = game.state.phase == "mulligan" and pi == viewer
+        centered = (game.state.phase == "mulligan" or center_hand) and pi == viewer
         if centered:
             width = (len(cards) * MULLIGAN_HAND_SIZE.width()
                      + max(0, len(cards) - 1) * 16)
         spacing = 70 if len(cards) <= 8 else 490 / (len(cards) - 1)
-        right = SCENE_WIDTH + 12
+        right = scene_width + 12
         for order, card in enumerate(cards):
             if centered:
-                x = (SCENE_WIDTH - width) / 2 + order * (MULLIGAN_HAND_SIZE.width() + 16)
+                x = (scene_width - width) / 2 + order * (MULLIGAN_HAND_SIZE.width() + 16)
                 y = 280
             else:
                 x = right - HAND_SIZE.width() - spacing * (len(cards) - 1 - order)
@@ -159,7 +163,7 @@ class BattleCardItem(QGraphicsObject):
         self.playable = False
         self.border_color = "yellow"
         self.dragging = False
-        self.setAcceptedMouseButtons(Qt.LeftButton)
+        self.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)
         self.setZValue(SHIKI_Z if key[0] in ("shiki", "player") else HAND_Z)
 
     def set_art(self, pixmap) -> None:
@@ -410,11 +414,9 @@ class BattleDragController:
             elif (kind == "shiki" and scene.phase == "upgrade" and item.playable
                     and item.player == scene.viewer):
                 scene.action_requested.emit({"op": "upgrade", "index": item.index})
-            else:
-                if (kind == "player" and item.payload not in scene.legal_targets
-                        and not QRectF(2, 2, 96, 96).contains(item.mapFromScene(scene_pos))):
-                    return
-                scene.detail_requested.emit(kind, item.payload)
+            elif (kind in ("shiki", "player")
+                  and item.payload in scene.legal_targets):
+                scene.target_requested.emit(kind, item.payload)
             return
         if source_rect.contains(scene_pos):
             return
@@ -480,6 +482,9 @@ class BattleView(QGraphicsView):
         self.fit_scene()
 
     def fit_scene(self) -> None:
+        viewport = self.viewport()
+        if viewport.width() > 0 and viewport.height() > 0:
+            self.scene().set_viewport_size(viewport.width(), viewport.height())
         self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
 
     def resizeEvent(self, event) -> None:
@@ -492,7 +497,7 @@ class BattleView(QGraphicsView):
 
 
 class BattleScene(QGraphicsScene):
-    detail_requested = Signal(str, object)
+    target_requested = Signal(str, object)
     read_detail_requested = Signal(str, object)
     action_requested = Signal(dict)
     mulligan_selected = Signal(object)
@@ -502,6 +507,9 @@ class BattleScene(QGraphicsScene):
         super().__init__(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
         self.db = db
         self.game = None
+        self.layout_width = SCENE_WIDTH
+        self.center_hand = False
+        self._control_keys = {}
         self.cards: dict[tuple, BattleCardItem] = {}
         self._move_animations: dict[BattleCardItem, QPropertyAnimation] = {}
         self._card_use_animations: list[QVariantAnimation] = []
@@ -568,10 +576,34 @@ class BattleScene(QGraphicsScene):
         for item in (self.banner_item, self.loading_item, *self.usage_labels):
             item.setDefaultTextColor(QColor(color))
 
+    def set_viewport_size(self, width: int, height: int) -> None:
+        """宽窗口扩展场景横向布局，避免等比缩放留下两侧信箱边。"""
+        layout_width = max(SCENE_WIDTH, SCENE_HEIGHT * width / height)
+        if abs(layout_width - self.layout_width) < 0.01:
+            return
+        self.layout_width = layout_width
+        self.setSceneRect(0, 0, layout_width, SCENE_HEIGHT)
+        self.loading_background.setRect(self.sceneRect())
+        positions = layout_positions(self.game, self.viewer, center_hand=self.center_hand,
+                                     scene_width=layout_width)
+        for proxy, key in self._control_keys.items():
+            proxy.setPos(positions[key])
+        for key, item in self.cards.items():
+            if key in positions:
+                item.setPos(positions[key])
+        for key, item in self.deck_backs.items():
+            item.setPos(positions[key])
+        for item in (self.banner_item, self.loading_item):
+            if item.isVisible():
+                rect = item.boundingRect()
+                item.setPos((layout_width - rect.width()) / 2,
+                            (SCENE_HEIGHT - rect.height()) / 2)
+        self.mulligan_selected.emit(self.mulligan_uid)
+
     def show_banner(self, text: str, duration: int = 900) -> None:
         self.banner_item.setPlainText(text)
         rect = self.banner_item.boundingRect()
-        self.banner_item.setPos((SCENE_WIDTH - rect.width()) / 2,
+        self.banner_item.setPos((self.layout_width - rect.width()) / 2,
                                 (SCENE_HEIGHT - rect.height()) / 2)
         self.banner_item.setScale(0.85)
         self.banner_item.setOpacity(0)
@@ -600,7 +632,7 @@ class BattleScene(QGraphicsScene):
     def show_loading(self, prefix: str) -> None:
         self.loading.start(prefix)
         rect = self.loading_item.boundingRect()
-        self.loading_item.setPos((SCENE_WIDTH - rect.width()) / 2,
+        self.loading_item.setPos((self.layout_width - rect.width()) / 2,
                                  (SCENE_HEIGHT - rect.height()) / 2)
         self.loading_background.show()
         self.loading_item.show()
@@ -623,7 +655,8 @@ class BattleScene(QGraphicsScene):
         if widget.inherits("QLabel"):
             widget.setStyleSheet(widget.styleSheet() + "background: transparent;")
         proxy = self.addWidget(widget)
-        proxy.setPos(layout_positions()[key])
+        self._control_keys[proxy] = key
+        proxy.setPos(layout_positions(scene_width=self.layout_width)[key])
         proxy.setZValue(60)
         return proxy
 
@@ -733,7 +766,7 @@ class BattleScene(QGraphicsScene):
         cached = self._hand_animation_cache.get(uid)
         if cached is None:
             source_pos = QPointF(
-                SCENE_WIDTH - HAND_SIZE.width() - 1,
+                self.layout_width - HAND_SIZE.width() - 1,
                 ENEMY_HAND_Y if player != self.viewer else OWN_HAND_Y)
             source_pixmap = None
             source_size = QSizeF(HAND_SIZE)
@@ -819,7 +852,7 @@ class BattleScene(QGraphicsScene):
                  + max(0, len(options) - 1) * 16)
         art_context = {}
         for index, (option, cdef) in enumerate(zip(options, card_defs)):
-            x = (SCENE_WIDTH - width) / 2 + index * (MULLIGAN_HAND_SIZE.width() + 16)
+            x = (self.layout_width - width) / 2 + index * (MULLIGAN_HAND_SIZE.width() + 16)
             item = BattleCardItem(("usage", option["id"]), size=MULLIGAN_HAND_SIZE)
             item.cdef = cdef
             item.payload = option["id"]
@@ -881,7 +914,7 @@ class BattleScene(QGraphicsScene):
                 self.removeItem(item)
                 del self.cards[key]
 
-    def sync_state(self, game, viewer, hand_info, inputs_open) -> None:
+    def sync_state(self, game, viewer, hand_info, inputs_open, center_hand=False) -> None:
         previous_game = self.game
         if previous_game is not None and viewer != self.viewer:
             self.reset_animations()
@@ -897,10 +930,12 @@ class BattleScene(QGraphicsScene):
         self.game = game
         self.phase = game.state.phase
         self.viewer = viewer
+        self.center_hand = center_hand
         self.inputs_open = inputs_open
         self.game_over = game.state.winner is not None
         self.drag_controller.cancel()
-        positions = layout_positions(game, viewer)
+        positions = layout_positions(game, viewer, center_hand=center_hand,
+                                     scene_width=self.layout_width)
         self._hand_animation_cache = {
             key[1]: (QPointF(item.pos()), item.pixmap, QSizeF(item.size), item.revealed)
             for key, item in self.cards.items() if key[0] == "hand"
@@ -1023,7 +1058,7 @@ class BattleScene(QGraphicsScene):
                 pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
                                       level_color=seat_level_color(owner_seat),
                                       cache_context=art_context,
-                                      height=255 if game.state.phase == "mulligan" and own else 156)
+                                      height=255 if (game.state.phase == "mulligan" or center_hand) and own else 156)
                           if cdef is not None else None)
                 item = self.cards.get(key)
                 if item is None:
@@ -1031,7 +1066,7 @@ class BattleScene(QGraphicsScene):
                     self.addItem(item)
                     self.cards[key] = item
                 item.cdef = cdef
-                centered = game.state.phase == "mulligan" and own
+                centered = (game.state.phase == "mulligan" or center_hand) and own
                 item.default_size = QSizeF(MULLIGAN_HAND_SIZE if centered else HAND_SIZE)
                 item.set_art(pixmap)
                 item.revealed = revealed
@@ -1076,13 +1111,13 @@ class BattleScene(QGraphicsScene):
                 item.setZValue(HAND_Z + order / 1000)
                 item.update()
                 self.loading_tick()
-        if self.phase == "mulligan":
+        if self.phase == "mulligan" or center_hand:
             centered_items = [item for key, item in self.cards.items()
                               if key[0] == "hand" and item.player == viewer]
             if centered_items:
                 left = min(item.x() for item in centered_items)
                 right = max(item.x() + item.size.width() for item in centered_items)
-                offset = (SCENE_WIDTH - left - right) / 2
+                offset = (self.layout_width - left - right) / 2
                 for item in centered_items:
                     item.setPos(item.x() + offset, item.y())
         for item in self.cards.values():

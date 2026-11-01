@@ -101,6 +101,10 @@ def _highlight_named_quotes(text: str, db) -> str:
 
 def _description(text: str, db=None) -> str:
     text = text.replace("{", "").replace("}", "")
+    text = re.sub(r"‘([^’]*)’", r"「\1」", text)
+    text = re.sub(r"『([^『』]*)』",
+                  lambda match: (match.group(0) if "「" in match.group(1)
+                                 else f"「{match.group(1)}」"), text)
     text = _KEYWORD_RE.sub(r"[[\1]]", text)
     if db is not None:
         text = _highlight_named_quotes(text, db)
@@ -137,7 +141,8 @@ def _card_data(cdef, db, config: dict) -> dict:
             data["shikigami2"] = _shikigami_name(db, cdef.shikigami2)
         else:
             data["shikigami"] = _shikigami_name(db, cdef.shikigami)
-    data.update(name=cdef.name, description=_description(cdef.text, db))
+    description = config.get("description") or cdef.text
+    data.update(name=cdef.name, description=_description(description, db))
     if getattr(cdef, "level", None) is not None:
         data["level"] = cdef.level
     if getattr(cdef, "rarity", None) is not None:
@@ -686,6 +691,7 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         selected = {"artwork": {"images": [art]}}
         if config:
             selected["frame_variant"] = config.get("frame_variant", "norm")
+            selected["description"] = config.get("description")
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(cdef, db, selected)
@@ -862,8 +868,7 @@ def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = Non
     health = shiki.health if current else definition.health + (
         shiki.perm_health if awakened else 0)
     overrides = {
-        "type": "式神", "name": source.name,
-        "description": _description(source.text, db), "faction": shiki.faction,
+        "type": "式神", "name": source.name, "faction": shiki.faction,
         "power": power, "health": health, "evolve": awakened,
         "level": shiki.level or None,
         "level_color": seat_level_color(seat),
