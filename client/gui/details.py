@@ -17,6 +17,8 @@ def player_ability_mechanisms(player, player_index: int, viewer: int) -> list[di
         entry for entry in player.delayed
         if not entry.get("secret") or player_index == viewer
     ]
+    entries.extend({"source_name": "眩晕", "text": str(entry.get("kind", "未标明类型"))}
+                   for entry in player.ext.get("stuns", []))
     return [
         {
             "name": entry.get("source_name") or "牌手能力",
@@ -28,6 +30,7 @@ def player_ability_mechanisms(player, player_index: int, viewer: int) -> list[di
 
 
 def shiki_status_lines(game, ref, viewer) -> list[str]:
+    """仅展示卡牌赋予的延迟能力与灵咒，不展开内部数值状态。"""
     shiki = game.state.players[ref.player].shikigami[ref.shikigami]
     db = game.db
 
@@ -46,63 +49,7 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
         source = player.shikigami[si]
         return f"{player.name}·{db.shikigami[source.id].name}"
 
-    def mods(label, power, health=None) -> str:
-        parts = [f"力量 {power:+d}"]
-        if health is not None:
-            parts.append(f"生命 {health:+d}")
-        return f"{label} {'　'.join(parts)}"
-
     text = []
-    if shiki.shield:
-        text.append(f"护甲/破甲 {shiki.shield}")
-    if shiki.energy:
-        text.append(f"能量 {shiki.energy}")
-    if shiki.perm_power or shiki.perm_health:
-        text.append(mods("永久修正", shiki.perm_power, shiki.perm_health))
-    if shiki.temp_power or shiki.temp_health:
-        text.append(mods("临时修正", shiki.temp_power, shiki.temp_health))
-    dyn_power = int(shiki.ext.get("dyn_power", 0))
-    dyn_health = int(shiki.ext.get("dyn_health", 0))
-    if dyn_power or dyn_health:
-        text.append(mods("动态光环合计", dyn_power, dyn_health))
-    if shiki.ext.get("power_zero"):
-        text.append("力量覆写：0（动态光环与灵咒仍合计）")
-    keywords = cli._kw_labels(
-        shiki.keywords + shiki.one_shot_keywords + shiki.perm_keywords)
-    if keywords:
-        text.append(f"关键字：{'、'.join(keywords)}")
-    for index, buff in enumerate(shiki.attack_buffs, 1):
-        parts = [f"攻击后到期强化 {index}：力量 {buff.get('power', 0):+d}"]
-        labels = cli._kw_labels(kw for kw, _cls in buff.get("keywords", []))
-        if labels:
-            parts.append(f"关键字 {'、'.join(labels)}")
-        text.append("　".join(parts))
-    if shiki.keep_shield:
-        text.append("保留护甲")
-    if shiki.keep_fragile:
-        text.append("保留破甲")
-    for index, immunity in enumerate(shiki.immunities, 1):
-        text.append(f"免疫 {index}：{immunity.get('kind', '未标明类型')}")
-    if shiki.stuns:
-        kinds = "、".join(str(entry.get("kind", "未标明类型")) for entry in shiki.stuns)
-        text.append(f"眩晕：{kinds}")
-    if shiki.dying:
-        text.append("濒死")
-    if shiki.despawned:
-        text.append("已离场")
-    if shiki.defeated:
-        text.append(f"气绝：复活倒计时 {shiki.revive_countdown}")
-    if shiki.countdown is not None:
-        countdown = [f"倒计时 {shiki.countdown}"]
-        if shiki.countdown_initial is not None:
-            countdown.append(f"初始 {shiki.countdown_initial}")
-        countdown.append("一次型" if shiki.countdown_once else "循环型")
-        source = shiki.countdown_source
-        if source in db.cards:
-            countdown.append(f"来源 {db.cards[source].name}")
-        elif source in db.shikigami:
-            countdown.append(f"来源 {db.shikigami[source].name}")
-        text.append("　".join(countdown))
     for index, delayed in enumerate(shiki.delayed, 1):
         block = delayed.get("block") or {}
         when = block.get("when") if isinstance(block, dict) else block.when
@@ -116,6 +63,9 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
         if chosen:
             parts.append(f"目标 {chosen}")
         text.append("　".join(parts))
+    if shiki.stuns:
+        kinds = "、".join(str(entry.get("kind", "未标明类型")) for entry in shiki.stuns)
+        text.append(f"眩晕：{kinds}")
     for index, invocation in enumerate(shiki.invocations, 1):
         name = invocation.get("name", "")
         parts = [f"灵咒 {index}：{name}"]
@@ -127,14 +77,6 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
             if 0 <= pi < len(game.state.players):
                 parts.append(f"来源 {game.state.players[pi].name}")
         text.append("　".join(parts))
-        if invocation.get("power") or invocation.get("health"):
-            text.append(mods("基础", invocation.get("power", 0),
-                             invocation.get("health", 0)))
-        if invocation.get("bonus"):
-            text.append(f"增强 {invocation['bonus']:+d}")
-        if invocation.get("mod_power") or invocation.get("mod_health"):
-            text.append(mods("修饰", invocation.get("mod_power", 0),
-                             invocation.get("mod_health", 0)))
         idef = db.invocations.get(name)
         if idef is not None and idef.text:
             text.append(idef.text)

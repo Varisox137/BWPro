@@ -65,8 +65,8 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     positions = {
         ("phase",): QPointF(65, 422),
         ("menu",): QPointF(1352, 16),
-        ("log",): QPointF(1, 422),
-        ("end_turn",): QPointF(1493, 400),
+        ("log",): QPointF(-12, 422),
+        ("end_turn",): QPointF(1505, 400),
         ("enemy_hand_label",): QPointF(1530, 156),
         ("enemy_deck",): QPointF(1530, 228),
         ("own_deck",): QPointF(1530, 608),
@@ -84,7 +84,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
     }
     for pi in (0, 1):
         top = pi != viewer
-        positions[("player", pi)] = QPointF(1, 4 if top else 766)
+        positions[("player", pi)] = QPointF(-12, 4 if top else 766)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
                 1376 + index * 18, (220 + index * 4) if top else (600 - index * 4))
@@ -107,7 +107,7 @@ def layout_positions(game=None, viewer: int = 0) -> dict[tuple, QPointF]:
             width = (len(cards) * MULLIGAN_HAND_SIZE.width()
                      + max(0, len(cards) - 1) * 16)
         spacing = 70 if len(cards) <= 8 else 490 / (len(cards) - 1)
-        right = SCENE_WIDTH - 1
+        right = SCENE_WIDTH + 12
         for order, card in enumerate(cards):
             if centered:
                 x = (SCENE_WIDTH - width) / 2 + order * (MULLIGAN_HAND_SIZE.width() + 16)

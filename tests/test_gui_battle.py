@@ -161,8 +161,8 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     slots = {key: item for key, item in scene.cards.items() if key[0] == "shiki"}
     refs = {key: item.payload for key, item in slots.items()}
     assert scene.cards[("player", 1)].y() < scene.cards[("player", 0)].y()
-    assert scene.cards[("player", 1)].pos() == QPointF(1, 4)
-    assert scene.cards[("player", 0)].pos() == QPointF(1, 766)
+    assert scene.cards[("player", 1)].pos() == QPointF(-12, 4)
+    assert scene.cards[("player", 0)].pos() == QPointF(-12, 766)
     assert [scene.cards[("shiki", 1, index)].y() for index in range(4)] == [
         120, 86, 86, 120]
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
@@ -241,7 +241,7 @@ def test_hand_layout_spacing_and_half_height(qapp, view):
         points = [positions[("hand", card.uid)] for card in enemy.hand]
         assert [points[i + 1].x() - points[i].x() for i in range(count - 1)] == pytest.approx(
             [spacing] * (count - 1))
-        assert points[-1].x() + HAND_SIZE.width() == 1599
+        assert points[-1].x() + HAND_SIZE.width() == 1612
         assert points[-1].x() - points[0].x() + HAND_SIZE.width() == 600
         assert all(point.y() == -78 for point in points)
 
@@ -279,7 +279,7 @@ def test_hand_spacing_twelve_cards_avoid_shikigami_and_keep_placeholder(qapp, vi
         assert len(items) == 12
         assert items[1].x() < items[0].x() + items[0].boundingRect().width()
         assert items[1].x() - items[0].x() == pytest.approx(490 / 11)
-        assert items[-1].x() + items[-1].boundingRect().width() <= 1600
+        assert items[-1].x() + items[-1].boundingRect().width() <= 1612
         shiki_items = [view.battle_scene.cards[("shiki", pi, index)] for index in range(4)]
         assert all(not hand.sceneBoundingRect().intersects(shiki.sceneBoundingRect())
                    for hand in items for shiki in shiki_items)
@@ -869,9 +869,10 @@ def test_scene_hand_and_controls_fit_horizontally_1600x900(qapp, db, tmp_path, m
         for item in scene_items(view, "hand"):
             rect = item.sceneBoundingRect()
             assert scene.sceneRect().left() <= rect.left()
-            assert rect.right() <= scene.sceneRect().right()
+            assert rect.right() <= scene.sceneRect().right() + 12
         for proxy in (scene.menu_item, scene.log_item, scene.end_turn_item):
-            assert scene.sceneRect().contains(proxy.sceneBoundingRect())
+            assert scene.sceneRect().adjusted(-12, 0, 12, 0).contains(
+                proxy.sceneBoundingRect())
         assert scene.cards[("hand", card.uid)].pixmap is not None
         assert win.height() <= 900 and win.minimumSizeHint().height() <= 900
     finally:
@@ -1919,28 +1920,17 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
     text = "\n".join(item["text"] for item in dialog.status_mechanisms)
     assert f"力量 {shiki.eff_power}" not in text
     assert f"生命 {shiki.health}/{shiki.max_health}" not in text
-    assert "护甲/破甲 4" in text and "能量 3" in text
     assert "派系 青岚" not in text
-    assert all(word in text for word in ("贯通", "屏障", "迅捷", "免疫", "combat_damage"))
-    assert "眩晕" in text and "气绝" in text and "复活倒计时 2" in text
-    assert "倒计时 2" in text and "初始 3" in text and "一次型" in text
-    assert f"来源 {db.shikigami[shiki.id].name}" in text
-    assert "永久修正 力量 +1　生命 +4" in text
-    assert "临时修正 力量 +2　生命 +5" in text
-    assert "战斗修正" not in text
-    assert "形态：测试形态" not in text and "形态原文" not in text
-    assert "觉醒：测试觉醒" not in text and "觉醒原文" not in text
     assert "延迟能力" in text and "on_battle_end" in text and "次数 2" in text
     assert "玩家B" in text and db.shikigami[view.game.state.players[1].shikigami[0].id].name in text
     assert "灵咒 1：测试灵咒" in text and "灵咒原文" in text
     assert "来源 玩家B" in text and db.shikigami[view.game.state.players[1].shikigami[1].id].name in text
-    assert "基础 力量 +1　生命 -1" in text and "增强 +2" in text
-    assert "修饰 力量 +3　生命 -2" in text
-    assert "攻击后到期强化 1：力量 +2　关键字 贯通" in text
-    assert "保留护甲" in text and "保留破甲" in text
-    assert "濒死" in text and "已离场" in text
-    assert "动态光环合计 力量 +3　生命 -2" in text
-    assert "力量覆写" in text and "动态光环与灵咒仍合计" in text
+    assert "眩晕：normal" in text
+    assert all(word not in text for word in (
+        "护甲/破甲", "能量", "永久修正", "临时修正", "动态光环合计", "力量覆写",
+        "贯通", "屏障", "迅捷", "免疫", "气绝", "倒计时",
+        "基础 力量", "增强 +2", "修饰 力量", "攻击后到期强化",
+        "保留护甲", "保留破甲", "濒死", "已离场"))
     assert "inv_mod" not in text and "'block'" not in text
     assert "其他扩展不得导出" not in text
     assert "transform_origin" not in text and "coffin_origin" not in text
@@ -2011,7 +2001,7 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     assert scene.log_item.widget() is view.log_button
-    assert scene.log_item.x() == 1
+    assert scene.log_item.x() == -12
     assert scene.log_item.y() == 422
     assert view.log_button.width() == view.log_button.height() == 40
     assert view.log_button.text() == "对局\n记录"
@@ -2029,7 +2019,8 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     assert phase_proxy.x() > scene.log_item.x()
     assert phase_proxy.y() == scene.log_item.y()
     assert view.order_label.isHidden()
-    assert scene.sceneRect().contains(scene.log_item.sceneBoundingRect())
+    assert scene.sceneRect().adjusted(-12, 0, 12, 0).contains(
+        scene.log_item.sceneBoundingRect())
 
 
 def test_log_dialog_is_nonmodal_reused_and_preserves_timeline(qapp, view):
@@ -2109,6 +2100,7 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
          "secret": True, "scope": "turn", "origin": 10010152,
          "source_name": "秘密来源", "text": "秘密延迟原文。"},
     ])
+    player.ext["stuns"] = [{"kind": "normal"}]
     dialog = PlayerDetailDialog(view.game, 0, 0)
     assert [widget.cdef.id for widget in dialog.field_widgets] == [10010151, 10010152]
     assert [widget._art_options["display"]["durability"]
@@ -2118,6 +2110,7 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
         ("光环来源", "牌手光环原文。"),
         ("延迟来源", "牌手延迟原文。"),
         ("秘密来源", "秘密延迟原文。"),
+        ("眩晕", "normal"),
     ]
 
     seen = []
@@ -2145,6 +2138,7 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
     assert [(item["name"], item["text"]) for item in enemy.ability_mechanisms] == [
         ("光环来源", "牌手光环原文。"),
         ("延迟来源", "牌手延迟原文。"),
+        ("眩晕", "normal"),
     ]
     enemy.close()
 
@@ -3056,3 +3050,17 @@ def test_right_click_opens_public_details_without_actions(qapp, view, monkeypatc
     hidden = scene.cards[("hand", view.game.state.players[1].hand[0].uid)]
     right_click(hidden, hidden.scenePos())
     assert len(calls) == 3
+
+
+def test_battle_controls_use_reduced_edge_padding(qapp, view):
+    from client.gui.battle_scene import SCENE_WIDTH, display_hand, layout_positions
+
+    start(view, mulligan=False)
+    positions = layout_positions(view.game, view.viewer)
+    assert positions[("player", 0)].x() == -12
+    assert positions[("player", 1)].x() == -12
+    assert positions[("log",)].x() == -12
+    assert positions[("end_turn",)].x() == 1505
+    ordered = display_hand(view.game, view.viewer, view.viewer)
+    hand = positions[("hand", ordered[-1].uid)]
+    assert hand.x() + 110 == SCENE_WIDTH + 12
