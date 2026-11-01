@@ -161,12 +161,12 @@ class ShikigamiDetailDialog(QDialog):
             f"力量 {power}　生命 {health}\n{ability_text}"
         )
         self.setWindowTitle(definition.name)
-        self.setMinimumSize(720 if shiki.form is not None else 520, 600)
+        self.setMinimumSize(720 if shiki.form is not None else 520, 680)
         layout = QVBoxLayout(self)
         cards = QHBoxLayout()
         self.column_names = ["main"]
 
-        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=336)
+        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=512)
         self.main_art_label = QLabel()
         self.main_art_label.setAlignment(Qt.AlignCenter)
         if self.main_art_pixmap is not None and not self.main_art_pixmap.isNull():
@@ -176,7 +176,7 @@ class ShikigamiDetailDialog(QDialog):
         else:
             main_card = QFrame()
             main_card.setObjectName("shikigamiMainCard")
-            main_card.setFixedSize(240, 336)
+            main_card.setFixedSize(240, 512)
             self.main_art_label.setFixedSize(main_card.size())
             main_card.setStyleSheet(
                 "QFrame#shikigamiMainCard {"
@@ -201,20 +201,21 @@ class ShikigamiDetailDialog(QDialog):
             cards.addWidget(self.form_card)
             self.column_names.append("form")
 
+        panel_width = self.main_art_label.width()
         status_texts = shiki_status_lines(game, ref, viewer)
         self.status_mechanisms = [
             {"name": "额外状态", "frame": "skill", "text": line}
             for line in status_texts
         ]
         self.status_panel, self.status_labels = mechanism_panel(
-            self.status_mechanisms, self, max_height=336)
+            self.status_mechanisms, self, max_height=512, width=panel_width)
         if self.status_panel is not None:
             cards.addWidget(self.status_panel, 1)
             self.column_names.append("status")
 
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
             shikigami_mechanisms(game, ref, status_texts=status_texts), self,
-            max_height=336)
+            max_height=512, width=panel_width)
         if self.mechanism_panel is not None:
             cards.addWidget(self.mechanism_panel, 1)
             self.column_names.append("mechanisms")

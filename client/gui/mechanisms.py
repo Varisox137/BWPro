@@ -199,6 +199,13 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
         pixmap = _mechanism_pixmap(mechanism["name"], mechanism["frame"],
                                    mechanism["text"], root_text, chars_per_line, font_scale,
                                    mechanism.get("badge"))
+        if pixmap is not None and not pixmap.isNull() and width is not None:
+            # 按真实框宽原生缩放，不用 CSS 拉伸匹配卡图宽度。
+            scale = min(font_scale, width / pixmap.width())
+            if scale < font_scale:
+                pixmap = _mechanism_pixmap(
+                    mechanism["name"], mechanism["frame"], mechanism["text"], root_text,
+                    chars_per_line, scale, mechanism.get("badge"))
         if pixmap is None or pixmap.isNull():
             continue
         label = QLabel()

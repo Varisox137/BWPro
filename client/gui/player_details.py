@@ -18,7 +18,7 @@ class PlayerDetailDialog(QDialog):
         super().__init__(parent)
         state = game.state.players[player]
         self.setWindowTitle(state.name)
-        self.setMinimumSize(520, 600)
+        self.setMinimumSize(520, 680)
         layout = QVBoxLayout(self)
         self.summary_label = QLabel(
             f"生命 {state.health}/{state.max_health}　护甲 {state.shield}\n"
@@ -42,8 +42,7 @@ class PlayerDetailDialog(QDialog):
             widget = CardWidget(
                 cdef, db=game.db, display={"durability": field.intensity}, art_height=512)
             widget.count_label.hide()
-            if widget._display_art is not None:
-                art_width = widget._display_art.width()
+            art_width = widget.art_width or art_width
             widget.setFixedWidth(art_width + 24)
             widget.setMinimumHeight(560)
             widget.clicked.connect(
@@ -54,7 +53,7 @@ class PlayerDetailDialog(QDialog):
         self.ability_mechanisms = player_ability_mechanisms(state, player, viewer)
         self.ability_panel, self.ability_labels = mechanism_panel(
             self.ability_mechanisms, self, chars_per_line=12, font_scale=1.0,
-            max_height=560, width=art_width)
+            max_height=512, width=art_width + 24)
         if self.ability_panel is not None:
             self.content_layout.addWidget(self.ability_panel)
         self.scroll_area.setWidget(content)

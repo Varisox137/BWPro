@@ -56,8 +56,9 @@ def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypa
         lambda name, _frame, text, _root, chars_per_line=None, font_scale=1.0, badge=None:
         rendered.append((name, text)) or QPixmap(360, 220))
     dialog = CardDetailDialog(cdef, db, runtime={"keywords": ["瞬发"]})
-    assert [name for name, _text in rendered] == ["贯通", "瞬发", "连击"]
-    assert rendered[1][1] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
+    # 原生测宽后按卡图宽度二次原生缩放，顺序保持不变。
+    assert [name for name, _text in rendered] == ["贯通", "贯通", "瞬发", "瞬发", "连击", "连击"]
+    assert rendered[2][1] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
     dialog.close()
 
 
@@ -82,15 +83,17 @@ def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, mon
     assert dialog.detail_top.itemAt(0).widget() is dialog.card_widget
     assert dialog.detail_top.itemAt(1).widget() is dialog.mechanism_panel
     assert art_calls and all(call["height"] == 512 for call in art_calls)
-    assert mechanism_args and all(args == (12, 1.0) for args in mechanism_args)
+    assert mechanism_args and all(args[0] == 12 and 0 < args[1] <= 1.0 for args in mechanism_args)
+    assert dialog.minimumHeight() >= 680
     dialog.resize(1000, 800)
     dialog.show()
     qapp.processEvents()
     assert dialog.card_widget.height() >= 500
-    assert abs(dialog.card_widget.width() - dialog.mechanism_panel.width()) <= 24
+    assert dialog.card_widget.width() == dialog.mechanism_panel.width()
+    assert dialog.card_widget.art_width == 263
     displayed = dialog.card_widget.art_label.pixmap()
     assert displayed.width() / displayed.height() == pytest.approx(263 / 512)
-    assert dialog.mechanism_panel.maximumHeight() <= dialog.card_widget.height() * 1.2
+    assert dialog.mechanism_panel.maximumHeight() == 512
     assert dialog.mechanism_panel.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
     assert dialog.mechanism_panel.verticalScrollBar().maximum() > 0
     dialog.close()
@@ -105,7 +108,10 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     from types import SimpleNamespace
     db.invocations["测试灵咒"] = SimpleNamespace(text="测试灵咒说明。")
     dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
+    assert dialog.main_art_pixmap.height() == 512
     assert dialog.mechanism_panel is not None
+    assert dialog.mechanism_panel.maximumHeight() == 512
+    assert dialog.status_panel.maximumHeight() == 512
     assert len(dialog.mechanism_labels) == 1
     assert all(not label.pixmap().isNull() for label in dialog.mechanism_labels)
     assert any("测试灵咒说明。" in item["text"] for item in dialog.status_mechanisms)

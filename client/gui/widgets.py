@@ -154,6 +154,10 @@ class CardWidget(QFrame):
         for child in self.findChildren(QLabel):
             child.setAttribute(Qt.WA_TransparentForMouseEvents)
 
+    @property
+    def art_width(self) -> int | None:
+        return self._display_art.width() if self._display_art is not None else None
+
     def _request_art(self):
         if self._art_db is None:
             return None
@@ -224,20 +228,20 @@ class CardDetailDialog(QDialog):
                  level_color=None):
         super().__init__(parent)
         self.setWindowTitle(cdef.name)
-        self.setMinimumSize(480, 600)
+        self.setMinimumSize(480, 680)
         layout = QVBoxLayout(self)
         self.detail_top = QHBoxLayout()
         self.card_widget = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
                                       level_color=level_color, art_height=512)
         self.card_widget.count_label.hide()
-        art_width = (self.card_widget._display_art.width()
-                     if self.card_widget._display_art is not None else 396)
-        self.card_widget.setFixedWidth(art_width + 24)
+        art_width = self.card_widget.art_width or 396
+        panel_width = art_width + 24
+        self.card_widget.setFixedWidth(panel_width)
         self.card_widget.setMinimumHeight(560)
         self.detail_top.addWidget(self.card_widget, 0, Qt.AlignLeft | Qt.AlignTop)
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
             card_mechanisms(cdef, runtime), self, chars_per_line=12, font_scale=1.0,
-            width=art_width)
+            max_height=512, width=panel_width)
         if self.mechanism_panel is not None:
             self.detail_top.addWidget(self.mechanism_panel, 1)
             self.setMinimumWidth(900)
@@ -280,7 +284,7 @@ class CardDetailDialog(QDialog):
     def _sync_mechanism_height(self) -> None:
         if self.mechanism_panel is not None:
             self.mechanism_panel.setMaximumHeight(
-                max(160, round(self.card_widget.height() * 1.1)))
+                min(512, max(160, round(self.card_widget.height() * 1.1))))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
