@@ -301,7 +301,7 @@ class BattleCardItem(QGraphicsObject):
         painter.restore()
 
     def mousePressEvent(self, event) -> None:
-        if self.key[0] != "usage":
+        if event.button() == Qt.LeftButton and self.key[0] != "usage":
             self.scene().drag_controller.press(self, event.scenePos())
         event.accept()
 
@@ -311,7 +311,16 @@ class BattleCardItem(QGraphicsObject):
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
-        if self.key[0] == "usage":
+        if event.button() == Qt.RightButton:
+            if self.key[0] == "hand" and not self.revealed:
+                event.accept()
+                return
+            if (self.key[0] == "player"
+                    and not QRectF(2, 2, 96, 96).contains(self.mapFromScene(event.scenePos()))):
+                event.accept()
+                return
+            self.scene().read_detail_requested.emit(self.key[0], self.payload)
+        elif self.key[0] == "usage":
             if self.playable:
                 self.scene().usage_selected.emit(self.payload)
         else:
@@ -484,6 +493,7 @@ class BattleView(QGraphicsView):
 
 class BattleScene(QGraphicsScene):
     detail_requested = Signal(str, object)
+    read_detail_requested = Signal(str, object)
     action_requested = Signal(dict)
     mulligan_selected = Signal(object)
     usage_selected = Signal(object)

@@ -633,7 +633,7 @@ class DeckBuilderView(QWidget):
                         lambda _=False, cid=cdef.id: self.change_card(cid, 1))
                     widget.minus_button.clicked.connect(
                         lambda _=False, cid=cdef.id: self.change_card(cid, -1))
-                widget.clicked.connect(self.show_card_detail)
+                widget.detail_clicked.connect(self.show_card_detail)
                 self.card_widgets.append(widget)
                 self._loading_tick()
             fill_card_row(self.card_layout, self.card_widgets)

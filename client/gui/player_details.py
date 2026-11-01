@@ -45,7 +45,7 @@ class PlayerDetailDialog(QDialog):
             art_width = widget.art_width or art_width
             widget.setFixedWidth(art_width + 24)
             widget.setMinimumHeight(560)
-            widget.clicked.connect(
+            widget.detail_clicked.connect(
                 lambda selected: CardDetailDialog(selected, game.db, self).exec())
             self.content_layout.addWidget(widget)
             self.field_widgets.append(widget)

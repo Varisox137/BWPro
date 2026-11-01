@@ -2042,3 +2042,19 @@ def test_cardart_null_pixmap_retry_with_same_cache_arguments(qapp, tmp_path, mon
     assert second is rendered
     assert len(calls) == 2
     cardart._cached_runtime_card_pixmap.cache_clear()
+
+
+def test_card_widget_right_click_has_independent_detail_signal(qapp):
+    from PySide6.QtTest import QTest
+    from client.gui.widgets import CardWidget
+    from tests import factories as F
+
+    widget = CardWidget(F.card(10010101))
+    left, right = [], []
+    widget.clicked.connect(left.append)
+    widget.detail_clicked.connect(right.append)
+    QTest.mouseClick(widget, Qt.RightButton)
+    assert left == [] and right == [widget.cdef]
+    QTest.mouseClick(widget, Qt.LeftButton)
+    assert left == [widget.cdef] and len(right) == 1
+    widget.close()

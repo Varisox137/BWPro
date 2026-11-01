@@ -258,7 +258,7 @@ class ShikigamiCodexView(QWidget):
             for cdef in shown:
                 widget = CardWidget(cdef, editable=False, db=self.edb, art_context=art_context)
                 widget.count_label.hide()
-                widget.clicked.connect(self.show_card_detail)
+                widget.detail_clicked.connect(self.show_card_detail)
                 self.card_widgets.append(widget)
                 self._loading_tick()
             fill_card_row(self.card_layout, self.card_widgets)

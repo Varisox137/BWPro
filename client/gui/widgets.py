@@ -73,6 +73,7 @@ class CardWidget(QFrame):
     """静态卡面：有本地卡图时显示全卡，否则回退文字卡。"""
 
     clicked = Signal(object)
+    detail_clicked = Signal(object)
 
     def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
                  display=None, level_color=None, art_context: dict | None = None,
@@ -190,6 +191,8 @@ class CardWidget(QFrame):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.clicked.emit(self.cdef)
+        elif event.button() == Qt.RightButton:
+            self.detail_clicked.emit(self.cdef)
         super().mouseReleaseEvent(event)
 
 
@@ -197,6 +200,7 @@ class CardChoiceView(QScrollArea):
     """横向候选列表：卡牌显示卡图，其他值保留文字按钮。"""
 
     chosen = Signal(object)
+    detail_clicked = Signal(object)
 
     def __init__(self, options, db=None, parent=None):
         super().__init__(parent)
@@ -215,6 +219,7 @@ class CardChoiceView(QScrollArea):
                 widget.count_label.hide()
                 widget.setFixedSize(180, 390)
             widget.clicked.connect(lambda _=None, option=value: self.chosen.emit(option))
+            widget.detail_clicked.connect(self.detail_clicked.emit)
             self.option_widgets.append(widget)
             row.addWidget(widget)
         row.addStretch(1)

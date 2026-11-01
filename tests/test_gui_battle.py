@@ -1913,8 +1913,8 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
     dialog = seen["dialog"]
     assert dialog.column_names == ["main", "form", "status", "mechanisms"]
     assert dialog.form_card.size() == dialog.main_art_label.size()
-    assert dialog.status_panel.maximumHeight() == 336
-    assert dialog.mechanism_panel.maximumHeight() == 336
+    assert dialog.status_panel.maximumHeight() == 512
+    assert dialog.mechanism_panel.maximumHeight() == 512
     assert not hasattr(dialog, "status_label")
     text = "\n".join(item["text"] for item in dialog.status_mechanisms)
     assert f"力量 {shiki.eff_power}" not in text
@@ -2130,7 +2130,7 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
             return QDialog.Rejected
 
     monkeypatch.setattr("client.gui.player_details.CardDetailDialog", Detail)
-    dialog.field_widgets[1].clicked.emit(dialog.field_widgets[1].cdef)
+    dialog.field_widgets[1].detail_clicked.emit(dialog.field_widgets[1].cdef)
     assert seen == [(db.cards[10010152], db, dialog)]
 
     dialog.resize(640, 700)
@@ -3021,3 +3021,38 @@ def test_mulligan_log_hides_opponent_counts_only_during_startup(qapp, view):
     view.refresh()
     settle(view)
     assert log_lines(view).count(other_message) == 1
+
+
+def test_right_click_opens_public_details_without_actions(qapp, view, monkeypatch):
+    from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.inputs_open = False
+    calls = []
+    scene.read_detail_requested.connect(lambda kind, _payload: calls.append(kind))
+    actions = []
+    scene.action_requested.connect(actions.append)
+
+    def right_click(item, pos):
+        press = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMousePress)
+        press.setButton(Qt.RightButton)
+        press.setScenePos(pos)
+        item.mousePressEvent(press)
+        release = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseRelease)
+        release.setButton(Qt.RightButton)
+        release.setScenePos(pos)
+        item.mouseReleaseEvent(release)
+
+    hand = scene.cards[("hand", view.game.current.hand[0].uid)]
+    right_click(hand, hand.scenePos())
+    shiki = scene.cards[("shiki", 0, 0)]
+    right_click(shiki, shiki.scenePos())
+    player = scene.cards[("player", 0)]
+    right_click(player, player.scenePos() + QPointF(48, 48))
+    assert len(calls) == 3
+    assert actions == []
+
+    hidden = scene.cards[("hand", view.game.state.players[1].hand[0].uid)]
+    right_click(hidden, hidden.scenePos())
+    assert len(calls) == 3
