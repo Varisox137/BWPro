@@ -341,6 +341,7 @@ def main() -> None:
                      require_client_ua=not args.no_require_ua,
                      allow_debug_rooms=args.allow_debug_rooms)
     config = uvicorn.Config(app, host=args.host, port=args.port,
+                            log_config=None,  # 复用项目日志，避免 tee stdout 无 isatty
                             ws_ping_interval=10, ws_ping_timeout=5,
                             ws_max_size=1024 * 1024,  # 单条消息最大 1MB
                             server_header=False,  # 不下发 server: uvicorn 响应头

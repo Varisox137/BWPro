@@ -1150,8 +1150,9 @@ def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path, remote):
     subprocess.run(["bash", "-n", str(script)], check=True)
     text = script.read_text(encoding="utf-8")
     for required in ("git pull --ff-only", "--locked", "--managed-python",
-                     "--python 3.14", "--no-dev", "--no-sync"):
+                     "--python 3.14", "--no-dev", ".venv/bin/python", "启动服务端"):
         assert required in text
+    assert "uv run" not in text
     assert 'UV_LINK_MODE="${UV_LINK_MODE:-copy}"' in text
     assert "export UV_LINK_MODE" in text
 
@@ -1197,3 +1198,11 @@ def test_termux_launcher_accepts_equivalent_remote_urls(tmp_path, remote_url):
     assert result.returncode != 0
     assert "未提交" in result.stderr
     assert "远端地址不符合预期" not in result.stderr
+
+
+def test_uvicorn_uses_project_logging_without_tty_probe():
+    """uvicorn 不再覆盖项目日志配置，避免 tee stdout 缺少 isatty。"""
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / "server" / "main.py").read_text(encoding="utf-8")
+    assert "log_config=None" in source

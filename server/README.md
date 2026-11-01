@@ -23,7 +23,8 @@ chmod +x scripts/termux_server.sh
 ```
 
 脚本依次检查分支/远端/工作区，自动识别 `origin`（新克隆默认）或 `main` 并执行 `git pull --ff-only <远端> master`，再用
-`uv sync --locked --managed-python --python 3.14 --no-dev` 同步服务端环境并启动。
+`uv sync --locked --managed-python --python 3.14 --no-dev` 同步环境，最后直接调用 `.venv/bin/python -m server.main` 启动。
+服务端使用项目统一日志配置（uvicorn `log_config=None`），兼容经 tee 重定向的 stdout。
 存在本地改动时直接中止，不会自动 stash/reset/clean；uv 不存在时也只提示，不自动执行安装脚本。
 脚本默认 `UV_LINK_MODE=copy`，避免部分 Termux 文件系统不支持硬链接；可用同名环境变量覆盖。
 launcher 日志写入 `logs/bwpro-launcher-<时间>-<PID>.log`。
