@@ -37,8 +37,14 @@ if [[ -z "$REMOTE" ]]; then
 fi
 REMOTE_URL=$(git remote get-url "$REMOTE" 2>/dev/null) \
     || fail "远端不存在：$REMOTE"
-[[ "$REMOTE_URL" == "$EXPECTED_REMOTE" ]] \
-    || fail "远端地址不符合预期：$REMOTE_URL"
+REMOTE_URL=${REMOTE_URL%/}
+case "$REMOTE_URL" in
+    "$EXPECTED_REMOTE"|"https://github.com/Varisox137/BWPro"|"git@github.com:Varisox137/BWPro.git"|"ssh://git@github.com/Varisox137/BWPro.git")
+        ;;
+    *)
+        fail "远端地址不符合预期：$REMOTE_URL"
+        ;;
+esac
 
 if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
     git status --short

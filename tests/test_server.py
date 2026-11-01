@@ -1168,3 +1168,30 @@ def test_termux_launcher_syntax_and_dirty_tree_guard(tmp_path, remote):
     assert result.returncode != 0
     assert "未提交" in result.stderr
     assert not (tmp_path / ".git" / "FETCH_HEAD").exists()
+
+
+@pytest.mark.parametrize("remote_url", [
+    "https://github.com/Varisox137/BWPro",
+    "https://github.com/Varisox137/BWPro/",
+    "https://github.com/Varisox137/BWPro.git",
+    "git@github.com:Varisox137/BWPro.git",
+    "ssh://git@github.com/Varisox137/BWPro.git",
+])
+def test_termux_launcher_accepts_equivalent_remote_urls(tmp_path, remote_url):
+    """GitHub 无 .git、尾斜杠与 SSH 地址均属于同一预期仓库。"""
+    import os
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).parents[1] / "scripts" / "termux_server.sh"
+    subprocess.run(["git", "init", "-b", "master", str(tmp_path)], check=True,
+                   capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", remote_url],
+                   check=True)
+    (tmp_path / "dirty.txt").write_text("local", encoding="utf-8")
+    result = subprocess.run(["bash", str(script)],
+                            env={**os.environ, "BWP_REPO_DIR": str(tmp_path)},
+                            capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode != 0
+    assert "未提交" in result.stderr
+    assert "远端地址不符合预期" not in result.stderr
