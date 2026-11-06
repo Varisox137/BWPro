@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from client.cli import KEYWORD_CN
 from client.gui.cardart import _renderer
-from client.gui.portrait import bwpdiy_root, library_root
+from client.gui.portrait import bwpdiy_root, library_root, load_global_layouts
 from client.gui.renderlog import log_render_failure
 
 MECHANISM_TEXTS = {
@@ -158,14 +158,13 @@ def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str,
                       font_scale: float = 1.0, badge=None) -> QPixmap | None:
     try:
         assets, _library, _render = _renderer(root_text)
-        from bwpdiy.render.layout import load_layouts
         from bwpdiy.render.mech import render_mechanism
 
         mechanism = {"name": name, "frame": frame, "text": text}
         if badge:
             mechanism["badge"] = badge
         image = render_mechanism(mechanism, assets,
-                                 layout=load_layouts(assets).get("机制"),
+                                 layout=load_global_layouts().get("机制"),
                                  chars_per_line=chars_per_line, font_scale=font_scale)
         buffer = BytesIO()
         image.save(buffer, "PNG")

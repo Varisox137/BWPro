@@ -1,0 +1,15 @@
+type: 形态
+name: 风符·龙
+level: 3
+rarity: SSR
+description: '[[倒计时2]]：随机对一个敌方角色造成6点伤害。此效果之前每触发过一次，多作用一个目标。'
+shikigami: 一目连
+power: 5
+health: 8
+version_date: '20201126'
+id: '10012508'
+artwork:
+  images:
+  - path: 10012508.png
+    scale: 0.711
+    offset_y: -69

@@ -9,21 +9,25 @@
 - 不修改 BWPDIY 的 `render_card`、`render_entity`、`render_portrait`、`render_mechanism` 接口。
 - 保留现有占位图显示策略；合法透明占位属于正常渲染结果，`None`、空 `QPixmap` 和异常才不能计为渲染成功。
 - 保持 `prewarm_all()` 返回成功 `entries`（全量缓存命中时返回全部成功条目），避免改变现有调用方契约。
+- 小卡仅对具有 `charge` 的式神传 `energy`（含 0），仅对非气绝倒计时式神传 `countdown`，二者可共存；气绝保留能量、隐藏普通倒计时，并传复活倒计时或 `defeated_countdown="infinity"`。
 - 不为诊断功能引入新依赖，不把异常文本直接拼入页面 HTML。
 
 ## 1. 高优先级
 
-### 1.1 worktree 资源根
+### 1.1 项目资源根与 worktree 回退
 
 位置：`client/gui/portrait.py` 的 `bwpdiy_root()`。
 
-资源根按以下顺序定位；向上查找同时覆盖普通 checkout 与 `.worktrees/<分支>`，固定层级回退仅在找不到有效资源目录时使用：
+资源根按以下顺序定位：
 
 1. `BWP_DIY_ROOT` 始终优先。
-2. 未配置时，从 `portrait.py` 的各级祖先目录向上寻找具有同级 `BWPDIY/assets` 的目录。
-3. 都找不到时保留原默认路径作为回退，由后续异常日志报告资源缺失。
+2. 未配置时，从 `portrait.py` 向上寻找最近的 `assets/frames`，默认命中 BWPro 项目内 `assets/`；worktree 也可携带自己的资源副本。
+3. 项目内没有资源时，兼容查找同级 `BWPDIY/assets`。
+4. 都找不到时保留原默认路径作为回退，由后续异常日志报告资源缺失。
 
-editable 安装只解决 Python 导入，不能替代资源根定位。非同级目录、worktree 和便携部署应显式设置：
+素材同步复制 BWPDIY `assets/` 的全部文件，同时保留本项目新增素材与旧兼容路径；PSD、`ref/`、`psd_export/` 仅作源文件与视觉参考，运行时仍由渲染器消费标准资源目录。对局 UI 字样、卡背与骰子由 `client/gui/ui_assets.py` 直接读取项目资源根下的 `misc/`、`cardbacks/`、`dice/`，带文件时间戳的内存缓存，不进入卡图 manifest；骰面按展开图实际边界裁剪，卡背按 alpha 裁紧。大卡、小卡、头像与机制框统一经 `load_global_layouts()` 读取 `~/.bwpdiy/layout.json`，缺失时由 BWPDIY 回退包内默认布局；布局缓存指纹跟踪全局文件内容。卡图资源指纹包含 `badges/` 与 `numbers/`，其内容更新会使缓存失效。渲染 Python 包与素材分离定位：资源根包含 `bwpdiy/render` 时直接使用，否则由 `bwpdiy_code_root()` 复用同级 BWPDIY 源码；卡图缓存的源码指纹也使用该代码根，不要求素材与源码同目录。
+
+editable 安装只解决 Python 导入，不能替代资源根定位。需要改用另一份素材或配置时可显式设置：
 
 ```bash
 BWP_DIY_ROOT='D:/Programming/BWPDIY'
@@ -97,7 +101,9 @@ BWP_DIY_LIBRARY='D:/Programming/BWPro/library'
 
 ### `tests/test_gui_builder.py`
 
-- `test_bwpdiy_root_worktree_finds_sibling_assets`：模拟 `.worktrees/<分支>/client/gui/portrait.py`，断言定位真实同级 `BWPDIY/assets`；环境变量覆盖优先于自动推导。
+- `test_bwpdiy_project_assets_precede_sibling_checkout`：项目内 `assets/frames` 优先于同级 BWPDIY 资源，无需本地布局文件。
+- `test_cardart_global_layout_content_changes_cache_key`：全局布局内容变化会生成新缓存，素材目录中的同名文件不参与布局解析。
+- `test_bwpdiy_worktree_root_and_environment_priority`：worktree 没有本地资源时回退到同级 `BWPDIY/assets`；环境变量覆盖优先于自动推导。
 - `test_render_failure_logs_context_once`：连续触发同一失败，断言日志含类型、id、资源根和堆栈且不重复；清缓存后可再次记录。
 - `test_cardart_frame_variant_selects_payload_and_layout`：非常规框配置同时进入渲染负载和布局选择，缺省仍为 `norm`。
 - `test_portrait_same_metadata_content_change_invalidates`：替换图片内容后恢复原 mtime、保持大小不变，第二次头像仍与第一次不同。

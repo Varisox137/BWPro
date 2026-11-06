@@ -1,0 +1,15 @@
+type: 形态
+name: 碧羽散华
+level: 3
+rarity: R
+description: 鸩造成的#pj效果转化为等量的伤害。
+shikigami: 鸩
+power: 5
+health: 7
+version_date: '20200120'
+id: '10012807'
+artwork:
+  images:
+  - path: 10012807.png
+    scale: 0.711
+    offset_y: -92

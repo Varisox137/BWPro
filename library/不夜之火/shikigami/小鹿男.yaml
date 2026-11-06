@@ -1,0 +1,17 @@
+type: 式神
+name: 小鹿男
+faction: 青岚
+power: 2
+health: 6
+description: '[[充能]]。小鹿男复活时获得2#nl。'
+version_date: '20200327'
+id: '100203'
+artwork:
+  images:
+  - path: 100203.png
+    scale: 0.711
+    offset_y: -73
+portrait:
+  scale: 3.388
+  offset_x: 2
+  offset_y: 54

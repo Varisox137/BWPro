@@ -3090,8 +3090,8 @@ def test_field_op_self_destroy_triggers_destroy_flow(db, make_game):
 
 def test_redirect_to_field(db, make_game):
     """泷夜叉姬新月之哀/日轮之城型（redirect_to_field 挂 on_after_shield）：受伤
-    改降触发来源幻境等量耐久——耐久足够全改降、不足部分照常结算；max_amount 封顶
-    （竹取物语"最多降低5耐久"）。"""
+    事件改为等量耐久降低事件——耐久不足时幻境消灭且式神不承受溢出；max_amount
+    封顶（竹取物语"最多降低5耐久"）时仍只转移封顶内的伤害。"""
     _field(db, 10010151, intensity=10, abilities=[F.block(
         F.Step(op="redirect_to_field"), when="on_after_shield",
         condition={"victim_shikigami": "self"})])
@@ -3108,12 +3108,12 @@ def test_redirect_to_field(db, make_game):
     pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 4, Ref(player=1, shikigami=0))
     assert s0.health == 4 and pa.fields[0].intensity == 6
-    # 耐久不足：3 耐久改降 3（幻境消灭），余 2 照常
+    # 耐久不足：幻境承受完整 5 伤并消灭，溢出 2 不再由式神承受
     pa.fields.clear()
     pa.fields.append(FieldState(card_id=10010152, intensity=3, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
     g._drain_queue()
-    assert pa.fields == [] and s0.health == 2       # 4 - 2
+    assert pa.fields == [] and s0.health == 4
     # max_amount 封顶：8 伤只改降 5
     s0.health = 4
     pa.fields.append(FieldState(card_id=10010153, intensity=20, shikigami=100101))
@@ -3129,8 +3129,8 @@ def test_field_absorbs_counter_damage(real_game):
     pa.orb = 9
     play(g, 0, 10030203)                      # 日轮之城（耐久 1）
     move(g, 1, 0)                             # B 泷夜叉姬驻守（3 攻反击）
-    g.apply({"op": "assault", "index": 0})   # A 泷夜叉姬出击：反击 3 由幻境代受 1
-    assert pa.shikigami[0].health == 2        # 4 - (3 - 1)
+    g.apply({"op": "assault", "index": 0})   # A 泷夜叉姬出击：反击 3 全由幻境代受
+    assert pa.shikigami[0].health == 4        # 幻境耐久不足也不承受溢出
     assert pa.fields == []                    # 耐久耗尽，幻境消灭
 
 
@@ -3283,18 +3283,20 @@ def test_friendly_field_condition(db, make_game):
 
 
 def test_health_floor_one(db, make_game):
-    """铃鹿山的秘宝（幻境实体关键字 health_floor_one）：生命不会降到 1 以下——
-    扣减生命前钳制；生命已为 1 时伤害完全免除。"""
+    """铃鹿山的秘宝（幻境实体关键字 health_floor_one）：伤害量保持原样，仅扣减
+    生命后把牌手生命置回 1；队首幻境仍按原始伤害量降低耐久，生命已为 1 也如此。"""
     g = make_game()
     pa = g.state.players[0]
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101,
+    pa.fields.append(FieldState(card_id=10010151, intensity=20, shikigami=100101,
                                 keywords=["health_floor_one"]))
     pa.health = 5
     g.deal_to_player(0, 10, Ref(player=1, shikigami=0))
-    assert pa.health == 1                       # 10 伤只扣 4
+    assert pa.health == 1
+    assert pa.fields[0].intensity == 10         # 原始 10 伤，不是只扣生命的 4
     g.deal_to_player(0, 3, Ref(player=1, shikigami=0))
-    assert pa.health == 1                       # 已为 1：免除
+    assert pa.health == 1
+    assert pa.fields[0].intensity == 7          # 已为 1：伤害事件仍完整结算
     assert g.state.winner is None
 
 
@@ -3581,22 +3583,52 @@ def test_field_intensity_dynamic_amount(db, make_game):
 
 
 def test_search_deck_field_intensity_boost(db, make_game):
-    """五道难题型：search_deck(card_type="field", intensity_boost=5) 从牌库检索
-    幻境牌置入手牌（随机代替选择），实例获得 5 耐久修饰——使用时召唤耐久
-    = 牌面 + 5。"""
+    """五道难题型：search_deck(pick="choose", intensity_boost=5) 即使仅一个候选
+    也挂起选择；所选原牌实例入手并获得 5 耐久修饰，使用时召唤耐久 = 牌面 + 5。"""
     _field(db, 10010161, intensity=5)
     cid = 10010194
     db.cards[cid] = F.card(cid, token=True, steps=[
         F.Step(op="search_deck", shikigami="self", card_type="field",
-               intensity_boost=5)])
+               pick="choose", intensity_boost=5)])
     g = make_game()
     pa, _ = F.battle_setup(g, {0: 1})
     pa.deck.insert(0, F.CardInstance(uid=9001, id=10010161))
     play(g, 0, cid)
+    pend = g.state.pending_choice
+    assert pend is not None and pend["kind"] == "search_deck_pick"
+    assert pend["options"] == [9001]
+    assert not any(c.uid == 9001 for c in pa.hand)
+    g.apply({"op": "choose", "uid": 9001, "player": 0})
     got = next(c for c in pa.hand if c.id == 10010161)
     assert got.mods["intensity_boost"] == 5
+    assert g.state.pending_choice is None
     g.apply({"op": "play_card", "uid": got.uid})    # 打出检索到手的那张（非新发实例）
     assert pa.fields[0].intensity == 10             # 牌面 5 + 修饰 5
+    play(g, 0, cid)                                 # 牌库已无候选：可用但无效果
+    assert g.state.pending_choice is None
+
+
+def test_search_deck_choose_selected_copy(db, make_game):
+    """牌库选择检索按 uid 取所选实例，而非随机同名牌；非法候选与敌方作答被拒绝。"""
+    _field(db, 10010161, intensity=5)
+    _field(db, 10010162, intensity=4)
+    cid = 10010194
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="search_deck", shikigami="self", card_type="field", pick="choose")])
+    g = make_game()
+    pa, _ = F.battle_setup(g, {0: 1})
+    pa.deck.insert(0, F.CardInstance(uid=9001, id=10010161))
+    pa.deck.insert(0, F.CardInstance(uid=9002, id=10010162))
+    play(g, 0, cid)
+    assert g.state.pending_choice["options"] == [9002, 9001]  # 与牌库当前顺序一致
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "choose", "uid": 9001, "player": 1})
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "choose", "uid": 9999, "player": 0})
+    g.apply({"op": "choose", "uid": 9002, "player": 0})
+    assert any(c.uid == 9002 for c in pa.hand)
+    assert any(c.uid == 9001 for c in pa.deck)
+    assert g.state.pending_choice is None
 
 
 def test_real_yaml_discard_pick_card_type_choice(real_game):
@@ -3788,8 +3820,8 @@ def test_field_merge_awaken_pick_all(db, make_game):
 def test_after_shield_priority_redirect_beats_transfer(db, make_game):
     """伤害事件"护甲计算后"批次优先级分层（定案(7)）：「伤害改为非伤害」类
     （redirect_to_field，优先级 1）先于「伤害目标转移」类（血蝠之盾挂账 = 引擎
-    内建优先级 2 段）——全额改降后原伤害事件终止：转移不再处理（挂账不消耗、
-    牌手不受伤害）；部分改降时余量照常转移。"""
+    内建优先级 2 段）——完整伤害改降后原事件终止：转移不再处理（挂账不消耗、
+    牌手不受伤害），幻境耐久不足也没有溢出余量。"""
     _field(db, 10010151, intensity=4, abilities=[F.block(
         F.Step(op="redirect_to_field"), when="on_after_shield", priority=1,
         condition={"victim_shikigami": "self", "kind": "effect"})])
@@ -3803,13 +3835,13 @@ def test_after_shield_priority_redirect_beats_transfer(db, make_game):
     assert pa.fields[0].intensity == 1              # 3 点全额改降幻境耐久
     assert s0.health == 4 and pa.health == 30       # 原事件终止：转移不处理
     assert len(s0.ext["damage_redirects"]) == 1     # 挂账未消耗
-    # 部分改降：余量照常转移给牌手
+    # 耐久不足：完整 5 伤仍改为耐久降低事件，不产生待转移的余量
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
     g._drain_queue()
     assert pa.fields == []                          # 1 耐久改降后归零消灭
-    assert pa.health == 26                          # 余量 4 转移给牌手
-    assert not s0.ext["damage_redirects"]           # 挂账已消耗
-    assert s0.health == 4                           # 式神本人未受余量
+    assert pa.health == 30
+    assert len(s0.ext["damage_redirects"]) == 1
+    assert s0.health == 4
 
 
 def test_redirect_first_same_name_only(db, make_game):
@@ -3826,6 +3858,10 @@ def test_redirect_first_same_name_only(db, make_game):
     pa.fields.append(FieldState(card_id=10010151, intensity=5, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 2, Ref(player=1, shikigami=0))
     assert [ph.intensity for ph in pa.fields] == [1, 5]     # 仅首个同名代受
+    assert s0.health == 4
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
+    g._drain_queue()
+    assert [ph.intensity for ph in pa.fields] == [5]        # 靠后者不承伤也不承受溢出
     assert s0.health == 4
 
 

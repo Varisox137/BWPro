@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -52,5 +53,32 @@ def test_default_log_dir_is_project_logs(tmp_path, monkeypatch):
         path = logging_config.configure_logging("default")
         assert path.parent == tmp_path / "project" / "logs"
         assert path.is_file()
+    finally:
+        logging_config.restore_output()
+
+
+def test_frozen_default_log_dir_uses_user_home(tmp_path, monkeypatch):
+    from core import logging_config
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+    try:
+        path = logging_config.configure_logging("frozen")
+        assert path.parent == tmp_path / "home" / ".bwpro" / "logs"
+        assert path.is_file()
+    finally:
+        logging_config.restore_output()
+
+
+def test_windowed_output_capture_allows_none_streams(monkeypatch):
+    from core import logging_config
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    logging_config.capture_output()
+    try:
+        assert sys.stdout.write("窗口输出") == 4
+        sys.stdout.flush()
+        sys.stderr.flush()
     finally:
         logging_config.restore_output()

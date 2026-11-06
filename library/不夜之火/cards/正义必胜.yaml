@@ -1,0 +1,16 @@
+type: 战斗
+name: 正义必胜
+level: 1
+rarity: R
+description: '[[增强]]：本回合鸦天狗每[[移动]]过一次，此牌获得+2#ll。'
+shikigami: 鸦天狗
+power+: 0
+shield+: 1
+version_date: '20200327'
+id: '10020102'
+artwork:
+  images:
+  - path: 10020102.png
+    scale: 0.747
+    offset_x: 0
+    offset_y: -72

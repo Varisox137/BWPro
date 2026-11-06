@@ -1,0 +1,18 @@
+type: 式神
+name: 鸦天狗
+faction: 苍叶
+power: 1
+health: 6
+description: 当鸦天狗[[移动]]时，[[投射]]：造成1点伤害。
+version_date: '20200327'
+id: '100201'
+artwork:
+  images:
+  - path: 100201.png
+    scale: 0.711
+    offset_y: -75
+portrait:
+  scale: 4.54
+  offset_x: 19
+  offset_y: 45
+  rotate: -45

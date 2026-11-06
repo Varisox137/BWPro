@@ -599,6 +599,48 @@ def test_entity_stat_colors_follow_base_permanent_reference(qapp, tmp_path, monk
     assert state["health_color"] == "red"
 
 
+def test_entity_counters_follow_charge_countdown_and_defeat(qapp, tmp_path, monkeypatch):
+    """小卡状态组件：仅充能者显示能量（含 0），仅非气绝倒计时者显示普通倒计时；
+    两者可共存，气绝保留能量并传入复活倒计时，无复活倒计时按永久气绝绘制。"""
+    import json
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    seen = {}
+    monkeypatch.setattr(cardart, "_cached_entity_pixmap",
+                        lambda _key, _payload, state, _layout, _root:
+                        seen.update(json.loads(state)))
+
+    def render(**values):
+        defaults = dict(id=100101, awakened=None, level=1, defeated=False,
+                        perm_power=0, perm_health=0, eff_power=3, combat_power=0,
+                        health=4, max_health=4, shield=0, ext={}, energy=0,
+                        countdown=None, revive_countdown=0,
+                        keywords=[], one_shot_keywords=[], perm_keywords=[])
+        defaults.update(values)
+        seen.clear()
+        cardart.entity_pixmap(SimpleNamespace(**defaults), database,
+                              library_dir=tmp_path / "empty")
+        return dict(seen)
+
+    state = render()
+    assert state["energy"] is None and state["countdown"] is None
+    assert state["defeated_countdown"] is None
+    assert render(perm_keywords=["charge"])["energy"] == 0
+    state = render(energy=3)
+    assert state["energy"] is None and state["countdown"] is None
+    state = render(countdown=2)
+    assert state["energy"] is None and state["countdown"] == 2
+    state = render(energy=3, countdown=2, perm_keywords=["charge"])
+    assert state["energy"] == 3 and state["countdown"] == 2
+    state = render(energy=3, countdown=2, defeated=True, revive_countdown=2,
+                   perm_keywords=["charge"])
+    assert state["energy"] == 3 and state["countdown"] is None
+    assert state["defeated_countdown"] == 2
+    assert render(defeated=True)["defeated_countdown"] == "infinity"
+
+
 def test_defeated_entity_uses_base_permanent_stats_and_grayscale_art(qapp, tmp_path, monkeypatch):
     import json
     from client.gui import cardart
@@ -1325,6 +1367,7 @@ def test_cardart_runtime_failure_retry_entity(qapp, monkeypatch):
 
 
 def test_cardart_layouts_load_once_across_cache_reads(qapp, tmp_path, monkeypatch):
+    from pathlib import Path
     from client.gui import cardart
 
     cardart._renderer(str(cardart.portrait.bwpdiy_root().resolve()))
@@ -1334,15 +1377,15 @@ def test_cardart_layouts_load_once_across_cache_reads(qapp, tmp_path, monkeypatc
     calls = []
     original = layout.load_layouts
 
-    def track(assets):
-        calls.append(assets)
-        return original(assets)
+    def track(config_root):
+        calls.append(config_root)
+        return original(config_root)
 
     monkeypatch.setattr(layout, "load_layouts", track)
     cardart.clear_cardart_caches()
     cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert len(calls) == 1
+    assert calls == [Path.home() / ".bwpdiy"]
     cardart.clear_cardart_caches()
 
 
@@ -1683,8 +1726,9 @@ def test_cardart_source_digest_tracks_render_python_only(tmp_path):
     assert cardart._renderer_source_digest(assets) == second
 
 
-def test_cardart_default_layout_content_changes_cache_key(qapp, tmp_path, monkeypatch):
+def test_cardart_global_layout_content_changes_cache_key(qapp, tmp_path, monkeypatch):
     import json
+    from pathlib import Path
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
@@ -1696,9 +1740,13 @@ def test_cardart_default_layout_content_changes_cache_key(qapp, tmp_path, monkey
 
     assets = tmp_path / "renderer-assets"
     assets.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+    global_layout = tmp_path / "home" / ".bwpdiy" / "layout.json"
+    global_layout.parent.mkdir(parents=True)
     layouts = load_layouts(real_assets)
-    (assets / "layout.json").write_text(
-        json.dumps(layouts, ensure_ascii=False), encoding="utf-8")
+    contents = json.dumps(layouts, ensure_ascii=False)
+    (assets / "layout.json").write_text(contents, encoding="utf-8")
+    global_layout.write_text(contents, encoding="utf-8")
     original_x = layouts["法术"]["elements"]["name"]["pos"][0]
 
     def render(payload, assets_dir, layout):
@@ -1712,8 +1760,7 @@ def test_cardart_default_layout_content_changes_cache_key(qapp, tmp_path, monkey
     first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert first is not None
     layouts["法术"]["elements"]["name"]["pos"][0] = original_x + 1
-    (assets / "layout.json").write_text(
-        json.dumps(layouts, ensure_ascii=False), encoding="utf-8")
+    global_layout.write_text(json.dumps(layouts, ensure_ascii=False), encoding="utf-8")
     second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert second is not None and second.toImage() != first.toImage()
     assert len(list(cache_dir.glob("*.png"))) == 2
@@ -1753,6 +1800,35 @@ def test_entity_source_only_invalidates_entity_cache(qapp, tmp_path):
     source.write_text("B", encoding="utf-8")
     assert cardart._renderer_resources(assets) == first
     assert cardart._entity_renderer_resources(assets) != first_entity
+
+
+def test_renderer_resources_track_bitmap_numbers_and_badges(tmp_path):
+    from pathlib import Path
+    from client.gui import cardart
+
+    assets = tmp_path / "assets"
+    for relative in ("numbers/white_0.png", "badges/已展示.png"):
+        path = assets / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(relative.encode("utf-8"))
+    tracked = {Path(item[0]).relative_to(assets).as_posix()
+               for item in cardart._renderer_resource_fingerprint(assets)}
+    assert {"numbers/white_0.png", "badges/已展示.png"} <= tracked
+
+
+def test_card_pixmap_passes_burst_to_render_payload(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    seen = {}
+    monkeypatch.setattr(
+        cardart, "_cached_card_pixmap",
+        lambda _key, payload, _layout, _root, *_args, **_kwargs:
+        seen.update(json.loads(payload)))
+    cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir,
+                        burst=2)
+    assert seen["burst"] == 2
 
 
 def test_unleveled_entity_art_ignores_all_stat_badges(qapp, tmp_path):
@@ -1924,6 +2000,19 @@ def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, mo
     assert third.toImage() != second.toImage()
     assert third.toImage().pixelColor(1, 1).name() == "#229955"
     portrait._portrait_pixmap.cache_clear()
+
+
+def test_bwpdiy_project_assets_precede_sibling_checkout(tmp_path, monkeypatch):
+    project = tmp_path / "BWPro"
+    source = project / "client" / "gui" / "portrait.py"
+    source.parent.mkdir(parents=True)
+    (project / "assets" / "frames").mkdir(parents=True)
+    sibling = tmp_path / "BWPDIY"
+    (sibling / "assets").mkdir(parents=True)
+    monkeypatch.setattr(portrait, "__file__", str(source))
+    monkeypatch.delenv("BWP_DIY_ROOT", raising=False)
+
+    assert portrait.bwpdiy_root() == project
 
 
 def test_bwpdiy_worktree_root_and_environment_priority(tmp_path, monkeypatch):

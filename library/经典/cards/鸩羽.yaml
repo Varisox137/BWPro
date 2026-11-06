@@ -1,0 +1,15 @@
+type: 战斗
+name: 鸩羽
+level: 1
+rarity: SR
+description: 若攻击有#pj的角色，免疫战斗伤害。
+shikigami: 鸩
+power+: 2
+shield+: 0
+version_date: '20191212'
+id: '10012801'
+artwork:
+  images:
+  - path: 10012801.png
+    scale: 0.711
+    offset_y: -74

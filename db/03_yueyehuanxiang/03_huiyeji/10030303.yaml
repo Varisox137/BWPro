@@ -12,7 +12,7 @@ versions:
         - {keyword: fast, deck_field_distinct_ge: 5}
       effects:
         steps:
-          # 「从你牌库选择一张辉夜姬的幻境牌置入手牌并使其获得5耐久」：随机代替玩家
-          # 选择（同花信风惯例）；intensity_boost 于召唤幻境时结算入耐久
-          - {op: search_deck, shikigami: self, card_type: field, intensity_boost: 5}
+          # 「从你牌库选择一张辉夜姬的幻境牌置入手牌并使其获得5耐久」：按实例 uid
+          # 交互选择（仅一个候选也挂起）；intensity_boost 于召唤幻境时结算入耐久
+          - {op: search_deck, shikigami: self, card_type: field, pick: choose, intensity_boost: 5}
       text: "从你牌库选择一张辉夜姬的幻境牌置入手牌并使其获得5耐久。[增强]：{若你牌库有辉夜姬的五种不同名幻境牌，此牌获得[瞬发]。}"

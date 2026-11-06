@@ -1,0 +1,15 @@
+type: 形态
+name: 风符·破
+level: 1
+rarity: R
+description: '[[倒计时2]]：[[投射]]：造成3点伤害。'
+shikigami: 一目连
+power: 3
+health: 6
+version_date: '20191212'
+id: '10012501'
+artwork:
+  images:
+  - path: 10012501.png
+    scale: 0.711
+    offset_y: -68

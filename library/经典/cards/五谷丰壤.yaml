@@ -1,0 +1,15 @@
+type: 形态
+name: 五谷丰壤
+level: 1
+rarity: R
+description: 己方回合开始时，双方牌手[[运势4]]：恢复3#sm。
+shikigami: 座敷童子
+power: 2
+health: 7
+version_date: '20191212'
+id: '10012902'
+artwork:
+  images:
+  - path: 10012902.png
+    scale: 0.711
+    offset_y: -66

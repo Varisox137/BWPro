@@ -171,6 +171,8 @@ class OnlineBattleView(HotseatView):
             self.stack.setCurrentWidget(self.battle_page)
             if timeline:
                 for entry in timeline:
+                    if entry.get("k") == "v":
+                        continue  # 视觉事件由 BattleScene.sync_state 的增量路径播放
                     self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
             elif log:
                 self.played_timeline.extend((None, line) for line in log)
@@ -264,10 +266,7 @@ class OnlineBattleView(HotseatView):
         self._sync_pending_choice()
 
     def _show_result(self) -> None:
-        names = [player.name for player in self.game.state.players]
-        self.result_banner.setText(cli.result_text(self.game.state.winner, names, viewer=self.me))
-        self.result_banner.show()
-        self.result_back.show()
+        super()._show_result()
 
     def show_game_over(self, winner: int | None, reason: str = "") -> None:
         self._game_over = True

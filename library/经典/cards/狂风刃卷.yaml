@@ -1,0 +1,15 @@
+type: 法术
+name: 狂风刃卷
+level: 3
+rarity: SSR
+description: '随机对一个敌方角色造成2点伤害，重复5次。
+
+  [[增强]]：若本局游戏妖狐造成过25次伤害，额外重复5次。'
+shikigami: 妖狐
+version_date: '20200120'
+id: '10013006'
+artwork:
+  images:
+  - path: 10013006.png
+    scale: 0.747
+    offset_y: -72

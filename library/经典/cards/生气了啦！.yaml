@@ -1,0 +1,15 @@
+type: 战斗
+name: 生气了啦！
+level: 2
+rarity: R
+description: '[[连击]]'
+shikigami: 跳跳妹妹
+power+: 0
+shield+: 0
+version_date: '20200227'
+id: '10013104'
+artwork:
+  images:
+  - path: 10013104.png
+    scale: 0.711
+    offset_y: -80

@@ -9,7 +9,7 @@ versions:
       level: 3
       intensity: 10
       field_keywords: [health_floor_one]  # 「你的生命不会降到1以下」——幻境实体
-      # 关键字（引擎扣减生命前钳制伤害量；召唤时拷贝到实体，离场即失效）
+      # 关键字（伤害量不变，扣减生命后把牌手生命置回 1；召唤时拷贝到实体，离场即失效）
       effects:
         steps: []
       text: "你的生命不会降到1以下。"

@@ -1,0 +1,13 @@
+type: 法术
+name: 坐下！
+level: 1
+rarity: SR
+description: 使‘[[番茄]]’永久获得1#ll。然后额外消耗1点鬼火，召唤‘[[番茄]]’。
+shikigami: 跳跳妹妹
+version_date: '20200227'
+id: '10013103'
+artwork:
+  images:
+  - path: 10013103.png
+    scale: 0.747
+    offset_y: -73

@@ -401,14 +401,16 @@ class NetClient:
                 return
             p = st.players[self.me]
             kind = pend.get("kind")
-            if kind == "discard_pick":
-                # 交互弃牌（意外之喜）：从手牌选一张弃置
+            if kind in ("discard_pick", "search_deck_pick"):
+                # 交互弃牌 / 牌库选择检索：均按实例 uid 作答
+                zone = p.hand if kind == "discard_pick" else p.deck
                 opts = [c for u in pend["options"]
-                        for c in [next((x for x in p.hand if x.uid == u), None)] if c]
+                        for c in [next((x for x in zone if x.uid == u), None)] if c]
                 if cmd == "choose" and args:
                     self.send_cmd({"op": "choose", "uid": opts[int(args[0]) - 1].uid})
                     return
-                print("—— 弃置手牌：输入 choose <序号> 弃置一张 ——")
+                title = "弃置手牌" if kind == "discard_pick" else "从牌库选择一张牌置入手牌"
+                print(f"—— {title}：输入 choose <序号> ——")
                 for i, c in enumerate(opts):
                     cd = self.db.cards[c.id]
                     print(f"  [{i + 1}]【{cd.name}】 {cd.text}")

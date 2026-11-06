@@ -1,0 +1,6 @@
+name: 帷幕
+frame: skill
+text: 无法成为敌方卡牌的选择目标。
+badge: null
+chars_per_line: 12
+version_date: '20200327'

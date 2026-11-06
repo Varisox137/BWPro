@@ -1,0 +1,15 @@
+type: 战斗
+name: 无往
+level: 2
+rarity: SR
+description: 对一个有#pj的或在战斗区的敌方角色造成2点伤害。
+shikigami: 铃鹿御前
+power+: 0
+shield+: 2
+version_date: '20200520'
+id: '10020706'
+artwork:
+  images:
+  - path: 10020706.png
+    scale: 0.747
+    offset_y: -72

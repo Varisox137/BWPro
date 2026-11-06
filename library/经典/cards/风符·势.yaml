@@ -1,0 +1,15 @@
+type: 形态
+name: 风符·势
+level: 2
+rarity: R
+description: '[[倒计时2]]：[[鼓舞]]：获得+3#ll与+3#hj。'
+shikigami: 一目连
+power: 3
+health: 8
+version_date: '20191212'
+id: '10012503'
+artwork:
+  images:
+  - path: 10012503.png
+    scale: 0.711
+    offset_y: -78

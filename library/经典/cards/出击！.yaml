@@ -1,0 +1,13 @@
+type: 法术
+name: 出击！
+level: 2
+rarity: SR
+description: 召唤‘[[番茄]]’并使其永久得‘攻击造成伤害时随机对另一个敌方角色造成3点伤害’。（效果可以叠加）
+shikigami: 跳跳妹妹
+version_date: '20200227'
+id: '10013106'
+artwork:
+  images:
+  - path: 10013106.png
+    scale: 0.711
+    offset_y: -98

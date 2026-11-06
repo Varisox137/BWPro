@@ -25,7 +25,8 @@ class _Tee:
         self.logger = logging.getLogger("bwpro.output")
 
     def write(self, text):
-        self.stream.write(text)
+        if self.stream is not None:  # PyInstaller windowed：无控制台流
+            self.stream.write(text)
         self.buffer += text
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
@@ -34,7 +35,8 @@ class _Tee:
         return len(text)
 
     def flush(self):
-        self.stream.flush()
+        if self.stream is not None:
+            self.stream.flush()
         if self.buffer:
             self.logger.log(self.level, self.buffer)
             self.buffer = ""
@@ -107,7 +109,9 @@ def _thread_exception_logger(logger: logging.Logger):
 
 def configure_logging(component: str, log_dir: Path | None = None) -> Path:
     """初始化进程日志并返回文件路径；重复调用会轮换而非叠加 handler。"""
-    log_dir = log_dir or Path(__file__).resolve().parents[1] / "logs"
+    if log_dir is None:
+        log_dir = (Path.home() / ".bwpro" / "logs" if getattr(sys, "frozen", False)
+                   else Path(__file__).resolve().parents[1] / "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
     _cleanup_logs(log_dir)
     path = log_dir / f"bwpro-{datetime.now():%Y%m%d-%H%M%S}-{os.getpid()}.log"

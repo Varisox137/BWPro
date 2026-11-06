@@ -1,0 +1,14 @@
+type: 式神
+name: 烟烟罗的分身
+faction: 青岚
+power: 2
+health: 4
+description: '[[充能]]。召唤时具有与烟烟罗相同的#ll和#sm以及一半的#nl。'
+shikigami: 烟烟罗
+version_date: '20200327'
+id: '10020499'
+artwork:
+  images:
+  - path: 10020499.png
+    scale: 0.711
+    offset_y: -85

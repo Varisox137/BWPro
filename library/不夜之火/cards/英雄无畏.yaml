@@ -1,0 +1,13 @@
+type: 法术
+name: 英雄无畏
+level: 3
+rarity: SSR
+description: 使一个敌方式神保持[[眩晕]]，直到鸦天狗使用牌、攻击或气绝。
+shikigami: 鸦天狗
+version_date: '20200327'
+id: '10020107'
+artwork:
+  images:
+  - path: 10020107.png
+    scale: 0.747
+    offset_y: -70

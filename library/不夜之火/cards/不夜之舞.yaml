@@ -1,0 +1,15 @@
+type: 形态
+name: 不夜之舞
+level: 1
+rarity: R
+description: 你的出击加成效果在使用战斗牌时也会生效。
+shikigami: 不知火
+power: 4
+health: 5
+version_date: '20200327'
+id: '10020201'
+artwork:
+  images:
+  - path: 10020201.png
+    scale: 0.711
+    offset_y: -76

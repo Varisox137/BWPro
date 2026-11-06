@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·萤草
+level: 3
+rarity: SR
+description: '[[觉醒]]：己方式神的形态牌获得[[瞬发]]且使用时抽一张牌。'
+shikigami: 萤草
+version_date: '20191212'
+id: '10012708'
+evolve: true
+power+: 2
+health+: 2
+artwork:
+  images:
+  - path: 10012708.png
+    scale: 0.747
+    offset_y: -77

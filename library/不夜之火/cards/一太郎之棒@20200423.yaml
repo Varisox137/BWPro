@@ -1,0 +1,19 @@
+type: 战斗
+name: 一太郎之棒
+level: 3
+rarity: SR
+description: '对敌方角色造成伤害后，使其[[眩晕]]且本回合#ll变为0。
+
+  [[爆能3]]：额外使用‘[[二太郎之戟]]’。
+
+  [[爆能7]]：再额外使用‘[[三太郎之斧]]’。'
+shikigami: 镰鼬
+power+: 2
+shield+: 2
+version_date: '20200423'
+id: '10020608'
+artwork:
+  images:
+  - path: 10020608.png
+    scale: 0.711
+    offset_y: -72

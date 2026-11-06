@@ -1,0 +1,17 @@
+type: 战斗
+name: 不玩了啦！
+level: 3
+rarity: SR
+description: '可以在气绝时使用。
+
+  复活跳跳妹妹。'
+shikigami: 跳跳妹妹
+power+: 2
+shield+: 2
+version_date: '20200227'
+id: '10013107'
+artwork:
+  images:
+  - path: 10013107.png
+    scale: 0.711
+    offset_y: -73

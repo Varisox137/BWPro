@@ -16,6 +16,7 @@ uv run python -m server.main         # 联机服务端（默认 127.0.0.1:1037�
 uv run python -m client.net          # 联机客户端（创建/加入房间）
 uv run python -m db.validate         # 校验卡牌数据库
 uv run python -m db.scaffold -h      # 式神/卡牌 yaml 脚手架（生成骨架再补效果块）
+uv run python scripts/build_exe.py   # 构建独立 Windows GUI exe 并自动冒烟测试
 uv run pytest -q tests/              # 运行全部测试
 ```
 
@@ -27,6 +28,7 @@ uv run pytest -q tests/              # 运行全部测试
 - `client/` — CLI 客户端：`cli.py` 热座 + 卡组构筑；`net.py` 联机（同一 `cmd dict` 协议）；
   `tui.py` TUI 基座（prompt_toolkit 底部输入框 + 常驻状态行，非 TTY 自动回退内置 input）
 - `server/` — authoritative 联机服务端（FastAPI + WebSocket，详见 `server/README.md`）
+- `assets/` — GUI 通用美术素材 · `library/` — 卡图配置与原图（均随仓库提交）
 - `diy/` — 自定义卡牌 DSL（Phase 3） · `docs/` — 规则与术语文档 · `tests/` — 测试
 
 ## 已实现机制

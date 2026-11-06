@@ -1,0 +1,17 @@
+type: 式神
+name: 一目连
+faction: 苍叶
+power: 2
+health: 6
+description: 一目连的形态牌被消灭时会触发[[倒计时]]效果。
+version_date: '20191212'
+id: '100125'
+artwork:
+  images:
+  - path: 1001225.png
+    scale: 0.747
+    offset_y: -70
+portrait:
+  scale: 5.005
+  offset_x: 24
+  offset_y: 38

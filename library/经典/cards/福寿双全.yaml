@@ -1,0 +1,17 @@
+type: 形态
+name: 福寿双全
+level: 1
+rarity: SR
+description: '[[增强]]：座敷童子结附形态牌时，此牌获得[[瞬发]]且使用时抽一张牌。
+
+  此牌进场或离场时，双方各获得1点鬼火。'
+shikigami: 座敷童子
+power: 4
+health: 5
+version_date: '20191212'
+id: '10012903'
+artwork:
+  images:
+  - path: 10012903.png
+    scale: 0.711
+    offset_y: -78

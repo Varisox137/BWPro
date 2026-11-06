@@ -15,6 +15,12 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 from client.gui.app import MainWindow
 from client.gui.builder import DeckBuilderView
 from client.gui.prewarm import prewarm_all
+
+
+def test_main_window_uses_application_icon(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    assert not win.windowIcon().isNull()
+    win.close()
 from client.gui.settings import SettingsView
 from tests import factories as F
 

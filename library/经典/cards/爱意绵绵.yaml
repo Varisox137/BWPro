@@ -1,0 +1,15 @@
+type: 形态
+name: 爱意绵绵
+level: 3
+rarity: R
+description: 你手牌所有法术牌伤害效果+1。
+shikigami: 妖狐
+power: 5
+health: 8
+version_date: '20200120'
+id: '10013008'
+artwork:
+  images:
+  - path: 10013008.png
+    scale: 0.711
+    offset_y: -65

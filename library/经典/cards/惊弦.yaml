@@ -1,0 +1,13 @@
+type: 法术
+name: 惊弦
+level: 1
+rarity: R
+description: 使一个式神的[[倒计时]]-2。
+shikigami: 妖琴师
+version_date: '20191212'
+id: '10012402'
+artwork:
+  images:
+  - path: 10012402.png
+    scale: 0.747
+    offset_y: -76

@@ -1,0 +1,18 @@
+type: 法术
+name: 觉醒·镇魂歌
+level: 3
+rarity: R
+description: '[[觉醒]]：[[倒计时3]]：抽一张牌，获得1点鬼火。
+
+  当你使用妖琴师的觉醒法术牌时，使妖琴师的[[倒计时]]-3。'
+shikigami: 妖琴师
+version_date: '20191212'
+evolve: true
+power+: 1
+health+: 1
+id: '10012407'
+artwork:
+  images:
+  - path: 10012407.png
+    scale: 0.747
+    offset_y: -60

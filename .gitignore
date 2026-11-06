@@ -34,3 +34,8 @@ gui_ref/
 # BWPDIY 可执行程序及本地运行日志
 /BWPDIY-v*.exe
 /logs/
+
+# PyInstaller 中间产物与本地发布包
+/build/
+/dist/
+/releases/

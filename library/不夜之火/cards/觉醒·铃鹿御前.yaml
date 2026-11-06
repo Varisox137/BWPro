@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·铃鹿御前
+level: 2
+rarity: SR
+description: '[[投射]]：造成2点伤害。
+
+  [[觉醒]]：当铃鹿御前对一个角色造成伤害时，使其获得等量的#pj（最大为3）。'
+shikigami: 铃鹿御前
+version_date: '20200520'
+evolve: true
+health+: 1
+id: '10020705'
+artwork:
+  images:
+  - path: 10020705.png
+    scale: 0.747
+    offset_y: -72

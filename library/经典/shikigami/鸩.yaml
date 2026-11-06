@@ -1,0 +1,17 @@
+type: 式神
+name: 鸩
+faction: 苍叶
+power: 2
+health: 5
+description: '[[倒计时2]]：使敌方牌手获得2#pj。'
+version_date: '20191212'
+id: '100128'
+artwork:
+  images:
+  - path: 100128.png
+    scale: 0.711
+    offset_y: -88
+portrait:
+  scale: 3.227
+  offset_x: -9
+  offset_y: 38

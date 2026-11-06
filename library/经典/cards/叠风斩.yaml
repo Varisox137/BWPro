@@ -1,0 +1,13 @@
+type: 法术
+name: 叠风斩
+level: 2
+rarity: R
+description: 对一个式神造成2点伤害，然后对其再次使用此牌。
+shikigami: 妖狐
+version_date: '20200120'
+id: '10013005'
+artwork:
+  images:
+  - path: 10013005.png
+    scale: 0.747
+    offset_y: -70

@@ -1,0 +1,15 @@
+type: 形态
+name: 和气满满
+level: 3
+rarity: R
+description: 每当一个式神攻击时[[运势4]]：失败则本次战斗#ll变为0。
+shikigami: 座敷童子
+power: 0
+health: 7
+version_date: '20191212'
+id: '10012907'
+artwork:
+  images:
+  - path: 10012907.png
+    scale: 0.711
+    offset_y: -74

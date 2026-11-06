@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·入阵歌
+level: 1
+rarity: R
+description: '[[觉醒]]：[[倒计时3]]：造成4点伤害，随机分配给所有敌方角色。
+
+  当你使用妖琴师的觉醒法术牌时，使妖琴师的[[倒计时]]-3。'
+shikigami: 妖琴师
+version_date: '20191212'
+evolve: true
+id: '10012401'
+artwork:
+  images:
+  - path: 10012401.png
+    scale: 0.747
+    offset_y: -70
+health+: 1

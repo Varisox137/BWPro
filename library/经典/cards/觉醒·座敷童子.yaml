@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·座敷童子
+level: 3
+rarity: SR
+description: '[[觉醒]]：每次[[运势]]判定中，当你[[运势]]判定失败时，重投一次。'
+shikigami: 座敷童子
+version_date: '20191212'
+id: '10012908'
+evolve: true
+power+: 1
+health+: 3
+artwork:
+  images:
+  - path: 10012908.png
+    scale: 0.747
+    offset_y: -87

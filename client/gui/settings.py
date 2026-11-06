@@ -1,14 +1,17 @@
-"""设置：卡图缓存状态与确认后的全量重建。"""
+"""设置：卡背选择、卡图缓存状态与确认后的全量重建。"""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox, QFormLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+)
 
 from client.gui.loading import LoadingIndicator, LoadingOverlay
 from client.gui.prewarm import MANIFEST_NAME, prewarm_all
+from client.gui.ui_assets import load_gui_settings, named_cardbacks, save_gui_settings
 from client.gui.widgets import ask_confirmation
 
 
@@ -23,6 +26,18 @@ class SettingsView(QWidget):
         title = QLabel("设置")
         title.setObjectName("viewTitle")
         layout.addWidget(title)
+        cardback_form = QFormLayout()
+        names = named_cardbacks()
+        settings = load_gui_settings()
+        self.cardback_selectors = {}
+        for key, label in (("own_cardback", "己方卡背"), ("enemy_cardback", "敌方卡背")):
+            selector = QComboBox()
+            selector.addItems(names)
+            selector.setCurrentText(settings[key])
+            selector.currentTextChanged.connect(self._save_cardbacks)
+            self.cardback_selectors[key] = selector
+            cardback_form.addRow(label, selector)
+        layout.addLayout(cardback_form)
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -32,6 +47,10 @@ class SettingsView(QWidget):
         layout.addWidget(self.rebuild_button)
         layout.addStretch(1)
         self.refresh_status()
+
+    def _save_cardbacks(self) -> None:
+        save_gui_settings({key: selector.currentText()
+                           for key, selector in self.cardback_selectors.items()})
 
     def refresh_status(self) -> None:
         path = self.cache_dir / MANIFEST_NAME

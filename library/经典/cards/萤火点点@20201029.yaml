@@ -1,0 +1,17 @@
+type: 法术
+name: 萤火点点
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  使一个己方式神+1#sm或对一个敌方式神造成1点伤害。
+
+  [[增强]]：己方回合开始时，若萤草上有形态，此牌效果+1。'
+shikigami: 萤草
+version_date: '20201029'
+id: '10012703'
+artwork:
+  images:
+  - path: 10012703.png
+    scale: 0.747
+    offset_y: -100

@@ -27,6 +27,7 @@ dev = [
     "pyside6>=6.12.0",
     "pillow>=13.0.0",
     "prompt-toolkit>=3.0.53",
+    "pyinstaller>=6.22.3",
 ]
 
 [tool.pytest.ini_options]

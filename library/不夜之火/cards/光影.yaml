@@ -1,0 +1,15 @@
+type: 战斗
+name: 光影
+level: 1
+rarity: R
+description: 若本次攻击造成的战斗伤害≥6，你抽一张牌并获得等同于一半伤害的#sm。
+shikigami: 铃鹿御前
+power+: 1
+shield+: 1
+version_date: '20200520'
+id: '10020703'
+artwork:
+  images:
+  - path: 10020703.png
+    scale: 0.711
+    offset_y: -74

@@ -6,7 +6,7 @@ import secrets
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QStackedWidget, QVBoxLayout, QWidget,
@@ -17,6 +17,7 @@ from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
 from client.gui.player_details import PlayerDetailDialog
+from client.gui.ui_assets import ui_pixmap
 from client.gui.widgets import CardChoiceView, CardDetailDialog, ask_confirmation, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
@@ -68,6 +69,7 @@ class ChoiceDialog(QDialog):
             "deck_top_pick": "检视牌库顶，选择一张置入手牌",
             "mulligan_pick": "选择一张手牌调度，或结束调度",
             "discard_pick": "选择一张手牌弃置",
+            "search_deck_pick": "从牌库选择一张牌置入手牌",
             "quest_complete_pick": "选择一张紧急委托，使其视为达成",
             "card_name": "选择敌方式神" if pending.get("stage") == "shikigami" else "选择一张牌名",
             "field_summon_pick": "选择要召唤的幻境",
@@ -193,7 +195,8 @@ class HotseatView(QWidget):
         self.log_button.clicked.connect(self.show_log)
         self.battle_scene.log_item = self.battle_scene.add_control(
             self.log_button, ("log",), (40, 40))
-        self.end_turn_button = QPushButton("结束\n回合")
+        self.end_turn_button = QPushButton()
+        self.end_turn_button.setFlat(True)
         self.end_turn_button.setObjectName("endTurnButton")
         self.end_turn_button.clicked.connect(self.end_turn)
         self.battle_scene.end_turn_item = self.battle_scene.add_control(
@@ -248,7 +251,7 @@ class HotseatView(QWidget):
         self.result_banner.setObjectName("resultBanner")
         self.result_banner.setAlignment(Qt.AlignCenter)
         self.battle_scene.result_item = self.battle_scene.add_control(
-            self.result_banner, ("result_banner",), (600, 90))
+            self.result_banner, ("result_banner",), (420, 300))
         self.battle_scene.result_item.setZValue(DRAG_Z + 20)
         self.result_banner.hide()
         self.result_back = QPushButton("返回主菜单")
@@ -303,7 +306,7 @@ class HotseatView(QWidget):
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
-        self.battle_scene.set_text_color(colors["text"])
+        self.battle_scene.set_text_color(colors["text"], theme)
         self.battle_scene.loading_background.setBrush(QColor(colors["bg"]))
         self.setStyleSheet(f"""
             QLabel#viewTitle {{ color: {colors['gold']}; font-size: 24px; }}
@@ -319,17 +322,12 @@ class HotseatView(QWidget):
                 background: transparent; border: none;
             }}
             QPushButton#endTurnButton {{
-                background: {colors['panel2']}; border: 3px solid {colors['gold2']};
-                border-radius: 52px; font-size: 18px; text-align: center; padding: 0;
-            }}
-            QPushButton#endTurnButton:disabled {{
-                background: {colors['bg']}; border-color: {colors['line']};
-                color: {colors['dim']};
+                background: transparent; border: none; border-radius: 52px; padding: 0;
             }}
             QLabel#targetHint, QLabel#battleError, QLabel#resultBanner {{
                 color: {colors['text']}; background: transparent; font-weight: 600;
             }}
-            QLabel#resultBanner {{ font-size: 34px; padding: 16px; }}
+            QLabel#resultBanner {{ font-size: 34px; padding: 0; }}
             QListWidget#battleLog {{ background: {colors['panel']}; color: {colors['text']}; }}
             QPushButton#battleSmall {{ padding: 4px; font-size: 12px; text-align: center; }}
         """)
@@ -346,7 +344,7 @@ class HotseatView(QWidget):
             "font-size: 34px; font-weight: 600;")
         self.result_banner.setStyleSheet(
             f"background: transparent; color: {colors['text']}; "
-            "font-size: 34px; font-weight: 600; padding: 16px;")
+            "font-size: 34px; font-weight: 600; padding: 0;")
         for item in self.battle_scene.items():
             button = item.widget() if hasattr(item, "widget") else None
             if isinstance(button, QPushButton) and button.objectName() == "battleSmall":
@@ -362,13 +360,9 @@ class HotseatView(QWidget):
                 padding: 0; font-size: 12px; text-align: center; }}
             QPushButton:hover {{ background: {colors['panel2']}; }}
         """)
-        self.end_turn_button.setStyleSheet(f"""
-            QPushButton {{ background: {colors['panel2']}; color: {colors['text']};
-                border: 3px solid {colors['gold2']}; border-radius: 52px;
-                font-size: 18px; text-align: center; padding: 0; }}
-            QPushButton:disabled {{ background: {colors['bg']}; color: {colors['dim']};
-                border-color: {colors['line']}; }}
-        """)
+        self.end_turn_button.setStyleSheet(
+            "QPushButton { background: transparent; border: none; border-radius: 52px; padding: 0; }")
+        self._sync_end_turn_art()
 
     def start_hotseat(self) -> bool:
         first = DeckSelectDialog(self.db, self.store_path, "玩家A", self)
@@ -544,6 +538,14 @@ class HotseatView(QWidget):
             f'<div>{html.escape(turn)}</div><div style="font-size:20px">'
             f'{html.escape(phase)}</div>')
 
+    def _sync_end_turn_art(self) -> None:
+        opponent = bool(self.game is not None
+                        and self.game.state.active != self.viewer)
+        name = "opponent_turn_button" if opponent else "end_turn_button"
+        self.end_turn_button.setProperty("assetName", name)
+        self.end_turn_button.setIcon(QIcon(ui_pixmap(f"misc/{name}.png")))
+        self.end_turn_button.setIconSize(self.end_turn_button.size() * 0.92)
+
     def _render_state(self) -> None:
         if self._handoff_pending:
             return
@@ -567,13 +569,14 @@ class HotseatView(QWidget):
         turn_key = (state.turn, state.active)
         if (self._last_turn_key is not None and turn_key != self._last_turn_key
                 and state.phase != "mulligan"):
-            self.battle_scene.show_banner("回合开始")
+            self.battle_scene.show_turn_banner(state.active == self.viewer)
         self._last_turn_key = turn_key
         if self._opening_banner_pending:
             order_text = "己方先手" if self.viewer == state.active else "己方后手"
             self.battle_scene.show_banner(order_text, 1200)
             self._opening_banner_pending = False
         self.end_turn_button.setEnabled(inputs and state.phase == "battle")
+        self._sync_end_turn_art()
         self.ready_button.setVisible(state.phase == "mulligan")
         self.ready_button.setEnabled(inputs and state.phase == "mulligan")
         targeting = self.pending_command is not None
@@ -788,8 +791,9 @@ class HotseatView(QWidget):
     def choice_option_def(self, pending: dict, option):
         kind = pending.get("kind")
         player = self.game.state.players[pending["player"]]
-        if kind in ("deck_top_pick", "mulligan_pick", "discard_pick", "quest_complete_pick"):
-            zones = [player.deck] if kind == "deck_top_pick" else [player.hand]
+        if kind in ("deck_top_pick", "search_deck_pick", "mulligan_pick",
+                    "discard_pick", "quest_complete_pick"):
+            zones = [player.deck] if kind in ("deck_top_pick", "search_deck_pick") else [player.hand]
             card = next((card for zone in zones for card in zone if card.uid == option), None)
             return self.db.cards[card.id] if card is not None else None
         if kind in ("field_summon_pick", "pick_generate") or (
@@ -840,8 +844,8 @@ class HotseatView(QWidget):
         if pending is None:
             return False
         command = {"op": "choose", "player": pending["player"]}
-        if pending.get("kind") in ("deck_top_pick", "mulligan_pick", "discard_pick",
-                                   "quest_complete_pick"):
+        if pending.get("kind") in ("deck_top_pick", "search_deck_pick", "mulligan_pick",
+                                   "discard_pick", "quest_complete_pick"):
             if value is not None:
                 command["uid"] = value
         else:
@@ -855,6 +859,9 @@ class HotseatView(QWidget):
             if entry.get("k") == "a":
                 if not self._handoff_pending:
                     self.battle_scene.animate_card_use(entry["u"], entry["c"], entry["p"])
+            elif entry.get("k") == "v":
+                if not self._handoff_pending:
+                    self.battle_scene.play_visual_event(entry)
             else:
                 self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
         if (self.timeline_queue and not self._handoff_pending
@@ -919,8 +926,15 @@ class HotseatView(QWidget):
                 item.update()
 
     def _show_result(self) -> None:
-        self.result_banner.setText(cli.result_text(
-            self.game.state.winner, [player.name for player in self.game.state.players]))
+        winner = self.game.state.winner
+        if winner in (0, 1):
+            name = "won" if winner == self.viewer else "lost"
+            self.result_banner.setText("")
+            self.result_banner.setPixmap(ui_pixmap(f"misc/{name}.png").scaled(
+                400, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            self.result_banner.setText(cli.result_text(
+                winner, [player.name for player in self.game.state.players]))
         self.result_banner.show()
         self.result_back.show()
 

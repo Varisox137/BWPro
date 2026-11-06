@@ -1,0 +1,13 @@
+type: 法术
+name: 疯魔琴心
+level: 2
+rarity: SR
+description: 重置所有敌方角色的[[倒计时]]。
+shikigami: 妖琴师
+version_date: '20191212'
+id: '10012405'
+artwork:
+  images:
+  - path: 10012405.png
+    scale: 0.747
+    offset_y: -75

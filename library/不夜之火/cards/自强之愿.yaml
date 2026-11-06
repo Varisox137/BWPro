@@ -1,0 +1,15 @@
+type: 形态
+name: 自强之愿
+level: 2
+rarity: R
+description: 小鹿男攻击或被攻击时，消耗1#nl，获得2#hj。
+shikigami: 小鹿男
+power: 4
+health: 6
+version_date: '20200327'
+id: '10020304'
+artwork:
+  images:
+  - path: 10020304.png
+    scale: 0.747
+    offset_y: -104

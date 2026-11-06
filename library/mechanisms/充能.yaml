@@ -1,0 +1,6 @@
+name: 充能
+frame: skill
+text: 己方回合开始时获得1点能量，最高储存10点。
+badge: null
+chars_per_line: 12
+version_date: '20200327'

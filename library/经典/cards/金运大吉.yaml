@@ -1,0 +1,15 @@
+type: 形态
+name: 金运大吉
+level: 1
+rarity: R
+description: 己方回合开始时，双方牌手[[运势4]]：抽一张牌。
+shikigami: 座敷童子
+power: 3
+health: 6
+version_date: '20191212'
+id: '10012901'
+artwork:
+  images:
+  - path: 10012901.png
+    scale: 0.711
+    offset_y: -75

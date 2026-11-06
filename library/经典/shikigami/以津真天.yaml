@@ -1,0 +1,17 @@
+type: 式神
+name: 以津真天
+faction: 苍叶
+power: 2
+health: 5
+description: '[[倒计时2]]：将一张‘[[黄金羽]]’置入手牌。'
+version_date: '20191212'
+id: '100126'
+artwork:
+  images:
+  - path: 100126.png
+    scale: 0.711
+    offset_y: -78
+portrait:
+  scale: 4.118
+  offset_x: 5
+  offset_y: 69

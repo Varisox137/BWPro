@@ -1224,6 +1224,8 @@ class Game:
           用尽 → 结束并洗牌库，续跑挂起块。
         - kind="discard_pick"（意外之喜/余辉）：uid 给出候选手牌 → 弃置该张；
           次数用尽/无候选 → 结束，续跑挂起块。
+        - kind="search_deck_pick"（五道难题）：uid 给出牌库候选 → 原实例入手，
+          应用 intensity_boost、洗牌并续跑挂起块；仅一个候选也挂起。
         - kind="card_name"（忘忧的旋律，两级）：stage="shikigami" 时 choice 给出
           敌方式神数据 id → 转 stage="card"（该式神可构筑牌池）；stage="card" 时
           choice 给出卡牌数据 id → 对 target_player 手牌+牌库移除全部同名牌，
@@ -1245,6 +1247,9 @@ class Game:
             return
         if pending.get("kind") == "discard_pick":
             self._cmd_discard_pick_choose(cmd, pending)
+            return
+        if pending.get("kind") == "search_deck_pick":
+            self._cmd_search_deck_choose(cmd, pending)
             return
         if pending.get("kind") == "card_name":
             self._cmd_card_name_choose(cmd, pending)
@@ -1474,6 +1479,42 @@ class Game:
         card.mods["quest_done"] = True
         self._log(f"{p.name} 的【{self.db.cards[card.id].name}】委托条件视为达成",
                   owner=pi)  # 手牌内部状态变化仅所属方可见（改进②）
+        self.state.pending_choice = None
+        self._resume_suspended()
+
+    def _open_search_deck_pick(self, pi: int, options: list[int], *,
+                               intensity_boost: int = 0) -> bool:
+        """牌库选择检索（五道难题）：按 uid 列出候选；即使只有一张也挂起。"""
+        if not options:
+            return False
+        self.state.pending_choice = {
+            "kind": "search_deck_pick", "player": pi, "options": list(options),
+            "intensity_boost": int(intensity_boost),
+        }
+        self._log(f"{self.state.players[pi].name} 从牌库选择一张牌置入手牌")
+        return True
+
+    def _cmd_search_deck_choose(self, cmd: dict, pending: dict) -> None:
+        """牌库选择检索作答：所选原实例入手、应用耐久修饰、洗牌并续跑挂起块。"""
+        pi = cmd.get("player", self.state.active)
+        if pi != pending["player"]:
+            raise IllegalAction("不是你的选择（等待对应玩家作答）")
+        uid = cmd.get("uid")
+        if uid not in pending["options"]:
+            raise IllegalAction("不在可选的牌库卡牌之列")
+        p = self.state.players[pi]
+        card = next((c for c in p.deck if c.uid == uid), None)
+        if card is None:
+            raise IllegalAction("该牌已不在牌库中")
+        cdef = self.db.cards[card.id]
+        self.move_card(p, card, "hand", reason="search")
+        boost = int(pending.get("intensity_boost", 0))
+        if boost:
+            card.mods["intensity_boost"] = boost
+        self._materialize(p, card, cdef)
+        self._log(f"{p.name} 将牌库中的【{cdef.name}】置入手牌", owner=pi)
+        self.rng.shuffle(p.deck)
+        self._log(f"{p.name} 洗了牌库")
         self.state.pending_choice = None
         self._resume_suspended()
 
@@ -5061,13 +5102,12 @@ class Game:
                                          if ev.pre_pierce_amount is not None else ev.amount),
                       battle=self._battle_stack[-1] if self._battle_stack else None)
         else:
-            # 铃鹿山的秘宝（幻境实体关键字 health_floor_one）：生命不会降到 1 以下——
-            # 扣减生命前钳制伤害量（超出部分免除，不走"扣减生命"即未实际造成）
-            if any("health_floor_one" in f.keywords for f in p.fields):
-                ev.amount = min(ev.amount, p.health - 1)
-                if ev.amount <= 0:
-                    return
+            # 铃鹿山的秘宝（幻境实体关键字 health_floor_one）：伤害量保持原样，
+            # 仅钳制扣减生命的结果；后续幻境耐久、吸血与伤害记账仍读原始伤害量。
+            old_health = p.health
             p.health -= ev.amount
+            if any("health_floor_one" in f.keywords for f in p.fields) and p.health < 1:
+                p.health = 1
             ev.dealt = ev.amount  # 实际造成：扣减生命批次锁定（巨浪统计口径）
             if ev.source is not None and ev.source.player == ev.victim.player:
                 p.ext["self_damage_taken"] = True  # 本局受到过己方伤害记账
@@ -5077,7 +5117,7 @@ class Game:
             self._mark_dealt_damage_turn(ev)  # 记仇过滤键记账（dealt_damage_turn）
             self._account_quest_damage(ev)  # 委托账本：造成伤害/非战斗伤害
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
-                         f"（生命 {p.health + ev.amount}→{p.health}）")
+                         f"（生命 {old_health}→{p.health}）")
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
             self._field_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -5399,6 +5439,8 @@ class Game:
             # （to_coffin keep_combat 消费：棺封对战斗区式神 = 棺材进其战斗区；
             # 气绝替换路径不读——棺材落准备区）
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
+            self.state.timeline.append(
+                {"k": "v", "v": "defeated", "p": ref.player, "s": ref.shikigami})
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
         # 击杀账本与委托计数（含牌手级 inv_bonus_on_kill 结算；棺材被击破路径共用）
         self._account_kill(source, ref, s)
@@ -6453,6 +6495,12 @@ class Game:
             mods.append(f"需 ≥{ev['x']}")
             self._settle(f"【运势】{jp.name} {cast}（{'；'.join(mods)}）："
                          f"{'成功' if ev['success'] else '失败'}")
+            source = ev.get("source")
+            self.state.timeline.append({
+                "k": "v", "v": "luck", "p": ev["judge"],
+                "s": source.shikigami if source is not None else None,
+                "dice": ev["dice"], "success": ev["success"],
+            })
         # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）
         for ev in events:
             judge = ev["judge"]

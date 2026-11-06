@@ -1,0 +1,17 @@
+type: 形态
+name: 无孔不入
+level: 3
+rarity: SSR
+description: '进场和己方回合开始时，在战斗区召唤一个‘[[烟烟罗的分身]]’。
+
+  ‘[[烟烟罗的分身]]’会复制她使用的法术牌。'
+shikigami: 烟烟罗
+power: 3
+health: 6
+version_date: '20200327'
+id: '10020407'
+artwork:
+  images:
+  - path: 10020407.png
+    scale: 0.711
+    offset_y: -74

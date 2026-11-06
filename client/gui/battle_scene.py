@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
 from client.gui.loading import LoadingIndicator
 from client.gui.portrait import bwpdiy_root
+from client.gui.ui_assets import cardback_pixmap, dice_face, turn_pixmap, ui_pixmap
 from core import targets
 from core.model import Ref
 
@@ -68,8 +69,8 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
     positions = {
         ("phase",): QPointF(65, 422),
         ("menu",): QPointF(1352 + extra, 16),
-        ("log",): QPointF(-12, 422),
-        ("end_turn",): QPointF(1505 + extra, 400),
+        ("log",): QPointF(12, 422),
+        ("end_turn",): QPointF(scene_width - 116, 400),
         ("enemy_hand_label",): QPointF(1530 + extra, 156),
         ("enemy_deck",): QPointF(1530 + extra, 228),
         ("own_deck",): QPointF(1530 + extra, 608),
@@ -82,12 +83,12 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("default_target",): QPointF(1120 + extra, 480),
         ("error",): QPointF(1, 540),
         ("result_banner",): QPointF(500 + center_shift, 350),
-        ("result_back",): QPointF(730 + center_shift, 470),
+        ("result_back",): QPointF(730 + center_shift, 660),
         ("upgrade_phase",): QPointF(411 + center_shift, 422),
     }
     for pi in (0, 1):
         top = pi != viewer
-        positions[("player", pi)] = QPointF(-12, 4 if top else 766)
+        positions[("player", pi)] = QPointF(12, 4 if top else 766)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
                 1376 + extra + index * 18, (220 + index * 4) if top else (600 - index * 4))
@@ -96,14 +97,17 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
 
     arc = (120, 86, 86, 120)
     ready_x = (196, 421, 871, 1096)
+    ready_positions = list(zip(ready_x, arc))
     for pi, player in enumerate(game.state.players):
         top = pi != viewer
-        for index, _shiki in enumerate(player.shikigami):
+        for index, shiki in enumerate(player.shikigami):
+            if shiki.despawned:
+                continue  # 召唤物离场后不保留图元；坑位仅供引擎下标稳定
             if player.combat_index == index:
                 position = QPointF(646 + center_shift, 220 if top else 460)
             else:
-                position = QPointF(ready_x[index] + center_shift,
-                                   arc[index] if top else (690 - arc[index]))
+                x, y = ready_positions[index]
+                position = QPointF(x + center_shift, y if top else (690 - y))
             positions[("shiki", pi, index)] = position
         cards = display_hand(game, pi, viewer)
         centered = (game.state.phase == "mulligan" or center_hand) and pi == viewer
@@ -111,7 +115,7 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
             width = (len(cards) * MULLIGAN_HAND_SIZE.width()
                      + max(0, len(cards) - 1) * 16)
         spacing = 70 if len(cards) <= 8 else 490 / (len(cards) - 1)
-        right = scene_width + 12
+        right = scene_width - 12
         for order, card in enumerate(cards):
             if centered:
                 x = (scene_width - width) / 2 + order * (MULLIGAN_HAND_SIZE.width() + 16)
@@ -332,6 +336,34 @@ class BattleCardItem(QGraphicsObject):
         event.accept()
 
 
+class BattleVisualItem(QGraphicsObject):
+    """由若干相对偏移的透明素材组成的非交互视觉图元。"""
+
+    def __init__(self, layers=()):
+        super().__init__()
+        self.layers = []
+        self._bounds = QRectF()
+        self.setAcceptedMouseButtons(Qt.NoButton)
+        self.set_layers(layers)
+
+    def set_layers(self, layers) -> None:
+        self.prepareGeometryChange()
+        self.layers = list(layers)
+        self._bounds = QRectF()
+        for pixmap, offset in self.layers:
+            self._bounds = self._bounds.united(
+                QRectF(offset, QSizeF(pixmap.size())))
+        self.update()
+
+    def boundingRect(self):
+        return self._bounds
+
+    def paint(self, painter: QPainter, option, widget=None):
+        del option, widget
+        for pixmap, offset in self.layers:
+            painter.drawPixmap(offset, pixmap)
+
+
 class BattleAnimationLayer:
     def __init__(self, scene):
         self.scene = scene
@@ -517,12 +549,17 @@ class BattleScene(QGraphicsScene):
         self._card_use_sources: dict[QVariantAnimation, dict] = {}
         self._hand_animation_cache: dict[int, tuple] = {}
         self._animation_timeline: list[dict] | None = None
+        self._visual_animations: list[QVariantAnimation] = []
+        self._visual_items: dict[QVariantAnimation, BattleVisualItem] = {}
+        self._visual_events: dict[QVariantAnimation, dict] = {}
+        self._defeat_visuals: set[tuple[int, int]] = set()
         self.usage_items: list[BattleCardItem] = []
         self.usage_labels: list[QGraphicsTextItem] = []
         self.deck_backs: dict[tuple, BattleCardItem] = {}
         self.upgrade_badges: dict[int, QGraphicsPixmapItem] = {}
         self.phase = None
         self.viewer = 0
+        self.theme = "light"
         self.inputs_open = False
         self.game_over = False
         self.legal_targets: list[Ref] = []
@@ -546,6 +583,10 @@ class BattleScene(QGraphicsScene):
         self.banner_item.setAcceptedMouseButtons(Qt.NoButton)
         self.banner_item.hide()
         self.addItem(self.banner_item)
+        self.banner_pixmap_item = BattleVisualItem()
+        self.banner_pixmap_item.setZValue(DRAG_Z + 20)
+        self.banner_pixmap_item.hide()
+        self.addItem(self.banner_pixmap_item)
         self.banner_timer = QTimer(self)
         self.banner_timer.setInterval(30)
         self.banner_timer.timeout.connect(self._advance_banner)
@@ -568,8 +609,10 @@ class BattleScene(QGraphicsScene):
         self.drag_controller = BattleDragController(self)
         self.text_color = "#26221c"
 
-    def set_text_color(self, color: str) -> None:
+    def set_text_color(self, color: str, theme: str | None = None) -> None:
         self.text_color = color
+        if theme is not None:
+            self.theme = theme
         for item in self.cards.values():
             item.text_color = QColor(color)
             item.update()
@@ -593,24 +636,39 @@ class BattleScene(QGraphicsScene):
                 item.setPos(positions[key])
         for key, item in self.deck_backs.items():
             item.setPos(positions[key])
-        for item in (self.banner_item, self.loading_item):
+        for item in (self.banner_item, self.banner_pixmap_item, self.loading_item):
             if item.isVisible():
                 rect = item.boundingRect()
                 item.setPos((layout_width - rect.width()) / 2,
                             (SCENE_HEIGHT - rect.height()) / 2)
         self.mulligan_selected.emit(self.mulligan_uid)
 
-    def show_banner(self, text: str, duration: int = 900) -> None:
-        self.banner_item.setPlainText(text)
-        rect = self.banner_item.boundingRect()
-        self.banner_item.setPos((self.layout_width - rect.width()) / 2,
-                                (SCENE_HEIGHT - rect.height()) / 2)
-        self.banner_item.setScale(0.85)
-        self.banner_item.setOpacity(0)
-        self.banner_item.show()
+    def _start_banner(self, item, duration: int) -> None:
+        rect = item.boundingRect()
+        item.setPos((self.layout_width - rect.width()) / 2,
+                    (SCENE_HEIGHT - rect.height()) / 2)
+        item.setTransformOriginPoint(rect.center())
+        item.setScale(0.85)
+        item.setOpacity(0)
+        item.show()
         self._banner_frame = 0
         self._banner_frames = max(1, round(duration / self.banner_timer.interval()))
         self.banner_timer.start()
+
+    def show_banner(self, text: str, duration: int = 900) -> None:
+        self.banner_pixmap_item.hide()
+        self.banner_item.setPlainText(text)
+        self._start_banner(self.banner_item, duration)
+
+    def show_turn_banner(self, own_turn: bool, duration: int = 900) -> None:
+        self.banner_item.hide()
+        name = "your_turn" if own_turn else "opponent_turn"
+        suffix = "dark" if self.theme == "light" else "light"
+        pixmap = turn_pixmap(own_turn, self.theme).scaledToWidth(
+            400, Qt.SmoothTransformation)
+        self.banner_pixmap_item.set_layers([(pixmap, QPointF())])
+        self.banner_pixmap_item.setProperty("assetName", f"{name}_{suffix}")
+        self._start_banner(self.banner_pixmap_item, duration)
 
     def _advance_banner(self) -> None:
         if not self._banner_frames:
@@ -618,9 +676,10 @@ class BattleScene(QGraphicsScene):
             return
         self._banner_frame += 1
         progress = self._banner_frame / self._banner_frames
-        self.banner_item.setScale(0.85 + 0.15 * min(1, progress * 2))
         opacity = min(1, progress * 4) if progress < 0.75 else (1 - progress) * 4
-        self.banner_item.setOpacity(max(0, opacity))
+        for item in (self.banner_item, self.banner_pixmap_item):
+            item.setScale(0.85 + 0.15 * min(1, progress * 2))
+            item.setOpacity(max(0, opacity))
         if progress >= 1:
             self.hide_banner()
 
@@ -628,6 +687,7 @@ class BattleScene(QGraphicsScene):
         self.banner_timer.stop()
         self._banner_frame = self._banner_frames = 0
         self.banner_item.hide()
+        self.banner_pixmap_item.hide()
 
     def show_loading(self, prefix: str) -> None:
         self.loading.start(prefix)
@@ -780,7 +840,8 @@ class BattleScene(QGraphicsScene):
         item.player = player
         item.revealed = source_revealed
         item.text_color = QColor(self.text_color)
-        item.set_art(source_pixmap)
+        item.set_art(source_pixmap or cardback_pixmap(
+            "own" if player == self.viewer else "enemy"))
         item.setAcceptedMouseButtons(Qt.NoButton)
         item.setZValue(DRAG_Z + 10)
         item.setPos(source_pos)
@@ -846,6 +907,87 @@ class BattleScene(QGraphicsScene):
             self.removeItem(item)
         animation.deleteLater()
 
+    def defeat_countdown_hidden(self, player: int, index: int) -> bool:
+        return (player, index) in self._defeat_visuals
+
+    def play_visual_event(self, event: dict) -> None:
+        kind = event.get("v")
+        player = int(event.get("p", self.viewer))
+        index = event.get("s")
+        target_key = (("shiki", player, index) if index is not None
+                      else ("player", player))
+        target = self.cards.get(target_key)
+        if target is None:
+            return
+        center = target.sceneBoundingRect().center()
+        layers = []
+        if kind == "defeated":
+            self._defeat_visuals.add((player, index))
+            word = ui_pixmap("misc/defeated_light.png").scaled(
+                160, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            layers = [(word, QPointF(-word.width() / 2, -word.height() / 2))]
+            self._refresh_defeated_entity(player, index)
+        elif kind in ("luck", "luck_reroll"):
+            dice = dice_face(int(event.get("dice", 1))).scaled(
+                96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            result_name = ("dice_reroll" if kind == "luck_reroll" else
+                           "dice_successful" if event.get("success") else "dice_unsuccessful")
+            result = ui_pixmap(f"misc/{result_name}.png").scaled(
+                180, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            layers = [(dice, QPointF(-dice.width() / 2, -dice.height() - 12)),
+                      (result, QPointF(-result.width() / 2, 0))]
+        else:
+            return
+        item = BattleVisualItem(layers)
+        item.setProperty("assetName", kind)
+        item.setPos(center)
+        item.setZValue(DRAG_Z + 15)
+        item.setOpacity(0)
+        self.addItem(item)
+        animation = QVariantAnimation(self)
+        animation.setDuration(900)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        self._visual_animations.append(animation)
+        self._visual_items[animation] = item
+        self._visual_events[animation] = dict(event)
+        animation.valueChanged.connect(
+            lambda value, animation=animation: self._update_visual(animation, value))
+        animation.finished.connect(
+            lambda animation=animation: self._finish_visual(animation))
+        animation.start()
+
+    def _update_visual(self, animation, progress: float) -> None:
+        item = self._visual_items.get(animation)
+        if item is not None:
+            item.setOpacity(min(1, progress * 4) if progress < 0.75
+                            else max(0, (1 - progress) * 4))
+
+    def _finish_visual(self, animation) -> None:
+        if animation not in self._visual_items:
+            return
+        self._visual_animations.remove(animation)
+        item = self._visual_items.pop(animation)
+        event = self._visual_events.pop(animation, {})
+        if event.get("v") == "defeated":
+            key = (int(event.get("p", 0)), int(event.get("s", 0)))
+            self._defeat_visuals.discard(key)
+            self._refresh_defeated_entity(*key)
+        if item.scene() is self:
+            self.removeItem(item)
+        animation.deleteLater()
+
+    def _refresh_defeated_entity(self, player: int, index: int) -> None:
+        item = self.cards.get(("shiki", player, index))
+        if item is None or self.game is None:
+            return
+        shiki = self.game.state.players[player].shikigami[index]
+        form = self.db.cards[shiki.form.id] if shiki.form is not None else None
+        item.set_art(entity_pixmap(
+            shiki, self.db, seat=index, form=form, cache_context={}, height=210,
+            show_defeated_countdown=not self.defeat_countdown_hidden(player, index)))
+        item.update()
+
     def show_usage_options(self, options: list[dict], card_defs: list) -> None:
         self.clear_usage_options()
         width = (len(options) * MULLIGAN_HAND_SIZE.width()
@@ -858,8 +1000,10 @@ class BattleScene(QGraphicsScene):
             item.payload = option["id"]
             item.playable = option["ok"]
             item.setOpacity(1 if option["ok"] else 0.6)
+            burst = option["energy"] if type(option["energy"]) is int and option["energy"] > 0 \
+                else None
             item.set_art(card_pixmap(cdef, self.db, cache_context=art_context,
-                                     height=MULLIGAN_HAND_SIZE.height()))
+                                     height=MULLIGAN_HAND_SIZE.height(), burst=burst))
             item.setPos(x, 280)
             item.setZValue(DRAG_Z + 15)
             item.text_color = QColor(self.text_color)
@@ -899,6 +1043,16 @@ class BattleScene(QGraphicsScene):
                 self.removeItem(item)
         self._card_use_items.clear()
         self._card_use_sources.clear()
+        for animation in self._visual_animations:
+            animation.stop()
+            animation.deleteLater()
+        self._visual_animations.clear()
+        for item in self._visual_items.values():
+            if item.scene() is self:
+                self.removeItem(item)
+        self._visual_items.clear()
+        self._visual_events.clear()
+        self._defeat_visuals.clear()
         self._hand_animation_cache.clear()
         self._animation_timeline = None
         self.inputs_open = False
@@ -942,8 +1096,9 @@ class BattleScene(QGraphicsScene):
         }
         art_context = {}
         self._loading_done = 0
-        self._loading_total = sum(len(player.shikigami) + len(player.hand)
-                                  for player in game.state.players)
+        self._loading_total = sum(
+            sum(not shiki.despawned for shiki in player.shikigami) + len(player.hand)
+            for player in game.state.players)
         self.loading.set_progress(0, self._loading_total)
         expected = {key for key in positions if key[0] in ("hand", "shiki", "player")}
         for key in set(self.cards) - expected:
@@ -967,7 +1122,10 @@ class BattleScene(QGraphicsScene):
                     back.setTransformOriginPoint(back.boundingRect().center())
                     self.addItem(back)
                     self.deck_backs[deck_key] = back
-                back.setPos(positions[deck_key])
+                back.set_art(cardback_pixmap(
+                    "enemy" if pi != viewer else "own", landscape=True))
+                back.setPos(positions[deck_key] + QPointF(
+                    0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
                 rotation = -15 + index * 5
                 back.setRotation(rotation if pi != viewer else -rotation)
                 back.setZValue(20 + index)
@@ -999,6 +1157,8 @@ class BattleScene(QGraphicsScene):
             item.update()
 
             for index, shiki in enumerate(player.shikigami):
+                if shiki.despawned:
+                    continue
                 key = ("shiki", pi, index)
                 item = self.cards.get(key)
                 created = item is None
@@ -1018,8 +1178,10 @@ class BattleScene(QGraphicsScene):
                 )
                 form = self.db.cards[shiki.form.id] if shiki.form is not None else None
                 item.cdef = form
-                pixmap = entity_pixmap(shiki, self.db, seat=index, form=form,
-                                       cache_context=art_context, height=210)
+                pixmap = entity_pixmap(
+                    shiki, self.db, seat=index, form=form,
+                    cache_context=art_context, height=210,
+                    show_defeated_countdown=not self.defeat_countdown_hidden(pi, index))
                 item.set_art(pixmap)
                 item.player = pi
                 item.index = index
@@ -1059,7 +1221,8 @@ class BattleScene(QGraphicsScene):
                                       level_color=seat_level_color(owner_seat),
                                       cache_context=art_context,
                                       height=255 if (game.state.phase == "mulligan" or center_hand) and own else 156)
-                          if cdef is not None else None)
+                          if cdef is not None else
+                          cardback_pixmap("own" if own else "enemy"))
                 item = self.cards.get(key)
                 if item is None:
                     item = BattleCardItem(key)
@@ -1135,3 +1298,5 @@ class BattleScene(QGraphicsScene):
         for entry in online_entries:
             if entry.get("k") == "a":
                 self.animate_card_use(entry["u"], entry["c"], entry["p"])
+            elif entry.get("k") == "v":
+                self.play_visual_event(entry)

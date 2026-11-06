@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
@@ -94,10 +95,16 @@ def _theme_icon(theme: str) -> QIcon:
     return QIcon(pixmap)
 
 
+def _application_icon() -> QIcon:
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    return QIcon(str(root / "assets" / "app_icon.ico"))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, db=None, store_path=None):
         super().__init__()
         self.setWindowTitle("BWPro")
+        self.setWindowIcon(_application_icon())
         self.resize(1600, 900)
         self.theme = "light"
         central = QWidget(self)
@@ -295,6 +302,7 @@ class MainWindow(QMainWindow):
 def main() -> int:
     configure_logging("gui")
     app = QApplication(sys.argv)
+    app.setWindowIcon(_application_icon())
     win = MainWindow()
     win.show()
     win.prewarm_resources()

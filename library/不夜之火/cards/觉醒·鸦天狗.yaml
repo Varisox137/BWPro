@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·鸦天狗
+level: 3
+rarity: SR
+description: '[[觉醒]]：当鸦天狗[[移动]]时，发动一次攻击，本次攻击具[[远程]]。'
+shikigami: 鸦天狗
+version_date: '20200327'
+evolve: true
+id: '10020108'
+power+: 2
+health+: 2
+artwork:
+  images:
+  - path: 10020108.png
+    scale: 0.747
+    offset_y: -73

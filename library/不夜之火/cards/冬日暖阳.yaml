@@ -1,0 +1,13 @@
+type: 法术
+name: 冬日暖阳
+level: 2
+rarity: SR
+description: 使所有己方有[[充能]]的式神各获得1#ll、1#sm与2#nl。
+shikigami: 日和坊
+version_date: '20200327'
+id: '10020504'
+artwork:
+  images:
+  - path: 10020504.png
+    scale: 0.784
+    offset_y: -94

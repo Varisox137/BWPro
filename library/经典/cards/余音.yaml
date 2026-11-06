@@ -1,0 +1,13 @@
+type: 法术
+name: 余音
+level: 3
+rarity: SR
+description: 使妖琴师的[[倒计时]]-3，重复一次该效果。
+shikigami: 妖琴师
+version_date: '20191212'
+id: '10012408'
+artwork:
+  images:
+  - path: 10012408.png
+    scale: 0.747
+    offset_y: -65

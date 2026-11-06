@@ -1,0 +1,13 @@
+type: 法术
+name: 虹彩
+level: 3
+rarity: SSR
+description: 将萤草的三种形态牌置入手牌。
+shikigami: 萤草
+version_date: '20191212'
+id: '10012707'
+artwork:
+  images:
+  - path: 10012707.png
+    scale: 0.747
+    offset_y: -77

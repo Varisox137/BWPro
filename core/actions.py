@@ -1395,10 +1395,12 @@ def transform_card(game, ctx, *, targets: list[Ref], card_id: int, into: int,
 def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target",
                 card_type: str | None = None, max_level: int | str | None = None,
                 direct_play_power_ge: int | None = None,
-                card_id: int | None = None,
+                card_id: int | None = None, pick: str = "random",
                 intensity_boost: int = 0) -> None:
-    """从控制者牌库随机检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
+    """从控制者牌库检索一张指定式神的牌置入手牌，然后洗牌库（花信风；targets 忽略）。
 
+    pick="random"（缺省）随机选取；pick="choose" 按实例 uid 挂起交互选择，仅一个
+    候选也照常选择（五道难题），无候选则空过且不洗牌。
     shikigami="target"（缺省）：按卡牌选择目标（targets[0]）所指式神的数据 id 检索；
     "self"=来源式神；或给出数据 id。仅实际检索到卡牌才洗牌库（未命中不洗——
     维护者定案；检索类效果命中即洗）。
@@ -1438,7 +1440,13 @@ def search_deck(game, ctx, *, targets: list[Ref], shikigami: int | str = "target
             and (card_type is None or game.db.cards[c.id].card_type == card_type)
             and (lv is None or game.db.cards[c.id].level <= lv)]
     if not pool:
-        return  # 未命中：不洗牌
+        return  # 未命中：不洗牌，也不开启选择
+    if pick == "choose":
+        if direct_play_power_ge is not None:
+            raise ValueError("search_deck pick=choose 暂不支持直接使用分支")
+        game._open_search_deck_pick(ctx.controller, [c.uid for c in pool],
+                                    intensity_boost=intensity_boost)
+        return
     card = game.rng.choice(pool)
     cdef = game.db.cards[card.id]
     if direct_play_power_ge is not None and ref is not None and ref.shikigami is not None:
@@ -1826,8 +1834,8 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
     忽略）：挂伤害事件"护甲计算后"批次（on_after_shield，insert，优先级 1——
     "伤害改为非伤害"类，EffectBlock.priority 约定见定案(7)）的幻境能力块——
     受伤者/伤害类别匹配由能力 condition 负责（victim_shikigami/kind 等）。
-    改降量 = min(伤害余量, 幻境当前耐久, max_amount)——耐久不足部分照常结算；
-    伤害事件 amount 相应减少（走 mutable ev 通道，同屏障/转移）。
+    无 max_amount 时把完整伤害事件改为等量耐久降低事件：伤害 amount 归零，耐久不足
+    也不产生溢出伤害；有 max_amount 时只转移 min(伤害余量, 当前耐久, 上限)，余量照常。
     **首个同名代受**（定案(10)）：触发来源幻境（ctx.field）在队列中存在更靠前的
     同名（同牌 id）幻境时本块为空操作——同名幻境只由队列首个代受。
     field_shikigami：非幻境来源（竹取物语形态能力块，ctx.field 为 None）时定位
@@ -1860,12 +1868,20 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
         raise ValueError("redirect_to_field 须挂伤害事件批次（on_after_shield）的幻境能力块")
     if not any(x is ph for x in p.fields):
         return  # 来源幻境已离场
-    amt = min(int(ev.amount), ph.intensity)
-    if max_amount is not None:
-        amt = min(amt, int(max_amount))
-    if amt <= 0:
+    raw_amt = int(ev.amount)
+    if raw_amt <= 0:
         return
-    ev.amount -= amt
+    if max_amount is None:
+        # 无上限时是"伤害事件改为耐久降低事件"：完整伤害量归零，不留下溢出伤害；
+        # 耐久变化事件仍接收原始伤害量，由耐久管线负责把实际降低量钳到当前耐久。
+        amt = raw_amt
+        ev.amount = 0
+    else:
+        # 有 max_amount 时是"最多改降 N"：只转移限额内且耐久足够承担的部分。
+        amt = min(raw_amt, ph.intensity, int(max_amount))
+        if amt <= 0:
+            return
+        ev.amount -= amt
     idx = p.fields.index(ph)
     game._log(f"【{game.db.cards[ph.card_id].name}】代为承受 {amt} 点伤害（耐久降低）")
     game._change_field_intensity(ctx.controller, idx, -amt, ev.source, "改降耐久")
@@ -3630,6 +3646,11 @@ def luck_reroll(game, ctx, *, targets: list[Ref]) -> None:
     else:
         ev["dice"] = game.rng.randint(1, 6)
     game._log(f"运势判定重投（新骰点 {ev['dice']}）")
+    source = ev.get("source")
+    game.state.timeline.append({
+        "k": "v", "v": "luck_reroll", "p": ev["judge"],
+        "s": source.shikigami if source is not None else None, "dice": ev["dice"],
+    })
 
 
 @action("win_game")

@@ -1,0 +1,15 @@
+type: 战斗
+name: 坏人走开
+level: 1
+rarity: R
+description: '[[贯通]]'
+shikigami: 跳跳妹妹
+power+: 3
+shield+: 0
+version_date: '20200227'
+id: '10013101'
+artwork:
+  images:
+  - path: 10013101.png
+    scale: 0.711
+    offset_y: -72

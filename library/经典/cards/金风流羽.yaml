@@ -1,0 +1,15 @@
+type: 战斗
+name: 金风流羽
+level: 2
+rarity: R
+description: 本回合若使用过‘[[黄金羽]]’，此牌不消耗鬼火。
+shikigami: 以津真天
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10012605'
+artwork:
+  images:
+  - path: 10012605.png
+    scale: 0.711
+    offset_y: -74

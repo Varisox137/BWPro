@@ -1,0 +1,17 @@
+type: 法术
+name: 觉醒·小鹿男
+level: 2
+rarity: SR
+description: '复活小鹿男。
+
+  [[觉醒]]：[[充能]]。小鹿男复活时获得2#nl，且他的形态牌都获得‘气绝时可消耗3#nl使用，复活小鹿男’。'
+shikigami: 小鹿男
+version_date: '20200327'
+evolve: true
+health+: 1
+id: '10020306'
+artwork:
+  images:
+  - path: 10020306.png
+    scale: 0.747
+    offset_y: -80

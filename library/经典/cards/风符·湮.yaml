@@ -1,0 +1,15 @@
+type: 形态
+name: 风符·湮
+level: 3
+rarity: SR
+description: '[[倒计时2]]：消灭敌方战斗区的式神。'
+shikigami: 一目连
+power: 4
+health: 6
+version_date: '20191212'
+id: '10012507'
+artwork:
+  images:
+  - path: 10012507.png
+    scale: 0.711
+    offset_y: -75

@@ -185,8 +185,9 @@ def _card_data(cdef, db, config: dict) -> dict:
 @lru_cache(maxsize=4)
 def _renderer(root_text: str):
     root = Path(root_text)
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
+    code_root = portrait.bwpdiy_code_root(root)
+    if str(code_root) not in sys.path:
+        sys.path.insert(0, str(code_root))
     from bwpdiy.render import render_card
     from bwpdiy.render.assets import AssetLibrary
 
@@ -194,8 +195,8 @@ def _renderer(root_text: str):
     return assets, AssetLibrary(assets), render_card
 
 
-def _layout_fingerprint(assets: Path) -> tuple:
-    path = assets / "layout.json"
+def _layout_fingerprint(_assets: Path) -> tuple:
+    path = portrait.global_layout_path()
     try:
         stat = path.stat()
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -207,14 +208,12 @@ def _layout_fingerprint(assets: Path) -> tuple:
 @lru_cache(maxsize=4)
 def _layouts(root_text: str, fingerprint: tuple):
     del fingerprint
-    assets, _library, _render = _renderer(root_text)
-    from bwpdiy.render.layout import load_layouts
-
-    return load_layouts(assets)
+    _renderer(root_text)
+    return portrait.load_global_layouts()
 
 
-_RESOURCE_DIRS = ("duo", "factions", "fonts", "frames", "icons", "levels",
-                  "mech", "rarity", "signs", "stats")
+_RESOURCE_DIRS = ("badges", "duo", "factions", "fonts", "frames", "icons", "levels",
+                  "mech", "numbers", "rarity", "signs", "stats")
 
 
 def _renderer_resource_fingerprint(assets: Path) -> tuple:
@@ -254,7 +253,8 @@ def _renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
 
 def _renderer_source_digest(assets: Path) -> str:
     digest = hashlib.sha256()
-    for path in sorted((assets.parent / "bwpdiy" / "render").rglob("*.py")):
+    source_dir = portrait.bwpdiy_code_root(assets.parent) / "bwpdiy" / "render"
+    for path in sorted(source_dir.rglob("*.py")):
         digest.update(str(path).encode("utf-8"))
         try:
             digest.update(path.read_bytes())
@@ -745,11 +745,13 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
 def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 cache_dir: Path | None = None,
                 display: dict[str, int] | None = None,
-                level_color: str | None = None,
+                level_color: str | None = None, burst: int | None = None,
                 cache_context: dict | None = None,
                 height: int | None = None) -> QPixmap | None:
     """按原生高度合成；静态卡面使用磁盘缓存，同页可复用资源校验。"""
-    overrides = {"level_color": level_color} if level_color is not None else None
+    overrides = {"level_color": level_color} if level_color is not None else {}
+    if burst is not None:
+        overrides["burst"] = burst
     return _card_pixmap_impl(
         cdef, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,
@@ -759,7 +761,8 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   library_dir: Path | None = None, cache_dir: Path | None = None,
                   cache_context: dict | None = None, height: int | None = None,
-                  disk_cache: bool = False) -> QPixmap | None:
+                  disk_cache: bool = False,
+                  show_defeated_countdown: bool = True) -> QPixmap | None:
     """以 BWPDIY render_entity 绘制对局小卡，保留当前战斗状态。"""
     path = None
     try:
@@ -816,6 +819,15 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         current_max_health = health if defeated else getattr(shiki, "max_health", health)
         health_color = ("red" if health < current_max_health else
                         None if current_max_health <= base_health else "green")
+        energy = int(getattr(shiki, "energy", 0))
+        has_energy = "charge" in definition.keywords or any(
+            "charge" in getattr(shiki, field, [])
+            for field in ("keywords", "one_shot_keywords", "perm_keywords"))
+        countdown = getattr(shiki, "countdown", None)
+        # 能量与普通倒计时可共存；气绝时仅隐藏普通倒计时。
+        state_energy = energy if has_energy else None
+        state_countdown = countdown if not defeated else None
+        revive = int(getattr(shiki, "revive_countdown", 0))
         state = {
             "level": shiki.level,
             "level_color": seat_level_color(seat),
@@ -823,6 +835,10 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             "health": health,
             "combat_power": 0 if defeated else shiki.combat_power,
             "shield": shiki.shield,
+            "energy": state_energy,
+            "countdown": state_countdown,
+            "defeated_countdown": ((revive if revive > 0 else "infinity")
+                                   if defeated and show_defeated_countdown else None),
             "power_color": power_color,
             "health_color": health_color,
             "combat_power_color": None,

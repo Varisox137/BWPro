@@ -1,0 +1,13 @@
+type: 法术
+name: 坐下！
+level: 1
+rarity: SR
+description: 召唤‘[[番茄]]’并使其永久得+1#ll。
+shikigami: 跳跳妹妹
+version_date: '20201029'
+id: '10013103'
+artwork:
+  images:
+  - path: 10013103.png
+    scale: 0.747
+    offset_y: -73

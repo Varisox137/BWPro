@@ -1,0 +1,15 @@
+type: 战斗
+name: 毒之华
+level: 3
+rarity: SR
+description: 对敌方角色造成战斗伤害时，使其获得等同于其一半#sm的#pj。
+shikigami: 鸩
+power+: 0
+shield+: 0
+version_date: '20191212'
+id: '10012808'
+artwork:
+  images:
+  - path: 10012808.png
+    scale: 0.711
+    offset_y: -72

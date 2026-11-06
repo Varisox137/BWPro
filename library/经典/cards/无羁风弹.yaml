@@ -1,0 +1,13 @@
+type: 法术
+name: 无羁风弹
+level: 2
+rarity: R
+description: 随机对一个其他式神造成2点伤害，重复此效果，直到任一式神气绝或此效果作用10次。
+shikigami: 妖狐
+version_date: '20200120'
+id: '10013004'
+artwork:
+  images:
+  - path: 10013004.png
+    scale: 0.747
+    offset_y: -70

@@ -1,0 +1,15 @@
+type: 战斗
+name: 三太郎之斧
+level: 1
+rarity: R
+description: '[[爆能3]]：此牌+3#ll。'
+shikigami: 镰鼬
+power+: 1
+shield+: 1
+version_date: '20200327'
+id: '10020601'
+artwork:
+  images:
+  - path: 10020601.png
+    scale: 0.711
+    offset_y: -73

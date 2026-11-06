@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·以津真天
+level: 2
+rarity: SSR
+description: '[[觉醒]]：[[倒计时1]]：将一张‘[[黄金羽]]’置入手牌。你的‘[[黄金羽]]’可以以敌方式神为目标。'
+shikigami: 以津真天
+version_date: '20191212'
+evolve: true
+power+: 1
+health+: 1
+id: '10012603'
+artwork:
+  images:
+  - path: 10012603.png
+    scale: 0.747
+    offset_y: -70

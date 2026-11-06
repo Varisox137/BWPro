@@ -161,8 +161,8 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     slots = {key: item for key, item in scene.cards.items() if key[0] == "shiki"}
     refs = {key: item.payload for key, item in slots.items()}
     assert scene.cards[("player", 1)].y() < scene.cards[("player", 0)].y()
-    assert scene.cards[("player", 1)].pos() == QPointF(-12, 4)
-    assert scene.cards[("player", 0)].pos() == QPointF(-12, 766)
+    assert scene.cards[("player", 1)].pos() == QPointF(12, 4)
+    assert scene.cards[("player", 0)].pos() == QPointF(12, 766)
     assert [scene.cards[("shiki", 1, index)].y() for index in range(4)] == [
         120, 86, 86, 120]
     assert [scene.cards[("shiki", 0, index)].y() for index in range(4)] == [
@@ -241,7 +241,7 @@ def test_hand_layout_spacing_and_half_height(qapp, view):
         points = [positions[("hand", card.uid)] for card in enemy.hand]
         assert [points[i + 1].x() - points[i].x() for i in range(count - 1)] == pytest.approx(
             [spacing] * (count - 1))
-        assert points[-1].x() + HAND_SIZE.width() == 1612
+        assert points[-1].x() + HAND_SIZE.width() == 1588
         assert points[-1].x() - points[0].x() + HAND_SIZE.width() == 600
         assert all(point.y() == -78 for point in points)
 
@@ -613,7 +613,7 @@ def test_playable_hand_has_no_blue_frame(qapp, view):
     assert image.pixelColor(2, 2).name() != "#75b9d1"
 
 
-def test_hand_deck_text_contrast_and_tight_outer_margins(qapp, view):
+def test_hand_deck_text_contrast_and_visible_outer_margins(qapp, view):
     start(view, mulligan=False)
     view.apply_theme("light", THEMES["light"])
     for label in (view.enemy_hand_label, view.enemy_deck_label,
@@ -621,16 +621,75 @@ def test_hand_deck_text_contrast_and_tight_outer_margins(qapp, view):
                   view.order_label, view.upgrade_label):
         assert f"color: {THEMES['light']['text']}" in label.styleSheet()
         assert "font-weight: 600" in label.styleSheet()
-    for button in (view.log_button, view.ready_button, view.result_back,
-                   view.end_turn_button):
+    for button in (view.log_button, view.ready_button, view.result_back):
         assert button.testAttribute(Qt.WA_TranslucentBackground)
         assert f"color: {THEMES['light']['text']}" in button.styleSheet()
+    assert view.end_turn_button.testAttribute(Qt.WA_TranslucentBackground)
     scene = view.battle_scene
-    assert scene.cards[("player", 0)].x() <= 1
+    assert scene.cards[("player", 0)].x() == 12
+    assert scene.log_item.x() == 12
     hand = max((item for key, item in scene.cards.items()
                 if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
-    assert hand.x() + hand.size.width() >= 1598
-    assert scene.end_turn_item.x() + 104 >= 1597
+    assert hand.x() + hand.size.width() == 1588
+    assert scene.end_turn_item.x() + 104 == 1588
+
+    from client.gui.battle_scene import HAND_SIZE, layout_positions
+    wide = layout_positions(view.game, view.viewer, scene_width=1800)
+    rightmost_hand = max(wide[("hand", card.uid)].x()
+                         for card in view.game.current.hand) + HAND_SIZE.width()
+    assert rightmost_hand == 1788
+    assert wide[("end_turn",)].x() + 104 == 1788
+
+
+def test_summoned_fifth_shikigami_keeps_refresh_and_next_upgrade_available(qapp, db, view):
+    """召唤物只占战斗区、不改变准备区座次，离场后不保留气绝小卡。"""
+    from client.gui.battle_scene import layout_positions
+
+    summon_id = 900001
+    card_id = 10010151
+    db.shikigami[summon_id] = F.shiki(summon_id, kind="summon")
+    db.cards[card_id] = F.card(
+        card_id, token=True, steps=[F.Step(op="summon", shikigami=summon_id)])
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    view.upgrade(1)
+    settle(view)
+    card = F.give(view.game, 0, card_id)
+    view.refresh()
+    settle(view)
+    ready_before = [layout_positions(view.game, view.viewer)[("shiki", 0, index)]
+                    for index in range(4)]
+
+    assert view.play_card(card.uid)
+    settle(view)
+    game = view.game
+    assert len(game.state.players[0].shikigami) == 5
+    positions = layout_positions(game, view.viewer)
+    summon_key = ("shiki", 0, 4)
+    assert [positions[("shiki", 0, index)] for index in range(4)] == ready_before
+    assert positions[summon_key].x() == 646 and positions[summon_key].y() == 460
+    assert view.battle_scene.cards[summon_key].pos() == positions[summon_key]
+
+    summoned = game.state.players[0].shikigami[4]
+    summoned.health = 0
+    game.check_defeated(Ref(player=0, shikigami=4), reason="测试")
+    game._drain_queue()
+    assert summoned.despawned and game.state.players[0].combat_index is None
+
+    view.refresh()
+    settle(view)
+    assert summon_key not in view.battle_scene.cards
+    assert summon_key not in layout_positions(game, view.viewer)
+    assert view.end_turn()
+    settle(view)
+
+    assert game.state.active == view.viewer == 1
+    assert game.state.phase == "upgrade"
+    legal = game.legal_upgrade_indices(1)
+    assert legal
+    assert view.battle_scene.cards[("shiki", 1, legal[0])].playable
+    assert view.upgrade(legal[0])
+    settle(view)
+    assert game.state.phase == "battle"
 
 
 def test_player_item_has_original_avatar_orbs_and_badges(qapp, view):
@@ -660,7 +719,7 @@ def test_card_detail_hides_deck_builder_copy_count(qapp, view, monkeypatch):
     assert labels and all(label.isHidden() for label in labels)
 
 
-def test_scene_card_art_preserves_ratio_and_reduces_outer_margins(qapp, view):
+def test_scene_card_art_preserves_ratio_and_visible_outer_margins(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     for key, max_size in ((("hand", view.game.current.hand[0].uid), (110, 156)),
@@ -672,10 +731,10 @@ def test_scene_card_art_preserves_ratio_and_reduces_outer_margins(qapp, view):
             pixmap.width() / pixmap.height())
         assert item.size.width() <= max_size[0]
         assert item.size.height() <= max_size[1]
-    assert scene.cards[("player", 0)].x() <= 4
+    assert scene.cards[("player", 0)].x() == 12
     own_hand = max((item for key, item in scene.cards.items()
                     if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
-    assert own_hand.x() + own_hand.size.width() >= 1596
+    assert own_hand.x() + own_hand.size.width() == 1588
 
 
 def test_scene_card_art_geometry_change_is_notified(qapp, view, monkeypatch):
@@ -875,9 +934,9 @@ def test_scene_hand_and_controls_fit_horizontally_1600x900(qapp, db, tmp_path, m
         for item in scene_items(view, "hand"):
             rect = item.sceneBoundingRect()
             assert scene.sceneRect().left() <= rect.left()
-            assert rect.right() <= scene.sceneRect().right() + 12
+            assert rect.right() <= scene.sceneRect().right()
         for proxy in (scene.menu_item, scene.log_item, scene.end_turn_item):
-            assert scene.sceneRect().adjusted(-12, 0, 12, 0).contains(
+            assert scene.sceneRect().contains(
                 proxy.sceneBoundingRect())
         assert scene.cards[("hand", card.uid)].pixmap is not None
         assert win.height() <= 900 and win.minimumSizeHint().height() <= 900
@@ -984,7 +1043,7 @@ def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
 
     calls = []
     monkeypatch.setattr(battle_scene, "entity_pixmap",
-                        lambda shiki, db, *, seat, form=None, cache_context=None, height=None:
+                        lambda shiki, db, *, seat, form=None, cache_context=None, height=None, show_defeated_countdown=True:
                         calls.append((shiki, seat, form)), raising=False)
     start(view, mulligan=False)
     assert len({id(call[0]) for call in calls}) == 8
@@ -1046,10 +1105,10 @@ def test_opening_and_turn_start_banners(qapp, view):
     scene.hide_banner()
     view.end_turn()
     settle(view)
-    assert scene.banner_item.toPlainText() == "回合开始"
-    assert scene.banner_item.isVisible() and scene.banner_timer.isActive()
+    assert scene.banner_pixmap_item.property("assetName") == "your_turn_dark"
+    assert scene.banner_pixmap_item.isVisible() and scene.banner_timer.isActive()
     scene.hide_banner()
-    assert not scene.banner_item.isVisible()
+    assert not scene.banner_item.isVisible() and not scene.banner_pixmap_item.isVisible()
     scene.show_banner("回合开始")
     view.return_to_menu()
     assert not scene.banner_timer.isActive() and not scene.banner_item.isVisible()
@@ -1287,7 +1346,7 @@ def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
 
     entity_calls = []
 
-    def capture_entity(shiki, database, *, seat, form=None, cache_context=None, height=None):
+    def capture_entity(shiki, database, *, seat, form=None, cache_context=None, height=None, show_defeated_countdown=True):
         entity_calls.append((shiki, seat, form))
         return None
 
@@ -1654,11 +1713,6 @@ def test_deck_count_labels_sit_right_of_card_backs(qapp, view):
         assert label.x() + 68 <= SCENE_WIDTH
 
 
-def test_end_turn_has_distinct_disabled_style(qapp, view):
-    view.apply_theme("light", THEMES["light"])
-    assert "QPushButton#endTurnButton:disabled" in view.styleSheet()
-
-
 def test_hotseat_new_games_use_random_seeds(qapp, view, monkeypatch):
     from types import SimpleNamespace
     import client.gui.battle as battle_module
@@ -2011,7 +2065,7 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     assert scene.log_item.widget() is view.log_button
-    assert scene.log_item.x() == -12
+    assert scene.log_item.x() == 12
     assert scene.log_item.y() == 422
     assert view.log_button.width() == view.log_button.height() == 40
     assert view.log_button.text() == "对局\n记录"
@@ -2029,7 +2083,7 @@ def test_log_button_is_a_scene_control_on_the_left(qapp, view):
     assert phase_proxy.x() > scene.log_item.x()
     assert phase_proxy.y() == scene.log_item.y()
     assert view.order_label.isHidden()
-    assert scene.sceneRect().adjusted(-12, 0, 12, 0).contains(
+    assert scene.sceneRect().contains(
         scene.log_item.sceneBoundingRect())
 
 
@@ -2357,6 +2411,36 @@ def test_pending_choice_answer(qapp, db, view):
     assert any(card.uid == uid for card in game.state.players[0].hand)
 
 
+def test_search_deck_choice_dialog_single_option(qapp, db, view):
+    """牌库选择检索仅一个候选也显示共用选择窗，作答后原实例入手。"""
+    field_id = 10010161
+    db.cards[field_id] = F.card(field_id, shikigami=100101,
+                                card_type="field", intensity=3)
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="search_deck", shikigami="self", card_type="field",
+               pick="choose", intensity_boost=5)])
+    start(view, mulligan=False)
+    game = view.game
+    target = F.CardInstance(uid=9001, id=field_id)
+    game.state.players[0].deck.insert(0, target)
+    card = F.give(game, 0, cid)
+    view.refresh()
+    settle(view)
+    view.play_card(card.uid)
+    settle(view)
+    assert game.state.pending_choice["kind"] == "search_deck_pick"
+    assert view.choice_dialog is not None
+    view.answer_pending(9001)
+    settle(view)
+    assert target in game.state.players[0].hand
+    assert target.mods["intensity_boost"] == 5
+    info = view.hand_info()[target.uid]
+    assert info["render"]["durability"] == 8
+    assert info["stats"] == "耐久8"
+    assert game.state.pending_choice is None
+
+
 def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view):
     """残阳无影候选使用共用卡图横滚视图；真实点击后作答并销毁旧窗。"""
     option_ids = [10010161 + index for index in range(6)]
@@ -2557,7 +2641,8 @@ def test_game_over_banner_returns_to_menu(qapp, view):
     view.refresh()
     settle(view)
     assert not view.result_banner.isHidden()
-    assert "玩家A" in view.result_banner.text()
+    assert view.result_banner.pixmap() is not None
+    assert not view.result_banner.pixmap().isNull()
     view.result_back.click()
     assert returned == [True]
 
@@ -2608,6 +2693,17 @@ def test_play_method_and_second_target(qapp, db, view):
     settle(view)
     assert double not in game.current.hand
     assert view.pending_command is None
+
+
+def test_burst_usage_option_renders_energy_badge(qapp, view, monkeypatch):
+    seen = []
+    monkeypatch.setattr("client.gui.battle_scene.card_pixmap",
+                        lambda *_args, **kwargs: seen.append(kwargs))
+    option = {"id": "burst", "label": "爆能", "cost": 1, "energy": 2,
+              "ok": True, "reason": None}
+    cdef = view.db.cards[min(view.db.cards)]
+    view.battle_scene.show_usage_options([option], [cdef])
+    assert seen[0]["burst"] == 2
 
 
 def test_usage_options_show_all_central_cards_and_reasons(qapp, db, view):
@@ -2742,7 +2838,7 @@ def test_enemy_card_use_animation_paints_card_back_before_flip(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     card = view.game.state.players[1].hand[0]
-    assert scene.cards[("hand", card.uid)].pixmap is None
+    assert not scene.cards[("hand", card.uid)].pixmap.isNull()
     view.game.state.timeline.append({"k": "a", "u": card.uid, "c": card.id, "p": 1})
     view._enqueue_timeline()
     animation = scene._card_use_animations[0]
@@ -3066,18 +3162,18 @@ def test_right_click_opens_public_details_without_actions(qapp, view, monkeypatc
     assert calls == ["hand", "shiki", "player"]
 
 
-def test_battle_controls_use_reduced_edge_padding(qapp, view):
+def test_battle_controls_keep_visible_edge_padding(qapp, view):
     from client.gui.battle_scene import SCENE_WIDTH, display_hand, layout_positions
 
     start(view, mulligan=False)
     positions = layout_positions(view.game, view.viewer)
-    assert positions[("player", 0)].x() == -12
-    assert positions[("player", 1)].x() == -12
-    assert positions[("log",)].x() == -12
-    assert positions[("end_turn",)].x() == 1505
+    assert positions[("player", 0)].x() == 12
+    assert positions[("player", 1)].x() == 12
+    assert positions[("log",)].x() == 12
+    assert positions[("end_turn",)].x() == 1484
     ordered = display_hand(view.game, view.viewer, view.viewer)
     hand = positions[("hand", ordered[-1].uid)]
-    assert hand.x() + 110 == SCENE_WIDTH + 12
+    assert hand.x() + 110 == SCENE_WIDTH - 12
 
 
 def test_battle_view_uses_extra_width_instead_of_side_letterbox(qapp, view):
@@ -3096,3 +3192,62 @@ def test_battle_view_uses_extra_width_instead_of_side_letterbox(qapp, view):
     right = view.battle_view.mapFromScene(QPointF(scene.sceneRect().width(), 0)).x()
     assert left == pytest.approx(0, abs=5)
     assert right == pytest.approx(viewport.width(), abs=5)
+
+
+def test_battle_uses_configured_cardbacks_and_word_art_controls(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    assert all(item.pixmap is not None and not item.pixmap.isNull()
+               for item in scene.deck_backs.values())
+    hidden_hand = next(item for key, item in scene.cards.items()
+                       if key[0] == "hand" and item.player != view.viewer)
+    assert hidden_hand.pixmap is not None and not hidden_hand.pixmap.isNull()
+    assert view.end_turn_button.text() == ""
+    assert view.end_turn_button.isFlat()
+    assert not view.end_turn_button.icon().isNull()
+    assert view.end_turn_button.property("assetName") == "end_turn_button"
+
+    view.game.state.active = 1 - view.viewer
+    view._render_state()
+    assert view.end_turn_button.property("assetName") == "opponent_turn_button"
+
+
+def test_result_and_turn_banners_use_word_art(qapp, view):
+    start(view, mulligan=False)
+    view.game.state.winner = view.viewer
+    view._render_state()
+    assert view.result_banner.text() == ""
+    assert view.result_banner.pixmap() is not None
+    assert not view.result_banner.pixmap().isNull()
+    assert view.battle_scene.result_back_item.y() >= (
+        view.battle_scene.result_item.y() + view.result_banner.height())
+
+    view.battle_scene.show_turn_banner(True)
+    assert view.battle_scene.banner_pixmap_item.isVisible()
+    assert view.battle_scene.banner_pixmap_item.property("assetName") == "your_turn_dark"
+
+
+def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.state.timeline.append(
+        {"k": "v", "v": "luck", "p": view.viewer, "s": 0, "dice": 6, "success": True})
+    view._enqueue_timeline()
+    assert not view.timeline_queue
+    assert scene._visual_animations
+    assert view.end_turn_button.isEnabled()
+    animation = scene._visual_animations[0]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert not scene._visual_animations
+
+
+def test_defeat_word_art_precedes_revive_countdown(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"k": "v", "v": "defeated", "p": view.viewer, "s": 0})
+    assert scene.defeat_countdown_hidden(view.viewer, 0)
+    animation = scene._visual_animations[0]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert not scene.defeat_countdown_hidden(view.viewer, 0)

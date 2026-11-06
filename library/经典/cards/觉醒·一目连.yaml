@@ -1,0 +1,15 @@
+type: 法术
+name: 觉醒·一目连
+level: 2
+rarity: SR
+description: '[[觉醒]]：一目连的形态牌进场或被消灭时触发[[倒计时]]效果。'
+shikigami: 一目连
+version_date: '20191212'
+evolve: true
+power+: 2
+id: '10012506'
+artwork:
+  images:
+  - path: 10012506.png
+    scale: 0.747
+    offset_y: -88

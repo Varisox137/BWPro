@@ -1,0 +1,13 @@
+type: 法术
+name: 森之守
+level: 2
+rarity: SR
+description: 使你的一个式神获得[[帷幕]]。
+shikigami: 小鹿男
+version_date: '20200327'
+id: '10020305'
+artwork:
+  images:
+  - path: 10020305.png
+    scale: 0.747
+    offset_y: -91

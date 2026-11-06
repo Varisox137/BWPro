@@ -1,0 +1,15 @@
+type: 形态
+name: 流浪之羽
+level: 3
+rarity: R
+description: 当以津真天使用‘[[黄金羽]]’时，对所有敌方式神造成2点伤害。
+shikigami: 以津真天
+power: 4
+health: 6
+version_date: '20200820'
+id: '10012608'
+artwork:
+  images:
+  - path: 10012608.png
+    scale: 0.711
+    offset_y: -72

@@ -1,0 +1,13 @@
+type: 法术
+name: 冥弓
+level: 2
+rarity: R
+description: 造成4点伤害，随机分配给所有敌方式神。
+shikigami: 铃鹿御前
+version_date: '20200520'
+id: '10020704'
+artwork:
+  images:
+  - path: 10020704.png
+    scale: 0.784
+    offset_y: -68

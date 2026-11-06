@@ -1,0 +1,15 @@
+type: 形态
+name: 治愈之光
+level: 1
+rarity: R
+description: 进场和己方回合开始时，为所有己方式神恢复2#sm。
+shikigami: 萤草
+power: 2
+health: 5
+version_date: '20191212'
+id: '10012702'
+artwork:
+  images:
+  - path: 10012702.png
+    scale: 0.711
+    offset_y: -102

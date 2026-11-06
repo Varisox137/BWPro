@@ -1,0 +1,6 @@
+name: 移动
+frame: skill
+text: 使式神从战斗区移入准备区，或从准备区移入战斗区。
+badge: null
+chars_per_line: 12
+version_date: '20200327'

@@ -1,0 +1,14 @@
+type: 法术
+name: 觉醒·不知火
+level: 2
+rarity: SR
+description: '[[觉醒]]：己方回合开始时，[[鼓舞]]：获得+1#ll。你的[[鼓舞]]效果额外获得+1#ll与+1#hj。'
+shikigami: 不知火
+version_date: '20200327'
+evolve: true
+id: '10020205'
+artwork:
+  images:
+  - path: 10020205.png
+    scale: 0.747
+    offset_y: -72

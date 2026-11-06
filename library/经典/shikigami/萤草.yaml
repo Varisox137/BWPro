@@ -1,0 +1,17 @@
+type: 式神
+name: 萤草
+faction: 苍叶
+power: 2
+health: 5
+description: 萤草的形态牌获得[[瞬发]]且使用时抽一张牌。
+version_date: '20191212'
+id: '100127'
+artwork:
+  images:
+  - path: 100127.png
+    scale: 0.711
+    offset_y: -66
+portrait:
+  scale: 3.922
+  offset_x: -10
+  offset_y: 20

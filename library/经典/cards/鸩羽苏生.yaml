@@ -1,0 +1,13 @@
+type: 法术
+name: 鸩羽苏生
+level: 1
+rarity: R
+description: 使鸩[[倒计时]]-2，抽一张牌。
+shikigami: 鸩
+version_date: '20191212'
+id: '10012802'
+artwork:
+  images:
+  - path: 10012802.png
+    scale: 0.747
+    offset_y: -74

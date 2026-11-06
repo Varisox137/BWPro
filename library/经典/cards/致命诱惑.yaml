@@ -1,0 +1,15 @@
+type: 战斗
+name: 致命诱惑
+level: 2
+rarity: R
+description: 若攻击有#pj的角色，获得[[吸血]]。
+shikigami: 鸩
+power+: 2
+shield+: 2
+version_date: '20191212'
+id: '10012806'
+artwork:
+  images:
+  - path: 10012806.png
+    scale: 0.711
+    offset_y: -72

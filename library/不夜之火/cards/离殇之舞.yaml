@@ -1,0 +1,15 @@
+type: 形态
+name: 离殇之舞
+level: 3
+rarity: SR
+description: 你的出击加成效果不会因出击而消耗。
+shikigami: 不知火
+power: 5
+health: 5
+version_date: '20200327'
+id: '10020207'
+artwork:
+  images:
+  - path: 10020207.png
+    scale: 0.711
+    offset_y: -75

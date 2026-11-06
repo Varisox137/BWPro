@@ -1,0 +1,15 @@
+type: 法术
+name: 暴躁鬼
+level: 3
+rarity: R
+description: '[[投射]]：造成3点伤害。
+
+  [[爆能X]]：额外造成X点伤害，X为全部#nl。若击杀式神，获得3点#nl。'
+shikigami: 烟烟罗
+version_date: '20200327'
+id: '10020408'
+artwork:
+  images:
+  - path: 10020408.png
+    scale: 0.747
+    offset_y: -74

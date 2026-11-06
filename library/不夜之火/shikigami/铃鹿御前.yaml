@@ -1,0 +1,17 @@
+type: 式神
+name: 铃鹿御前
+faction: 紫岩
+power: 3
+health: 4
+description: 当铃鹿御前对一个角色造成伤害时，使其获得1#pj。
+version_date: '20200520'
+id: '100207'
+artwork:
+  images:
+  - path: 100207.png
+    scale: 0.711
+    offset_y: -84
+portrait:
+  scale: 4.767
+  offset_x: -46
+  offset_y: 47

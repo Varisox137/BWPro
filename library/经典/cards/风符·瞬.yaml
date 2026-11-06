@@ -1,0 +1,17 @@
+type: 形态
+name: 风符·瞬
+level: 2
+rarity: SR
+description: '回合结束时此牌自毁。
+
+  [[响应]]：当一目连被攻击时，自动使用此牌。'
+shikigami: 一目连
+power: 6
+health: 9
+version_date: '20191212'
+id: '10012504'
+artwork:
+  images:
+  - path: 10012504.png
+    scale: 0.711
+    offset_y: -77

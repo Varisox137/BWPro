@@ -1,0 +1,15 @@
+type: 形态
+name: 惊鸿之舞
+level: 3
+rarity: SSR
+description: 每个回合开始时，随机触发一个效果。
+shikigami: 不知火
+power: 7
+health: 7
+version_date: '20200327'
+id: '10020208'
+artwork:
+  images:
+  - path: 10020208.png
+    scale: 0.677
+    offset_y: -79

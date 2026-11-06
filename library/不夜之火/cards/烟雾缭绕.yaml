@@ -1,0 +1,17 @@
+type: 形态
+name: 烟雾缭绕
+level: 2
+rarity: SR
+description: '进场时，在战斗区召唤一个‘[[烟烟罗的分身]]’。
+
+  ‘[[烟烟罗的分身]]’每有1#nl便获得1#ll。'
+shikigami: 烟烟罗
+power: 2
+health: 4
+version_date: '20200327'
+id: '10020404'
+artwork:
+  images:
+  - path: 10020404.png
+    scale: 0.711
+    offset_y: -104

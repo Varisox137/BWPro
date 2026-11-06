@@ -1,0 +1,15 @@
+type: 形态
+name: 生生不息
+level: 3
+rarity: R
+description: 小鹿男攻击或被攻击时，消耗1#nl，[[投射]]：造成3点伤害。
+shikigami: 小鹿男
+power: 4
+health: 9
+version_date: '20200327'
+id: '10020308'
+artwork:
+  images:
+  - path: 10020308.png
+    scale: 0.711
+    offset_y: -69

@@ -1,0 +1,6 @@
+name: 爆能
+frame: skill
+text: 消耗一定能量，产生额外效果。
+badge: null
+chars_per_line: 12
+version_date: '20200327'

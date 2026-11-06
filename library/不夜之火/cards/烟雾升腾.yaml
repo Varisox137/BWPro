@@ -1,0 +1,15 @@
+type: 法术
+name: 烟雾升腾
+level: 1
+rarity: R
+description: '[[瞬发]]
+
+  获得3#nl。'
+shikigami: 烟烟罗
+version_date: '20200327'
+id: '10020403'
+artwork:
+  images:
+  - path: 10020403.png
+    scale: 0.747
+    offset_y: -72

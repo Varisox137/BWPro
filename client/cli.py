@@ -234,6 +234,8 @@ def _card_render_stats(game: Game, p, c) -> dict[str, int]:
         shiki = p.shikigami[seat] if seat is not None else None
         power, shield = game.combat_card_stats(cd.effects, c, shiki, p)
         return {"power+": power, "shield+": shield}
+    if cd.card_type == "field":
+        return {"durability": cd.intensity + int(c.mods.get("intensity_boost", 0))}
     if cd.card_type == "form" and cd.form_power is not None:
         bonus = 0
         if any(isinstance((stp.model_extra or {}).get("amount"), dict)
@@ -270,6 +272,8 @@ def _stats_label(game: Game, p, c, render=None) -> str:
             parts.append(f"护甲+{shield}")
     elif cd.card_type == "form" and cd.form_power is not None:
         parts.append(f"身材{render['power']}/{render['health']}")
+    elif cd.card_type == "field":
+        parts.append(f"耐久{render['durability']}")
     else:
         live = _live_enhance(p, c)
         if live != int(c.mods.get("enhance", 0)):
@@ -570,7 +574,7 @@ def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
     - cost     当前费用（含实例修饰 cost_delta）
     - keywords 当前关键字显示名列表（_card_keywords 统一读取点，中文化）
     - stats    数值段文本（战斗牌力量/护甲、形态身材、增强数值等，_stats_label 同口径）
-    - render   BWPDIY 卡面数值负载（战斗力量/护甲、形态身材）
+    - render   BWPDIY 卡面数值负载（战斗力量/护甲、形态身材、幻境耐久含实例加成）
     - enhance  实时增强计数（无 = 0）
     - quest    委托条件进度标签（无 = None）
     - playable 使用条件（play_condition）当前是否满足
@@ -799,15 +803,17 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
             pend = game.state.pending_choice
             p = game.state.players[pend["player"]]
             kind = pend.get("kind")
-            if kind == "discard_pick":
-                # 交互弃牌（意外之喜）：从手牌选一张弃置
-                opts = [next(c for c in p.hand if c.uid == u) for u in pend["options"]]
-                print(f"—— {p.name} 选择一张手牌弃置 ——")
+            if kind in ("discard_pick", "search_deck_pick"):
+                # 交互弃牌 / 牌库选择检索：均按实例 uid 作答
+                zone = p.hand if kind == "discard_pick" else p.deck
+                opts = [next(c for c in zone if c.uid == u) for u in pend["options"]]
+                title = "选择一张手牌弃置" if kind == "discard_pick" else "从牌库选择一张牌置入手牌"
+                print(f"—— {p.name} {title} ——")
                 for i, c in enumerate(opts):
                     cd = game.db.cards[c.id]
                     print(f"  [{i + 1}]【{cd.name}】 {cd.text}")
                 try:
-                    pick = int(tui.prompt("弃置哪张 > ")) - 1
+                    pick = int(tui.prompt("选择哪张 > ")) - 1
                     game.apply({"op": "choose", "uid": opts[pick].uid,
                                 "player": pend["player"]})
                     settle_seen = _play_settle(game, settle_seen, printer)

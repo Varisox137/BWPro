@@ -1,0 +1,17 @@
+type: 法术
+name: 射怪鸟事
+level: 2
+rarity: R
+description: '[[瞬发]]
+
+  弃掉所有以津真天的专属牌，抽等量的牌。
+
+  [[响应]]：当以津真天将气绝时，自动使用此牌。'
+shikigami: 以津真天
+version_date: '20191212'
+id: '10012604'
+artwork:
+  images:
+  - path: 10012604.png
+    scale: 0.747
+    offset_y: -94

@@ -1,0 +1,14 @@
+type: 法术
+name: 黄金羽
+level: 1
+description: '[[瞬发]]
+
+  对敌方牌手造成2点伤害。'
+shikigami: 以津真天
+version_date: '20191212'
+id: '10012651'
+artwork:
+  images:
+  - path: 10012651.png
+    scale: 0.784
+    offset_y: -50

@@ -1,0 +1,17 @@
+type: 式神
+name: 妖狐
+faction: 苍叶
+power: 2
+health: 4
+description: 当妖狐使用法术牌时，[[运势4]]：随机对一个敌方角色造成2点伤害。
+version_date: '20200120'
+id: '100130'
+artwork:
+  images:
+  - path: 100130.png
+    scale: 0.711
+    offset_y: -72
+portrait:
+  scale: 4.767
+  offset_x: -6
+  offset_y: 73

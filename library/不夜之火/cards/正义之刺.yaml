@@ -1,0 +1,15 @@
+type: 战斗
+name: 正义之刺
+level: 2
+rarity: SR
+description: 若己方战斗区有其他式神，使其先攻击一次。
+shikigami: 鸦天狗
+power+: 1
+shield+: 2
+version_date: '20200327'
+id: '10020103'
+artwork:
+  images:
+  - path: 10020103.png
+    scale: 0.711
+    offset_y: -85

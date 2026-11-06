@@ -1,0 +1,13 @@
+type: 法术
+name: 大合奏
+level: 1
+rarity: SSR
+description: '[[增强]]：本局游戏妖琴师的基础能力每生效过一种，此牌便具有对应效果。'
+shikigami: 妖琴师
+version_date: '20191212'
+id: '10012403'
+artwork:
+  images:
+  - path: 10012403.png
+    scale: 0.747
+    offset_y: -69

@@ -1,0 +1,15 @@
+type: 形态
+name: 勇气之光
+level: 2
+rarity: SR
+description: 进场和己方回合开始时，[[鼓舞]]：获得+2#ll。
+shikigami: 萤草
+power: 3
+health: 5
+version_date: '20191212'
+id: '10012704'
+artwork:
+  images:
+  - path: 10012704.png
+    scale: 0.711
+    offset_y: -70

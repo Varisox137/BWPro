@@ -1,0 +1,13 @@
+type: 法术
+name: 福运昌隆
+level: 2
+rarity: R
+description: 抽一张牌。[[运势4]]：你获得2点鬼火。
+shikigami: 座敷童子
+version_date: '20191212'
+id: '10012905'
+artwork:
+  images:
+  - path: 10012905.png
+    scale: 0.747
+    offset_y: -73

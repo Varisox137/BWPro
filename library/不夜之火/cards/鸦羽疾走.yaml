@@ -1,0 +1,15 @@
+type: 法术
+name: 鸦羽疾走
+level: 2
+rarity: R
+description: '[[移动]]，然后再次[[移动]]。
+
+  [[响应]]：当鸦天狗被攻击时，自动使用并取消本次攻击。'
+shikigami: 鸦天狗
+version_date: '20200327'
+id: '10020106'
+artwork:
+  images:
+  - path: 10020106.png
+    scale: 0.747
+    offset_y: -80

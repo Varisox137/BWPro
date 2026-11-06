@@ -1,0 +1,15 @@
+type: 形态
+name: 群鸦乱舞
+level: 2
+rarity: R
+description: 己方回合结束时若鸦天狗在战斗区，对敌方所有式神造成1点伤害，鸦天狗恢复等量#sm。
+shikigami: 鸦天狗
+power: 2
+health: 8
+version_date: '20200327'
+id: '10020105'
+artwork:
+  images:
+  - path: 10020105.png
+    scale: 0.711
+    offset_y: -72

@@ -1,0 +1,15 @@
+type: 形态
+name: 人多势众
+level: 1
+rarity: SR
+description: 镰鼬每有2#nl便获得1#ll。
+shikigami: 镰鼬
+power: 3
+health: 5
+version_date: '20200423'
+id: '10020602'
+artwork:
+  images:
+  - path: 10020602.png
+    scale: 0.711
+    offset_y: -67

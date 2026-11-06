@@ -18,16 +18,42 @@ from client.gui.renderlog import log_render_failure
 
 
 def bwpdiy_root() -> Path:
-    """BWPDIY 仓库位置：可用 BWP_DIY_ROOT 覆盖，默认 BWPro 的同级目录。"""
+    """渲染资源根：环境变量优先，默认项目 assets，兼容同级 BWPDIY 开发目录。"""
     configured = os.environ.get("BWP_DIY_ROOT")
     if configured:
         return Path(configured)
     source = Path(__file__).resolve()
     for anchor in source.parents:
+        if (anchor / "assets" / "frames").is_dir():
+            return anchor
+    for anchor in source.parents:
         candidate = anchor.parent / "BWPDIY"
         if (candidate / "assets").exists():
             return candidate
     return source.parents[3] / "BWPDIY"
+
+
+def bwpdiy_code_root(resource_root: Path) -> Path:
+    """定位渲染 Python 包；允许项目内素材与同级 BWPDIY 源码分离。"""
+    if (resource_root / "bwpdiy" / "render").is_dir():
+        return resource_root
+    source = Path(__file__).resolve()
+    for anchor in source.parents:
+        candidate = anchor.parent / "BWPDIY"
+        if (candidate / "bwpdiy" / "render").is_dir():
+            return candidate
+    return source.parents[3] / "BWPDIY"
+
+
+def global_layout_path() -> Path:
+    """BWPDIY 全局布局配置；缺失时渲染器回退包内默认布局。"""
+    return Path.home() / ".bwpdiy" / "layout.json"
+
+
+def load_global_layouts() -> dict:
+    """经 BWPDIY 现有加载器读取全局配置，保留默认补全与版本迁移。"""
+    from bwpdiy.render.layout import load_layouts
+    return load_layouts(global_layout_path().parent)
 
 
 def library_root() -> Path:
@@ -166,15 +192,15 @@ def _preflight_artwork(library, element: dict, art: dict | None) -> None:
 @lru_cache(maxsize=4)
 def _renderer(root_text: str):
     root = Path(root_text)
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
+    code_root = bwpdiy_code_root(root)
+    if str(code_root) not in sys.path:
+        sys.path.insert(0, str(code_root))
     from bwpdiy.render.assets import AssetLibrary
     from bwpdiy.render.duo import render_portrait
-    from bwpdiy.render.layout import load_layouts
 
     assets = root / "assets"
     library = AssetLibrary(assets)
-    element = load_layouts(assets)["协战"]["elements"]["duo_frame"]
+    element = load_global_layouts()["协战"]["elements"]["duo_frame"]
     return root, library, element, render_portrait
 
 

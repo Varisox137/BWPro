@@ -1,0 +1,15 @@
+type: 形态
+name: 家内安全
+level: 2
+rarity: SR
+description: 每当一个式神攻击后[[运势4]]：失败则被[[眩晕]]。
+shikigami: 座敷童子
+power: 3
+health: 7
+version_date: '20191212'
+id: '10012906'
+artwork:
+  images:
+  - path: 10012906.png
+    scale: 0.711
+    offset_y: -70

@@ -1,0 +1,15 @@
+type: 形态
+name: 霸主
+level: 1
+rarity: SR
+description: 免疫有#pj的敌方式神对其造成的伤害。
+shikigami: 铃鹿御前
+power: 4
+health: 5
+version_date: '20200520'
+id: '10020702'
+artwork:
+  images:
+  - path: 10020702.png
+    scale: 0.711
+    offset_y: -76

@@ -1,0 +1,17 @@
+type: 式神
+name: 烟烟罗
+faction: 青岚
+power: 2
+health: 4
+description: '[[充能]]。当烟烟罗获得#nl时若#nl为0，额外多获得1点。'
+version_date: '20200327'
+id: '100204'
+artwork:
+  images:
+  - path: 100204.png
+    scale: 0.711
+    offset_y: -85
+portrait:
+  scale: 4.118
+  offset_x: -1
+  offset_y: 46

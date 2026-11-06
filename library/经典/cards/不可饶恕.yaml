@@ -1,0 +1,15 @@
+type: 形态
+name: 不可饶恕
+level: 2
+rarity: SR
+description: 本回合若使用过‘[[黄金羽]]’，以津真天免疫战斗伤害。
+shikigami: 以津真天
+power: 4
+health: 6
+version_date: '20191212'
+id: '10012606'
+artwork:
+  images:
+  - path: 10012606.png
+    scale: 0.711
+    offset_y: -90

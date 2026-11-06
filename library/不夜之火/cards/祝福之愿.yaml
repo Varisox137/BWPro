@@ -1,0 +1,15 @@
+type: 形态
+name: 祝福之愿
+level: 1
+rarity: R
+description: 小鹿男攻击或被攻击时，随机使你的一个其他具有[[充能]]的式神获得1#nl。
+shikigami: 小鹿男
+power: 3
+health: 6
+version_date: '20200327'
+id: '10020301'
+artwork:
+  images:
+  - path: 10020301.png
+    scale: 0.711
+    offset_y: -75

@@ -1,0 +1,13 @@
+type: 法术
+name: 羽迹
+level: 2
+rarity: SR
+description: 将一个敌方式神移入战斗区并使其[[眩晕]]，然后[[移动]]鸦天狗。
+shikigami: 鸦天狗
+version_date: '20200327'
+id: '10020104'
+artwork:
+  images:
+  - path: 10020104.png
+    scale: 0.747
+    offset_y: -72
