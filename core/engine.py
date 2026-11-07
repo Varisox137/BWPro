@@ -170,6 +170,7 @@ class _DamageEvent:
     pre_pierce_amount: int | None = None  # 贯通分配前的原始伤害值（翻倍后口径快照，
     # 光影"贯通场合按贯通分配前的原始伤害值计"，全卡盘点）：仅贯通分配（溢出截断）时
     # 记录；on_damage/on_player_damaged payload 恒带同名键（无贯通时回退 = amount）
+    visual_group: int | None = None  # 同一并行伤害批次的 GUI 动画分组；单事件=None
 
     def __post_init__(self) -> None:
         if self.spell:
@@ -4720,6 +4721,9 @@ class Game:
         由调用方延后统一结算（随机分配伤害：气绝事件按延时时机在效果结束后结算）。
         子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者出现再拆。
         """
+        visual_group = id(events) if len(events) > 1 else None
+        for event in events:
+            event.visual_group = visual_group
         dq: deque[_DamageEvent] = deque(events)
         victims: list[tuple[Ref, Ref | None, str]] = []  # (受伤式神, 来源, 气绝原因) 按受伤顺序
         total_dealt = 0  # 本队列实际造成的伤害合计（巨浪"每造成 1 点伤害"统计口径）
@@ -5085,7 +5089,8 @@ class Game:
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
                          f"（生命 {s.health + ev.amount}→{s.health}）")
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
-                                        "s": ev.victim.shikigami, "amount": ev.amount})
+                                        "s": ev.victim.shikigami, "amount": ev.amount,
+                                        "g": ev.visual_group})
             # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（濒死定义见 docs/rules.md）
@@ -5133,7 +5138,7 @@ class Game:
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {old_health}→{p.health}）")
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
-                                        "s": None, "amount": ev.amount})
+                                        "s": None, "amount": ev.amount, "g": ev.visual_group})
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
             self._field_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -5752,7 +5757,7 @@ class Game:
                 # 不写 _log 孪生行：归 settle 通道，避免双通道重复
                 self.state.timeline.append({
                     "k": "v", "v": "heal", "p": ref.player, "s": ref.shikigami,
-                    "amount": healed,
+                    "amount": healed, "g": id(items) if len(items) > 1 else None,
                 })
             if healed <= 0:
                 # 实际恢复为 0 也明示一行（治疗时时机仍触发；海坊主过量治疗转化可读）
@@ -6467,6 +6472,8 @@ class Game:
         """
         if not events:
             return
+        for ev in events:
+            ev["g"] = id(events) if len(events) > 1 else None
         self._deferred_luck_stack.append([])  # 本批运势事件的延时复用层（转运）
         try:
             self._run_luck_events_inner(events)
@@ -6520,7 +6527,7 @@ class Game:
                 "k": "v", "v": "luck", "p": ev["judge"],
                 "s": (None if ev.get("player_visual") or source is None
                       else source.shikigami),
-                "dice": ev["dice"], "success": ev["success"],
+                "dice": ev["dice"], "success": ev["success"], "g": ev.get("g"),
             })
         # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）
         for ev in events:

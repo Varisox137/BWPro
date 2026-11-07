@@ -291,11 +291,15 @@ def test_online_card_use_animation_for_both_players_is_nonblocking_and_cleans_up
 
     assert not battle.timeline_queue
     assert battle._inputs_open()
-    assert len(scene._card_use_animations) == 2
-    assert [item.cdef.id for item in scene._card_use_items.values()] == [
-        card.id for card in cards]
-    for animation in list(scene._card_use_animations):
-        animation.setCurrentTime(animation.duration())
+    assert len(scene._card_use_animations) == 1
+    first = scene._card_use_animations[0]
+    assert scene._card_use_items[first].cdef.id == cards[0].id
+    first.setCurrentTime(first.duration())
+    qapp.processEvents()
+    assert len(scene._card_use_animations) == 1
+    second = scene._card_use_animations[0]
+    assert scene._card_use_items[second].cdef.id == cards[1].id
+    second.setCurrentTime(second.duration())
     qapp.processEvents()
     assert not scene._card_use_animations
     assert not scene._card_use_items
@@ -321,6 +325,10 @@ def test_online_reset_session_clears_animations_and_reconnect_history(qapp, db, 
     payload["hand_info"] = cli.hand_cards_info(game, 0)
     battle.set_state(payload, log=[], timeline=[entry])
     assert scene._move_animations
+    assert not scene._card_use_animations
+    movement = next(iter(scene._move_animations.values()))
+    movement.setCurrentTime(movement.duration())
+    qapp.processEvents()
     assert scene._card_use_animations
     assert scene._animation_timeline
 

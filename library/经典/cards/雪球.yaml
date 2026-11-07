@@ -8,3 +8,8 @@ description: '[[瞬发]]
 shikigami: 雪女
 version_date: '20191212'
 id: '10012151'
+artwork:
+  images:
+  - path: 10012151.png
+    scale: 0.747
+    offset_y: -72

@@ -1,0 +1,10 @@
+type: 式神
+name: 石钵
+faction: 红莲
+power: 0
+health: 5
+description: ''
+shikigami: 辉夜姬
+version_date: '20200624'
+id: '10030399'
+special_type: 召唤物

@@ -1,0 +1,15 @@
+type: 战斗
+name: 曜断
+level: 1
+rarity: R
+description: '[[增强]]：若你有[[幻境]]，此牌获得[[瞬发]]。'
+shikigami: 泷夜叉姬
+power+: 1
+shield+: 1
+version_date: '20200624'
+id: '10030201'
+artwork:
+  images:
+  - path: 10030201.png
+    scale: 0.747
+    offset_y: -78

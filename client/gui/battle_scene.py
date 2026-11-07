@@ -8,8 +8,8 @@ from PySide6.QtCore import (
     QVariantAnimation, Signal,
 )
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QFontDatabase, QImage, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QTransform,
+    QBitmap, QBrush, QColor, QFont, QFontDatabase, QImage, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap, QRegion, QTransform,
 )
 from PySide6.QtWidgets import (
     QApplication, QGraphicsObject, QGraphicsPathItem, QGraphicsPixmapItem,
@@ -278,7 +278,7 @@ class BattleCardItem(QGraphicsObject):
         painter.drawText(avatar, Qt.AlignCenter, self.player_name[:1])
 
         def draw_stat(box, icon_name, value, icon_size, text_size):
-            icon = ui_pixmap(f"icons/{icon_name}.png").scaled(
+            icon = ui_pixmap(f"stats/{icon_name}.png").scaled(
                 icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             icon_rect = QRectF(box.center().x() - icon_size / 2,
                                box.center().y() - icon_size / 2, icon_size, icon_size)
@@ -766,11 +766,22 @@ class BattleScene(QGraphicsScene):
         self._sync_focus()
 
     def set_focus(self, items) -> None:
-        """用带孔洞的暗色遮罩突出指定图元，其余画面统一压暗。"""
+        """用带轮廓孔洞的暗色遮罩突出图元，其余画面统一压暗。"""
         path = QPainterPath()
-        path.addRect(self.sceneRect())
+        path.addRect(self.sceneRect().adjusted(0, -120, 0, 120))
         for item in items:
-            path.addRect(item.sceneBoundingRect())
+            rect = item.sceneBoundingRect()
+            if isinstance(item, BattleCardItem) and item.pixmap is not None \
+                    and not item.pixmap.isNull():
+                mask = item.pixmap.mask()
+                if not mask.isNull():
+                    mask = mask.scaled(rect.size().toSize(), Qt.IgnoreAspectRatio,
+                                       Qt.SmoothTransformation)
+                    mono = mask.toImage().convertToFormat(QImage.Format_MonoLSB)
+                    bitmap = QBitmap.fromData(mono.size(), mono.bits(), QImage.Format_MonoLSB)
+                    path.addRegion(QRegion(bitmap).translated(rect.topLeft().toPoint()))
+                    continue
+            path.addRect(rect)
         path.setFillRule(Qt.OddEvenFill)
         self.focus_overlay.setPath(path)
         self.focus_overlay.show()
@@ -790,6 +801,8 @@ class BattleScene(QGraphicsScene):
                      if key[0] == "hand" and item.player == self.viewer and self.inputs_open]
             if self.mulligan_uid is not None and self.mulligan_item.isVisible():
                 items.append(self.mulligan_item)
+            if self.ready_item.isVisible():
+                items.append(self.ready_item)
         else:
             items = []
         if items:
@@ -837,23 +850,39 @@ class BattleScene(QGraphicsScene):
         self.set_focus(items)
 
     def _stop_move_animation(self, item: BattleCardItem) -> None:
+        self._visual_queue[:] = [event for event in self._visual_queue
+                                 if not (event.get("v") == "_move"
+                                         and event.get("item") is item)]
         animation = self._move_animations.pop(item, None)
         if animation is not None:
             animation.stop()
+            if animation in self._visual_animations:
+                self._visual_animations.remove(animation)
+            self._visual_events.pop(animation, None)
             animation.deleteLater()
+            self._start_queued_visuals()
 
     def _animate_position(self, item: BattleCardItem, target: QPointF) -> None:
-        self._stop_move_animation(item)
+        self._visual_queue[:] = [event for event in self._visual_queue
+                                 if not (event.get("v") == "_move"
+                                         and event.get("item") is item)]
         start = QPointF(item.pos())
-        if start == target:
+        if start == target and item not in self._move_animations:
             item.setPos(target)
             return
+        self._queue_or_start_visual(
+            {"v": "_move", "item": item, "start": start, "target": QPointF(target)})
+
+    def _start_move_event(self, event: dict) -> None:
+        item = event["item"]
         animation = QPropertyAnimation(item, b"pos", self)
         animation.setDuration(180)
         animation.setEasingCurve(QEasingCurve.Linear)
-        animation.setStartValue(start)
-        animation.setEndValue(QPointF(target))
+        animation.setStartValue(event["start"])
+        animation.setEndValue(event["target"])
         self._move_animations[item] = animation
+        self._visual_animations.append(animation)
+        self._visual_events[animation] = dict(event)
         animation.finished.connect(
             lambda item=item, animation=animation: self._finish_move_animation(item, animation))
         animation.start()
@@ -861,10 +890,21 @@ class BattleScene(QGraphicsScene):
     def _finish_move_animation(self, item: BattleCardItem, animation) -> None:
         if self._move_animations.get(item) is animation:
             del self._move_animations[item]
+            if animation in self._visual_animations:
+                self._visual_animations.remove(animation)
+            self._visual_events.pop(animation, None)
             animation.deleteLater()
+            self._start_queued_visuals()
 
     def animate_card_use(self, uid: int, card_id: int, player: int,
                          response: bool = False) -> None:
+        self._queue_or_start_visual(
+            {"v": "_card_use", "u": uid, "c": card_id, "p": player,
+             "response": response})
+
+    def _start_card_use_event(self, event: dict) -> None:
+        uid, card_id, player = event["u"], event["c"], event["p"]
+        response = event["response"]
         cdef = self.db.cards[card_id]
         cached = self._hand_animation_cache.get(uid)
         if cached is None:
@@ -899,6 +939,8 @@ class BattleScene(QGraphicsScene):
         big_pixmap = card_pixmap(
             cdef, self.db, cache_context={}, height=int(round(big_size.height())))
         self._card_use_animations.append(animation)
+        self._visual_animations.append(animation)
+        self._visual_events[animation] = dict(event)
         self._card_use_items[animation] = item
         self._card_use_sources[animation] = {
             "source_pos": source_pos,
@@ -946,36 +988,55 @@ class BattleScene(QGraphicsScene):
         if animation not in self._card_use_items:
             return
         self._card_use_animations.remove(animation)
+        if animation in self._visual_animations:
+            self._visual_animations.remove(animation)
+        self._visual_events.pop(animation, None)
         item = self._card_use_items.pop(animation)
         self._card_use_sources.pop(animation, None)
         if item.scene() is self:
             self.removeItem(item)
         animation.deleteLater()
+        self._start_queued_visuals()
 
     def defeat_countdown_hidden(self, player: int, index: int) -> bool:
         return (player, index) in self._defeat_visuals
 
     @staticmethod
     def _visual_target_key(event: dict) -> tuple:
-        if event.get("v") == "response":
+        kind = event.get("v")
+        if kind == "response":
             return ("scene",)
+        if kind == "_move":
+            return event["item"].key
+        if kind == "_card_use":
+            return ("card_use", event["u"])
         player = int(event.get("p", 0))
         index = event.get("s")
         return ("shiki", player, index) if index is not None else ("player", player)
 
-    def _visual_target_busy(self, target_key: tuple) -> bool:
-        return any(self._visual_target_key(event) == target_key
-                   for event in self._visual_events.values())
+    def _animation_can_start(self, event: dict) -> bool:
+        target = self._visual_target_key(event)
+        active = list(self._visual_events.values())
+        if any(self._visual_target_key(current) == target for current in active):
+            return False
+        if not active:
+            return True
+        group = event.get("g")
+        return group is not None and all(current.get("g") == group for current in active)
+
+    def _queue_or_start_visual(self, event: dict) -> None:
+        if self._animation_can_start(event):
+            self._start_visual_event(event)
+        else:
+            self._visual_queue.append(dict(event))
 
     def _start_queued_visuals(self) -> None:
-        """不同目标的动画并行；同一目标严格按事件入队先后播放。"""
-        index = 0
-        while index < len(self._visual_queue):
-            event = self._visual_queue[index]
-            if self._visual_target_busy(self._visual_target_key(event)):
-                index += 1
-                continue
-            self._visual_queue.pop(index)
+        """默认全局 FIFO；仅同组且不同目标的并行效果可同时播放。"""
+        while self._visual_queue:
+            event = self._visual_queue[0]
+            if not self._animation_can_start(event):
+                break
+            self._visual_queue.pop(0)
             self._start_visual_event(event)
 
     def play_visual_event(self, event: dict) -> None:
@@ -989,13 +1050,19 @@ class BattleScene(QGraphicsScene):
             key = (int(event.get("p", 0)), int(event.get("s", 0)))
             self._defeat_visuals.add(key)
             self._refresh_defeated_entity(*key)
-        if self._visual_target_busy(self._visual_target_key(event)):
-            self._visual_queue.append(dict(event))
-            return
-        self._start_visual_event(event)
+        events = ([dict(event, v="luck_dice"), dict(event, v="luck_result")]
+                  if kind == "luck" else [event])
+        for current in events:
+            self._queue_or_start_visual(current)
 
     def _start_visual_event(self, event: dict) -> None:
         kind = event.get("v")
+        if kind == "_move":
+            self._start_move_event(event)
+            return
+        if kind == "_card_use":
+            self._start_card_use_event(event)
+            return
         player = int(event.get("p", self.viewer))
         index = event.get("s")
         target_key = (("shiki", player, index) if index is not None
@@ -1038,16 +1105,16 @@ class BattleScene(QGraphicsScene):
             number = heal_number_pixmap(int(event.get("amount", 0))).scaledToHeight(
                 72, Qt.SmoothTransformation)
             layers = [(number, QPointF(-number.width() / 2, -number.height() / 2))]
-        else:
-            dice_value = event.get("previous_dice" if kind == "luck_reroll" else "dice", 1)
-            dice = dice_face(int(dice_value)).scaled(
+        elif kind == "luck_dice":
+            dice = dice_face(int(event.get("dice", 1))).scaled(
                 96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            layers = [(dice, QPointF(-dice.width() / 2, -dice.height() / 2))]
+        else:
             result_name = ("dice_reroll" if kind == "luck_reroll" else
                            "dice_successful" if event.get("success") else "dice_unsuccessful")
             result = ui_pixmap(f"animations/{result_name}.png").scaled(
                 180, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            layers = [(dice, QPointF(-dice.width() / 2, -dice.height() / 2)),
-                      (result, QPointF(-result.width() / 2, dice.height() / 2 + 12))]
+            layers = [(result, QPointF(-result.width() / 2, -result.height() / 2))]
         item = BattleVisualItem(layers)
         item.setProperty("assetName", kind)
         item.setPos(center)

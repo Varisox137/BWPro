@@ -1,0 +1,15 @@
+type: 战斗
+name: 月之奥义
+level: 2
+rarity: R
+description: 当对牌手造成战斗伤害时，消灭一个他#nj最大的[[幻境]]。
+shikigami: 泷夜叉姬
+power+: 2
+shield+: 1
+version_date: '20200624'
+id: '10030206'
+artwork:
+  images:
+  - path: 10030206.png
+    scale: 0.711
+    offset_y: -75

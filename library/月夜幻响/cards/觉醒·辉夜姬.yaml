@@ -1,0 +1,18 @@
+type: 法术
+name: 觉醒·辉夜姬
+level: 3
+rarity: SR
+description: '[[觉醒]]：辉夜姬的[[幻境]]同时只能存在一个但能力和#nj会叠加。
+
+  [[增强]]：若本局游戏已召唤五个不同的辉夜姬[[幻境]]，召唤她的五种[[幻境]]且#nj都为1。'
+shikigami: 辉夜姬
+version_date: '20200624'
+id: '10030306'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10030306.png
+    scale: 0.747
+    offset_y: -68

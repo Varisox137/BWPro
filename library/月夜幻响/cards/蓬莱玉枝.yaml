@@ -1,0 +1,14 @@
+type: 幻境
+name: 蓬莱玉枝
+level: 3
+rarity: SR
+description: 每个回合开始时，抽一张牌并获得1点鬼火。若此牌#nj≥10，效果翻倍。
+shikigami: 辉夜姬
+durability: 5
+version_date: '20200624'
+id: '10030307'
+artwork:
+  images:
+  - path: 10030307.png
+    scale: 0.711
+    offset_y: -72

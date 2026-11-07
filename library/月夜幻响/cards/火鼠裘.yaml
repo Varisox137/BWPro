@@ -1,0 +1,14 @@
+type: 幻境
+name: 火鼠裘
+level: 1
+rarity: R
+description: 当敌方式神对你造成战斗伤害时，他受到2点伤害。若此牌#nj≥10，当敌方式神对你的式神造成战斗伤害时，他受到1点伤害。
+shikigami: 辉夜姬
+durability: 5
+version_date: '20200624'
+id: '10030302'
+artwork:
+  images:
+  - path: 10030302.png
+    scale: 0.711
+    offset_y: -84

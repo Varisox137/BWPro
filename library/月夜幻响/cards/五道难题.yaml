@@ -1,0 +1,15 @@
+type: 法术
+name: 五道难题
+level: 1
+rarity: SR
+description: '从你牌库选择一张辉夜姬的[[幻境]]牌置入手牌并使其获得5#nj。
+
+  [[增强]]：若你牌库有辉夜姬的五种不同名[[幻境]]牌，此牌获得[[瞬发]]。'
+shikigami: 辉夜姬
+version_date: '20200624'
+id: '10030303'
+artwork:
+  images:
+  - path: 10030303.png
+    scale: 0.747
+    offset_y: -74

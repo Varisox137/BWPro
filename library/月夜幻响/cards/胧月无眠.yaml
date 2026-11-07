@@ -1,0 +1,15 @@
+type: 战斗
+name: 胧月无眠
+level: 3
+rarity: SSR
+description: 攻击后随机消灭一个你的[[幻境]]并再次使用此牌。
+shikigami: 泷夜叉姬
+power+: 0
+shield+: 0
+version_date: '20200624'
+id: '10030207'
+artwork:
+  images:
+  - path: 10030207.png
+    scale: 0.711
+    offset_y: -75

@@ -3648,7 +3648,7 @@ def luck_reroll(game, ctx, *, targets: list[Ref]) -> None:
     previous_dice = ev["dice"]
     game.state.timeline.append({
         "k": "v", "v": "luck", "p": ev["judge"], "s": visual_shiki,
-        "dice": previous_dice, "success": previous_dice >= ev["x"],
+        "dice": previous_dice, "success": previous_dice >= ev["x"], "g": ev.get("g"),
     })
     if game.state.players[ev["judge"]].ext.get("dice_force_six"):
         ev["dice"] = 6  # 萌即正义：重投的投掷骰子时机同样必 6
@@ -3657,7 +3657,7 @@ def luck_reroll(game, ctx, *, targets: list[Ref]) -> None:
     game._log(f"运势判定重投（新骰点 {ev['dice']}）")
     game.state.timeline.append({
         "k": "v", "v": "luck_reroll", "p": ev["judge"], "s": visual_shiki,
-        "dice": ev["dice"], "previous_dice": previous_dice,
+        "dice": ev["dice"], "previous_dice": previous_dice, "g": ev.get("g"),
     })
 
 

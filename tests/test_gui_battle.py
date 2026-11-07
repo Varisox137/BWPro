@@ -49,10 +49,10 @@ def settle(view):
         if view.timeline_queue:
             view.play_next_timeline()
     scene = view.battle_scene
-    animations = list(scene._move_animations.values()) + list(scene._card_use_animations)
-    for animation in animations:
-        animation.setCurrentTime(animation.duration())
-    QApplication.processEvents()
+    while scene._visual_queue or scene._visual_animations:
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            QApplication.processEvents()
 
 
 def log_lines(view):
@@ -589,6 +589,8 @@ def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all
         assert view._handoff_stage == "review"
         assert view.handoff_dialog is None
         assert view.battle_scene.handoff_item.isVisible()
+        assert not view.battle_scene.ready_item.isVisible()
+        assert view.battle_scene.handoff_item.pos() == view.battle_scene.ready_item.pos()
         assert view.handoff_button.text() == "切换玩家"
         old_hand_items = scene_items(view, "hand", player=pi)
         assert old_hand_items and all(item.y() == 280 for item in old_hand_items)
@@ -730,8 +732,8 @@ def test_player_item_paints_health_and_signed_shield_icons(qapp, view, monkeypat
     painter = QPainter(image)
     item.paint(painter, None)
     painter.end()
-    assert "icons/health.png" in used
-    assert "icons/shield.png" in used
+    assert "stats/health.png" in used
+    assert "stats/shield.png" in used
 
 
 def test_card_detail_hides_deck_builder_copy_count(qapp, view, monkeypatch):
@@ -851,6 +853,7 @@ def test_upgrade_focus_requires_current_legal_action(qapp, view):
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
     scene = view.battle_scene
     assert scene.focus_overlay.isVisible()
+    assert scene.focus_overlay.path().elementCount() > 40  # 轮廓而非矩形孔洞
     scene.sync_state(view.game, 0, view.hand_info(), False)
     assert not scene.focus_overlay.isVisible()
     scene.sync_state(view.game, 1, {}, True)
@@ -1461,6 +1464,12 @@ def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
     assert all(rect.center().y() < 600 for rect in rects)
     assert all(item.default_size.width() >= 170 for item in items)
     assert scene.focus_overlay.isVisible()
+    assert scene.focus_overlay.path().elementCount() > 40  # 轮廓而非矩形孔洞
+    hand_edges = [item.sceneBoundingRect() for item in scene_items(view, "hand")]
+    assert scene.focus_overlay.path().boundingRect().top() <= min(
+        rect.top() for rect in hand_edges)
+    assert scene.focus_overlay.path().boundingRect().bottom() >= max(
+        rect.bottom() for rect in hand_edges)
     assert view.ready_button.width() <= 110
     assert getattr(view, "order_label", None) is not None
     assert view.order_label.text() == "己方先手"
@@ -2828,10 +2837,13 @@ def test_shiki_position_animation_reaches_layout_target(qapp, view):
     view.game.current.combat_index = None
     view.refresh()
     replacement = scene._move_animations[item]
-    assert animation.state() == animation.State.Stopped
-    animation = replacement
-    target = layout_positions(view.game, view.viewer)[key]
+    assert animation.state() == animation.State.Running
     animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    replacement = scene._move_animations[item]
+    assert replacement is not animation
+    target = layout_positions(view.game, view.viewer)[key]
+    replacement.setCurrentTime(replacement.duration())
     qapp.processEvents()
     assert item.pos() == target
     assert item not in scene._move_animations
@@ -2866,15 +2878,18 @@ def test_card_use_animation_for_both_players_is_nonblocking_and_cleans_up(qapp, 
 
     assert not view.timeline_queue
     assert view._inputs_open()
-    assert len(scene._card_use_animations) == 2
-    assert [item.cdef.id for item in scene._card_use_items.values()] == [
-        card.id for card in cards]
-    assert [item.player for item in scene._card_use_items.values()] == [0, 1]
-    assert [item.pos() for item in scene._card_use_items.values()] == [
-        old_positions[card.uid] for card in cards]
-
-    for animation in list(scene._card_use_animations):
-        animation.setCurrentTime(animation.duration())
+    assert len(scene._card_use_animations) == 1
+    first = scene._card_use_animations[0]
+    assert scene._card_use_items[first].cdef.id == cards[0].id
+    assert scene._card_use_items[first].player == 0
+    assert scene._card_use_items[first].pos() == old_positions[cards[0].uid]
+    first.setCurrentTime(first.duration())
+    qapp.processEvents()
+    assert len(scene._card_use_animations) == 1
+    second = scene._card_use_animations[0]
+    assert scene._card_use_items[second].player == 1
+    assert scene._card_use_items[second].pos() == old_positions[cards[1].uid]
+    second.setCurrentTime(second.duration())
     qapp.processEvents()
     assert not scene._card_use_animations
     assert not scene._card_use_items
@@ -2888,8 +2903,11 @@ def test_card_use_animation_without_cache_uses_hand_layout_anchor(qapp, view):
     cards = [view.game.state.players[pi].hand[0] for pi in (0, 1)]
     for pi, card in enumerate(cards):
         scene.animate_card_use(card.uid, card.id, pi)
-    assert [item.pos() for item in scene._card_use_items.values()] == [
-        QPointF(1489, 822), QPointF(1489, -78)]
+    assert [item.pos() for item in scene._card_use_items.values()] == [QPointF(1489, 822)]
+    animation = scene._card_use_animations[0]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert [item.pos() for item in scene._card_use_items.values()] == [QPointF(1489, -78)]
 
 
 def test_enemy_card_use_animation_paints_card_back_before_flip(qapp, view):
@@ -2992,15 +3010,12 @@ def test_viewer_handoff_freezes_commands_hands_choices_and_timeline(qapp, view):
     assert old_hand_items
     assert view.end_turn()
     assert view._handoff_pending
-    assert view._handoff_stage == "review"
-    assert all(item.scene() is not None for item in old_hand_items)
+    assert view._handoff_stage == "transfer"
+    assert all(item.scene() is None for item in old_hand_items)
     assert view.handoff_dialog is None
     assert scene.handoff_item.isVisible()
     assert scene.handoff_item.x() < scene.end_turn_item.x()
     assert view.handoff_button.text() == "切换玩家"
-    view.handoff_button.click()  # 第一次仅隐藏手牌
-    assert view._handoff_stage == "transfer"
-    assert all(item.scene() is None for item in old_hand_items)
     assert not scene_items(view, "hand")
     assert view.choice_dialog is None
     assert scene.cards[("player", 0)].y() > scene.cards[("player", 1)].y()
@@ -3010,7 +3025,7 @@ def test_viewer_handoff_freezes_commands_hands_choices_and_timeline(qapp, view):
     view.play_next_timeline()
     assert view.timeline_queue == before
 
-    view.handoff_button.click()  # 第二次才切换视角
+    view.handoff_button.click()  # 回合结束交接只需一次点击
     assert not view._handoff_pending
     assert not scene.handoff_item.isVisible()
     assert scene.cards[("player", 1)].y() > scene.cards[("player", 0)].y()
@@ -3035,8 +3050,6 @@ def test_handoff_clears_drag_and_reveals_only_new_viewer_hand(qapp, view):
     assert view._handoff_pending
     assert scene.drag_controller.drag_ghost is None
     assert scene.drag_controller.drag_arrow is None
-    assert any(key[0] == "hand" for key in scene.cards)
-    view.confirm_handoff()
     assert not any(key[0] == "hand" for key in scene.cards)
     view.confirm_handoff()
     expected = {card.uid for player in view.game.state.players for card in player.hand}
@@ -3118,10 +3131,8 @@ def test_cross_player_pending_choice_hands_off_on_entry_and_return(qapp, view):
     assert view.viewer == 1
     assert view._handoff_pending
     assert view.choice_dialog is None
-    assert scene_items(view, "hand")
-
-    view.confirm_handoff()
     assert not scene_items(view, "hand")
+
     view.confirm_handoff()
     assert view.choice_dialog is not None
     assert not view.choice_dialog.isHidden()
@@ -3130,7 +3141,6 @@ def test_cross_player_pending_choice_hands_off_on_entry_and_return(qapp, view):
     assert view.viewer == 0
     assert view._handoff_pending
     assert view.choice_dialog is None
-    view.confirm_handoff()
     assert not scene_items(view, "hand")
     view.confirm_handoff()
     assert scene_items(view, "hand", player=0)
@@ -3350,18 +3360,22 @@ def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
     assert view.end_turn_button.isEnabled()
     animation = scene._visual_animations[0]
     assert animation.duration() <= 700
-    dice_layer, result_layer = scene._visual_items[animation].layers
-    assert dice_layer[1] == QPointF(-dice_layer[0].width() / 2, -dice_layer[0].height() / 2)
-    assert result_layer[1].y() == dice_layer[0].height() / 2 + 12
+    assert scene._visual_events[animation]["v"] == "luck_dice"
+    dice, offset = scene._visual_items[animation].layers[0]
+    assert offset == QPointF(-dice.width() / 2, -dice.height() / 2)
     assert scene._visual_items[animation].pos() == scene.cards[("shiki", view.viewer, 0)].sceneBoundingRect().center()
     animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    result_animation = scene._visual_animations[0]
+    assert scene._visual_events[result_animation]["v"] == "luck_result"
+    result, offset = scene._visual_items[result_animation].layers[0]
+    assert offset == QPointF(-result.width() / 2, -result.height() / 2)
+    result_animation.setCurrentTime(result_animation.duration())
     qapp.processEvents()
     assert not scene._visual_animations
 
 
 def test_luck_visuals_play_sequentially(qapp, view):
-    from client.gui.ui_assets import dice_face
-
     start(view, mulligan=False)
     scene = view.battle_scene
     scene.play_visual_event({"v": "luck", "p": view.viewer, "s": 0, "dice": 1, "success": False})
@@ -3371,19 +3385,21 @@ def test_luck_visuals_play_sequentially(qapp, view):
     first = scene._visual_animations[0]
     first.setCurrentTime(first.duration())
     qapp.processEvents()
-    assert len(scene._visual_animations) == 1
+    result = scene._visual_animations[0]
+    assert scene._visual_events[result]["v"] == "luck_result"
+    result.setCurrentTime(result.duration())
+    qapp.processEvents()
     animation = scene._visual_animations[0]
     assert scene._visual_events[animation]["v"] == "luck_reroll"
-    actual = scene._visual_items[animation].layers[0][0].toImage()
-    expected = dice_face(1).scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation).toImage()
-    assert actual == expected
+    word, offset = scene._visual_items[animation].layers[0]
+    assert offset == QPointF(-word.width() / 2, -word.height() / 2)
 
 
 def test_visuals_on_different_targets_play_in_parallel(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
-    scene.play_visual_event({"v": "luck", "p": 0, "s": None, "dice": 4, "success": True})
-    scene.play_visual_event({"v": "luck", "p": 1, "s": None, "dice": 2, "success": False})
+    scene.play_visual_event({"v": "luck", "p": 0, "s": None, "dice": 4, "success": True, "g": 1})
+    scene.play_visual_event({"v": "luck", "p": 1, "s": None, "dice": 2, "success": False, "g": 1})
     assert len(scene._visual_animations) == 2
     positions = {scene._visual_events[animation]["p"]: item.pos()
                  for animation, item in scene._visual_items.items()}
@@ -3391,14 +3407,14 @@ def test_visuals_on_different_targets_play_in_parallel(qapp, view):
     assert positions[1] == scene.cards[("player", 1)].sceneBoundingRect().center()
 
     scene.play_visual_event({"v": "luck_reroll", "p": 0, "s": None,
-                             "dice": 6, "previous_dice": 4})
-    assert len(scene._visual_queue) == 1
+                             "dice": 6, "previous_dice": 4, "g": 1})
+    assert len(scene._visual_queue) == 3
     first = next(animation for animation, event in scene._visual_events.items()
-                 if event["p"] == 0 and event["v"] == "luck")
+                 if event["p"] == 0 and event["v"] == "luck_dice")
     first.setCurrentTime(first.duration())
     qapp.processEvents()
     assert len(scene._visual_animations) == 2
-    assert not scene._visual_queue
+    assert len(scene._visual_queue) == 2
 
 
 def test_heal_visual_uses_signed_number_at_target_center(qapp, view):
@@ -3435,28 +3451,32 @@ def test_immune_response_and_upgrade_visual_layouts(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     scene.play_visual_event({"v": "immune", "p": 0, "s": 0})
+    assert len(scene._visual_animations) == 1
+    animation = scene._visual_animations[0]
+    word, offset = scene._visual_items[animation].layers[0]
+    assert offset == QPointF(-word.width() / 2, -word.height() / 2)
+    assert scene._visual_items[animation].pos() == scene.cards[("shiki", 0, 0)].sceneBoundingRect().center()
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+
     scene.play_visual_event({"v": "upgrade", "p": 0, "s": 1})
-    scene.play_visual_event({"v": "response", "p": 1})
-    assert len(scene._visual_animations) == 3
-    items = {event["v"]: scene._visual_items[animation]
-             for animation, event in scene._visual_events.items()}
-
-    immune_word, immune_offset = items["immune"].layers[0]
-    assert immune_offset == QPointF(-immune_word.width() / 2, -immune_word.height() / 2)
-    assert items["immune"].pos() == scene.cards[("shiki", 0, 0)].sceneBoundingRect().center()
-
-    up_word, up_offset = items["upgrade"].layers[0]
+    animation = scene._visual_animations[0]
+    word, offset = scene._visual_items[animation].layers[0]
     target = scene.cards[("shiki", 0, 1)]
-    assert up_offset.y() == -target.size.height() / 2 - up_word.height() - 8
-    assert items["upgrade"].pos() == target.sceneBoundingRect().center()
+    assert offset.y() == -target.size.height() / 2 - word.height() - 8
+    assert scene._visual_items[animation].pos() == target.sceneBoundingRect().center()
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
 
-    response_layers = items["response"].layers
-    assert len(response_layers) == 2
-    assert response_layers[0][1].x() == -response_layers[0][0].width()
-    assert response_layers[1][1].x() == 0
-    assert items["response"].pos() == scene.sceneRect().center()
+    scene.play_visual_event({"v": "response", "p": 1})
+    animation = scene._visual_animations[0]
+    layers = scene._visual_items[animation].layers
+    assert len(layers) == 2
+    assert layers[0][1].x() == -layers[0][0].width()
+    assert layers[1][1].x() == 0
+    assert scene._visual_items[animation].pos() == scene.sceneRect().center()
     scene.play_visual_event({"v": "response", "p": view.viewer})
-    assert len(scene._visual_animations) == 3  # 己方响应不显示中央提示
+    assert len(scene._visual_animations) == 1  # 己方响应不显示中央提示
 
 
 def test_turn_start_visuals_survive_hotseat_handoff(qapp, view):
@@ -3482,3 +3502,46 @@ def test_defeat_word_art_precedes_revive_countdown(qapp, view, monkeypatch):
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
     assert not scene.defeat_countdown_hidden(view.viewer, 0)
+
+
+def test_animation_groups_only_parallelize_same_effect(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "luck", "p": 0, "s": None, "dice": 4, "success": True, "g": 7})
+    scene.play_visual_event({"v": "luck", "p": 1, "s": None, "dice": 2, "success": False, "g": 7})
+    scene.play_visual_event({"v": "damage", "p": 0, "s": 0, "amount": 3})
+    assert len(scene._visual_animations) == 2
+    while scene._visual_animations and all(
+            event["v"] != "damage" for event in scene._visual_events.values()):
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
+    assert len(scene._visual_animations) == 1
+    assert scene._visual_events[scene._visual_animations[0]]["v"] == "damage"
+
+
+def test_movement_damage_defeat_and_return_share_linear_queue(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    item = scene.cards[("shiki", 0, 0)]
+    scene._animate_position(item, QPointF(646, 460))
+    scene.play_visual_event({"v": "damage", "p": 0, "s": 1, "amount": 3, "g": 9})
+    scene.play_visual_event({"v": "damage", "p": 1, "s": 1, "amount": 2, "g": 9})
+    scene.play_visual_event({"v": "defeated", "p": 0, "s": 0})
+    scene._animate_position(item, QPointF(196, 570))
+    assert len(scene._move_animations) == 1
+    assert len(scene._visual_animations) == 1
+    assert scene._visual_events[scene._visual_animations[0]]["v"] == "_move"
+
+    first_move = next(iter(scene._move_animations.values()))
+    first_move.setCurrentTime(first_move.duration())
+    qapp.processEvents()
+    assert len(scene._visual_animations) == 2
+    for animation in list(scene._visual_animations):
+        animation.setCurrentTime(animation.duration())
+        qapp.processEvents()
+    assert len(scene._visual_animations) == 1
+    assert scene._visual_events[scene._visual_animations[0]]["v"] == "defeated"
+    scene._visual_animations[0].setCurrentTime(scene._visual_animations[0].duration())
+    qapp.processEvents()
+    assert len(scene._move_animations) == 1

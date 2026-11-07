@@ -1,0 +1,14 @@
+type: 幻境
+name: 龙首之玉
+level: 2
+rarity: R
+description: 每个回合结束时，[[投射]]：造成2点伤害。若此牌#nj≥10，再对敌方准备区式神各造成1点伤害。
+shikigami: 辉夜姬
+durability: 5
+version_date: '20200624'
+id: '10030305'
+artwork:
+  images:
+  - path: 10030305.png
+    scale: 0.711
+    offset_y: -69

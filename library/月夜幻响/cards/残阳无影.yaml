@@ -1,0 +1,17 @@
+type: 战斗
+name: 残阳无影
+level: 2
+rarity: SR
+description: '选择召唤一个泷夜叉姬的[[幻境]]。
+
+  当对牌手造成伤害时，使泷夜叉姬的所有[[幻境]]获得3#nj。'
+shikigami: 泷夜叉姬
+power+: 1
+shield+: 0
+version_date: '20200624'
+id: '10030204'
+artwork:
+  images:
+  - path: 10030204.png
+    scale: 0.711
+    offset_y: -73

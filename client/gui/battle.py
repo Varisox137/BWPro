@@ -465,8 +465,11 @@ class HotseatView(QWidget):
         self.timeline_timer.stop()
         self._clear_usage()
         self.battle_scene.reset_animations()
+        mulligan = preserve_hand
         self._handoff_pending = True
-        self._handoff_stage = "review"
+        self._handoff_stage = "review" if mulligan else "transfer"
+        if not mulligan:
+            self._clear_hand()
         self.pending_command = None
         self.target_specs = []
         self.legal_targets = []
@@ -477,8 +480,9 @@ class HotseatView(QWidget):
         self.close_log()
         next_name = self.game.state.players[self.viewer].name
         self.handoff_button.setToolTip(f"确认后交给 {next_name}")
-        if self.game.state.phase == "mulligan":
-            position = self.battle_scene.ready_item.pos() + QPointF(-112, 0)
+        if mulligan:
+            self.battle_scene.ready_item.hide()
+            position = self.battle_scene.ready_item.pos()
         else:
             position = self.battle_scene.end_turn_item.pos() + QPointF(-112, 35)
         self.battle_scene.handoff_item.setPos(position)

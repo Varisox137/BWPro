@@ -1,0 +1,14 @@
+type: 幻境
+name: 燕子安贝
+level: 1
+rarity: R
+description: 自己回合结束时，使所有己方角色各恢复1#sm，使所有其他己方[[幻境]]各获得1#nj。若此牌#nj≥10，敌方回合结束时，再触发上述效果一次。
+shikigami: 辉夜姬
+durability: 5
+version_date: '20200624'
+id: '10030301'
+artwork:
+  images:
+  - path: 10030301.png
+    scale: 0.747
+    offset_y: -96
