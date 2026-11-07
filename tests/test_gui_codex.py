@@ -43,6 +43,7 @@ def test_main_window_opens_real_codex(qapp, db, tmp_path):
 
 def test_overview_filters_and_shikigami_home(qapp, db, view):
     assert "标准(最新)" in [view.env_combo.itemText(i) for i in range(view.env_combo.count())]
+    assert view.pack_combo.itemText(view.pack_combo.findData("01")) == "经典包"
     view.pack_combo.setCurrentIndex(view.pack_combo.findData("01"))
     view.faction_combo.setCurrentText("红莲")
     view.search_edit.setText(db.shikigami[100101].name)
@@ -76,6 +77,17 @@ def test_codex_loading_covers_only_card_area(qapp, view, monkeypatch):
     view.show_shikigami_cards()
     assert seen == [(False, True)]
     assert any("（1/" in text for text in texts)
+
+
+def test_environment_dates_include_all_snapshots_in_order(qapp, db):
+    from db.envs import available_env_dates
+
+    db.raw_cards[99999999] = {"versions": {"history": [
+        {"date": 20200423}, {"date": 20200101}, {"date": 20191212},
+    ]}}
+    dates = available_env_dates(db)
+    assert dates == sorted(dates)
+    assert {20191212, 20200101, 20200327, 20200423} <= set(dates)
 
 
 def test_environment_change_reloads_shikigami_and_cards(qapp, db, view):

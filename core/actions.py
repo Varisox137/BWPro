@@ -3621,7 +3621,8 @@ def luck_roll(game, ctx, *, targets: list[Ref], x: int, judge: str = "self",
         jctx = ctx if j == ctx.controller else dataclasses.replace(ctx, controller=j)
         jctx.memo = ctx.memo  # 共享块内暂存：luck_dice / last_damage_victims 等
         events.append({"judge": j, "x": x_eff, "source": ctx.source, "card": ctx.card,
-                       "ctx": jctx, "then": steps, "on_fail": False})
+                       "ctx": jctx, "then": steps, "on_fail": False,
+                       "player_visual": judge == "both"})
     game._run_luck_events(events)
 
 
@@ -3641,15 +3642,22 @@ def luck_reroll(game, ctx, *, targets: list[Ref]) -> None:
     if key in used:
         return  # 同一判定中每个来源能力至多一次
     used.append(key)
+    source = ev.get("source")
+    visual_shiki = (None if ev.get("player_visual") or source is None
+                    else source.shikigami)
+    previous_dice = ev["dice"]
+    game.state.timeline.append({
+        "k": "v", "v": "luck", "p": ev["judge"], "s": visual_shiki,
+        "dice": previous_dice, "success": previous_dice >= ev["x"],
+    })
     if game.state.players[ev["judge"]].ext.get("dice_force_six"):
         ev["dice"] = 6  # 萌即正义：重投的投掷骰子时机同样必 6
     else:
         ev["dice"] = game.rng.randint(1, 6)
     game._log(f"运势判定重投（新骰点 {ev['dice']}）")
-    source = ev.get("source")
     game.state.timeline.append({
-        "k": "v", "v": "luck_reroll", "p": ev["judge"],
-        "s": source.shikigami if source is not None else None, "dice": ev["dice"],
+        "k": "v", "v": "luck_reroll", "p": ev["judge"], "s": visual_shiki,
+        "dice": ev["dice"], "previous_dice": previous_dice,
     })
 
 

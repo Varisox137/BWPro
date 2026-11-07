@@ -2426,7 +2426,10 @@ class Game:
         chosen：该次使用的选择目标（无目标/无选择信息为空列表）——条件
         {chosen_side: friendly} 匹配"对单个己方式神使用的法术"类触发（记仇）。
         """
-        self.state.timeline.append({"k": "a", "u": uid, "c": cdef.id, "p": player})
+        animation = {"k": "a", "u": uid, "c": cdef.id, "p": player}
+        if triggered == "response":
+            animation["r"] = True
+        self.state.timeline.append(animation)
         played = self._card_by_uid(uid)
         # 委托账本（三目委托机制）：使用牌数（不限主动/响应/自动，定案(3)）/形态牌/
         # 阵容套牌以外/三目使用委托牌。阵容套牌以外口径（定案(5)）：同名牌不在本局
@@ -3405,7 +3408,7 @@ class Game:
         cancel_marker = {"cancelled": False}  # 取消本次攻击旗标（cancel_attack 响应置位）
         replace_marker = {"active": False}    # 攻击替换旗标（attack_replace 能力置位）
         self.emit("on_before_assault", attacker=atk_ref,
-                  victim=Ref(player=def_pi, shikigami=vic_idx),
+                  victim=Ref(player=def_pi, shikigami=vic_idx), origin=origin,
                   battle=self._battle_stack[-1],
                   cancel=cancel_marker, attack_replace=replace_marker)
         self._drain_queue()
@@ -4126,6 +4129,7 @@ class Game:
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
         self._settle(f"【升级】{p.name} 的{name}升至 {s.level} 级")
+        self.state.timeline.append({"k": "v", "v": "upgrade", "p": self.state.active, "s": i})
         self.emit("on_upgrade", player=self.state.active, shikigami=i, level=s.level,
                   target=Ref(player=self.state.active, shikigami=i))
         if p.upgrades == 0 or not self._has_upgrade_target(p):
@@ -5010,20 +5014,28 @@ class Game:
         # 且须命中授予时指定的作用域
         if ev.kind == "combat" and s is not None and self._combat_immune(s):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
+            self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
+                                        "s": ev.victim.shikigami})
             return
         # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）：
         # 法术伤害与其他伤害均属"非战斗伤害"（三类化口径），一并免疫
         if ev.kind != "combat" and s is not None and self._effect_immune(s, ev):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
+            self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
+                                        "s": ev.victim.shikigami})
             return
         # 破甲来源免疫（霸主；条目 {"kind": "fragile_source"}）：伤害来源为当前持有
         # 破甲的敌方式神时免疫（伤害类别不限；来源须为式神，牌手来源/无来源不免）
         if s is not None and self._fragile_source_immune(s, ev):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了破甲式神的伤害")
+            self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
+                                        "s": ev.victim.shikigami})
             return
         # 牌手级伤害免疫（舍生"本回合你免疫所有伤害"；PlayerState.immunities 按回合号过期）
         if s is None and self._player_immune(p, ev):
             self._log(f"{p.name} 免疫了本次伤害")
+            self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
+                                        "s": ev.victim.shikigami})
             return
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
         if not skip_before_health:
@@ -5072,6 +5084,8 @@ class Game:
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
                          f"（生命 {s.health + ev.amount}→{s.health}）")
+            self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
+                                        "s": ev.victim.shikigami, "amount": ev.amount})
             # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（濒死定义见 docs/rules.md）
@@ -5118,6 +5132,8 @@ class Game:
             self._account_quest_damage(ev)  # 委托账本：造成伤害/非战斗伤害
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {old_health}→{p.health}）")
+            self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
+                                        "s": None, "amount": ev.amount})
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
             self._field_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -5734,6 +5750,10 @@ class Game:
                 self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
                              f"恢复 {healed} 点生命（生命 {holder.health - healed}→{holder.health}）")
                 # 不写 _log 孪生行：归 settle 通道，避免双通道重复
+                self.state.timeline.append({
+                    "k": "v", "v": "heal", "p": ref.player, "s": ref.shikigami,
+                    "amount": healed,
+                })
             if healed <= 0:
                 # 实际恢复为 0 也明示一行（治疗时时机仍触发；海坊主过量治疗转化可读）
                 self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
@@ -6498,7 +6518,8 @@ class Game:
             source = ev.get("source")
             self.state.timeline.append({
                 "k": "v", "v": "luck", "p": ev["judge"],
-                "s": source.shikigami if source is not None else None,
+                "s": (None if ev.get("player_visual") or source is None
+                      else source.shikigami),
                 "dice": ev["dice"], "success": ev["success"],
             })
         # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）

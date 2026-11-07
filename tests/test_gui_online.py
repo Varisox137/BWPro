@@ -497,6 +497,7 @@ def test_online_choice_dialog_click_sends_once_waits_and_reconnects(qapp, db, ma
     assert len(cards) == 1
 
     QTest.mouseClick(cards[0], Qt.LeftButton)
+    QTest.mouseClick(dialog.option_view.option_buttons[card.uid], Qt.LeftButton)
     assert sent == [{"op": "choose", "player": 1, "uid": card.uid}]
     assert battle._awaiting_state
     assert not cards[0].isEnabled()
@@ -533,6 +534,7 @@ def test_online_choice_dialog_receive_error_restores_retry(qapp, db, make_game):
     battle.set_state(payload, log=[], timeline=[])
     first_dialog = battle.choice_dialog
     QTest.mouseClick(first_dialog.findChildren(CardWidget)[0], Qt.LeftButton)
+    QTest.mouseClick(first_dialog.option_view.option_buttons[card.uid], Qt.LeftButton)
     command = {"op": "choose", "player": 1, "uid": card.uid}
     assert sent == [command]
 
@@ -542,6 +544,7 @@ def test_online_choice_dialog_receive_error_restores_retry(qapp, db, make_game):
     assert not restored.isHidden()
     assert not battle._awaiting_state
     QTest.mouseClick(restored.findChildren(CardWidget)[0], Qt.LeftButton)
+    QTest.mouseClick(restored.option_view.option_buttons[card.uid], Qt.LeftButton)
     assert sent == [command, command]
     battle.close()
 

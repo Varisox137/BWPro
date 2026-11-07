@@ -106,6 +106,7 @@ class ShikigamiDetailDialog(QDialog):
         self.setMinimumSize(720 if shiki.form is not None else 520, 680)
         layout = QVBoxLayout(self)
         cards = QHBoxLayout()
+        cards.setSpacing(0)
         self.column_names = ["main"]
 
         self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=512)

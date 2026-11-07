@@ -1,0 +1,15 @@
+type: 战斗
+name: 血袭
+level: 1
+rarity: R
+description: '[[吸血]]'
+shikigami: 吸血姬
+power+: 1
+shield+: 1
+version_date: '20200820'
+id: '10030101'
+artwork:
+  images:
+  - path: 10030101.png
+    scale: 0.711
+    offset_y: -76

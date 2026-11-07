@@ -858,7 +858,7 @@ def test_timeline_merges_log_and_settle_in_order(db, make_game):
     pa, pb = F.battle_setup(g)
     pa.shikigami[0].health = 1
     g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
-    text_entries = [e for e in g.state.timeline if e["k"] != "a"]
+    text_entries = [e for e in g.state.timeline if e["k"] in ("s", "l")]
     kinds = [e["k"] for e in text_entries]
     msgs = [e["m"] for e in text_entries]
     assert set(kinds) == {"s", "l"}
@@ -875,13 +875,14 @@ def test_timeline_animation_metadata_skips_cli_output(make_game, capsys):
     game = make_game()
     game.state.timeline.clear()
     game.state.timeline.append({"k": "a", "u": 41, "c": 10010101, "p": 0})
+    game.state.timeline.append({"k": "v", "v": "damage", "p": 0, "s": 0, "amount": 3})
     printer = SettlePrinter(interval=0)
     printer.start()
     try:
         seen = cli._play_settle(game, 0, printer)
     finally:
         printer.stop(flush=True)
-    assert seen == 1
+    assert seen == 2
     assert capsys.readouterr().out == ""
 
 

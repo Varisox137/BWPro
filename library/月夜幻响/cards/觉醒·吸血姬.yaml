@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·吸血姬
+level: 3
+rarity: SR
+description: '[[觉醒]]：每当你恢复#sm时，吸血姬获得等量的#ll和#hj。（每次最大为5）'
+shikigami: 吸血姬
+version_date: '20200624'
+id: '10030107'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10030107.png
+    scale: 0.747
+    offset_y: -75

@@ -34,6 +34,17 @@ ENV_ALIASES: dict[str, int] = {
 FACTION_DISPLAY_MIN_DATE = 20210330
 
 
+def available_env_dates(db) -> list[int]:
+    """汇总别名与全部版本快照日期，供 GUI 环境选择器使用。"""
+    dates = set(ENV_ALIASES.values())
+    for raw in list(db.raw_cards.values()) + list(db.raw_shikigami.values()):
+        for snapshot in raw.get("versions", {}).get("history", []):
+            date = snapshot.get("date")
+            if isinstance(date, int):
+                dates.add(date)
+    return sorted(dates)
+
+
 def show_faction(date: int | None) -> bool:
     """该环境日期下是否显示式神派系：None（最新数据）或 >= 分界日期显示。"""
     return date is None or date >= FACTION_DISPLAY_MIN_DATE

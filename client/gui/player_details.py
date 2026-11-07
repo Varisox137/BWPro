@@ -35,6 +35,7 @@ class PlayerDetailDialog(QDialog):
         content = QWidget()
         self.content_layout = QHBoxLayout(content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(0)
         self.field_widgets = []
         art_width = 396
         for field in state.fields:
@@ -58,6 +59,12 @@ class PlayerDetailDialog(QDialog):
             self.content_layout.addWidget(self.ability_panel)
         self.scroll_area.setWidget(content)
         layout.addWidget(self.scroll_area, 1)
+        field_columns = min(len(self.field_widgets), 3)
+        columns = field_columns + (1 if self.ability_panel is not None else 0)
+        default_width = max(
+            520, columns * (art_width + 24)
+            + max(0, columns - 1) * self.content_layout.spacing() + 48)
+        self.resize(default_width, 700)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)

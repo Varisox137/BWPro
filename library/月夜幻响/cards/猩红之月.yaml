@@ -1,0 +1,17 @@
+type: 形态
+name: 猩红之月
+level: 3
+rarity: SSR
+description: '[[吸血]]
+
+  你的法术牌获得[[吸血]]。'
+shikigami: 吸血姬
+power: 5
+health: 8
+version_date: '20200624'
+id: '10030108'
+artwork:
+  images:
+  - path: 10030108.png
+    scale: 0.711
+    offset_y: -78

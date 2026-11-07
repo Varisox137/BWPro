@@ -1,12 +1,14 @@
 """固定坐标对局场景与卡牌图元。"""
 from __future__ import annotations
 
+from functools import lru_cache
+
 from PySide6.QtCore import (
     QEasingCurve, QLineF, QPointF, QPropertyAnimation, QRectF, QSizeF, Qt, QTimer,
     QVariantAnimation, Signal,
 )
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath,
+    QBrush, QColor, QFont, QFontDatabase, QImage, QLinearGradient, QPainter, QPainterPath,
     QPen, QPixmap, QTransform,
 )
 from PySide6.QtWidgets import (
@@ -17,7 +19,10 @@ from PySide6.QtWidgets import (
 from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
 from client.gui.loading import LoadingIndicator
 from client.gui.portrait import bwpdiy_root
-from client.gui.ui_assets import cardback_pixmap, dice_face, turn_pixmap, ui_pixmap
+from client.gui.ui_assets import (
+    cardback_pixmap, damage_number_pixmap, dice_face, heal_number_pixmap,
+    load_gui_settings, turn_pixmap, ui_pixmap,
+)
 from core import targets
 from core.model import Ref
 
@@ -25,7 +30,7 @@ SCENE_WIDTH = 1600
 SCENE_HEIGHT = 900
 HAND_SIZE = QSizeF(110, 156)
 MULLIGAN_HAND_SIZE = QSizeF(180, 255)
-DECK_BACK_SIZE = QSizeF(112, 80)
+DECK_BACK_SIZE = QSizeF(132, 94)
 SHIKI_SIZE = QSizeF(148, 210)
 PLAYER_SIZE = QSizeF(210, 130)
 HAND_Z = 40
@@ -34,6 +39,14 @@ FOCUS_Z = 80
 DRAG_Z = 100
 ENEMY_HAND_Y = -78
 OWN_HAND_Y = 822
+
+
+@lru_cache(maxsize=1)
+def _stat_font_family() -> str:
+    path = bwpdiy_root() / "assets" / "fonts" / "方正北魏楷书.ttf"
+    font_id = QFontDatabase.addApplicationFont(str(path))
+    families = QFontDatabase.applicationFontFamilies(font_id)
+    return families[0] if families else "北魏楷书"
 
 
 def card_owner_seat(game, player, cdef) -> int | None:
@@ -47,10 +60,10 @@ def card_owner_seat(game, player, cdef) -> int | None:
     return None
 
 
-def display_hand(game, pi: int, viewer: int):
-    """敌方与调度保留入手序；常态己方仅显示排序，不改写 hand_seq。"""
+def display_hand(game, pi: int, viewer: int, preserve_order: bool = False):
+    """敌方、调度与中央交接预览保留入手序；常态己方仅显示排序。"""
     player = game.state.players[pi]
-    if pi != viewer or game.state.phase == "mulligan":
+    if pi != viewer or game.state.phase == "mulligan" or preserve_order:
         return sorted(player.hand, key=lambda card: card.hand_seq)
 
     def sort_key(card):
@@ -76,13 +89,14 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("own_deck",): QPointF(1530 + extra, 608),
         ("hand_caption",): QPointF(1530 + extra, 680),
         ("ready",): QPointF(1328 + extra, 435),
+        ("handoff",): QPointF(1216 + extra, 435),
         ("mulligan",): QPointF(730 + center_shift, 610),
         ("turn_order",): QPointF(1, 340),
         ("target_label",): QPointF(1120 + extra, 400),
         ("cancel_target",): QPointF(1120 + extra, 440),
         ("default_target",): QPointF(1120 + extra, 480),
         ("error",): QPointF(1, 540),
-        ("result_banner",): QPointF(500 + center_shift, 350),
+        ("result_banner",): QPointF(590 + center_shift, 300),
         ("result_back",): QPointF(730 + center_shift, 660),
         ("upgrade_phase",): QPointF(411 + center_shift, 422),
     }
@@ -91,7 +105,9 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         positions[("player", pi)] = QPointF(12, 4 if top else 766)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
-                1376 + extra + index * 18, (220 + index * 4) if top else (600 - index * 4))
+                1358 + extra + index * 18,
+                (220 + index * 4) if top
+                else (SCENE_HEIGHT - 220 - DECK_BACK_SIZE.height() - index * 4))
     if game is None:
         return positions
 
@@ -109,7 +125,7 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
                 x, y = ready_positions[index]
                 position = QPointF(x + center_shift, y if top else (690 - y))
             positions[("shiki", pi, index)] = position
-        cards = display_hand(game, pi, viewer)
+        cards = display_hand(game, pi, viewer, preserve_order=center_hand)
         centered = (game.state.phase == "mulligan" or center_hand) and pi == viewer
         if centered:
             width = (len(cards) * MULLIGAN_HAND_SIZE.width()
@@ -250,7 +266,7 @@ class BattleCardItem(QGraphicsObject):
     def _paint_player(self, painter: QPainter, rect: QRectF) -> None:
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
-        avatar = QRectF(rect.left() + 2, rect.top() + 2, 96, 96)
+        avatar = QRectF(rect.left() + 2, rect.top() + 2, 104, 104)
         painter.setPen(QPen(QColor("#d9b96a"), 3))
         painter.setBrush(QColor(45, 65, 82, 235))
         painter.drawEllipse(avatar)
@@ -261,19 +277,25 @@ class BattleCardItem(QGraphicsObject):
         painter.setFont(font)
         painter.drawText(avatar, Qt.AlignCenter, self.player_name[:1])
 
-        hp = QRectF(avatar.right() - 48, avatar.bottom() - 24, 58, 28)
-        painter.setPen(QPen(QColor("#d9b96a"), 1))
-        painter.setBrush(QColor(170, 55, 60, 245))
-        painter.drawRoundedRect(hp, 12, 12)
-        font.setPointSize(12)
-        painter.setFont(font)
-        painter.setPen(QColor("#fff4e0"))
-        painter.drawText(hp, Qt.AlignCenter, f"♥{self.health}")
+        def draw_stat(box, icon_name, value, icon_size, text_size):
+            icon = ui_pixmap(f"icons/{icon_name}.png").scaled(
+                icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            icon_rect = QRectF(box.center().x() - icon_size / 2,
+                               box.center().y() - icon_size / 2, icon_size, icon_size)
+            painter.drawPixmap(icon_rect, icon, QRectF(icon.rect()))
+            stat_font = QFont(_stat_font_family(), text_size)
+            painter.setFont(stat_font)
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                painter.setPen(QColor("#141121"))
+                painter.drawText(box.translated(dx, dy), Qt.AlignCenter, str(value))
+            painter.setPen(QColor("#fff4e0"))
+            painter.drawText(box, Qt.AlignCenter, str(value))
+
+        hp = QRectF(avatar.right() - 52, avatar.bottom() - 30, 52, 38)
+        draw_stat(hp, "health", self.health, 34, 16)
         if self.shield:
-            shield = QRectF(hp.left(), hp.top() - 22, 58, 22)
-            painter.setBrush(QColor(65, 95, 115, 240))
-            painter.drawRoundedRect(shield, 9, 9)
-            painter.drawText(shield, Qt.AlignCenter, f"护{self.shield}")
+            shield = QRectF(hp.left(), hp.top() - 31, 52, 32)
+            draw_stat(shield, "shield", self.shield, 30, 14)
 
         side_x = avatar.right() + 8
         orb_size = 14
@@ -324,7 +346,7 @@ class BattleCardItem(QGraphicsObject):
                 event.accept()
                 return
             if (self.key[0] == "player"
-                    and not QRectF(2, 2, 96, 96).contains(self.mapFromScene(event.scenePos()))):
+                    and not QRectF(2, 2, 104, 104).contains(self.mapFromScene(event.scenePos()))):
                 event.accept()
                 return
             self.scene().read_detail_requested.emit(self.key[0], self.payload)
@@ -552,6 +574,7 @@ class BattleScene(QGraphicsScene):
         self._visual_animations: list[QVariantAnimation] = []
         self._visual_items: dict[QVariantAnimation, BattleVisualItem] = {}
         self._visual_events: dict[QVariantAnimation, dict] = {}
+        self._visual_queue: list[dict] = []
         self._defeat_visuals: set[tuple[int, int]] = set()
         self.usage_items: list[BattleCardItem] = []
         self.usage_labels: list[QGraphicsTextItem] = []
@@ -720,13 +743,27 @@ class BattleScene(QGraphicsScene):
         proxy.setZValue(60)
         return proxy
 
+    def refresh_cardbacks(self) -> None:
+        """设置页保存卡背后立即刷新当前对局，无需重建场景。"""
+        for key, item in self.deck_backs.items():
+            item.set_art(cardback_pixmap(
+                "enemy" if key[1] != self.viewer else "own", landscape=True))
+            item.update()
+        for key, item in self.cards.items():
+            if key[0] == "hand" and not item.revealed:
+                item.set_art(cardback_pixmap(
+                    "own" if item.player == self.viewer else "enemy"))
+                item.update()
+
     def select_mulligan(self, uid: int) -> None:
         self.mulligan_uid = uid
         for key, item in self.cards.items():
             if key[0] == "hand":
+                item.setTransformOriginPoint(item.boundingRect().center())
                 item.setScale(1.08 if key[1] == uid else 1.0)
                 item.update()
         self.mulligan_selected.emit(uid)
+        self._sync_focus()
 
     def set_focus(self, items) -> None:
         """用带孔洞的暗色遮罩突出指定图元，其余画面统一压暗。"""
@@ -748,10 +785,15 @@ class BattleScene(QGraphicsScene):
         if self.phase == "upgrade":
             items = [item for key, item in self.cards.items()
                      if key[0] == "shiki" and self.inputs_open and item.playable]
-            if items:
-                self.set_focus(items)
-            else:
-                self.clear_focus()
+        elif self.phase == "mulligan":
+            items = [item for key, item in self.cards.items()
+                     if key[0] == "hand" and item.player == self.viewer and self.inputs_open]
+            if self.mulligan_uid is not None and self.mulligan_item.isVisible():
+                items.append(self.mulligan_item)
+        else:
+            items = []
+        if items:
+            self.set_focus(items)
         else:
             self.clear_focus()
         self._sync_upgrade_badges()
@@ -821,7 +863,8 @@ class BattleScene(QGraphicsScene):
             del self._move_animations[item]
             animation.deleteLater()
 
-    def animate_card_use(self, uid: int, card_id: int, player: int) -> None:
+    def animate_card_use(self, uid: int, card_id: int, player: int,
+                         response: bool = False) -> None:
         cdef = self.db.cards[card_id]
         cached = self._hand_animation_cache.get(uid)
         if cached is None:
@@ -870,6 +913,8 @@ class BattleScene(QGraphicsScene):
         animation.finished.connect(
             lambda animation=animation: self._finish_card_use(animation))
         animation.start()
+        if response:
+            self.play_visual_event({"v": "response", "p": player})
 
     def _update_card_use(self, animation, progress: float) -> None:
         item = self._card_use_items.get(animation)
@@ -910,34 +955,99 @@ class BattleScene(QGraphicsScene):
     def defeat_countdown_hidden(self, player: int, index: int) -> bool:
         return (player, index) in self._defeat_visuals
 
+    @staticmethod
+    def _visual_target_key(event: dict) -> tuple:
+        if event.get("v") == "response":
+            return ("scene",)
+        player = int(event.get("p", 0))
+        index = event.get("s")
+        return ("shiki", player, index) if index is not None else ("player", player)
+
+    def _visual_target_busy(self, target_key: tuple) -> bool:
+        return any(self._visual_target_key(event) == target_key
+                   for event in self._visual_events.values())
+
+    def _start_queued_visuals(self) -> None:
+        """不同目标的动画并行；同一目标严格按事件入队先后播放。"""
+        index = 0
+        while index < len(self._visual_queue):
+            event = self._visual_queue[index]
+            if self._visual_target_busy(self._visual_target_key(event)):
+                index += 1
+                continue
+            self._visual_queue.pop(index)
+            self._start_visual_event(event)
+
     def play_visual_event(self, event: dict) -> None:
+        kind = event.get("v")
+        if kind not in ("defeated", "luck", "luck_reroll", "heal", "damage",
+                        "immune", "response", "upgrade"):
+            return
+        if kind == "response" and int(event.get("p", -1)) == self.viewer:
+            return  # 仅提示对方响应
+        if kind == "defeated":
+            key = (int(event.get("p", 0)), int(event.get("s", 0)))
+            self._defeat_visuals.add(key)
+            self._refresh_defeated_entity(*key)
+        if self._visual_target_busy(self._visual_target_key(event)):
+            self._visual_queue.append(dict(event))
+            return
+        self._start_visual_event(event)
+
+    def _start_visual_event(self, event: dict) -> None:
         kind = event.get("v")
         player = int(event.get("p", self.viewer))
         index = event.get("s")
         target_key = (("shiki", player, index) if index is not None
                       else ("player", player))
         target = self.cards.get(target_key)
-        if target is None:
+        if kind == "response":
+            center = self.sceneRect().center()
+        elif target is None:
             return
-        center = target.sceneBoundingRect().center()
-        layers = []
-        if kind == "defeated":
-            self._defeat_visuals.add((player, index))
-            word = ui_pixmap("misc/defeated_light.png").scaled(
+        else:
+            center = target.sceneBoundingRect().center()
+        if kind in ("defeated", "immune"):
+            asset = ("defeat_" + (load_gui_settings()["defeated_variant"] or "white")
+                     if kind == "defeated" else "immune")
+            word = ui_pixmap(f"animations/{asset}.png").scaled(
                 160, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             layers = [(word, QPointF(-word.width() / 2, -word.height() / 2))]
-            self._refresh_defeated_entity(player, index)
-        elif kind in ("luck", "luck_reroll"):
-            dice = dice_face(int(event.get("dice", 1))).scaled(
+        elif kind == "response":
+            left = ui_pixmap("animations/response_1.png").scaled(
+                220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            right = ui_pixmap("animations/response_2.png").scaled(
+                220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            layers = [(left, QPointF(-left.width(), -left.height() / 2)),
+                      (right, QPointF(0, -right.height() / 2))]
+        elif kind == "upgrade":
+            color = load_gui_settings()["upgrade_variant"] or "yellow"
+            word = ui_pixmap(f"animations/up_{color}.png").scaled(
+                96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            layers = [(word, QPointF(-word.width() / 2,
+                                     -target.size.height() / 2 - word.height() - 8))]
+        elif kind == "damage":
+            background = ui_pixmap("numbers/damage_background.png").scaledToWidth(
+                180, Qt.SmoothTransformation)
+            number = damage_number_pixmap(
+                int(event.get("amount", 0)), max_width=round(background.width() * 0.85))
+            layers = [(background, QPointF(-background.width() / 2,
+                                           -background.height() / 2)),
+                      (number, QPointF(-number.width() / 2, -number.height() / 2))]
+        elif kind == "heal":
+            number = heal_number_pixmap(int(event.get("amount", 0))).scaledToHeight(
+                72, Qt.SmoothTransformation)
+            layers = [(number, QPointF(-number.width() / 2, -number.height() / 2))]
+        else:
+            dice_value = event.get("previous_dice" if kind == "luck_reroll" else "dice", 1)
+            dice = dice_face(int(dice_value)).scaled(
                 96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             result_name = ("dice_reroll" if kind == "luck_reroll" else
                            "dice_successful" if event.get("success") else "dice_unsuccessful")
-            result = ui_pixmap(f"misc/{result_name}.png").scaled(
+            result = ui_pixmap(f"animations/{result_name}.png").scaled(
                 180, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            layers = [(dice, QPointF(-dice.width() / 2, -dice.height() - 12)),
-                      (result, QPointF(-result.width() / 2, 0))]
-        else:
-            return
+            layers = [(dice, QPointF(-dice.width() / 2, -dice.height() / 2)),
+                      (result, QPointF(-result.width() / 2, dice.height() / 2 + 12))]
         item = BattleVisualItem(layers)
         item.setProperty("assetName", kind)
         item.setPos(center)
@@ -945,7 +1055,7 @@ class BattleScene(QGraphicsScene):
         item.setOpacity(0)
         self.addItem(item)
         animation = QVariantAnimation(self)
-        animation.setDuration(900)
+        animation.setDuration(650)
         animation.setStartValue(0.0)
         animation.setEndValue(1.0)
         self._visual_animations.append(animation)
@@ -976,6 +1086,7 @@ class BattleScene(QGraphicsScene):
         if item.scene() is self:
             self.removeItem(item)
         animation.deleteLater()
+        self._start_queued_visuals()
 
     def _refresh_defeated_entity(self, player: int, index: int) -> None:
         item = self.cards.get(("shiki", player, index))
@@ -1052,6 +1163,7 @@ class BattleScene(QGraphicsScene):
                 self.removeItem(item)
         self._visual_items.clear()
         self._visual_events.clear()
+        self._visual_queue.clear()
         self._defeat_visuals.clear()
         self._hand_animation_cache.clear()
         self._animation_timeline = None
@@ -1211,7 +1323,8 @@ class BattleScene(QGraphicsScene):
 
         for pi, player in enumerate(game.state.players):
             own = pi == viewer
-            for order, card in enumerate(display_hand(game, pi, viewer)):
+            for order, card in enumerate(display_hand(
+                    game, pi, viewer, preserve_order=center_hand)):
                 key = ("hand", card.uid)
                 revealed = own or bool(card.mods.get("revealed"))
                 cdef = self.db.cards[card.id] if revealed else None
@@ -1297,6 +1410,7 @@ class BattleScene(QGraphicsScene):
         self._sync_focus()
         for entry in online_entries:
             if entry.get("k") == "a":
-                self.animate_card_use(entry["u"], entry["c"], entry["p"])
+                self.animate_card_use(entry["u"], entry["c"], entry["p"],
+                                      response=bool(entry.get("r")))
             elif entry.get("k") == "v":
                 self.play_visual_event(entry)

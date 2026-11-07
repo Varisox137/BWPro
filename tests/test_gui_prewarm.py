@@ -224,6 +224,25 @@ def test_prewarm_iter_yields_progress_and_returns_entries(qapp, tmp_path, monkey
     assert [entry["id"] for entry in stopped.value.value] == [10010101, 100101]
 
 
+def test_cardback_preview_dialog_pages_and_selection(qapp):
+    from client.gui import settings
+
+    dialog_class = getattr(settings, "CardbackPreviewDialog", None)
+    assert dialog_class is not None
+    names = settings.named_cardbacks()
+    assert len(names) > 5
+    dialog = dialog_class(names, names[0])
+    assert len(dialog.card_buttons) == 5
+    assert dialog.selected == names[0]
+    dialog.next_button.click()
+    assert len(dialog.card_buttons) == 5
+    dialog.card_buttons[0].click()
+    assert dialog.selected == names[5]
+    dialog.accept()
+    assert dialog.selected == names[5]
+    dialog.deleteLater()
+
+
 def test_settings_status_displays_failure_stats(qapp, db, tmp_path):
     view = SettingsView(db)
     view.cache_dir = tmp_path

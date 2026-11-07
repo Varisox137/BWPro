@@ -56,9 +56,11 @@ def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypa
         lambda name, _frame, text, _root, chars_per_line=None, font_scale=1.0, badge=None:
         rendered.append((name, text)) or QPixmap(360, 220))
     dialog = CardDetailDialog(cdef, db, runtime={"keywords": ["瞬发"]})
-    # 原生测宽后按卡图宽度二次原生缩放，顺序保持不变。
-    assert [name for name, _text in rendered] == ["贯通", "贯通", "瞬发", "瞬发", "连击", "连击"]
-    assert rendered[2][1] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
+    # 默认 12 字/行只渲染一次，显示时整体缩放，顺序保持不变。
+    assert [name for name, _text in rendered] == ["贯通", "瞬发", "连击"]
+    assert rendered[1][1] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
+    assert all(label.pixmap().width() == dialog.mechanism_panel.width()
+               for label in dialog.mechanism_labels)
     dialog.close()
 
 
@@ -188,6 +190,7 @@ def test_mechanisms_render_failure_log_returns_none(tmp_path, caplog, monkeypatc
 def test_mechanisms_badge_enters_render_and_lru(qapp, tmp_path, monkeypatch):
     from PIL import Image
     from client.gui import mechanisms
+    mechanisms._renderer(str(mechanisms.bwpdiy_root()))  # 独立分片运行时先注册本地渲染包
     from bwpdiy.render import layout, mech
 
     seen = []

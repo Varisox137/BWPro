@@ -17,7 +17,7 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_turn_start",        # 任一玩家回合开始 {player}
     "on_turn_end",          # 任一玩家回合结束 {player}
     "on_card_played",       # 卡牌使用后 {player, uid}
-    "on_before_assault",    # 出击宣言后、伤害结算前 {attacker: Ref, victim: Ref}
+    "on_before_assault",    # 出击宣言后、伤害结算前 {attacker: Ref, victim: Ref, origin: str}
     "on_before_battle_prep",  # 战斗准备前（攻击者即将移入战斗区，全卡盘点——英雄无畏
     #                       "直到鸦天狗攻击"解除挂点，只在攻击者作为事件主体时命中；
     #                       origin 键=发起方式 assault/card/effect，初会之舞"因出击而

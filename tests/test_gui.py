@@ -45,6 +45,9 @@ def test_menu_navigation_and_theme(qapp, db, tmp_path):
     win.theme_button.click()
     assert win.theme == "light"
     assert "#f3efe8" in win.styleSheet()
+    assert "QListWidget::item:selected" in win.styleSheet()
+    assert "QTreeWidget::item:selected" in win.styleSheet()
+    assert "#cfe5f7" in win.styleSheet()
     win.go("settings")
     win.set_theme("dark")
     assert "QLabel#viewTitle" in win.pages["settings"].styleSheet()

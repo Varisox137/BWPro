@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from client.deckbuilder import available_shikigami, buildable_cards
 from client.gui.loading import LoadingIndicator
 from client.gui.widgets import CardDetailDialog, CardWidget, fill_card_row
-from db.envs import ENV_ALIASES, env_label, parse_env_input
+from db.envs import available_env_dates, env_label, parse_env_input
 from db.packs import PACK_NAMES, PACKS
 
 CARD_PAGE_SIZE = 5
@@ -58,15 +58,15 @@ class ShikigamiCodexView(QWidget):
         self.env_combo = QComboBox()
         self.env_combo.setEditable(True)
         self.env_combo.addItem(env_label(None), None)
-        for date in dict.fromkeys(ENV_ALIASES.values()):
+        for date in available_env_dates(self.db):
             self.env_combo.addItem(env_label(date), date)
         self.env_combo.activated.connect(self.change_environment)
         self.env_combo.lineEdit().editingFinished.connect(self.change_environment)
         filters.addWidget(self.env_combo)
         self.pack_combo = QComboBox()
         self.pack_combo.addItem("全部版本包", None)
-        for number, name in PACKS.items():
-            self.pack_combo.addItem(name, number)
+        for number in PACKS:
+            self.pack_combo.addItem(PACK_NAMES[number], number)
         self.pack_combo.currentIndexChanged.connect(self._render_shiki_list)
         filters.addWidget(self.pack_combo)
         self.faction_combo = QComboBox()

@@ -571,6 +571,8 @@ def test_on_card_played_response_payload(db, make_game):
     g.apply({"op": "assault", "index": 0})
     assert seen[-1]["triggered"] == "response"
     assert seen[-1]["play_from"] == "hand"
+    animation = next(entry for entry in reversed(g.state.timeline) if entry.get("k") == "a")
+    assert animation["r"] is True
 
 
 def test_enemy_bench_pool(db, make_game):

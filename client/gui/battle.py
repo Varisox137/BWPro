@@ -5,7 +5,7 @@ import html
 import secrets
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QMessageBox,
@@ -17,7 +17,7 @@ from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog
 from client.gui.player_details import PlayerDetailDialog
-from client.gui.ui_assets import ui_pixmap
+from client.gui.ui_assets import end_turn_button_pixmap, ui_pixmap
 from client.gui.widgets import CardChoiceView, CardDetailDialog, ask_confirmation, polish_dialog_buttons
 from core import targets
 from core.engine import IllegalAction
@@ -116,6 +116,7 @@ class BattleErrorLabel(QLabel):
 class HotseatView(QWidget):
     """热坐单屏视图；手牌与非公开结算仅显示当前行动/作答方。"""
 
+    state_changed = Signal()
     exit_confirmation = True
 
     def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None, parent=None):
@@ -137,8 +138,9 @@ class HotseatView(QWidget):
         self._choice_key = None
         self._handoff_pending = False
         self._handoff_stage = None
-        self.handoff_dialog: QDialog | None = None
+        self.handoff_dialog = None  # 兼容外部检查；热坐交接已改为场景内按钮
         self._timeline_seen = 0
+        self._deferred_visuals: list[dict] = []
         self.timeline_queue: list[tuple[int | None, str]] = []
         self.played_timeline: list[tuple[int | None, str]] = []
         self._build_ui()
@@ -177,9 +179,9 @@ class HotseatView(QWidget):
         self.battle_view = BattleView(self.battle_scene)
         layout.addWidget(self.battle_view)
 
-        self.menu_button = QPushButton("退出对局")
+        self.menu_button = QPushButton("游戏设置")
         self.menu_button.setObjectName("battleSmall")
-        self.menu_button.clicked.connect(self.return_to_menu)
+        self.menu_button.clicked.connect(self.open_settings)
         self.battle_scene.menu_item = self.battle_scene.add_control(
             self.menu_button, ("menu",), (120, 34))
         self.battle_scene.menu_item.hide()
@@ -232,12 +234,18 @@ class HotseatView(QWidget):
         self.ready_button.setObjectName("battleSmall")
         self.ready_button.clicked.connect(self.ready)
         self.battle_scene.ready_item = self.battle_scene.add_control(
-            self.ready_button, ("ready",), (140, 34))
+            self.ready_button, ("ready",), (104, 34))
+        self.handoff_button = QPushButton("切换玩家")
+        self.handoff_button.setObjectName("battleSmall")
+        self.handoff_button.clicked.connect(self.confirm_handoff)
+        self.battle_scene.handoff_item = self.battle_scene.add_control(
+            self.handoff_button, ("handoff",), (104, 34))
+        self.battle_scene.handoff_item.hide()
         self.mulligan_button = QPushButton("替换")
         self.mulligan_button.setObjectName("battleSmall")
         self.mulligan_button.clicked.connect(self.replace_mulligan)
         self.battle_scene.mulligan_item = self.battle_scene.add_control(
-            self.mulligan_button, ("mulligan",), (140, 44))
+            self.mulligan_button, ("mulligan",), (96, 36))
         self.order_label = QLabel()
         self.order_label.setObjectName("turnOrderLabel")
         self.order_label.setAlignment(Qt.AlignCenter)
@@ -404,6 +412,7 @@ class HotseatView(QWidget):
             self.target_specs = []
             self.legal_targets = []
             self._timeline_seen = 0
+            self._deferred_visuals.clear()
             self.timeline_queue.clear()
             self.played_timeline.clear()
             self.log_list.clear()
@@ -457,9 +466,7 @@ class HotseatView(QWidget):
         self._clear_usage()
         self.battle_scene.reset_animations()
         self._handoff_pending = True
-        self._handoff_stage = "review" if preserve_hand else "transfer"
-        if not preserve_hand:
-            self._clear_hand()
+        self._handoff_stage = "review"
         self.pending_command = None
         self.target_specs = []
         self.legal_targets = []
@@ -468,25 +475,14 @@ class HotseatView(QWidget):
             self.choice_dialog = None
         self._choice_key = None
         self.close_log()
-        message = (f"调度完毕\n请确认本次调度结果，然后交给 "
-                   f"{self.game.state.players[self.viewer].name}" if preserve_hand else
-                   f"请将设备交给 {self.game.state.players[self.viewer].name}")
-        title = "调度完毕请确认" if preserve_hand else "准备移交"
-        if self.handoff_dialog is None:
-            dialog = QDialog(self)
-            dialog.setModal(True)
-            layout = QVBoxLayout(dialog)
-            layout.addWidget(QLabel(message))
-            buttons = QDialogButtonBox(QDialogButtonBox.Ok)
-            polish_dialog_buttons(buttons)
-            buttons.accepted.connect(self.confirm_handoff)
-            dialog.rejected.connect(dialog.show)
-            layout.addWidget(buttons, alignment=Qt.AlignRight)
-            self.handoff_dialog = dialog
+        next_name = self.game.state.players[self.viewer].name
+        self.handoff_button.setToolTip(f"确认后交给 {next_name}")
+        if self.game.state.phase == "mulligan":
+            position = self.battle_scene.ready_item.pos() + QPointF(-112, 0)
         else:
-            self.handoff_dialog.findChild(QLabel).setText(message)
-        self.handoff_dialog.setWindowTitle(title)
-        self.handoff_dialog.show()
+            position = self.battle_scene.end_turn_item.pos() + QPointF(-112, 35)
+        self.battle_scene.handoff_item.setPos(position)
+        self.battle_scene.handoff_item.show()
         self._update_input_widgets()
 
     def confirm_handoff(self) -> None:
@@ -495,31 +491,25 @@ class HotseatView(QWidget):
         if self._handoff_stage == "review":
             self._clear_hand()
             self._handoff_stage = "transfer"
-            self.handoff_dialog.setWindowTitle("准备移交")
-            self.handoff_dialog.findChild(QLabel).setText(
-                f"请将设备交给 {self.game.state.players[self.viewer].name}")
+            self.handoff_button.setToolTip("再次点击切换玩家")
             return
         self._handoff_pending = False
         self._handoff_stage = None
-        if self.handoff_dialog is not None:
-            dialog = self.handoff_dialog
-            dialog.hide()
-            dialog.deleteLater()
-            self.handoff_dialog = None
+        self.battle_scene.handoff_item.hide()
         self._clear_hand()
         self._render_log()
         self._render_state()
         self._enqueue_timeline()
+        deferred = self._deferred_visuals
+        self._deferred_visuals = []
+        for entry in deferred:
+            self.battle_scene.play_visual_event(entry)
         self._sync_pending_choice()
 
     def _close_handoff(self) -> None:
         self._handoff_pending = False
         self._handoff_stage = None
-        if self.handoff_dialog is not None:
-            dialog = self.handoff_dialog
-            dialog.hide()
-            dialog.deleteLater()
-            self.handoff_dialog = None
+        self.battle_scene.handoff_item.hide()
 
     def _phase_lines(self, countdown="") -> tuple[str, str]:
         state = self.game.state
@@ -543,7 +533,8 @@ class HotseatView(QWidget):
                         and self.game.state.active != self.viewer)
         name = "opponent_turn_button" if opponent else "end_turn_button"
         self.end_turn_button.setProperty("assetName", name)
-        self.end_turn_button.setIcon(QIcon(ui_pixmap(f"misc/{name}.png")))
+        self.end_turn_button.setIcon(QIcon(end_turn_button_pixmap(
+            self.end_turn_button.width(), opponent=opponent)))
         self.end_turn_button.setIconSize(self.end_turn_button.size() * 0.92)
 
     def _render_state(self) -> None:
@@ -587,6 +578,7 @@ class HotseatView(QWidget):
         self.error_label.setVisible(bool(self.error_label.text()))
         if state.winner is not None:
             self._show_result()
+        self.state_changed.emit()
 
     def hand_info(self) -> dict[int, dict]:
         return cli.hand_cards_info(self.game, self.viewer)
@@ -858,9 +850,12 @@ class HotseatView(QWidget):
         for entry in entries:
             if entry.get("k") == "a":
                 if not self._handoff_pending:
-                    self.battle_scene.animate_card_use(entry["u"], entry["c"], entry["p"])
+                    self.battle_scene.animate_card_use(
+                        entry["u"], entry["c"], entry["p"], response=bool(entry.get("r")))
             elif entry.get("k") == "v":
-                if not self._handoff_pending:
+                if self._handoff_pending:
+                    self._deferred_visuals.append(entry)
+                else:
                     self.battle_scene.play_visual_event(entry)
             else:
                 self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
@@ -930,13 +925,32 @@ class HotseatView(QWidget):
         if winner in (0, 1):
             name = "won" if winner == self.viewer else "lost"
             self.result_banner.setText("")
-            self.result_banner.setPixmap(ui_pixmap(f"misc/{name}.png").scaled(
+            self.result_banner.setPixmap(ui_pixmap(f"animations/{name}.png").scaled(
                 400, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             self.result_banner.setText(cli.result_text(
                 winner, [player.name for player in self.game.state.players]))
         self.result_banner.show()
         self.result_back.show()
+
+    def _refresh_game_settings(self) -> None:
+        self.battle_scene.refresh_cardbacks()
+        self._sync_end_turn_art()
+
+    def open_settings(self) -> None:
+        from client.gui.settings import SettingsView
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("游戏设置")
+        layout = QVBoxLayout(dialog)
+        settings = SettingsView(self.db, dialog, on_change=self._refresh_game_settings)
+        layout.addWidget(settings, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        polish_dialog_buttons(buttons)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons, alignment=Qt.AlignRight)
+        dialog.resize(680, 520)
+        dialog.exec()
 
     def return_to_menu(self) -> bool:
         if (self.exit_confirmation and self.game is not None
@@ -955,6 +969,13 @@ class HotseatView(QWidget):
         if self.choice_dialog is not None:
             self.choice_dialog.close()
             self.choice_dialog = None
+        self.game = None
+        self.timeline_queue.clear()
+        self.played_timeline.clear()
+        self._deferred_visuals.clear()
+        self.result_banner.hide()
+        self.result_back.hide()
+        self.stack.setCurrentWidget(self.setup_page)
         if self.on_back is not None:
             self.on_back()
         return True

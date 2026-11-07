@@ -40,8 +40,22 @@ MENU_ENTRIES = [
 
 def qss(theme: str) -> str:
     t = THEMES[theme]
+    selection_bg = "#cfe5f7" if theme == "light" else "#294c68"
+    selection_text = "#17344d" if theme == "light" else t["text"]
+    selection_hover = "rgba(207, 229, 247, 128)" if theme == "light" else "rgba(41, 76, 104, 128)"
     return f"""
     QMainWindow, QWidget {{ background: {t['bg']}; color: {t['text']}; }}
+    QListWidget, QTreeWidget {{ outline: none; }}
+    QListWidget::item, QTreeWidget::item {{ border: none; }}
+    QListWidget::item:selected, QTreeWidget::item:selected, QTreeWidget::branch:selected {{
+        background: {selection_bg}; color: {selection_text}; border: none;
+    }}
+    QListWidget::item:hover, QTreeWidget::item:hover, QComboBox QAbstractItemView::item:hover {{
+        background: {selection_hover}; color: {selection_text}; border: none;
+    }}
+    QComboBox QAbstractItemView::item:selected {{
+        background: {selection_bg}; color: {selection_text}; border: none;
+    }}
     QLabel#title {{ color: {t['gold']}; font-size: 40px; }}
     QLabel#subtitle {{ color: {t['dim']}; font-size: 16px; }}
     QLabel {{ font-size: 15px; }}
@@ -111,7 +125,7 @@ class MainWindow(QMainWindow):
         self.outer = outer = QVBoxLayout(central)
         outer.setContentsMargins(12, 12, 12, 12)
         self.chrome = chrome = QHBoxLayout()
-        self.back_button = QPushButton("← 返回主菜单")
+        self.back_button = QPushButton("返回主菜单")
         self.back_button.setObjectName("small")
         self.back_button.setFixedSize(116, 36)
         self.back_button.clicked.connect(self.back)
@@ -165,6 +179,7 @@ class MainWindow(QMainWindow):
                 self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
         self.pages["hotseat"].stack.currentChanged.connect(self._sync_game_menu_button)
+        self.pages["hotseat"].state_changed.connect(self._sync_game_menu_button)
         self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.back_button.hide()
         self.set_theme(self.theme)
@@ -214,16 +229,20 @@ class MainWindow(QMainWindow):
     def _sync_game_menu_button(self, *_args) -> None:
         page = self.stack.currentWidget()
         online = self.pages["online"]
-        visible = page is self.pages["hotseat"] or (
-            page is online and online.stack.currentWidget() is online.battle)
-        self.game_menu_button.setVisible(visible)
-        in_battle = (
+        hotseat_battle = (
             page is self.pages["hotseat"]
             and self.pages["hotseat"].stack.currentWidget()
                 is self.pages["hotseat"].battle_page
-        ) or (
-            page is online and online.stack.currentWidget() is online.battle
         )
+        online_battle = page is online and online.stack.currentWidget() is online.battle
+        in_battle = hotseat_battle or online_battle
+        self.game_menu_button.setVisible(in_battle)
+        self.game_menu_button.setText("游戏设置" if hotseat_battle else "退出对局")
+        hotseat = self.pages["hotseat"]
+        hotseat_finished = (hotseat_battle and hotseat.game is not None
+                            and hotseat.game.state.winner is not None)
+        self.back_button.setText(
+            "返回主菜单" if not hotseat_battle or hotseat_finished else "退出对局")
         margin = 0 if in_battle else 12
         self.outer.setContentsMargins(margin, margin, margin, margin)
         chrome_margin = 12 if in_battle else 0
@@ -236,7 +255,8 @@ class MainWindow(QMainWindow):
 
     def return_current_game(self) -> None:
         page = self.stack.currentWidget()
-        hook = getattr(page, "return_to_menu", None)
+        hook_name = "open_settings" if page is self.pages["hotseat"] else "return_to_menu"
+        hook = getattr(page, hook_name, None)
         if callable(hook):
             hook()
         else:

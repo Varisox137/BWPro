@@ -45,8 +45,6 @@ def view(qapp, db, tmp_path):
 def settle(view):
     while view._handoff_pending or view.timeline_queue:
         if view._handoff_pending:
-            if view._handoff_stage == "review":
-                break
             view.confirm_handoff()
         if view.timeline_queue:
             view.play_next_timeline()
@@ -581,22 +579,29 @@ def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all
     start(view)
     for pi in (0, 1):
         if replace_all:
-            for _ in range(3):
+            for replacement in range(3):
                 view.mulligan(view.game.state.players[view.viewer].hand[0].uid)
-                settle(view)
+                if replacement < 2:
+                    settle(view)
         else:
             view.ready()
         assert view.battle_scene.viewer == pi
         assert view._handoff_stage == "review"
-        assert view.handoff_dialog.windowTitle() == "调度完毕请确认"
-        assert view.handoff_dialog.isVisible()
+        assert view.handoff_dialog is None
+        assert view.battle_scene.handoff_item.isVisible()
+        assert view.handoff_button.text() == "切换玩家"
         old_hand_items = scene_items(view, "hand", player=pi)
         assert old_hand_items and all(item.y() == 280 for item in old_hand_items)
-        view.confirm_handoff()
-        assert view.handoff_dialog.windowTitle() == "准备移交"
+        if pi == 1:  # 后手交接预览不重排入手顺序
+            assert [item.uid for item in sorted(old_hand_items, key=lambda item: item.x())] == [
+                card.uid for card in sorted(view.game.state.players[1].hand,
+                                            key=lambda card: card.hand_seq)]
+        view.handoff_button.click()
+        assert view._handoff_stage == "transfer"
+        assert view.battle_scene.handoff_item.isVisible()
         assert all(item.scene() is None for item in old_hand_items)
-        assert not scene_items(view, "hand")
-        view.confirm_handoff()
+        view.handoff_button.click()
+        assert not view.battle_scene.handoff_item.isVisible()
     assert view.game.state.phase != "mulligan"
 
 
@@ -703,6 +708,30 @@ def test_player_item_has_original_avatar_orbs_and_badges(qapp, view):
     assert item.health == player.health and item.max_health == player.max_health
     assert item.orb == player.orb and item.assaults_left == player.assaults_left
     assert item.inspire_power == 2 and item.inspire_shield == 3
+
+
+def test_player_item_paints_health_and_signed_shield_icons(qapp, view, monkeypatch):
+    from client.gui import battle_scene
+
+    start(view, mulligan=False)
+    view.game.current.shield = -3
+    view.refresh()
+    item = view.battle_scene.cards[("player", view.viewer)]
+    used = []
+    original = battle_scene.ui_pixmap
+
+    def recording_pixmap(relative, **kwargs):
+        used.append(relative)
+        return original(relative, **kwargs)
+
+    monkeypatch.setattr(battle_scene, "ui_pixmap", recording_pixmap)
+    image = QImage(240, 150, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    item.paint(painter, None)
+    painter.end()
+    assert "icons/health.png" in used
+    assert "icons/shield.png" in used
 
 
 def test_card_detail_hides_deck_builder_copy_count(qapp, view, monkeypatch):
@@ -1431,6 +1460,8 @@ def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
     assert abs(center_x - scene.sceneRect().center().x()) < 1
     assert all(rect.center().y() < 600 for rect in rects)
     assert all(item.default_size.width() >= 170 for item in items)
+    assert scene.focus_overlay.isVisible()
+    assert view.ready_button.width() <= 110
     assert getattr(view, "order_label", None) is not None
     assert view.order_label.text() == "己方先手"
     assert view.order_label.isHidden()
@@ -1445,9 +1476,8 @@ def test_last_mulligan_reviews_result_before_handoff(qapp, view):
             settle(view)
     assert view._handoff_pending
     assert scene_items(view, "hand", player=0)
-    labels = view.handoff_dialog.findChildren(QLabel)
-    assert any("调度完毕" in label.text() for label in labels)
-    view.confirm_handoff()
+    assert view.battle_scene.handoff_item.isVisible()
+    view.handoff_button.click()
     settle(view)
     assert view.viewer == 1
     assert scene_items(view, "hand", player=1)
@@ -1739,6 +1769,9 @@ def test_hotseat_new_games_use_random_seeds(qapp, view, monkeypatch):
 
 
 def test_deck_backs_are_symmetric_horizontal_cards_and_hide_when_empty(qapp, view):
+    from client.gui.battle_scene import DECK_BACK_SIZE
+
+    assert DECK_BACK_SIZE.width() >= 130 and DECK_BACK_SIZE.height() >= 90
     start(view, mulligan=False)
     scene = view.battle_scene
     assert len(getattr(scene, "deck_backs", {})) == 6
@@ -2190,8 +2223,10 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
     dialog.field_widgets[1].detail_clicked.emit(dialog.field_widgets[1].cdef)
     assert seen == [(db.cards[10010152], db, dialog)]
 
-    dialog.resize(640, 700)
     dialog.show()
+    qapp.processEvents()
+    assert dialog.scroll_area.horizontalScrollBar().maximum() == 0
+    dialog.resize(640, 700)
     qapp.processEvents()
     assert dialog.scroll_area.horizontalScrollBarPolicy() == Qt.ScrollBarAsNeeded
     assert dialog.scroll_area.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
@@ -2467,6 +2502,7 @@ def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view
     chosen_id = option_ids[2]
     assert cards[2].cdef.id == chosen_id
     QTest.mouseClick(cards[2], Qt.LeftButton)
+    QTest.mouseClick(dialog.option_view.option_buttons[chosen_id], Qt.LeftButton)
     assert [field.card_id for field in game.current.fields] == [chosen_id]
     assert game.state.pending_choice is None
     assert dialog.isHidden()
@@ -2508,6 +2544,7 @@ def test_real_yaml_discard_pick_click_draws_three_and_closes(qapp, gdb, view):
     dialog.destroyed.connect(lambda: destroyed.append(True))
 
     QTest.mouseClick(cards[chosen_index], Qt.LeftButton)
+    QTest.mouseClick(dialog.option_view.option_buttons[fld.uid], Qt.LeftButton)
     settle(view)
     assert fld in pa.graveyard
     assert len(pa.hand) == hand_before + 1           # 使用 1、弃 1 后抽 3
@@ -2537,6 +2574,15 @@ def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, v
     first_dialog.destroyed.connect(lambda: destroyed.append(True))
 
     QTest.mouseClick(first_cards[0], Qt.LeftButton)
+    choice = first_dialog.option_view
+    assert choice.selected == first.uid
+    assert choice.option_buttons[first.uid].isVisible()
+    assert choice.option_buttons[first.uid].width() == 96
+    assert first_cards[0].width() == 194
+    assert first_cards[0].geometry().center().x() == choice._wrappers[first.uid].rect().center().x()
+    assert choice._wrappers[first.uid].graphicsEffect() is not None
+    assert first.uid not in [card.uid for card in game.current.graveyard]
+    QTest.mouseClick(choice.option_buttons[first.uid], Qt.LeftButton)
     assert first.uid in [card.uid for card in game.current.graveyard]
     assert game.state.pending_choice["options"] == [second.uid]
     assert first_dialog.isHidden()
@@ -2550,6 +2596,7 @@ def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, v
     second_cards = second_dialog.findChildren(CardWidget)
     assert len(second_cards) == 1
     QTest.mouseClick(second_cards[0], Qt.LeftButton)
+    QTest.mouseClick(second_dialog.option_view.option_buttons[second.uid], Qt.LeftButton)
     assert second.uid in [card.uid for card in game.current.graveyard]
     assert game.state.pending_choice is None
     assert second_dialog.isHidden()
@@ -2568,6 +2615,8 @@ def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
     assert returned == []
     assert view.return_to_menu()
     assert returned == [True]
+    assert view.game is None
+    assert view.stack.currentWidget() is view.setup_page
 
 
 def test_game_over_is_immediate_and_right_click_details_remain_available(qapp, view, monkeypatch):
@@ -2652,10 +2701,19 @@ def test_main_window_hotseat_page_and_theme(qapp, db, tmp_path):
     assert isinstance(win.pages["hotseat"], HotseatView)
     win.go("hotseat")
     assert win.stack.currentWidget() is win.pages["hotseat"]
+    assert win.game_menu_button.isHidden()
+    hotseat = win.pages["hotseat"]
+    hotseat.stack.setCurrentWidget(hotseat.battle_page)
     assert not win.game_menu_button.isHidden()
-    assert not win.pages["hotseat"].battle_scene.menu_item.isVisible()
+    assert win.game_menu_button.text() == "游戏设置"
+    assert win.back_button.text() == "退出对局"
+    assert not hotseat.battle_scene.menu_item.isVisible()
     win.toggle_theme()
     assert win.pages["hotseat"].theme == "dark"
+    start(hotseat, mulligan=False)
+    hotseat.game.state.winner = 0
+    hotseat.refresh()
+    assert win.back_button.text() == "返回主菜单"
     win.pages["hotseat"].timeline_timer.start()
     win.back_button.click()
     assert win.stack.currentIndex() == 0
@@ -2895,6 +2953,7 @@ def test_viewer_handoff_and_restart_clear_animations(qapp, view):
     assert not scene._move_animations
     assert not scene._card_use_animations
     view.confirm_handoff()
+    view.confirm_handoff()
     assert not scene._move_animations
 
     card = view.game.state.players[1].hand[0]
@@ -2933,18 +2992,15 @@ def test_viewer_handoff_freezes_commands_hands_choices_and_timeline(qapp, view):
     assert old_hand_items
     assert view.end_turn()
     assert view._handoff_pending
+    assert view._handoff_stage == "review"
+    assert all(item.scene() is not None for item in old_hand_items)
+    assert view.handoff_dialog is None
+    assert scene.handoff_item.isVisible()
+    assert scene.handoff_item.x() < scene.end_turn_item.x()
+    assert view.handoff_button.text() == "切换玩家"
+    view.handoff_button.click()  # 第一次仅隐藏手牌
+    assert view._handoff_stage == "transfer"
     assert all(item.scene() is None for item in old_hand_items)
-    assert view.handoff_dialog is not None and not view.handoff_dialog.isHidden()
-    dialog = view.handoff_dialog
-    box = dialog.findChild(QDialogButtonBox)
-    confirm = box.button(QDialogButtonBox.Ok)
-    assert confirm.text() == "确定"
-    assert confirm.minimumWidth() == 76 and confirm.minimumHeight() == 30
-    layout = dialog.layout()
-    assert layout.itemAt(layout.count() - 1).widget() is box
-    assert layout.itemAt(layout.count() - 1).alignment() == Qt.AlignRight
-    dialog.reject()
-    assert view._handoff_pending and not dialog.isHidden()
     assert not scene_items(view, "hand")
     assert view.choice_dialog is None
     assert scene.cards[("player", 0)].y() > scene.cards[("player", 1)].y()
@@ -2954,10 +3010,9 @@ def test_viewer_handoff_freezes_commands_hands_choices_and_timeline(qapp, view):
     view.play_next_timeline()
     assert view.timeline_queue == before
 
-    confirm.click()
+    view.handoff_button.click()  # 第二次才切换视角
     assert not view._handoff_pending
-    assert view.handoff_dialog is None
-    assert dialog.isHidden()
+    assert not scene.handoff_item.isVisible()
     assert scene.cards[("player", 1)].y() > scene.cards[("player", 0)].y()
     assert scene_items(view, "hand", player=1)
     assert view.timeline_queue == before
@@ -2980,6 +3035,8 @@ def test_handoff_clears_drag_and_reveals_only_new_viewer_hand(qapp, view):
     assert view._handoff_pending
     assert scene.drag_controller.drag_ghost is None
     assert scene.drag_controller.drag_arrow is None
+    assert any(key[0] == "hand" for key in scene.cards)
+    view.confirm_handoff()
     assert not any(key[0] == "hand" for key in scene.cards)
     view.confirm_handoff()
     expected = {card.uid for player in view.game.state.players for card in player.hand}
@@ -3061,8 +3118,10 @@ def test_cross_player_pending_choice_hands_off_on_entry_and_return(qapp, view):
     assert view.viewer == 1
     assert view._handoff_pending
     assert view.choice_dialog is None
-    assert not scene_items(view, "hand")
+    assert scene_items(view, "hand")
 
+    view.confirm_handoff()
+    assert not scene_items(view, "hand")
     view.confirm_handoff()
     assert view.choice_dialog is not None
     assert not view.choice_dialog.isHidden()
@@ -3071,6 +3130,7 @@ def test_cross_player_pending_choice_hands_off_on_entry_and_return(qapp, view):
     assert view.viewer == 0
     assert view._handoff_pending
     assert view.choice_dialog is None
+    view.confirm_handoff()
     assert not scene_items(view, "hand")
     view.confirm_handoff()
     assert scene_items(view, "hand", player=0)
@@ -3089,17 +3149,17 @@ def test_handoff_skips_game_over_and_cleans_up_on_restart_and_return(qapp, view)
     start(view, mulligan=False)
     assert view.end_turn()
     assert view._handoff_pending
-    restart_dialog = view.handoff_dialog
     start(view, mulligan=False)
     assert not view._handoff_pending
     assert view.handoff_dialog is None
-    assert restart_dialog.isHidden()
+    assert not view.battle_scene.handoff_item.isVisible()
     assert view.end_turn()
-    return_dialog = view.handoff_dialog
     view.return_to_menu()
     assert not view._handoff_pending
     assert view.handoff_dialog is None
-    assert return_dialog.isHidden()
+    assert not view.battle_scene.handoff_item.isVisible()
+    assert view.game is None
+    assert view.stack.currentWidget() is view.setup_page
 
 
 def test_mulligan_log_hides_opponent_counts_only_during_startup(qapp, view):
@@ -3212,6 +3272,56 @@ def test_battle_uses_configured_cardbacks_and_word_art_controls(qapp, view):
     assert view.end_turn_button.property("assetName") == "opponent_turn_button"
 
 
+def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeypatch):
+    from client.gui.settings import SettingsView
+    from client.gui.ui_assets import cardback_pixmap, load_gui_settings, unnamed_misc_images
+
+    start(view, mulligan=False)
+    seen = {}
+
+    def capture_exec(dialog):
+        seen["dialog"] = dialog
+        return QDialog.Rejected
+
+    class Preview:
+        selected = "三途花境"
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return QDialog.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", capture_exec)
+    monkeypatch.setattr("client.gui.settings.CardbackPreviewDialog", Preview)
+    view.open_settings()
+    settings = seen["dialog"].findChild(SettingsView)
+    settings.choose_cardback("own_cardback")
+    deck = view.battle_scene.deck_backs[("deck_back", view.viewer, 0)]
+    assert deck.pixmap.toImage() == cardback_pixmap("own", landscape=True).toImage()
+    assert settings.cardback_buttons["own_cardback"].text() == "三途花境"
+
+    default_icon = view.end_turn_button.icon().pixmap(104, 104).toImage()
+    Preview.selected = unnamed_misc_images()[0]
+    settings.choose_end_turn_background()
+    assert load_gui_settings()["end_turn_background"] == Preview.selected
+    assert view.end_turn_button.icon().pixmap(104, 104).toImage() != default_icon
+    Preview.selected = "无"
+    settings.choose_end_turn_background()
+    assert load_gui_settings()["end_turn_background"] == ""
+    assert view.end_turn_button.icon().pixmap(104, 104).toImage() == default_icon
+
+    Preview.selected = unnamed_misc_images()[1]
+    settings.choose_visual_option("opponent_turn_background")
+    assert load_gui_settings()["opponent_turn_background"] == Preview.selected
+    Preview.selected = "red"
+    settings.choose_visual_option("defeated_variant")
+    assert load_gui_settings()["defeated_variant"] == "red"
+    Preview.selected = "purple"
+    settings.choose_visual_option("upgrade_variant")
+    assert load_gui_settings()["upgrade_variant"] == "purple"
+
+
 def test_result_and_turn_banners_use_word_art(qapp, view):
     start(view, mulligan=False)
     view.game.state.winner = view.viewer
@@ -3219,6 +3329,8 @@ def test_result_and_turn_banners_use_word_art(qapp, view):
     assert view.result_banner.text() == ""
     assert view.result_banner.pixmap() is not None
     assert not view.result_banner.pixmap().isNull()
+    assert view.battle_scene.result_item.sceneBoundingRect().center() == (
+        view.battle_scene.sceneRect().center())
     assert view.battle_scene.result_back_item.y() >= (
         view.battle_scene.result_item.y() + view.result_banner.height())
 
@@ -3237,9 +3349,128 @@ def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
     assert scene._visual_animations
     assert view.end_turn_button.isEnabled()
     animation = scene._visual_animations[0]
+    assert animation.duration() <= 700
+    dice_layer, result_layer = scene._visual_items[animation].layers
+    assert dice_layer[1] == QPointF(-dice_layer[0].width() / 2, -dice_layer[0].height() / 2)
+    assert result_layer[1].y() == dice_layer[0].height() / 2 + 12
+    assert scene._visual_items[animation].pos() == scene.cards[("shiki", view.viewer, 0)].sceneBoundingRect().center()
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
     assert not scene._visual_animations
+
+
+def test_luck_visuals_play_sequentially(qapp, view):
+    from client.gui.ui_assets import dice_face
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "luck", "p": view.viewer, "s": 0, "dice": 1, "success": False})
+    scene.play_visual_event({"v": "luck_reroll", "p": view.viewer, "s": 0,
+                             "dice": 6, "previous_dice": 1})
+    assert len(scene._visual_animations) == 1
+    first = scene._visual_animations[0]
+    first.setCurrentTime(first.duration())
+    qapp.processEvents()
+    assert len(scene._visual_animations) == 1
+    animation = scene._visual_animations[0]
+    assert scene._visual_events[animation]["v"] == "luck_reroll"
+    actual = scene._visual_items[animation].layers[0][0].toImage()
+    expected = dice_face(1).scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation).toImage()
+    assert actual == expected
+
+
+def test_visuals_on_different_targets_play_in_parallel(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "luck", "p": 0, "s": None, "dice": 4, "success": True})
+    scene.play_visual_event({"v": "luck", "p": 1, "s": None, "dice": 2, "success": False})
+    assert len(scene._visual_animations) == 2
+    positions = {scene._visual_events[animation]["p"]: item.pos()
+                 for animation, item in scene._visual_items.items()}
+    assert positions[0] == scene.cards[("player", 0)].sceneBoundingRect().center()
+    assert positions[1] == scene.cards[("player", 1)].sceneBoundingRect().center()
+
+    scene.play_visual_event({"v": "luck_reroll", "p": 0, "s": None,
+                             "dice": 6, "previous_dice": 4})
+    assert len(scene._visual_queue) == 1
+    first = next(animation for animation, event in scene._visual_events.items()
+                 if event["p"] == 0 and event["v"] == "luck")
+    first.setCurrentTime(first.duration())
+    qapp.processEvents()
+    assert len(scene._visual_animations) == 2
+    assert not scene._visual_queue
+
+
+def test_heal_visual_uses_signed_number_at_target_center(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    target = scene.cards[("shiki", view.viewer, 0)]
+    scene.play_visual_event({"v": "heal", "p": view.viewer, "s": 0, "amount": 12})
+    animation = scene._visual_animations[0]
+    item = scene._visual_items[animation]
+    number, offset = item.layers[0]
+    assert not number.isNull() and number.width() > 70
+    assert offset == QPointF(-number.width() / 2, -number.height() / 2)
+    assert item.pos() == target.sceneBoundingRect().center()
+
+
+def test_damage_visual_centers_scaled_ink_and_signed_number(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    target = scene.cards[("shiki", view.viewer, 0)]
+    scene.play_visual_event({"v": "damage", "p": view.viewer, "s": 0, "amount": 123})
+    animation = scene._visual_animations[0]
+    item = scene._visual_items[animation]
+    assert len(item.layers) == 2
+    background, number = item.layers[0][0], item.layers[1][0]
+    assert not background.isNull() and not number.isNull()
+    assert background.width() <= 180
+    assert number.width() <= round(background.width() * 0.85)
+    for layer, offset in item.layers:
+        assert offset == QPointF(-layer.width() / 2, -layer.height() / 2)
+    assert item.pos() == target.sceneBoundingRect().center()
+
+
+def test_immune_response_and_upgrade_visual_layouts(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "immune", "p": 0, "s": 0})
+    scene.play_visual_event({"v": "upgrade", "p": 0, "s": 1})
+    scene.play_visual_event({"v": "response", "p": 1})
+    assert len(scene._visual_animations) == 3
+    items = {event["v"]: scene._visual_items[animation]
+             for animation, event in scene._visual_events.items()}
+
+    immune_word, immune_offset = items["immune"].layers[0]
+    assert immune_offset == QPointF(-immune_word.width() / 2, -immune_word.height() / 2)
+    assert items["immune"].pos() == scene.cards[("shiki", 0, 0)].sceneBoundingRect().center()
+
+    up_word, up_offset = items["upgrade"].layers[0]
+    target = scene.cards[("shiki", 0, 1)]
+    assert up_offset.y() == -target.size.height() / 2 - up_word.height() - 8
+    assert items["upgrade"].pos() == target.sceneBoundingRect().center()
+
+    response_layers = items["response"].layers
+    assert len(response_layers) == 2
+    assert response_layers[0][1].x() == -response_layers[0][0].width()
+    assert response_layers[1][1].x() == 0
+    assert items["response"].pos() == scene.sceneRect().center()
+    scene.play_visual_event({"v": "response", "p": view.viewer})
+    assert len(scene._visual_animations) == 3  # 己方响应不显示中央提示
+
+
+def test_turn_start_visuals_survive_hotseat_handoff(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view._handoff_pending = True
+    view._handoff_stage = "transfer"
+    view.game.state.timeline.append(
+        {"k": "v", "v": "luck", "p": view.viewer, "s": 0, "dice": 4, "success": True})
+    view._enqueue_timeline()
+    assert not scene._visual_animations
+    view.confirm_handoff()
+    assert scene._visual_animations
+    assert scene._visual_events[scene._visual_animations[0]]["dice"] == 4
 
 
 def test_defeat_word_art_precedes_revive_countdown(qapp, view, monkeypatch):

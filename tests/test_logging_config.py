@@ -27,7 +27,7 @@ def test_log_file_debug_output_and_cleanup(tmp_path):
         assert re.fullmatch(r"bwpro-\d{8}-\d{6}-\d+\.log", path.name)
         assert not old.exists()
         assert unrelated.read_text(encoding="utf-8") == "不得删除"
-        assert len(list(log_dir.glob("bwpro_*.log"))) <= 30
+        assert len(list(log_dir.glob("bwpro_*.log"))) <= 10
         logging.getLogger("test.debug").debug("调试内容")
         logging.getLogger("PIL.PngImagePlugin").debug("STREAM 调试噪声")
         for handler in logging.getLogger().handlers:
@@ -40,6 +40,31 @@ def test_log_file_debug_output_and_cleanup(tmp_path):
         for handler in logging.getLogger().handlers:
             handler.flush()
         assert "控制台同步输出" in path.read_text(encoding="utf-8")
+    finally:
+        restore_output()
+
+
+def test_log_cleanup_applies_age_and_count_to_both_file_patterns(tmp_path):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    expired = time.time() - 15 * 86400
+    for name in ("bwpro-20000101-000000-1.log", "bwpro_20000101_000000_old.log"):
+        path = log_dir / name
+        path.write_text("过期", encoding="utf-8")
+        os.utime(path, (expired, expired))
+    for index in range(35):
+        name = (f"bwpro-20260101-0000{index:02d}-{index}.log" if index % 2
+                else f"bwpro_20260101_0000{index:02d}_test.log")
+        path = log_dir / name
+        path.write_text(str(index), encoding="utf-8")
+        os.utime(path, (time.time() - index, time.time() - index))
+    try:
+        current = configure_logging("test", log_dir=log_dir)
+        survivors = list(log_dir.glob("bwpro-*.log")) + list(log_dir.glob("bwpro_*.log"))
+        assert len(survivors) <= 10
+        assert current in survivors
+        assert all("20000101" not in path.name for path in survivors)
+        assert not (log_dir / "bwpro_20260101_000034_test.log").exists()
     finally:
         restore_output()
 

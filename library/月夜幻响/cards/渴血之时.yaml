@@ -1,0 +1,15 @@
+type: 形态
+name: 渴血之时
+level: 2
+rarity: R
+description: '[[吸血]]'
+shikigami: 吸血姬
+power: 3
+health: 6
+version_date: '20200624'
+id: '10030105'
+artwork:
+  images:
+  - path: 10030105.png
+    scale: 0.711
+    offset_y: -75

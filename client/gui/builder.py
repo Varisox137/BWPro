@@ -21,7 +21,7 @@ from client.gui.widgets import (
 )
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, rules_summary, validate_deck
-from db.envs import ENV_ALIASES, env_label, parse_env_input
+from db.envs import available_env_dates, env_label, parse_env_input
 from db.packs import PACK_NAMES, PACKS
 
 CARD_PAGE_SIZE = 5
@@ -245,7 +245,7 @@ class DeckBuilderView(QWidget):
         self.env_combo = QComboBox()
         self.env_combo.setEditable(True)
         self.env_combo.addItem(env_label(None), None)
-        for date in dict.fromkeys(ENV_ALIASES.values()):
+        for date in available_env_dates(self.db):
             self.env_combo.addItem(env_label(date), date)
         self.env_combo.setMinimumWidth(190)
         self.env_combo.activated.connect(self.change_environment)

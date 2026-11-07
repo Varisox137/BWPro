@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 
 _LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
-_MAX_LOG_AGE_SECONDS = 14 * 86400
-_MAX_LOG_FILES = 30
+_MAX_LOG_AGE_SECONDS = 7 * 86400
+_MAX_LOG_FILES = 10
 _original_stdout = None
 _original_stderr = None
 
@@ -67,6 +67,7 @@ def restore_output() -> None:
 
 
 def _cleanup_logs(log_dir: Path) -> None:
+    """同时应用 7 天时限与 10 份上限（为即将创建的新日志预留 1 份）。"""
     now = datetime.now().timestamp()
     candidates = []
     for pattern in _LOG_PATTERNS:

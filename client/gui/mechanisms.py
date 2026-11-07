@@ -177,10 +177,10 @@ def _mechanism_pixmap(name: str, frame: str, text: str, root_text: str,
         return None
 
 
-def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int | None = None,
+def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int | None = 12,
                     font_scale: float = 1.0, max_height: int = 220,
                     width: int | None = None):
-    """生成可滚动的机制框列表；无有效机制时返回 (None, [])。"""
+    """按默认 12 字/行渲染一次，再将整图等比缩放到卡面宽度的 2/3–1 倍。"""
     panel = QScrollArea(parent)
     panel.setWidgetResizable(True)
     if width is not None:
@@ -199,12 +199,9 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
                                    mechanism["text"], root_text, chars_per_line, font_scale,
                                    mechanism.get("badge"))
         if pixmap is not None and not pixmap.isNull() and width is not None:
-            # 按真实框宽原生缩放，不用 CSS 拉伸匹配卡图宽度。
-            scale = min(font_scale, width / pixmap.width())
-            if scale < font_scale:
-                pixmap = _mechanism_pixmap(
-                    mechanism["name"], mechanism["frame"], mechanism["text"], root_text,
-                    chars_per_line, scale, mechanism.get("badge"))
+            target_width = min(width, max(round(width * 2 / 3), pixmap.width()))
+            if target_width != pixmap.width():
+                pixmap = pixmap.scaledToWidth(target_width, Qt.SmoothTransformation)
         if pixmap is None or pixmap.isNull():
             continue
         label = QLabel()

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMessageBox,
+    QDialog, QDialogButtonBox, QFrame, QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
@@ -197,7 +198,7 @@ class CardWidget(QFrame):
 
 
 class CardChoiceView(QScrollArea):
-    """横向候选列表：卡牌显示卡图，其他值保留文字按钮。"""
+    """调度式候选列表：选中卡片后，再点其下方“选择”按钮确认。"""
 
     chosen = Signal(object)
     detail_clicked = Signal(object)
@@ -207,23 +208,81 @@ class CardChoiceView(QScrollArea):
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setStyleSheet(
+            "QScrollArea, QScrollArea > QWidget > QWidget { background: #211d2d; }"
+            "QWidget#choiceContent { background: transparent; }")
         content = QWidget()
+        content.setObjectName("choiceContent")
         row = QHBoxLayout(content)
+        row.setContentsMargins(12, 12, 12, 12)
         self.option_widgets = []
+        self.option_buttons = {}
+        self._wrappers = {}
+        self._values = {}
+        self.selected = None
         for value, cdef, label in options:
             if cdef is None:
-                widget = QPushButton(label)
-                widget.setMinimumSize(180, 60)
+                card = QPushButton(label)
+                card.setMinimumSize(180, 60)
             else:
-                widget = CardWidget(cdef, db=db)
-                widget.count_label.hide()
-                widget.setFixedSize(180, 390)
-            widget.clicked.connect(lambda _=None, option=value: self.chosen.emit(option))
-            widget.detail_clicked.connect(self.detail_clicked.emit)
-            self.option_widgets.append(widget)
-            row.addWidget(widget)
+                card = CardWidget(cdef, db=db)
+                card.count_label.hide()
+                card.setFixedSize(180, 390)
+                card.setFrameShape(QFrame.NoFrame)
+                card.setStyleSheet("background: transparent; border: none;")
+                card.detail_clicked.connect(self.detail_clicked.emit)
+            button = QPushButton("选择")
+            button.setObjectName("battleSmall")
+            button.setFixedSize(96, 30)
+            button.hide()
+            wrapper = QWidget()
+            wrapper.setObjectName("choiceContent")
+            wrapper.setMinimumWidth(194)
+            column = QVBoxLayout(wrapper)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(6)
+            column.addWidget(card, 0, Qt.AlignCenter)
+            column.addWidget(button, alignment=Qt.AlignCenter)
+            card.clicked.connect(lambda _=None, option=value: self.select(option))
+            button.clicked.connect(lambda _checked=False, option=value: self.confirm(option))
+            self.option_widgets.append(card)
+            self.option_buttons[value] = button
+            self._wrappers[value] = wrapper
+            self._values[card] = value
+            row.addWidget(wrapper)
         row.addStretch(1)
         self.setWidget(content)
+
+    def select(self, value) -> None:
+        if self.selected == value:
+            self.confirm(value)
+            return
+        previous = self.selected
+        self.selected = value
+        for option, wrapper in self._wrappers.items():
+            selected = option == value
+            if selected:
+                glow = QGraphicsDropShadowEffect(wrapper)
+                glow.setColor(QColor("#f3d56b"))
+                glow.setBlurRadius(28)
+                glow.setXOffset(0)
+                glow.setYOffset(0)
+                wrapper.setGraphicsEffect(glow)
+            elif option == previous:
+                wrapper.setGraphicsEffect(None)
+            if option != value and option is not None:
+                dim = QGraphicsOpacityEffect(wrapper)
+                dim.setOpacity(0.45)
+                wrapper.setGraphicsEffect(dim)
+            card = self.option_widgets[list(self._wrappers).index(option)]
+            if isinstance(card, CardWidget):
+                card.setFixedSize(194 if selected else 180, 421 if selected else 390)
+            self.option_buttons[option].setVisible(selected)
+
+    def confirm(self, value=None) -> None:
+        value = self.selected if value is None else value
+        if value is not None and value == self.selected:
+            self.chosen.emit(value)
 
 
 class CardDetailDialog(QDialog):
@@ -236,6 +295,7 @@ class CardDetailDialog(QDialog):
         self.setMinimumSize(480, 680)
         layout = QVBoxLayout(self)
         self.detail_top = QHBoxLayout()
+        self.detail_top.setSpacing(0)
         self.card_widget = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
                                       level_color=level_color, art_height=512)
         self.card_widget.count_label.hide()

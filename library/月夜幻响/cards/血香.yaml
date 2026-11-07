@@ -1,0 +1,15 @@
+type: 战斗
+name: 血香
+level: 2
+rarity: SR
+description: '[[增强]]：若你#sm为30，此牌获得[[连击]]。'
+shikigami: 吸血姬
+power+: 2
+shield+: 1
+version_date: '20200624'
+id: '10030106'
+artwork:
+  images:
+  - path: 10030106.png
+    scale: 0.747
+    offset_y: -68

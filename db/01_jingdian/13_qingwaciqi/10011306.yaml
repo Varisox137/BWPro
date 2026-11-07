@@ -32,7 +32,7 @@ versions:
         # 出击或被攻击时（on_before_assault 双挂：攻击方/受害方为自身，祝福之愿
         # 10020301 同型）[运势4]：获得 2 护甲（EffectBlock.luck 触发式门控）
         - when: on_before_assault
-          condition: {attacker_shikigami: self}
+          condition: {attacker_shikigami: self, origin: assault}
           luck: 4
           steps:
             - {op: gain_shield, amount: 2, target: {kind: self}}

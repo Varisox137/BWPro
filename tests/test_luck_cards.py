@@ -165,6 +165,23 @@ def test_luck_block_gates_form_ability(gdb, monkeypatch):
     assert s2.shield == 0 and s2.health == 6   # 失败：无护甲，吃满攻击 3
 
 
+def test_assault_trigger_excludes_battle_card(gdb, monkeypatch):
+    """门前清 20200423 的“出击时”不含战斗牌发起战斗；被攻击时分支不受影响。"""
+    g, pa, _pb = _game(gdb, QWQC_TEAM, levels={IDX: 2})
+    play(g, 0, MENQIAN)
+    _force_dice(monkeypatch, g, [1])
+    play(g, 0, LIZHI)                          # 仅立直自身运势，不触发门前清
+    assert pa.ext["dice_history"] == [1]
+    assert pa.shikigami[IDX].shield == 0
+
+    g2, pa2, _pb2 = _game(gdb, QWQC_TEAM, levels={IDX: 2})
+    play(g2, 0, MENQIAN)
+    _force_dice(monkeypatch, g2, [4])
+    g2.apply({"op": "assault", "index": IDX})
+    assert pa2.ext["dice_history"] == [4]
+    assert pa2.shikigami[IDX].shield == 2
+
+
 def test_luck_dice_ctx_amount(gdb, monkeypatch):
     """骰子炸弹（amount_ctx: luck_dice）：运势1 必定成功，造成等同于骰子点数的伤害。"""
     g, pa, pb = _game(gdb, QWQC_TEAM, levels={IDX: 2})
@@ -408,6 +425,11 @@ def test_luck_reroll_on_dice_one(gdb, monkeypatch):
     play(g, 0, FUYUN)                          # 福运昌隆：抽 1；运势4 → +2 鬼火
     assert pa.ext["dice_history"] == [5]       # 被重投覆盖的首投不计入
     assert pa.orb == 9 - 1 + 2                 # 判定成功：获得 2 鬼火
+    visuals = [entry for entry in g.state.timeline if entry.get("k") == "v"]
+    assert [(entry["v"], entry.get("dice"), entry.get("success")) for entry in visuals] == [
+        ("luck", 1, False), ("luck_reroll", 5, None), ("luck", 5, True),
+    ]
+    assert visuals[1]["previous_dice"] == 1
 
 
 def test_awaken_reroll_on_would_fail(gdb, monkeypatch):
@@ -433,6 +455,9 @@ def test_judge_both_each_draw(gdb, monkeypatch):
     pass_turns(g, 2)                           # B 回合开始补抽 → A 回合开始：补抽+双方判定
     assert len(pa.hand) == ha + 2              # 回合开始补抽 1 + 判定成功抽 1
     assert len(pb.hand) == hb + 2              # B 回合补抽 1 + 判定成功抽 1
+    luck_visuals = [entry for entry in g.state.timeline
+                    if entry.get("k") == "v" and entry.get("v") == "luck"]
+    assert [(entry["p"], entry["s"]) for entry in luck_visuals] == [(0, None), (1, None)]
     g2, pa2, pb2 = _game(gdb, ZFTZ_TEAM)
     play(g2, 0, JINYUN)
     _force_dice(monkeypatch, g2, [4, 2])       # 当前回合玩家先：A 成功、B 失败
