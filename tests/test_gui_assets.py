@@ -174,6 +174,8 @@ def test_combat_movement_and_card_animation_precede_effects(db, make_game):
     kinds = [entry["v"] for entry in game.state.timeline if entry.get("k") == "v"]
     assert kinds[:2] == ["assault", "move"]
     assert kinds[-2:] == ["defeated", "move"]
+    assert any(entry.get("k") == "l" and "出击" in entry.get("m", "")
+               for entry in game.state.timeline)
 
     cid = 10010153
     db.cards[cid] = F.card(cid, token=True,
