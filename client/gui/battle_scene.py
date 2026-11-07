@@ -85,8 +85,8 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("log",): QPointF(12, 422),
         ("end_turn",): QPointF(scene_width - 116, 400),
         ("enemy_hand_label",): QPointF(1530 + extra, 156),
-        ("enemy_deck",): QPointF(1530 + extra, 120),
-        ("own_deck",): QPointF(1530 + extra, 800),
+        ("enemy_deck",): QPointF(1530 + extra, 228),
+        ("own_deck",): QPointF(1530 + extra, 608),
         ("hand_caption",): QPointF(1530 + extra, 680),
         ("ready",): QPointF(1328 + extra, 435),
         ("handoff",): QPointF(1216 + extra, 435),
@@ -104,10 +104,11 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         top = pi != viewer
         positions[("player", pi)] = QPointF(12, 4 if top else 766)
         for index in range(3):
+            fan_index = index if top else 2 - index
             positions[("deck_back", pi, index)] = QPointF(
-                scene_width - 236 + index * 22,
-                (40 + index * 6) if top
-                else (SCENE_HEIGHT - 40 - DECK_BACK_SIZE.height() - index * 6))
+                scene_width - 274 + fan_index * 22,
+                (170 + index * 40) if top
+                else (SCENE_HEIGHT - 170 - DECK_BACK_SIZE.height() - fan_index * 40))
     if game is None:
         return positions
 
@@ -1421,9 +1422,9 @@ class BattleScene(QGraphicsScene):
                     "enemy" if pi != viewer else "own", landscape=True))
                 back.setPos(positions[deck_key] + QPointF(
                     0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
-                rotation = 15 + index * 5
+                rotation = 15 + index * 10
                 back.setRotation(rotation if pi != viewer else -rotation)
-                back.setZValue(20 + index)
+                back.setZValue(20 + index if pi != viewer else 22 - index)
                 back.update()
             ref = Ref(player=pi)
             key = ("player", pi)

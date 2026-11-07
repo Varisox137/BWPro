@@ -1802,10 +1802,11 @@ def test_deck_backs_are_symmetric_horizontal_cards_and_hide_when_empty(qapp, vie
     assert len({item.x() for item in own}) == 3
     assert len({item.y() for item in own}) == 3
     assert len({item.rotation() for item in own}) == 3
-    for lower, upper in zip(own, enemy):
+    for index, lower in enumerate(own):
+        upper = enemy[2 - index]
         assert lower.x() == upper.x()
         assert lower.y() + upper.y() + lower.size.height() == 900
-        assert lower.rotation() == -upper.rotation()
+        assert lower.rotation() == -enemy[index].rotation()
     view.game.state.players[0].deck.clear()
     view.refresh()
     settle(view)
@@ -3663,13 +3664,23 @@ def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
 
 
 def test_deck_backs_match_reference_size_and_orientation(qapp, view):
+    from PySide6.QtGui import QTransform
     from client.gui.battle_scene import DECK_BACK_SIZE
+    from client.gui.ui_assets import cardback_pixmap
 
     start(view, mulligan=False)
     assert DECK_BACK_SIZE.width() >= 150
-    enemy = view.battle_scene.deck_backs[("deck_back", 1, 0)]
-    own = view.battle_scene.deck_backs[("deck_back", 0, 0)]
-    assert enemy.rotation() > 0
-    assert own.rotation() < 0
-    assert enemy.y() < 100
-    assert own.y() > 700
+    enemy = [view.battle_scene.deck_backs[("deck_back", 1, index)]
+             for index in range(3)]
+    own = [view.battle_scene.deck_backs[("deck_back", 0, index)]
+           for index in range(3)]
+    expected = cardback_pixmap("enemy").transformed(
+        QTransform().rotate(-90), Qt.SmoothTransformation)
+    assert enemy[0].pixmap.toImage() == expected.toImage()
+    assert [item.rotation() for item in enemy] == [15, 25, 35]
+    assert [item.rotation() for item in own] == [-15, -25, -35]
+    assert [item.y() for item in enemy] == sorted(item.y() for item in enemy)
+    assert [item.y() for item in own] == sorted(item.y() for item in own)
+    assert 120 <= enemy[0].y() < 200
+    assert enemy[-1].sceneBoundingRect().bottom() >= 370
+    assert 520 <= own[0].sceneBoundingRect().top() <= 580

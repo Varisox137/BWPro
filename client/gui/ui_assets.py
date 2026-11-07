@@ -169,7 +169,7 @@ def _cached_cardback(path: str, mtime_ns: int, landscape: bool) -> QPixmap:
         left, top, right, bottom = bbox
         pixmap = pixmap.copy(QRect(left, top, right - left, bottom - top))
     if landscape:
-        pixmap = pixmap.transformed(QTransform().rotate(90), Qt.SmoothTransformation)
+        pixmap = pixmap.transformed(QTransform().rotate(-90), Qt.SmoothTransformation)
     return pixmap
 
 
