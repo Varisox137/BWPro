@@ -30,7 +30,7 @@ SCENE_WIDTH = 1600
 SCENE_HEIGHT = 900
 HAND_SIZE = QSizeF(110, 156)
 MULLIGAN_HAND_SIZE = QSizeF(180, 255)
-DECK_BACK_SIZE = QSizeF(132, 94)
+DECK_BACK_SIZE = QSizeF(160, 114)
 SHIKI_SIZE = QSizeF(148, 210)
 PLAYER_SIZE = QSizeF(210, 130)
 HAND_Z = 40
@@ -85,8 +85,8 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("log",): QPointF(12, 422),
         ("end_turn",): QPointF(scene_width - 116, 400),
         ("enemy_hand_label",): QPointF(1530 + extra, 156),
-        ("enemy_deck",): QPointF(1530 + extra, 228),
-        ("own_deck",): QPointF(1530 + extra, 608),
+        ("enemy_deck",): QPointF(1530 + extra, 120),
+        ("own_deck",): QPointF(1530 + extra, 800),
         ("hand_caption",): QPointF(1530 + extra, 680),
         ("ready",): QPointF(1328 + extra, 435),
         ("handoff",): QPointF(1216 + extra, 435),
@@ -105,9 +105,9 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         positions[("player", pi)] = QPointF(12, 4 if top else 766)
         for index in range(3):
             positions[("deck_back", pi, index)] = QPointF(
-                1358 + extra + index * 18,
-                (220 + index * 4) if top
-                else (SCENE_HEIGHT - 220 - DECK_BACK_SIZE.height() - index * 4))
+                scene_width - 236 + index * 22,
+                (40 + index * 6) if top
+                else (SCENE_HEIGHT - 40 - DECK_BACK_SIZE.height() - index * 6))
     if game is None:
         return positions
 
@@ -1007,6 +1007,7 @@ class BattleScene(QGraphicsScene):
             self.removeItem(item)
         animation.deleteLater()
         self._start_queued_visuals()
+        self._refresh_all_art()
 
     def defeat_countdown_hidden(self, player: int, index: int) -> bool:
         return (player, index) in self._defeat_visuals
@@ -1052,7 +1053,7 @@ class BattleScene(QGraphicsScene):
     def play_visual_event(self, event: dict) -> None:
         kind = event.get("v")
         if kind not in ("defeated", "luck", "luck_reroll", "heal", "damage",
-                        "immune", "response", "upgrade", "move", "assault"):
+                        "immune", "response", "upgrade", "move", "assault", "stat"):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应
@@ -1067,6 +1068,31 @@ class BattleScene(QGraphicsScene):
 
     def _start_visual_event(self, event: dict) -> None:
         kind = event.get("v")
+        if kind == "stat":
+            player = int(event.get("p", self.viewer))
+            index = int(event.get("s", 0))
+            target = self.cards.get(("shiki", player, index)
+                                    if index is not None else ("player", player))
+            item = BattleVisualItem()
+            item.setProperty("assetName", kind)
+            if target is not None:
+                item.setPos(target.sceneBoundingRect().center())
+            item.setZValue(DRAG_Z + 15)
+            item.setOpacity(0)
+            self.addItem(item)
+            animation = QVariantAnimation(self)
+            animation.setDuration(200)
+            animation.setStartValue(0.0)
+            animation.setEndValue(1.0)
+            self._visual_animations.append(animation)
+            self._visual_items[animation] = item
+            self._visual_events[animation] = dict(event)
+            animation.valueChanged.connect(
+                lambda value, animation=animation: self._update_visual(animation, value))
+            animation.finished.connect(
+                lambda animation=animation: self._finish_visual(animation))
+            animation.start()
+            return
         if kind == "assault":
             image = ui_pixmap("assault/出击.png")
             player = int(event.get("p", self.viewer))
@@ -1395,7 +1421,7 @@ class BattleScene(QGraphicsScene):
                     "enemy" if pi != viewer else "own", landscape=True))
                 back.setPos(positions[deck_key] + QPointF(
                     0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
-                rotation = -15 + index * 5
+                rotation = 15 + index * 5
                 back.setRotation(rotation if pi != viewer else -rotation)
                 back.setZValue(20 + index)
                 back.update()

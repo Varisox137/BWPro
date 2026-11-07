@@ -3619,3 +3619,57 @@ def test_assault_and_response_animations_use_viewer_sides_and_order(qapp, view):
     qapp.processEvents()
     card_animation = scene._card_use_animations[0]
     assert scene._card_use_sources[card_animation]["big_pos"].x() > scene.sceneRect().center().x()
+
+
+def test_combat_card_stats_refresh_between_card_and_move(qapp, db, view):
+    cid = 10010154
+    db.cards[cid] = F.card(cid, card_type="combat", token=True, steps=[
+        F.Step(op="buff_power", amount=2, target=F.T(kind="self")),
+        F.Step(op="gain_shield", amount=2, target=F.T(kind="self")),
+    ])
+    start(view, mulligan=False)
+    card = F.give(view.game, 0, cid)
+    view.play_card(card.uid)
+    kinds = [entry["v"] for entry in view.game.state.timeline if entry.get("k") == "v"]
+    assert "stat" in kinds
+    assert kinds.index("stat") < kinds.index("move")
+
+
+def test_form_art_refreshes_after_card_use(qapp, db, view):
+    form_id = 10010155
+    db.cards[form_id] = F.card(form_id, token=True, card_type="form",
+                               form_power=2, form_health=6)
+    start(view, mulligan=False)
+    item = view.battle_scene.cards[("shiki", 0, 0)]
+    original = item.pixmap.cacheKey()
+    card = F.give(view.game, 0, form_id)
+    view.play_card(card.uid)
+    settle(view)
+    assert item.cdef.id == form_id
+    assert item.pixmap.cacheKey() != original
+
+
+def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
+    field_id = 10010161
+    db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    first = F.give(view.game, 0, field_id)
+    view.game._open_discard_pick(0, 1, card_type="field")
+    view.refresh()
+    dialog = view.choice_dialog
+    assert not dialog.option_view.styleSheet()
+    assert dialog.option_view._wrappers[first.uid].layout().spacing() == 2
+    assert dialog.width() <= 720
+
+
+def test_deck_backs_match_reference_size_and_orientation(qapp, view):
+    from client.gui.battle_scene import DECK_BACK_SIZE
+
+    start(view, mulligan=False)
+    assert DECK_BACK_SIZE.width() >= 150
+    enemy = view.battle_scene.deck_backs[("deck_back", 1, 0)]
+    own = view.battle_scene.deck_backs[("deck_back", 0, 0)]
+    assert enemy.rotation() > 0
+    assert own.rotation() < 0
+    assert enemy.y() < 100
+    assert own.y() > 700

@@ -2619,6 +2619,8 @@ class Game:
         atk_ref = Ref(player=self.state.players.index(p), shikigami=si)
         if not defeated_entry:
             self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
+            self.state.timeline.append({"k": "v", "v": "stat", "p": atk_ref.player,
+                                        "s": atk_ref.shikigami})
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
         # 均绑定本次战斗上下文，终止点移除（rules.md 第十三章战斗牌分支"直到本次战斗结束后"）；
         # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
@@ -2647,6 +2649,8 @@ class Game:
                     return
                 # 复活后：战力/护甲按正常战斗牌补齐，随后正常发起战斗（定案(14)）
                 self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
+                self.state.timeline.append({"k": "v", "v": "stat", "p": atk_ref.player,
+                                            "s": atk_ref.shikigami})
             # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗；
             # 响应方式使用不消耗（不夜之舞"非响应方式使用战斗牌时"口径，全卡盘点）
             if not from_response and any(

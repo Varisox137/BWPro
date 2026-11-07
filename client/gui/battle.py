@@ -83,12 +83,13 @@ class ChoiceDialog(QDialog):
         self.option_view = CardChoiceView(options, db=view.db)
         self.option_view.chosen.connect(self._answer)
         self.option_view.detail_clicked.connect(view.show_card_detail)
+        self.option_view.setMinimumHeight(450)
         layout.addWidget(self.option_view, 1)
         if kind == "mulligan_pick":
             done = QPushButton("结束调度")
             done.clicked.connect(lambda: self._answer(None))
             layout.addWidget(done)
-        self.resize(720, 500)
+        self.adjustSize()
 
     def _answer(self, value) -> None:
         if not self.isEnabled():
