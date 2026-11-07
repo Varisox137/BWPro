@@ -170,6 +170,7 @@ class BattleCardItem(QGraphicsObject):
         self.text_color = QColor("#26221c")
         self.player_name = ""
         self.health = self.max_health = self.shield = 0
+        self.health_color = "white"
         self.orb = self.assaults_left = 0
         self.orb_display_count = 2
         self.orb_overflow = 0
@@ -289,7 +290,7 @@ class BattleCardItem(QGraphicsObject):
             for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                 painter.setPen(QColor("#141121"))
                 painter.drawText(text_box.translated(dx, dy), Qt.AlignCenter, str(value))
-            painter.setPen(QColor("#fff4e0"))
+            painter.setPen(QColor(self.health_color if icon_name == "health" else "#fff4e0"))
             painter.drawText(text_box, Qt.AlignCenter, str(value))
 
         hp = QRectF(avatar.right() - 40, avatar.bottom() - 30, 52, 38)
@@ -867,6 +868,7 @@ class BattleScene(QGraphicsScene):
             self._visual_events.pop(animation, None)
             animation.deleteLater()
             self._start_queued_visuals()
+            self._refresh_all_art()
 
     def _animate_position(self, item: BattleCardItem, target: QPointF) -> None:
         self._visual_queue[:] = [event for event in self._visual_queue
@@ -901,6 +903,7 @@ class BattleScene(QGraphicsScene):
             self._visual_events.pop(animation, None)
             animation.deleteLater()
             self._start_queued_visuals()
+            self._refresh_all_art()
 
     def animate_card_use(self, uid: int, card_id: int, player: int,
                          response: bool = False) -> None:
@@ -1048,7 +1051,7 @@ class BattleScene(QGraphicsScene):
     def play_visual_event(self, event: dict) -> None:
         kind = event.get("v")
         if kind not in ("defeated", "luck", "luck_reroll", "heal", "damage",
-                        "immune", "response", "upgrade"):
+                        "immune", "response", "upgrade", "move"):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应
@@ -1063,6 +1066,16 @@ class BattleScene(QGraphicsScene):
 
     def _start_visual_event(self, event: dict) -> None:
         kind = event.get("v")
+        if kind == "move":
+            player = int(event.get("p", self.viewer))
+            index = int(event.get("s", 0))
+            item = self.cards.get(("shiki", player, index))
+            if item is not None:
+                positions = layout_positions(
+                    self.game, self.viewer, center_hand=self.center_hand,
+                    scene_width=self.layout_width)
+                self._animate_position(item, positions[("shiki", player, index)])
+            return
         if kind == "_move":
             self._start_move_event(event)
             return
@@ -1160,6 +1173,7 @@ class BattleScene(QGraphicsScene):
             self.removeItem(item)
         animation.deleteLater()
         self._start_queued_visuals()
+        self._refresh_all_art()
 
     def _refresh_defeated_entity(self, player: int, index: int) -> None:
         item = self.cards.get(("shiki", player, index))
@@ -1171,6 +1185,38 @@ class BattleScene(QGraphicsScene):
             shiki, self.db, seat=index, form=form, cache_context={}, height=210,
             show_defeated_countdown=not self.defeat_countdown_hidden(player, index)))
         item.update()
+
+    def _refresh_all_art(self) -> None:
+        """动画队列清空后统一更新数值与卡图，避免结算状态抢先显示。"""
+        if self.game is None or self._visual_animations or self._visual_queue:
+            return
+        art_context = {}
+        for pi, player in enumerate(self.game.state.players):
+            player_item = self.cards.get(("player", pi))
+            if player_item is not None:
+                player_item.health = player.health
+                player_item.max_health = player.max_health
+                player_item.shield = player.shield
+                player_item.orb = player.orb
+                player_item.assaults_left = player.assaults_left
+                player_item.inspire_power = sum(
+                    boost.get("power", 0) for boost in player.assault_boosts)
+                player_item.inspire_shield = sum(
+                    boost.get("shield", 0) for boost in player.assault_boosts)
+                player_item.health_color = self._player_health_color(player)
+                player_item.update()
+            for index, shiki in enumerate(player.shikigami):
+                if shiki.despawned:
+                    continue
+                item = self.cards.get(("shiki", pi, index))
+                if item is None:
+                    continue
+                form = self.db.cards[shiki.form.id] if shiki.form is not None else None
+                item.set_art(entity_pixmap(
+                    shiki, self.db, seat=index, form=form,
+                    cache_context=art_context, height=210,
+                    show_defeated_countdown=not self.defeat_countdown_hidden(pi, index)))
+                item.update()
 
     def show_usage_options(self, options: list[dict], card_defs: list) -> None:
         self.clear_usage_options()
@@ -1253,18 +1299,31 @@ class BattleScene(QGraphicsScene):
                 self.removeItem(item)
                 del self.cards[key]
 
-    def sync_state(self, game, viewer, hand_info, inputs_open, center_hand=False) -> None:
+    @staticmethod
+    def _player_health_color(player) -> str:
+        if player.health < player.max_health:
+            return "red"
+        return "green" if player.max_health > 30 else "white"
+
+    def sync_state(self, game, viewer, hand_info, inputs_open, center_hand=False,
+                   pending_entries=None, play_pending=True) -> None:
         previous_game = self.game
         if previous_game is not None and viewer != self.viewer:
             self.reset_animations()
             previous_game = None
         previous_timeline = self._animation_timeline
         timeline = game.state.timeline
-        online_entries = []
-        if (previous_game is not None and previous_game is not game
-                and previous_timeline is not None
-                and timeline[:len(previous_timeline)] == previous_timeline):
-            online_entries = timeline[len(previous_timeline):]
+        if pending_entries is not None:
+            online_entries = list(pending_entries)
+        else:
+            online_entries = []
+            if (previous_game is not None and previous_game is not game
+                    and previous_timeline is not None
+                    and timeline[:len(previous_timeline)] == previous_timeline):
+                online_entries = timeline[len(previous_timeline):]
+        structured_moves = {(entry["p"], entry["s"]) for entry in online_entries
+                            if entry.get("v") == "move"}
+        defer_art = bool(online_entries or self._visual_animations or self._visual_queue)
         self._animation_timeline = list(timeline)
         self.game = game
         self.phase = game.state.phase
@@ -1318,6 +1377,7 @@ class BattleScene(QGraphicsScene):
             ref = Ref(player=pi)
             key = ("player", pi)
             item = self.cards.get(key)
+            created = item is None
             if item is None:
                 item = BattleCardItem(key, size=PLAYER_SIZE)
                 self.addItem(item)
@@ -1325,17 +1385,19 @@ class BattleScene(QGraphicsScene):
             item.player = pi
             item.payload = ref
             item.player_name = player.name
-            item.health = player.health
-            item.max_health = player.max_health
-            item.shield = player.shield
-            item.orb = player.orb
-            item.orb_display_count = min(4, max(2, player.orb))
-            item.orb_overflow = max(0, player.orb - 4)
-            item.assaults_left = player.assaults_left
-            item.inspire_power = sum(boost.get("power", 0)
-                                     for boost in player.assault_boosts)
-            item.inspire_shield = sum(boost.get("shield", 0)
-                                      for boost in player.assault_boosts)
+            if not defer_art or created:
+                item.health = player.health
+                item.max_health = player.max_health
+                item.shield = player.shield
+                item.orb = player.orb
+                item.orb_display_count = min(4, max(2, player.orb))
+                item.orb_overflow = max(0, player.orb - 4)
+                item.assaults_left = player.assaults_left
+                item.inspire_power = sum(boost.get("power", 0)
+                                         for boost in player.assault_boosts)
+                item.inspire_shield = sum(boost.get("shield", 0)
+                                          for boost in player.assault_boosts)
+                item.health_color = self._player_health_color(player)
             item.shiki_text = ""
             item.targetable = ref in self.legal_targets
             item.setPos(positions[key])
@@ -1367,7 +1429,8 @@ class BattleScene(QGraphicsScene):
                     shiki, self.db, seat=index, form=form,
                     cache_context=art_context, height=210,
                     show_defeated_countdown=not self.defeat_countdown_hidden(pi, index))
-                item.set_art(pixmap)
+                if not defer_art or created:
+                    item.set_art(pixmap)
                 item.player = pi
                 item.index = index
                 item.uid = None
@@ -1389,7 +1452,7 @@ class BattleScene(QGraphicsScene):
                              and index in game.legal_upgrade_indices(pi))))
                 if created or previous_game is None:
                     item.setPos(positions[key])
-                else:
+                elif (pi, index) not in structured_moves:
                     self._animate_position(item, positions[key])
                 item.update()
                 self.loading_tick()
@@ -1481,7 +1544,7 @@ class BattleScene(QGraphicsScene):
                 item.update()
         self.mulligan_selected.emit(self.mulligan_uid)
         self._sync_focus()
-        for entry in online_entries:
+        for entry in online_entries if play_pending else ():
             if entry.get("k") == "a":
                 self.animate_card_use(entry["u"], entry["c"], entry["p"],
                                       response=bool(entry.get("r")))

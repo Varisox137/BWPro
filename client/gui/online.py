@@ -244,8 +244,8 @@ class OnlineBattleView(HotseatView):
             return
         super()._sync_pending_choice()
 
-    def _render_state(self) -> None:
-        super()._render_state()
+    def _render_state(self, play_pending=True) -> None:
+        super()._render_state(play_pending=play_pending)
         self.battle_scene.game_over = self.battle_scene.game_over or self._game_over
         self._update_countdown()
 

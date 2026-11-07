@@ -161,3 +161,28 @@ def test_engine_emits_damage_visuals_for_shikigami_and_player(db, make_game):
     assert [(entry["p"], entry["s"], entry["amount"]) for entry in damages] == [
         (0, 0, 3), (0, None, 4),
     ]
+
+
+def test_combat_movement_and_card_animation_precede_effects(db, make_game):
+    game = make_game()
+    pa, pb = F.battle_setup(game)
+    pb.combat_index = 0
+    pa.shikigami[0].health = 1
+    pb.shikigami[0].base_power = 10
+    pa.shikigami[0].base_power = 1
+    game.apply({"op": "assault", "index": 0})
+    kinds = [entry["v"] for entry in game.state.timeline if entry.get("k") == "v"]
+    assert kinds[0] == "move"
+    assert kinds[-2:] == ["defeated", "move"]
+
+    cid = 10010153
+    db.cards[cid] = F.card(cid, token=True,
+                           steps=[F.dmg(1, F.T(kind="all", pool="enemy_player"))])
+    game = make_game()
+    F.battle_setup(game)
+    game.apply({"op": "play_card", "uid": F.give(game, 0, cid).uid})
+    animation_index = next(index for index, entry in enumerate(game.state.timeline)
+                           if entry.get("k") == "a")
+    damage_index = next(index for index, entry in enumerate(game.state.timeline)
+                        if entry.get("k") == "v" and entry.get("v") == "damage")
+    assert animation_index < damage_index

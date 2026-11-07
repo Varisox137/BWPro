@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QToolButton, QVBoxLayout, QWidget,
+    QPushButton, QStyle, QToolButton, QVBoxLayout, QWidget,
 )
 
 from client.gui.loading import LoadingIndicator, LoadingOverlay
@@ -95,6 +95,13 @@ class CardbackPreviewDialog(QDialog):
         self.previous_button.setEnabled(self.page > 0)
         self.next_button.setEnabled(self.page + 1 < pages)
         self.adjustSize()
+        QTimer.singleShot(0, self._center_on_screen)
+
+    def _center_on_screen(self) -> None:
+        screen = self.screen()
+        if screen is not None:
+            self.setGeometry(QStyle.alignedRect(
+                Qt.LeftToRight, Qt.AlignCenter, self.size(), screen.availableGeometry()))
 
     def _select(self, name: str) -> None:
         self.selected = name
@@ -124,6 +131,7 @@ class SettingsView(QWidget):
         settings = load_gui_settings()
         self.cardback_buttons = {}
         self.option_buttons = {}
+        self.option_rows = []
 
         def add_option_row(entries):
             row = QHBoxLayout()
@@ -141,8 +149,9 @@ class SettingsView(QWidget):
                     self.option_buttons[key] = button
                 row.addWidget(QLabel(label))
                 row.addWidget(button)
-                row.addStretch(1)
+            row.addStretch(1)
             layout.addLayout(row)
+            self.option_rows.append(row)
 
         add_option_row((("own_cardback", "己方卡背"), ("enemy_cardback", "敌方卡背")))
         add_option_row((("turn_background", "回合按钮底图"),
@@ -176,7 +185,7 @@ class SettingsView(QWidget):
         button = self.option_buttons[key]
         background = key in ("turn_background", "end_turn_background", "opponent_turn_background")
         turn_style = key in ("end_turn_variant", "opponent_turn_variant")
-        prefix = key.split("_")[0]
+        prefix = "defeat" if key == "defeated_variant" else key.split("_")[0]
         names = (["无"] + unnamed_misc_images() if background
                  else turn_button_variants(key == "opponent_turn_variant") if turn_style
                  else animation_variants(prefix))

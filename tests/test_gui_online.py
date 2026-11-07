@@ -291,6 +291,12 @@ def test_online_card_use_animation_for_both_players_is_nonblocking_and_cleans_up
 
     assert not battle.timeline_queue
     assert battle._inputs_open()
+    for _ in range(10):
+        if scene._card_use_animations:
+            break
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
     assert len(scene._card_use_animations) == 1
     first = scene._card_use_animations[0]
     assert scene._card_use_items[first].cdef.id == cards[0].id
@@ -326,9 +332,12 @@ def test_online_reset_session_clears_animations_and_reconnect_history(qapp, db, 
     battle.set_state(payload, log=[], timeline=[entry])
     assert scene._move_animations
     assert not scene._card_use_animations
-    movement = next(iter(scene._move_animations.values()))
-    movement.setCurrentTime(movement.duration())
-    qapp.processEvents()
+    for _ in range(10):
+        if scene._card_use_animations:
+            break
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
     assert scene._card_use_animations
     assert scene._animation_timeline
 

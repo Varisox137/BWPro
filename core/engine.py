@@ -2389,6 +2389,7 @@ class Game:
         marker = {"nullified": False}
         prev = self._active_play_marker
         self._active_play_marker = marker
+        self._emit_card_animation(player, card.uid, cdef)
         try:
             if play_from == "hand":
                 self.emit("on_before_hand_play", player=player, uid=card.uid, card=card,
@@ -2404,6 +2405,19 @@ class Game:
             pl = self.state.players[player]
             pl.ext["lianmo_used_game"] = pl.ext.get("lianmo_used_game", 0) + 1
         return marker
+
+    def _emit_card_animation(self, player: int, uid: int, cdef: CardDef,
+                             triggered: str = "active") -> None:
+        """用牌动画在预使用阶段发出；响应标记在后置统一发点补齐。"""
+        for entry in reversed(self.state.timeline):
+            if entry.get("k") == "a" and entry.get("u") == uid:
+                if triggered == "response":
+                    entry["r"] = True
+                return
+        animation = {"k": "a", "u": uid, "c": cdef.id, "p": player}
+        if triggered == "response":
+            animation["r"] = True
+        self.state.timeline.append(animation)
 
     def _emit_card_played(self, player: int, uid: int, cdef: CardDef,
                           affected: list[Ref] | None = None, *,
@@ -2427,10 +2441,7 @@ class Game:
         chosen：该次使用的选择目标（无目标/无选择信息为空列表）——条件
         {chosen_side: friendly} 匹配"对单个己方式神使用的法术"类触发（记仇）。
         """
-        animation = {"k": "a", "u": uid, "c": cdef.id, "p": player}
-        if triggered == "response":
-            animation["r"] = True
-        self.state.timeline.append(animation)
+        self._emit_card_animation(player, uid, cdef, triggered)
         played = self._card_by_uid(uid)
         # 委托账本（三目委托机制）：使用牌数（不限主动/响应/自动，定案(3)）/形态牌/
         # 阵容套牌以外/三目使用委托牌。阵容套牌以外口径（定案(5)）：同名牌不在本局
@@ -3774,6 +3785,8 @@ class Game:
         if p.combat_index is not None and p.combat_index != i:
             self._retreat(p, p.combat_index)
         p.combat_index = i
+        self.state.timeline.append({"k": "v", "v": "move", "p": self.state.players.index(p),
+                                    "s": i, "zone": "combat"})
         if count_move:
             s = p.shikigami[i]
             s.ext["move_count_turn"] = s.ext.get("move_count_turn", 0) + 1
@@ -3794,6 +3807,8 @@ class Game:
         else:
             self._log(f"{self.db.shikigami[s.id].name} 退回准备区")
         if was_in_combat:
+            self.state.timeline.append({"k": "v", "v": "move",
+                                        "p": self.state.players.index(p), "s": i, "zone": "ready"})
             s.ext["move_count_turn"] = s.ext.get("move_count_turn", 0) + 1  # 移动计数
             self.emit("on_leave_combat", player=self.state.players.index(p),
                       shikigami=Ref(player=self.state.players.index(p), shikigami=i))
@@ -5462,6 +5477,9 @@ class Game:
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
             self.state.timeline.append(
                 {"k": "v", "v": "defeated", "p": ref.player, "s": ref.shikigami})
+            if in_combat and not defeat_revive_stay:
+                self.state.timeline.append({"k": "v", "v": "move",
+                                            "p": ref.player, "s": ref.shikigami, "zone": "ready"})
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
         # 击杀账本与委托计数（含牌手级 inv_bonus_on_kill 结算；棺材被击破路径共用）
         self._account_kill(source, ref, s)

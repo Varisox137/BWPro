@@ -3563,3 +3563,33 @@ def test_movement_damage_defeat_and_return_share_linear_queue(qapp, view):
     scene._visual_animations[0].setCurrentTime(scene._visual_animations[0].duration())
     qapp.processEvents()
     assert len(scene._move_animations) == 1
+
+
+def test_entity_art_waits_for_damage_animation(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    item = scene.cards[("shiki", 0, 0)]
+    original = item.pixmap.cacheKey()
+    view.game.deal_to_shikigami(Ref(player=0, shikigami=0), 1, Ref(player=1, shikigami=0))
+    view.refresh()
+    assert item.pixmap.cacheKey() == original
+    animation = scene._visual_animations[0]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert item.pixmap.cacheKey() != original
+
+
+def test_player_health_color_tracks_missing_and_bonus_cap(qapp, view):
+    start(view, mulligan=False)
+    player = view.game.current
+    player.health = 20
+    view.refresh()
+    item = view.battle_scene.cards[("player", view.viewer)]
+    assert item.health_color == "red"
+    player.max_health = 35
+    player.health = 35
+    view.refresh()
+    assert item.health_color == "green"
+    player.max_health = player.health = 30
+    view.refresh()
+    assert item.health_color == "white"

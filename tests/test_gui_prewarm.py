@@ -255,6 +255,36 @@ def test_settings_option_rows_are_compact(qapp, db):
     view.close()
 
 
+def test_animation_style_previews_and_option_rows_left_alignment(qapp, db):
+    from client.gui.settings import CardbackPreviewDialog
+
+    view = SettingsView(db)
+    assert hasattr(view, "option_rows")
+    for row in view.option_rows:
+        assert row.count() >= 2
+        assert sum(row.itemAt(index).spacerItem() is not None for index in range(row.count())) == 1
+    for prefix, current in (("up_", "yellow"), ("defeat_", "white")):
+        dialog = CardbackPreviewDialog(
+            [current], current, asset_dir="animations", asset_prefix=prefix)
+        assert not dialog.card_buttons[0].icon().isNull()
+        dialog.deleteLater()
+    view.close()
+
+
+def test_preview_dialog_recenters_after_page_shrink(qapp):
+    from client.gui.settings import CardbackPreviewDialog
+
+    from client.gui.ui_assets import named_cardbacks
+    dialog = CardbackPreviewDialog(named_cardbacks()[:6], named_cardbacks()[0])
+    dialog.show()
+    qapp.processEvents()
+    dialog.next_button.click()
+    qapp.processEvents()
+    available = dialog.screen().availableGeometry().center()
+    assert (dialog.geometry().center() - available).manhattanLength() <= 2
+    dialog.close()
+
+
 def test_settings_status_displays_failure_stats(qapp, db, tmp_path):
     view = SettingsView(db)
     view.cache_dir = tmp_path

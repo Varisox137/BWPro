@@ -541,7 +541,7 @@ class HotseatView(QWidget):
             self.end_turn_button.width(), opponent=opponent)))
         self.end_turn_button.setIconSize(self.end_turn_button.size() * 0.92)
 
-    def _render_state(self) -> None:
+    def _render_state(self, play_pending=False) -> None:
         if self._handoff_pending:
             return
         game = self.game
@@ -559,8 +559,10 @@ class HotseatView(QWidget):
         inputs = self._inputs_open()
         self.battle_scene.legal_targets = list(self.legal_targets)
         info = {} if state.pending_choice else self.hand_info()
-        self.battle_scene.sync_state(game, self.viewer, info, inputs,
-                                     center_hand=self._review_mulligan)
+        self.battle_scene.sync_state(
+            game, self.viewer, info, inputs, center_hand=self._review_mulligan,
+            pending_entries=state.timeline[self._timeline_seen:] or None,
+            play_pending=play_pending)
         turn_key = (state.turn, state.active)
         if (self._last_turn_key is not None and turn_key != self._last_turn_key
                 and state.phase != "mulligan" and not self._review_mulligan):
