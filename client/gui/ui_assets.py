@@ -69,7 +69,8 @@ def load_gui_settings(path: Path | None = None) -> dict[str, str]:
     path = path or gui_settings_path()
     settings = {
         "own_cardback": DEFAULT_CARDBACK, "enemy_cardback": DEFAULT_CARDBACK,
-        "end_turn_background": "", "opponent_turn_background": "",
+        "end_turn_background": "", "opponent_turn_background": "", "turn_background": "",
+        "end_turn_variant": "golden", "opponent_turn_variant": "golden",
         "defeated_variant": "white", "upgrade_variant": "yellow",
     }
     try:
@@ -111,6 +112,14 @@ def unnamed_misc_images(root: Path | None = None) -> list[str]:
                   if re.fullmatch(r"[0-9a-fA-F]{8}", path.stem))
 
 
+def turn_button_variants(opponent: bool = False, root: Path | None = None) -> list[str]:
+    directory = Path(root) if root is not None else assets_root() / "turn_buttons"
+    prefix = "opponent_turn_button_" if opponent else "end_turn_button_"
+    if not directory.is_dir():
+        return []
+    return sorted(path.stem[len(prefix):] for path in directory.glob(f"{prefix}*.png"))
+
+
 def animation_variants(prefix: str, root: Path | None = None) -> list[str]:
     directory = Path(root) if root is not None else assets_root() / "animations"
     if not directory.is_dir():
@@ -124,8 +133,13 @@ def end_turn_button_pixmap(size: int, opponent: bool = False, *,
     size = max(1, int(size))
     prefix = "opponent_turn_button_" if opponent else "end_turn_button_"
     key = "opponent_turn_background" if opponent else "end_turn_background"
-    selected = load_gui_settings()[key]
-    word = ui_pixmap(f"turn_buttons/{prefix}golden.png", root=root)
+    variant_key = "opponent_turn_variant" if opponent else "end_turn_variant"
+    settings = load_gui_settings()
+    selected = settings["turn_background"] or settings[key]
+    variant = settings[variant_key] or "golden"
+    word = ui_pixmap(f"turn_buttons/{prefix}{variant}.png", root=root)
+    if word.isNull():
+        word = ui_pixmap(f"turn_buttons/{prefix}golden.png", root=root)
     if not re.fullmatch(r"[0-9a-fA-F]{8}", selected):
         return word.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     background = ui_pixmap(f"turn_buttons/{selected}.png", root=root)

@@ -563,7 +563,7 @@ class HotseatView(QWidget):
                                      center_hand=self._review_mulligan)
         turn_key = (state.turn, state.active)
         if (self._last_turn_key is not None and turn_key != self._last_turn_key
-                and state.phase != "mulligan"):
+                and state.phase != "mulligan" and not self._review_mulligan):
             self.battle_scene.show_turn_banner(state.active == self.viewer)
         self._last_turn_key = turn_key
         if self._opening_banner_pending:

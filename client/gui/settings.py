@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QMessageBox,
+    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -15,7 +15,7 @@ from client.gui.loading import LoadingIndicator, LoadingOverlay
 from client.gui.prewarm import MANIFEST_NAME, prewarm_all
 from client.gui.ui_assets import (
     animation_variants, load_gui_settings, named_cardbacks, save_gui_settings,
-    ui_pixmap, unnamed_misc_images,
+    turn_button_variants, ui_pixmap, unnamed_misc_images,
 )
 from client.gui.widgets import ask_confirmation, polish_dialog_buttons
 
@@ -121,30 +121,38 @@ class SettingsView(QWidget):
         title = QLabel("设置")
         title.setObjectName("viewTitle")
         layout.addWidget(title)
-        cardback_form = QFormLayout()
-        names = named_cardbacks()
         settings = load_gui_settings()
         self.cardback_buttons = {}
-        for key, label in (("own_cardback", "己方卡背"), ("enemy_cardback", "敌方卡背")):
-            button = QPushButton(settings[key])
-            button.setObjectName("small")
-            button.clicked.connect(lambda _checked=False, key=key: self.choose_cardback(key))
-            self.cardback_buttons[key] = button
-            cardback_form.addRow(label, button)
         self.option_buttons = {}
-        for key, label in (
-                ("end_turn_background", "回合结束底图"),
-                ("opponent_turn_background", "对手回合底图"),
-                ("defeated_variant", "气绝字样"),
-                ("upgrade_variant", "升级字样")):
-            button = QPushButton(settings[key] or "无")
-            button.setObjectName("small")
-            button.clicked.connect(lambda _checked=False, key=key: self.choose_visual_option(key))
-            self.option_buttons[key] = button
-            cardback_form.addRow(label, button)
-        self.end_turn_background_button = self.option_buttons["end_turn_background"]
-        self.opponent_turn_background_button = self.option_buttons["opponent_turn_background"]
-        layout.addLayout(cardback_form)
+
+        def add_option_row(entries):
+            row = QHBoxLayout()
+            for key, label in entries:
+                button = QPushButton(settings[key] or "无")
+                button.setObjectName("small")
+                button.setMaximumWidth(150)
+                if key in ("own_cardback", "enemy_cardback"):
+                    button.clicked.connect(
+                        lambda _checked=False, key=key: self.choose_cardback(key))
+                    self.cardback_buttons[key] = button
+                else:
+                    button.clicked.connect(
+                        lambda _checked=False, key=key: self.choose_visual_option(key))
+                    self.option_buttons[key] = button
+                row.addWidget(QLabel(label))
+                row.addWidget(button)
+                row.addStretch(1)
+            layout.addLayout(row)
+
+        add_option_row((("own_cardback", "己方卡背"), ("enemy_cardback", "敌方卡背")))
+        add_option_row((("turn_background", "回合按钮底图"),
+                        ("end_turn_variant", "结束回合样式"),
+                        ("opponent_turn_variant", "对手回合样式")))
+        add_option_row((("upgrade_variant", "升级样式"), ("defeated_variant", "气绝样式")))
+        self.end_turn_background_button = self.option_buttons["turn_background"]
+        self.opponent_turn_background_button = self.end_turn_background_button
+        self.option_buttons["end_turn_background"] = self.end_turn_background_button
+        self.option_buttons["opponent_turn_background"] = self.end_turn_background_button
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -166,19 +174,27 @@ class SettingsView(QWidget):
 
     def choose_visual_option(self, key: str) -> None:
         button = self.option_buttons[key]
-        background = key in ("end_turn_background", "opponent_turn_background")
+        background = key in ("turn_background", "end_turn_background", "opponent_turn_background")
+        turn_style = key in ("end_turn_variant", "opponent_turn_variant")
         prefix = key.split("_")[0]
         names = (["无"] + unnamed_misc_images() if background
+                 else turn_button_variants(key == "opponent_turn_variant") if turn_style
                  else animation_variants(prefix))
+        asset_prefix = ("" if background else
+                        "opponent_turn_button_" if key == "opponent_turn_variant" else
+                        "end_turn_button_" if turn_style else prefix + "_")
         dialog = CardbackPreviewDialog(
             names, button.text(), self,
-            asset_dir="turn_buttons" if background else "animations",
-            asset_prefix="" if background else prefix + "_",
+            asset_dir="turn_buttons" if background or turn_style else "animations",
+            asset_prefix=asset_prefix,
             icon_size=QSize(128, 128), button_size=(150, 172),
             title="选择" + {
+                "turn_background": "回合按钮底图",
                 "end_turn_background": "回合结束底图",
                 "opponent_turn_background": "对手回合底图",
-                "defeated_variant": "气绝字样", "upgrade_variant": "升级字样",
+                "end_turn_variant": "结束回合样式",
+                "opponent_turn_variant": "对手回合样式",
+                "defeated_variant": "气绝样式", "upgrade_variant": "升级样式",
             }[key])
         if dialog.exec() == QDialog.Accepted:
             selected = dialog.selected
@@ -188,7 +204,7 @@ class SettingsView(QWidget):
                 self.on_change()
 
     def choose_end_turn_background(self) -> None:
-        self.choose_visual_option("end_turn_background")
+        self.choose_visual_option("turn_background")
 
     def refresh_status(self) -> None:
         path = self.cache_dir / MANIFEST_NAME

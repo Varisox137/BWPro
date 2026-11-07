@@ -8,8 +8,8 @@ from PySide6.QtCore import (
     QVariantAnimation, Signal,
 )
 from PySide6.QtGui import (
-    QBitmap, QBrush, QColor, QFont, QFontDatabase, QImage, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QRegion, QTransform,
+    QBrush, QColor, QFont, QFontDatabase, QImage, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap, QTransform,
 )
 from PySide6.QtWidgets import (
     QApplication, QGraphicsObject, QGraphicsPathItem, QGraphicsPixmapItem,
@@ -285,13 +285,14 @@ class BattleCardItem(QGraphicsObject):
             painter.drawPixmap(icon_rect, icon, QRectF(icon.rect()))
             stat_font = QFont(_stat_font_family(), text_size)
             painter.setFont(stat_font)
+            text_box = box.translated(0, 2)
             for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                 painter.setPen(QColor("#141121"))
-                painter.drawText(box.translated(dx, dy), Qt.AlignCenter, str(value))
+                painter.drawText(text_box.translated(dx, dy), Qt.AlignCenter, str(value))
             painter.setPen(QColor("#fff4e0"))
-            painter.drawText(box, Qt.AlignCenter, str(value))
+            painter.drawText(text_box, Qt.AlignCenter, str(value))
 
-        hp = QRectF(avatar.right() - 52, avatar.bottom() - 30, 52, 38)
+        hp = QRectF(avatar.right() - 40, avatar.bottom() - 30, 52, 38)
         draw_stat(hp, "health", self.health, 34, 16)
         if self.shield:
             shield = QRectF(hp.left(), hp.top() - 31, 52, 32)
@@ -773,15 +774,20 @@ class BattleScene(QGraphicsScene):
             rect = item.sceneBoundingRect()
             if isinstance(item, BattleCardItem) and item.pixmap is not None \
                     and not item.pixmap.isNull():
-                mask = item.pixmap.mask()
-                if not mask.isNull():
-                    mask = mask.scaled(rect.size().toSize(), Qt.IgnoreAspectRatio,
-                                       Qt.SmoothTransformation)
-                    mono = mask.toImage().convertToFormat(QImage.Format_MonoLSB)
-                    bitmap = QBitmap.fromData(mono.size(), mono.bits(), QImage.Format_MonoLSB)
-                    path.addRegion(QRegion(bitmap).translated(rect.topLeft().toPoint()))
-                    continue
-            path.addRect(rect)
+                image = item.pixmap.toImage().scaled(
+                    rect.size().toSize(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+                for y in range(image.height()):
+                    run_start = -1
+                    for x in range(image.width() + 1):
+                        opaque = x < image.width() and image.pixelColor(x, y).alpha() > 0
+                        if opaque and run_start < 0:
+                            run_start = x
+                        elif not opaque and run_start >= 0:
+                            path.addRect(rect.left() + run_start, rect.top() + y,
+                                         x - run_start, 1)
+                            run_start = -1
+                continue
+            path.addRoundedRect(rect, 6, 6)
         path.setFillRule(Qt.OddEvenFill)
         self.focus_overlay.setPath(path)
         self.focus_overlay.show()

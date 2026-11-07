@@ -243,6 +243,18 @@ def test_cardback_preview_dialog_pages_and_selection(qapp):
     dialog.deleteLater()
 
 
+def test_settings_option_rows_are_compact(qapp, db):
+    view = SettingsView(db)
+    view.show()
+    qapp.processEvents()
+    assert view.cardback_buttons["own_cardback"].y() == view.cardback_buttons["enemy_cardback"].y()
+    turn_keys = ("turn_background", "end_turn_variant", "opponent_turn_variant")
+    assert len({view.option_buttons[key].y() for key in turn_keys}) == 1
+    assert view.option_buttons["upgrade_variant"].y() == view.option_buttons["defeated_variant"].y()
+    assert all(button.width() <= 150 for button in view.option_buttons.values())
+    view.close()
+
+
 def test_settings_status_displays_failure_stats(qapp, db, tmp_path):
     view = SettingsView(db)
     view.cache_dir = tmp_path

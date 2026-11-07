@@ -8,3 +8,8 @@ shikigami: 辉夜姬
 version_date: '20200624'
 id: '10030399'
 special_type: 召唤物
+artwork:
+  images:
+  - path: 10030399.png
+    scale: 0.711
+    offset_y: -60

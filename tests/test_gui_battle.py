@@ -1492,6 +1492,18 @@ def test_last_mulligan_reviews_result_before_handoff(qapp, view):
     assert scene_items(view, "hand", player=1)
 
 
+def test_second_player_mulligan_review_has_no_turn_banner(qapp, view, monkeypatch):
+    start(view)
+    view.ready()
+    view.confirm_handoff()
+    view.confirm_handoff()
+    called = []
+    monkeypatch.setattr(view.battle_scene, "show_turn_banner", lambda *_args: called.append(True))
+    view.ready()
+    assert view._handoff_pending
+    assert called == []
+
+
 def test_scene_commands_apply_through_existing_engine(qapp, view):
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
     scene = view.battle_scene
@@ -3314,11 +3326,11 @@ def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeyp
     default_icon = view.end_turn_button.icon().pixmap(104, 104).toImage()
     Preview.selected = unnamed_misc_images()[0]
     settings.choose_end_turn_background()
-    assert load_gui_settings()["end_turn_background"] == Preview.selected
+    assert load_gui_settings()["turn_background"] == Preview.selected
     assert view.end_turn_button.icon().pixmap(104, 104).toImage() != default_icon
     Preview.selected = "无"
     settings.choose_end_turn_background()
-    assert load_gui_settings()["end_turn_background"] == ""
+    assert load_gui_settings()["turn_background"] == ""
     assert view.end_turn_button.icon().pixmap(104, 104).toImage() == default_icon
 
     Preview.selected = unnamed_misc_images()[1]
@@ -3330,6 +3342,12 @@ def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeyp
     Preview.selected = "purple"
     settings.choose_visual_option("upgrade_variant")
     assert load_gui_settings()["upgrade_variant"] == "purple"
+    Preview.selected = "blue"
+    settings.choose_visual_option("end_turn_variant")
+    assert load_gui_settings()["end_turn_variant"] == "blue"
+    Preview.selected = "silver"
+    settings.choose_visual_option("opponent_turn_variant")
+    assert load_gui_settings()["opponent_turn_variant"] == "silver"
 
 
 def test_result_and_turn_banners_use_word_art(qapp, view):

@@ -51,7 +51,8 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
     path = tmp_path / "gui.json"
     assert load_gui_settings(path) == {
         "own_cardback": "月明风清", "enemy_cardback": "月明风清",
-        "end_turn_background": "", "opponent_turn_background": "",
+        "end_turn_background": "", "opponent_turn_background": "", "turn_background": "",
+        "end_turn_variant": "golden", "opponent_turn_variant": "golden",
         "defeated_variant": "white", "upgrade_variant": "yellow",
     }
     save_gui_settings({"own_cardback": "三途花境", "enemy_cardback": "月明风清"}, path)
@@ -73,6 +74,10 @@ def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypa
     save_gui_settings({"end_turn_background": ""}, path)
     assert load_gui_settings(path)["end_turn_background"] == ""
     assert end_turn_button_pixmap(104).toImage() == default.toImage()
+    opponent_default = end_turn_button_pixmap(104, opponent=True)
+    save_gui_settings({"end_turn_variant": "blue", "opponent_turn_variant": "silver"}, path)
+    assert end_turn_button_pixmap(104).toImage() != default.toImage()
+    assert end_turn_button_pixmap(104, opponent=True).toImage() != opponent_default.toImage()
 
 
 def test_turn_word_art_follows_theme(qapp):
