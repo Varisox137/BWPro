@@ -21,5 +21,5 @@ versions:
         - when: on_after_heal
           condition: {target_side: friendly}
           steps:
-            - {op: damage, amount: 1, target: {kind: all, pool: enemy_character}}
+            - {op: damage, amount: 1, parallel: true, target: {kind: all, pool: enemy_character}}
       text: 恢复8点生命。[觉醒]：{当你恢复生命时，对所有敌人造成1点伤害。}

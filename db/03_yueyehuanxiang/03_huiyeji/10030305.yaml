@@ -19,5 +19,5 @@ versions:
         - when: on_turn_end
           condition: {field_intensity_ge: 10}
           steps:
-            - {op: damage, amount: 1, target: {kind: all, pool: enemy_bench}}
+            - {op: damage, amount: 1, parallel: true, target: {kind: all, pool: enemy_bench}}
       text: "每个回合结束时，[投射]：{造成2点伤害}。若此牌耐久≥10，再对敌方准备区式神各造成1点伤害。"

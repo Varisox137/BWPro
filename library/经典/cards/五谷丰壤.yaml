@@ -2,7 +2,7 @@ type: 形态
 name: 五谷丰壤
 level: 1
 rarity: R
-description: 己方回合开始时，双方牌手[[运势4]]：恢复3#sm。
+description: 己方回合开始时，双方牌手[[运势4]]：恢复3点#sm。
 shikigami: 座敷童子
 power: 2
 health: 7

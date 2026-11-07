@@ -52,8 +52,8 @@ def test_combo_kill_revive_second_strike_original(db, make_game, monkeypatch):
     orig = type(g).check_defeated
     revived = {"done": False}
 
-    def revive_after_defeat(self, ref, source=None, reason=None):
-        orig(self, ref, source=source, reason=reason)
+    def revive_after_defeat(self, ref, source=None, reason=None, visual_group=None):
+        orig(self, ref, source=source, reason=reason, visual_group=visual_group)
         if ref.player == 1 and ref.shikigami == 0 and b.defeated and not revived["done"]:
             revived["done"] = True
             g._revive(g.state.players[1], 1, 0)  # 气绝后复活（桃花妖类通道）

@@ -2,9 +2,7 @@ type: 法术
 name: 魔音扰心
 level: 2
 rarity: SR
-description: '敌方牌手本回合使用的下一张牌不会生效。
-
-  [[响应]]：当敌方牌手将使用牌时，自动使用此牌。'
+description: 敌方牌手本回合使用的下一张牌不会生效。[[响应]]：当敌方牌手将使用牌时，自动使用此牌。
 shikigami: 妖琴师
 version_date: '20191212'
 id: '10012404'

@@ -2,9 +2,7 @@ type: 法术
 name: 贪食鬼
 level: 2
 rarity: R
-description: '对敌方战斗区式神造成3点伤害，你恢复3点生命。
-
-  [[爆能X]]：额外造成X点伤害，X为全部#nl。'
+description: 对敌方战斗区式神造成3点伤害，你恢复3点#sm。[[爆能X]]：额外造成X点伤害，X为全部#nl。
 shikigami: 烟烟罗
 version_date: '20200327'
 id: '10020405'

@@ -2,9 +2,7 @@ type: 战斗
 name: 天翔鹤斩
 level: 2
 rarity: SSR
-description: '[[贯通]]。免疫战斗伤害。
-
-  本次战斗改为攻击一个敌方准备区式神。'
+description: '[[贯通]]。免疫战斗伤害。本次战斗改为攻击一个敌方准备区式神。'
 shikigami: 姑获鸟
 power+: 3
 shield+: 0

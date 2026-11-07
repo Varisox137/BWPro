@@ -2,9 +2,7 @@ type: 法术
 name: 觉醒·神乐歌
 level: 2
 rarity: R
-description: '[[觉醒]]：[[倒计时3]]：己方其他式神[[倒计时]]-1并获得1#ll与1#sm。
-
-  当你使用妖琴师的觉醒法术牌时，使妖琴师的[[倒计时]]-3。'
+description: 使妖琴师的倒计时-3。[[觉醒]]：[[倒计时3]]：己方其他式神倒计时-1并获得1#ll与1#sm。
 shikigami: 妖琴师
 version_date: '20191212'
 evolve: true

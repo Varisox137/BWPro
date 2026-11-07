@@ -27,6 +27,8 @@
 
 素材同步复制 BWPDIY `assets/` 的全部文件，同时保留本项目新增素材与旧兼容路径；PSD、`ref/`、`psd_export/` 仅作源文件与视觉参考，运行时仍由渲染器消费标准资源目录。对局 UI 字样、按钮、卡背与骰子由 `client/gui/ui_assets.py` 直接读取项目资源根下的 `animations/`、`turn_buttons/`、`cardbacks/`、`dice/`，带文件时间戳的内存缓存，不进入卡图 manifest；1–6 点读取预合成的完整骰面，统一保留 6 点模板的透明边距与浅色圆角框，卡背按 alpha 裁紧。大卡、小卡、头像与机制框统一经 `load_global_layouts()` 读取 `~/.bwpdiy/layout.json`，缺失时由 BWPDIY 回退包内默认布局；布局缓存指纹跟踪全局文件内容。卡图资源指纹包含 `badges/` 与 `numbers/`，其内容更新会使缓存失效。渲染 Python 包与素材分离定位：资源根包含 `bwpdiy/render` 时直接使用，否则由 `bwpdiy_code_root()` 复用同级 BWPDIY 源码；卡图缓存的源码指纹也使用该代码根，不要求素材与源码同目录。
 
+卡图描述更新后运行 `PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m scripts.sync_library_text`；同步按卡名与 `version_date` 读取引擎历史文本（同名实体再按 id 消歧），仅改写 `description`，`--check` 只检查差异。
+
 editable 安装只解决 Python 导入，不能替代资源根定位。需要改用另一份素材或配置时可显式设置：
 
 ```bash

@@ -2,7 +2,7 @@ type: 幻境
 name: 佛前石钵
 level: 2
 rarity: R
-description: 己方回合结束时若你战斗区没有式神，召唤一个‘[[石钵]]’。若此牌#nj≥10，便使其获得4#ll。
+description: 己方回合结束时若你战斗区没有式神，召唤一个「[[石钵]]」。若此牌#nj≥10，便使其获得4#ll。
 shikigami: 辉夜姬
 durability: 5
 version_date: '20200624'

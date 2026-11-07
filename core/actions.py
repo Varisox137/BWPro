@@ -148,8 +148,9 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
             for ref in targets:
                 amt = amount if static else _target_amount(game, amount, ref)
                 if ref.shikigami is None:
-                    total += game.deal_to_player(ref.player, amt, ctx.source, spell=spell,
-                                                 card=ctx.card)
+                    events.append(_DamageEvent(source=ctx.source, victim=ref, amount=amt,
+                                               kind="effect", piercing=pierce, spell=spell,
+                                               card=ctx.card))
                     continue
                 s = game.state.players[ref.player].shikigami[ref.shikigami]
                 if s.defeated:
@@ -164,6 +165,9 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
                                            kind="effect", piercing=pierce, spell=spell,
                                            card=ctx.card))
             if events:
+                # 并行波次先处理式神、再处理牌手，避免牌手受伤先扣幻境耐久而
+                # 抢掉同波式神伤害的代受条件（竹取物语×月坠）。
+                events.sort(key=lambda ev: ev.victim.shikigami is None)
                 total += game._run_damage_queue(events)
         else:
             for _pass in range(1 + int(repeat_on_kill)):  # 首波 + 至多 repeat_on_kill 次重复
@@ -384,6 +388,7 @@ def buff_power(game, ctx, *, targets: list[Ref], amount: int | dict = 0, perm: b
             game._record_max_power(s)
             game._settle(f"【力量】{game.db.shikigami[s.id].name} "
                          f"{'永久' if perm else '临时'}力量 {amt:+d}（现 {s.eff_power}）")
+            game._visual_stat(ref)
 
 
 @action("buff_health")
@@ -425,6 +430,7 @@ def buff_health(game, ctx, *, targets: list[Ref], amount: int, perm: bool = Fals
             game._settle(f"【生命】{game.db.shikigami[s.id].name} "
                          f"{'永久' if perm else '临时'}生命上限 {amount:+d}"
                          f"（现 {s.health}/{s.max_health}）")
+            game._visual_stat(ref)
 
 
 @action("gain_shield")
@@ -567,6 +573,8 @@ def attack_buff(game, ctx, *, targets: list[Ref], power: int = 0,
             entry["keywords"].append((kw, cls))
         s.attack_buffs.append(entry)
         game._log(f"{game.db.shikigami[s.id].name} 获得强化（直到其下一次攻击后）")
+        if power:
+            game._visual_stat(ref)
 
 
 @action("keep_shield")
@@ -2782,6 +2790,7 @@ def reapply_attack_buff_power(game, ctx, *, targets: list[Ref]) -> None:
             game._record_max_power(s)
             s.attack_buffs.append({"power": total, "keywords": []})
             game._log(f"{game.db.shikigami[s.id].name} 再次获得法术强化的 {total} 力量加成")
+            game._visual_stat(ref)
 
 
 @action("trigger_form_enter")
@@ -3910,6 +3919,7 @@ def countdown_power_boost(game, ctx, *, targets: list[Ref], countdown: int = -1,
             game._record_max_power(s)
             game._settle(f"【力量】{name} {'永久' if perm else '临时'}力量 "
                          f"{int(power):+d}（现 {s.eff_power}）")
+            game._visual_stat(ref)
 
 
 @action("random_play_form")
@@ -4159,6 +4169,7 @@ def reset_stats(game, ctx, *, targets: list[Ref]) -> None:
         s.health = s.max_health
         game._settle(f"【重置】{game.db.shikigami[s.id].name} 力量/生命变为基础值"
                      f"（{s.eff_power}/{s.health}），护甲与破甲清除")
+        game._visual_stat(ref)
 
 
 @action("energy_assault")

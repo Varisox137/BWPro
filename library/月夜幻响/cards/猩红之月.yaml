@@ -2,9 +2,7 @@ type: 形态
 name: 猩红之月
 level: 3
 rarity: SSR
-description: '[[吸血]]
-
-  你的法术牌获得[[吸血]]。'
+description: '[[吸血]]。你的法术牌获得[[吸血]]。'
 shikigami: 吸血姬
 power: 5
 health: 8

@@ -2,9 +2,7 @@ type: 法术
 name: 会
 level: 2
 rarity: R
-description: '选择一个敌方式神。你的下个回合开始时，对该式神造成8点伤害。
-
-  （所选目标仅己方可见）'
+description: 选择一个敌方式神。你的下个回合开始时，对该式神造成8点伤害。（所选目标仅己方可见）
 shikigami: 白狼
 version_date: '20191212'
 id: '10010106'

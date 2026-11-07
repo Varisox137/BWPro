@@ -2,9 +2,7 @@ type: 法术
 name: 森之佑
 level: 1
 rarity: SR
-description: '使一个己方式神获得1#ll、1#sm和1#hj。
-
-  [[爆能2]]：目标改为所有己方式神。'
+description: 使一个己方式神获得1#ll、1#sm和1#hj。[[爆能2]]：目标改为所有己方式神。
 shikigami: 小鹿男
 version_date: '20200327'
 id: '10020302'

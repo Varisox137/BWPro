@@ -2,7 +2,7 @@ type: 战斗
 name: 金风流羽
 level: 2
 rarity: R
-description: 本回合若使用过‘[[黄金羽]]’，此牌不消耗鬼火。
+description: 本回合若使用过「[[黄金羽]]」，此牌不消耗鬼火。
 shikigami: 以津真天
 power+: 0
 shield+: 0

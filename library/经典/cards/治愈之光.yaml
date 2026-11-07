@@ -2,7 +2,7 @@ type: 形态
 name: 治愈之光
 level: 1
 rarity: R
-description: 进场和己方回合开始时，为所有己方式神恢复2#sm。
+description: 进场和己方回合开始时，为所有己方式神恢复2点#sm。
 shikigami: 萤草
 power: 2
 health: 5

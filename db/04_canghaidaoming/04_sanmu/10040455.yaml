@@ -13,5 +13,5 @@ versions:
       # 与所在区域无关）
       effects:
         steps:
-          - {op: damage, amount: 3, target: {kind: all, pool: enemy_character}}
+          - {op: damage, amount: 3, parallel: true, target: {kind: all, pool: enemy_character}}
       text: "[条件]：{己方还需造成了25点非战斗伤害}（在牌库也有效）。对所有敌方角色造成3点伤害。"

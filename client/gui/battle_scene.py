@@ -1071,9 +1071,22 @@ class BattleScene(QGraphicsScene):
         kind = event.get("v")
         if kind == "stat":
             player = int(event.get("p", self.viewer))
-            index = int(event.get("s", 0))
-            target = self.cards.get(("shiki", player, index)
-                                    if index is not None else ("player", player))
+            index = event.get("s")
+            snapshot = event.get("r") or {}
+            if index is None:
+                target = self.cards.get(("player", player))
+                if target is not None:
+                    current = self.game.state.players[player]
+                    target.health = snapshot.get("health", current.health)
+                    target.max_health = snapshot.get("max_health", current.max_health)
+                    target.shield = snapshot.get("shield", current.shield)
+                    target.health_color = (
+                        "red" if target.health < target.max_health
+                        else "green" if target.max_health > 30 else "white")
+                    target.update()
+            else:
+                target = self.cards.get(("shiki", player, index))
+                self._refresh_defeated_entity(player, index, snapshot=event.get("r"))
             item = BattleVisualItem()
             item.setProperty("assetName", kind)
             if target is not None:
@@ -1126,7 +1139,11 @@ class BattleScene(QGraphicsScene):
                 positions = layout_positions(
                     self.game, self.viewer, center_hand=self.center_hand,
                     scene_width=self.layout_width)
-                self._animate_position(item, positions[("shiki", player, index)])
+                target = positions[("shiki", player, index)]
+                if event.get("zone") == "combat":
+                    target = QPointF((self.layout_width - SHIKI_SIZE.width()) / 2,
+                                     220 if player != self.viewer else 460)
+                self._animate_position(item, target)
             return
         if kind == "_move":
             self._start_move_event(event)
@@ -1227,7 +1244,8 @@ class BattleScene(QGraphicsScene):
         self._start_queued_visuals()
         self._refresh_all_art()
 
-    def _refresh_defeated_entity(self, player: int, index: int) -> None:
+    def _refresh_defeated_entity(self, player: int, index: int,
+                                 snapshot: dict | None = None) -> None:
         item = self.cards.get(("shiki", player, index))
         if item is None or self.game is None:
             return
@@ -1235,7 +1253,8 @@ class BattleScene(QGraphicsScene):
         form = self.db.cards[shiki.form.id] if shiki.form is not None else None
         item.set_art(entity_pixmap(
             shiki, self.db, seat=index, form=form, cache_context={}, height=210,
-            show_defeated_countdown=not self.defeat_countdown_hidden(player, index)))
+            show_defeated_countdown=not self.defeat_countdown_hidden(player, index),
+            snapshot=snapshot))
         item.update()
 
     def _refresh_all_art(self) -> None:

@@ -2,7 +2,7 @@ type: 战斗
 name: 血香
 level: 2
 rarity: SR
-description: '[[增强]]：若你#sm为30，此牌获得免疫战斗伤害。'
+description: '[[增强]]：若你#sm值为30，此牌获得免疫战斗伤害。'
 shikigami: 吸血姬
 power+: 2
 shield+: 1

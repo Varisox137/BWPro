@@ -2,9 +2,7 @@ type: 法术
 name: 闪烁
 level: 2
 rarity: R
-description: '敌方战斗区的式神本回合#ll变为0。
-
-  [[响应]]：当敌方式神进入战斗区时，对其自动使用该牌。'
+description: 敌方战斗区的式神本回合#ll变为0。[[响应]]：当敌方式神进入战斗区时，对其自动使用该牌。
 shikigami: 萤草
 version_date: '20191212'
 id: '10012705'

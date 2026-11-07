@@ -2,9 +2,7 @@ type: 战斗
 name: 二太郎之戟
 level: 2
 rarity: R
-description: '对敌方角色造成伤害后，使其获得2#pj。
-
-  [[爆能4]]：额外使用‘[[三太郎之斧]]’。'
+description: 对敌方角色造成伤害后，使其获得2点#pj。[[爆能4]]：额外使用「[[三太郎之斧]]」。
 shikigami: 镰鼬
 power+: 0
 shield+: 1

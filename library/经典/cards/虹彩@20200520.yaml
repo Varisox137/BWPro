@@ -2,9 +2,7 @@ type: 法术
 name: 虹彩
 level: 3
 rarity: SSR
-description: '[[瞬发]]
-
-  将萤草的三种形态牌置入手牌。'
+description: '[[瞬发]]。将萤草的三种形态牌置入手牌。'
 shikigami: 萤草
 version_date: '20200520'
 id: '10012707'

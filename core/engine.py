@@ -219,11 +219,8 @@ class Game:
         # 的条目不在战斗开始求值，挂账到"确定战斗目标后"（（被）攻击时响应结算完）按
         # 实际交战另一方判定；battle id → ([(kw, cond)], [(nested, cond, kind)])
         self._battle_cond_pending: dict[int, tuple[list, list]] = {}
-        # battle id → [(式神 Ref, 战力)]：响应战斗牌插入使用授予的战力，终止点核销
-        # （rules.md 第二章响应备注"该牌的力量与能力加成会持续到该次（被插入的）战斗后"）
-        self._battle_power: dict[int, list[tuple[Ref, int]]] = {}
-        # battle id → [(式神 Ref, 临时力量增减)]：buff_power scope="battle" 的"直到本次
-        # 战斗后"一次性增减（和气满满减益，全卡盘点(12)），终止点核销
+        # battle id → [(式神 Ref, 临时力量增减)]：战斗牌力量与 buff_power scope="battle"
+        # 的"直到本次战斗后"一次性增减，终止点核销
         self._battle_temp_power: dict[int, list[tuple[Ref, int]]] = {}
         self._op_param_cache: dict[str, frozenset] = {}  # op 函数签名缓存（Step.condition 分派用）
         # 出牌效果伤害记录栈：结算打出/响应/自动使用的效果块期间压栈一条记录，
@@ -270,6 +267,9 @@ class Game:
         # 伤害转移类能力（redirect_damage_to_self）在伤害批次内生成的新事件挂起列表：
         # op 在 emit 上下文中执行（访问不到伤害队列），由 _run_damage_queue 统一入队
         self._redirect_spawned: list[_DamageEvent] = []
+        # 伤害队列中的护甲/破甲刷新暂存：(本批事件列表, 并行组)。统一插到伤害数字前，
+        # 避免多目标伤害被逐目标护甲刷新拆成顺序动画；嵌套伤害按栈隔离。
+        self._damage_shield_visuals: list[tuple[list[dict], str | int | None]] = []
         # 结算单元栈（定案"延时界=引起该次减少的结算单元"）：每个 _resolve_block 压栈
         # 一个唯一 id；emit 的延时 pend 记栈顶 id（horizon），倒计时归零块完成后按
         # 单元 drain（_drain_horizon）；栈空=非块上下文（horizon=0，由外层统一结算）
@@ -2569,19 +2569,21 @@ class Game:
 
     def _apply_combat_stats(self, ref: Ref, s: ShikigamiState, power: int, shield: int,
                             *, battle_scoped: bool) -> None:
-        """战斗牌战力/一次性护甲结算（主动使用与响应插入使用共用）。
+        """战斗牌临时力量/一次性护甲结算（主动使用与响应插入使用共用）。
 
-        战力：主动使用经 s.combat_power（战斗后由调用方清零）；响应插入使用挂账
-        _battle_power（battle_scoped=True），持续到被插入的该次战斗后由终止点核销。
-        护甲/破甲保留，并按即时时机发出 on_shield_changed 事件。
+        力量进入 temp_power，在本次战斗终止点经 _battle_temp_power 核销；不写入
+        combat_power，因此小卡使用主力量大图标。护甲/破甲保留并照常发出变化事件。
         """
         if power:
-            s.combat_power += power
-            self._settle(f"【战力】{self.db.shikigami[s.id].name} 战力 +{power}（本次战斗）")
+            s.temp_power += power
+            self._record_max_power(s)
+            self._settle(f"【力量】{self.db.shikigami[s.id].name} 临时力量 {power:+d}"
+                         f"（本次战斗，现 {s.eff_power}）")
             if battle_scoped and self._battle_stack:
-                self._battle_power.setdefault(self._battle_stack[-1], []).append((ref, power))
+                self._battle_temp_power.setdefault(
+                    self._battle_stack[-1], []).append((ref, power))
         if shield:
-            self._change_shield(ref, shield, "combat_card")
+            self._change_shield(ref, shield, "combat_card", visual=False)
 
     def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
                              cdef: CardDef, method: PlayMethod | None,
@@ -2619,8 +2621,7 @@ class Game:
         atk_ref = Ref(player=self.state.players.index(p), shikigami=si)
         if not defeated_entry:
             self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
-            self.state.timeline.append({"k": "v", "v": "stat", "p": atk_ref.player,
-                                        "s": atk_ref.shikigami})
+            self._visual_stat(atk_ref)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
         # 均绑定本次战斗上下文，终止点移除（rules.md 第十三章战斗牌分支"直到本次战斗结束后"）；
         # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
@@ -2649,8 +2650,7 @@ class Game:
                     return
                 # 复活后：战力/护甲按正常战斗牌补齐，随后正常发起战斗（定案(14)）
                 self._apply_combat_stats(atk_ref, s, power, shield, battle_scoped=False)
-                self.state.timeline.append({"k": "v", "v": "stat", "p": atk_ref.player,
-                                            "s": atk_ref.shikigami})
+                self._visual_stat(atk_ref)
             # 战斗牌消耗鼓舞（boost_on_combat_card 旗标，觉醒·不知火类）：正常战斗牌不消耗；
             # 响应方式使用不消耗（不夜之舞"非响应方式使用战斗牌时"口径，全卡盘点）
             if not from_response and any(
@@ -2666,12 +2666,15 @@ class Game:
                              f"灵咒【{rep_inv}】")
                 self.attach_invocation(rep_inv, player=self.state.players.index(p),
                                        source=atk_ref, target=atk_ref)
+                s.temp_power -= power
                 s.combat_power = 0
+                self._visual_stat(atk_ref)
                 return
             self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                                  temp_grants=tuple(cdef.temp_grants), convert=convert,
                                  counter_piercing=counter_piercing, double_fragile=double_fragile,
-                                 target=hunt_target, origin="card", strikes=strikes)
+                                 target=hunt_target, origin="card", strikes=strikes,
+                                 card_power=power)
             s.combat_power = 0
 
         # 其它效果步（千羽风之舞的"生成金风流羽"为首个）：战力/护甲与上述专用提取步
@@ -2703,8 +2706,8 @@ class Game:
         """响应战斗牌的插入使用（rules.md 第二章响应备注）：在"（被）攻击时"触发时——
 
         - 不发起新战斗：所属式神改为移入战斗区（无论是否具有远程）；
-        - 牌的力量（战力）/护甲/关键字/战斗伤害免疫/一次性临时触发绑定当前（被插入的）战斗，
-          力量与能力加成持续到该次战斗后（战力经 _battle_power 终止点核销，
+        - 牌的临时力量/护甲/关键字/战斗伤害免疫/一次性临时触发绑定当前（被插入的）战斗，
+          力量与能力加成持续到该次战斗后（力量经 _battle_temp_power 终止点核销，
           关键字/免疫经 _battle_grants / immunities 的战斗作用域清理）；
         - 牌入墓地。调用方已支付费用并 emit on_trigger。
         """
@@ -3088,8 +3091,39 @@ class Game:
                     return s.form
         return None
 
+    def _stat_event(self, ref: Ref, group=None) -> dict:
+        """生成带结算时点快照的数值重绘事件，避免动画读取后续结算的最终状态。"""
+        p = self.state.players[ref.player]
+        if ref.shikigami is None:
+            snapshot = {"health": p.health, "max_health": p.max_health,
+                        "shield": p.shield}
+        else:
+            s = p.shikigami[ref.shikigami]
+            definition = self.db.shikigami[s.id]
+            form = self.db.cards[s.form.id] if s.form is not None else None
+            base_power = (form.form_power if form is not None and form.form_power is not None
+                          else definition.power) + s.perm_power
+            base_health = (form.form_health if form is not None and form.form_health is not None
+                           else definition.health) + s.perm_health
+            snapshot = {
+                "power": (max(0, base_power) if s.defeated else
+                          s.eff_power if s.ext.get("power_zero")
+                          else s.eff_power - s.combat_power),
+                "health": max(0, base_health) if s.defeated else s.health,
+                "max_health": base_health if s.defeated else s.max_health,
+                "shield": s.shield, "combat_power": 0 if s.defeated else s.combat_power,
+                "base_power": base_power, "base_health": base_health,
+                "defeated": s.defeated,
+            }
+        return {"k": "v", "v": "stat", "p": ref.player, "s": ref.shikigami,
+                "g": group, "r": snapshot}
+
+    def _visual_stat(self, ref: Ref, group=None) -> None:
+        """记录一次小卡/牌手数值重绘；group 仅用于同批并行效果的刷新阶段。"""
+        self.state.timeline.append(self._stat_event(ref, group))
+
     def _change_shield(self, ref: Ref, delta: int, reason: str, kind: str = "shield",
-                       source: Ref | None = None) -> None:
+                       source: Ref | None = None, visual: bool = True) -> None:
         """目标（式神或牌手）护甲/破甲变化（docs/rules.md 第六章），并发出 on_shield_changed。
 
         shield 为有符号字段（>0 护甲 / <0 破甲）；delta 以 kind 方向的正数计量
@@ -3161,6 +3195,13 @@ class Game:
                      f"（{old}→{new}，{reason}）")
         self.emit("on_shield_changed", target=ref, old=old, new=new, reason=reason, kind=kind,
                   amount=delta, gained=delta > 0)
+        if visual:
+            if self._damage_shield_visuals:
+                visuals, group = self._damage_shield_visuals[-1]
+                visuals.append(self._stat_event(
+                    ref, f"{group}:shield" if group is not None else None))
+            else:
+                self._visual_stat(ref)
 
     # ---------- 出击 / 移动 ----------
 
@@ -3175,7 +3216,8 @@ class Game:
                         target: Ref | None = None,
                         origin: str = "effect",
                         strikes: int = 1,
-                        ignore_veil: bool = False) -> None:
+                        ignore_veil: bool = False,
+                        card_power: int = 0) -> None:
         """通用战斗流程（docs/rules.md 第四章）。复用于出击指令与战斗牌。
 
         战斗上下文：压栈新 battle id。grant_keywords 为战斗牌等授予攻击者的关键字实例
@@ -3210,7 +3252,8 @@ class Game:
         self._settle(f"—— 战斗开始：{self.db.shikigami[attacker.id].name} ——")
         grants: list[tuple[Ref, str, str]] = []
         self._battle_grants[bid] = grants
-        self._battle_power[bid] = []  # 响应战斗牌插入使用授予的战力（终止点核销）
+        if card_power:
+            self._battle_temp_power.setdefault(bid, []).append((atk_ref, card_power))
         self._battle_followups[bid] = []  # 战斗结束后的追加攻击登记（战斗结束后结算）
         if strikes > 1:
             self._battle_strikes[bid] = strikes  # 多段攻击登记（交战阶段后追加段数读取）
@@ -3258,6 +3301,7 @@ class Game:
                 # uses 扩展键（缺省 1）：战斗内可多次触发（胧月雪华斩"造成伤害时"）
                 uses=int((block.model_extra or {}).get("uses", 1)),
                 seq=self.state.next_ability_seq()))
+        refresh_attacker = bool(card_power or attacker.combat_power or attacker.attack_buffs)
         try:
             completed = self._battle_flow(atk_ref, attacker, move=move, target=target,
                                           origin=origin, ignore_veil=ignore_veil)
@@ -3268,11 +3312,7 @@ class Game:
                 self._remove_keyword(st, kw, cls)
             self._battle_grants.pop(bid, None)
             self._battle_cond_pending.pop(bid, None)  # 条件授予/免疫延后挂账随战斗终止清理
-            # 响应战斗牌插入使用授予的战力核销（持续到该次战斗后）
-            for ref, pw in self._battle_power.pop(bid, []):
-                st = self.state.players[ref.player].shikigami[ref.shikigami]
-                st.combat_power -= pw
-            # buff_power scope="battle" 的临时力量增减核销（"直到本次战斗后"）
+            # 战斗牌与 buff_power scope="battle" 的临时力量增减核销（直到本次战斗后）
             for ref, pw in self._battle_temp_power.pop(bid, []):
                 st = self.state.players[ref.player].shikigami[ref.shikigami]
                 st.temp_power -= pw
@@ -3303,6 +3343,8 @@ class Game:
         # 再依次结算本战斗登记的追加攻击（战斗绑定的力量/关键字/临时触发已在上方
         # 终止点核销，追加战斗不享受原战斗牌加成——答复(7)）
         attacker.combat_power = 0  # 本次战斗战力于战斗结束时清除（追加攻击不继承）
+        if refresh_attacker:
+            self._visual_stat(atk_ref)
         if completed:
             # 战斗结束后（裁决(10)，麓鸣·轰/影杀延时打击层）：战斗被取消或过早终止
             # （攻击者气绝/鸦羽疾走/攻击替换）则 _battle_flow 返回 falsy，不发事件；
@@ -3750,6 +3792,8 @@ class Game:
             s.attack_buffs.append(entry)
         if shield:
             self._change_shield(atk_ref, shield, "basic_boost")
+        elif power:
+            self._visual_stat(atk_ref)
         suffix = f"，关键字 {bkw}" if bkw else ""
         self._log(f"{self.db.shikigami[s.id].name} 获得出击加成（+{power}力量/+{shield}护甲{suffix}）")
         # 不消耗鼓舞（boost_no_consume 旗标，觉醒·不知火类）：出击加成保留，下次出击仍生效
@@ -4744,24 +4788,35 @@ class Game:
         子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者出现再拆。
         """
         visual_group = id(events) if len(events) > 1 else None
+        stat_group = f"{visual_group}:stat" if visual_group is not None else None
+        visual_stats: list[dict] = []
         for event in events:
             event.visual_group = visual_group
         dq: deque[_DamageEvent] = deque(events)
         victims: list[tuple[Ref, Ref | None, str]] = []  # (受伤式神, 来源, 气绝原因) 按受伤顺序
         total_dealt = 0  # 本队列实际造成的伤害合计（巨浪"每造成 1 点伤害"统计口径）
         self._settle("—— 伤害结算开始 ——")
-        while dq:
-            ev = dq.popleft()
-            self._damage_event_flow(ev, dq, victims)
-            if self._redirect_spawned:
-                # 转移类能力（redirect_damage_to_self）在 on_after_shield 批次生成的
-                # 新事件：原事件已终止（amount 归零），新事件插入队列最前优先结算
-                for new_ev in reversed(self._redirect_spawned):
-                    dq.appendleft(new_ev)
-                self._redirect_spawned.clear()
-            total_dealt += ev.dealt
-            if self.state.winner is not None:
-                return total_dealt
+        visual_start = len(self.state.timeline)
+        shield_stats: list[dict] = []
+        self._damage_shield_visuals.append((shield_stats, visual_group))
+        try:
+            while dq:
+                ev = dq.popleft()
+                self._damage_event_flow(ev, dq, victims, visual_stats)
+                if self._redirect_spawned:
+                    # 转移类能力（redirect_damage_to_self）在 on_after_shield 批次生成的
+                    # 新事件：原事件已终止（amount 归零），新事件插入队列最前优先结算
+                    for new_ev in reversed(self._redirect_spawned):
+                        dq.appendleft(new_ev)
+                    self._redirect_spawned.clear()
+                total_dealt += ev.dealt
+                if self.state.winner is not None:
+                    return total_dealt
+        finally:
+            self._damage_shield_visuals.pop()
+            self.state.timeline[visual_start:visual_start] = shield_stats
+        # 全部伤害数字结束后，再并行刷新本波各目标的小卡/牌手数值。
+        self.state.timeline.extend(visual_stats)
         for ref, source, reason in victims:
             if defer_defeats is not None:
                 defer_defeats.append((ref, source, reason))
@@ -4770,7 +4825,8 @@ class Game:
                 # 队列排水后统一生成——插入效果（移动/牌手伤害）触发的延时能力先结算
                 self._deferred_defeats.append((ref, source, reason))
             else:
-                self.check_defeated(ref, source=source, reason=reason)
+                self.check_defeated(ref, source=source, reason=reason,
+                                    visual_group=visual_group)
         self._settle("—— 伤害结算结束 ——")
         return total_dealt
 
@@ -4829,7 +4885,8 @@ class Game:
             redirect_chain=ev.redirect_chain | {uid}, card=ev.card))
 
     def _damage_event_flow(self, ev: _DamageEvent, dq: deque[_DamageEvent],
-                           victims: list[tuple[Ref, Ref | None, str]]) -> None:
+                           victims: list[tuple[Ref, Ref | None, str]],
+                           visual_stats: list[dict]) -> None:
         p = self.state.players[ev.victim.player]
         s = p.shikigami[ev.victim.shikigami] if ev.victim.shikigami is not None else None
         if ev.amount <= 0:
@@ -5113,6 +5170,8 @@ class Game:
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
                                         "s": ev.victim.shikigami, "amount": ev.amount,
                                         "g": ev.visual_group})
+            visual_stats.append(self._stat_event(
+                ev.victim, f"{ev.visual_group}:stat" if ev.visual_group is not None else None))
             # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
             if s.health <= 0:
                 s.dying = True  # 先标记濒死，再按 victims 延时生成气绝事件（濒死定义见 docs/rules.md）
@@ -5161,6 +5220,8 @@ class Game:
                          f"（生命 {old_health}→{p.health}）")
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
                                         "s": None, "amount": ev.amount, "g": ev.visual_group})
+            visual_stats.append(self._stat_event(
+                ev.victim, f"{ev.visual_group}:stat" if ev.visual_group is not None else None))
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）
             self._field_intensity_loss(ev.victim.player, ev.amount, ev.source)
             self._queue_lifesteal(ev)  # 吸血对牌手伤害同样生效
@@ -5346,7 +5407,8 @@ class Game:
         if s.kind != "summon":
             self._quest_tick(1 - ref.player, "enemy_defeat", shareable=False)
 
-    def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None) -> None:
+    def check_defeated(self, ref: Ref, source: Ref | None = None, reason: str | None = None,
+                       visual_group=None) -> None:
         """生成并结算式神气绝事件（要素：来源、气绝者、原因）。
 
         时机分层（裁决(9)，docs/rules.md 第七章）：气绝前/消灭前1（即时
@@ -5482,11 +5544,15 @@ class Game:
             # （to_coffin keep_combat 消费：棺封对战斗区式神 = 棺材进其战斗区；
             # 气绝替换路径不读——棺材落准备区）
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
+            defeat_group = f"{visual_group}:defeat" if visual_group is not None else None
+            return_group = f"{visual_group}:return" if visual_group is not None else None
             self.state.timeline.append(
-                {"k": "v", "v": "defeated", "p": ref.player, "s": ref.shikigami})
+                {"k": "v", "v": "defeated", "p": ref.player, "s": ref.shikigami,
+                 "g": defeat_group})
             if in_combat and not defeat_revive_stay:
                 self.state.timeline.append({"k": "v", "v": "move",
-                                            "p": ref.player, "s": ref.shikigami, "zone": "ready"})
+                                            "p": ref.player, "s": ref.shikigami, "zone": "ready",
+                                            "g": return_group})
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
         # 击杀账本与委托计数（含牌手级 inv_bonus_on_kill 结算；棺材被击破路径共用）
         self._account_kill(source, ref, s)
@@ -5755,6 +5821,9 @@ class Game:
         并行中途转化（法界唯心在治疗前把治疗量置 0 + 入队延时伤害）：被转化的
         事件不再产出治疗，其衍生伤害事件经延时队列**依次**结算（不再并行）。
         单目标 heal() 委托本通道（行为与逐项直调一致）。"""
+        visual_group = id(items) if len(items) > 1 else None
+        stat_group = f"{visual_group}:stat" if visual_group is not None else None
+        visual_stats: list[dict] = []
         pending: list[tuple[Ref, int, Ref | None, str]] = []
         for ref, amount, source, reason in items:
             p = self.state.players[ref.player]
@@ -5782,8 +5851,9 @@ class Game:
                 # 不写 _log 孪生行：归 settle 通道，避免双通道重复
                 self.state.timeline.append({
                     "k": "v", "v": "heal", "p": ref.player, "s": ref.shikigami,
-                    "amount": healed, "g": id(items) if len(items) > 1 else None,
+                    "amount": healed, "g": visual_group,
                 })
+                visual_stats.append(self._stat_event(ref, stat_group))
             if healed <= 0:
                 # 实际恢复为 0 也明示一行（治疗时时机仍触发；海坊主过量治疗转化可读）
                 self._settle(f"【治疗】{self.db.shikigami[s.id].name if s is not None else p.name} "
@@ -5796,6 +5866,8 @@ class Game:
                       source=source, reason=reason)
             self.emit("on_after_heal", target=ref, amount=healed, overheal=overheal,
                       source=source, reason=reason)
+        # 与并行伤害一致：数字动画全部完成后，再并行刷新各目标数值。
+        self.state.timeline.extend(visual_stats)
 
     def _queue_heal_reversal_damage(self, ref: Ref, amount: int, source: Ref | None) -> None:
         """法界唯心（裁决(10)）：on_before_heal 处治疗量被改 0 后，按原治疗量入队一个

@@ -761,9 +761,9 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   library_dir: Path | None = None, cache_dir: Path | None = None,
                   cache_context: dict | None = None, height: int | None = None,
-                  disk_cache: bool = False,
-                  show_defeated_countdown: bool = True) -> QPixmap | None:
-    """以 BWPDIY render_entity 绘制对局小卡，保留当前战斗状态。"""
+                  disk_cache: bool = False, show_defeated_countdown: bool = True,
+                  snapshot: dict | None = None) -> QPixmap | None:
+    """以 BWPDIY render_entity 绘制对局小卡；snapshot 固定动画时点的数值。"""
     path = None
     try:
         awakened = shiki.awakened is not None
@@ -801,14 +801,21 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         payload["evolve"] = awakened
         payload["_base_dir"] = (str(cache_dir) if fallback_art or not path
                                 else str(path.parent.parent / "images"))
-        defeated = bool(getattr(shiki, "defeated", False))
+        defeated = bool(snapshot.get("defeated", getattr(shiki, "defeated", False))
+                        if snapshot else getattr(shiki, "defeated", False))
         payload["_defeated"] = defeated
         definition = db.shikigami[shiki.id]
         base_power = (form.form_power if form is not None and form.form_power is not None
                       else definition.power) + getattr(shiki, "perm_power", 0)
         base_health = (form.form_health if form is not None and form.form_health is not None
                        else definition.health) + getattr(shiki, "perm_health", 0)
-        if defeated:
+        if snapshot:
+            base_power = snapshot.get("base_power", base_power)
+            base_health = snapshot.get("base_health", base_health)
+        if snapshot:
+            power = snapshot["power"]
+            health = snapshot["health"]
+        elif defeated:
             power = max(0, base_power)
             health = max(0, base_health)
         else:
@@ -816,7 +823,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                      else shiki.eff_power - shiki.combat_power)
             health = shiki.health
         power_color = "red" if power < base_power else "green" if power > base_power else None
-        current_max_health = health if defeated else getattr(shiki, "max_health", health)
+        current_max_health = snapshot["max_health"] if snapshot else (
+            health if defeated else getattr(shiki, "max_health", health))
         health_color = ("red" if health < current_max_health else
                         None if current_max_health <= base_health else "green")
         energy = int(getattr(shiki, "energy", 0))
@@ -833,8 +841,9 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             "level_color": seat_level_color(seat),
             "power": power,
             "health": health,
-            "combat_power": 0 if defeated else shiki.combat_power,
-            "shield": shiki.shield,
+            "combat_power": snapshot["combat_power"] if snapshot else (
+                0 if defeated else shiki.combat_power),
+            "shield": snapshot["shield"] if snapshot else shiki.shield,
             "energy": state_energy,
             "countdown": state_countdown,
             "defeated_countdown": ((revive if revive > 0 else "infinity")

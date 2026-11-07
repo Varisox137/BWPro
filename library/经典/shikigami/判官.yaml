@@ -3,7 +3,7 @@ name: 判官
 faction: 青岚
 power: 3
 health: 4
-description: 当判官消灭一个式神时，对敌方牌手造成1点伤害且你恢复1#sm。
+description: 当判官消灭一个式神时，对敌方牌手造成1点伤害且你恢复1点#sm。
 version_date: '20191212'
 id: '100110'
 artwork:

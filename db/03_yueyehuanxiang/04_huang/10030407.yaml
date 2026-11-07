@@ -27,6 +27,6 @@ versions:
             - {op: field_op, pick: self_field, amount: 3}
             - {op: field_op, pick: self_field, action: destroy,
                condition: {field_intensity_ge: 30}}
-            - {op: damage, amount: 10, target: {kind: all, pool: enemy_character},
+            - {op: damage, amount: 10, parallel: true, target: {kind: all, pool: enemy_character},
                condition: {field_intensity_ge: 30}}
       text: "当此牌获得耐久时，效果+2。自己回合开始时获得3耐久，然后若耐久>=30则自毁并对所有敌方角色造成10点伤害。"

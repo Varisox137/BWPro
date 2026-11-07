@@ -13,11 +13,11 @@ versions:
       effects:
         # 入场（=进场，早期文本规范化）为己方所有式神恢复2点生命
         steps:
-          - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
+          - {op: heal, amount: 2, parallel: true, target: {kind: all, pool: friendly_shikigami}}
       abilities:
         # 己方回合开始时为己方所有式神恢复2点生命
         - when: on_turn_start
           condition: {player: self}
           steps:
-            - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami}}
+            - {op: heal, amount: 2, parallel: true, target: {kind: all, pool: friendly_shikigami}}
       text: 进场和己方回合开始时，为所有己方式神恢复2点生命。

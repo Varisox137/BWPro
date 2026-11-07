@@ -2,7 +2,7 @@ type: 法术
 name: 觉醒·泷夜叉姬
 level: 2
 rarity: SR
-description: '[[觉醒]]：若你有[[幻境]]，泷夜叉姬攻击时便获得[[先攻]]；你每有一个[[幻境]]她便获得1#ll。'
+description: '[[觉醒]]：若你有幻境，泷夜叉姬攻击时便获得[[先攻]]；你每有一个幻境她便获得1#ll。'
 shikigami: 泷夜叉姬
 version_date: '20200624'
 id: '10030205'

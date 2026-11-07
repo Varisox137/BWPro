@@ -2,9 +2,7 @@ type: 战斗
 name: 义道
 level: 3
 rarity: SSR
-description: '[[贯通]]，[[连击]]
-
-  对有#pj的式神造成双倍伤害。'
+description: '[[贯通]]，[[连击]]。对有#pj的式神造成双倍伤害。'
 shikigami: 铃鹿御前
 power+: -1
 shield+: 2

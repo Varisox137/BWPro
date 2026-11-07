@@ -2,9 +2,7 @@ type: 法术
 name: 觉醒·烟烟罗
 level: 2
 rarity: SR
-description: '获得2#nl。
-
-  [[觉醒]]：[[充能]]。当烟烟罗获得#nl时，获得两倍的#nl。'
+description: 获得2#nl。[[觉醒]]：[[充能]]。当烟烟罗获得#nl时，获得两倍的#nl。
 shikigami: 烟烟罗
 version_date: '20200327'
 evolve: true

@@ -3,9 +3,7 @@ name: 妖琴师
 faction: 苍叶
 power: 3
 health: 4
-description: '[[倒计时3]]：为所有己方角色恢复3#sm。
-
-  当你使用妖琴师的觉醒法术牌时，使妖琴师的[[倒计时]]-3。'
+description: '[[倒计时3]]：为所有己方角色恢复3点#sm。'
 version_date: '20191212'
 id: '100124'
 artwork:

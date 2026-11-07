@@ -2,9 +2,7 @@ type: 法术
 name: 日出有曜
 level: 2
 rarity: R
-description: '[[瞬发]]
-
-  使一个式神的#ll、#sm变为基础值，清除他的#hj与#pj；或清除一个牌手的出击加成效果。'
+description: '[[瞬发]]。使一个式神的#ll、#sm变为基础值，清除他的#hj与#pj；或清除一个牌手的出击加成效果。'
 shikigami: 日和坊
 version_date: '20200327'
 id: '10020506'

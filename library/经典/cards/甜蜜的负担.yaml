@@ -2,9 +2,7 @@ type: 战斗
 name: 甜蜜的负担
 level: 2
 rarity: R
-description: '[[瞬发]]
-
-  [[响应]]：当你被攻击时，自动使用此牌。'
+description: '[[瞬发]]。[[响应]]：当你被攻击时，自动使用此牌。'
 shikigami: 跳跳弟弟
 power+: 3
 shield+: 0

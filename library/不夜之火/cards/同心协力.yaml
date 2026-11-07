@@ -2,9 +2,7 @@ type: 法术
 name: 同心协力
 level: 2
 rarity: R
-description: '[[瞬发]]
-
-  获得1#nl。将一张此牌的复制置入你的牌库并抽一张牌。'
+description: '[[瞬发]]。获得1#nl。将一张此牌的复制置入你的牌库并抓一张牌。'
 shikigami: 镰鼬
 version_date: '20200327'
 id: '10020604'

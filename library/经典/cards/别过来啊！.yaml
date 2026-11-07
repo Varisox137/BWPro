@@ -2,11 +2,7 @@ type: 法术
 name: 别过来啊！
 level: 2
 rarity: R
-description: '[[瞬发]]
-
-  召唤‘[[番茄]]’。
-
-  [[响应]]：当跳跳妹妹被攻击时，自动使用此牌。'
+description: '[[瞬发]]。召唤「[[番茄]]」。[[响应]]：当跳跳妹妹被攻击时，自动使用此牌。'
 shikigami: 跳跳妹妹
 version_date: '20200227'
 id: '10013105'

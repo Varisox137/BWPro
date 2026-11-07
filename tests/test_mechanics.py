@@ -3123,6 +3123,32 @@ def test_redirect_to_field(db, make_game):
     assert pa.fields[0].intensity == 15 and s0.health == 1  # 4 - 3
 
 
+def test_field_redirect_within_parallel_aoe(real_game):
+    """竹取物语在月坠全体伤害中只转移至多 5 点；剩余伤害与牌手受伤的幻境
+    扣减照常。整波伤害、随后数值刷新与同时气绝分别使用各自的并行动画组。"""
+    g = real_game([100303, 100304, 100112, 100110])
+    pa, pb = F.battle_setup(g, {0: 3})
+    for shiki in pb.shikigami:
+        shiki.level = 3
+    play(g, 0, 10030308)
+    pa.fields.append(FieldState(card_id=10030301, intensity=20, shikigami=100303))
+    pb.fields.append(FieldState(card_id=10030407, intensity=30, shikigami=100304))
+    g.state.active = 1
+    g.emit("on_turn_start", player=1)
+    g._drain_queue()
+    assert any("代为承受 5 点伤害" in line for line in g.state.log)
+    assert pa.fields[0].intensity == 5  # 20 - 代受 5 - 牌手受伤 10
+    assert pa.shikigami[0].defeated     # 竹取物语 5 生命仍承受剩余 5 点
+    damage = [e for e in g.state.timeline if e.get("v") == "damage"]
+    stats = [e for e in g.state.timeline if e.get("v") == "stat"]
+    defeats = [e for e in g.state.timeline if e.get("v") == "defeated"]
+    assert len({e.get("g") for e in damage}) == 1 and damage[0].get("g") is not None
+    assert len(stats) == len(damage)
+    assert len({e.get("g") for e in stats}) == 1 and stats[0].get("g") is not None
+    assert damage[0]["g"] != stats[0]["g"]
+    assert len({e.get("g") for e in defeats}) == 1 and defeats[0].get("g") is not None
+
+
 def test_field_absorbs_counter_damage(real_game):
     """日轮之城（真实库回归）：战斗伤害口径含反击（kind: combat——三类化合并后反击
     同 kind）——泷夜叉姬出击吃反击时，反击战斗伤害同样改降幻境耐久。"""

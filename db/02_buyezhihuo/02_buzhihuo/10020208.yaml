@@ -135,7 +135,7 @@ versions:
                 # 16 对所有敌方式神造成2点伤害（仅敌方有未气绝式神时，无回合侧限制）
                 - condition: {enemy_alive_exists: true}
                   steps:
-                    - {op: damage, amount: 2, target: {kind: all, pool: enemy_shikigami}}
+                    - {op: damage, amount: 2, parallel: true, target: {kind: all, pool: enemy_shikigami}}
                 # 17 对敌方牌手造成4点伤害
                 - condition: null
                   steps:

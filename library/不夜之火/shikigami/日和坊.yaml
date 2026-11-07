@@ -3,7 +3,7 @@ name: 日和坊
 faction: 红莲
 power: 1
 health: 6
-description: '[[充能]]。日和坊#nl不足时，可以消耗其#sm代替。（不能使生命降到0）'
+description: '[[充能]]。日和坊#nl不足时，可以消耗其#sm代替。（不能使#sm降到0）'
 version_date: '20200327'
 id: '100205'
 artwork:

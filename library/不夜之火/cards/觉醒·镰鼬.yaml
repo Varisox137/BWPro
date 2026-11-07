@@ -2,7 +2,7 @@ type: 法术
 name: 觉醒·镰鼬
 level: 3
 rarity: SSR
-description: '[[觉醒]]：[[充能]]。当镰鼬对牌手造成伤害时，获得1#nl。你鬼火和出击次数都为0时，镰鼬可以消耗3#nl出击。'
+description: '[[觉醒]]：[[充能]]。当镰鼬对牌手造成伤害时，获得1点#nl。你鬼火和出击次数都为0时，镰鼬可以消耗3点#nl出击。'
 shikigami: 镰鼬
 version_date: '20200327'
 evolve: true

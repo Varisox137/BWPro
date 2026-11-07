@@ -2,9 +2,7 @@ type: 法术
 name: 聚气
 level: 1
 rarity: SR
-description: '[[瞬发]]
-
-  使妖狐的基础能力造成的伤害永久+1。'
+description: '[[瞬发]]。使妖狐的基础能力造成的伤害永久+1。'
 shikigami: 妖狐
 version_date: '20200120'
 id: '10013002'

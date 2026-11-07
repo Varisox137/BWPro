@@ -2,9 +2,7 @@ type: 形态
 name: 风符·瞬
 level: 2
 rarity: SR
-description: '回合结束时此牌自毁。
-
-  [[响应]]：当一目连被攻击时，自动使用此牌。'
+description: '[[响应]]：当一目连被攻击时，自动使用此牌。回合结束时此牌自毁。'
 shikigami: 一目连
 power: 6
 health: 9

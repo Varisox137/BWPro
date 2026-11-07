@@ -10,5 +10,5 @@ versions:
       level: 1
       effects:
         steps:
-          - {op: damage, amount: 1, target: {kind: all, pool: enemy_shikigami}}
+          - {op: damage, amount: 1, parallel: true, target: {kind: all, pool: enemy_shikigami}}
       text: 对敌方所有式神造成1点伤害。

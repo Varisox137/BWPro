@@ -2,9 +2,7 @@ type: 法术
 name: 佛印
 level: 1
 rarity: R
-description: '[[瞬发]]
-
-  为双方牌手恢复4#sm。'
+description: '[[瞬发]]。为双方牌手恢复4点#sm。'
 shikigami: 青坊主
 version_date: '20191212'
 id: '10011101'

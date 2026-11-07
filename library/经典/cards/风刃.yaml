@@ -2,9 +2,7 @@ type: 法术
 name: 风刃
 level: 1
 rarity: R
-description: '[[瞬发]]
-
-  [[投射]]：造成2点伤害。'
+description: '[[瞬发]]。[[投射]]：造成2点伤害。'
 shikigami: 妖狐
 version_date: '20200120'
 id: '10013001'

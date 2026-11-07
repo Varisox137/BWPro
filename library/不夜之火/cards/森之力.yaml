@@ -2,9 +2,7 @@ type: 法术
 name: 森之力
 level: 2
 rarity: R
-description: '[[眩晕]]一个式神并造成3点伤害。
-
-  [[爆能2]]：获得[[瞬发]]。'
+description: '[[眩晕]]一个式神并造成3点伤害。[[爆能2]]：获得[[瞬发]]。'
 shikigami: 小鹿男
 version_date: '20200327'
 id: '10020303'

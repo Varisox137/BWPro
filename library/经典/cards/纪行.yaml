@@ -2,9 +2,7 @@ type: 形态
 name: 纪行
 level: 1
 rarity: R
-description: '[[迅捷]]
-
-  当书翁对敌方牌手造成伤害时，抽一张牌。'
+description: '[[迅捷]]。当书翁对敌方牌手造成伤害时，抽一张牌。'
 shikigami: 书翁
 power: 2
 health: 5

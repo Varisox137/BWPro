@@ -2,9 +2,7 @@ type: 法术
 name: 古尘之盾
 level: 1
 rarity: R
-description: '使一个己方式神得5#hj。
-
-  [[响应]]：当兵俑被攻击时，自动对自己使用该牌。'
+description: 使一个己方式神得5#hj。[[响应]]：当兵俑被攻击时，自动对自己使用该牌。
 shikigami: 兵俑
 version_date: '20191212'
 id: '10010202'

@@ -2,9 +2,7 @@ type: 法术
 name: 罡风
 level: 2
 rarity: R
-description: '[[瞬发]]
-
-  消灭一目连上的形态牌，抽两张牌。'
+description: '[[瞬发]]。消灭一目连上的形态牌，抽两张牌。'
 shikigami: 一目连
 version_date: '20191212'
 id: '10012505'

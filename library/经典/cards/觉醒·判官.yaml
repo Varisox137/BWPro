@@ -2,7 +2,7 @@ type: 法术
 name: 觉醒·判官
 level: 2
 rarity: SR
-description: '[[觉醒]]：当你消灭一个式神时，对敌方牌手造成1点伤害且你恢复1#sm。'
+description: '[[觉醒]]：当你消灭一个式神时，对敌方牌手造成1点伤害且你恢复1点#sm。'
 shikigami: 判官
 version_date: '20191212'
 evolve: true

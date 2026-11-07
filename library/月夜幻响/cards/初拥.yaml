@@ -2,9 +2,7 @@ type: 法术
 name: 初拥
 level: 2
 rarity: R
-description: '[[瞬发]]
-
-  对一个式神造成1点伤害，它本回合获得‘造成战斗伤害时为其牌手恢复等量#sm’。'
+description: '[[瞬发]]。对一个式神造成1点伤害，它本回合获得「造成战斗伤害时为其牌手恢复等量#sm」。'
 shikigami: 吸血姬
 version_date: '20200624'
 id: '10030104'

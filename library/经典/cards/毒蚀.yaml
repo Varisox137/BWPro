@@ -2,9 +2,7 @@ type: 战斗
 name: 毒蚀
 level: 2
 rarity: SR
-description: '本次战斗中双方造成的伤害效果转化为等量的#pj。
-
-  [[响应]]：当鸩被攻击时，自动使用此牌。'
+description: 本次战斗中双方造成的伤害效果转化为等量的#pj。[[响应]]：当鸩被攻击时，自动使用此牌。
 shikigami: 鸩
 power+: 4
 shield+: 0

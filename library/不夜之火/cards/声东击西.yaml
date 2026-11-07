@@ -2,9 +2,7 @@ type: 战斗
 name: 声东击西
 level: 1
 rarity: R
-description: '镰鼬本次的交战目标改为另一个敌方角色并免疫战斗伤害。
-
-  [[响应]]：当镰鼬被攻击时，自动使用此牌。'
+description: 镰鼬本次的交战目标改为另一个敌方角色并免疫战斗伤害。[[响应]]：当镰鼬被攻击时，自动使用此牌。
 shikigami: 镰鼬
 power+: 0
 shield+: 0

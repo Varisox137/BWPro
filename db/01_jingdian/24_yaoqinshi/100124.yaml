@@ -12,7 +12,7 @@ versions:
         # 恢复3点生命（含牌手，故拆 friendly_shikigami + self_player 两步）
         countdown: 3
         steps:
-          - {op: heal, amount: 3, target: {kind: all, pool: friendly_shikigami}}
+          - {op: heal, amount: 3, parallel: true, target: {kind: all, pool: friendly_shikigami}}
           - {op: heal, amount: 3, target: {kind: all, pool: self_player}}
       abilities:
         # 使用妖琴师的觉醒法术牌时：妖琴师倒计时-3——挂"觉醒前"（on_before_awaken，能力替换前），

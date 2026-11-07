@@ -2,9 +2,7 @@ type: 战斗
 name: 夺命
 level: 2
 rarity: SSR
-description: '[[必杀]]
-
-  [[增强]]：本局游戏若你消灭过13个式神，改为‘消灭受到判官战斗伤害的角色’。'
+description: '[[必杀]]。[[增强]]：本局游戏若你消灭过13个式神，改为「消灭受到判官战斗伤害的角色」。'
 shikigami: 判官
 power+: 0
 shield+: 0

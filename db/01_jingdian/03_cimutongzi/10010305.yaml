@@ -16,5 +16,5 @@ versions:
         - when: on_shikigami_defeated
           condition: {source_shikigami: self, victim_side: enemy, in_combat: true}
           steps:
-            - {op: damage, amount: 2, target: {kind: all, pool: enemy_bench}}
+            - {op: damage, amount: 2, parallel: true, target: {kind: all, pool: enemy_bench}}
       text: 当茨木童子击杀敌方战斗区式神时，对其准备区式神各造成2点伤害。

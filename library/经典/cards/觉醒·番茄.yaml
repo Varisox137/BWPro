@@ -2,7 +2,7 @@ type: 法术
 name: 觉醒·番茄
 level: 3
 rarity: SSR
-description: '[[觉醒]]：跳跳妹妹替换成‘[[番茄]]’，并将所有她的非战斗牌随机替换成战斗牌。'
+description: '[[觉醒]]：跳跳妹妹替换成「[[番茄]]」，并将所有她的非战斗牌随机替换成战斗牌。'
 shikigami: 跳跳妹妹
 version_date: '20200227'
 id: '10013108'

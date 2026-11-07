@@ -2,9 +2,7 @@ type: 法术
 name: 凤鸣
 level: 1
 rarity: R
-description: '[[瞬发]]
-
-  对敌方牌手造成2点伤害。'
+description: '[[瞬发]]。对敌方牌手造成2点伤害。'
 shikigami: 凤凰火
 version_date: '20200227'
 id: '10010501'

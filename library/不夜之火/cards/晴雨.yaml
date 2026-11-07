@@ -2,9 +2,7 @@ type: 形态
 name: 晴雨
 level: 3
 rarity: R
-description: '当己方其他角色受到伤害时，日和坊恢复3#sm。
-
-  每个回合结束时，消耗3#nl，恢复所有其他己方角色3#sm。'
+description: 当己方其他角色受到伤害时，日和坊恢复3点#sm。每个回合结束时，消耗3#nl，恢复所有其他己方角色3点#sm。
 shikigami: 日和坊
 power: 3
 health: 8

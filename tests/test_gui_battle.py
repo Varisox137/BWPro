@@ -3622,18 +3622,37 @@ def test_assault_and_response_animations_use_viewer_sides_and_order(qapp, view):
     assert scene._card_use_sources[card_animation]["big_pos"].x() > scene.sceneRect().center().x()
 
 
-def test_combat_card_stats_refresh_between_card_and_move(qapp, db, view):
+def test_combat_card_stats_refresh_between_card_and_move(qapp, db, view, monkeypatch):
+    """战斗牌力量是本次战斗的临时力量，不用战力小图标；用牌→加成→卡面
+    效果→移入战斗区→并行战斗伤害→数值刷新严格按此时点排列。"""
     cid = 10010154
     db.cards[cid] = F.card(cid, card_type="combat", token=True, steps=[
         F.Step(op="buff_power", amount=2, target=F.T(kind="self")),
         F.Step(op="gain_shield", amount=2, target=F.T(kind="self")),
+        F.Step(op="damage", amount=1, target=F.T(kind="all", pool="enemy_player")),
     ])
     start(view, mulligan=False)
+    seen = []
+    original = view.game._apply_combat_stats
+
+    def capture(ref, shiki, power, shield, *, battle_scoped):
+        original(ref, shiki, power, shield, battle_scoped=battle_scoped)
+        seen.append((shiki.temp_power, shiki.combat_power))
+
+    monkeypatch.setattr(view.game, "_apply_combat_stats", capture)
+    view.game.state.players[1].shield = 0  # 让卡面效果伤害实际扣血，产生完整时点序列
     card = F.give(view.game, 0, cid)
     view.play_card(card.uid)
-    kinds = [entry["v"] for entry in view.game.state.timeline if entry.get("k") == "v"]
-    assert "stat" in kinds
-    assert kinds.index("stat") < kinds.index("move")
+    assert seen == [(2, 0)]
+    entries = [entry for entry in view.game.state.timeline
+               if entry.get("k") == "a" or entry.get("k") == "v"]
+    kinds = [entry.get("v", "card_use") for entry in entries]
+    assert kinds.index("card_use") < kinds.index("stat")
+    assert kinds.index("stat") < kinds.index("damage") < kinds.index("move")
+    combat_damage = [entry for entry in entries if entry.get("v") == "damage"
+                     and entry.get("amount") != 1]
+    assert len(combat_damage) == 1  # 敌方战斗区为空，仅攻击牌手
+    assert view.game.state.players[0].shikigami[0].temp_power == 0
 
 
 def test_form_art_refreshes_after_card_use(qapp, db, view):
@@ -3686,3 +3705,87 @@ def test_deck_backs_match_reference_size_and_orientation(qapp, view):
     assert 120 <= enemy[0].y() < 200
     assert enemy[-1].sceneBoundingRect().bottom() >= 370
     assert 520 <= own[0].sceneBoundingRect().top() <= 580
+
+
+def test_move_visual_uses_event_zone_instead_of_final_state(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    item = scene.cards[("shiki", 0, 0)]
+    scene.play_visual_event({"v": "move", "p": 0, "s": 0, "zone": "combat"})
+    animation = scene._move_animations[item]
+    assert animation.endValue() == QPointF(
+        (scene.layout_width - item.default_size.width()) / 2, 460)
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    scene.play_visual_event({"v": "move", "p": 0, "s": 0, "zone": "ready"})
+    animation = scene._move_animations[item]
+    assert animation.endValue() == QPointF(196, 570)
+
+
+def test_combat_damage_defeat_and_return_are_parallel_phases(qapp, view):
+    start(view, mulligan=False)
+    pa, pb = view.game.state.players
+    pa.shikigami[0].level = pb.shikigami[0].level = 1
+    pa.shikigami[0].health = pb.shikigami[0].health = 3
+    pb.combat_index = 0
+    view.assault(0)
+    entries = [entry for entry in view.game.state.timeline if entry.get("k") == "v"]
+    damage = [entry for entry in entries if entry["v"] == "damage"]
+    stats = [entry for entry in entries if entry["v"] == "stat"]
+    defeats = [entry for entry in entries if entry["v"] == "defeated"]
+    returns = [entry for entry in entries
+               if entry["v"] == "move" and entry.get("zone") == "ready"]
+    assert len(damage) == len(stats) == len(defeats) == len(returns) == 2
+    for wave in (damage, stats, defeats, returns):
+        assert len({entry.get("g") for entry in wave}) == 1
+        assert wave[0].get("g") is not None
+    assert len({damage[0]["g"], stats[0]["g"], defeats[0]["g"], returns[0]["g"]}) == 4
+    kinds = [entry["v"] for entry in entries]
+    damage_indices = [i for i, entry in enumerate(entries) if entry["v"] == "damage"]
+    return_indices = [i for i, entry in enumerate(entries)
+                      if entry["v"] == "move" and entry.get("zone") == "ready"]
+    assert max(damage_indices) < kinds.index("stat") < kinds.index("defeated") \
+        < min(return_indices)
+
+
+def test_parallel_heal_has_following_parallel_refresh_phase(qapp, db, view):
+    cid = 10010156
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="heal", amount=2, parallel=True,
+               target=F.T(kind="all", pool="friendly_character"))])
+    start(view, mulligan=False)
+    player = view.game.current
+    player.health = 27
+    player.shikigami[0].level = player.shikigami[1].level = 1
+    player.shikigami[0].health = 2
+    player.shikigami[1].health = 3
+    card = F.give(view.game, 0, cid)
+    view.play_card(card.uid)
+    entries = [entry for entry in view.game.state.timeline
+               if entry.get("v") in ("heal", "stat")]
+    heals = [entry for entry in entries if entry["v"] == "heal"]
+    stats = [entry for entry in entries if entry["v"] == "stat"]
+    assert len(heals) == len(stats) == 3
+    assert [entry["v"] for entry in entries] == ["heal"] * 3 + ["stat"] * 3
+    assert len({entry["g"] for entry in heals}) == 1
+    assert len({entry["g"] for entry in stats}) == 1
+    assert heals[0]["g"] != stats[0]["g"]
+
+
+def test_parallel_damage_shield_refresh_is_a_preceding_phase(qapp, db, view):
+    cid = 10010157
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="damage", amount=2, parallel=True,
+               target=F.T(kind="all", pool="enemy_shikigami"))])
+    start(view, mulligan=False)
+    enemy = view.game.state.players[1]
+    enemy.shikigami[0].level = enemy.shikigami[1].level = 1
+    enemy.shikigami[0].shield = enemy.shikigami[1].shield = 1
+    card = F.give(view.game, 0, cid)
+    view.play_card(card.uid)
+    entries = [entry for entry in view.game.state.timeline
+               if entry.get("v") in ("damage", "stat")]
+    assert [entry["v"] for entry in entries] == ["stat"] * 2 + ["damage"] * 2 + ["stat"] * 2
+    for wave in (entries[:2], entries[2:4], entries[4:]):
+        assert len({entry["g"] for entry in wave}) == 1 and wave[0]["g"] is not None
+    assert len({entries[0]["g"], entries[2]["g"], entries[4]["g"]}) == 3

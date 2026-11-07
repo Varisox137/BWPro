@@ -2,9 +2,7 @@ type: 法术
 name: 追风
 level: 1
 rarity: R
-description: '[[瞬发]]
-
-  [[移动]]鸦天狗，抽一张牌。'
+description: '[[瞬发]]。[[移动]]鸦天狗，抽一张牌。'
 shikigami: 鸦天狗
 version_date: '20200327'
 id: '10020101'

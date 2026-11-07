@@ -10,5 +10,5 @@ versions:
       keywords: [fast]
       effects:
         steps:
-          - {op: heal, amount: 3, target: {kind: all, pool: friendly_character}}
+          - {op: heal, amount: 3, parallel: true, target: {kind: all, pool: friendly_character}}
       text: "[瞬发]。为所有己方角色恢复3点生命。"

@@ -2,7 +2,7 @@ type: 形态
 name: 同生共死
 level: 2
 rarity: SR
-description: 当镰鼬将受到致死伤害时，消耗3#nl，免疫本次伤害并移回准备区。
+description: 当镰鼬将受到致死伤害时，消耗3点#nl，免疫本次伤害并移回准备区。
 shikigami: 镰鼬
 power: 4
 health: 5

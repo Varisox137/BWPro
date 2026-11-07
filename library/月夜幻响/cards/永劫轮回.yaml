@@ -2,9 +2,7 @@ type: 形态
 name: 永劫轮回
 level: 3
 rarity: SR
-description: '进场时召唤泷夜叉姬的两个[[幻境]]。
-
-  泷夜叉姬的所有[[幻境]]改为对己方所有式神有效。'
+description: 进场时召唤泷夜叉姬的两个幻境。泷夜叉姬的所有幻境改为对己方所有式神有效。
 shikigami: 泷夜叉姬
 power: 3
 health: 7

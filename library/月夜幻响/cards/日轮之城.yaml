@@ -2,9 +2,7 @@ type: 幻境
 name: 日轮之城
 level: 1
 rarity: R
-description: '[[瞬发]]
-
-  泷夜叉姬受到的战斗伤害改为降低此[[幻境]]的#nj。'
+description: '[[瞬发]]。泷夜叉姬受到的战斗伤害改为降低此幻境的#nj。'
 shikigami: 泷夜叉姬
 durability: 1
 version_date: '20200624'

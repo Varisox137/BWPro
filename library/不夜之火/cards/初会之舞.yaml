@@ -2,9 +2,7 @@ type: 形态
 name: 初会之舞
 level: 2
 rarity: SR
-description: '[[远程]]
-
-  当己方式神出击并对敌方牌手造成伤害时，抽一张牌。'
+description: '[[远程]]。当己方式神出击并对敌方牌手造成伤害时，抽一张牌。'
 shikigami: 不知火
 power: 2
 health: 6

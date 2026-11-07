@@ -2,9 +2,7 @@ type: 法术
 name: 沐浴阳光
 level: 1
 rarity: R
-description: '[[瞬发]]
-
-  恢复己方有[[充能]]的式神所有#sm并使他们各获得1#nl。'
+description: '[[瞬发]]。恢复己方有[[充能]]的式神所有#sm并使他们各获得1点#nl。'
 shikigami: 日和坊
 version_date: '20200423'
 id: '10020501'

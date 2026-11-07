@@ -2,11 +2,7 @@ type: 法术
 name: 血怒
 level: 1
 rarity: SR
-description: '[[瞬发]]，[[吸血]]
-
-  造成1点伤害。
-
-  [[增强]]：每当敌方牌手获得#sm时，此牌伤害+1。'
+description: '[[瞬发]]，[[吸血]]。造成1点伤害。[[增强]]：每当敌方牌手获得#sm时，此牌伤害+1。'
 shikigami: 吸血姬
 version_date: '20200624'
 id: '10030103'

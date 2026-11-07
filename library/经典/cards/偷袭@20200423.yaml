@@ -2,9 +2,7 @@ type: 战斗
 name: 偷袭
 level: 2
 rarity: R
-description: '在敌方回合获得[[瞬发]]。
-
-  [[响应]]：当敌方回合结束时战斗区没有式神，自动使用此牌。'
+description: 在敌方回合获得[[瞬发]]。[[响应]]：当敌方回合结束时战斗区没有式神，自动使用此牌。
 shikigami: 姑获鸟
 power+: 3
 shield+: 0

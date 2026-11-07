@@ -2,9 +2,7 @@ type: 法术
 name: 扑朔迷离
 level: 1
 rarity: SR
-description: '在战斗区召唤一个‘[[烟烟罗的分身]]’。
-
-  [[响应]]：当你被攻击时，自动使用。'
+description: 在战斗区召唤一个「[[烟烟罗的分身]]」。[[响应]]：当你被攻击时，自动使用。
 shikigami: 烟烟罗
 version_date: '20200327'
 id: '10020402'

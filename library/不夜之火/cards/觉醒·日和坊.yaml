@@ -2,9 +2,7 @@ type: 法术
 name: 觉醒·日和坊
 level: 3
 rarity: SSR
-description: '[[瞬发]]
-
-  [[觉醒]]：[[充能]]。日和坊#nl不足时，可以消耗其#sm代替。每回合一次己方式神消耗#nl的效果不再消耗#nl。'
+description: '[[瞬发]]。[[觉醒]]：[[充能]]。日和坊#nl不足时，可以消耗其#sm代替。每回合一次己方式神消耗#nl的效果不再消耗#nl。'
 shikigami: 日和坊
 version_date: '20200327'
 id: '10020507'

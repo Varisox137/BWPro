@@ -28,6 +28,6 @@ versions:
         - when: on_turn_end
           steps:
             - {op: spend_energy, amount: 3, gate: true}
-            - {op: heal, amount: 3,
+            - {op: heal, amount: 3, parallel: true,
                target: {kind: all, pool: friendly_others_character}}
       text: "当己方其他角色受到伤害时，日和坊恢复3点生命。每个回合结束时，消耗3能量，恢复所有其他己方角色3点生命。"

@@ -14,7 +14,7 @@ versions:
         # [羁绊]：{进场时樱花妖为所有己方式神恢复2生命}——樱花妖（100403）未加入前
         # 门控恒 False（shikigami_active 只查队伍数据 id，不读库，安全）
         steps:
-          - {op: heal, amount: 2, target: {kind: all, pool: friendly_shikigami},
+          - {op: heal, amount: 2, parallel: true, target: {kind: all, pool: friendly_shikigami},
              condition: {shikigami_active: 100403}}
       abilities:
         # 己方式神进入战斗区时恢复2生命（治疗来源=桃花妖→连锁桃花妖赋益）
