@@ -48,6 +48,9 @@ esac
 
 if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
     git status --short
+    if [[ -n "$(git diff --name-only -- uv.lock pyproject.toml)" ]]; then
+        printf '提示：项目版本或依赖声明变化后，请先执行 uv lock，并提交 uv.lock 与 pyproject.toml。\n' >&2
+    fi
     fail "存在未提交或未跟踪改动；不会自动 stash/reset/clean，请使用干净部署副本"
 fi
 
