@@ -104,11 +104,11 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         top = pi != viewer
         positions[("player", pi)] = QPointF(12, 4 if top else 766)
         for index in range(3):
-            fan_index = index if top else 2 - index
+            fan_index = 2 - index if top else index
             positions[("deck_back", pi, index)] = QPointF(
                 scene_width - 274 + fan_index * 22,
                 (170 + index * 40) if top
-                else (SCENE_HEIGHT - 170 - DECK_BACK_SIZE.height() - fan_index * 40))
+                else (SCENE_HEIGHT - 170 - DECK_BACK_SIZE.height() - (2 - index) * 40))
     if game is None:
         return positions
 

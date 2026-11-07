@@ -3679,6 +3679,8 @@ def test_deck_backs_match_reference_size_and_orientation(qapp, view):
     assert enemy[0].pixmap.toImage() == expected.toImage()
     assert [item.rotation() for item in enemy] == [15, 25, 35]
     assert [item.rotation() for item in own] == [-15, -25, -35]
+    assert enemy[0].x() > enemy[1].x() > enemy[2].x()
+    assert own[0].x() < own[1].x() < own[2].x()
     assert [item.y() for item in enemy] == sorted(item.y() for item in enemy)
     assert [item.y() for item in own] == sorted(item.y() for item in own)
     assert 120 <= enemy[0].y() < 200
