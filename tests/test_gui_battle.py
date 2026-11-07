@@ -3367,6 +3367,12 @@ def test_result_and_turn_banners_use_word_art(qapp, view):
     assert view.battle_scene.banner_pixmap_item.property("assetName") == "your_turn_dark"
 
 
+def test_timeline_refresh_interval_is_200ms(qapp, db, tmp_path):
+    widget = HotseatView(db, store_path=tmp_path / "decks.json")
+    assert widget.timeline_timer.interval() == 200
+    widget.close()
+
+
 def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -3593,3 +3599,23 @@ def test_player_health_color_tracks_missing_and_bonus_cap(qapp, view):
     player.max_health = player.health = 30
     view.refresh()
     assert item.health_color == "white"
+
+
+def test_assault_and_response_animations_use_viewer_sides_and_order(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "assault", "p": 1})
+    animation = scene._visual_animations[0]
+    assert animation.duration() == 900
+    assert scene._visual_items[animation].pos().x() > scene.sceneRect().center().x()
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+
+    card = view.game.state.players[1].hand[0]
+    scene.animate_card_use(card.uid, card.id, 1, response=True)
+    assert scene._visual_events[scene._visual_animations[0]]["v"] == "response"
+    response_animation = scene._visual_animations[0]
+    response_animation.setCurrentTime(response_animation.duration())
+    qapp.processEvents()
+    card_animation = scene._card_use_animations[0]
+    assert scene._card_use_sources[card_animation]["big_pos"].x() > scene.sceneRect().center().x()

@@ -183,31 +183,11 @@ def cardback_pixmap(side: str, *, root: Path | None = None,
     return _cached_cardback(str(path), path.stat().st_mtime_ns, landscape)
 
 
-def heal_number_pixmap(amount: int, *, root: Path | None = None) -> QPixmap:
-    """用 BWPDIY 数字素材拼接居中的治疗量（含加号，支持多位数）。"""
+def _signed_number_pixmap(prefix: str, amount: int, max_width: int | None = None, *,
+                          root: Path | None = None) -> QPixmap:
     amount = max(0, int(amount))
-    names = ["heal_plus"] + [f"heal_{digit}" for digit in str(amount)]
-    pixmaps = [ui_pixmap(f"numbers/{name}.png", root=root) for name in names]
-    if any(pixmap.isNull() for pixmap in pixmaps):
-        return QPixmap()
-    width = sum(pixmap.width() for pixmap in pixmaps) + 2 * (len(pixmaps) - 1)
-    height = max(pixmap.height() for pixmap in pixmaps)
-    result = QPixmap(width, height)
-    result.fill(Qt.transparent)
-    painter = QPainter(result)
-    x = 0
-    for pixmap in pixmaps:
-        painter.drawPixmap(x, (height - pixmap.height()) // 2, pixmap)
-        x += pixmap.width() + 2
-    painter.end()
-    return result
-
-
-def damage_number_pixmap(amount: int, max_width: int | None = None, *,
-                         root: Path | None = None) -> QPixmap:
-    """用伤害素材拼接减号与多位数字，并按墨色背景限制整体宽度。"""
-    amount = max(0, int(amount))
-    names = ["damage_minus"] + [f"damage_{digit}" for digit in str(amount)]
+    names = [f"{prefix}_minus" if prefix == "damage" else f"{prefix}_plus"]
+    names += [f"{prefix}_{digit}" for digit in str(amount)]
     pixmaps = [ui_pixmap(f"numbers/{name}.png", root=root) for name in names]
     if any(pixmap.isNull() for pixmap in pixmaps):
         return QPixmap()
@@ -224,3 +204,14 @@ def damage_number_pixmap(amount: int, max_width: int | None = None, *,
     if max_width is not None and result.width() > max_width:
         return result.scaledToWidth(max_width, Qt.SmoothTransformation)
     return result
+
+
+def heal_number_pixmap(amount: int, *, root: Path | None = None) -> QPixmap:
+    """用 BWPDIY 数字素材拼接居中的治疗量（含加号，支持多位数）。"""
+    return _signed_number_pixmap("heal", amount, root=root)
+
+
+def damage_number_pixmap(amount: int, max_width: int | None = None, *,
+                         root: Path | None = None) -> QPixmap:
+    """用伤害素材拼接减号与多位数字，并按墨色背景限制整体宽度。"""
+    return _signed_number_pixmap("damage", amount, max_width, root=root)

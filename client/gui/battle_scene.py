@@ -907,13 +907,14 @@ class BattleScene(QGraphicsScene):
 
     def animate_card_use(self, uid: int, card_id: int, player: int,
                          response: bool = False) -> None:
+        if response:
+            self.play_visual_event({"v": "response", "p": player})
         self._queue_or_start_visual(
             {"v": "_card_use", "u": uid, "c": card_id, "p": player,
              "response": response})
 
     def _start_card_use_event(self, event: dict) -> None:
         uid, card_id, player = event["u"], event["c"], event["p"]
-        response = event["response"]
         cdef = self.db.cards[card_id]
         cached = self._hand_animation_cache.get(uid)
         if cached is None:
@@ -954,7 +955,9 @@ class BattleScene(QGraphicsScene):
         self._card_use_sources[animation] = {
             "source_pos": source_pos,
             "source_size": source_size,
-            "big_pos": QPointF(70, (SCENE_HEIGHT - big_size.height()) / 2),
+            "big_pos": QPointF(
+                70 if player == self.viewer else self.layout_width - 70 - big_size.width(),
+                (SCENE_HEIGHT - big_size.height()) / 2),
             "big_size": big_size,
             "big_pixmap": big_pixmap,
             "flipped": False,
@@ -964,8 +967,6 @@ class BattleScene(QGraphicsScene):
         animation.finished.connect(
             lambda animation=animation: self._finish_card_use(animation))
         animation.start()
-        if response:
-            self.play_visual_event({"v": "response", "p": player})
 
     def _update_card_use(self, animation, progress: float) -> None:
         item = self._card_use_items.get(animation)
@@ -1051,7 +1052,7 @@ class BattleScene(QGraphicsScene):
     def play_visual_event(self, event: dict) -> None:
         kind = event.get("v")
         if kind not in ("defeated", "luck", "luck_reroll", "heal", "damage",
-                        "immune", "response", "upgrade", "move"):
+                        "immune", "response", "upgrade", "move", "assault"):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应
@@ -1066,6 +1067,30 @@ class BattleScene(QGraphicsScene):
 
     def _start_visual_event(self, event: dict) -> None:
         kind = event.get("v")
+        if kind == "assault":
+            image = ui_pixmap("assault/出击.png")
+            player = int(event.get("p", self.viewer))
+            x = 70 if player == self.viewer else self.layout_width - 70 - image.width()
+            item = BattleVisualItem([(image, QPointF(-image.width() / 2,
+                                                     -image.height() / 2))])
+            item.setProperty("assetName", kind)
+            item.setPos(x + image.width() / 2, SCENE_HEIGHT / 2)
+            item.setZValue(DRAG_Z + 15)
+            item.setOpacity(0)
+            self.addItem(item)
+            animation = QVariantAnimation(self)
+            animation.setDuration(900)
+            animation.setStartValue(0.0)
+            animation.setEndValue(1.0)
+            self._visual_animations.append(animation)
+            self._visual_items[animation] = item
+            self._visual_events[animation] = dict(event)
+            animation.valueChanged.connect(
+                lambda value, animation=animation: self._update_visual(animation, value))
+            animation.finished.connect(
+                lambda animation=animation: self._finish_visual(animation))
+            animation.start()
+            return
         if kind == "move":
             player = int(event.get("p", self.viewer))
             index = int(event.get("s", 0))

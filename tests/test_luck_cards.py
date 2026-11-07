@@ -430,6 +430,8 @@ def test_luck_reroll_on_dice_one(gdb, monkeypatch):
         ("luck", 1, False), ("luck_reroll", 5, None), ("luck", 5, True),
     ]
     assert visuals[1]["previous_dice"] == 1
+    assert "运势重置（原骰点 1）" in g.state.log
+    assert not any("新骰点" in message for message in g.state.log)
 
 
 def test_awaken_reroll_on_would_fail(gdb, monkeypatch):

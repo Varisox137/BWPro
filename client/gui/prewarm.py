@@ -80,9 +80,12 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
                               if config and path is not None else ""),
             "art_sha256": (_art_sha256(config, path, definition.name)
                            if config and path is not None else ""),
+            "prewarm": bool(config),
         })
     entries = sorted(definition_entries,
                      key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
+    pending = [(definition, entry) for definition, entry in zip(definitions, definition_entries)
+               if entry["prewarm"]]
     manifest = {
         "version": 5,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -92,10 +95,11 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
     }
     if not clear and _manifest_current(cache_dir, manifest):
         manifest["stats"] = {
-            "total": len(definitions),
+            "total": len(pending),
             "succeeded": len(entries),
             "failed": 0,
-            "skipped": len(definitions),
+            "skipped": len(pending),
+            "deferred": len(definitions) - len(pending),
         }
         cache_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = cache_dir / MANIFEST_NAME
@@ -103,12 +107,11 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
         temporary_path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary_path.replace(manifest_path)
-        yield len(entries), len(definitions)
+        yield len(pending), len(pending)
         return entries
     successful_entries = []
     failures = []
-    for index, ((kind, definition), entry) in enumerate(
-            zip(definitions, definition_entries), 1):
+    for index, ((kind, definition), entry) in enumerate(pending, 1):
         pixmaps = [card_pixmap(
             definition, db, library_dir=library_dir, cache_dir=cache_dir,
             cache_context=art_context)]
@@ -130,15 +133,16 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
                 "reason": "渲染返回空图",
             })
             logger.error("卡图预热失败：%s %s", kind, definition.id)
-        yield index, len(definitions)
+        yield index, len(pending)
     successful_entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
     manifest["entries"] = successful_entries
     manifest["failures"] = failures
     manifest["stats"] = {
-        "total": len(definitions),
+        "total": len(pending),
         "succeeded": len(successful_entries),
         "failed": len(failures),
         "skipped": 0,
+        "deferred": len(definitions) - len(pending),
     }
     cache_dir.mkdir(parents=True, exist_ok=True)
     (cache_dir / MANIFEST_NAME).write_text(

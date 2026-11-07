@@ -145,7 +145,7 @@ class HotseatView(QWidget):
         self.played_timeline: list[tuple[int | None, str]] = []
         self._build_ui()
         self.timeline_timer = QTimer(self)
-        self.timeline_timer.setInterval(300)
+        self.timeline_timer.setInterval(200)
         self.timeline_timer.timeout.connect(self.play_next_timeline)
 
     def _build_ui(self) -> None:

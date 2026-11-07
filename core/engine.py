@@ -3719,6 +3719,8 @@ class Game:
             self.attach_invocation(rep_inv, player=self.state.active,
                                    source=atk_ref, target=atk_ref)
             return
+        self.state.timeline.append({"k": "v", "v": "assault",
+                                    "p": self.state.active, "s": i})
         self._resolve_combat(atk_ref, s, target=target, origin="assault")
 
     def _consume_assault_boosts(self, p: PlayerState, atk_ref: Ref, s: ShikigamiState) -> None:

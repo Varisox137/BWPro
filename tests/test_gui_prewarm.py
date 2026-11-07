@@ -213,15 +213,38 @@ def test_prewarm_forwards_explicit_paths(qapp, tmp_path, monkeypatch):
 def test_prewarm_iter_yields_progress_and_returns_entries(qapp, tmp_path, monkeypatch):
     from client.gui import prewarm
 
+    from tests.test_gui_builder import _cardart_config
+
     db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    library_dir = tmp_path / "library"
+    _cardart_config(library_dir, 100101, 20260720, "#336699")
+    _cardart_config(library_dir, 10010101, 20260720, "#336699")
+    import yaml
+    shiki_dir = library_dir / "项目" / "shikigami"
+    shiki_dir.mkdir(parents=True, exist_ok=True)
+    data = yaml.safe_load((library_dir / "项目" / "cards" / "100101@20260720.yaml")
+                          .read_text(encoding="utf-8"))
+    data["type"] = "式神"
+    (shiki_dir / "100101@20260720.yaml").write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(prewarm, "card_pixmap", lambda *_args, **_kwargs: QPixmap(2, 2))
     monkeypatch.setattr(prewarm, "entity_pixmap", lambda *_args, **_kwargs: QPixmap(2, 2))
-    iterator = prewarm.prewarm_iter(db, tmp_path / "library", tmp_path / "cache")
+    iterator = prewarm.prewarm_iter(db, library_dir, tmp_path / "cache")
     assert next(iterator) == (1, 2)
     assert next(iterator) == (2, 2)
     with pytest.raises(StopIteration) as stopped:
         next(iterator)
     assert [entry["id"] for entry in stopped.value.value] == [10010101, 100101]
+
+
+def test_prewarm_skips_unconfigured_placeholders(qapp, tmp_path):
+    from client.gui import prewarm
+
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    iterator = prewarm.prewarm_iter(db, tmp_path / "library", tmp_path / "cache")
+    with pytest.raises(StopIteration) as stopped:
+        next(iterator)
+    assert stopped.value.value == []
 
 
 def test_cardback_preview_dialog_pages_and_selection(qapp):
