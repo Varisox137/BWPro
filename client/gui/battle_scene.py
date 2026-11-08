@@ -875,7 +875,8 @@ class BattleScene(QGraphicsScene):
             self._start_queued_visuals()
             self._refresh_all_art()
 
-    def _animate_position(self, item: BattleCardItem, target: QPointF) -> None:
+    def _animate_position(self, item: BattleCardItem, target: QPointF,
+                          group=None) -> None:
         self._visual_queue[:] = [event for event in self._visual_queue
                                  if not (event.get("v") == "_move"
                                          and event.get("item") is item)]
@@ -884,7 +885,8 @@ class BattleScene(QGraphicsScene):
             item.setPos(target)
             return
         self._queue_or_start_visual(
-            {"v": "_move", "item": item, "start": start, "target": QPointF(target)})
+            {"v": "_move", "item": item, "start": start, "target": QPointF(target),
+             "g": group})
 
     def _start_move_event(self, event: dict) -> None:
         item = event["item"]
@@ -1047,12 +1049,14 @@ class BattleScene(QGraphicsScene):
             self._visual_queue.append(dict(event))
 
     def _start_queued_visuals(self) -> None:
-        """默认全局 FIFO；仅同组且不同目标的并行效果可同时播放。"""
-        while self._visual_queue:
-            event = self._visual_queue[0]
+        """默认全局 FIFO；同组事件可越过其他组的等待项并行播放。"""
+        index = 0
+        while index < len(self._visual_queue):
+            event = self._visual_queue[index]
             if not self._animation_can_start(event):
-                break
-            self._visual_queue.pop(0)
+                index += 1
+                continue
+            self._visual_queue.pop(index)
             self._start_visual_event(event)
 
     def play_visual_event(self, event: dict) -> None:
@@ -1062,10 +1066,6 @@ class BattleScene(QGraphicsScene):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应
-        if kind == "defeated":
-            key = (int(event.get("p", 0)), int(event.get("s", 0)))
-            self._defeat_visuals.add(key)
-            self._refresh_defeated_entity(*key)
         events = ([dict(event, v="luck_dice"), dict(event, v="luck_result")]
                   if kind == "luck" else [event])
         for current in events:
@@ -1146,7 +1146,7 @@ class BattleScene(QGraphicsScene):
                 target = positions[("shiki", player, index)]
                 if event.get("zone") == "combat":
                     target = combat_position(self.layout_width, player != self.viewer)
-                self._animate_position(item, target)
+                self._animate_position(item, target, group=event.get("g"))
             return
         if kind == "_move":
             self._start_move_event(event)
@@ -1165,6 +1165,10 @@ class BattleScene(QGraphicsScene):
             return
         else:
             center = target.sceneBoundingRect().center()
+        if kind == "defeated":
+            key = (player, int(index))
+            self._defeat_visuals.add(key)
+            self._refresh_defeated_entity(*key, snapshot=event.get("r"))
         if kind in ("defeated", "immune"):
             asset = ("defeat_" + (load_gui_settings()["defeated_variant"] or "white")
                      if kind == "defeated" else "immune")
@@ -1240,7 +1244,7 @@ class BattleScene(QGraphicsScene):
         if event.get("v") == "defeated":
             key = (int(event.get("p", 0)), int(event.get("s", 0)))
             self._defeat_visuals.discard(key)
-            self._refresh_defeated_entity(*key)
+            self._refresh_defeated_entity(*key, snapshot=event.get("r"))
         if item.scene() is self:
             self.removeItem(item)
         animation.deleteLater()
@@ -1262,7 +1266,8 @@ class BattleScene(QGraphicsScene):
 
     def _refresh_all_art(self) -> None:
         """动画队列清空后统一更新数值与卡图，避免结算状态抢先显示。"""
-        if self.game is None or self._visual_animations or self._visual_queue:
+        if (self.game is None or self._visual_animations or self._visual_queue
+                or self._move_animations):
             return
         art_context = {}
         for pi, player in enumerate(self.game.state.players):
@@ -1527,7 +1532,7 @@ class BattleScene(QGraphicsScene):
                              and index in game.legal_upgrade_indices(pi))))
                 if created or previous_game is None:
                     item.setPos(positions[key])
-                elif (pi, index) not in structured_moves:
+                elif not defer_art and (pi, index) not in structured_moves:
                     self._animate_position(item, positions[key])
                 item.update()
                 self.loading_tick()

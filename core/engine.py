@@ -3113,7 +3113,7 @@ class Game:
                 "max_health": base_health if s.defeated else s.max_health,
                 "shield": s.shield, "combat_power": 0 if s.defeated else s.combat_power,
                 "base_power": base_power, "base_health": base_health,
-                "defeated": s.defeated,
+                "defeated": s.defeated, "revive_countdown": s.revive_countdown,
             }
         return {"k": "v", "v": "stat", "p": ref.player, "s": ref.shikigami,
                 "g": group, "r": snapshot}
@@ -5546,13 +5546,14 @@ class Game:
             self._settle(f"【气绝】{name} 气绝（复活倒计时 {s.revive_countdown}）")
             defeat_group = f"{visual_group}:defeat" if visual_group is not None else None
             return_group = f"{visual_group}:return" if visual_group is not None else None
+            snapshot = self._stat_event(ref, defeat_group)["r"]
             self.state.timeline.append(
                 {"k": "v", "v": "defeated", "p": ref.player, "s": ref.shikigami,
-                 "g": defeat_group})
+                 "g": defeat_group, "r": snapshot})
             if in_combat and not defeat_revive_stay:
                 self.state.timeline.append({"k": "v", "v": "move",
                                             "p": ref.player, "s": ref.shikigami, "zone": "ready",
-                                            "g": return_group})
+                                            "g": return_group, "r": snapshot})
             # 不写 _log 孪生行（"X 气绝"）：归 settle 通道，避免双通道重复
         # 击杀账本与委托计数（含牌手级 inv_bonus_on_kill 结算；棺材被击破路径共用）
         self._account_kill(source, ref, s)

@@ -846,7 +846,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         # 能量与普通倒计时可共存；气绝时仅隐藏普通倒计时。
         state_energy = energy if has_energy else None
         state_countdown = countdown if not defeated else None
-        revive = int(getattr(shiki, "revive_countdown", 0))
+        revive = int(snapshot.get("revive_countdown", 0) if snapshot
+                     else getattr(shiki, "revive_countdown", 0))
         state = {
             "level": shiki.level,
             "level_color": seat_level_color(seat),

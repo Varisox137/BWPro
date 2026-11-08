@@ -2851,10 +2851,13 @@ def test_shiki_position_animation_reaches_layout_target(qapp, view):
     item.setPos(target)
     view.game.current.combat_index = None
     view.refresh()
-    replacement = scene._move_animations[item]
-    assert animation.state() == animation.State.Running
+    assert scene._move_animations[item] is animation
+    assert not any(event.get("v") == "_move" for event in scene._visual_queue)
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
+    assert item not in scene._move_animations
+
+    view.refresh()
     replacement = scene._move_animations[item]
     assert replacement is not animation
     target = layout_positions(view.game, view.viewer)[key]
@@ -3755,6 +3758,118 @@ def test_combat_damage_defeat_and_return_are_parallel_phases(qapp, view):
                       if entry["v"] == "move" and entry.get("zone") == "ready"]
     assert max(damage_indices) < kinds.index("stat") < kinds.index("defeated") \
         < min(return_indices)
+
+
+def test_combat_visual_defeat_snapshot(qapp, view, monkeypatch):
+    import json
+    from client.gui import battle_scene, cardart
+    from client.gui.battle_scene import combat_position, layout_positions
+
+    rendered = []
+    visible = []
+    original = cardart._cached_entity_pixmap
+    original_entity = battle_scene.entity_pixmap
+
+    def capture(*args):
+        state = json.loads(args[2])
+        state["_defeated"] = json.loads(args[1])["_defeated"]
+        rendered.append(state)
+        return original(*args)
+
+    def capture_visible(*args, **kwargs):
+        pixmap = original_entity(*args, **kwargs)
+        if kwargs.get("snapshot") is not None:
+            state = dict(rendered[-1])
+            state["_key"] = next((pi, index) for pi, player in enumerate(
+                view.game.state.players) for index, shiki in enumerate(player.shikigami)
+                                 if shiki is args[0])
+            visible.append(state)
+        return pixmap
+
+    monkeypatch.setattr(cardart, "_cached_entity_pixmap", capture)
+    monkeypatch.setattr(battle_scene, "entity_pixmap", capture_visible)
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    pa, pb = view.game.state.players
+    pa.shikigami[0].level = pb.shikigami[0].level = 1
+    pa.shikigami[0].health = pb.shikigami[0].health = 3
+    pb.combat_index = 0
+    view.refresh()
+    settle(view)
+    keys = [(0, 0), (1, 0)]
+    items = {key: scene.cards[("shiki", *key)] for key in keys}
+    assert items[(1, 0)].pos() == combat_position(scene.layout_width, True)
+
+    view.assault(0)
+    view.timeline_timer.stop()
+    assert [event["v"] for event in scene._visual_events.values()] == ["assault"]
+    assert not scene._move_animations
+    assert not scene._defeat_visuals
+    view._render_state()
+    assert not any(event.get("v") == "_move" for event in scene._visual_queue)
+
+    defeats = [entry for entry in view.game.state.timeline if entry.get("v") == "defeated"]
+    returns = [entry for entry in view.game.state.timeline
+               if entry.get("v") == "move" and entry.get("zone") == "ready"]
+    assert len(defeats) == len(returns) == 2
+    for defeat in defeats:
+        assert defeat["r"]["defeated"] is True
+        assert defeat["r"]["revive_countdown"] == 3
+        returning = next(entry for entry in returns
+                         if (entry["p"], entry["s"]) == (defeat["p"], defeat["s"]))
+        assert returning["r"] == defeat["r"]
+    for player in (pa, pb):
+        player.shikigami[0].revive_countdown = 9
+
+    def finish(kind):
+        animations = [animation for animation, event in scene._visual_events.items()
+                      if event.get("v") == kind]
+        assert animations
+        for animation in animations:
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
+
+    finish("assault")
+    assert [event["v"] for event in scene._visual_events.values()] == ["_move"]
+    assert not scene._defeat_visuals
+    view._render_state()
+    assert not any(event.get("v") == "_move" for event in scene._visual_queue)
+
+    finish("_move")
+    assert [event["v"] for event in scene._visual_events.values()] == ["damage"] * 2
+    assert not scene._defeat_visuals
+    view._render_state()
+    assert not any(event.get("v") == "_move" for event in scene._visual_queue)
+
+    finish("damage")
+    assert [event["v"] for event in scene._visual_events.values()] == ["stat"] * 2
+    assert not scene._defeat_visuals
+    assert [(state["_defeated"], state["defeated_countdown"], state["health"])
+            for state in visible[-2:]] == [(False, None, 0), (False, None, 0)]
+    view._render_state()
+
+    finish("stat")
+    assert [event["v"] for event in scene._visual_events.values()] == ["defeated"] * 2
+    assert scene._defeat_visuals == set(keys)
+    assert all(state["defeated_countdown"] is None for state in visible[-2:])
+    view._render_state()
+
+    finish("defeated")
+    assert [event["v"] for event in scene._visual_events.values()] == ["_move"] * 2
+    assert not scene._defeat_visuals
+    for key in keys:
+        latest = next(state for state in reversed(visible) if state["_key"] == key)
+        assert latest["defeated_countdown"] == 3
+    view._render_state()
+
+    finish("_move")
+    assert not scene._visual_animations and not scene._visual_queue
+    positions = layout_positions(view.game, view.viewer, scene_width=scene.layout_width)
+    for key, item in items.items():
+        assert item.pos() == positions[("shiki", *key)]
+        assert view.game.state.players[key[0]].shikigami[key[1]].defeated
+    view._render_state()
+    assert not scene._move_animations
 
 
 def test_parallel_heal_has_following_parallel_refresh_phase(qapp, db, view):

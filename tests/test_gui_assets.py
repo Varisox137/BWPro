@@ -98,6 +98,8 @@ def test_engine_emits_structured_defeat_and_luck_events(db, make_game):
     defeat = next(entry for entry in game.state.timeline
                   if entry.get("k") == "v" and entry.get("v") == "defeated")
     assert (defeat["p"], defeat["s"]) == (0, 0)
+    assert defeat["r"]["defeated"] is True
+    assert defeat["r"]["revive_countdown"] == 3
 
     db.cards[10010151] = F.card(
         10010151, token=True,
