@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMessageBox,
+    QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect,
+    QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
@@ -78,7 +78,7 @@ class CardWidget(QFrame):
 
     def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
                  display=None, level_color=None, art_context: dict | None = None,
-                 art_height: int | None = None):
+                 art_height: int | None = None, frame_variant: str | None = None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -119,6 +119,8 @@ class CardWidget(QFrame):
         self._art_db = db
         self._art_height = art_height
         self._art_options = {"display": display, "level_color": level_color}
+        if frame_variant is not None:
+            self._art_options["frame_variant"] = frame_variant
         if art_context is not None:
             self._art_options["cache_context"] = art_context
         pixmap = self._request_art()
@@ -203,11 +205,13 @@ class CardChoiceView(QScrollArea):
     chosen = Signal(object)
     detail_clicked = Signal(object)
 
-    def __init__(self, options, db=None, parent=None):
+    def __init__(self, options, db=None, parent=None, *,
+                 frame_variant: str | None = None, button_text: str = "选择"):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setMinimumHeight(475)
         content = QWidget()
         content.setObjectName("choiceContent")
         row = QHBoxLayout(content)
@@ -222,13 +226,13 @@ class CardChoiceView(QScrollArea):
                 card = QPushButton(label)
                 card.setMinimumSize(180, 60)
             else:
-                card = CardWidget(cdef, db=db)
+                card = CardWidget(cdef, db=db, frame_variant=frame_variant)
                 card.count_label.hide()
                 card.setFixedSize(180, 390)
                 card.setFrameShape(QFrame.NoFrame)
                 card.setStyleSheet("background: transparent; border: none;")
                 card.detail_clicked.connect(self.detail_clicked.emit)
-            button = QPushButton("选择")
+            button = QPushButton(button_text)
             button.setObjectName("battleSmall")
             button.setFixedSize(96, 28)
             button.hide()
@@ -254,20 +258,12 @@ class CardChoiceView(QScrollArea):
         if self.selected == value:
             self.confirm(value)
             return
-        previous = self.selected
         self.selected = value
         for option, wrapper in self._wrappers.items():
             selected = option == value
             if selected:
-                glow = QGraphicsDropShadowEffect(wrapper)
-                glow.setColor(QColor("#f3d56b"))
-                glow.setBlurRadius(28)
-                glow.setXOffset(0)
-                glow.setYOffset(0)
-                wrapper.setGraphicsEffect(glow)
-            elif option == previous:
                 wrapper.setGraphicsEffect(None)
-            if option != value and option is not None:
+            elif option is not None:
                 dim = QGraphicsOpacityEffect(wrapper)
                 dim.setOpacity(0.45)
                 wrapper.setGraphicsEffect(dim)

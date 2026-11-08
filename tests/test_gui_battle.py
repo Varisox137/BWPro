@@ -2602,7 +2602,7 @@ def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, v
     assert choice.option_buttons[first.uid].width() == 96
     assert first_cards[0].width() == 194
     assert first_cards[0].geometry().center().x() == choice._wrappers[first.uid].rect().center().x()
-    assert choice._wrappers[first.uid].graphicsEffect() is not None
+    assert choice._wrappers[first.uid].graphicsEffect() is None
     assert first.uid not in [card.uid for card in game.current.graveyard]
     QTest.mouseClick(choice.option_buttons[first.uid], Qt.LeftButton)
     assert first.uid in [card.uid for card in game.current.graveyard]

@@ -20,6 +20,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from client.gui import portrait
+from client.gui.card_appearance import card_appearance
 from client.gui.portrait import library_root
 from client.gui.renderlog import (
     clear_render_log_dedup, log_cache_failure, log_render_failure)
@@ -692,6 +693,9 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         if config:
             selected["frame_variant"] = config.get("frame_variant", "norm")
             selected["description"] = config.get("description")
+        preference = card_appearance(cdef.id)
+        if preference["frame_variant"] != "norm":
+            selected["frame_variant"] = preference["frame_variant"]
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(cdef, db, selected)
@@ -747,11 +751,13 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 display: dict[str, int] | None = None,
                 level_color: str | None = None, burst: int | None = None,
                 cache_context: dict | None = None,
-                height: int | None = None) -> QPixmap | None:
+                height: int | None = None, frame_variant: str | None = None) -> QPixmap | None:
     """按原生高度合成；静态卡面使用磁盘缓存，同页可复用资源校验。"""
     overrides = {"level_color": level_color} if level_color is not None else {}
     if burst is not None:
         overrides["burst"] = burst
+    if frame_variant is not None:
+        overrides["frame_variant"] = frame_variant
     return _card_pixmap_impl(
         cdef, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,

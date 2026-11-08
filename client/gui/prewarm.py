@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from client.gui import cardart, portrait
+from client.gui.card_appearance import card_appearance
 from client.gui.cardart import card_pixmap, entity_pixmap
 
 MANIFEST_NAME = "manifest.json"
@@ -75,6 +76,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
             "id": definition.id,
             "kind": kind,
             "version": definition.version,
+            "appearance": card_appearance(definition.id),
             "definition_sha256": _definition_sha256(definition),
             "config_sha256": (hashlib.sha256(path.read_bytes()).hexdigest()
                               if config and path is not None else ""),

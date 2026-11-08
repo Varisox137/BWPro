@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.deckbuilder import available_shikigami, buildable_cards
+from client.gui.appearance import CardAppearanceDialog
 from client.gui.loading import LoadingIndicator
 from client.gui.widgets import CardDetailDialog, CardWidget, fill_card_row
 from db.envs import available_env_dates, env_label, parse_env_input
@@ -258,6 +259,7 @@ class ShikigamiCodexView(QWidget):
             for cdef in shown:
                 widget = CardWidget(cdef, editable=False, db=self.edb, art_context=art_context)
                 widget.count_label.hide()
+                widget.clicked.connect(self.show_card_appearance)
                 widget.detail_clicked.connect(self.show_card_detail)
                 self.card_widgets.append(widget)
                 self._loading_tick()
@@ -272,6 +274,10 @@ class ShikigamiCodexView(QWidget):
         page = max(0, min(self.page_index + direction, self.page_count - 1))
         if page != self.page_index:
             self.page_index = page
+            self._render_cards()
+
+    def show_card_appearance(self, cdef) -> None:
+        if CardAppearanceDialog(cdef, self.edb, self).exec():
             self._render_cards()
 
     def show_card_detail(self, cdef) -> None:

@@ -83,7 +83,7 @@ BWP_DIY_LIBRARY='D:/Programming/BWPro/library'
 2. 作为 `get_type_layout(..., frame_variant)` 的框品参数；
 3. 通过现有负载和布局 JSON 自然进入缓存身份。
 
-小卡使用同一负载字段选择框内卡图窗口。未配置时继续使用 `norm`，不改变现有普通框结果。
+本机 `~/.bwpro/card_appearance.json` 可按卡牌 id 覆盖大卡的 `frame_variant`，仅稀疏保存非常规框；预览对话框使用显式参数覆盖且不提前写盘。小卡继续使用配置中的负载字段选择框内卡图窗口。未配置时继续使用 `norm`，不改变现有普通框结果。启动预热只合成当前选择的外观，manifest 逐卡记录外观，不枚举四种牌框。
 
 ### 2.3 机制 badge
 
