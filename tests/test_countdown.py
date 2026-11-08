@@ -157,6 +157,89 @@ def test_countdown_visual_effect_delta(db, make_game):
     assert visual[0]["r"]["revive_pending"] is False
 
 
+def test_countdown_visual_register_and_form_clear(db, make_game):
+    """效果注册、形态注册与形态离场分别记录最终倒计时/移除快照。"""
+    cid = 10010151
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, level=1, token=True,
+        steps=[F.Step(op="set_countdown", target=T(kind="self"), initial=4, steps=[])])
+    fm = _cd_form(db, 10010154, countdown=2)
+    plain = _cd_form(db, 10010155)
+    g, pa = _game(make_game)
+    g.state.timeline.clear()
+    play(g, 0, cid)
+    play(g, 0, fm)
+    play(g, 0, plain)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("s") == IDX]
+    assert [entry["r"]["countdown"] for entry in visual] == [4, 2, None]
+
+
+def test_countdown_visual_upgrade_registers(db, make_game):
+    """升至 1 级使倒计时能力真实进场时记录注册值。"""
+    _cd_ability(db, initial=3, sid=CD2)
+    g = make_game(auto_skip_upgrade=False)
+    g.state.timeline.clear()
+    g.apply({"op": "upgrade", "index": IDX2})
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("s") == IDX2]
+    assert [entry["r"]["countdown"] for entry in visual] == [3]
+
+
+def test_countdown_visual_awaken_rebinds(db, make_game):
+    """觉醒替换倒计时能力后记录觉醒倒计时，而非中间清除状态。"""
+    _cd_ability(db, initial=2)
+    awk = 10010160
+    db.cards[awk] = F.card(
+        awk, shikigami=CD, card_type="spell", level=2, subtype="awaken",
+        steps=[], token=True,
+        abilities=[F.EffectBlock(countdown=3, steps=[])])
+    g, pa = _game(make_game)
+    pa.shikigami[IDX].level = 2
+    g.state.timeline.clear()
+    play(g, 0, awk)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("s") == IDX]
+    assert [entry["r"]["countdown"] for entry in visual] == [3]
+
+
+def test_countdown_visual_revive_reregisters(db, make_game):
+    """复活先显示未复活倒计时能力，再记录能力重注册与同批自然减少。"""
+    _cd_ability(db, initial=2)
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g._drain_queue()
+    s.revive_countdown = 1
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") in ("countdown", "revive")
+              and entry.get("p") == 0 and entry.get("s") == IDX]
+    assert [entry["v"] for entry in visual] == [
+        "countdown", "revive", "countdown", "countdown"]
+    assert [entry["r"]["countdown"] for entry in visual] == [None, None, 2, 1]
+
+
+def test_countdown_visual_transform_restore_only_real_changes(db, make_game):
+    """变形移除、还原继续剩余倒计时均发快照；无倒计时实体变形不产生假动画。"""
+    db.shikigami[PAPER_DUMMY] = F.shiki(PAPER_DUMMY, kind="transform",
+                                        name="纸人", power=1, health=1)
+    _cd_ability(db, initial=2)
+    g, pa = _game(make_game)
+    g.state.timeline.clear()
+    g._transform_shikigami(pa, IDX, PAPER_DUMMY)
+    g._untransform(0, IDX)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("s") == IDX]
+    assert [entry["r"]["countdown"] for entry in visual] == [None, 1]
+    g.state.timeline.clear()
+    g._transform_shikigami(pa, IDX2, PAPER_DUMMY)
+    g._untransform(0, IDX2)
+    assert not [entry for entry in g.state.timeline
+                if entry.get("v") == "countdown" and entry.get("s") == IDX2]
+
+
 def test_countdown_visual_once_zero_removes(db, make_game):
     """一次型归零在生效快照后记录移除状态，而非残留实时倒计时。"""
     cid = 10010151

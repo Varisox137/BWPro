@@ -2506,7 +2506,7 @@ class Game:
             if (kw.split(":", 1)[0] in ABILITY_PSEUDO_KEYWORDS
                     and kw not in st_aw.perm_keywords):
                 st_aw.perm_keywords.append(kw)
-        self._register_ability_countdown(pi, si, awaken=True)
+        self._register_ability_countdown(pi, si, awaken=True, visual=True)
         self._log(f"{self.db.shikigami[p.shikigami[si].id].name} 觉醒")
         self._settle(f"【觉醒】{self.db.shikigami[p.shikigami[si].id].name} 觉醒"
                      f"（永久 {cdef.awaken_power:+d}/{cdef.awaken_health:+d}）")
@@ -2953,7 +2953,7 @@ class Game:
                 cd = next((b for b in idef.abilities if b.countdown is not None), None)
                 if cd is not None:
                     self._register_countdown(s, initial=cd.countdown, block=cd,
-                                             once=cd.once, source=None)
+                                             once=cd.once, source=None, ref=target)
                     entry["cd_block"] = cd
             else:
                 assert card is not None
@@ -3018,13 +3018,14 @@ class Game:
             s = self.state.players[target.player].shikigami[target.shikigami]
             for e in list(s.invocations):
                 if _hit(e):
-                    self._remove_invocation(s, e, reason="式神唯一")
+                    self._remove_invocation(s, e, reason="式神唯一", ref=target)
             return
-        for pl in self.state.players:
-            for s in pl.shikigami:
+        for pi, pl in enumerate(self.state.players):
+            for si, s in enumerate(pl.shikigami):
                 for e in list(s.invocations):
                     if _hit(e):
-                        self._remove_invocation(s, e, reason="唯一")
+                        self._remove_invocation(s, e, reason="唯一",
+                                                ref=Ref(player=pi, shikigami=si))
             for zname in ("hand", "deck"):
                 for c in pl.zones.get(zname, []):
                     for e in list(c.invocations):
@@ -3033,7 +3034,8 @@ class Game:
                             self._log(f"【{self.db.cards[c.id].name}】上结附的灵咒"
                                       f"【{idef.name}】移除（唯一）")
 
-    def _remove_invocation(self, s: ShikigamiState, entry: dict, *, reason: str) -> None:
+    def _remove_invocation(self, s: ShikigamiState, entry: dict, *, reason: str,
+                           ref: Ref | None = None) -> None:
         """移除式神身上的灵咒条目：身材增减益为类光环层（条目移除即失效，
         无双重扣减）；上限降低时钳当前生命（同 buff_health/dyn 通道口径，
         不触发事件）。能力类随条目移除失效；结附授予的关键字按实例撤销、
@@ -3048,7 +3050,7 @@ class Game:
             s.stuns[:] = kept
             self._log(f"{self.db.shikigami[s.id].name} 的眩晕解除（灵咒移除）")
         if entry.get("cd_block") is not None and s.countdown_block is entry["cd_block"]:
-            self._clear_countdown(s)
+            self._clear_countdown(s, ref=ref)
         if s.health > s.max_health:
             s.health = s.max_health  # 灵咒生命上限增益随移除失效：钳当前生命
         self._log(f"{self.db.shikigami[s.id].name} 的灵咒【{entry['name']}】移除（{reason}）")
@@ -3912,6 +3914,7 @@ class Game:
         if d.kind != "transform":
             raise ValueError(f"transform 的目标 {into} 不是变形物（kind=transform）")
         s = p.shikigami[i]
+        previous = s.countdown
         origin = (s.transform_origin if s.transform_origin is not None
                   else s.model_dump(exclude={"transform_origin"}))
         owner_id = s.transform_owner if s.transform_owner is not None else s.id
@@ -3933,6 +3936,8 @@ class Game:
         self._settle(f"【变形】{self.db.shikigami[s.id].name} 变形为 {d.name}"
                      f"（身材 {b.base_power}/{b.max_health}）")
         self._register_ability_countdown(pi, i)  # 能力后进场：注册变形物的倒计时能力块
+        if previous != b.countdown:
+            self._visual_countdown(Ref(player=pi, shikigami=i))
 
     def _replace_shikigami(self, p: PlayerState, i: int, into: int) -> None:
         """式神替换（觉醒·番茄；非变形）：座次 i 的式神 A 被替换物 B 实体取代——
@@ -3945,6 +3950,7 @@ class Game:
         if d.kind != "replace":
             raise ValueError(f"replace 的目标 {into} 不是替换物定义（kind=replace）")
         s = p.shikigami[i]
+        previous = s.countdown
         owner_id = s.ext.get("replace_owner", s.id)  # 连续替换仍指向最初的原式神
         pi = self.state.players.index(p)
         b = ShikigamiState(
@@ -3961,6 +3967,8 @@ class Game:
         self._settle(f"【替换】{self.db.shikigami[s.id].name} 替换为 {d.name}"
                      f"（身材 {b.base_power}/{b.max_health}）")
         self._register_ability_countdown(pi, i)  # 能力后进场（替换物无能力块时为空操作）
+        if previous != b.countdown:
+            self._visual_countdown(Ref(player=pi, shikigami=i))
 
     def _to_coffin(self, p: PlayerState, pi: int, i: int, into: int,
                    *, keep_combat: bool = False) -> None:
@@ -4004,6 +4012,8 @@ class Game:
         self._settle(f"【替换】气绝的{self.db.shikigami[owner_id].name} 替换为 "
                      f"{d.name}（身材 {b.base_power}/{b.max_health}，倒计时 1）")
         self._register_ability_countdown(pi, i)  # 能力后进场：注册棺材的倒计时能力块
+        if b.countdown is not None:
+            self._visual_countdown(Ref(player=pi, shikigami=i))
 
     def _untransform(self, pi: int, i: int) -> None:
         """解除座次 i 变形物的变形：按 transform_origin 快照还原原式神当时状态
@@ -4015,6 +4025,7 @@ class Game:
         s = p.shikigami[i]
         if s.transform_origin is None:
             return
+        previous = s.countdown
         restored = ShikigamiState.model_validate(s.transform_origin)
         restored.level = s.level  # 等级继承变形物当前值（覆盖快照；定案见 docstring）
         # 还原进场 = 再进场：entry_order 覆盖快照旧值，取本队当前最大值 +1
@@ -4050,6 +4061,8 @@ class Game:
                 restored.ability_entry["form"] = self.state.next_ability_seq()  # 形态能力进场
             for entry in restored.delayed:  # 卡牌赋予的延迟能力进场
                 entry["seq"] = self.state.next_ability_seq()
+        if previous != restored.countdown:
+            self._visual_countdown(Ref(player=pi, shikigami=i))
 
     def _attach_form(self, p: PlayerState, i: int, card: CardInstance, cdef: CardDef) -> None:
         """为式神结附形态牌：先消灭旧形态，再用形态身材覆盖基础身材。
@@ -4071,8 +4084,9 @@ class Game:
         s.ability_entry["form"] = self.state.next_ability_seq()  # 形态能力进场序号（答复(4)）
         # 形态牌具有倒计时时，式神获得该倒计时能力（替换当前倒计时；rules.md ch10 结附流程）
         if cdef.countdown is not None:
-            self._register_countdown(s, initial=cdef.countdown,
-                                     block=cdef.countdown_effects, source=card.id)
+            self._register_countdown(
+                s, initial=cdef.countdown, block=cdef.countdown_effects, source=card.id,
+                ref=Ref(player=self.state.players.index(p), shikigami=i))
         if cdef.form_power is not None:
             s.base_power = cdef.form_power + int(card.mods.get("form_power_delta", 0))
             self._record_max_power(s)  # 形态基础力量变更后同步峰值记账
@@ -4144,7 +4158,8 @@ class Game:
         # 形态离场仅清除该形态授予的倒计时（rules.md ch10 消灭流程）；
         # 已被 set_countdown/能力注册替换的倒计时不受影响
         if s.countdown_source == old.id:
-            self._clear_countdown(s)
+            self._clear_countdown(
+                s, ref=None if reason == "defeat" else Ref(player=pi, shikigami=i))
         # 移除形态授予的关键字实例（气绝已清空时跳过）
         for kw in cdef.keywords:
             if kw not in CARD_LEVEL_KEYWORDS:
@@ -4214,7 +4229,7 @@ class Game:
         s.level += 1
         p.upgrades -= 1
         if s.level == 1:
-            self._register_ability_countdown(self.state.active, i)  # 能力进场：0 级升至 1 级
+            self._register_ability_countdown(self.state.active, i, visual=True)  # 能力进场：0 级升至 1 级
         name = self.db.shikigami[s.id].name
         self._log(f"{p.name} 将 {name} 升至 {s.level} 级")
         self._settle(f"【升级】{p.name} 的{name}升至 {s.level} 级")
@@ -4508,26 +4523,32 @@ class Game:
 
     # ---------- 式神级倒计时框架（一名式神至多 1 个倒计时能力，新注册替换旧的） ----------
 
-    @staticmethod
-    def _clear_countdown(s: ShikigamiState) -> None:
+    def _clear_countdown(self, s: ShikigamiState, *, ref: Ref | None = None) -> None:
         """清除式神当前倒计时能力（被替换/形态离场/气绝/一次型生效后）。"""
+        previous = s.countdown
         s.countdown = None
         s.countdown_initial = None
         s.countdown_block = None
         s.countdown_once = False
         s.countdown_source = None
+        if ref is not None and previous is not None:
+            self._visual_countdown(ref)
 
     def _register_countdown(self, s: ShikigamiState, *, initial: int,
                             block: EffectBlock | None, once: bool = False,
-                            source: int | None = None) -> None:
+                            source: int | None = None, ref: Ref | None = None) -> None:
         """注册倒计时能力三要素（初值/归零效果块/是否一次型），替换当前倒计时能力。"""
+        previous = s.countdown
         s.countdown = initial
         s.countdown_initial = initial
         s.countdown_block = block if block is not None else EffectBlock()
         s.countdown_once = once
         s.countdown_source = source
+        if ref is not None and previous != initial:
+            self._visual_countdown(ref)
 
-    def _register_ability_countdown(self, pi: int, si: int, *, awaken: bool = False) -> None:
+    def _register_ability_countdown(self, pi: int, si: int, *, awaken: bool = False,
+                                    visual: bool = False) -> None:
         """能力进场（对局开始/升至 1 级/复活）与觉醒替换：注册式神当前能力
         （基础/觉醒）中的倒计时能力块（EffectBlock.countdown 非 None 者）。
 
@@ -4539,6 +4560,7 @@ class Game:
         """
         p = self.state.players[pi]
         s = p.shikigami[si]
+        previous = s.countdown
         if s.awakened is not None:
             blocks = self.db.cards[s.awakened].abilities
             source = s.awakened
@@ -4557,6 +4579,8 @@ class Game:
             s.countdown = min(s.countdown, 1) if s.countdown is not None else 1
         elif s.form is None or s.countdown_source != s.form.id:
             self._clear_countdown(s)
+        if visual and previous != s.countdown:
+            self._visual_countdown(Ref(player=pi, shikigami=si))
         # 能力进场序号（答复(4)(6)：同事件触发按能力进场顺序排序；对局开始/升级/
         # 复活/觉醒替换/变形与还原均经本路径重新记录）
         s.ability_entry["ability"] = self.state.next_ability_seq()
@@ -4631,7 +4655,8 @@ class Game:
                          if e.get("cd_block") is block}
                 for e in list(s.invocations):
                     if e["name"] in names:
-                        self._remove_invocation(s, e, reason="倒计时生效")
+                        self._remove_invocation(s, e, reason="倒计时生效",
+                                                ref=Ref(player=pi, shikigami=si))
             horizon = self._resolve_block(block, ExecContext(
                 controller=pi, source=Ref(player=pi, shikigami=si), card=card,
                 is_ability=True))  # 倒计时效果属式神能力（贯通继承判定）
@@ -4659,7 +4684,7 @@ class Game:
         revive = self._stat_event(Ref(player=pi, shikigami=i))
         revive["v"] = "revive"
         self.state.timeline.append(revive)
-        self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
+        self._register_ability_countdown(pi, i, visual=True)  # 能力进场：复活重新注册倒计时能力
         self._log(f"{self.db.shikigami[s.id].name} 复活")
         self._settle(f"【复活】{self.db.shikigami[s.id].name} 复活（生命回满 {s.max_health}）")
         # 委托账本：己方复活计数（一切复活含倒计时自然复活都计；shareable=False）
@@ -5491,6 +5516,7 @@ class Game:
             original = ShikigamiState.model_validate(s.coffin_origin)
             original.revive_countdown = self.config.revive_countdown
             owner0.shikigami[ref.shikigami] = original
+            self._visual_countdown(ref)
             self._settle(f"【气绝】{self.db.shikigami[s.id].name} 被击破（棺材）："
                          f"{self.db.shikigami[original.id].name} 保持气绝"
                          f"（复活倒计时 {original.revive_countdown}）")

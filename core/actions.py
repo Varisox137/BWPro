@@ -2336,7 +2336,8 @@ def set_countdown(game, ctx, *, targets: list[Ref], initial: int,
                              for c in z if c.uid == uid), None)
                 if inst is not None:
                     s.ext["recorded_card"] = inst.id
-        game._register_countdown(s, initial=initial, block=block, once=once, source=s.id)
+        game._register_countdown(s, initial=initial, block=block, once=once, source=s.id,
+                                 ref=ref)
         game._log(f"{game.db.shikigami[s.id].name} 获得了倒计时 {initial} 的能力")
 
 
@@ -4491,7 +4492,7 @@ def inv_count_mod(game, ctx, *, targets: list[Ref], name: str, add: int = 1) -> 
         else:
             mine = [e for e in s.invocations if e["name"] == idef.name]
             for e in mine[:int(-add)]:
-                game._remove_invocation(s, e, reason="数量减少")
+                game._remove_invocation(s, e, reason="数量减少", ref=ref)
         touched.add(ref.player)
         game._log(f"{game.db.shikigami[s.id].name} 的灵咒【{idef.name}】数量 "
                   f"{int(add):+d}（现有 "
@@ -4649,7 +4650,7 @@ def detach_invocation(game, ctx, *, targets: list[Ref], names: list[str],
     wanted = {str(n) for n in names}
     for e in list(s.invocations):
         if e["name"] in wanted:
-            game._remove_invocation(s, e, reason="效果移除")
+            game._remove_invocation(s, e, reason="效果移除", ref=ref)
 
 
 @action("announce_invocation")

@@ -599,7 +599,7 @@ def test_invocation_keywords_grant_and_revoke(db, make_game):
     assert "veil" not in s.keywords
 
 
-def test_invocation_countdown_once_removes_body(db, make_game):
+def test_invocation_countdown_once_visual_removes_body(db, make_game):
     """迟钝型灵咒倒计时块（once）：结附即注册式神级倒计时、归零生效（眩晕中仍
     发起攻击——launch_attack 不查眩晕）后移除灵咒本体而非重置。"""
     db.invocations["迟钝"] = InvocationDef(
@@ -608,14 +608,24 @@ def test_invocation_countdown_once_removes_body(db, make_game):
     g = make_game()
     pa, pb = F.battle_setup(g)
     s = pa.shikigami[0]
+    g.state.timeline.clear()
     g.attach_invocation("迟钝", player=0, target=Ref(player=0, shikigami=0))
     assert (s.countdown, s.countdown_once) == (2, True) and s.is_stunned
+    visual = [entry for entry in g.state.timeline if entry.get("v") == "countdown"]
+    assert [entry["r"]["countdown"] for entry in visual] == [2]
     F.pass_turns(g, 2)  # 回到己方回合开始：2→1
     assert s.countdown == 1 and s.invocations
+    g.state.timeline.clear()
     F.pass_turns(g, 2)  # 再到己方回合开始：1→0 生效
     assert pb.health == 27  # 眩晕中发起攻击：3 力量打空战斗区牌手
     assert s.invocations == []  # 生效后移除本体
     assert s.countdown is None and not s.is_stunned  # 倒计时清除、眩晕随灵咒解除
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") in ("countdown", "countdown_proc")
+              and entry.get("p") == 0 and entry.get("s") == 0]
+    assert [entry["v"] for entry in visual] == [
+        "countdown", "countdown_proc", "countdown"]
+    assert [entry["r"]["countdown"] for entry in visual] == [0, 0, None]
 
 
 def test_invocation_bonus_inherit_and_defeat_reset(db, make_game):
@@ -968,7 +978,7 @@ def test_coffin_family_assault_unyielding(db, make_game):
     assert pa.combat_index == 0  # 攻击者进战斗区
 
 
-def test_coffin_destroyed_keeps_original_defeated(db, make_game):
+def test_coffin_destroyed_visual_restores_defeated_countdown(db, make_game):
     """棺材被击杀（定案(8)）：原式神保持气绝、按正常气绝倒计时复活（棺材移除
     不复活），**会有气绝事件、计入击杀账本**（入棺时按原式神已结算过一次，
     击破棺材再结算一次）。"""
@@ -990,6 +1000,7 @@ def test_coffin_destroyed_keeps_original_defeated(db, make_game):
     g.emit = spy
     c = pa.shikigami[1]
     c.health = 0
+    g.state.timeline.clear()
     g.check_defeated(Ref(player=0, shikigami=1), source=Ref(player=1, shikigami=0))
     r = pa.shikigami[1]
     assert r.id == 100102 and r.defeated  # 原式神保持气绝
@@ -997,6 +1008,13 @@ def test_coffin_destroyed_keeps_original_defeated(db, make_game):
     assert pb.kill_total == kills0 + 1  # 击破棺材计入击杀账本
     assert pb.kill_by.get(100101) == 1  # 按来源实体数据 id 分桶
     assert seen and seen[0]["victim"] == Ref(player=0, shikigami=1)  # 气绝事件照发
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("p") == 0
+              and entry.get("s") == 1]
+    assert len(visual) == 1
+    assert visual[0]["r"]["defeated"] is True
+    assert visual[0]["r"]["revive_countdown"] == g.config.revive_countdown
+    assert visual[0]["r"]["revive_pending"] is False
     g._drain_queue()
 
 
