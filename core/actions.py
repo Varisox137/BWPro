@@ -3655,10 +3655,6 @@ def luck_reroll(game, ctx, *, targets: list[Ref]) -> None:
     visual_shiki = (None if ev.get("player_visual") or source is None
                     else source.shikigami)
     previous_dice = ev["dice"]
-    game.state.timeline.append({
-        "k": "v", "v": "luck", "p": ev["judge"], "s": visual_shiki,
-        "dice": previous_dice, "success": previous_dice >= ev["x"], "g": ev.get("g"),
-    })
     if game.state.players[ev["judge"]].ext.get("dice_force_six"):
         ev["dice"] = 6  # 萌即正义：重投的投掷骰子时机同样必 6
     else:

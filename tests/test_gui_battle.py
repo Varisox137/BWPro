@@ -3425,6 +3425,17 @@ def test_luck_visuals_play_sequentially(qapp, view):
     assert offset == QPointF(-word.width() / 2, -word.height() / 2)
 
 
+def test_granular_luck_visuals_play_directly(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "luck_dice", "p": view.viewer, "s": 0, "dice": 1})
+    scene.play_visual_event({"v": "luck_result", "p": view.viewer, "s": 0,
+                             "dice": 1, "success": False})
+    animation = scene._visual_animations[0]
+    assert scene._visual_events[animation]["v"] == "luck_dice"
+    assert [event["v"] for event in scene._visual_queue] == ["luck_result"]
+
+
 def test_visuals_on_different_targets_play_in_parallel(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

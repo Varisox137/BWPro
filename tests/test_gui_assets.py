@@ -107,10 +107,13 @@ def test_engine_emits_structured_defeat_and_luck_events(db, make_game):
     game = make_game()
     game.state.players[0].orb = 9
     play(game, 0, 10010151)
-    luck = next(entry for entry in game.state.timeline
-                if entry.get("k") == "v" and entry.get("v") == "luck")
-    assert luck["p"] == 0 and 1 <= luck["dice"] <= 6
-    assert luck["success"] is (luck["dice"] >= 4)
+    luck_events = [entry for entry in game.state.timeline
+                   if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
+    assert [entry["v"] for entry in luck_events] == ["luck_dice", "luck_result"]
+    dice, result = luck_events
+    assert dice["p"] == 0 and 1 <= dice["dice"] <= 6
+    assert result["dice"] == dice["dice"]
+    assert result["success"] is (result["dice"] >= 4)
 
 
 def test_engine_emits_actual_heal_visuals_only(db, make_game):

@@ -103,9 +103,18 @@ def test_luck_success_aura_power_same_turn(gdb, monkeypatch):
     s = pa.shikigami[IDX]
     base = s.eff_power
     _force_dice(monkeypatch, g, [6, 5])
+    g.state.timeline.clear()
     play(g, 0, CHUQIAN)                        # 成功 1 次
     assert pa.ext["luck_success_turn"] == g.state.turn
     assert s.eff_power == base + 2
+    visual = [entry for entry in g.state.timeline if entry.get("k") == "v"]
+    kinds = [entry["v"] for entry in visual]
+    aura_stat = next((entry for entry in visual
+                      if entry["v"] == "stat" and entry.get("s") == IDX
+                      and entry["r"]["power"] == base + 2), None)
+    assert aura_stat is not None
+    assert kinds.index("luck_result") < visual.index(aura_stat) \
+        < kinds.index("move") < kinds.index("damage")
     play(g, 0, CHUQIAN)                        # 同回合再成功：不叠加
     assert s.eff_power == base + 2
     pass_turns(g, 2)                           # 下个己方回合：光环消失
@@ -426,12 +435,26 @@ def test_luck_reroll_on_dice_one(gdb, monkeypatch):
     assert pa.ext["dice_history"] == [5]       # 被重投覆盖的首投不计入
     assert pa.orb == 9 - 1 + 2                 # 判定成功：获得 2 鬼火
     visuals = [entry for entry in g.state.timeline if entry.get("k") == "v"]
-    assert [(entry["v"], entry.get("dice"), entry.get("success")) for entry in visuals] == [
-        ("luck", 1, False), ("luck_reroll", 5, None), ("luck", 5, True),
+    assert [(entry["v"], entry.get("dice")) for entry in visuals] == [
+        ("luck_dice", 1), ("luck_reroll", 5),
+        ("luck_dice", 5), ("luck_result", 5),
     ]
     assert visuals[1]["previous_dice"] == 1
-    assert "运势重置（原骰点 1）" in g.state.log
+    assert g.state.log.count("运势重置（原骰点 1）") == 1
+    assert sum("运势重置" in entry.get("m", "") for entry in g.state.timeline) == 1
     assert not any("新骰点" in message for message in g.state.log)
+
+
+def test_luck_reroll_same_value_emits_second_dice(gdb, monkeypatch):
+    """重投后点数不变仍依次呈现重投标记、第二骰与最终结果。"""
+    g, pa, _pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 2})
+    _force_dice(monkeypatch, g, [1, 1])
+    play(g, 0, FUYUN)
+    visuals = [entry for entry in g.state.timeline if entry.get("k") == "v"]
+    assert [(entry["v"], entry.get("dice")) for entry in visuals] == [
+        ("luck_dice", 1), ("luck_reroll", 1),
+        ("luck_dice", 1), ("luck_result", 1),
+    ]
 
 
 def test_awaken_reroll_on_would_fail(gdb, monkeypatch):
@@ -458,8 +481,12 @@ def test_judge_both_each_draw(gdb, monkeypatch):
     assert len(pa.hand) == ha + 2              # 回合开始补抽 1 + 判定成功抽 1
     assert len(pb.hand) == hb + 2              # B 回合补抽 1 + 判定成功抽 1
     luck_visuals = [entry for entry in g.state.timeline
-                    if entry.get("k") == "v" and entry.get("v") == "luck"]
-    assert [(entry["p"], entry["s"]) for entry in luck_visuals] == [(0, None), (1, None)]
+                    if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
+    assert [(entry["v"], entry["p"], entry["s"]) for entry in luck_visuals] == [
+        ("luck_dice", 0, None), ("luck_dice", 1, None),
+        ("luck_result", 0, None), ("luck_result", 1, None),
+    ]
+    assert luck_visuals[0]["g"] == luck_visuals[1]["g"] is not None
     g2, pa2, pb2 = _game(gdb, ZFTZ_TEAM)
     play(g2, 0, JINYUN)
     _force_dice(monkeypatch, g2, [4, 2])       # 当前回合玩家先：A 成功、B 失败

@@ -1061,8 +1061,9 @@ class BattleScene(QGraphicsScene):
 
     def play_visual_event(self, event: dict) -> None:
         kind = event.get("v")
-        if kind not in ("defeated", "luck", "luck_reroll", "heal", "damage",
-                        "immune", "response", "upgrade", "move", "assault", "stat"):
+        if kind not in ("defeated", "luck", "luck_dice", "luck_reroll", "luck_result",
+                        "heal", "damage", "immune", "response", "upgrade", "move",
+                        "assault", "stat"):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应

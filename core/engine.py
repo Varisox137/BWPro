@@ -390,6 +390,9 @@ class Game:
         当前生命（不触发任何事件）。
         """
         holders = [s for pl in self.state.players for s in pl.shikigami]
+        previous = {(pi, i): (int(s.ext.get("dyn_power", 0)), int(s.ext.get("dyn_health", 0)))
+                    for pi, pl in enumerate(self.state.players)
+                    for i, s in enumerate(pl.shikigami)}
         old_dyn = {id(s): int(s.ext.get("dyn_health", 0)) for s in holders}
         for s in holders:
             s.ext["dyn_power"] = 0
@@ -506,6 +509,15 @@ class Game:
             # 上限的当前生命，如测试/调试直改的健康值）
             if s.ext["dyn_health"] < old_dyn[id(s)] and s.health > s.max_health:
                 s.health = s.max_health
+        changed = []
+        for pi, player in enumerate(self.state.players):
+            for i, shiki in enumerate(player.shikigami):
+                old_power, old_health = previous[(pi, i)]
+                if (shiki.ext["dyn_power"], shiki.ext["dyn_health"]) != (old_power, old_health):
+                    changed.append(Ref(player=pi, shikigami=i))
+        group = id(changed) if len(changed) > 1 else None
+        for ref in changed:
+            self._visual_stat(ref, group)
         self._reconcile_invocation_aura_keywords()
 
     def _reconcile_invocation_aura_keywords(self) -> None:
@@ -6601,6 +6613,14 @@ class Game:
                 ev["forced"] = True
             ev["dice"] = dice
             ev["first_dice"] = dice  # 重投检测用（判定时 on_luck_judge 可改写骰点）
+        for ev in events:
+            source = ev.get("source")
+            self.state.timeline.append({
+                "k": "v", "v": "luck_dice", "p": ev["judge"],
+                "s": (None if ev.get("player_visual") or source is None
+                      else source.shikigami),
+                "dice": ev["dice"], "g": ev.get("g"),
+            })
         # 2. 判定时（即时时机；重投改写 ev["dice"]，强制 6 不豁免本时机）
         for ev in events:
             self.emit("on_luck_judge", luck=ev, judge=ev["judge"],
@@ -6621,10 +6641,15 @@ class Game:
             self._settle(f"【运势】{jp.name} {cast}（{'；'.join(mods)}）："
                          f"{'成功' if ev['success'] else '失败'}")
             source = ev.get("source")
+            visual_shiki = (None if ev.get("player_visual") or source is None
+                            else source.shikigami)
+            if ev.get("rerolled"):
+                self.state.timeline.append({
+                    "k": "v", "v": "luck_dice", "p": ev["judge"], "s": visual_shiki,
+                    "dice": ev["dice"], "g": ev.get("g"),
+                })
             self.state.timeline.append({
-                "k": "v", "v": "luck", "p": ev["judge"],
-                "s": (None if ev.get("player_visual") or source is None
-                      else source.shikigami),
+                "k": "v", "v": "luck_result", "p": ev["judge"], "s": visual_shiki,
                 "dice": ev["dice"], "success": ev["success"], "g": ev.get("g"),
             })
         # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）
