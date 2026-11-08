@@ -2202,7 +2202,7 @@ def cap_damage(game, ctx, *, targets: list[Ref], to: str | int = "shield") -> No
             game._log(f"{game.db.shikigami[s.id].name} 的伤害上限生效（{ev.amount} → {to}）")
             ev.amount = to
             if ev.amount == 0:
-                game._visual_damage_zero(victim, ev.visual_group)
+                game._visual_damage_zero(ev)
     else:
         raise ValueError(f"未知 cap_damage 上限类型: {to}")
 
@@ -3201,7 +3201,7 @@ def reduce_damage(game, ctx, *, targets: list[Ref], amount: int = 0) -> None:
     previous = ev.amount
     ev.amount = max(0, ev.amount - amount)
     if previous > 0 and ev.amount == 0:
-        game._visual_damage_zero(ev.victim, ev.visual_group)
+        game._visual_damage_zero(ev)
 
 
 @action("cancel_damage")
@@ -4810,7 +4810,7 @@ def override_damage(game, ctx, *, targets: list[Ref], to: int) -> None:
     previous = ev.amount
     ev.amount = int(to)
     if previous > 0 and ev.amount == 0:
-        game._visual_damage_zero(ev.victim, ev.visual_group)
+        game._visual_damage_zero(ev)
 
 
 @action("multi_strike")

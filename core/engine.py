@@ -171,6 +171,7 @@ class _DamageEvent:
     # 光影"贯通场合按贯通分配前的原始伤害值计"，全卡盘点）：仅贯通分配（溢出截断）时
     # 记录；on_damage/on_player_damaged payload 恒带同名键（无贯通时回退 = amount）
     visual_group: int | None = None  # 同一并行伤害批次的 GUI 动画分组；单事件=None
+    zero_visual_emitted: bool = False  # 本伤害事件已补过 -0，后续再次归零不重复
 
     def __post_init__(self) -> None:
         if self.spell:
@@ -275,6 +276,9 @@ class Game:
         # 单元 drain（_drain_horizon）；栈空=非块上下文（horizon=0，由外层统一结算）
         self._horizon_seq: int = 0
         self._horizon_stack: list[int] = []
+        # stat 合并执行纪元：嵌套块与伤害步骤即使不产生视觉也会推进；仅内存账本。
+        self._visual_stat_epoch: int = 0
+        self._visual_stat_event_epochs: dict[int, int] = {}
         # 执行上下文栈（结算明细显示过滤用）：_resolve_block 压栈 (block, ctx)，
         # _log/_settle 读取栈顶判定"不在场式神卡牌触发器的行不打印"（改进①）
         self._ctx_stack: list[tuple[EffectBlock, ExecContext]] = []
@@ -3141,6 +3145,7 @@ class Game:
     def _visual_stat(self, ref: Ref, group=None) -> None:
         """同效果单元内同目标的相邻刷新合并；不同目标共用效果单元动画组。"""
         horizon = self._horizon_stack[-1] if self._horizon_stack else None
+        epoch = self._visual_stat_epoch
         if group is None and horizon is not None:
             group = horizon
         event = self._stat_event(ref, group)
@@ -3149,15 +3154,21 @@ class Game:
         if (horizon is not None and previous is not None
                 and previous.get("v") == "stat" and previous.get("g") == horizon
                 and previous.get("p") == ref.player
-                and previous.get("s") == ref.shikigami):
+                and previous.get("s") == ref.shikigami
+                and self._visual_stat_event_epochs.get(id(previous)) == epoch):
             previous["r"] = event["r"]
             return
         self.state.timeline.append(event)
+        self._visual_stat_event_epochs[id(event)] = epoch
 
-    def _visual_damage_zero(self, target: Ref, group=None) -> None:
-        """正伤害被非免疫防护归零时仅补视觉数字，不进入扣血与伤害时机。"""
-        self.state.timeline.append({"k": "v", "v": "damage", "p": target.player,
-                                    "s": target.shikigami, "amount": 0, "g": group})
+    def _visual_damage_zero(self, ev: _DamageEvent) -> None:
+        """每个伤害事件至多补一次 -0，不进入扣血与伤害时机。"""
+        if ev.zero_visual_emitted:
+            return
+        ev.zero_visual_emitted = True
+        self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
+                                    "s": ev.victim.shikigami, "amount": 0,
+                                    "g": ev.visual_group})
 
     def _visual_countdown(self, ref: Ref, *, revive_pending: bool = False) -> None:
         event = self._stat_event(ref)
@@ -5064,7 +5075,7 @@ class Game:
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "贯通修正")
                 if ev.amount == 0:
-                    self._visual_damage_zero(ev.victim, ev.visual_group)
+                    self._visual_damage_zero(ev)
             # 提前结算"扣减生命前"批次，后续不再结算该批次
             self._emit_damage_batch("on_before_health", ev)
             self._damage_double_modifiers(ev, s)
@@ -5096,7 +5107,7 @@ class Game:
             if ev.pre_shield_zero and ev.amount > 0:
                 ev.amount = 0
                 self._log(f"{self.db.shikigami[s.id].name} 的森罗之阵挡下了本次伤害")
-                self._visual_damage_zero(ev.victim, ev.visual_group)
+                self._visual_damage_zero(ev)
                 return
             # 毒蚀转化（全卡盘点(6)）：鸩参与（作为来源或受伤者）的战斗伤害在
             # "护甲计算前1"转化为等量破甲——受伤者改为获得等量破甲、伤害值改为 0
@@ -5127,7 +5138,7 @@ class Game:
             ev.amount = 0
             s.one_shot_keywords.remove("barrier")
             self._log(f"{self.db.shikigami[s.id].name} 的屏障抵消了伤害")
-            self._visual_damage_zero(ev.victim, ev.visual_group)
+            self._visual_damage_zero(ev)
         if ev.amount <= 0:
             return
         # 批次 4：护甲计算——破甲（shield < 0）：移除并增加等量伤害；护甲（> 0）：吸收
@@ -5144,7 +5155,7 @@ class Game:
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "护甲计算")
                 if ev.amount == 0:
-                    self._visual_damage_zero(ev.victim, ev.visual_group)
+                    self._visual_damage_zero(ev)
             if ev.amount <= 0:
                 return  # 护甲完全吸收：终止结算
         # 批次 5：护甲计算后（伤害转移/改为非伤害能力锚点；优先级分层见 EffectBlock.priority）
@@ -6562,6 +6573,7 @@ class Game:
         """结算单元入口（定案"延时界=引起该次减少的结算单元"）：压栈一个唯一单元 id，
         结算期间 emit 的延时 pend 记为该单元（horizon）；返回单元 id 供调用方按单元
         drain（_drain_horizon，倒计时归零块用）。实际结算见 _resolve_block_inner。"""
+        self._visual_stat_epoch += 1
         self._horizon_seq += 1
         horizon = self._horizon_seq
         self._horizon_stack.append(horizon)
@@ -6614,8 +6626,12 @@ class Game:
         """依次执行效果块的 steps（_resolve_block 与运势门控续段共用）。
         actions.AbortBlock（spend_energy gate 支付失败）：中止块剩余步骤，不算错误。"""
         for idx in range(start, len(block.steps)):
+            step = block.steps[idx]
+            if step.op in ("damage", "random_damage", "distribute_damage",
+                           "repeat_random_damage"):
+                self._visual_stat_epoch += 1
             try:
-                self._run_step(block.steps[idx], ctx)
+                self._run_step(step, ctx)
             except actions.AbortBlock:
                 return
             if block.mode == "interleaved":

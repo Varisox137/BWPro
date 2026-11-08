@@ -1879,3 +1879,37 @@ def test_stat_merge_does_not_cross_nested_effect_horizon(db, make_game):
     assert [(e["r"]["power"], e["r"]["health"]) for e in stats] == [
         (3, 5), (4, 5), (4, 6),
     ]
+
+
+def test_stat_merge_does_not_cross_empty_nested_effect(db, make_game):
+    """外层 A→不产生视觉的嵌套效果→外层 A：执行边界本身阻止合并。"""
+    db.custom_events.add("test_stat_merge_empty_nested")
+    db.shikigami[100101].ability = F.block(
+        when="test_stat_merge_empty_nested", timing="insert",
+        condition={"player": "self"})
+    db.cards[10010151] = F.card(10010151, token=True, steps=[
+        F.Step(op="buff_health", amount=1, target=T(kind="self")),
+        F.Step(op="emit", event="test_stat_merge_empty_nested", payload={"player": 0}),
+        F.Step(op="buff_health", amount=1, target=T(kind="self")),
+    ])
+    g = make_game()
+    play(g, 0, 10010151)
+    stats = [e for e in g.state.timeline
+             if e.get("v") == "stat" and e.get("p") == 0 and e.get("s") == 0]
+    assert len(stats) == 2
+    assert [e["r"]["health"] for e in stats] == [5, 6]
+
+
+def test_stat_merge_does_not_cross_silent_damage_step(db, make_game):
+    """原始 0 伤害不产生视觉，但仍是伤害规则步骤，两侧同目标 stat 不合并。"""
+    db.cards[10010151] = F.card(10010151, token=True, steps=[
+        F.Step(op="buff_power", amount=1, target=T(kind="self")),
+        F.Step(op="damage", amount=0, target=T(kind="all", pool="enemy_player")),
+        F.Step(op="buff_health", amount=1, target=T(kind="self")),
+    ])
+    g = make_game()
+    play(g, 0, 10010151)
+    stats = [e for e in g.state.timeline
+             if e.get("v") == "stat" and e.get("p") == 0 and e.get("s") == 0]
+    assert len(stats) == 2
+    assert [(e["r"]["power"], e["r"]["health"]) for e in stats] == [(4, 4), (4, 5)]

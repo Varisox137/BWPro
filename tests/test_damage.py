@@ -1669,3 +1669,47 @@ def test_zero_damage_visual_excludes_non_damage_terminations(db, make_game, reas
                         0 if reason == "original" else 3, Ref(player=0, shikigami=IDX))
     assert not [e for e in g.state.timeline
                 if e.get("v") == "damage" and e.get("amount") == 0]
+
+
+@pytest.mark.parametrize("with_shield", [False, True])
+def test_zero_damage_visual_emitted_once_per_event(db, make_game, with_shield):
+    """减 3→增 3→减 3，及护甲归零后的后续修正，同一事件都只发一个 -0。"""
+    if with_shield:
+        db.shikigami[SID].ability = F.block(
+            F.Step(op="boost_damage", amount=3),
+            F.Step(op="reduce_damage", amount=3),
+            when="on_after_shield", condition={"victim_shikigami": "self"})
+    else:
+        db.shikigami[SID].ability = F.block(
+            F.Step(op="reduce_damage", amount=3),
+            F.Step(op="boost_damage", amount=3),
+            F.Step(op="reduce_damage", amount=3),
+            when="on_damage_start", condition={"victim_shikigami": "self"})
+    g, pa, pb = _game(make_game)
+    if with_shield:
+        pb.shikigami[0].shield = 3
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, Ref(player=0, shikigami=IDX))
+    zero = [e for e in g.state.timeline
+            if e.get("v") == "damage" and e.get("amount") == 0]
+    assert len(zero) == 1
+    assert zero[0]["p"] == 1 and zero[0]["s"] == 0
+
+
+@pytest.mark.parametrize("reason", ["piercing_shield", "segmented_protection"])
+def test_zero_damage_visual_piercing_and_segmented_protection(db, make_game, reason):
+    """贯通护甲归零与森罗之阵分段保护归零均只向原受伤者发一个 -0。"""
+    if reason == "segmented_protection":
+        db.shikigami[SID].ability = F.block(
+            F.Step(op="cap_damage", to="zero_pre_shield"),
+            when="on_damage_start", condition={"victim_shikigami": "self"})
+    g, pa, pb = _game(make_game)
+    target = pb.shikigami[0]
+    target.shield = 3
+    g.deal_to_shikigami(Ref(player=1, shikigami=0),
+                        5 if reason == "segmented_protection" else 3,
+                        Ref(player=0, shikigami=IDX), piercing=True)
+    zero = [e for e in g.state.timeline
+            if e.get("v") == "damage" and e.get("amount") == 0]
+    assert len(zero) == 1
+    assert zero[0]["p"] == 1 and zero[0]["s"] == 0
+    assert target.health == 4 and target.shield == 0
