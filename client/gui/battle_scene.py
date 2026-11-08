@@ -563,6 +563,7 @@ class BattleScene(QGraphicsScene):
     action_requested = Signal(dict)
     mulligan_selected = Signal(object)
     usage_selected = Signal(object)
+    animations_settled = Signal()
 
     def __init__(self, db):
         super().__init__(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
@@ -801,6 +802,10 @@ class BattleScene(QGraphicsScene):
     def clear_focus(self) -> None:
         self.focus_overlay.hide()
         self.focus_overlay.setPath(QPainterPath())
+
+    @property
+    def visual_busy(self) -> bool:
+        return bool(self._visual_animations or self._visual_queue or self._move_animations)
 
     def _sync_focus(self) -> None:
         if self.drag_controller.dragged:
@@ -1297,6 +1302,8 @@ class BattleScene(QGraphicsScene):
                     cache_context=art_context, height=210,
                     show_defeated_countdown=not self.defeat_countdown_hidden(pi, index)))
                 item.update()
+        self._sync_focus()
+        self.animations_settled.emit()
 
     def show_usage_options(self, options: list[dict], card_defs: list) -> None:
         self.clear_usage_options()
@@ -1401,9 +1408,9 @@ class BattleScene(QGraphicsScene):
                     and previous_timeline is not None
                     and timeline[:len(previous_timeline)] == previous_timeline):
                 online_entries = timeline[len(previous_timeline):]
-        structured_moves = {(entry["p"], entry["s"]) for entry in online_entries
-                            if entry.get("v") == "move"}
-        defer_art = bool(online_entries or self._visual_animations or self._visual_queue)
+        structured_moves = {(entry["p"], entry["s"]): entry.get("zone")
+                            for entry in online_entries if entry.get("v") == "move"}
+        defer_art = bool(online_entries or self.visual_busy)
         self._animation_timeline = list(timeline)
         self.game = game
         self.phase = game.state.phase
@@ -1531,8 +1538,13 @@ class BattleScene(QGraphicsScene):
                           and game.assault_error(pi, index) is None)
                          or (game.state.phase == "upgrade"
                              and index in game.legal_upgrade_indices(pi))))
-                if created or previous_game is None:
+                if created:
                     item.setPos(positions[key])
+                elif previous_game is None:
+                    if structured_moves.get((pi, index)) == "ready":
+                        item.setPos(combat_position(self.layout_width, pi != viewer))
+                    else:
+                        item.setPos(positions[key])
                 elif not defer_art and (pi, index) not in structured_moves:
                     self._animate_position(item, positions[key])
                 item.update()

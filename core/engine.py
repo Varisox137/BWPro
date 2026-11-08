@@ -4357,6 +4357,7 @@ class Game:
         if self.state.winner is not None:
             return
         p = self.current
+        self.state.timeline.append({"k": "v", "v": "turn_start", "p": self.state.active})
         self._settle(f"—— 回合开始阶段（{p.name} 的第 {p.turn_count + 1} 回合）——")
         pi = self.state.active
         cfg = self.config

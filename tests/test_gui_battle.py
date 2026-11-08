@@ -3534,6 +3534,145 @@ def test_turn_start_visuals_survive_hotseat_handoff(qapp, view):
     assert scene._visual_events[scene._visual_animations[0]]["dice"] == 4
 
 
+def test_handoff_visual_queue_preserves_old_player_turn_end(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.state.players[1].combat_index = 0
+    view.refresh()
+    settle(view)
+    card = view.game.state.players[0].hand[0]
+    view.game.state.timeline.extend([
+        {"k": "a", "u": card.uid, "c": card.id, "p": 0},
+        {"k": "v", "v": "damage", "p": 0, "s": 1, "amount": 2},
+    ])
+
+    assert view.end_turn()
+    assert scene.viewer == 0
+    assert scene._visual_animations
+    assert not scene.handoff_item.isVisible()
+    first = scene._visual_animations[0]
+    assert scene._visual_events[first]["v"] == "_card_use"
+    first.setCurrentTime(first.duration())
+    qapp.processEvents()
+    assert scene._visual_animations
+    assert not scene.handoff_item.isVisible()
+
+    second = scene._visual_animations[0]
+    assert scene._visual_events[second]["v"] == "damage"
+    second.setCurrentTime(second.duration())
+    qapp.processEvents()
+    assert view._handoff_pending
+    assert scene.handoff_item.isVisible()
+    assert view._deferred_visuals[0]["v"] == "turn_start"
+    assert any(entry.get("v") == "move" for entry in view._deferred_visuals)
+
+
+def test_handoff_visual_confirmation_replays_retreat_and_turn_banner(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.state.players[1].combat_index = 0
+    view.refresh()
+    settle(view)
+    card = view.game.state.players[0].hand[0]
+    view.game.state.timeline.append({"k": "a", "u": card.uid, "c": card.id, "p": 0})
+    banners = []
+    monkeypatch.setattr(scene, "show_turn_banner", lambda own: banners.append(own))
+
+    assert view.end_turn()
+    assert banners == []
+    while not view._handoff_pending:
+        assert scene.visual_busy
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
+    assert banners == []
+    assert not scene._move_animations
+
+    view.confirm_handoff()
+    assert banners == [True]
+    assert not view._deferred_visuals
+    assert scene._move_animations
+    retreat = next(iter(scene._move_animations.values()))
+    assert retreat.endValue() != retreat.startValue()
+    retreat.setCurrentTime(retreat.duration())
+    qapp.processEvents()
+
+
+def test_handoff_visual_turn_banner_waits_for_old_player_choice(qapp, view):
+    start(view, mulligan=False)
+    old_turn_key = view._last_turn_key
+    view.game.state.active = 1
+    view.game.state.turn += 1
+    view.game.state.pending_choice = {
+        "kind": "choose", "player": 0, "options": ["继续"],
+    }
+    view.refresh()
+
+    assert view.viewer == 0
+    assert view._last_turn_key == old_turn_key
+    view.game.state.pending_choice = None
+    view.refresh()
+    view.confirm_handoff()
+    assert view.battle_scene.banner_pixmap_item.property("assetName") == "your_turn_dark"
+
+
+def test_upgrade_visual_busy_locks_inputs_and_focus(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    scene = view.battle_scene
+    view.game.state.timeline.append(
+        {"k": "v", "v": "luck_dice", "p": 0, "s": 0, "dice": 4})
+    view._enqueue_timeline()
+
+    assert not view._inputs_open()
+    assert scene.visual_busy
+    assert not scene.focus_overlay.isVisible()
+    assert not scene.upgrade_badges
+    assert not view.upgrade(1)
+
+    animation = scene._visual_animations[0]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert not scene.visual_busy
+    assert view._inputs_open()
+    assert scene.focus_overlay.isVisible()
+    assert scene.upgrade_badges
+    assert view.upgrade(1)
+
+
+def test_upgrade_visual_busy_does_not_wait_for_text_log(qapp, view):
+    start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
+    view.game.state.timeline.append({"k": "l", "m": "升级阶段文字记录", "o": 0})
+    view._enqueue_timeline()
+    assert view.timeline_queue
+    assert view._inputs_open()
+    assert view.upgrade(1)
+
+
+def test_consecutive_upgrade_focus_refreshes_after_visual(qapp, view):
+    start(view, mulligan=False, config=GameConfig(
+        auto_skip_upgrade=False, upgrade_rule="free", max_level=1))
+    scene = view.battle_scene
+    view.game.current.upgrades = 2
+    view.refresh()
+    item = scene.cards[("shiki", 0, 1)]
+    original_art = item.pixmap.cacheKey()
+    second = next(index for index in view.game.legal_upgrade_indices(0) if index != 1)
+
+    assert view.upgrade(1)
+    assert scene.visual_busy
+    assert not view.upgrade(second)
+    animation = scene._visual_animations[0]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+
+    assert item.pixmap.cacheKey() != original_art
+    assert 1 not in scene.upgrade_badges
+    assert not item.playable
+    assert scene.focus_overlay.isVisible()
+    assert scene.focus_overlay.path().contains(item.sceneBoundingRect().center())
+    assert view.upgrade(second)
+
+
 def test_defeat_word_art_precedes_revive_countdown(qapp, view, monkeypatch):
     start(view, mulligan=False)
     scene = view.battle_scene
