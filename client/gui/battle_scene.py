@@ -1033,6 +1033,8 @@ class BattleScene(QGraphicsScene):
             return event["item"].key
         if kind == "_card_use":
             return ("card_use", event["u"])
+        if kind == "hand":
+            return ("hand", event["u"])
         player = int(event.get("p", 0))
         index = event.get("s")
         return ("shiki", player, index) if index is not None else ("player", player)
@@ -1068,7 +1070,7 @@ class BattleScene(QGraphicsScene):
         kind = event.get("v")
         if kind not in ("defeated", "luck", "luck_dice", "luck_reroll", "luck_result",
                         "heal", "damage", "immune", "response", "upgrade", "move",
-                        "assault", "stat", "countdown", "countdown_proc", "revive"):
+                        "assault", "stat", "countdown", "countdown_proc", "revive", "hand"):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应
@@ -1079,6 +1081,35 @@ class BattleScene(QGraphicsScene):
 
     def _start_visual_event(self, event: dict) -> None:
         kind = event.get("v")
+        if kind == "hand":
+            player = int(event.get("p", self.viewer))
+            uid = event["u"]
+            item = self.cards.get(("hand", uid))
+            if (item is None or self.game is None
+                    or uid not in {card.uid for card in self.game.state.players[player].hand}):
+                return
+            target = QPointF(item.pos())
+            if event.get("from") == "deck":
+                backs = [back for key, back in self.deck_backs.items() if key[1] == player]
+                if backs:
+                    item.setPos(max(backs, key=lambda back: back.zValue()).pos())
+                else:
+                    index = 0 if player == self.viewer else 2
+                    source = layout_positions(scene_width=self.layout_width)[
+                        ("deck_back", player, index)]
+                    pixmap = cardback_pixmap(
+                        "own" if player == self.viewer else "enemy", landscape=True)
+                    scale = min(DECK_BACK_SIZE.width() / pixmap.width(),
+                                DECK_BACK_SIZE.height() / pixmap.height())
+                    item.setPos(source + QPointF(
+                        0, (DECK_BACK_SIZE.height() - pixmap.height() * scale) / 2))
+            else:
+                source = self.cards.get(("player", player))
+                if source is not None:
+                    item.setPos(source.pos())
+            item.show()
+            self._animate_position(item, target, group=event.get("g"))
+            return
         if kind in ("stat", "countdown", "countdown_proc", "revive"):
             player = int(event.get("p", self.viewer))
             index = event.get("s")
@@ -1370,6 +1401,9 @@ class BattleScene(QGraphicsScene):
         self._visual_items.clear()
         self._visual_events.clear()
         self._visual_queue.clear()
+        for key, item in self.cards.items():
+            if key[0] == "hand":
+                item.show()
         self._defeat_visuals.clear()
         self._hand_animation_cache.clear()
         self._animation_timeline = None
@@ -1410,6 +1444,8 @@ class BattleScene(QGraphicsScene):
                 online_entries = timeline[len(previous_timeline):]
         structured_moves = {(entry["p"], entry["s"]): entry.get("zone")
                             for entry in online_entries if entry.get("v") == "move"}
+        pending_hand = {entry["u"] for entry in online_entries
+                        if entry.get("k") == "v" and entry.get("v") == "hand"}
         defer_art = bool(online_entries or self.visual_busy)
         self._animation_timeline = list(timeline)
         self.game = game
@@ -1570,6 +1606,8 @@ class BattleScene(QGraphicsScene):
                     item = BattleCardItem(key)
                     self.addItem(item)
                     self.cards[key] = item
+                    if card.uid in pending_hand:
+                        item.hide()
                 item.cdef = cdef
                 centered = (game.state.phase == "mulligan" or center_hand) and own
                 item.default_size = QSizeF(MULLIGAN_HAND_SIZE if centered else HAND_SIZE)

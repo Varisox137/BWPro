@@ -2974,6 +2974,128 @@ def test_card_use_animation_uses_integer_height_and_keeps_fallback_art(
     assert not item.pixmap.isNull()
 
 
+def test_hand_animation_hides_pending_draw_and_uses_deck_origin(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    deck = max((back for key, back in scene.deck_backs.items()
+                if key[1] == view.viewer), key=lambda back: back.zValue())
+    source = QPointF(deck.pos())
+    before = len(view.game.state.timeline)
+    card = view.game.current.deck[0]
+    view.game.current.deck[:] = [card]
+    view.game.draw_cards(view.viewer, 1)
+    entries = view.game.state.timeline[before:]
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=entries, play_pending=False)
+    item = scene.cards[("hand", card.uid)]
+    target = QPointF(item.pos())
+
+    assert not item.isVisible()
+    event = next(entry for entry in entries if entry.get("v") == "hand")
+    scene.play_visual_event(event)
+    assert item.isVisible()
+    assert item.pos() == source
+    assert scene._move_animations[item].endValue() == target
+
+
+def test_hand_animation_generate_uses_player_origin_and_enemy_cardback(qapp, view):
+    from client.gui.ui_assets import cardback_pixmap
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    player = 1 - view.viewer
+    owner = view.game.state.players[player]
+    card = CardInstance(uid=view.game.state.next_uid, id=owner.hand[0].id)
+    view.game.state.next_uid += 1
+    view.game.move_card(owner, card, "hand", reason="generate")
+    event = view.game.state.timeline[-1]
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=[event], play_pending=False)
+    item = scene.cards[("hand", card.uid)]
+
+    assert not item.isVisible()
+    assert not item.revealed
+    assert item.pixmap.cacheKey() == cardback_pixmap("enemy").cacheKey()
+    scene.play_visual_event(event)
+    assert item.pos() == scene.cards[("player", player)].pos()
+    assert scene._move_animations[item].endValue() != item.pos()
+
+
+def test_hand_animation_multiple_draws_are_fifo_and_leave_single_items(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    before = len(view.game.state.timeline)
+    view.game.draw_cards(view.viewer, 2)
+    entries = view.game.state.timeline[before:]
+    events = [entry for entry in entries if entry.get("v") == "hand"]
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=entries, play_pending=False)
+    first, second = [scene.cards[("hand", event["u"])] for event in events]
+    assert not first.isVisible() and not second.isVisible()
+
+    for event in events:
+        scene.play_visual_event(event)
+    assert list(scene._move_animations) == [first]
+    assert first.isVisible() and not second.isVisible()
+    assert [event["u"] for event in scene._visual_queue] == [second.uid]
+
+    next(iter(scene._move_animations.values())).setCurrentTime(180)
+    qapp.processEvents()
+    assert list(scene._move_animations) == [second]
+    assert second.isVisible()
+    next(iter(scene._move_animations.values())).setCurrentTime(180)
+    qapp.processEvents()
+    assert not scene.visual_busy
+    for item in (first, second):
+        assert item.isVisible()
+        assert sum(getattr(candidate, "key", None) == item.key
+                   for candidate in scene.items()) == 1
+
+
+def test_hand_animation_reset_and_handoff_leave_no_hidden_items(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    before = len(view.game.state.timeline)
+    view.game.draw_cards(view.viewer, 1)
+    entries = view.game.state.timeline[before:]
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=entries, play_pending=False)
+    assert any(not item.isVisible() for item in scene_items(view, "hand"))
+
+    scene.reset_animations()
+    assert all(item.isVisible() for item in scene_items(view, "hand"))
+
+    before = len(view.game.state.timeline)
+    view.game.draw_cards(view.viewer, 1)
+    entries = view.game.state.timeline[before:]
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=entries, play_pending=False)
+    old_items = scene_items(view, "hand")
+    assert any(not item.isVisible() for item in old_items)
+    view._begin_handoff()
+    assert not scene_items(view, "hand")
+    assert all(item.scene() is None for item in old_items)
+
+
+def test_hand_animation_skips_card_that_already_left(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    before = len(view.game.state.timeline)
+    view.game.draw_cards(view.viewer, 1)
+    entries = view.game.state.timeline[before:]
+    event = next(entry for entry in entries if entry.get("v") == "hand")
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=entries, play_pending=False)
+    item = scene.cards[("hand", event["u"])]
+    view.game.move_card(view.game.current, item.payload, "graveyard")
+
+    scene.play_visual_event(event)
+    assert not scene._move_animations
+    assert not item.isVisible()
+    scene.sync_state(view.game, view.viewer, {}, True, pending_entries=[])
+    assert ("hand", item.uid) not in scene.cards
+
+
 def test_viewer_handoff_and_restart_clear_animations(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

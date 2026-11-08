@@ -168,6 +168,41 @@ def test_engine_emits_damage_visuals_for_shikigami_and_player(db, make_game):
     ]
 
 
+def test_hand_visual_events_cover_draw_generate_return_and_skip_burst(db, make_game):
+    """入手动画只携带公开移动信息；爆牌未进入手牌，不发事件。"""
+    from core.model import CardInstance
+
+    game = make_game()
+    player = game.state.players[0]
+    game.state.timeline.clear()
+    drawn = player.deck[0]
+    game.draw_cards(0, 1)
+    generated = CardInstance(uid=game.state.next_uid, id=10010151)
+    game.state.next_uid += 1
+    game.move_card(player, generated, "hand", reason="generate")
+    returned = player.hand[0]
+    game.move_card(player, returned, "graveyard")
+    game.move_card(player, returned, "hand")
+
+    events = [entry for entry in game.state.timeline
+              if entry.get("k") == "v" and entry.get("v") == "hand"]
+    assert [(entry["u"], entry["from"], entry["reason"]) for entry in events] == [
+        (drawn.uid, "deck", "draw"),
+        (generated.uid, None, "generate"),
+        (returned.uid, "graveyard", None),
+    ]
+    assert all(set(entry) == {"k", "v", "p", "u", "from", "reason"}
+               for entry in events)
+
+    while len(player.hand) < 12:
+        game.move_card(player, player.deck[0], "hand", reason="generate")
+    burst = player.deck[0]
+    game.draw_cards(0, 1)
+    assert burst in player.zones["graveyard"]
+    assert not any(entry.get("v") == "hand" and entry.get("u") == burst.uid
+                   for entry in game.state.timeline)
+
+
 def test_combat_movement_and_card_animation_precede_effects(db, make_game):
     game = make_game()
     pa, pb = F.battle_setup(game)

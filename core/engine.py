@@ -2840,6 +2840,9 @@ class Game:
             self._log(f"{p.name} 的手牌已达上限（{cap}），"
                       f"【{self.db.cards[card.id].name}】置入墓地（爆牌）")
             self.move_card(p, card, "graveyard", reason="hand_cap")
+        if to_zone == "hand" and not burst:
+            self.state.timeline.append({"k": "v", "v": "hand", "p": pi, "u": card.uid,
+                                        "from": src_zone, "reason": reason})
 
     def _proc_invocations_on_move(self, p: PlayerState, card: CardInstance,
                                   reason: str | None, payload: dict,

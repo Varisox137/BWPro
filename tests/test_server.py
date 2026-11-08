@@ -737,6 +737,29 @@ def test_private_log_visible_only_to_owner(db):
     run(go())
 
 
+def test_hand_privacy_visual_event_has_no_card_identity_for_opponent(db):
+    """入手动画按 uid 关联公开图元，增量与完整状态都不得泄露卡牌 id。"""
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        player = room.seat_to_player[0]
+        card = room.game.state.players[player].deck[0]
+        room.game.draw_cards(player, 1)
+        await room.broadcast_state()
+        expected = {"k": "v", "v": "hand", "p": player, "u": card.uid,
+                    "from": "deck", "reason": "draw"}
+        for ws in (ws0, ws1):
+            message = ws.messages[-1]
+            incremental = [entry for entry in message["timeline"]
+                           if entry.get("v") == "hand"]
+            complete = [entry for entry in message["payload"]["timeline"]
+                        if entry.get("v") == "hand"]
+            assert incremental[-1] == expected
+            assert complete[-1] == expected
+            assert not ({"c", "card", "id"} & incremental[-1].keys())
+            assert not ({"c", "card", "id"} & complete[-1].keys())
+    run(go())
+
+
 def test_pending_choice_sanitized_for_opponent():
     """联机信息隐藏：pending_choice 的可检视牌仅选择方可见，其余视角抹除为占位。"""
     from server.room import sanitize_state
