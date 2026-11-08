@@ -115,6 +115,7 @@ git push
 **Files:**
 - Modify: `core/engine.py:3094-3123,4779-4830,5520-5555`
 - Modify: `client/gui/battle_scene.py:1054-1109,1134-1147,1231-1290,1379-1528`
+- Modify: `client/gui/cardart.py`
 - Test: `tests/test_gui_battle.py:3725-3749`
 - Test: `tests/test_gui_assets.py`
 
