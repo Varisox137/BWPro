@@ -3369,7 +3369,7 @@ def level_up(game, ctx, *, targets: list[Ref], amount: int = 1,
             continue
         s.level = min(3, s.level + int(amount))
         game._log(f"{game.db.shikigami[s.id].name} 升至 {s.level} 级")
-        game._register_ability_countdown(ref.player, ref.shikigami)  # 能力进场（同升级）
+        game._register_ability_countdown(ref.player, ref.shikigami, visual=True)  # 能力进场（同升级）
         game.emit("on_upgrade", player=ref.player, shikigami=ref.shikigami,
                   level=s.level, target=ref)
 

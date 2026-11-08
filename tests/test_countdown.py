@@ -186,6 +186,24 @@ def test_countdown_visual_upgrade_registers(db, make_game):
     assert [entry["r"]["countdown"] for entry in visual] == [3]
 
 
+def test_countdown_visual_effect_level_up_reregisters(db, make_game):
+    """效果升级与指令升级一样，在能力重注册导致真实倒计时变化时发快照。"""
+    _cd_ability(db, initial=3)
+    cid = 10010151
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, level=1, token=True,
+        steps=[F.Step(op="level_up", target=T(kind="self"))])
+    g, pa = _game(make_game)
+    assert pa.shikigami[IDX].countdown == 2
+    g.state.timeline.clear()
+    play(g, 0, cid)
+    assert pa.shikigami[IDX].level == 2
+    assert pa.shikigami[IDX].countdown == 3
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("s") == IDX]
+    assert [entry["r"]["countdown"] for entry in visual] == [3]
+
+
 def test_countdown_visual_awaken_rebinds(db, make_game):
     """觉醒替换倒计时能力后记录觉醒倒计时，而非中间清除状态。"""
     _cd_ability(db, initial=2)
