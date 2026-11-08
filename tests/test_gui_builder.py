@@ -613,6 +613,7 @@ def test_entity_counters_follow_charge_countdown_and_defeat(qapp, tmp_path, monk
                         seen.update(json.loads(state)))
 
     def render(**values):
+        snapshot = values.pop("snapshot", None)
         defaults = dict(id=100101, awakened=None, level=1, defeated=False,
                         perm_power=0, perm_health=0, eff_power=3, combat_power=0,
                         health=4, max_health=4, shield=0, ext={}, energy=0,
@@ -621,8 +622,15 @@ def test_entity_counters_follow_charge_countdown_and_defeat(qapp, tmp_path, monk
         defaults.update(values)
         seen.clear()
         cardart.entity_pixmap(SimpleNamespace(**defaults), database,
-                              library_dir=tmp_path / "empty")
+                              library_dir=tmp_path / "empty", snapshot=snapshot)
         return dict(seen)
+
+    def snapshot(**values):
+        result = dict(power=3, health=0, max_health=4, combat_power=0, shield=0,
+                      defeated=True, countdown=None, revive_countdown=0,
+                      revive_pending=False)
+        result.update(values)
+        return result
 
     state = render()
     assert state["energy"] is None and state["countdown"] is None
@@ -639,6 +647,38 @@ def test_entity_counters_follow_charge_countdown_and_defeat(qapp, tmp_path, monk
     assert state["energy"] == 3 and state["countdown"] is None
     assert state["defeated_countdown"] == 2
     assert render(defeated=True)["defeated_countdown"] == "infinity"
+    assert render(defeated=True, snapshot=snapshot())["defeated_countdown"] == "infinity"
+    assert render(defeated=True, snapshot=snapshot(revive_pending=True))[
+        "defeated_countdown"] == 0
+    assert render(countdown=9, snapshot=snapshot(defeated=False, countdown=2))[
+        "countdown"] == 2
+    assert render(countdown=9, snapshot=snapshot(defeated=False, countdown=None))[
+        "countdown"] is None
+
+
+def test_countdown_and_revive_visuals_refresh_snapshot(qapp, db, monkeypatch):
+    """三类倒计时/复活事件与 stat 一样以 200ms 快照刷新小卡。"""
+    from client.gui.battle_scene import BattleScene
+
+    game = factories.mk_game(db)
+    captured = []
+    monkeypatch.setattr(
+        "client.gui.battle_scene.entity_pixmap",
+        lambda *_args, snapshot=None, **_kwargs: captured.append(snapshot))
+    scene = BattleScene(db)
+    scene.sync_state(game, 0, {}, True)
+    captured.clear()
+    for kind in ("countdown", "countdown_proc", "revive"):
+        snapshot = {"defeated": kind != "revive", "countdown": 0,
+                    "revive_countdown": 0, "revive_pending": kind == "countdown"}
+        scene.play_visual_event({"k": "v", "v": kind, "p": 0, "s": 0, "r": snapshot})
+        assert [event["v"] for event in scene._visual_events.values()] == [kind]
+        animation = scene._visual_animations[0]
+        assert animation.duration() == 200
+        assert captured[-1] == snapshot
+        animation.setCurrentTime(animation.duration())
+        qapp.processEvents()
+        assert not scene._visual_animations
 
 
 def test_defeated_entity_uses_base_permanent_stats_and_grayscale_art(qapp, tmp_path, monkeypatch):

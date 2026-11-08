@@ -127,6 +127,106 @@ def test_once_countdown_removed_after_trigger(db, make_game):
     assert pa.ext["countdown_history"] == [CD]
 
 
+def test_countdown_visual_natural_zero_cycle(db, make_game):
+    """自然减少与循环归零依次留下 0、生效前 0、重置初值的快照。"""
+    _cd_ability(db, initial=2)
+    g, pa = _game(make_game)
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("k") == "v" and entry.get("p") == 0
+              and entry.get("s") == IDX]
+    assert [entry["v"] for entry in visual] == [
+        "countdown", "countdown_proc", "countdown"]
+    assert [entry["r"]["countdown"] for entry in visual] == [0, 0, 2]
+    assert all(entry["r"]["revive_pending"] is False for entry in visual)
+
+
+def test_countdown_visual_effect_delta(db, make_game):
+    """效果减少在实际字段修改后记录新值，不等待后续结算读取实时状态。"""
+    _cd_ability(db, initial=3)
+    dec = _delta_card(db, 10010152, -1)
+    g, pa = _game(make_game)
+    g.state.timeline.clear()
+    play(g, 0, dec)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") == "countdown" and entry.get("s") == IDX]
+    assert len(visual) == 1
+    assert visual[0]["r"]["countdown"] == 1
+    assert visual[0]["r"]["revive_countdown"] == 0
+    assert visual[0]["r"]["revive_pending"] is False
+
+
+def test_countdown_visual_once_zero_removes(db, make_game):
+    """一次型归零在生效快照后记录移除状态，而非残留实时倒计时。"""
+    cid = 10010151
+    db.cards[cid] = F.card(
+        cid, shikigami=CD, level=1, token=True,
+        steps=[F.Step(op="set_countdown", target=T(kind="self"), initial=1, once=True,
+                      steps=[{"op": "damage", "amount": 3,
+                              "target": {"kind": "all", "pool": "enemy_player"}}])])
+    g, pa = _game(make_game)
+    play(g, 0, cid)
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("k") == "v" and entry.get("p") == 0
+              and entry.get("s") == IDX]
+    assert [entry["v"] for entry in visual] == [
+        "countdown", "countdown_proc", "countdown"]
+    assert [entry["r"]["countdown"] for entry in visual] == [0, 0, None]
+
+
+def test_revive_countdown_visual_zero_then_revive(db, make_game):
+    """自然复活先展示气绝中的 0，再展示已复活快照。"""
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g._drain_queue()
+    s.revive_countdown = 1
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("k") == "v" and entry.get("p") == 0
+              and entry.get("s") == IDX]
+    assert [entry["v"] for entry in visual] == ["countdown", "revive"]
+    revive_zero, revive = visual
+    assert revive_zero["r"]["revive_countdown"] == 0
+    assert revive_zero["r"]["defeated"] is True
+    assert revive_zero["r"]["revive_pending"] is True
+    assert revive["r"]["defeated"] is False
+    assert revive["r"]["revive_countdown"] == 0
+    assert revive["r"]["revive_pending"] is False
+
+
+def test_revive_countdown_visual_effect_delta_paths(db, make_game):
+    """revive 与 include_revive 两条效果路径都记录复活倒计时变化。"""
+    dec = 10010152
+    include = 10010153
+    db.cards[dec] = F.card(
+        dec, shikigami=CD, level=1, token=True, playable_when_defeated=True,
+        steps=[F.Step(op="countdown_delta", amount=-1, revive=True,
+                      target=T(kind="self"))])
+    db.cards[include] = F.card(
+        include, shikigami=CD, level=1, token=True, playable_when_defeated=True,
+        steps=[F.Step(op="countdown_delta", amount=-1, include_revive=True,
+                      target=T(kind="self"))])
+    g, pa = _game(make_game)
+    s = pa.shikigami[IDX]
+    g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
+    g._drain_queue()
+    s.revive_countdown = 2
+    g.state.timeline.clear()
+    play(g, 0, dec)
+    play(g, 0, include)
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") in ("countdown", "revive")
+              and entry.get("s") == IDX]
+    assert [entry["v"] for entry in visual] == ["countdown", "countdown", "revive"]
+    assert [entry["r"]["revive_countdown"] for entry in visual] == [1, 0, 0]
+    assert [entry["r"]["revive_pending"] for entry in visual] == [False, True, False]
+
+
 def test_countdown_replaced_during_zero_not_reset(db, make_game):
     """归零结算期间能力被替换（块内 set_countdown）：旧能力不再重置。"""
     _cd_ability(db, initial=2, steps=[

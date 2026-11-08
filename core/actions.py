@@ -158,6 +158,7 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
                             allow_defeated
                             or (kw_convert and ref.player != ctx.controller)):
                         s.revive_countdown += 1
+                        game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
                         game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
                                      f"（现 {s.revive_countdown}，伤害转化）")
                     continue
@@ -186,6 +187,7 @@ def damage(game, ctx, *, targets: list[Ref], amount: int | dict = 0,
                             # 对气绝式神的伤害转化：气绝倒计时 +1（觉醒·樱花妖，仅敌方目标；
                             # 不再视为伤害）
                             s.revive_countdown += 1
+                            game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
                             game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 +1"
                                          f"（现 {s.revive_countdown}，伤害转化）")
                         continue  # 气绝目标不进伤害管线（未授权时拦截空过），也不计新击杀
@@ -245,6 +247,7 @@ def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
                         or (kw_convert and ref.player == ctx.controller)):
                     # 对气绝式神的恢复转化：气绝倒计时 -1（非治疗事件，不进并行队列）
                     s.revive_countdown -= 1
+                    game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
                     game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 -1"
                                  f"（现 {s.revive_countdown}，恢复转化）")
                     if s.revive_countdown <= 0:
@@ -273,6 +276,7 @@ def heal(game, ctx, *, targets: list[Ref], amount: int = 0, full: bool = False,
                     # 对气绝式神的恢复转化：气绝倒计时 -1（樱花妖，仅己方目标；
                     # 不再视为治疗，不发出治疗事件）；减到 ≤0 立即复活
                     s.revive_countdown -= 1
+                    game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
                     game._settle(f"【倒计时】{game.db.shikigami[s.id].name} 气绝倒计时 -1"
                                  f"（现 {s.revive_countdown}，恢复转化）")
                     if s.revive_countdown <= 0:
@@ -2245,6 +2249,7 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
             if s.countdown_block is None or s.countdown_initial is None:
                 continue  # 无倒计时能力：空操作
             s.countdown = s.countdown_initial
+            game._visual_countdown(ref)
             game._log(f"{game.db.shikigami[s.id].name} 的倒计时重置为 {s.countdown_initial}")
         return
     if revive:
@@ -2262,6 +2267,7 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
             if not s.defeated or s.despawned or s.level < 1:
                 continue
             s.revive_countdown += amount
+            game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
             if s.revive_countdown <= 0:
                 game._revive(pl, ref.player, ref.shikigami)
         return
@@ -2272,6 +2278,7 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
         if include_revive and s.defeated and not s.despawned and s.level >= 1:
             # 觉醒·神乐歌通道：气绝目标改减气绝倒计时（减到 ≤0 立即复活）
             s.revive_countdown += amount
+            game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
             if s.revive_countdown <= 0:
                 game._revive(game.state.players[ref.player], ref.player, ref.shikigami)
             continue
@@ -2297,6 +2304,7 @@ def countdown_delta(game, ctx, *, targets: list[Ref], amount: int = 0,
                       shikigami=ref, original=original, actual=actual,
                       by_card=ctx.card is not None)
         s.countdown += amount
+        game._visual_countdown(ref)
         if s.countdown <= 0:
             game._countdown_zero(ref.player, ref.shikigami)
 
@@ -3899,12 +3907,14 @@ def countdown_power_boost(game, ctx, *, targets: list[Ref], countdown: int = -1,
         name = game.db.shikigami[s.id].name
         if s.defeated:
             s.revive_countdown += int(countdown)
+            game._visual_countdown(ref, revive_pending=s.revive_countdown <= 0)
             game._log(f"{name} 的气绝倒计时 {int(countdown):+d}（余 {s.revive_countdown}）")
             if s.revive_countdown <= 0:
                 game._revive(p, ref.player, ref.shikigami)  # 被本次归零复活者不追加力量
             continue
         if s.countdown is not None and s.countdown > 0 and s.countdown_block is not None:
             s.countdown += int(countdown)
+            game._visual_countdown(ref)
             if s.countdown <= 0:
                 game._countdown_zero(ref.player, ref.shikigami)
         if power:

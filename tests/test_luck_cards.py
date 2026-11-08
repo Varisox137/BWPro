@@ -269,7 +269,7 @@ XIAOZHIREN = 10011798   # 小纸人
 ST_TEAM = [100117, 100129, 100102, 100123]   # 座敷童子同队（幸运兔兔羁绊）
 
 
-def test_countdown_power_boost_atomic(gdb, monkeypatch):
+def test_countdown_power_boost_atomic_revive_visual(gdb, monkeypatch):
     """山兔基础能力（countdown_power_boost 原子语义）：运势6 成功——其他己方式神
     倒计时 -1 并 +1 力量；气绝者只减复活倒计时，被本次 -1 归零复活者不追加力量。"""
     g, pa, pb = _game(gdb, ST_TEAM)
@@ -283,11 +283,20 @@ def test_countdown_power_boost_atomic(gdb, monkeypatch):
     dead.revive_countdown = 2                  # A 回合开始自然 -1 余 1，由山兔本次 -1 归零
     _force_dice(monkeypatch, g, [6])
     zuofu_power = zuofu.eff_power
+    g.state.timeline.clear()
     pass_turns(g, 2)                           # A 下回合开始：运势6 成功
     assert zuofu.countdown == 1                # 2 - 1
     assert zuofu.eff_power == zuofu_power + 1  # 存活者 +1 力量
     assert not dead.defeated                   # 被本次 -1 归零复活
     assert dead.temp_power == 0 and dead.perm_power == 0  # 归零复活者不追加力量
+    visual = [entry for entry in g.state.timeline
+              if entry.get("v") in ("countdown", "revive")
+              and entry.get("p") == 0 and entry.get("s") == 2]
+    assert [entry["v"] for entry in visual] == ["countdown", "countdown", "revive"]
+    assert [entry["r"]["revive_countdown"] for entry in visual] == [1, 0, 0]
+    assert [entry["r"]["revive_pending"] for entry in visual] == [False, True, False]
+    assert visual[1]["r"]["defeated"] is True
+    assert visual[2]["r"]["defeated"] is False
 
 
 def test_awaken_double_independent_luck(gdb, monkeypatch):

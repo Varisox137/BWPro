@@ -842,12 +842,14 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         has_energy = "charge" in definition.keywords or any(
             "charge" in getattr(shiki, field, [])
             for field in ("keywords", "one_shot_keywords", "perm_keywords"))
-        countdown = getattr(shiki, "countdown", None)
+        countdown = (snapshot.get("countdown", getattr(shiki, "countdown", None))
+                     if snapshot else getattr(shiki, "countdown", None))
         # 能量与普通倒计时可共存；气绝时仅隐藏普通倒计时。
         state_energy = energy if has_energy else None
         state_countdown = countdown if not defeated else None
         revive = int(snapshot.get("revive_countdown", 0) if snapshot
                      else getattr(shiki, "revive_countdown", 0))
+        revive_pending = bool(snapshot and snapshot.get("revive_pending", False))
         state = {
             "level": shiki.level,
             "level_color": seat_level_color(seat),
@@ -858,7 +860,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             "shield": snapshot["shield"] if snapshot else shiki.shield,
             "energy": state_energy,
             "countdown": state_countdown,
-            "defeated_countdown": ((revive if revive > 0 else "infinity")
+            "defeated_countdown": ((revive if revive > 0 else
+                                    0 if revive_pending else "infinity")
                                    if defeated and show_defeated_countdown else None),
             "power_color": power_color,
             "health_color": health_color,

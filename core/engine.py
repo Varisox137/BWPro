@@ -2021,6 +2021,8 @@ class Game:
             if not s.defeated or s.despawned:
                 continue
             s.revive_countdown -= 1
+            self._visual_countdown(Ref(player=pi, shikigami=si),
+                                   revive_pending=s.revive_countdown <= 0)
             self._log(f"{self.db.shikigami[s.id].name} 的气绝倒计时 -1（{s.revive_countdown}）")
             if s.revive_countdown <= 0:
                 self._revive(p, pi, si)
@@ -3126,6 +3128,7 @@ class Game:
                 "shield": s.shield, "combat_power": 0 if s.defeated else s.combat_power,
                 "base_power": base_power, "base_health": base_health,
                 "defeated": s.defeated, "revive_countdown": s.revive_countdown,
+                "countdown": s.countdown, "revive_pending": False,
             }
         return {"k": "v", "v": "stat", "p": ref.player, "s": ref.shikigami,
                 "g": group, "r": snapshot}
@@ -3133,6 +3136,12 @@ class Game:
     def _visual_stat(self, ref: Ref, group=None) -> None:
         """记录一次小卡/牌手数值重绘；group 仅用于同批并行效果的刷新阶段。"""
         self.state.timeline.append(self._stat_event(ref, group))
+
+    def _visual_countdown(self, ref: Ref, *, revive_pending: bool = False) -> None:
+        event = self._stat_event(ref)
+        event["v"] = "countdown"
+        event["r"]["revive_pending"] = revive_pending
+        self.state.timeline.append(event)
 
     def _change_shield(self, ref: Ref, delta: int, reason: str, kind: str = "shield",
                        source: Ref | None = None, visual: bool = True) -> None:
@@ -3547,6 +3556,7 @@ class Game:
                     if (not vs0.despawned and vs0.level >= 1
                             and self._has_keyword(attacker, "heal_defeated_countdown")):
                         vs0.revive_countdown -= 1
+                        self._visual_countdown(victim, revive_pending=vs0.revive_countdown <= 0)
                         self._settle(f"【倒计时】{self.db.shikigami[vs0.id].name} "
                                      f"气绝倒计时 -1（现 {vs0.revive_countdown}，恢复转化）")
                         if vs0.revive_countdown <= 0:
@@ -4477,6 +4487,7 @@ class Game:
                 s = p.shikigami[i]
                 processed.add((i, s.id))
                 s.countdown -= 1
+                self._visual_countdown(Ref(player=pi, shikigami=i))
                 self.emit("on_countdown_reduced",
                           shikigami=Ref(player=pi, shikigami=i),
                           original=1, actual=1, by_card=False, natural=True)  # 自然减少不共享
@@ -4604,6 +4615,9 @@ class Game:
             card = s.form if (s.form is not None and s.form.id == source) else None
             cname = f"（【{self.db.cards[card.id].name}】）" if card is not None else ""
             self._settle(f"【倒计时】{self.db.shikigami[s.id].name} 的倒计时归零，效果生效{cname}")
+            proc = self._stat_event(Ref(player=pi, shikigami=si))
+            proc["v"] = "countdown_proc"
+            self.state.timeline.append(proc)
             # 倒计时能力生效时（即时时机）：先于归零块结算——烈/刚/斩类监听授予的
             # 增益/关键字赶上归零块发起的攻击（斩经 next_battle 通道绑定该次战斗）
             self.emit("on_countdown_proc",
@@ -4633,6 +4647,7 @@ class Game:
                 self._clear_countdown(s)
             else:
                 s.countdown = initial
+            self._visual_countdown(Ref(player=pi, shikigami=si))
 
     def _revive(self, p: PlayerState, pi: int, i: int, source: Optional[Ref] = None, reason: str = "倒计时") -> None:
         """复活一名己方式神（倒计时归零/复活类 op 共用）：回满生命、重注册倒计时
@@ -4641,6 +4656,9 @@ class Game:
         s.defeated = False
         s.revive_countdown = 0
         s.health = s.max_health
+        revive = self._stat_event(Ref(player=pi, shikigami=i))
+        revive["v"] = "revive"
+        self.state.timeline.append(revive)
         self._register_ability_countdown(pi, i)  # 能力进场：复活重新注册倒计时能力
         self._log(f"{self.db.shikigami[s.id].name} 复活")
         self._settle(f"【复活】{self.db.shikigami[s.id].name} 复活（生命回满 {s.max_health}）")
@@ -4654,6 +4672,8 @@ class Game:
         for i, s in enumerate(p.shikigami):
             if s.defeated and not s.despawned and s.level >= 1:
                 s.revive_countdown -= 1
+                self._visual_countdown(Ref(player=pi, shikigami=i),
+                                       revive_pending=s.revive_countdown <= 0)
                 if s.revive_countdown <= 0:
                     self._revive(p, pi, i)
 
@@ -4915,6 +4935,7 @@ class Game:
                     .shikigami[ev.source.shikigami]
                 if src0.in_play and self._has_keyword(src0, "damage_defeated_countdown"):
                     s.revive_countdown += 1
+                    self._visual_countdown(ev.victim)
                     self._settle(f"【倒计时】{self.db.shikigami[s.id].name} 气绝倒计时 +1"
                                  f"（现 {s.revive_countdown}，伤害转化）")
             return  # 气绝/离场/濒死者不受伤害
