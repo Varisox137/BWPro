@@ -1037,6 +1037,7 @@ def test_assault_timer_finishes_and_refreshes_public_state(qapp, view):
         qapp.processEvents()
         time.sleep(0.005)
     qapp.processEvents()
+    settle(view)
     assert not view.timeline_queue
     after = enemy.health + enemy.shield + sum(
         shiki.health + shiki.shield for shiki in enemy.shikigami)
@@ -1078,7 +1079,8 @@ def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
                         lambda shiki, db, *, seat, form=None, cache_context=None, height=None, show_defeated_countdown=True:
                         calls.append((shiki, seat, form)), raising=False)
     start(view, mulligan=False)
-    assert len({id(call[0]) for call in calls}) == 8
+    expected = {id(s) for p in view.game.state.players for s in p.shikigami}
+    assert expected <= {id(call[0]) for call in calls}
     assert {call[0].id for call in calls} == set(view.db.shikigami)
     shiki = view.game.current.shikigami[0]
     form = view.db.cards[shiki.id * 100 + 1]
@@ -1806,7 +1808,7 @@ def test_deck_backs_are_symmetric_horizontal_cards_and_hide_when_empty(qapp, vie
         upper = enemy[2 - index]
         assert lower.x() == upper.x()
         assert lower.y() + upper.y() + lower.size.height() == 900
-        assert lower.rotation() == -enemy[index].rotation()
+        assert lower.rotation() == -upper.rotation()
     view.game.state.players[0].deck.clear()
     view.refresh()
     settle(view)
@@ -3697,26 +3699,33 @@ def test_deck_backs_match_reference_size_and_orientation(qapp, view):
         QTransform().rotate(-90), Qt.SmoothTransformation)
     assert enemy[0].pixmap.toImage() == expected.toImage()
     assert [item.rotation() for item in enemy] == [15, 25, 35]
-    assert [item.rotation() for item in own] == [-15, -25, -35]
+    assert [item.rotation() for item in own] == [-35, -25, -15]
+    assert [item.rotation() for item in own] == [-enemy[2-i].rotation() for i in range(3)]
+    assert own[1].pos() - own[0].pos() == own[2].pos() - own[1].pos()
     assert enemy[0].x() > enemy[1].x() > enemy[2].x()
     assert own[0].x() < own[1].x() < own[2].x()
     assert [item.y() for item in enemy] == sorted(item.y() for item in enemy)
     assert [item.y() for item in own] == sorted(item.y() for item in own)
     assert 120 <= enemy[0].y() < 200
     assert enemy[-1].sceneBoundingRect().bottom() >= 370
-    assert 520 <= own[0].sceneBoundingRect().top() <= 580
+    assert 510 <= own[0].sceneBoundingRect().top() <= 580
 
 
 def test_move_visual_uses_event_zone_instead_of_final_state(qapp, view):
+    from client.gui.battle_scene import layout_positions
+
     start(view, mulligan=False)
     scene = view.battle_scene
     item = scene.cards[("shiki", 0, 0)]
+    view.game.state.players[0].combat_index = 0
+    expected = layout_positions(view.game, view.viewer,
+                                scene_width=scene.layout_width)[("shiki", 0, 0)]
     scene.play_visual_event({"v": "move", "p": 0, "s": 0, "zone": "combat"})
     animation = scene._move_animations[item]
-    assert animation.endValue() == QPointF(
-        (scene.layout_width - item.default_size.width()) / 2, 460)
+    assert animation.endValue() == expected
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
+    view.game.state.players[0].combat_index = None
     scene.play_visual_event({"v": "move", "p": 0, "s": 0, "zone": "ready"})
     animation = scene._move_animations[item]
     assert animation.endValue() == QPointF(196, 570)

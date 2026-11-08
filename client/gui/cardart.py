@@ -743,7 +743,12 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
             entity=cdef.id, config_path=path)
     except Exception as error:
         log_render_failure("card", cdef.id, portrait.bwpdiy_root(), error, path)
-        return None
+        pixmap_height = 504 if height is None else height
+        pixmap_width = 360 if height is None else round(pixmap_height * 5 / 7)
+        pixmap = QPixmap(pixmap_width, pixmap_height)
+        pixmap.fill(Qt.transparent)
+        _paint_placeholder_name(pixmap, cdef.name, _placeholder_color(), entity=False)
+        return pixmap
 
 
 def card_pixmap(cdef, db, *, library_dir: Path | None = None,

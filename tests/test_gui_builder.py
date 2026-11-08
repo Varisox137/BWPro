@@ -995,8 +995,9 @@ def test_cardart_native_height_and_size_cache(qapp, tmp_path, monkeypatch):
 
 
 def test_entity_native_height(qapp, tmp_path, monkeypatch):
-    from bwpdiy.render import entity
     from client.gui import cardart
+    cardart._renderer(str(cardart.portrait.bwpdiy_root().resolve()))
+    from bwpdiy.render import entity
 
     definition = factories.shiki(100101, power=3, health=4)
     database = factories.db_of([definition], [])

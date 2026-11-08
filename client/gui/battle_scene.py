@@ -75,6 +75,10 @@ def display_hand(game, pi: int, viewer: int, preserve_order: bool = False):
     return sorted(player.hand, key=sort_key)
 
 
+def combat_position(scene_width: int, top: bool) -> QPointF:
+    return QPointF(646 + (scene_width - SCENE_WIDTH) / 2, 220 if top else 460)
+
+
 def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
                      scene_width: float = SCENE_WIDTH) -> dict[tuple, QPointF]:
     extra = scene_width - SCENE_WIDTH
@@ -121,7 +125,7 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
             if shiki.despawned:
                 continue  # 召唤物离场后不保留图元；坑位仅供引擎下标稳定
             if player.combat_index == index:
-                position = QPointF(646 + center_shift, 220 if top else 460)
+                position = combat_position(scene_width, top)
             else:
                 x, y = ready_positions[index]
                 position = QPointF(x + center_shift, y if top else (690 - y))
@@ -1141,8 +1145,7 @@ class BattleScene(QGraphicsScene):
                     scene_width=self.layout_width)
                 target = positions[("shiki", player, index)]
                 if event.get("zone") == "combat":
-                    target = QPointF((self.layout_width - SHIKI_SIZE.width()) / 2,
-                                     220 if player != self.viewer else 460)
+                    target = combat_position(self.layout_width, player != self.viewer)
                 self._animate_position(item, target)
             return
         if kind == "_move":
@@ -1441,7 +1444,8 @@ class BattleScene(QGraphicsScene):
                     "enemy" if pi != viewer else "own", landscape=True))
                 back.setPos(positions[deck_key] + QPointF(
                     0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
-                rotation = 15 + index * 10
+                fan_index = index if pi != viewer else 2 - index
+                rotation = 15 + fan_index * 10
                 back.setRotation(rotation if pi != viewer else -rotation)
                 back.setZValue(20 + index if pi != viewer else 22 - index)
                 back.update()
