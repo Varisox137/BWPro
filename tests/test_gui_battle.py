@@ -4185,3 +4185,19 @@ def test_parallel_damage_shield_refresh_is_a_preceding_phase(qapp, db, view):
     for wave in (entries[:2], entries[2:4], entries[4:]):
         assert len({entry["g"] for entry in wave}) == 1 and wave[0]["g"] is not None
     assert len({entries[0]["g"], entries[2]["g"], entries[4]["g"]}) == 3
+
+
+def test_zero_damage_visual_has_centered_signed_zero(qapp, view):
+    """damage(amount=0) 直接播放为居中的 -0 数字与墨色背景。"""
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    target = scene.cards[("shiki", view.viewer, 0)]
+    scene.play_visual_event({"v": "damage", "p": view.viewer, "s": 0, "amount": 0})
+    animation = scene._visual_animations[0]
+    item = scene._visual_items[animation]
+    assert len(item.layers) == 2
+    number = item.layers[1][0]
+    assert not number.isNull() and number.width() > 0
+    for layer, offset in item.layers:
+        assert offset == QPointF(-layer.width() / 2, -layer.height() / 2)
+    assert item.pos() == target.sceneBoundingRect().center()

@@ -1835,3 +1835,47 @@ def test_counter_kill_counts_kill_ledger(db, make_game):
     assert a.defeated                     # 被反击击杀
     assert pb.kill_total == 1
     assert pb.kill_by.get(100101) == 1    # B0（100101）反击击杀按来源记账
+
+
+@pytest.mark.parametrize("boundary", ["damage", "move", "defeat"])
+def test_stat_merge_does_not_cross_visual_boundaries(db, make_game, boundary):
+    """同目标相邻增益也不能跨伤害、移动或气绝视觉事件合并。"""
+    middle = {
+        "damage": F.Step(op="damage", amount=1,
+                         target=T(kind="all", pool="enemy_player")),
+        "move": F.Step(op="move", target=T(kind="self")),
+        "defeat": F.Step(op="damage", amount=99, target=T(kind="self")),
+    }[boundary]
+    db.cards[10010151] = F.card(10010151, token=True, steps=[
+        F.Step(op="buff_power", amount=1, target=T(kind="self")),
+        middle,
+        F.Step(op="buff_health", amount=1, perm=True, target=T(kind="self")),
+    ])
+    g = make_game()
+    play(g, 0, 10010151)
+    stats = [e for e in g.state.timeline
+             if e.get("v") == "stat" and e.get("p") == 0 and e.get("s") == 0]
+    assert len(stats) == (3 if boundary == "defeat" else 2)
+    assert stats[0]["r"]["power"] == 4
+    assert stats[-1]["r"]["max_health"] == 5
+
+
+def test_stat_merge_does_not_cross_nested_effect_horizon(db, make_game):
+    """外层增益→嵌套触发增益→外层增益即使视觉相邻，也按效果单元保留三段。"""
+    db.custom_events.add("test_stat_merge_nested")
+    db.shikigami[100101].ability = F.block(
+        F.Step(op="buff_power", amount=1, target=T(kind="self")),
+        when="test_stat_merge_nested", timing="insert", condition={"player": "self"})
+    db.cards[10010151] = F.card(10010151, token=True, steps=[
+        F.Step(op="buff_health", amount=1, target=T(kind="self")),
+        F.Step(op="emit", event="test_stat_merge_nested", payload={"player": 0}),
+        F.Step(op="buff_health", amount=1, target=T(kind="self")),
+    ])
+    g = make_game()
+    play(g, 0, 10010151)
+    stats = [e for e in g.state.timeline
+             if e.get("v") == "stat" and e.get("p") == 0 and e.get("s") == 0]
+    assert len(stats) == 3
+    assert [(e["r"]["power"], e["r"]["health"]) for e in stats] == [
+        (3, 5), (4, 5), (4, 6),
+    ]

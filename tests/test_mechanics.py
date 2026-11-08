@@ -4181,3 +4181,46 @@ def test_damage_redirect_chain_immune_final_victim(db, make_game):
     g.deal_to_shikigami(Ref(player=1, shikigami=1), 3, Ref(player=0, shikigami=0))
     assert a.health == 4                # 转移给 A 后被其免疫拦截
     assert b.health == 6                # 原受伤者无伤（原事件已终止）
+
+
+@pytest.mark.parametrize("enhanced, expected", [(False, (4, 5)), (True, (6, 7))])
+def test_stat_merge_same_effect_final_snapshot(real_game, enhanced, expected):
+    """送祝福基础/增强：同效果对同目标的连续力量、生命刷新合并为最终快照。"""
+    g = real_game([100117, 100101, 100102, 100104])
+    pa, _ = F.battle_setup(g)
+    pa.ext["dice_six_count"] = 3 if enhanced else 0
+    play(g, 0, 10011702, target=Ref(player=0, shikigami=0))
+    stats = [e for e in g.state.timeline
+             if e.get("v") == "stat" and e.get("p") == 0 and e.get("s") == 0]
+    assert len(stats) == 1
+    assert (stats[0]["r"]["power"], stats[0]["r"]["health"]) == expected
+    assert stats[0]["r"]["max_health"] == expected[1]
+
+
+def test_stat_merge_shield_final_snapshot(real_game):
+    """森之佑：力量、生命、护甲连续刷新只保留含全部最终数值的快照。"""
+    g = real_game([100203, 100101, 100102, 100104], check_deck=False)
+    F.battle_setup(g)
+    play(g, 0, 10020302, target=Ref(player=0, shikigami=0))
+    stats = [e for e in g.state.timeline if e.get("v") == "stat"]
+    assert len(stats) == 1
+    assert (stats[0]["r"]["power"], stats[0]["r"]["health"],
+            stats[0]["r"]["shield"]) == (3, 7, 1)
+
+
+def test_stat_merge_multi_target_refresh_stays_parallel(db, make_game):
+    """多目标刷新不跨目标合并，同一效果单元的全部 stat 共享动画组。"""
+    target = T(kind="all", pool="friendly_shikigami")
+    db.cards[10010151] = F.card(10010151, token=True, steps=[
+        F.Step(op="buff_power", amount=1, perm=True, target=target),
+        F.Step(op="buff_health", amount=1, perm=True, target=target),
+        F.Step(op="gain_shield", amount=1, target=target),
+    ])
+    g = make_game()
+    pa, _ = F.battle_setup(g)
+    for s in pa.shikigami:
+        s.level = 1
+    play(g, 0, 10010151)
+    stats = [e for e in g.state.timeline if e.get("v") == "stat"]
+    assert len(stats) == 12
+    assert len({e.get("g") for e in stats}) == 1 and stats[0]["g"] is not None

@@ -3139,8 +3139,25 @@ class Game:
                 "g": group, "r": snapshot}
 
     def _visual_stat(self, ref: Ref, group=None) -> None:
-        """记录一次小卡/牌手数值重绘；group 仅用于同批并行效果的刷新阶段。"""
-        self.state.timeline.append(self._stat_event(ref, group))
+        """同效果单元内同目标的相邻刷新合并；不同目标共用效果单元动画组。"""
+        horizon = self._horizon_stack[-1] if self._horizon_stack else None
+        if group is None and horizon is not None:
+            group = horizon
+        event = self._stat_event(ref, group)
+        previous = next((entry for entry in reversed(self.state.timeline)
+                         if entry.get("k") == "v"), None)
+        if (horizon is not None and previous is not None
+                and previous.get("v") == "stat" and previous.get("g") == horizon
+                and previous.get("p") == ref.player
+                and previous.get("s") == ref.shikigami):
+            previous["r"] = event["r"]
+            return
+        self.state.timeline.append(event)
+
+    def _visual_damage_zero(self, target: Ref, group=None) -> None:
+        """正伤害被非免疫防护归零时仅补视觉数字，不进入扣血与伤害时机。"""
+        self.state.timeline.append({"k": "v", "v": "damage", "p": target.player,
+                                    "s": target.shikigami, "amount": 0, "g": group})
 
     def _visual_countdown(self, ref: Ref, *, revive_pending: bool = False) -> None:
         event = self._stat_event(ref)
@@ -5046,6 +5063,8 @@ class Game:
                 absorbed = min(s.shield, ev.amount)
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "贯通修正")
+                if ev.amount == 0:
+                    self._visual_damage_zero(ev.victim, ev.visual_group)
             # 提前结算"扣减生命前"批次，后续不再结算该批次
             self._emit_damage_batch("on_before_health", ev)
             self._damage_double_modifiers(ev, s)
@@ -5077,6 +5096,7 @@ class Game:
             if ev.pre_shield_zero and ev.amount > 0:
                 ev.amount = 0
                 self._log(f"{self.db.shikigami[s.id].name} 的森罗之阵挡下了本次伤害")
+                self._visual_damage_zero(ev.victim, ev.visual_group)
                 return
             # 毒蚀转化（全卡盘点(6)）：鸩参与（作为来源或受伤者）的战斗伤害在
             # "护甲计算前1"转化为等量破甲——受伤者改为获得等量破甲、伤害值改为 0
@@ -5107,6 +5127,7 @@ class Game:
             ev.amount = 0
             s.one_shot_keywords.remove("barrier")
             self._log(f"{self.db.shikigami[s.id].name} 的屏障抵消了伤害")
+            self._visual_damage_zero(ev.victim, ev.visual_group)
         if ev.amount <= 0:
             return
         # 批次 4：护甲计算——破甲（shield < 0）：移除并增加等量伤害；护甲（> 0）：吸收
@@ -5122,6 +5143,8 @@ class Game:
                 absorbed = min(holder.shield, ev.amount)
                 ev.amount -= absorbed
                 self._change_shield(ev.victim, -absorbed, "护甲计算")
+                if ev.amount == 0:
+                    self._visual_damage_zero(ev.victim, ev.visual_group)
             if ev.amount <= 0:
                 return  # 护甲完全吸收：终止结算
         # 批次 5：护甲计算后（伤害转移/改为非伤害能力锚点；优先级分层见 EffectBlock.priority）

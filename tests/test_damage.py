@@ -4,6 +4,8 @@
 第六章（护甲/破甲变化事件流程）、第七章（气绝前/消灭前 1）。
 0 号位（100101）为测试主体式神；破甲以 shield 负值表示。
 """
+import pytest
+
 from core import targets
 from core.engine import _DamageEvent
 from core.model import Ref
@@ -1610,3 +1612,60 @@ def test_heal_parallel_converted_to_sequential_damage(db, make_game):
     seg = g.history[n:]
     assert seg.index("on_shikigami_defeated") < max(
         i for i, h in enumerate(seg) if h == "on_damage")  # 依次队列结算
+
+
+@pytest.mark.parametrize("reason", ["shield", "barrier", "reduction", "override", "cap"])
+def test_zero_damage_visual_from_positive_damage(db, make_game, reason):
+    """正伤害被防护/减伤/覆写/封顶归零：只发一个 -0，不进入实际伤害规则。"""
+    if reason in ("reduction", "override", "cap"):
+        step = {
+            "reduction": F.Step(op="reduce_damage", amount=3),
+            "override": F.Step(op="override_damage", to=0),
+            "cap": F.Step(op="cap_damage", to=0),
+        }[reason]
+        db.shikigami[SID].ability = F.block(
+            step, when="on_damage_start", condition={"victim_shikigami": "self"})
+    g, pa, pb = _game(make_game)
+    source = pa.shikigami[IDX]
+    source.keywords.extend(["lifesteal", "lethal"])
+    pa.health = 20
+    target = pb.shikigami[0]
+    if reason == "shield":
+        target.shield = 3
+    elif reason == "barrier":
+        target.one_shot_keywords.append("barrier")
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, Ref(player=0, shikigami=IDX))
+    g._drain_queue()
+    zero = [e for e in g.state.timeline
+            if e.get("v") == "damage" and e.get("amount") == 0]
+    assert len(zero) == 1
+    assert zero[0]["p"] == 1 and zero[0]["s"] == 0
+    assert target.health == 4 and not target.defeated
+    assert pa.health == 20
+    assert "on_damage" not in g.history
+    assert "on_heal" not in g.history
+    assert "on_shikigami_defeated" not in g.history
+
+
+@pytest.mark.parametrize("reason", ["original", "immune", "cancel", "redirect", "conversion"])
+def test_zero_damage_visual_excludes_non_damage_terminations(db, make_game, reason):
+    """原始 0、免疫、终止、转移与转化均不补发 -0。"""
+    if reason == "cancel":
+        db.shikigami[SID].ability = F.block(
+            F.Step(op="cancel_damage"), when="on_after_shield", priority=2,
+            condition={"victim_shikigami": "self"})
+    elif reason == "redirect":
+        db.shikigami[100102].ability = _redirect_self_block(100102)
+    g, pa, pb = _game(make_game)
+    target = pb.shikigami[0]
+    source = pa.shikigami[IDX]
+    if reason == "immune":
+        target.immunities.append({"kind": "all"})
+    elif reason == "redirect":
+        pb.shikigami[1].level = 1
+    elif reason == "conversion":
+        source.keywords.append("damage_to_fragile")
+    g.deal_to_shikigami(Ref(player=1, shikigami=0),
+                        0 if reason == "original" else 3, Ref(player=0, shikigami=IDX))
+    assert not [e for e in g.state.timeline
+                if e.get("v") == "damage" and e.get("amount") == 0]
