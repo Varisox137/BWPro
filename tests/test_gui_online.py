@@ -326,10 +326,12 @@ def test_online_reset_session_clears_animations_and_reconnect_history(qapp, db, 
     game.state.players[0].hand.remove(card)
     game.state.players[0].combat_index = 0
     entry = {"k": "a", "u": card.uid, "c": card.id, "p": 0}
-    game.state.timeline.append(entry)
+    move = {"k": "v", "v": "move", "p": 0, "s": 0, "zone": "combat"}
+    entries = [move, entry]
+    game.state.timeline.extend(entries)
     payload = game.state.model_dump(mode="json")
     payload["hand_info"] = cli.hand_cards_info(game, 0)
-    battle.set_state(payload, log=[], timeline=[entry])
+    battle.set_state(payload, log=[], timeline=entries)
     assert scene._move_animations
     assert not scene._card_use_animations
     for _ in range(10):

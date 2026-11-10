@@ -782,7 +782,7 @@ def test_debug_draw_set_turn_and_guards(db, make_game):
 # ==========================================================================
 
 def test_settle_log_channels(db, make_game):
-    """结算明细通道：回合阶段/升级/力量/战力/护甲/伤害与战斗、伤害结算的
+    """结算明细通道：回合阶段/升级/力量/护甲/伤害与战斗、伤害结算的
     开始结束分类入账（引擎只记录，不打印）。"""
     g = make_game(auto_skip_upgrade=False)
     pa, pb = F.battle_setup(g)
@@ -802,8 +802,9 @@ def test_settle_log_channels(db, make_game):
         steps=[F.Step(op="buff_power", amount=2, target=T(kind="self")),
                F.Step(op="gain_shield", amount=1, target=T(kind="self"))],
         token=True)
+    settle_start = len(slog)
     F.play(g, 0, c2)
-    assert any("【战力】式神100101 战力 +2" in x for x in slog)
+    assert any("【力量】式神100101 临时力量 +2" in x for x in slog[settle_start:])
     assert any("【护甲】式神100101 获得 1 点护甲" in x for x in slog)
     assert any("—— 战斗开始：式神100101 ——" in x for x in slog)
     assert any("—— 战斗结束 ——" in x for x in slog)

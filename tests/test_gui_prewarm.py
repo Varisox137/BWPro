@@ -114,7 +114,9 @@ def test_prewarm_stats_record_unchanged_manifest_skip(qapp, tmp_path, monkeypatc
     assert len(entries) == 2
     assert calls == []
     manifest = json.loads((tmp_path / "cache" / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["stats"] == {"total": 2, "succeeded": 2, "failed": 0, "skipped": 2}
+    assert manifest["stats"] == {
+        "total": 2, "succeeded": 2, "failed": 0, "skipped": 2, "deferred": 0,
+    }
 
 
 def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monkeypatch):
@@ -142,6 +144,7 @@ def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monke
 def test_prewarm_failure_summary_is_not_a_success_manifest(qapp, tmp_path, monkeypatch, null_pixmap):
     from client.gui import prewarm
 
+    _configs(tmp_path)
     db = F.db_of([F.shiki(100101)], [F.card(10010101)])
     failed = {10010101}
     calls = []
@@ -163,7 +166,9 @@ def test_prewarm_failure_summary_is_not_a_success_manifest(qapp, tmp_path, monke
     assert manifest["failures"] == [{
         "kind": "cards", "id": 10010101, "version": 20260720, "reason": "渲染返回空图",
     }]
-    assert manifest["stats"] == {"total": 2, "succeeded": 1, "failed": 1, "skipped": 0}
+    assert manifest["stats"] == {
+        "total": 2, "succeeded": 1, "failed": 1, "skipped": 0, "deferred": 0,
+    }
 
     calls.clear()
     failed.clear()
@@ -177,6 +182,7 @@ def test_prewarm_failure_summary_is_not_a_success_manifest(qapp, tmp_path, monke
 def test_prewarm_retries_failed_real_cache_entries(qapp, tmp_path, monkeypatch):
     from client.gui import cardart
 
+    _configs(tmp_path)
     db = F.db_of([F.shiki(100101)], [])
     calls = []
 
