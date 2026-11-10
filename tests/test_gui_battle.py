@@ -3051,6 +3051,27 @@ def test_hand_animation_generate_uses_player_origin_and_enemy_cardback(qapp, vie
     assert scene._move_animations[item].endValue() != item.pos()
 
 
+def test_hand_animation_hides_existing_item_on_return(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    card = view.game.current.hand[0]
+    item = scene.cards[("hand", card.uid)]
+    assert item.isVisible()
+    view.game.move_card(view.game.current, card, "graveyard")
+    view.game.move_card(view.game.current, card, "hand")
+    event = next(entry for entry in reversed(view.game.state.timeline)
+                 if entry.get("v") == "hand" and entry.get("u") == card.uid)
+
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=[event], play_pending=False)
+    assert scene.cards[("hand", card.uid)] is item
+    assert not item.isVisible()
+
+    scene.play_visual_event(event)
+    assert item.isVisible()
+    assert item in scene._move_animations
+
+
 def test_hand_animation_multiple_draws_are_fifo_and_leave_single_items(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -3719,6 +3740,37 @@ def test_handoff_visual_queue_preserves_old_player_turn_end(qapp, view):
     assert any(entry.get("v") == "move" for entry in view._deferred_visuals)
 
 
+def test_handoff_old_viewer_builds_and_plays_turn_end_draw(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    before = len(view.game.state.timeline)
+    view.game.draw_cards(0, 1)
+    draw_event = next(entry for entry in view.game.state.timeline[before:]
+                      if entry.get("v") == "hand")
+
+    assert view.end_turn()
+    assert scene.viewer == 0
+    assert view._handoff_waiting
+    assert not view._handoff_pending
+    item = scene.cards.get(("hand", draw_event["u"]))
+    assert item is not None
+    assert item.player == 0 and item.revealed
+    assert item.isVisible()
+    assert item in scene._move_animations
+    assert view._deferred_visuals[0]["v"] == "turn_start"
+    assert all(not card.revealed for card in scene_items(view, "hand", player=1))
+
+    animation = scene._move_animations[item]
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert view._handoff_pending
+    assert not scene_items(view, "hand")
+
+    view.confirm_handoff()
+    assert scene.viewer == 1
+    assert all(card.revealed for card in scene_items(view, "hand", player=1))
+
+
 def test_handoff_visual_confirmation_replays_retreat_and_turn_banner(qapp, view, monkeypatch):
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -3766,6 +3818,48 @@ def test_handoff_visual_turn_banner_waits_for_old_player_choice(qapp, view):
     view.refresh()
     view.confirm_handoff()
     assert view.battle_scene.banner_pixmap_item.property("assetName") == "your_turn_dark"
+
+
+def test_handoff_visual_queue_defers_events_during_old_player_choice(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.state.active = 1
+    view.game.state.turn += 1
+    view.game.state.pending_choice = {
+        "kind": "choose", "player": 0, "options": ["继续"],
+    }
+    view.game.state.timeline.extend([
+        {"k": "v", "v": "damage", "p": 0, "s": 0, "amount": 1},
+        {"k": "v", "v": "turn_start", "p": 1},
+        {"k": "v", "v": "luck_dice", "p": 1, "s": 0, "dice": 4},
+    ])
+    view.refresh()
+
+    assert view.viewer == 0
+    assert view._handoff_waiting
+    assert view.choice_dialog is not None
+    assert not view._handoff_pending
+    assert [entry["v"] for entry in view._deferred_visuals] == ["turn_start", "luck_dice"]
+    animation = scene._visual_animations[0]
+    assert scene._visual_events[animation]["v"] == "damage"
+    assert not scene._visual_queue
+
+    animation.setCurrentTime(animation.duration())
+    qapp.processEvents()
+    assert view._handoff_waiting
+    assert not view._handoff_pending
+    assert view.choice_dialog is not None
+    view.game.state.pending_choice = None
+    view.refresh()
+    assert view._handoff_pending
+    assert scene.viewer == 0
+    assert not scene._visual_animations
+    view.confirm_handoff()
+    assert scene.viewer == 1
+    assert not view._deferred_visuals
+    animation = scene._visual_animations[0]
+    assert scene._visual_events[animation]["v"] == "luck_dice"
+    assert scene._visual_events[animation]["p"] == 1
 
 
 def test_upgrade_visual_busy_locks_inputs_and_focus(qapp, view):

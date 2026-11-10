@@ -1449,7 +1449,7 @@ class BattleScene(QGraphicsScene):
                 online_entries = timeline[len(previous_timeline):]
         structured_moves = {(entry["p"], entry["s"]): entry.get("zone")
                             for entry in online_entries if entry.get("v") == "move"}
-        pending_hand = {entry["u"] for entry in online_entries
+        pending_hand = {entry["u"]: entry for entry in online_entries
                         if entry.get("k") == "v" and entry.get("v") == "hand"}
         defer_art = bool(online_entries or self.visual_busy or preserve_drag)
         self._animation_timeline = list(timeline)
@@ -1612,8 +1612,10 @@ class BattleScene(QGraphicsScene):
                     item = BattleCardItem(key)
                     self.addItem(item)
                     self.cards[key] = item
-                    if card.uid in pending_hand:
-                        item.hide()
+                hand_event = pending_hand.get(card.uid)
+                if hand_event is not None and getattr(item, "_hand_event", None) is not hand_event:
+                    item._hand_event = hand_event
+                    item.hide()
                 item.cdef = cdef
                 centered = (game.state.phase == "mulligan" or center_hand) and own
                 item.default_size = QSizeF(MULLIGAN_HAND_SIZE if centered else HAND_SIZE)

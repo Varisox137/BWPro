@@ -444,26 +444,37 @@ class HotseatView(QWidget):
             return
         previous_viewer = self.viewer
         next_viewer = self._current_viewer()
+        entries = self.game.state.timeline[self._timeline_seen:]
+        turn_key = (self.game.state.turn, self.game.state.active)
+        if (self.game.state.winner is None and not self._review_mulligan
+                and self._last_turn_key is not None and turn_key != self._last_turn_key
+                and any(entry.get("v") == "turn_start" for entry in entries)):
+            self._render_state(show_turn=False)
+            self.viewer = next_viewer
+            self._handoff_waiting = True
+            self._handoff_boundary_seen = False
+            self._enqueue_timeline()
+            pending = self.game.state.pending_choice
+            if pending is not None and pending["player"] == self.battle_scene.viewer:
+                self._sync_pending_choice()
+            elif not self.battle_scene.visual_busy:
+                self._begin_handoff()
+            return
         if previous_viewer != next_viewer and self.game.state.winner is None:
             if self._review_mulligan:
                 self.viewer = previous_viewer
                 self._render_state()  # 先展示第三次换牌后的结果，再遮挡操作并交接
             self.viewer = next_viewer
-            entries = self.game.state.timeline[self._timeline_seen:]
-            if (not self._review_mulligan
-                    and any(entry.get("v") == "turn_start" for entry in entries)):
-                self._handoff_waiting = True
-                self._handoff_boundary_seen = False
-                self._enqueue_timeline()
-                if not self.battle_scene.visual_busy:
-                    self._begin_handoff()
-                return
-            self._begin_handoff(preserve_hand=self._review_mulligan)
+            if not self._handoff_waiting:
+                self._begin_handoff(preserve_hand=self._review_mulligan)
         else:
             self.viewer = next_viewer
         if self._handoff_waiting:
             self._enqueue_timeline()
-            if not self.battle_scene.visual_busy:
+            pending = self.game.state.pending_choice
+            if pending is not None and pending["player"] == self.battle_scene.viewer:
+                self._sync_pending_choice()
+            elif not self.battle_scene.visual_busy:
                 self._begin_handoff()
             return
         if self._handoff_pending:
@@ -564,9 +575,12 @@ class HotseatView(QWidget):
             self.end_turn_button.width(), opponent=opponent)))
         self.end_turn_button.setIconSize(self.end_turn_button.size() * 0.92)
 
-    def _render_state(self, play_pending=False) -> None:
+    def _render_state(self, play_pending=False, show_turn=True) -> None:
         if self._handoff_waiting:
-            if not self.battle_scene.visual_busy:
+            pending = self.game.state.pending_choice
+            if pending is not None and pending["player"] == self.battle_scene.viewer:
+                self._sync_pending_choice()
+            elif not self.battle_scene.visual_busy:
                 self._begin_handoff()
             return
         if self._handoff_pending:
@@ -593,7 +607,7 @@ class HotseatView(QWidget):
             pending_entries=pending_entries or None,
             play_pending=play_pending)
         turn_key = (state.turn, state.active)
-        track_turn = state.pending_choice is None or state.active == self.viewer
+        track_turn = show_turn and (state.pending_choice is None or state.active == self.viewer)
         if (track_turn and self._last_turn_key is not None and turn_key != self._last_turn_key
                 and state.phase != "mulligan" and not self._review_mulligan):
             self.battle_scene.show_turn_banner(state.active == self.viewer)
