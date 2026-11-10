@@ -495,6 +495,7 @@ class BattleDragController:
                 scene.action_requested.emit({"op": "play_card", "uid": item.uid})
 
     def cancel(self) -> None:
+        was_dragged = self.dragged
         if self.item is not None:
             self.item.dragging = False
             self.item.setOpacity(1)
@@ -505,6 +506,8 @@ class BattleDragController:
         self.drag_ghost = None
         self.drag_arrow = None
         self.scene._sync_focus()
+        if was_dragged:
+            self.scene._refresh_all_art()
 
     def _start_drag(self) -> None:
         item = self.item
@@ -1430,6 +1433,7 @@ class BattleScene(QGraphicsScene):
     def sync_state(self, game, viewer, hand_info, inputs_open, center_hand=False,
                    pending_entries=None, play_pending=True) -> None:
         previous_game = self.game
+        preserve_drag = self.drag_controller.dragged and viewer == self.viewer
         if previous_game is not None and viewer != self.viewer:
             self.reset_animations()
             previous_game = None
@@ -1447,7 +1451,7 @@ class BattleScene(QGraphicsScene):
                             for entry in online_entries if entry.get("v") == "move"}
         pending_hand = {entry["u"] for entry in online_entries
                         if entry.get("k") == "v" and entry.get("v") == "hand"}
-        defer_art = bool(online_entries or self.visual_busy)
+        defer_art = bool(online_entries or self.visual_busy or preserve_drag)
         self._animation_timeline = list(timeline)
         self.game = game
         self.phase = game.state.phase
@@ -1455,7 +1459,8 @@ class BattleScene(QGraphicsScene):
         self.center_hand = center_hand
         self.inputs_open = inputs_open
         self.game_over = game.state.winner is not None
-        self.drag_controller.cancel()
+        if not preserve_drag:
+            self.drag_controller.cancel()
         positions = layout_positions(game, viewer, center_hand=center_hand,
                                      scene_width=self.layout_width)
         self._hand_animation_cache = {

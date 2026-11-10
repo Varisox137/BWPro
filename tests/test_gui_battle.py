@@ -2879,6 +2879,39 @@ def test_drag_stops_shiki_position_animation(qapp, view):
     assert item not in scene._move_animations
 
 
+def test_drag_defers_following_animation_settlement_until_release(qapp, view):
+    from client.gui.battle_scene import layout_positions
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    view.game.current.combat_index = 0
+    view.refresh()
+    key = ("shiki", 0, 0)
+    item = scene.cards[key]
+    scene.play_visual_event({"v": "damage", "p": 0, "s": 1, "amount": 1})
+    assert [event["v"] for event in scene._visual_queue] == ["damage"]
+
+    origin = item.scenePos()
+    assert scene.drag_controller.press(item, origin)
+    scene.drag_controller.move(origin + QPointF(160, -80))
+    assert scene.drag_controller.dragged
+    assert item not in scene._move_animations
+    damage = scene._visual_animations[0]
+    assert scene._visual_events[damage]["v"] == "damage"
+    damage.setCurrentTime(damage.duration())
+    qapp.processEvents()
+    assert scene.drag_controller.dragged
+    assert item not in scene._move_animations
+
+    scene.drag_controller.cancel()
+    assert not scene.drag_controller.dragged
+    replacement = scene._move_animations[item]
+    replacement.setCurrentTime(replacement.duration())
+    qapp.processEvents()
+    assert item.pos() == layout_positions(view.game, view.viewer)[key]
+    assert item not in scene._move_animations
+
+
 def test_card_use_animation_for_both_players_is_nonblocking_and_cleans_up(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

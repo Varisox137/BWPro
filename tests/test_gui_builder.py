@@ -1543,20 +1543,12 @@ def test_cardart_library_description_overrides_engine_text_in_cache(qapp, tmp_pa
     cardart.clear_cardart_caches()
 
 
-def test_cardart_display_values_use_memory_not_disk_cache(qapp, tmp_path, monkeypatch):
-    import json
+def test_cardart_display_values_use_memory_not_disk_cache(qapp, tmp_path):
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
     cdef = cdef.model_copy(update={"subtype": "awaken"})
     database = factories.db_of([factories.shiki(100101)], [cdef])
-
-    def render(payload_json, _layout_json, _root, *_args):
-        pixmap = QPixmap(2, 2)
-        pixmap.fill(Qt.white if json.loads(payload_json)["health+"] == 2 else Qt.black)
-        return pixmap
-
-    monkeypatch.setattr(cardart, "_render_card_pixmap", render)
     cardart.clear_cardart_caches()
     base = cardart.card_pixmap(cdef, database, library_dir=library_dir,
                                cache_dir=cache_dir,

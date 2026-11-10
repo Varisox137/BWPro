@@ -698,10 +698,10 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 ### 视觉事件与呈现快照
 
 - GUI 视觉事件是 timeline 中公开的 `{"k": "v", "v": ...}` 条目，不是 `emit()` 规则事件，不触发能力，也不进入文字记录。当前清单：
-  - 战斗与数值：`assault`、`move`、`stat`、`defeated`、`heal`、`damage`、`immune`、`upgrade`；对方响应提示另用 `response`。
+  - 战斗与数值：`assault`、`move`、`stat`、`defeated`、`heal`、`damage`、`immune`、`upgrade`。
   - 运势：`luck_dice`（每次实际骰面）、`luck_reroll`（重投标记及原骰点）、`luck_result`（最终结果）；旧 `luck` 仅作客户端兼容入口，拆成骰面与结果两段。
   - 倒计时与复活：`countdown`（普通/复活倒计时及移除快照，复活倒计时即将归零时标 `revive_pending`）、`countdown_proc`（归零能力块执行前）、`revive`（状态恢复后）。
-  - 手牌与回合边界：`hand`（非爆牌入手，只带 `p/u/from/reason`，不带卡牌 id；抽空牌库仍按牌库布局起点播放）、`turn_start`（回合开始结算前的新行动方边界，供热坐两段交接；不是 `on_turn_start` 的别名）。主动/响应/自动用牌动画仍使用独立的 `k="a"` 条目。
+  - 手牌与回合边界：`hand`（非爆牌入手，只带 `p/u/from/reason`，不带卡牌 id；抽空牌库仍按牌库布局起点播放）、`turn_start`（回合开始结算前的新行动方边界，供热坐两段交接；不是 `on_turn_start` 的别名）。主动/响应/自动用牌动画仍使用独立的 `k="a"` 条目；对方响应的 `response` 字样由客户端读取 `k="a"` 响应标记后内部生成，不是引擎发出的 `k="v"` 事件。
 - `stat/countdown/countdown_proc/revive/defeated` 以及气绝回位 `move` 可携带结算时点快照 `r`；GUI 在对应事件开始时应用快照，待播期间不用后续实时状态覆盖卡面。同一效果单元内、同一目标且视觉相邻的 `stat` 合并为最终快照；不同目标共享并行组但不互相合并，嵌套效果、伤害步骤等执行边界阻止跨单元合并。动态光环重算无数值 diff 时不追加 `stat`。
 - 正伤害被护甲、屏障、减伤、覆写、封顶或分段保护首次降为 0 时，可补一个仅用于呈现的 `damage(amount=0)`，GUI 显示 `-0`；它不扣血，也不进入 `on_damage`、吸血或必杀流程。原始 0、免疫、`cancel_damage`、伤害转移与伤害转化不补该事件；同一伤害事件重复归零也只保留一次。
 

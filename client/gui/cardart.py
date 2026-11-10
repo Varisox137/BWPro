@@ -183,6 +183,16 @@ def _card_data(cdef, db, config: dict) -> dict:
     return data
 
 
+def _asset_library(assets: Path):
+    from bwpdiy.render.assets import AssetLibrary
+
+    library = AssetLibrary(assets)
+    if (not (assets / "levels/evolve_circle.png").is_file()
+            and (assets / "levels/evolve.png").is_file()):
+        library.level_evolve_circle = library.level_star
+    return library
+
+
 @lru_cache(maxsize=4)
 def _renderer(root_text: str):
     root = Path(root_text)
@@ -190,10 +200,9 @@ def _renderer(root_text: str):
     if str(code_root) not in sys.path:
         sys.path.insert(0, str(code_root))
     from bwpdiy.render import render_card
-    from bwpdiy.render.assets import AssetLibrary
 
     assets = root / "assets"
-    return assets, AssetLibrary(assets), render_card
+    return assets, _asset_library(assets), render_card
 
 
 def _layout_fingerprint(_assets: Path) -> tuple:
@@ -375,9 +384,7 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
         layout = json.loads(layout_json)
         assets, _shared_library, render = _renderer(root_text)
         from bwpdiy.render import pipeline
-        from bwpdiy.render.assets import AssetLibrary
-
-        library = AssetLibrary(assets)
+        library = _asset_library(assets)
         art = payload["artwork"]["images"][0]
         transparent = art["path"] == _TRANSPARENT_ART
         with _RENDER_LOCK:
@@ -426,9 +433,7 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
         layout = json.loads(layout_json)
         assets, _shared_library, _render = _renderer(root_text)
         from bwpdiy.render import entity
-        from bwpdiy.render.assets import AssetLibrary
-
-        library = AssetLibrary(assets)
+        library = _asset_library(assets)
         art = payload["artwork"]["images"][0]
         transparent = art["path"] == _TRANSPARENT_ART
         with _RENDER_LOCK:
