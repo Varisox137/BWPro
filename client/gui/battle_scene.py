@@ -508,7 +508,7 @@ class BattleDragController:
 
     def _start_drag(self) -> None:
         item = self.item
-        self.scene._stop_move_animation(item)
+        self.scene._stop_move_animation(item, refresh=False)
         if item.pixmap is not None and not item.pixmap.isNull():
             pixmap = item.pixmap.scaled(item.size.toSize(), Qt.KeepAspectRatio,
                                         Qt.SmoothTransformation)
@@ -866,7 +866,7 @@ class BattleScene(QGraphicsScene):
                 items.append(item)
         self.set_focus(items)
 
-    def _stop_move_animation(self, item: BattleCardItem) -> None:
+    def _stop_move_animation(self, item: BattleCardItem, *, refresh=True) -> None:
         self._visual_queue[:] = [event for event in self._visual_queue
                                  if not (event.get("v") == "_move"
                                          and event.get("item") is item)]
@@ -878,7 +878,8 @@ class BattleScene(QGraphicsScene):
             self._visual_events.pop(animation, None)
             animation.deleteLater()
             self._start_queued_visuals()
-            self._refresh_all_art()
+            if refresh:
+                self._refresh_all_art()
 
     def _animate_position(self, item: BattleCardItem, target: QPointF,
                           group=None) -> None:

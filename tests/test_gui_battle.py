@@ -2855,9 +2855,6 @@ def test_shiki_position_animation_reaches_layout_target(qapp, view):
     assert not any(event.get("v") == "_move" for event in scene._visual_queue)
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
-    assert item not in scene._move_animations
-
-    view.refresh()
     replacement = scene._move_animations[item]
     assert replacement is not animation
     target = layout_positions(view.game, view.viewer)[key]

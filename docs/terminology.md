@@ -166,6 +166,8 @@
 | 结算次序总表 | （rules.md 第一章小节） | 一个能力"何时执行"的六旋钮判定链：事件默认类别 → 单卡 timing 覆盖 → priority 分层 → 能力进场序号 → horizon 单元绑定 → 排水模式；通用次序规则的唯一出处，其余章节只写事件语义。timing 覆盖 / 非伤害管线 priority / horizon 为**特例机制**（受限使用，新卡先用先讨论并登记总表节；现状清单见该节） | ✅ |
 | 延时单元绑定 | `_Pending.horizon` / `Game._drain_horizon` / `Game._horizon_stack` | 延时待结算项 emit 时记下当前结算单元 id，只在所属单元完成后冲刷、中途排水跳过；现用于觉醒·山风复制（on_countdown_reduced）、灵咒"抽到触发"挂起、抽牌事件移动挂起（draw_move）三处 | ✅ |
 | 结算明细可见性 | `Game._log/_settle(owner=)` / `log_vis`/`settle_vis` / timeline `"o"` 键 / `Game._display_suppressed` | ① 持有式神不在场的卡牌触发器结算期间不产出日志/明细行（豁免 trigger_when_defeated/trigger_when_not_in_play、player_aura、幻境）；② owner 打标行仅所属方可见，联机增量广播/resync/负载内嵌全量均按 viewer 过滤；CLI 热坐全见，GUI 热坐按当前查看方过滤并隐藏对手调度张数（口径见 rules.md 二十五章"结算明细显示"） | ✅ |
+| 视觉事件 | timeline `{"k": "v", "v": ...}` | 仅供 GUI 的公开呈现条目，不是 `emit()` 规则事件、不触发能力；完整清单见 rules.md「视觉事件与呈现快照」。`luck_dice/luck_result` 分拆每次骰面与最终结果，`hand` 表达非爆牌入手，`countdown/countdown_proc/revive` 表达倒计时变化/归零执行/复活，`turn_start` 是热坐交接边界而非 `on_turn_start` 别名 | ✅ |
+| 呈现快照 | timeline 视觉事件 `r` / `Game._stat_event` | 事件生成时的力量、生命、护甲、气绝、普通/复活倒计时等显示数值；GUI 到对应事件开始时才应用，避免后续实时状态提前泄露到动画。同效果同目标的相邻 `stat` 只保留最终快照，不同目标以 `g` 并行但不合并 | ✅ |
 | 目标 | `target` / `Ref` | Ref(player, shikigami?) | ✅ |
 | 随机生成 | `generate`（动作） | 从 db 按谓词（所属式神/主类型）随机生成卡牌置入区域（发 uid、可重复、池内不含衍生卡；杀念/觉醒·一目连） | ✅ |
 | 直接消灭 | `destroy` / `destroy_form`（动作） | 非伤害消灭：生命归零走气绝流程 / 消灭当前结附的形态（直接消灭免疫为扩展锚点） | ✅ |

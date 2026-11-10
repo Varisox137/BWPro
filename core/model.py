@@ -363,7 +363,10 @@ class GameState(BaseModel):
     # "能力触发"类叙事行滞后到插入结算明细之后（维护者定案）。非公开信息行另带
     # "o": 所属方下标（仅该方可见——联机 server 按 viewer 过滤；热坐单屏不过滤）；
     # 动画 {"k": "a", "u": uid, "c": card_id, "p": player} 与视觉事件
-    # {"k": "v", "v": "defeated"|"luck"|"luck_reroll"|"heal"|"damage"|"immune"|"upgrade", ...} 无 m，仅供 GUI；
+    # {"k": "v", "v": "defeated"|"move"|"assault"|"stat"|"luck"|"luck_dice"|
+    # "luck_reroll"|"luck_result"|"heal"|"damage"|"immune"|"response"|"upgrade"|
+    # "countdown"|"countdown_proc"|"revive"|"hand"|"turn_start", ...} 无 m，仅供 GUI；
+    # stat/countdown/countdown_proc/revive/defeated 及气绝回位 move 可带结算时点快照 r；
     # CLI 与文字 timeline 播放跳过）
     log_vis: list[int | None] = Field(default_factory=list)  # 与 log 逐条对齐的可见性（None=双方；int=仅该方）
     settle_vis: list[int | None] = Field(default_factory=list)  # 与 settle_log 逐条对齐（同上）

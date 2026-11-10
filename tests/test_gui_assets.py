@@ -212,7 +212,8 @@ def test_combat_movement_and_card_animation_precede_effects(db, make_game):
     pa.shikigami[0].base_power = 1
     game.apply({"op": "assault", "index": 0})
     kinds = [entry["v"] for entry in game.state.timeline if entry.get("k") == "v"]
-    assert kinds[:2] == ["assault", "move"]
+    assault_index = kinds.index("assault")
+    assert kinds[assault_index:assault_index + 2] == ["assault", "move"]
     assert kinds[-2:] == ["defeated", "move"]
     assert any(entry.get("k") == "l" and "出击" in entry.get("m", "")
                for entry in game.state.timeline)

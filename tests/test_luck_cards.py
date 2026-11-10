@@ -115,8 +115,16 @@ def test_luck_success_aura_power_same_turn(gdb, monkeypatch):
     assert aura_stat is not None
     assert kinds.index("luck_result") < visual.index(aura_stat) \
         < kinds.index("move") < kinds.index("damage")
+    second_start = len(g.state.timeline)
     play(g, 0, CHUQIAN)                        # 同回合再成功：不叠加
     assert s.eff_power == base + 2
+    second_visual = [entry for entry in g.state.timeline[second_start:]
+                     if entry.get("k") == "v"]
+    second_result = max(i for i, entry in enumerate(second_visual)
+                        if entry["v"] == "luck_result")
+    assert [entry for entry in second_visual[second_result + 1:]
+            if entry["v"] == "stat" and entry.get("p") == 0
+            and entry.get("s") == IDX] == []
     pass_turns(g, 2)                           # 下个己方回合：光环消失
     assert s.eff_power == base
 
@@ -443,7 +451,8 @@ def test_luck_reroll_on_dice_one(gdb, monkeypatch):
     play(g, 0, FUYUN)                          # 福运昌隆：抽 1；运势4 → +2 鬼火
     assert pa.ext["dice_history"] == [5]       # 被重投覆盖的首投不计入
     assert pa.orb == 9 - 1 + 2                 # 判定成功：获得 2 鬼火
-    visuals = [entry for entry in g.state.timeline if entry.get("k") == "v"]
+    visuals = [entry for entry in g.state.timeline
+               if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
     assert [(entry["v"], entry.get("dice")) for entry in visuals] == [
         ("luck_dice", 1), ("luck_reroll", 5),
         ("luck_dice", 5), ("luck_result", 5),
@@ -459,7 +468,8 @@ def test_luck_reroll_same_value_emits_second_dice(gdb, monkeypatch):
     g, pa, _pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 2})
     _force_dice(monkeypatch, g, [1, 1])
     play(g, 0, FUYUN)
-    visuals = [entry for entry in g.state.timeline if entry.get("k") == "v"]
+    visuals = [entry for entry in g.state.timeline
+               if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
     assert [(entry["v"], entry.get("dice")) for entry in visuals] == [
         ("luck_dice", 1), ("luck_reroll", 1),
         ("luck_dice", 1), ("luck_result", 1),

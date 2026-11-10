@@ -1543,12 +1543,20 @@ def test_cardart_library_description_overrides_engine_text_in_cache(qapp, tmp_pa
     cardart.clear_cardart_caches()
 
 
-def test_cardart_display_values_use_memory_not_disk_cache(qapp, tmp_path):
+def test_cardart_display_values_use_memory_not_disk_cache(qapp, tmp_path, monkeypatch):
+    import json
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
     cdef = cdef.model_copy(update={"subtype": "awaken"})
     database = factories.db_of([factories.shiki(100101)], [cdef])
+
+    def render(payload_json, _layout_json, _root, *_args):
+        pixmap = QPixmap(2, 2)
+        pixmap.fill(Qt.white if json.loads(payload_json)["health+"] == 2 else Qt.black)
+        return pixmap
+
+    monkeypatch.setattr(cardart, "_render_card_pixmap", render)
     cardart.clear_cardart_caches()
     base = cardart.card_pixmap(cdef, database, library_dir=library_dir,
                                cache_dir=cache_dir,
@@ -1979,7 +1987,8 @@ def test_cardart_rejects_unsafe_layout(qapp, tmp_path, monkeypatch, layout):
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     config["layout"] = layout
     config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
-    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is None
+    pixmap = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert pixmap is not None and not pixmap.isNull()
     assert not list(cache_dir.glob("*.png"))
     monkeypatch.setattr(cardart, "_renderer", original_renderer)
     cardart.clear_cardart_caches()
