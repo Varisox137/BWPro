@@ -3825,8 +3825,10 @@ def test_handoff_visual_queue_defers_events_during_old_player_choice(qapp, view)
     scene = view.battle_scene
     view.game.state.active = 1
     view.game.state.turn += 1
+    choice_uid = view.game.state.players[0].deck[0].uid
     view.game.state.pending_choice = {
-        "kind": "choose", "player": 0, "options": ["继续"],
+        "kind": "deck_top_pick", "player": 0, "options": [choice_uid],
+        "count": 1, "remaining": 1,
     }
     view.game.state.timeline.extend([
         {"k": "v", "v": "damage", "p": 0, "s": 0, "amount": 1},
@@ -3849,8 +3851,14 @@ def test_handoff_visual_queue_defers_events_during_old_player_choice(qapp, view)
     assert view._handoff_waiting
     assert not view._handoff_pending
     assert view.choice_dialog is not None
-    view.game.state.pending_choice = None
-    view.refresh()
+    assert not view.end_turn()
+    assert not view.apply_command({"op": "choose", "player": 1, "uid": choice_uid})
+    assert view.game.state.pending_choice is not None
+
+    assert view.answer_pending(choice_uid)
+    assert view.game.state.pending_choice is None
+    assert any(card.uid == choice_uid for card in view.game.state.players[0].hand)
+    assert view._deferred_visuals[-1]["v"] == "hand"
     assert view._handoff_pending
     assert scene.viewer == 0
     assert not scene._visual_animations

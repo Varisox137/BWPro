@@ -644,8 +644,13 @@ class HotseatView(QWidget):
                          and self.battle_scene.visual_busy))
 
     def apply_command(self, command: dict) -> bool:
-        if self.game is None or self._handoff_pending or self._handoff_waiting:
+        if self.game is None or self._handoff_pending:
             return False
+        if self._handoff_waiting:
+            pending = self.game.state.pending_choice
+            if (command.get("op") != "choose" or pending is None
+                    or command.get("player") != pending["player"]):
+                return False
         try:
             self.game.apply(command)
         except IllegalAction as error:
