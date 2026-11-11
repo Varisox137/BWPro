@@ -110,6 +110,7 @@ class OnlineBattleView(HotseatView):
                 entry.get("kind"), entry.get("seq"), entry.get("message", ""))
 
     def reset_session(self) -> None:
+        self._choice_generation += 1
         self.timeline_timer.stop()
         self._clear_usage()
         self.timeline_queue.clear()
@@ -151,6 +152,7 @@ class OnlineBattleView(HotseatView):
     def set_state(self, payload: dict, timer: dict | None = None,
                   log: list[str] | None = None,
                   timeline: list[dict] | None = None) -> None:
+        self._choice_generation += 1
         if self._state_rendering:
             self._deferred_state = (payload, timer, log, timeline)
             return
@@ -269,6 +271,7 @@ class OnlineBattleView(HotseatView):
         super()._show_result()
 
     def show_game_over(self, winner: int | None, reason: str = "") -> None:
+        self._choice_generation += 1
         self._game_over = True
         self.battle_scene.game_over = True
         self.cancel_targeting()

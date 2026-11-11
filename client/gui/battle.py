@@ -60,6 +60,8 @@ class ChoiceDialog(QDialog):
 
     def __init__(self, view: "HotseatView", pending: dict):
         super().__init__(view)
+        self._game = view.game
+        self._pending = pending
         self.setWindowTitle("结算选择")
         self.setModal(False)
         layout = QVBoxLayout(self)
@@ -96,13 +98,23 @@ class ChoiceDialog(QDialog):
             return
         self.setEnabled(False)
         view = self.parent()
+        game = self._game
+        pending = self._pending
+        generation = view._choice_generation
         view._close_choice_dialog(self)
 
+        def context_open() -> bool:
+            return (view._choice_generation == generation
+                    and view.game is game and game.state.pending_choice is pending
+                    and game.state.winner is None and not getattr(view, "_game_over", False))
+
         def answer() -> None:
-            if not view.answer_pending(value):
+            if not context_open():
+                return
+            if not view.answer_pending(value) and context_open():
                 view._sync_pending_choice()
 
-        QTimer.singleShot(0, answer)
+        QTimer.singleShot(0, view, answer)
 
     def reject(self) -> None:
         pass
@@ -140,6 +152,7 @@ class HotseatView(QWidget):
         self.legal_targets: list[Ref] = []
         self.choice_dialog: ChoiceDialog | None = None
         self._choice_key = None
+        self._choice_generation = 0
         self._handoff_pending = False
         self._handoff_stage = None
         self._handoff_waiting = False
@@ -400,6 +413,7 @@ class HotseatView(QWidget):
         return True
 
     def start_game(self, p1: tuple, p2: tuple, seed: int | None = None, **kwargs) -> None:
+        self._choice_generation += 1
         if seed is None:
             seed = secrets.randbits(32)
         self._clear_usage()
@@ -1030,6 +1044,7 @@ class HotseatView(QWidget):
             answer = ask_confirmation(self, "终止对局", "确定结束当前对局并返回主菜单？")
             if answer != QMessageBox.Yes:
                 return False
+        self._choice_generation += 1
         self.timeline_timer.stop()
         self._clear_usage()
         self.battle_scene.reset_animations()

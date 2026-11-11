@@ -1623,6 +1623,32 @@ def test_choice_immediate_feedback_restores_invalid_answer(qapp, db, view, monke
     assert not view.error_label.isHidden()
 
 
+def test_choice_session_boundary_return_to_menu_cancels_answer(
+        qapp, db, view, monkeypatch):
+    import sys
+
+    option_ids = [10010161, 10010162]
+    for cid in option_ids:
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    view.game._open_field_summon_pick(0, option_ids)
+    view.refresh()
+    dialog = view.choice_dialog
+    dialog.option_view.select(option_ids[0])
+    dialog.option_view.option_buttons[option_ids[0]].click()
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda *args: errors.append(args))
+
+    assert view.return_to_menu()
+    try:
+        qapp.processEvents()
+    except Exception as error:
+        errors.append(error)
+    assert errors == []
+    assert view.game is None
+    assert view.choice_dialog is None
+
+
 def test_second_player_mulligan_review_has_no_turn_banner(qapp, view, monkeypatch):
     start(view)
     view.ready()

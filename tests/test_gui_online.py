@@ -542,6 +542,95 @@ def test_online_choice_immediate_feedback_sends_once_waits_and_reconnects(qapp, 
     battle.close()
 
 
+def _click_online_choice_without_processing(db, make_game):
+    game = make_game(mulligan=True)
+    field_id = 10010161
+    db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
+    card = F.give(game, 1, field_id)
+    game._open_discard_pick(1, 1, card_type="field")
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 1
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 1)
+    battle.set_state(payload, log=[], timeline=[])
+    dialog = battle.choice_dialog
+    QTest.mouseClick(dialog.findChildren(CardWidget)[0], Qt.LeftButton)
+    QTest.mouseClick(dialog.option_view.option_buttons[card.uid], Qt.LeftButton)
+    assert sent == []
+    assert dialog.isHidden()
+    return battle, payload, sent
+
+
+def test_online_choice_session_boundary_reset_cancels_answer(
+        qapp, db, make_game, monkeypatch):
+    import sys
+
+    battle, _payload, sent = _click_online_choice_without_processing(db, make_game)
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda *args: errors.append(args))
+    battle.reset_session()
+    try:
+        qapp.processEvents()
+    except Exception as error:
+        errors.append(error)
+
+    assert errors == []
+    assert sent == []
+    assert battle.game is None
+    assert battle.choice_dialog is None
+    battle.close()
+
+
+def test_online_choice_session_boundary_game_over_does_not_reopen(qapp, db, make_game):
+    battle, _payload, sent = _click_online_choice_without_processing(db, make_game)
+    battle.show_game_over(None, "player_left")
+    qapp.processEvents()
+
+    assert sent == []
+    assert battle.choice_dialog is None
+    assert battle._choice_key is None
+    battle.close()
+
+
+def test_online_choice_session_boundary_equal_new_state_is_not_answered(qapp, db, make_game):
+    battle, payload, sent = _click_online_choice_without_processing(db, make_game)
+    old_game = battle.game
+    old_pending = old_game.state.pending_choice
+    battle.set_state(payload, log=[], timeline=[])
+    new_pending = battle.game.state.pending_choice
+    assert battle.game is not old_game
+    assert new_pending == old_pending
+    assert new_pending is not old_pending
+    new_dialog = battle.choice_dialog
+    assert new_dialog is not None and not new_dialog.isHidden()
+
+    qapp.processEvents()
+    assert sent == []
+    assert not battle._awaiting_state
+    assert battle.choice_dialog is new_dialog
+    assert not new_dialog.isHidden()
+    battle.close()
+
+
+def test_online_choice_session_boundary_destroy_cancels_answer(
+        qapp, db, make_game, monkeypatch):
+    import sys
+
+    battle, _payload, sent = _click_online_choice_without_processing(db, make_game)
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda *args: errors.append(args))
+    battle.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    try:
+        qapp.processEvents()
+    except Exception as error:
+        errors.append(error)
+
+    assert errors == []
+    assert sent == []
+
+
 def test_online_choice_dialog_receive_error_restores_retry(qapp, db, make_game):
     game = make_game(mulligan=True)
     field_id = 10010161
