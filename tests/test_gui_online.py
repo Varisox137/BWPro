@@ -356,6 +356,23 @@ def test_online_reset_session_clears_animations_and_reconnect_history(qapp, db, 
     battle.close()
 
 
+def test_online_second_start_resize_before_state(qapp, view, make_game):
+    game = make_game(mulligan=False)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    view.me = view.battle.me = 0
+    view.battle.set_state(payload, log=[], timeline=[])
+    scene = view.battle.battle_scene
+    assert scene.deck_backs
+
+    view.handle_message({"type": "start", "player_index": 0, "opponent": "B"})
+    assert scene.game is None and scene.deck_backs
+    view.battle.battle_view.resize(2000, 900)
+    scene.set_viewport_size(2000, 900)
+    view.battle.set_state(payload, log=[], timeline=[])
+    assert scene.game is not None
+
+
 def test_online_state_push_clears_pending_usage(qapp, db, make_game):
     game = make_game(mulligan=False)
     db.cards[10010153] = F.card(10010153, token=True, cost=0, level=0)

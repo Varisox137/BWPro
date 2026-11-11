@@ -683,6 +683,8 @@ class BattleScene(QGraphicsScene):
             item.setDefaultTextColor(QColor(color))
 
     def _sync_deck_back(self, key: tuple, back: BattleCardItem) -> None:
+        if self.game is None:
+            return
         player_index = key[1]
         player = self.game.state.players[player_index]
         side = "enemy" if player_index != self.viewer else "own"
@@ -692,9 +694,11 @@ class BattleScene(QGraphicsScene):
         if getattr(back, "_render_signature", None) != signature:
             pixmap = (cardback_pixmap(side, landscape=True) if player.deck else
                       empty_deck_pixmap(light, landscape=True))
-            back.set_art(pixmap.transformed(
-                QTransform().rotate(180), Qt.SmoothTransformation))
-            back._render_signature = signature
+            rotated = (pixmap.transformed(QTransform().rotate(180), Qt.SmoothTransformation)
+                       if pixmap is not None else None)
+            back.set_art(rotated)
+            back._render_signature = (
+                signature if rotated is not None and not rotated.isNull() else None)
         position, rotation, z_value = deck_back_layout(
             player_index, key[2], self.viewer, self.layout_width)
         back.setPos(position + QPointF(0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
@@ -830,7 +834,8 @@ class BattleScene(QGraphicsScene):
                   if cdef is not None else
                   cardback_pixmap("own" if own else "enemy"))
         item.set_art(pixmap)
-        item._render_signature = signature
+        item._render_signature = (
+            signature if pixmap is not None and not pixmap.isNull() else None)
 
     def refresh_cardbacks(self) -> None:
         """设置页保存卡背后立即刷新当前对局，无需重建场景。"""
@@ -1391,10 +1396,12 @@ class BattleScene(QGraphicsScene):
             shiki, form, seat, show_defeated_countdown, self.theme)
         if getattr(item, "_render_signature", None) == signature:
             return
-        item.set_art(entity_pixmap(
+        pixmap = entity_pixmap(
             shiki, self.db, seat=seat, form=form, cache_context=art_context, height=210,
-            show_defeated_countdown=show_defeated_countdown))
-        item._render_signature = signature
+            show_defeated_countdown=show_defeated_countdown)
+        item.set_art(pixmap)
+        item._render_signature = (
+            signature if pixmap is not None and not pixmap.isNull() else None)
 
     def _refresh_all_art(self) -> None:
         """动画队列清空后统一更新数值与卡图，避免结算状态抢先显示。"""

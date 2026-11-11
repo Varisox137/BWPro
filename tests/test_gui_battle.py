@@ -1565,6 +1565,73 @@ def test_scene_unchanged_render_signature_invalidates_visual_settings(
     assert all(not entries for entries in render_calls.values())
 
 
+def test_scene_reset_then_resize_without_game(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    assert scene.deck_backs
+    scene.reset_animations()
+    assert scene.game is None
+    scene.set_viewport_size(2000, 900)
+    assert scene.layout_width == 2000
+
+
+def test_scene_failed_render_is_retried_without_redrawing_successes(qapp, view, monkeypatch):
+    from client.gui import battle_scene
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    shiki = view.game.current.shikigami[0]
+    card = view.game.current.hand[0]
+    original_entity = battle_scene.entity_pixmap
+    original_card = battle_scene.card_pixmap
+    failures = {"entity": True, "card": True}
+    entity_attempts = []
+    card_attempts = []
+
+    def fail_entity_once(*args, **kwargs):
+        entity_attempts.append(args[0])
+        if failures["entity"] and args[0] is shiki:
+            failures["entity"] = False
+            return None
+        return original_entity(*args, **kwargs)
+
+    def fail_card_once(*args, **kwargs):
+        card_attempts.append(args[0].id)
+        if failures["card"] and args[0].id == card.id:
+            failures["card"] = False
+            return None
+        return original_card(*args, **kwargs)
+
+    monkeypatch.setattr(battle_scene, "entity_pixmap", fail_entity_once)
+    monkeypatch.setattr(battle_scene, "card_pixmap", fail_card_once)
+    scene.reset_animations()
+    view.refresh()
+    assert scene.cards[("shiki", 0, 0)].pixmap is None
+    assert scene.cards[("hand", card.uid)].pixmap is None
+
+    entity_attempts.clear()
+    card_attempts.clear()
+    view.refresh()
+    assert entity_attempts == [shiki]
+    assert card_attempts == [card.id]
+    assert scene.cards[("shiki", 0, 0)].pixmap is not None
+    assert not scene.cards[("shiki", 0, 0)].pixmap.isNull()
+    assert scene.cards[("hand", card.uid)].pixmap is not None
+    assert not scene.cards[("hand", card.uid)].pixmap.isNull()
+
+
+def test_scene_direct_sync_state_viewer_change_invalidates_signatures(
+        qapp, view, render_calls):
+    from client import cli
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    clear_render_calls(render_calls)
+    scene.sync_state(view.game, 1, cli.hand_cards_info(view.game, 1), False)
+    assert scene.viewer == 1
+    assert all(render_calls.values())
+
+
 def test_drag_visuals_cancel_and_hand_left_click_has_no_detail(qapp, view, monkeypatch):
     start(view, mulligan=False)
     scene = view.battle_scene
