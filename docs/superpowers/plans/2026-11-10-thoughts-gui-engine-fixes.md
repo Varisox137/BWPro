@@ -13,7 +13,7 @@
 - 不修改 BWPDIY 代码或测试；仅复制其 `evolve_circle.png` 到 BWPro。
 - 不修改 `card_data_raw.md`、用户现有 `library/` 和其他素材改动。
 - 不改规则事件顺序、联机隐私和文字日志通道；怪力、不屈只修指定规则语义。
-- 气绝倒计时 0 在 BWPDIY 支持前保留上一张有效小卡，不传非法参数。
+- BWPDIY `e7090d1` 已支持气绝倒计时 0；直接使用该能力，不修改其代码或测试。
 - 每项先取得真实 RED，再最小实现 GREEN；主上下文复验后分批中文 conventional commit 并 push。
 - 测试命令使用 `PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m pytest ... -n 0`。
 
@@ -24,37 +24,36 @@
 **Files:**
 - Create: `assets/levels/evolve_circle.png`（从 `D:/Programming/BWPDIY/assets/levels/evolve_circle.png` 复制）
 - Modify: `client/gui/cardart.py`
-- Modify: `client/gui/battle_scene.py`
 - Modify: `docs/gui-design.md`
 - Test: `tests/test_gui_builder.py`
 - Test: `tests/test_gui_battle.py`
 
 **Interfaces:**
 - Preserves: `entity_pixmap(..., snapshot=...)` 和 200ms `countdown/revive` 视觉事件。
-- Produces: 倒计时 0 过渡帧保留上一张非空 pixmap，不向 BWPDIY 传 `defeated_countdown=0`。
+- Produces: 使用 BWPDIY `e7090d1` 的非负气绝倒计时支持，过渡帧直接显示 0。
 
 - [ ] **Step 1: 写真实渲染失败测试**
 
-用真实 `entity_pixmap` 覆盖负生命，并用完整倒计时→复活链覆盖过渡帧：
+用真实 `entity_pixmap` 覆盖负生命和倒计时 0，并用完整倒计时→复活链覆盖过渡帧：
 
 ```python
-pixmap = entity_pixmap(shiki, db, snapshot={"health": -2})
-assert pixmap is not None and not pixmap.isNull()
-# countdown(revive_pending=True, revive_countdown=0) 开始时
-assert item.pixmap.cacheKey() == previous_valid_cache_key
-assert not item.pixmap.isNull()
-assert item.size == previous_valid_size
+negative = entity_pixmap(shiki, db, snapshot={"health": -2})
+assert negative is not None and not negative.isNull()
+zero = entity_pixmap(shiki, db, snapshot={
+    "defeated": True, "revive_pending": True, "revive_countdown": 0})
+assert zero is not None and not zero.isNull()
+# 完整动画链中 pixmap 始终非空，item.size 不跳到文字兜底尺寸
 ```
 
 另断言新版 `assets/levels/evolve_circle.png` 存在且真实觉醒渲染同时包含星标和圆盘调用。
 
 - [ ] **Step 2: 运行确认 RED**
 
-Run: `PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m pytest -q tests/test_gui_builder.py tests/test_gui_battle.py -k 'negative_health_render or revive_zero_keeps_valid_art or evolve_circle' -n 0`
+Run: `PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m pytest -q tests/test_gui_builder.py tests/test_gui_battle.py -k 'negative_health_render or revive_zero_render or evolve_circle' -n 0`
 
-Expected: 资源缺失、负生命返回 None 或倒计时 0 色块导致 FAIL。
+Expected: 资源缺失或负生命返回 None 导致 FAIL；倒计时 0 用例在 BWPDIY `e7090d1` 上作为上游支持验证，若已通过不得伪造 RED。
 
-- [ ] **Step 3: 实现呈现钳制与过渡保护**
+- [ ] **Step 3: 实现呈现钳制并使用新版倒计时能力**
 
 复制圆盘资源。`entity_pixmap` 在使用快照前复制并钳制：
 
@@ -66,7 +65,7 @@ for key in ("power", "health"):
         snapshot[key] = max(0, value)
 ```
 
-`BattleScene` 在 `countdown` 且 `revive_pending=True, revive_countdown==0` 时不调用 `_refresh_defeated_entity`，继续创建原有 200ms 视觉事件；后续 `revive` 仍按快照更新。
+保留 `revive_pending=True, revive_countdown=0` 到 `defeated_countdown=0` 的现有映射，直接使用 BWPDIY 新版非负整数支持，不加旧帧兜底。
 
 - [ ] **Step 4: 更新 libpng 说明并验证提交**
 
