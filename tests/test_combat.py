@@ -306,6 +306,37 @@ def test_remote_no_counter_no_move(db, make_game):
 
 # ---------- 不屈 / 迅捷 / 屏障 ----------
 
+def test_unyielding_preserves_original_damage_amount(db, make_game):
+    """不屈只限制生命扣减；原伤害量仍用于 dealt、日志、事件、记账与吸血。"""
+    import json
+
+    entries = []
+    g = make_game(trace_sink=entries.append)
+    pa, pb = g.state.players
+    source = pa.shikigami[0]
+    source.keywords.append("lifesteal")
+    pa.health = 20
+    shiki = pb.shikigami[0]
+    shiki.health = 3
+    shiki.one_shot_keywords.append("unyielding")
+    entries.clear()
+
+    dealt = g.deal_to_shikigami(
+        Ref(player=1, shikigami=0), 5, Ref(player=0, shikigami=0))
+    g._drain_queue()
+    damage_event = next(
+        json.loads(entry["message"])["payload"]
+        for entry in entries if entry.get("summary") == "on_damage")
+
+    assert shiki.health == 1
+    assert dealt == 5
+    assert damage_event["amount"] == 5
+    assert shiki.ext["damage_taken_turn"] == 5
+    assert any("受到 5 点伤害（生命 3→1）" in line
+               for line in g.state.settle_log)
+    assert pa.health == 25
+
+
 def test_unyielding_one_shot_consumed(db, make_game):
     """不屈（一次性）：生命>1 受致命伤害保留 1 点生命，全部一次性不屈一并消耗。"""
     g = make_game()

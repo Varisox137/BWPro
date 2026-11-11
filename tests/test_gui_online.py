@@ -897,6 +897,42 @@ def test_online_game_over_clears_usage_and_pending_choice(
     battle.close()
 
 
+def test_online_result_waits_visual_busy(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
+    scene = battle.battle_scene
+    scene.play_visual_event({"v": "damage", "p": 0, "s": 0, "amount": 3})
+    assert scene.visual_busy
+
+    battle.game.state.winner = 0
+    battle.show_game_over(0)
+    assert battle.result_banner.isHidden()
+
+    while scene.visual_busy:
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
+    assert not battle.result_banner.isHidden()
+    battle.close()
+
+
+def test_online_result_waits_visual_busy_winner_none_immediate(qapp, db, make_game):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
+    scene = battle.battle_scene
+    scene.play_visual_event({"v": "damage", "p": 0, "s": 0, "amount": 3})
+    assert scene.visual_busy
+
+    battle.show_game_over(None, "player_left")
+    assert not battle.result_banner.isHidden()
+    assert "player_left" in battle.result_banner.text()
+    battle.close()
+
+
 def test_game_over_is_immediate_during_timeline_playback(qapp, db, make_game, monkeypatch):
     game = make_game(mulligan=True)
     battle = OnlineBattleView(db, send_command=lambda _cmd: None)

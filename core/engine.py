@@ -2601,7 +2601,8 @@ class Game:
                 self._battle_temp_power.setdefault(
                     self._battle_stack[-1], []).append((ref, power))
         if shield:
-            self._change_shield(ref, shield, "combat_card", visual=False)
+            kind = "shield" if shield > 0 else "fragile"
+            self._change_shield(ref, abs(shield), "combat_card", kind=kind, visual=False)
 
     def _resolve_combat_card(self, p: PlayerState, si: int, card: CardInstance,
                              cdef: CardDef, method: PlayMethod | None,
@@ -5243,11 +5244,12 @@ class Game:
                 return
             # 不屈：生命 > 1 且伤害 >= 当前生命 → 保留 1 点生命，消耗全部一次性不屈
             # （生命 = 1 时不触发；持续/永久不屈不移除，回血后可再次触发）
+            health_loss = ev.amount
             if ev.amount >= s.health > 1 and self._has_keyword(s, "unyielding"):
-                ev.amount = s.health - 1
+                health_loss = min(ev.amount, s.health - 1)
                 s.one_shot_keywords[:] = [k for k in s.one_shot_keywords if k != "unyielding"]
                 self._log(f"{self.db.shikigami[s.id].name} 的【不屈】生效，保留 1 点生命")
-            s.health -= ev.amount
+            s.health -= health_loss
             # 狂啸"本回合生命不会降到 1 以下"（ext["min_health_turn"]，半回合作用域；
             # 裁决(5)）：扣减生命步骤**后**若生命 <1 置为 1——伤害量不钳制（全额计入
             # 实际造成/吸血/记账），仅对伤害导致的扣减有效（墨笔夺魂/蛊蚀等生命上限
@@ -5262,7 +5264,7 @@ class Game:
             # 本回合所受伤害之和记账（百鬼夜行 X；半回合作用域，回合开始清除）
             s.ext["damage_taken_turn"] = s.ext.get("damage_taken_turn", 0) + ev.amount
             self._settle(f"【伤害】{self.db.shikigami[s.id].name} 受到 {ev.amount} 点伤害"
-                         f"（生命 {s.health + ev.amount}→{s.health}）")
+                         f"（生命 {s.health + health_loss}→{s.health}）")
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
                                         "s": ev.victim.shikigami, "amount": ev.amount,
                                         "g": ev.visual_group})

@@ -2839,6 +2839,23 @@ def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
     assert view.stack.currentWidget() is view.setup_page
 
 
+def test_hotseat_result_waits_visual_busy(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "damage", "p": 0, "s": 0, "amount": 3})
+    assert scene.visual_busy
+
+    view.game.state.winner = 0
+    view.refresh()
+    assert view.result_banner.isHidden()
+
+    while scene.visual_busy:
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
+    assert not view.result_banner.isHidden()
+
+
 def test_game_over_is_immediate_and_right_click_details_remain_available(qapp, view, monkeypatch):
     from PySide6.QtWidgets import QGraphicsSceneMouseEvent
 

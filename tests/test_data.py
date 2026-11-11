@@ -1590,6 +1590,34 @@ def test_auto_attack_turn_start(real_game):
     assert pa.combat_index == IDX             # 攻击后留在战斗区
 
 
+@pytest.mark.parametrize("team, cid, amount", [
+    (ST_TEAM, GL, 1),
+    ([100120, 100105, 100101, 100123], 10012001, 2),
+])
+def test_fragile_combat_real_card_gain(real_game, team, cid, amount):
+    """负护甲战斗牌（怪力/腐坏直拳）按破甲方向结算并保留。"""
+    g, pa, _pb = _game(real_game, team)
+    play(g, 0, cid)
+    shiki = pa.shikigami[IDX]
+    assert shiki.shield == -amount
+    assert any(f"获得 {amount} 点破甲" in line for line in g.state.settle_log)
+
+
+def test_fragile_combat_armor_offset_and_20191212(real_game):
+    """怪力获得破甲先抵消已有护甲；20191212 版本没有负护甲，不产生破甲。"""
+    g, pa, _pb = _game(real_game, ST_TEAM)
+    pa.shikigami[IDX].shield = 2
+    play(g, 0, GL)
+    assert pa.shikigami[IDX].shield == 1
+
+    old_db = CardDatabase.load().at_date(20191212)
+    old_game = F.mk_game(old_db, team=ST_TEAM)
+    old_pa, _old_pb = F.battle_setup(old_game)
+    play(old_game, 0, GL)
+    assert old_pa.shikigami[IDX].shield == 0
+    assert not any("破甲" in line for line in old_game.state.settle_log)
+
+
 def test_perm_power_not_battle_power(real_game):
     """怪力：永久 +1 力量按常规效果步执行（不提取为本次战斗战力）；当次战斗已生效。"""
     g, pa, pb = _game(real_game, ST_TEAM)

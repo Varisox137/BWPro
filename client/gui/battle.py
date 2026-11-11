@@ -1006,6 +1006,8 @@ class HotseatView(QWidget):
         self.battle_scene._sync_focus()
 
     def _show_result(self) -> None:
+        if self.battle_scene.visual_busy:
+            return
         winner = self.game.state.winner
         if winner in (0, 1):
             name = "won" if winner == self.viewer else "lost"
