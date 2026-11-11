@@ -323,25 +323,49 @@ def test_awaken_double_independent_luck(gdb, monkeypatch):
     assert len(pa.ext["dice_history"]) >= 2    # 两次独立判定各记一骰
 
 
+def test_luck_success_insert_effects_precede_next_independent_roll(gdb, monkeypatch):
+    """觉醒山兔两次独立判定之间：妖狐伤害插入结算，青蛙光环实时刷新。"""
+    team = [100117, 100130, 100113, 100102]
+    g, pa, pb = _game(gdb, team, levels={0: 2, 1: 3, 2: 1})
+    play(g, 0, YH_AWAKEN)
+    play(g, 0, ST_AWAKEN)
+    _force_dice(monkeypatch, g, [6, 1])
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visuals = [entry for entry in g.state.timeline if entry.get("k") == "v"]
+    first_result = next(i for i, entry in enumerate(visuals)
+                        if entry.get("v") == "luck_result" and entry.get("success"))
+    second_roll = next(i for i, entry in enumerate(visuals)
+                       if entry.get("v") == "luck_dice" and entry.get("dice") == 1)
+    fox_damage = next(i for i, entry in enumerate(visuals) if entry.get("v") == "damage")
+    frog_stat = next(i for i, entry in enumerate(visuals)
+                     if entry.get("v") == "stat" and entry.get("p") == 0
+                     and entry.get("s") == 2 and entry["r"]["power"] == 4)
+    assert first_result < fox_damage < second_roll
+    assert first_result < frog_stat < second_roll
+
+
 def test_dice_six_ge_enhance_merges_buff(gdb):
-    """送祝福增强（dice_six_ge:3）：合并为一次性 +3/+3+[迅捷] + 抽 1；不足为 +1/+1。"""
+    """送祝福增强（dice_six_ge:3）：合并为一次性 +3/+3；不足为 +1/+1，均不抽牌。"""
     g, pa, pb = _game(gdb, ST_TEAM)
     pa.ext["dice_six_count"] = 3
     s = pa.shikigami[IDX]
     hand_before = len(pa.hand)
     play(g, 0, SONGZHUFU, target=Ref(player=0, shikigami=IDX))
     assert s.temp_power == 3 and s.temp_health == 3
-    assert "haste" in s.keywords or "haste" in s.one_shot_keywords
-    assert len(pa.hand) == hand_before + 1     # give+打出抵消，抽 1
+    assert "haste" not in s.keywords and "haste" not in s.one_shot_keywords
+    assert len(pa.hand) == hand_before         # give+打出抵消，无额外抽牌
     g2, pa2, pb2 = _game(gdb, ST_TEAM)
     s2 = pa2.shikigami[IDX]
+    hand_before = len(pa2.hand)
     play(g2, 0, SONGZHUFU, target=Ref(player=0, shikigami=IDX))
     assert s2.temp_power == 1 and s2.temp_health == 1
+    assert len(pa2.hand) == hand_before
 
 
 def test_transform_enemy_combat_and_enhance(gdb):
-    """戏谑套索：敌方战斗区式神变形为'纸人'并抽 1；增强（三次6）改为'小纸人'
-    （连续变形，transform_origin 还原到最初原式神）。"""
+    """戏谑套索：敌方战斗区式神变形为'纸人'；增强（三次6）改为'小纸人'
+    （连续变形，transform_origin 还原到最初原式神），原文无抽牌。"""
     g, pa, pb = _game(gdb, ST_TEAM, levels={IDX: 2})
     move(g, 1, 1)                              # B 白狼入战斗区
     hand_before = len(pa.hand)
@@ -349,7 +373,7 @@ def test_transform_enemy_combat_and_enhance(gdb):
     doll = pb.shikigami[1]
     assert doll.id == ZHIREN                   # 变成纸人 3/3
     assert doll.transform_origin is not None
-    assert len(pa.hand) == hand_before + 1     # 抽 1
+    assert len(pa.hand) == hand_before         # give+打出抵消，无额外抽牌
     g2, pa2, pb2 = _game(gdb, ST_TEAM, levels={IDX: 2})
     pa2.ext["dice_six_count"] = 3
     move(g2, 1, 1)
@@ -450,7 +474,7 @@ def test_luck_reroll_on_dice_one(gdb, monkeypatch):
     _force_dice(monkeypatch, g, [1, 5])        # 首投 1 → 重投 5
     play(g, 0, FUYUN)                          # 福运昌隆：抽 1；运势4 → +2 鬼火
     assert pa.ext["dice_history"] == [5]       # 被重投覆盖的首投不计入
-    assert pa.orb == 9 - 1 + 2                 # 判定成功：获得 2 鬼火
+    assert pa.orb == 4                         # 判定成功：获得 2 鬼火，统一封顶 4
     visuals = [entry for entry in g.state.timeline
                if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
     assert [(entry["v"], entry.get("dice")) for entry in visuals] == [
@@ -486,7 +510,7 @@ def test_awaken_reroll_on_would_fail(gdb, monkeypatch):
     _force_dice(monkeypatch, g, [2, 6])        # 运势4 首投 2（将失败）→ 重投 6
     play(g, 0, FUYUN)
     assert pa.ext["dice_history"][-1] == 6
-    assert pa.orb == 9 - 1 - 1 + 2             # 觉醒 1 火 + 福运 1 火，成功 +2
+    assert pa.orb == 4                         # 觉醒/福运付费后 +2，统一封顶 4
 
 
 def test_judge_both_each_draw(gdb, monkeypatch):
@@ -516,6 +540,21 @@ def test_judge_both_each_draw(gdb, monkeypatch):
     assert pa2.ext["dice_history"] == [4] and pb2.ext["dice_history"] == [2]
 
 
+def test_luck_reroll_visual_precedes_next_original_roll(gdb, monkeypatch):
+    """同批双方判定中，一方的重投与第二骰连续呈现，再记录另一方的原始骰动画。"""
+    g, pa, pb = _game(gdb, ZFTZ_TEAM)
+    play(g, 0, JINYUN)
+    _force_dice(monkeypatch, g, [1, 4, 5])
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visuals = [entry for entry in g.state.timeline
+               if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
+    assert [(entry["v"], entry["p"], entry.get("dice")) for entry in visuals] == [
+        ("luck_dice", 0, 1), ("luck_reroll", 0, 5), ("luck_dice", 0, 5),
+        ("luck_dice", 1, 4), ("luck_result", 0, 5), ("luck_result", 1, 4),
+    ]
+
+
 def test_luck_fail_branch_stuns_attacker(gdb, monkeypatch):
     """家内安全（luck {x:4, on:fail}）：式神攻击后判定失败则攻击者被[眩晕]（stun）。"""
     g, pa, pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 2})
@@ -524,6 +563,9 @@ def test_luck_fail_branch_stuns_attacker(gdb, monkeypatch):
     _force_dice(monkeypatch, g, [1, 2])        # 首投 1 → 座敷基础能力重投 2（仍失败）
     g.apply({"op": "assault", "index": 0})     # B 大天狗出击
     assert pb.shikigami[0].stuns               # 普通眩晕条目
+    result = next(entry for entry in reversed(g.state.timeline)
+                  if entry.get("v") == "luck_result")
+    assert result["on_fail"] is True and result["success"] is False
 
 
 def test_luck_fail_branch_power_debuff(gdb, monkeypatch):
@@ -550,22 +592,22 @@ def test_form_enter_leave_orb_any_reason(gdb):
     觉醒·一目连（任意原因消灭均触发：替换与气绝消灭同）；[增强]只在使用时检查
     形态（无形态时不瞬发不抽牌）。"""
     g, pa, pb = _game(gdb, ZFTZ_TEAM)
-    pa.orb = 8
+    pa.orb = 4
     pb.orb = 0
     hand0 = len(pa.hand)
     play(g, 0, FUSHOU)                         # 无形态使用：1 火（无瞬发），不抽牌
-    assert pa.orb == 8 and pb.orb == 1         # 进场（延时）双方 +1
+    assert pa.orb == 4 and pb.orb == 1         # 进场（延时）双方 +1，统一封顶 4
     assert len(pa.hand) == hand0               # 打出前无形态 → 不抽
     play(g, 0, JINYUN)                         # 有形态使用：替换，离场双方再 +1
-    assert pa.orb == 8 and pb.orb == 2
+    assert pa.orb == 4 and pb.orb == 2
     # 气绝消灭同样触发离场鬼火（触发条件类似觉醒·一目连）
     g, pa, pb = _game(gdb, ZFTZ_TEAM)
     play(g, 0, FUSHOU)
-    pa.orb, pb.orb = 5, 3
+    pa.orb, pb.orb = 3, 3
     g.deal_to_shikigami(Ref(player=0, shikigami=IDX), 99, None)
     g._drain_queue()
     assert pa.shikigami[IDX].defeated and pa.shikigami[IDX].form is None
-    assert pa.orb == 6 and pb.orb == 4         # 气绝消灭离场：双方各 +1
+    assert pa.orb == 4 and pb.orb == 4         # 气绝消灭离场：双方各 +1，统一封顶 4
 
 
 def test_play_condition_luck_total_gate(gdb):
@@ -585,7 +627,7 @@ def test_play_condition_luck_total_gate(gdb):
     play(g, 0, FUMAN)
     assert pa.health == 30 and pb.health == 30
     assert len(pa.hand) == 10 and len(pb.hand) == 10
-    assert pa.orb == 9 - 1 - 1 - 1 + 3
+    assert pa.orb == 4                         # 三次付费后 +3，统一封顶 4
     assert pb.orb == 3
 
 

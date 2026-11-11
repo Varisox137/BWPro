@@ -337,15 +337,27 @@ def test_fragile_echo_requires_fragile(make_game):
 
 def test_consume_assault_boosts_as_combat_bonus(make_game):
     """羁绊 2：己方全部鼓舞（战力/护甲）作为此战斗牌加成赋予白狼并消耗。"""
-    g, pa, pb = _game(make_game, levels={0: 2}, team=TEAM_WOLF)
+    g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 2}, team=YC_TEAM)
     pa.assault_boosts.append({"power": 1, "shield": 1})
     pa.assault_boosts.append({"power": 2, "shield": 0})
     play(g, 0, LSGH)                          # 白狼 3+2+3=8 攻 → 敌方牌手（空战斗区）
     assert pb.health == 22
     assert pa.assault_boosts == []            # 鼓舞被消耗
-    wolf = pa.shikigami[0]
+    wolf = pa.shikigami[WOLF_IDX]
     assert wolf.shield == 3                   # +2（牌）+1（鼓舞）护甲
     assert wolf.combat_power == 0             # 战力已在战斗后清除
+
+
+def test_consume_assault_boosts_requires_bond_shikigami_active(make_game):
+    """羁绊对象气绝时不消耗鼓舞，也不把鼓舞转化为本次战斗加成。"""
+    g, pa, pb = _game(make_game, levels={YC_IDX: 1, WOLF_IDX: 2}, team=YC_TEAM)
+    pa.shikigami[YC_IDX].defeated = True
+    boosts = [{"power": 1, "shield": 1}, {"power": 2, "shield": 0}]
+    pa.assault_boosts.extend(boosts)
+    play(g, 0, LSGH)
+    assert pb.health == 25                    # 仅卡牌自身 +2 力量
+    assert pa.assault_boosts == boosts
+    assert pa.shikigami[WOLF_IDX].shield == 2
 
 
 # ==========================================================================

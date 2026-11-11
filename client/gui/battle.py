@@ -279,7 +279,7 @@ class HotseatView(QWidget):
         self.result_banner.setObjectName("resultBanner")
         self.result_banner.setAlignment(Qt.AlignCenter)
         self.battle_scene.result_item = self.battle_scene.add_control(
-            self.result_banner, ("result_banner",), (420, 300))
+            self.result_banner, ("result_banner",), (560, 400))
         self.battle_scene.result_item.setZValue(DRAG_Z + 20)
         self.result_banner.hide()
         self.result_back = QPushButton("返回主菜单")
@@ -1016,7 +1016,7 @@ class HotseatView(QWidget):
             name = "won" if winner == self.viewer else "lost"
             self.result_banner.setText("")
             self.result_banner.setPixmap(ui_pixmap(f"animations/{name}.png").scaled(
-                400, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                520, 360, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             self.result_banner.setText(cli.result_text(
                 winner, [player.name for player in self.game.state.players]))

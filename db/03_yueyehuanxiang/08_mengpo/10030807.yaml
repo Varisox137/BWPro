@@ -16,7 +16,7 @@ versions:
       abilities:
         # 每当孟婆对敌方牌手造成伤害时，将他牌库底五张牌移除（同基础能力，count=5）
         - when: on_player_damaged
-          condition: {source_shikigami: self}
+          condition: {source_shikigami: self, player: opponent}
           steps:
             - {op: remove_deck, count: 5, side: opponent}
       text: "[觉醒]：{每当孟婆对敌方牌手造成伤害时，将他牌库底五张牌移除。}"
@@ -31,7 +31,7 @@ versions:
         steps: []
       abilities:
         - when: on_player_damaged
-          condition: {source_shikigami: self}
+          condition: {source_shikigami: self, player: opponent}
           steps:
             - {op: remove_deck, count: 5, side: opponent}
       text: "[觉醒]：{每当孟婆对敌方牌手造成伤害时，将他牌库底五张牌移除。}"

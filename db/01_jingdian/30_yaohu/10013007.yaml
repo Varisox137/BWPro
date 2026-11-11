@@ -20,8 +20,9 @@ versions:
           steps:
             - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,
                amount_ext_source: shikigami, pool: enemy_character, count: 1}
-        # 判定者=己方的运势判定成功（判定后延时触发；可因觉醒青蛙瓷器翻倍）
+        # 判定者=己方的运势判定成功（插入结算；可因觉醒青蛙瓷器翻倍）
         - when: on_luck_success
+          timing: insert
           condition: {judge: self}
           steps:
             - {op: random_damage, amount: 2, amount_ext: yaohu_dmg_bonus,

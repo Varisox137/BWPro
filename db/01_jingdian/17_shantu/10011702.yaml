@@ -12,9 +12,7 @@ versions:
         steps:
           - {op: buff_power, amount: 1}
           - {op: buff_health, amount: 1}
-          # 增强（投出三次6点）：合并为一次性额外 +2/+2+[迅捷]（合计 +3/+3+[迅捷]，规则要点）
+          # 增强（投出三次6点）：合并为一次性额外 +2/+2（合计 +3/+3）
           - {op: buff_power, amount: 2, condition: {dice_six_ge: 3}}
           - {op: buff_health, amount: 2, condition: {dice_six_ge: 3}}
-          - {op: grant_keyword, keyword: haste, condition: {dice_six_ge: 3}}
-          - {op: draw, count: 1}
       text: "使一个式神获得1力量与1生命。[增强]：{本局游戏若你骰子投出三次6点，该式神额外获得2力量与2生命。}"

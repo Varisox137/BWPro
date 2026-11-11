@@ -19,5 +19,5 @@ versions:
           - {op: trigger_form_enter, shikigami: 100127}
           # 羁绊2（维护者答复 10）：己方全部鼓舞（战力/护甲）作为此战斗牌赋予的加成
           # 生效并消耗（战力持续到本次战斗后、护甲保留；鼓舞关键字当前卡池不存在）
-          - {op: consume_assault_boosts}
+          - {op: consume_assault_boosts, condition: {shikigami_active: 100127}}
       text: "本次攻击白狼获得当前自身法术牌强化效果的力量加成。[羁绊]：{攻击前触发萤草当前形态进场效果。你的出击加成效果在使用此牌时也会生效。}"

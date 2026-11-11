@@ -18,4 +18,4 @@ versions:
           condition: {active: self, friendly_armor_ge: 5}
           steps:
             - {op: draw, count: 1}
-      text: "己方回合结束时，若你有式神的护甲>=5，抽一张牌。"
+      text: "己方回合结束时，若你有式神的护甲≥5，抽一张牌。"

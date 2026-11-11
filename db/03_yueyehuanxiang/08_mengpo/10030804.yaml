@@ -16,4 +16,4 @@ versions:
         - {enemy_deck_le: 16, mods: {form_power_delta: 3, form_health_delta: 3}}
       effects:
         steps: []
-      text: "[贯通]。[增强]：{若敌方牌库张数<=16，此牌获得3力量和3生命。}"
+      text: "[贯通]。[增强]：{若敌方牌库张数≤16，此牌获得3力量和3生命。}"

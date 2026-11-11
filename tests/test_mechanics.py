@@ -3659,6 +3659,53 @@ def test_search_deck_choose_selected_copy(db, make_game):
     assert g.state.pending_choice is None
 
 
+@pytest.mark.parametrize("awakened", [False, True])
+def test_real_combat_player_damage_gains_field_intensity(real_game, awakened):
+    """荒造成战斗伤害含对牌手：基础与觉醒均使己方幻境 +1 耐久。"""
+    g = real_game([100304, 100101, 100102, 100103], check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 2})
+    if awakened:
+        play(g, 0, 10030406)
+    pa.fields.append(FieldState(card_id=10030401, intensity=2, shikigami=100304))
+    g.deal_to_player(1, 1, Ref(player=0, shikigami=0), kind="combat")
+    g._drain_queue()
+    assert pa.fields[0].intensity == 3
+
+
+@pytest.mark.parametrize("awakened", [False, True])
+def test_real_player_damage_requires_enemy_player(real_game, awakened):
+    """孟婆基础与觉醒仅在伤害敌方牌手时磨牌，转移造成的自伤不触发。"""
+    g = real_game([100308, 100101, 100102, 100103], check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 3 if awakened else 1})
+    if awakened:
+        play(g, 0, 10030807)
+    before = len(pb.deck)
+    g.deal_to_player(0, 1, Ref(player=0, shikigami=0))
+    g._drain_queue()
+    assert len(pb.deck) == before
+    g.deal_to_player(1, 1, Ref(player=0, shikigami=0))
+    g._drain_queue()
+    assert len(pb.deck) == before - (5 if awakened else 1)
+
+
+def test_real_summon_buff_only_new_summon(real_game):
+    """佛前石钵耐久≥10时仅强化本次召唤者，准备区既有石钵不获得力量。"""
+    from core.model import ShikigamiState
+
+    g = real_game([100303, 100101, 100102, 100103], check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 2})
+    play(g, 0, 10030304)
+    pa.fields[0].intensity = 10
+    old = ShikigamiState(id=10030399, kind="summon", level=1,
+                         base_power=0, base_health=5, health=5)
+    pa.shikigami.append(old)
+    g.apply({"op": "end_turn"})
+    new = pa.shikigami[-1]
+    assert new is not old and new.id == 10030399
+    assert old.temp_power == 0
+    assert new.temp_power == 4
+
+
 def test_real_yaml_discard_pick_card_type_choice(real_game):
     """真实余辉：选择幻境牌弃置后续跑抽三张，并清空 pending_choice。"""
     g = real_game([100304, 100101, 100102, 100103], check_deck=False)

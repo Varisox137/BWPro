@@ -44,7 +44,7 @@
 | 07 觉醒·白狼 | ✅ | 任意伤害（非仅战斗）触发，与原版一致 |
 | 08 无我 | ✅ | |
 | 21 森佑灵矢 | ✅ | 协战主牌（白狼&萤草，id 10010121）：随[庇佑]与检索直接使用形态机制落地 |
-| 51 灵矢贯虹 | ✅ | 协战子选项（白狼侧战斗牌）：三步齐备——法术强化力量再授予（reapply_attack_buff_power：离/无我等 attack_buffs 力量部分合计再授予，仅力量）、羁绊 1 萤草形态进场效果再触发（trigger_form_enter，未结附空操作）、羁绊 2 鼓舞消耗转化（维护者答复(3)） |
+| 51 灵矢贯虹 | ✅ | 协战子选项（白狼侧战斗牌）：三步齐备——法术强化力量再授予（reapply_attack_buff_power：离/无我等 attack_buffs 力量部分合计再授予，仅力量）、羁绊 1 萤草形态进场效果再触发（trigger_form_enter，未结附空操作）、羁绊 2 鼓舞消耗转化（维护者答复(3)；以 shikigami_active:100127 门控，萤草气绝不消耗鼓舞） |
 
 ## 兵俑（100102）
 
@@ -380,13 +380,13 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 己方回合开始 luck:6 → countdown_power_boost{countdown:-1, power:1, friendly_others}（气绝者只减复活倒计时、归零复活者不追加力量；存活者含无倒计时能力的 +1 力量） |
 | 01 谁还不听话 | ✅ | [瞬发][投射2]；增强 = damage amount_ext:dice_six_count（每次投出 6 伤害+1） |
-| 02 送祝福 | ✅ | buff 1/1 + 抽 1；增强{dice_six_ge:3}→ 合并一次性 +3/+3+[迅捷] |
+| 02 送祝福 | ✅ | buff 1/1；增强{dice_six_ge:3}→ 合并一次性 +3/+3，原文无抽牌/[迅捷] |
 | 03 快来保护我 | ✅ | 形态 6/6；增强{dice_six_ge:3}→ 获得[不屈] |
-| 04 觉醒·山兔 | ✅ | +1/+1；己方回合开始两次独立 luck:6 → countdown_power_boost{power:2}（两个独立 block） |
-| 05 戏谑套索 | ✅ | transform{into:10011799 纸人, 敌方战斗区式神}+抽 1；增强{dice_six_ge:3}→ into:10011798 小纸人；[响应] 山兔被攻击时自动使用 |
+| 04 觉醒·山兔 | ✅ | +1/+1；己方回合开始两次独立 luck:6 → countdown_power_boost{power:2}（两个独立 block；每次成功后的插入结算先于下一次判定） |
+| 05 戏谑套索 | ✅ | transform{into:10011799 纸人, 敌方战斗区式神}；增强{dice_six_ge:3}→ into:10011798 小纸人；[响应] 山兔被攻击时自动使用，原文无抽牌 |
 | 06 来打我呀 | ✅ | launch_attack shikigami="target"（使一敌方式神立刻攻击）；增强 = 本回合该式神 -dice_six_count 力量（amount_ext + amount_sign:-1） |
 | 07 萌即正义 | ✅ | 形态 6/6；进场/离场 set_dice_modifier{mode:six}（判定者级必 6 光环，dice_force_six + dice_force_six_holder）；增强 = 进场按 dice_six_count +N/+N |
-| 08 这把算我赢 | ✅ | 等级 3，基础无[瞬发]；set_dice_modifier{mode:six_once}；增强{dice_six_ge:10}→ alt_effects + win_game（吾即正义先例） |
+| 08 这把算我赢 | ✅ | 等级 3，基础无[瞬发]、无常规效果；增强{dice_six_ge:10}→ alt_effects + win_game（吾即正义先例） |
 | 21 福星高照 | ✅ | 协战主牌（山兔&座敷童子，id 10011721）：options [10011751 幸运兔兔, 10012951 鸿运当头] |
 | 51 幸运兔兔 | ✅ | 协战子选项（山兔侧[瞬发]）：增强{dice_six_ge:3}→ cost_delta_player{opponent, +1, next_turn}（[不消耗鬼火]/首张[瞬发]仍免费、非手牌使用不受影响）；羁绊（座敷在场，{shikigami_active:100129}）：luck_roll{x:4} → power_override scope=turn 敌方全式神 |
 | 99 纸人 | ✅ | 变形物 3/3（kind=transform）；己方回合结束 untransform self |
@@ -422,7 +422,7 @@
 | 04 无羁风弹 | ✅ | repeat_random_damage{2, all_other_shikigami, max:10, stop_on_defeat}（逐次插入结算；目标池仅豁免施放者妖狐（按来源座次）——敌方妖狐可被选中，施放者在事件中被变形后新实体回到目标池；停止条件其一：满 10 次 / 有角色生命≤0 / 任一式神气绝含延时气绝——濒死或生命≤0 已置位即停；多次重复为一段连续效果，触发式能力由事件队列在整牌结算完后统一排水——全卡盘点(14)） |
 | 05 叠风斩 | ✅ | 对一式神造成 2 伤害 → reuse_card（同目标，恰好两次）：两段伤害是一段效果但视为两次使用——"使用后"时机触发的能力（妖狐基础能力等）随两次使用各触发一次，于整牌结算完后连续两次执行（全卡盘点(15)） |
 | 06 狂风刃卷 | ✅ | random_damage{2, enemy_character, sequential:true, count:5}（逐次独立随机、有放回）；增强{yaohu_damage_count>=25}→ count:10（20200120：阈值 20→25） |
-| 07 觉醒·妖狐 | ✅ | +2/+2；觉醒能力两段：你使用法术牌（含中立法术牌）或运势判定成功时随机打一敌方角色 2（吃 yaohu_dmg_bonus；可因觉醒青蛙瓷器翻倍） |
+| 07 觉醒·妖狐 | ✅ | +2/+2；觉醒能力两段：你使用法术牌（含中立法术牌）或运势判定成功时随机打一敌方角色 2（吃 yaohu_dmg_bonus；on_luck_success 用 timing: insert 插入结算，先于后续独立判定；可因觉醒青蛙瓷器翻倍） |
 | 08 爱意绵绵 | ✅ | 20200120：3 级形态 5/8（原 1 级 4/5）；card_aura shikigami="any"（新通配）——手牌所有法术牌伤害效果 +1（damage_boost 通道，scope=form） |
 
 ## 跳跳弟弟（100120）
@@ -667,7 +667,7 @@
 
 | 卡 | 状态 | 备注 |
 |----|------|------|
-| 基础能力 | ✅ | on_player_damaged {source_shikigami: self} → remove_deck bottom 1 side=opponent（入 exiled 不进墓地） |
+| 基础能力 | ✅ | on_player_damaged {source_shikigami: self, player: opponent} → remove_deck bottom 1 side=opponent（入 exiled 不进墓地；自伤不触发） |
 | 01 孟婆汤 | ✅ | choose 牌手（any_character 池代）→ remove_deck bottom 3 按 targets[0].player |
 | 02 意外之喜 | ✅ | draw 2 + discard_pick 1（交互弃牌 pending_choice）；conditional_keywords enemy_deck_le 16 → [瞬发] |
 | 03 天降之物 | ✅ | 形态 4/5：on_turn_end {active: self} → remove_deck bottom 1 side=self + side=opponent 两步 |
@@ -716,7 +716,7 @@
 | 01 燕子安贝 | ✅ | 幻境 耐久5；①on_turn_end {active: self} → heal 全体己方 1 + field_op pick=others 其他幻境 +1；②敌方回合结束且 field_intensity_ge 10 再触发一次 |
 | 02 火鼠裘 | ✅ | 幻境 耐久5；①on_player_damaged {player: self, kind: combat} → 来源式神 2 伤；②耐久≥10 on_damage {victim_kind: shikigami, 己方} → 来源式神 1 伤 |
 | 03 五道难题 | ✅ | search_deck shikigami=self card_type=field pick=choose（按 uid 选择，单候选也挂起，无候选空过）+ intensity_boost 5（入手实例与手牌卡图 +5 耐久）；conditional_keywords deck_field_distinct_ge 5 → [瞬发] |
-| 04 佛前石钵 | ✅ | 幻境 耐久5；on_turn_end {active: self, combat_empty: friendly} → summon 石钵；耐久≥10 追加 buff_power 4（对在场石钵，friendly_shikigami shikigami=10030399 池） |
+| 04 佛前石钵 | ✅ | 幻境 耐久5；on_turn_end {active: self, combat_empty: friendly} → summon 石钵；耐久≥10 追加 buff_power 4（仅本次进入战斗区的石钵，friendly_combat shikigami=10030399 池） |
 | 05 龙首之玉 | ✅ | 幻境 耐久5；on_turn_end → projectile 2；耐久≥10 追加 enemy_bench 各 1 伤 |
 | 06 觉醒·辉夜姬 | ✅ | 觉醒牌能力块带 merge_abilities: true（叠加时按牌 id 去重合并能力块，mods.merged_ability_ids 记账；伪关键字 field_ability_stack 已作废）；效果 {field_summon_distinct_ge: {count: 5, shikigami: self}} → summon_field pick=all intensity=1（五幻境各 1 耐久全召唤，候选按 id 升序，经 field_merge 合并入同一实体） |
 | 07 蓬莱玉枝 | ✅ | 幻境 耐久5；on_turn_start → draw 1 + gain_orb 1；耐久≥10 双块"效果翻倍"（再来一份） |
@@ -727,13 +727,13 @@
 
 | 卡 | 状态 | 备注 |
 |----|------|------|
-| 基础能力 | ✅ | on_damage {source_shikigami: self, kind: combat} → field_op pick=all 全幻境 +1 耐久 |
+| 基础能力 | ✅ | abilities 双块：on_damage/on_player_damaged {source_shikigami: self, kind: combat} → field_op pick=all 全幻境 +1 耐久（含对牌手战斗伤害） |
 | 01 星轨 | ✅ | 幻境 耐久4，field_keywords [piercing]（幻境能力伤害贯通——_ability_piercing 并入 ctx.field.keywords）；on_turn_start {active: self} → damage {field_intensity: self} 投射 + field_op self_field destroy 自毁 |
 | 02 荒海 | ✅ | 幻境 耐久1 [瞬发]；on_before_field_destroy {field_self} → field_rebound（回手并失去此能力——一次性回手标记） |
 | 03 余辉 | ✅ | play_condition {hand_card_type: field}（手牌无幻境牌不可用——match_condition 新键）；discard_pick card_type=field count=1（仅幻境候选，空候选不挂起）→ draw 3 |
 | 04 星陨 | ✅ | 幻境 耐久4；on_turn_start {active: self} → repeat count={field_intensity: self} 套 damage 2 随机敌方角色 + field_op self_field destroy 自毁 |
 | 05 星辰之境 | ✅ | 形态；stat_aura kind=field_count_stats power/health 1（每有一个幻境 +1/+1） |
-| 06 觉醒·荒 | ✅ | 觉醒能力双块：基础同款（战斗伤害 → 全幻境 +1）+ on_card_played {card_type: field, player: self} → grant_keyword haste（使用幻境牌时荒得[迅捷]） |
+| 06 觉醒·荒 | ✅ | 觉醒能力三块：基础同款 on_damage/on_player_damaged（战斗伤害含对牌手 → 全幻境 +1）+ on_card_played {card_type: field, player: self} → grant_keyword haste（使用幻境牌时荒得[迅捷]） |
 | 07 月坠 | ✅ | 幻境 耐久15；on_before_field_intensity {field_self} → boost_change +2（"当此牌获得耐久时，效果+2"）；单块 on_turn_start {active: self} 三步：field_op +3 → destroy + damage 全体敌方 10 各带步级条件 field_intensity_ge 30（同块首次判定快照耐久，自毁归零后伤害步仍通过——仅"召唤并炸 3"一步判定，任意途径块已删，定案） |
 | 08 命运螺旋 | ✅ | 形态；on_card_played {card_type: field, player: self} → grant_immunity scope=next_battle + launch_attack（免疫本次战斗伤害并发动攻击） |
 
@@ -784,7 +784,7 @@
 | 05 薰（100405） | 紫岩 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒鸮之守护（[唯一]+on_damage_start reduce_damage 1）——攻击账本 ext last_attacker（0928 口径：仅出击/战斗牌记账，_resolve_combat origin 单点；觉醒·薰"攻击时"挂攻击前 on_before_assault 优先级1——出击/战斗牌同走，原"行动前" on_before_card_played 事件随之废除）、鸮之庇佑结附+不屈双效果、鸮之利爪/警惕/庇佑 stat_aura friendly_invocation（含 keywords 光环 inv_aura_kw 持续授予）、干扰投掷 no_damage_vs_inv 禁伤（定案(7) 改结附己方牌手、气绝/复活不丢失） + victim_has_invocation 响应、祈愿之翼 inv_override（unique 降级+attach_all_friendly 全体结附）、决意 has_invocation same_source 过滤；平衡性：决意 20201015 触发改"己方回合开始时"（双快照） |
 | 06 食梦貘（100406） | 紫岩 | 完整 | **已落地**（rules.md 第三十七章）：8 卡全效果 + 牌库灵咒'梦魇'（invocations.yaml：unique=none，draw_trigger 抽到对敌方牌手造 3 伤后移除；离库静默清除）——attach_deck_invocation 牌库结附（基础能力 on_player_damaged kind=combat 门控）、入眠/食梦/觉醒结附 3 张、on_invocation_drawn 事件+惊梦回合账本 drew_invocation_turn（enemy_drew_invocation 条件/伪关键字[瞬发]+conditional_mods[增强]）、梦中低语/梦境浮现/永眠之梦幻境监听（card_shikigami 消灭）、支配者 stat_aura enemy_deck_invocation（敌方牌库每张'梦魇'+1/+1）+ redirect_deck_invocation 受伤改移除牌库标记牌、deck_invocation_count 计数（食梦奶量） |
 | 07 御馔津（100407） | 青岚 | 完整 | **已落地**（rules.md 第三十六章）：8 卡全效果——[充能]先天（2026-08 裁决：御馔津能力只剩[充能]）+符咒子类型 talisman（驱魔符/封魔符/破魔符）+**爆能转化单卡自带**（三张符咒各带 methods [爆能3]转战斗牌选目标攻击，方式 effects 替换原效果、仍是符咒子类型，裁决(9)；觉醒版经 card_aura grant_method 同 id 键级合并只追加 battle_immunity+text 后缀）、丰穗 pick_generate 符咒三选一+3能量、奉祝之愿 cast_ledger 符咒账本（talisman_ledger 按序记账至多3种，出击对目标依次自动使用，裁决(10)）、御狩之愿[连击]战斗授予、狐狩界 burst_discount 爆能-1可叠加+符咒[瞬发]（裁决(11)）、破魔符 crit_pierce_mark（[暴击] critical 关键字落地：伤害事件"伤害开始时"按受伤者标记置位[暴击][贯通]——暴击为事件属性、任意伤害类型翻倍（2026-08 裁决），防守侧反击天然不生效、贯通分配按翻倍后口径——裁决(3)(4) 定案）、驱魔符 defeat_on_damage（受伤即气绝，同必杀通道）、封魔符眩晕+power_override 响应；平衡性：丰穗 20201015 改"3能量+抽1"（双快照）、破魔符 20201015 爆能转化 +3/+1→+1/+1（**只落 10040708 自带方式快照**——重构后 100407/10040706 的 @20201015 传导快照已删，best 均保持 20200928） |
-| 08 大岳丸（100408） | 红莲 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒八尺琼曲玉（[唯一]+1力量）+ 衍生 51 挪移——基础/觉醒 inv_mod 持有方修饰（结附于大岳丸时效果+1，scope=ability 随能力离场）、觉醒 inv_bonus_on_kill 击杀加成（bonus 继承/重置语义）、麓鸣·穿/袭 invocation_on_field 条件[瞬发]/[增强]、麓鸣·灭 target2 双选择目标（chosen_index+launch_attack at_index）、麓鸣·轰战斗牌 ctx.chosen + delay_grant bind=chosen、无尽剑狱 attach_invocation grant_keywords 持续眩晕 |
+| 08 大岳丸（100408） | 红莲 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒八尺琼曲玉（[唯一]+1力量）+ 衍生 51 挪移——基础/觉醒 inv_mod 持有方修饰（结附于大岳丸时效果+1，scope=ability 随能力离场）、觉醒 inv_bonus_on_kill 击杀加成（bonus 继承/重置语义）、麓鸣·穿/袭 invocation_on_field 条件[瞬发]/[增强]（袭在结附前以 grant_immunity scope=next_battle 判定既有灵咒）、麓鸣·灭 target2 双选择目标（chosen_index+launch_attack at_index）、麓鸣·轰战斗牌 ctx.chosen + delay_grant bind=chosen、无尽剑狱 attach_invocation grant_keywords 持续眩晕 |
 | 09 鬼切（100409） | 青岚 | 完整 | **已落地**（rules.md 第三十七章）：8 卡全效果 + 鬼斩三灵咒（invocations.yaml：髭切 insert 反打+announce_invocation+next_battle 免疫、友切 on_before_card_play 敌方法术门控截击 card_shikigami、狮子之子敌方回合结束空场 +2 攻）——choose_invocation/detach_invocation 回合开始选择结附/敌方回合结束移除（>1 候选挂 invocation_pick 交互）、复仇之刃 virtual_combat 视同战斗区、刀鸣之刃 inv_trigger_echo 触发双发、散华之刃 power_on_enemy_turn:3、鬼刃·两断/罗城门/影杀[响应]灵咒联动（on_invocation_trigger insert 覆盖块分派；罗城门 counter_on_kill 击杀反制进行中的使用、影杀三连 launch_attack）、觉醒 pick_generate 选择凭空生成战斗牌置入手牌（不检索不洗牌）+战斗牌[瞬发] card_aura；友切定案(4)：任意方式/位置使用的法术专属牌均触发（_emit_before_card_play 统一发点）+ ignore_veil 帷幕放行；平衡性：髭切/友切 20201224 加"敌方回合"限定+免疫扩为所有伤害（双快照，best 保持 20200928） |
 | 10 巫蛊师（100410） | 紫岩 | 完整 | **已落地**（rules.md 第三十六章）：8 卡全效果 + 灵咒蛊蚀（invocations.yaml：unique=none 可叠加 -1/-1，裁决(12) 结附/存量改变上限即致死检查 ≤0 气绝）——基础/觉醒战斗伤害结附、施蛊[弹回]、无尽蛊 victim_invocation 快照抽牌、噬命蛊 has_invocation 消灭、增殖 inv_count_mod 存量+1（不吃增幅，裁决(13)）+exclude_chosen"其他"口径、食魂蛊 victim_invocation_count 计数奶、觉醒 inv_attach_bonus 结附增幅（按来源牌手）、魔蛊毒爆 inv_transfer_on_defeat 牌手级半回合等量转移（裁决(14)）、缚蝶蛊狱 redirect_to_invocation 伤害改结附终止（裁决(15)）+power_eq 0 消灭 |
 

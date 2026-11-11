@@ -28,7 +28,7 @@ class GameConfig(BaseModel):
     draw_per_turn: int = 1        # 回合开始抽牌数（在回合开始效果结算后执行；先手首回合不抽）
     orb_per_turn: int = 2         # 回合开始鬼火
     first_turn_orb: int = 1       # 先手第一回合鬼火
-    orb_cap: int | None = None    # 鬼火上限；None = 不限
+    orb_cap: int | None = 4       # 鬼火上限（含临时获得）；None = 自定义不限
     max_level: int = 3            # 式神等级上限
     revive_countdown: int = 3     # 气绝复活所需己方回合数
     upgrade_rule: str = "lowest"  # 升级规则：lowest=只能升己方最低级 / ordered=按上阵顺序 / free=任选

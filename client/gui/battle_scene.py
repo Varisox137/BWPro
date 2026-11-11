@@ -128,7 +128,7 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("cancel_target",): QPointF(1120 + extra, 440),
         ("default_target",): QPointF(1120 + extra, 480),
         ("error",): QPointF(1, 540),
-        ("result_banner",): QPointF(590 + center_shift, 300),
+        ("result_banner",): QPointF(520 + center_shift, 250),
         ("result_back",): QPointF(730 + center_shift, 660),
         ("upgrade_phase",): QPointF(411 + center_shift, 422),
     }
@@ -237,10 +237,16 @@ class BattleCardItem(QGraphicsObject):
         self.prepareGeometryChange()
         super().update(*args)
 
-    def _paint_operation_glow(self, painter: QPainter, rect: QRectF) -> None:
+    def _operation_glow_color(self) -> QColor:
         colors = {"yellow": "#f3d56b", "blue": "#75b9d1", "green": "#78c896"}
-        color = QColor("#f3d56b" if self.dragging or self.targetable
-                       else colors[self.border_color])
+        if self.dragging or self.targetable:
+            return QColor("#f3d56b")
+        if self.key[0] == "hand" and self.border_color == "yellow":
+            return QColor("#d9b96a")
+        return QColor(colors[self.border_color])
+
+    def _paint_operation_glow(self, painter: QPainter, rect: QRectF) -> None:
+        color = self._operation_glow_color()
         gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
         gradient.setColorAt(0, color.lighter(145))
         gradient.setColorAt(1, color.darker(115))
@@ -338,10 +344,6 @@ class BattleCardItem(QGraphicsObject):
             painter.setBrush(QColor("#d9b96a") if index < self.orb
                              else QColor(35, 40, 45, 180))
             painter.drawEllipse(orb)
-        if self.orb_overflow:
-            painter.setPen(self.text_color)
-            painter.drawText(QRectF(side_x + 76, avatar.top() + 4, 34, 20),
-                             Qt.AlignLeft | Qt.AlignVCenter, f"×{self.orb}")
         attack = QRectF(side_x, avatar.top() + 30, 28, 28)
         painter.setBrush(QColor(35, 40, 55, 230))
         painter.drawEllipse(attack)
@@ -1161,6 +1163,8 @@ class BattleScene(QGraphicsScene):
             return
         if kind == "response" and int(event.get("p", -1)) == self.viewer:
             return  # 仅提示对方响应
+        if kind == "luck_result" and bool(event.get("success")) == bool(event.get("on_fail")):
+            return  # 成功生效只显示大吉；失败生效只显示大凶，另一分支不显示字样
         events = ([dict(event, v="luck_dice"), dict(event, v="luck_result")]
                   if kind == "luck" else [event])
         for current in events:
@@ -1298,7 +1302,8 @@ class BattleScene(QGraphicsScene):
                      if kind == "defeated" else "immune")
             word = ui_pixmap(f"animations/{asset}.png").scaled(
                 160, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            layers = [(word, QPointF(-word.width() / 2, -word.height() / 2))]
+            lift = 12 if kind == "defeated" else 0
+            layers = [(word, QPointF(-word.width() / 2, -word.height() / 2 - lift))]
         elif kind == "response":
             left = ui_pixmap("animations/response_1.png").scaled(
                 220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -1333,7 +1338,7 @@ class BattleScene(QGraphicsScene):
                            "dice_successful" if event.get("success") else "dice_unsuccessful")
             result = ui_pixmap(f"animations/{result_name}.png").scaled(
                 180, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            layers = [(result, QPointF(-result.width() / 2, -result.height() / 2))]
+            layers = [(result, QPointF(-result.width() / 2, -result.height() / 2 - 12))]
         item = BattleVisualItem(layers)
         item.setProperty("assetName", kind)
         item.setPos(center)
@@ -1415,7 +1420,7 @@ class BattleScene(QGraphicsScene):
                 player_item.health = player.health
                 player_item.max_health = player.max_health
                 player_item.shield = player.shield
-                player_item.orb = player.orb
+                player_item.orb = min(4, player.orb)
                 player_item.assaults_left = player.assaults_left
                 player_item.inspire_power = sum(
                     boost.get("power", 0) for boost in player.assault_boosts)
@@ -1613,9 +1618,9 @@ class BattleScene(QGraphicsScene):
                 item.health = player.health
                 item.max_health = player.max_health
                 item.shield = player.shield
-                item.orb = player.orb
+                item.orb = min(4, player.orb)
                 item.orb_display_count = min(4, max(2, player.orb))
-                item.orb_overflow = max(0, player.orb - 4)
+                item.orb_overflow = 0
                 item.assaults_left = player.assaults_left
                 item.inspire_power = sum(boost.get("power", 0)
                                          for boost in player.assault_boosts)

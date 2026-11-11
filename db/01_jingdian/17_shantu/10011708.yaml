@@ -8,9 +8,7 @@ versions:
       rarity: SR
       level: 3
       effects:
-        steps:
-          # 来源级必6：写山兔式神 ext dice_force_six_once，下次以其为来源的判定首投 6 并消耗
-          - {op: set_dice_modifier, mode: six_once}
+        steps: []
       alt_effects:
         steps:
           - {op: win_game, target: {kind: all, pool: self_player}}

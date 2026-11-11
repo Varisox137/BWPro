@@ -3144,3 +3144,20 @@ def test_real_assault_defeated_gate(real_game):
              "target": {"player": 1, "shikigami": 1}})
     assert pb.shikigami[1].revive_countdown == 4  # 伤害转化 +1
     assert pa.shikigami[0].health == hp0  # 气绝者不反击
+
+
+def test_real_battle_immunity_requires_preexisting_invocation(real_game):
+    """麓鸣·袭：本牌结附的灵咒不令增强自满足；使用前已有灵咒才免疫反击。"""
+    team = [100408, 100101, 100102, 100103]
+    g = real_game(team, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 2})
+    F.move(g, 1, 1)  # 敌方兵俑驻战斗区，反击 1
+    F.play(g, 0, 10040803)
+    assert pa.shikigami[0].health == 3  # 4 - 1：本牌刚结附，未获得免疫
+
+    g2 = real_game(team, check_deck=False)
+    pa2, pb2 = F.battle_setup(g2, {0: 2, 1: 1})
+    g2.attach_invocation("八尺琼曲玉", player=0, target=Ref(player=0, shikigami=1))
+    F.move(g2, 1, 1)
+    F.play(g2, 0, 10040803)
+    assert pa2.shikigami[0].health == 4  # 使用前已有：免疫反击

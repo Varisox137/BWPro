@@ -1044,7 +1044,7 @@ def test_online_card_detail_uses_payload_runtime_without_recalculation(
 
     monkeypatch.setattr(QDialog, "exec", capture_exec)
     battle.show_card_detail(battle.game.state.players[0].hand[0])
-    assert seen["dialog"].runtime_label.text().find("联机运行时唯一标记") >= 0
+    assert not hasattr(seen["dialog"], "runtime_label")
     battle.close()
 
 
@@ -1134,7 +1134,7 @@ def test_online_hand_art_keeps_payload_runtime_separate(
         monkeypatch.setattr(QDialog, "exec", capture_exec)
         battle.show_card_detail(card)
         dialog = seen["dialog"]
-        assert "联机卡图运行时唯一标记" in dialog.runtime_label.text()
+        assert not hasattr(dialog, "runtime_label")
         assert not dialog.findChild(CardWidget).art_label.pixmap().isNull()
         assert cdef.text != runtime["stats"]
         dialog.close()

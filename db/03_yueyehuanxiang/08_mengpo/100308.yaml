@@ -11,7 +11,7 @@ versions:
         # 每当孟婆对敌方牌手造成伤害时，将他牌库底一张牌移除（remove_deck 移入
         # exiled、不进墓地；side=opponent 磨敌方——伤害类别不限）
         when: on_player_damaged
-        condition: {source_shikigami: self}
+        condition: {source_shikigami: self, player: opponent}
         steps:
           - {op: remove_deck, count: 1, side: opponent}
       text: "每当孟婆对敌方牌手造成伤害时，将他牌库底一张牌移除。"

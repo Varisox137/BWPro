@@ -22,5 +22,5 @@ versions:
           condition: {active: self, combat_empty: friendly, field_intensity_ge: 10}
           steps:
             - {op: buff_power, amount: 4,
-               target: {kind: all, pool: friendly_shikigami, shikigami: 10030399}}
+               target: {kind: all, pool: friendly_combat, shikigami: 10030399}}
       text: "己方回合结束时若你战斗区没有式神，召唤一个‘石钵’。若此牌耐久≥10，便使其获得4力量。"

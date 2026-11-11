@@ -7,7 +7,7 @@ versions:
       card_type: combat
       rarity: R
       level: 3
-      keywords: [fast, pierce]
+      keywords: [fast, piercing]
       effects:
         # 获得等同于自己破甲的力量（{fragile_of: self} 读来源式神当前破甲量，
         # 战斗牌战力提取与结算两读取点同源；无破甲为 0）

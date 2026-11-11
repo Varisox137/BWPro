@@ -10,10 +10,9 @@ versions:
       effects:
         steps:
           - {op: gain_shield, amount: 2, target: {kind: self}}
-          - {op: attach_invocation, name: 八尺琼曲玉, target: {kind: self}}
-          # [增强]本次战斗获得免疫战斗伤害：battle_immunity step 由战斗牌流程提取、
-          # 绑定本次战斗（缺省 kind=combat_damage）；Step.condition 按攻击方视角在
-          # 战斗上下文求值（鸩羽 10012801 条件免疫先例）
-          - {op: battle_immunity, target: {kind: self},
+          # [增强]须在本牌结附前判定"场上已有"：先在普通效果步按当前场面挂账，
+          # 再由下一次战斗开始消费；不能延迟到本牌结附后判定。
+          - {op: grant_immunity, scope: next_battle, target: {kind: self},
              condition: {invocation_on_field: 八尺琼曲玉}}
+          - {op: attach_invocation, name: 八尺琼曲玉, target: {kind: self}}
       text: "将‘八尺琼曲玉’结附于大岳丸。[增强]：{若场上已有己方的‘八尺琼曲玉’，本次战斗获得免疫战斗伤害。}"

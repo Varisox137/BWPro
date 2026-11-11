@@ -278,7 +278,7 @@
 | 有目标战斗扩展 | `target` 扩展键 `battle` / `optional` | battle=true：非追猎战斗牌的 choose 目标作为战斗目标（同追猎的有目标战斗管线、帷幕不可选——天翔鹤斩"改为攻击一个敌方准备区式神"）；optional=true：合法目标池为空时可不带目标使用（退化为无目标普通战斗） | ✅ |
 | 精确等级生成 | `level` / `max_level` / `exclude_self`（generate 参数） | level：int 或 "shikigami"：后者按 shikigami 参数所指式神当前等级精确匹配生成（醉酒当歌羁绊"获得一张茨木童子当前等级的战斗牌"；所指式神未出战/未在场空操作）；max_level="source"：生成牌等级 ≤ 来源式神当前等级（吾即正义 20200423"不大于自身等级"）；exclude_self=True：候选池排除与来源同 id 的牌（"其他法术牌"） | ✅ |
 | 战斗牌数值不提取 | `no_extract`（step 参数） | 战斗牌的 buff_power/gain_shield(self) step 缺省提取为战力/一次性护甲在效果步之前结算；标 no_extract 则不提取、按步骤顺序执行（醉酒当歌"先自伤 3 再获得等量护甲"——前置结算会被自己的自伤消耗） | ✅ |
-| 鬼火储存 | `orb_store`（tags） | 觉醒·青行灯：己方在场有已觉醒且觉醒牌含此标记的式神时，回合开始鬼火不清零、改为累加并封顶 4 点（`min(4, orb+gain)`；`_orb_stored` 扫在场式神觉醒牌 tags；结算见 rules.md 回合流程步骤 5 注记） | ✅ |
+| 鬼火上限 / 储存 | `orb_cap` / `orb_store`（tags） | 双方鬼火统一上限 4 点，回合开始与 `gain_orb` 等临时获得均封顶（`GameConfig.orb_cap` 默认 4；GUI 不显示超上限 ×N）。觉醒·青行灯：己方在场有已觉醒且觉醒牌含 `orb_store` 的式神时，回合开始鬼火不清零、改为累加并同样封顶 4 点（`_orb_stored` 扫在场式神觉醒牌 tags；结算见 rules.md 回合流程步骤 5 注记） | ✅ |
 | 结算中交互选择 | `pending_choice` / `choose`（指令） / `deck_top_pick`（动作） | 效果结算中挂起等待玩家作答：deck_top_pick 检视牌库顶 count 张选 1 入手再洗牌、重复 times 次（times 可为 {"orb": true} = **1 + 效果结算时剩余鬼火**，0 火仍执行基础 1 次——维护者答复；青灯夜谈——**clear_orb=True 时先清火再执行，次数按清空前取值**，全卡盘点(1)）；挂起点存 `_suspended` 续点（内存态，随服务端房间的 Game 实例存活——客户端断线不丢，重连 resync 全量 state 带 pending_choice 可续答）、`GameState.pending_choice` 记 {kind, options, remaining}；pending 期间 apply() 只接受 choose 指令；触发式（triggered）块不挂起、空发即弃；联机 sanitize 对非选择方把 options 脱敏为等长占位（room.py），CLI/net 以 `choose <序号>` 作答；`field_summon_pick`（残阳无影"选择召唤一个幻境"：候选=读牌者场上幻境牌，>1 只挂起、单只自动，作答键 choice=卡牌数据 id，CLI/net 各有交互分支，超时随机作答并结束回合）；回合超时先随机作答到底再走常规超时流程（否则回合无法收尾、计时器不重启——room._on_timeout） | ✅ |
 | 重复执行 | `repeat`（动作） | 子步骤组重复 count 次（int 或 {"orb": true} = **1 + 效果结算时控制者剩余鬼火**：基础 1 次 + 每点剩余鬼火重复 1 次，0 火仍执行基础 1 次——维护者答复；吸魂灯；**或 {"ext": key, "base": n} = base + 控制者 `PlayerState.ext[key]` 计数**——流霰"本局每从手牌使用过一张'雪球'额外重复一次"，读 snowball_used_game；repeat/deck_top_pick/generate 次数形式共用 `_orb_count`），同块上下文共享 ctx.memo；clear_orb=True **先一次性清空控制者鬼火再执行**（全卡盘点(1)：次数按清空前剩余鬼火取值，2→0 不经过 1；青灯夜谈/吸魂灯"重复，清空你的鬼火"= 失去所有剩余 X 点鬼火、执行 X+1 次） | ✅ |
 | 鬼火消耗/清空 | `consume_orb` / `clear_orb`（动作） | consume_orb：扣控制者鬼火 amount（不灭之火；不视作使用牌）；clear_orb：一次性清空一方鬼火（side="self"/"opponent"，月食类"清空敌方的鬼火"——月食卡不入数据，机制可用）；均 emit on_orb_changed（old→new 单事件，清空不经过中间值） | ✅ |
@@ -359,7 +359,7 @@
 | `dice_six_count` | `PlayerState.ext` | 本局投出 6 次数（确定结果时同步维护；dice_six_ge 增强/萌即正义身材/这把算我赢增强读数） |
 | `luck_success_game` / `luck_success_turn` | `PlayerState.ext` | 本局运势判定成功次数（按"一次判定"计；福满乾坤 play_condition 合计口径）/ 最近一次判定成功的回合号（青蛙瓷器光环读取：== 当前回合号则在场的青蛙瓷器 +2 力量） |
 | `dice_force_six` / `dice_force_six_holder` | `PlayerState.ext` | 萌即正义：判定者级必 6 光环（set_dice_modifier mode=six 写；形态进场 on/离场 off）/ 持有者座次 [player, shikigami]（形态离场通道一并解除） |
-| `dice_force_six_once` | `ShikigamiState.ext` | 这把算我赢：下次以其为来源的判定首投必 6 并消耗（set_dice_modifier mode=six_once 写，投掷骰子时机 pop） |
+| `dice_force_six_once` | `ShikigamiState.ext` | 来源级一次性必 6：下次以其为来源的判定首投必 6 并消耗（set_dice_modifier mode=six_once 写，投掷骰子时机 pop；机制保留，当前正式卡池无携带者） |
 | `cost_mods` | `PlayerState.ext` | 手牌费用修正条目（cost_delta_player 登记 {"amount","turn","scope"}，回合号过期；`_effective_cost` 读取——幸运兔兔"敌方下回合手牌鬼火+1"） |
 | `stuns` | `PlayerState.ext`（牌手） | 牌手眩晕条目（同 `ShikigamiState.stuns` 结构；式神眩晕为 State 字段非 ext；眩晕牌手不能使己方式神出击） |
 | `yaohu_damage_count` | `PlayerState.ext` | 妖狐伤害计数：伤害流程按来源=妖狐时每次伤害事件 +1（`_account_yaohu_damage`；狂风刃卷增强 {yaohu_damage_count>=20} 读数） |
@@ -406,7 +406,7 @@
 | 指定式神过滤 | `shikigami`（TargetSpec kind=all 扩展键） | all 分支统一按数据 id 过滤式神（豪焰固定项 buff 茨木、羁绊伤酒吞类"指定式神"；池先取、id 后滤） | ✅ |
 | 运势判定 | `luck_roll` / `luck_reroll`（动作） | `luck_roll`：步骤级 [运势X]（x 阈值；judge=self/opponent/both——both 双方各生成事件、当前回合玩家先、各自以自己视角结算 then；then 成功子步骤；force_x1_if 条件满足时阈值视为 1——立直，骰子照投照计）；骰点写 `ctx.memo["luck_dice"]` 供 amount_ctx 读取。`luck_reroll`：判定时（on_luck_judge）改写运势事件当前骰点，同一判定中每个来源能力至多一次、同样吃必 6 修饰（座敷童子） | ✅ |
 | 运势门控 | `luck`（EffectBlock） | 触发式块的运势判定门控：`luck: X`（int）= 判定成功才结算块 steps；`luck: {"x": X, "on": "fail"}` = 判定失败才结算（家内安全/和气满满）；判定者默认控制者；并行入队/同步推进由引擎 `_run_luck_events` 负责 | ✅ |
-| 运势事件 | `on_luck_judge` / `on_luck_success` / `on_luck_effect_after` | 判定时（即时，payload 含可变运势事件 dict luck——重投改写其骰点）/ 判定后（延时，成功才发；翻倍标记下各 handler 追加一次，排除翻倍提供者自身能力与响应/临时触发）/ 生效后（延时，预留）。时机序列见 rules.md 第二十七章 | ✅ |
+| 运势事件 | `on_luck_judge` / `on_luck_success` / `on_luck_effect_after` | 判定时（即时，payload 含可变运势事件 dict luck——重投改写其骰点）/ 判定后（默认延时，成功才发；觉醒·妖狐用 `timing: insert` 插入；翻倍标记下各 handler 追加一次，排除翻倍提供者自身能力与响应/临时触发）/ 生效后（延时，预留）。视觉 `luck_result` 带 `on_fail`：成功生效只显示大吉、失败生效只显示大凶；同批重投动画按首骰→重投→第二骰连续排列。时机序列见 rules.md 第二十七章 | ✅ |
 | 直接获胜 | `win_game`（动作） | 目标牌手获得本局游戏胜利（target=self=控制者胜）：`_set_pending_end(loser=对方)` 走待结束流程，非气绝判负（这把算我赢增强变后） | ✅ |
 | 逐次随机伤害 | `repeat_random_damage`（动作） | 逐次在 pool 随机 1 名造成 amount 点伤害、插入结算、每次重新求值目标池（无羁风弹；pool="all_other_shikigami"=双方未气绝式神中**仅豁免施放者妖狐**（按来源座次）——敌方妖狐可被选中，施放者在事件中被变形后新实体 id 非妖狐、回到目标池，全卡盘点(14) 修正）：停止条件其一——满 max 次 / 有角色（牌手）生命≤0 / stop_on_defeat=True 时任一式神气绝（**含延时气绝**：濒死/生命≤0 标记在伤害落地时即置位、气绝事件延后生成的情形同样命中）；多次重复是一段连续效果，触发式能力由事件队列在整牌结算完后统一排水 | ✅ |
 | 再次使用本牌 | `reuse_card`（动作） | 法术→凭空自动使用管线同目标重结算（实例标记 `_reused` 防自循环，恰好两次——叠风斩）；照常 emit on_card_played（triggered=auto，可再触发"使用牌时"能力）。（转运的延时复用已改走 auto_use delayed 通道，见「凭空自动使用」行） | ✅ |
@@ -416,7 +416,7 @@
 | 牌手费用修正 | `cost_delta_player`（动作）/ `cost_mods`（ext 键） | 目标牌手的手牌费用 +amount（scope="next_turn"=下个回合，按回合号记账过期，仿 immunities；`_effective_cost` 读取——[不消耗鬼火]与回合内首张[瞬发]已归零不受影响，非手牌使用不走费用求值不受影响；幸运兔兔）；**`side="opponent"` 改作用于敌方牌手、`card_flag`（如 "revealed"）仅命中带对应实例标志的手牌、`scope="form"` 绑定来源形态、形态离场移除（心灵迷宫"敌方使用已展示的手牌额外耗 1 火"，仍在 cost>0 门内——瞬发/不耗火全免）** | ✅ |
 | 倒计时力量复合 | `countdown_power_boost`（动作） | 山兔能力原子语义"倒计时-1 并 +1 力量"同段效果：气绝者只减复活倒计时（被本次归零复活者不追加力量）；存活者（含无倒计时能力的）倒计时 -1（归零走 `_countdown_zero`）并 +1 力量（perm=False 默认临时） | ✅ |
 | 随机使用形态 | `random_play_form`（动作） | 目标各随机使用 1 张等级 ≤ 其当前等级的专属形态牌（凭空自动使用：`_play_form_card` + on_card_played(triggered=auto)，play_condition 同检）；无可用形态/气绝者跳过（鸿运当头） | ✅ |
-| 骰子修饰 | `set_dice_modifier`（动作） | mode="six"：判定者级光环必 6，写控制者牌手 ext `dice_force_six`（记持有者座次 `dice_force_six_holder`，形态进场 on/离场 off——萌即正义）；mode="six_once"：来源级，写来源式神 ext `dice_force_six_once`，下次以其为来源的判定首投必 6 并消耗（这把算我赢） | ✅ |
+| 骰子修饰 | `set_dice_modifier`（动作） | mode="six"：判定者级光环必 6，写控制者牌手 ext `dice_force_six`（记持有者座次 `dice_force_six_holder`，形态进场 on/离场 off——萌即正义）；mode="six_once"：来源级一次性修饰，写来源式神 ext `dice_force_six_once`，下次以其为来源的判定首投必 6 并消耗（当前正式卡池无携带者） | ✅ |
 | 随机弃牌 | `discard_random`（动作） | 随机弃目标牌手 count 张手牌（rng.sample；targets 缺省回退控制者——转运）。与 `discard` 的顺序/谓词弃牌语义不同，故独立 op | ✅ |
 | 眩晕施加 | `stun`（动作） | 目标角色获得眩晕条目（kind 默认 normal，记控制者回合号；lasting 持续眩晕已落地——`lasting`/`until_event` 参数见「持续眩晕施加」行）；式神条目存 `ShikigamiState.stuns`、牌手存 `PlayerState.ext["stuns"]`；门控与解除见 rules.md 第二十八章 | ✅ |
 | 眩晕事件 | `on_stun` | 角色被眩晕后发出（即时时机 insert，payload {victim, source}；stun 施加点发出，同 on_shield_changed 变化点位置）——雪女"每回合一次，当你[眩晕]敌方式神时"挂点（每回合一次配 turn_mark 门控） | ✅ |

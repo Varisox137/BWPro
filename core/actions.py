@@ -3970,7 +3970,7 @@ def set_dice_modifier(game, ctx, *, targets: list[Ref], mode: str,
 
     - mode="six"（萌即正义）：判定者级光环必 6，写控制者牌手 ext["dice_force_six"]
       （形态进场 on / 离场 off 由数据侧挂接）；
-    - mode="six_once"（这把算我赢）：来源级——写来源式神 ext["dice_force_six_once"]，
+    - mode="six_once"：来源级一次性修饰——写来源式神 ext["dice_force_six_once"]，
       下次以其为来源的判定首投必 6 并消耗。
     """
     if mode == "six":

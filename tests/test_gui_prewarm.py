@@ -300,6 +300,27 @@ def test_animation_style_previews_and_option_rows_left_alignment(qapp, db):
     view.close()
 
 
+def test_upgrade_preview_uses_up_assets(qapp, db, monkeypatch):
+    from client.gui.ui_assets import animation_variants
+
+    seen = {}
+
+    class Preview:
+        def __init__(self, names, _current, _parent, **kwargs):
+            seen.update(names=names, **kwargs)
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr("client.gui.settings.CardbackPreviewDialog", Preview)
+    view = SettingsView(db)
+    view.choose_visual_option("upgrade_variant")
+    assert seen["names"] and seen["names"] == animation_variants("up")
+    assert seen["asset_dir"] == "animations"
+    assert seen["asset_prefix"] == "up_"
+    view.close()
+
+
 def test_preview_dialog_recenters_after_page_shrink(qapp):
     from client.gui.settings import CardbackPreviewDialog
 

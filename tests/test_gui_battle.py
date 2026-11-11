@@ -119,8 +119,7 @@ def test_hand_art_preserves_runtime_and_detail(qapp, view, tmp_path, monkeypatch
         monkeypatch.setattr(QDialog, "exec", capture_exec)
         view.show_card_detail(card)
         dialog = seen["dialog"]
-        assert not dialog.runtime_label.isHidden()
-        assert "手牌运行时唯一标记" in dialog.runtime_label.text()
+        assert not hasattr(dialog, "runtime_label")
         detail_card = dialog.findChild(CardWidget)
         assert not detail_card.art_label.pixmap().isNull()
         assert cdef.text != runtime["stats"]
@@ -500,6 +499,7 @@ def test_playable_card_uses_alpha_contour_glow_not_tight_box(qapp):
         return image
 
     item.playable = True
+    assert item._operation_glow_color().name() == "#d9b96a"
     glowing = render()
     assert glowing.pixelColor(2, 2).alpha() == 0
     assert glowing.pixelColor(5, 30).alpha() > 0
@@ -897,7 +897,7 @@ def test_direct_assault_focus_targets_player_not_combat_shiki(qapp, view):
     scene.drag_controller.cancel()
 
 
-def test_player_orb_overflow_and_turn_button_stay_bounded(qapp, view):
+def test_player_orb_and_turn_button_stay_bounded(qapp, view):
     start(view, mulligan=False)
     view.apply_theme("light", THEMES["light"])
     player = view.game.current
@@ -907,8 +907,9 @@ def test_player_orb_overflow_and_turn_button_stay_bounded(qapp, view):
     view.refresh()
     settle(view)
     item = view.battle_scene.cards[("player", 0)]
-    assert item.orb_display_count <= 4
-    assert item.orb_overflow == 2
+    assert item.orb == 4
+    assert item.orb_display_count == 4
+    assert item.orb_overflow == 0
     assert not hasattr(item, "graveyard_count")
     assert not hasattr(view, "field_labels")
     assert view.end_turn_button.width() == view.end_turn_button.height() == 104
@@ -2254,7 +2255,7 @@ def test_shiki_normal_status_only_shows_core_fields(qapp, db, view):
     assert all(text not in item.shiki_text for text in ("能量", "形态", "贯通", "灵咒"))
 
 
-def test_card_runtime_details_and_static_compatibility(qapp, db):
+def test_card_detail_hides_runtime_summary(qapp, db):
     cdef = F.card(10010151, name="运行时详情卡")
     runtime = {
         "cost": 0, "stats": "力量 +2　护甲 +1", "keywords": ["瞬发", "贯通"],
@@ -2262,15 +2263,10 @@ def test_card_runtime_details_and_static_compatibility(qapp, db):
         "usage": [{"label": "常规", "ok": False, "reason": "条件未满足"}],
     }
     dialog = CardDetailDialog(cdef, db, runtime=runtime)
-    text = dialog.runtime_label.text()
-    assert dialog.runtime_label.wordWrap()
-    assert "费用 0" in text and "增强 2" in text
-    assert "力量 +2　护甲 +1" in text and "瞬发" in text and "贯通" in text
-    assert "已 1/2" in text and "条件未满足" in text and "条件：不满足" in text
-    assert text.count("委托") == 1
-    assert "常规" in text
+    assert not hasattr(dialog, "runtime_label")
     labels = [label.text() for label in dialog.findChildren(QLabel)]
-    assert all(not text.startswith(("所属式神：", "子类型：")) for text in labels)
+    assert all(not text.startswith(("所属式神：", "子类型：", "当前状态"))
+               for text in labels)
     assert dialog.mechanism_panel is not None
     dialog.close()
 
@@ -2294,7 +2290,7 @@ def test_card_detail_uses_only_matching_hand_info(qapp, view, monkeypatch):
                    "enhance": 0, "quest": None, "playable": True, "usage": []},
     })
     view.show_card_detail(card)
-    assert "手牌唯一运行时标记" in seen[-1].runtime_label.text()
+    assert not hasattr(seen[-1], "runtime_label")
 
     monkeypatch.setattr(view, "hand_info", lambda: {})
     view.show_card_detail(card)
@@ -2694,7 +2690,7 @@ def test_player_detail_empty_fields_and_legacy_ability_have_no_placeholder(qapp,
     dialog = PlayerDetailDialog(view.game, 0, 0)
     assert dialog.field_widgets == []
     assert [item["name"] for item in dialog.ability_mechanisms] == ["牌手能力"]
-    assert dialog.content_layout.count() == 1
+    assert dialog.content_layout.count() == 2  # 能力栏 + 右侧留白，无空占位栏
     assert dialog.content_layout.itemAt(0).widget() is dialog.ability_panel
     dialog.close()
 
@@ -3981,6 +3977,8 @@ def test_result_and_turn_banners_use_word_art(qapp, view):
     assert view.result_banner.text() == ""
     assert view.result_banner.pixmap() is not None
     assert not view.result_banner.pixmap().isNull()
+    assert view.result_banner.pixmap().width() >= 360
+    assert view.result_banner.pixmap().height() >= 360
     assert view.battle_scene.result_item.sceneBoundingRect().center() == (
         view.battle_scene.sceneRect().center())
     assert view.battle_scene.result_back_item.y() >= (
@@ -4017,7 +4015,7 @@ def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
     result_animation = scene._visual_animations[0]
     assert scene._visual_events[result_animation]["v"] == "luck_result"
     result, offset = scene._visual_items[result_animation].layers[0]
-    assert offset == QPointF(-result.width() / 2, -result.height() / 2)
+    assert offset == QPointF(-result.width() / 2, -result.height() / 2 - 12)
     result_animation.setCurrentTime(result_animation.duration())
     qapp.processEvents()
     assert not scene._visual_animations
@@ -4026,7 +4024,8 @@ def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
 def test_luck_visuals_play_sequentially(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
-    scene.play_visual_event({"v": "luck", "p": view.viewer, "s": 0, "dice": 1, "success": False})
+    scene.play_visual_event({"v": "luck", "p": view.viewer, "s": 0, "dice": 1,
+                             "success": False, "on_fail": True})
     scene.play_visual_event({"v": "luck_reroll", "p": view.viewer, "s": 0,
                              "dice": 6, "previous_dice": 1})
     assert len(scene._visual_animations) == 1
@@ -4040,7 +4039,7 @@ def test_luck_visuals_play_sequentially(qapp, view):
     animation = scene._visual_animations[0]
     assert scene._visual_events[animation]["v"] == "luck_reroll"
     word, offset = scene._visual_items[animation].layers[0]
-    assert offset == QPointF(-word.width() / 2, -word.height() / 2)
+    assert offset == QPointF(-word.width() / 2, -word.height() / 2 - 12)
 
 
 def test_granular_luck_visuals_play_directly(qapp, view):
@@ -4048,17 +4047,36 @@ def test_granular_luck_visuals_play_directly(qapp, view):
     scene = view.battle_scene
     scene.play_visual_event({"v": "luck_dice", "p": view.viewer, "s": 0, "dice": 1})
     scene.play_visual_event({"v": "luck_result", "p": view.viewer, "s": 0,
-                             "dice": 1, "success": False})
+                             "dice": 1, "success": False, "on_fail": True})
     animation = scene._visual_animations[0]
     assert scene._visual_events[animation]["v"] == "luck_dice"
     assert [event["v"] for event in scene._visual_queue] == ["luck_result"]
+
+
+@pytest.mark.parametrize("success,on_fail,visible", [
+    (True, False, True), (False, False, False),
+    (False, True, True), (True, True, False),
+])
+def test_luck_result_visual_only_for_effect_branch(qapp, view, success, on_fail, visible):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    scene.play_visual_event({"v": "luck_result", "p": view.viewer, "s": 0,
+                             "dice": 6 if success else 1, "success": success,
+                             "on_fail": on_fail})
+    assert bool(scene._visual_animations) is visible
+    assert bool(scene._visual_queue) is False
+    if visible:
+        animation = scene._visual_animations[0]
+        word, offset = scene._visual_items[animation].layers[0]
+        assert offset == QPointF(-word.width() / 2, -word.height() / 2 - 12)
 
 
 def test_visuals_on_different_targets_play_in_parallel(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     scene.play_visual_event({"v": "luck", "p": 0, "s": None, "dice": 4, "success": True, "g": 1})
-    scene.play_visual_event({"v": "luck", "p": 1, "s": None, "dice": 2, "success": False, "g": 1})
+    scene.play_visual_event({"v": "luck", "p": 1, "s": None, "dice": 2,
+                             "success": False, "on_fail": True, "g": 1})
     assert len(scene._visual_animations) == 2
     positions = {scene._visual_events[animation]["p"]: item.pos()
                  for animation, item in scene._visual_items.items()}
@@ -4103,6 +4121,18 @@ def test_damage_visual_centers_scaled_ink_and_signed_number(qapp, view):
     assert number.width() <= round(background.width() * 0.85)
     for layer, offset in item.layers:
         assert offset == QPointF(-layer.width() / 2, -layer.height() / 2)
+    assert item.pos() == target.sceneBoundingRect().center()
+
+
+def test_defeat_visual_is_centered_slightly_above_shiki(qapp, view):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    target = scene.cards[("shiki", view.viewer, 0)]
+    scene.play_visual_event({"v": "defeated", "p": view.viewer, "s": 0})
+    animation = scene._visual_animations[0]
+    item = scene._visual_items[animation]
+    word, offset = item.layers[0]
+    assert offset == QPointF(-word.width() / 2, -word.height() / 2 - 12)
     assert item.pos() == target.sceneBoundingRect().center()
 
 

@@ -84,6 +84,8 @@ def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, mon
     dialog = CardDetailDialog(cdef, db)
     assert dialog.detail_top.itemAt(0).widget() is dialog.card_widget
     assert dialog.detail_top.itemAt(1).widget() is dialog.mechanism_panel
+    assert dialog.detail_top.spacing() == 12
+    assert dialog.sizeHint().width() <= 640
     assert art_calls and all(call["height"] == 512 for call in art_calls)
     assert mechanism_args and all(args[0] == 12 and 0 < args[1] <= 1.0 for args in mechanism_args)
     assert dialog.minimumHeight() >= 680

@@ -309,6 +309,9 @@ class CardChoiceView(QScrollArea):
             self.chosen.emit(value)
 
 
+DETAIL_COLUMN_SPACING = 12
+
+
 class CardDetailDialog(QDialog):
     """左侧大卡图、右侧独立滚动机制栏的单卡详情。"""
 
@@ -318,8 +321,10 @@ class CardDetailDialog(QDialog):
         self.setWindowTitle(cdef.name)
         self.setMinimumSize(480, 680)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         self.detail_top = QHBoxLayout()
-        self.detail_top.setSpacing(0)
+        self.detail_top.setSpacing(DETAIL_COLUMN_SPACING)
         self.card_widget = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
                                       level_color=level_color, art_height=512)
         self.card_widget.count_label.hide()
@@ -332,37 +337,10 @@ class CardDetailDialog(QDialog):
             card_mechanisms(cdef, runtime), self, chars_per_line=12, font_scale=1.0,
             max_height=512, width=panel_width)
         if self.mechanism_panel is not None:
-            self.detail_top.addWidget(self.mechanism_panel, 1)
-            self.setMinimumWidth(900)
-        else:
-            self.detail_top.addStretch(1)
+            self.detail_top.addWidget(
+                self.mechanism_panel, 0, Qt.AlignLeft | Qt.AlignTop)
+        self.detail_top.addStretch(1)
         layout.addLayout(self.detail_top, 1)
-        if runtime is not None:
-            current = ["当前状态"]
-            if "cost" in runtime:
-                current.append(f"费用 {runtime['cost']}")
-            if runtime.get("stats"):
-                current.append(f"数值 {runtime['stats']}")
-            if "enhance" in runtime:
-                current.append(f"增强 {runtime['enhance']}")
-            if runtime.get("keywords"):
-                current.append(f"关键字 {'、'.join(runtime['keywords'])}")
-            if runtime.get("quest"):
-                quest = str(runtime["quest"])
-                current.append(quest if quest.startswith("委托") else f"委托 {quest}")
-            if "playable" in runtime:
-                current.append(f"条件：{'满足' if runtime['playable'] else '不满足'}")
-            for option in runtime.get("usage", []):
-                usage = f"使用方式 {option.get('label', option.get('id', ''))}"
-                if option.get("ok"):
-                    current.append(f"{usage}：可用")
-                else:
-                    reason = option.get("reason") or "不可用"
-                    current.append(f"{usage}：{reason}")
-            self.runtime_label = QLabel("\n".join(current))
-            self.runtime_label.setObjectName("cardRuntime")
-            self.runtime_label.setWordWrap(True)
-            layout.addWidget(self.runtime_label)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)

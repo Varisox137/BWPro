@@ -76,6 +76,17 @@ def test_card_identity_matches_raw(gdb, cid, expected):
             cdef.keywords) == expected
 
 
+def test_no_unwritten_base_effect(gdb):
+    """增强才生效的牌在未转化时不应携带原文没有的常规效果。"""
+    assert gdb.cards[10011708].effects.steps == []
+
+
+def test_combat_keyword_ids_match_raw(gdb):
+    """[贯通]使用 piercing；pierce 是另一个[穿刺]关键字，不得混用。"""
+    keywords = gdb.cards[10012008].keywords
+    assert "piercing" in keywords and "pierce" not in keywords
+
+
 # ---------- 萤草测试库注册（gdb 覆盖；供萤草基础能力测试） ----------
 
 YC = 100127       # 萤草（双方 0 号位）
@@ -2627,8 +2638,8 @@ def test_form_gain_orb_and_generate_three_forms(real_game):
     pa.health = 25
     orb = pa.orb
     play(g, 0, 10012706)                      # 光环瞬发首张免费 + 1 鬼火（不再回血）
-    assert pa.orb == orb + 1 and pa.health == 25
+    assert pa.orb == min(4, orb + 1) and pa.health == 25
     play(g, 0, 10012707)                      # 瞬发名额已用，1 火
-    assert pa.orb == orb
+    assert pa.orb == min(4, orb + 1) - 1
     ids = {c.id for c in pa.hand}
     assert {10012702, 10012704, 10012706} <= ids

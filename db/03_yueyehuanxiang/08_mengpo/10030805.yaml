@@ -15,4 +15,4 @@ versions:
         # [投射]：{造成4点伤害}（凤火 100105 先例）
         steps:
           - {op: damage, amount: 4, target: {kind: all, pool: projectile}}
-      text: "[投射]：{造成4点伤害}。[增强]：{若敌方牌库张数<=16，此牌伤害翻倍。}"
+      text: "[投射]：{造成4点伤害}。[增强]：{若敌方牌库张数≤16，此牌伤害翻倍。}"

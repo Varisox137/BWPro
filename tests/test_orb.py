@@ -79,6 +79,18 @@ def test_orb_gain_on_turn_end_form(make_game, db):
     assert pa.orb == 1          # 回合结束 +1（B 回合开始不影响 A 留火）
 
 
+def test_orb_gain_uses_universal_cap_four(make_game, db):
+    """所有获得鬼火效果默认封顶 4，包含临时获得；超出部分不再保留。"""
+    cid = 10010168
+    db.cards[cid] = F.card(cid, shikigami=SID, level=1, token=True,
+                           steps=[F.Step(op="gain_orb", amount=3)])
+    g, pa, _pb = _game(make_game)
+    pa.orb = 3
+    g.apply({"op": "play_card", "uid": give(g, 0, cid).uid})
+    assert g.config.orb_cap == 4
+    assert pa.orb == 4
+
+
 # ---------- 清空重复（吸魂灯 repeat） ----------
 
 def test_repeat_per_orb_and_clear(make_game, db):

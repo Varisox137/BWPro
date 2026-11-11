@@ -16,4 +16,4 @@ versions:
         steps:
           - {op: draw, count: 2}
           - {op: discard_pick, count: 1}
-      text: "抽两张牌，弃一张牌。[增强]：{若敌方牌库张数<=16，此牌获得[瞬发]。}"
+      text: "抽两张牌，弃一张牌。[增强]：{若敌方牌库张数≤16，此牌获得[瞬发]。}"

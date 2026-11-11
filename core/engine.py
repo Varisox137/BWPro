@@ -6668,7 +6668,7 @@ class Game:
         时机：投掷骰子（必 6 修饰：萌即正义判定者级 / 这把算我赢来源级首投并消耗）→
         判定时（on_luck_judge 即时时机，座敷童子重投改写骰点）→ 确定结果（掷骰记账：
         dice_history 只记最终有效骰点、dice_six_count 同步维护）→ 判定后
-        （on_luck_success 延时时机，整队生效完毕后由队列统一结算）→ 执行成功/失败效果
+        （on_luck_success 默认延时、可由块级 timing: insert 插入）→ 执行成功/失败效果
         （成功效果在翻倍标记下执行两次，不重新掷骰；失败效果不翻倍）→ 生效后
         （on_luck_effect_after 延时，预留）。
         """
@@ -6705,18 +6705,24 @@ class Game:
                 ev["forced"] = True
             ev["dice"] = dice
             ev["first_dice"] = dice  # 重投检测用（判定时 on_luck_judge 可改写骰点）
+        # 2. 判定时（即时时机；重投改写 ev["dice"]，强制 6 不豁免本时机）。
+        # 视觉事件按每次判定连续记录：首骰 → 重投 → 第二骰，再到下一项原始判定；
+        # 结算仍保持同批事件全部判定后才统一确定结果。
         for ev in events:
             source = ev.get("source")
+            visual_shiki = (None if ev.get("player_visual") or source is None
+                            else source.shikigami)
             self.state.timeline.append({
-                "k": "v", "v": "luck_dice", "p": ev["judge"],
-                "s": (None if ev.get("player_visual") or source is None
-                      else source.shikigami),
+                "k": "v", "v": "luck_dice", "p": ev["judge"], "s": visual_shiki,
                 "dice": ev["dice"], "g": ev.get("g"),
             })
-        # 2. 判定时（即时时机；重投改写 ev["dice"]，强制 6 不豁免本时机）
-        for ev in events:
             self.emit("on_luck_judge", luck=ev, judge=ev["judge"],
-                      source=ev.get("source"), x=ev["x"], dice=ev["dice"])
+                      source=source, x=ev["x"], dice=ev["dice"])
+            if ev.get("rerolled"):
+                self.state.timeline.append({
+                    "k": "v", "v": "luck_dice", "p": ev["judge"], "s": visual_shiki,
+                    "dice": ev["dice"], "g": ev.get("g"),
+                })
         # 3. 确定结果 + 掷骰记账（只记最终有效骰点；被重投覆盖的首投不计入）
         for ev in events:
             ev["success"] = ev["dice"] >= ev["x"]
@@ -6735,14 +6741,10 @@ class Game:
             source = ev.get("source")
             visual_shiki = (None if ev.get("player_visual") or source is None
                             else source.shikigami)
-            if ev.get("rerolled"):
-                self.state.timeline.append({
-                    "k": "v", "v": "luck_dice", "p": ev["judge"], "s": visual_shiki,
-                    "dice": ev["dice"], "g": ev.get("g"),
-                })
             self.state.timeline.append({
                 "k": "v", "v": "luck_result", "p": ev["judge"], "s": visual_shiki,
-                "dice": ev["dice"], "success": ev["success"], "g": ev.get("g"),
+                "dice": ev["dice"], "success": ev["success"],
+                "on_fail": ev.get("on_fail", False), "g": ev.get("g"),
             })
         # 4-6. 判定后（延时）→ 执行成功/失败效果 → 生效后（延时，预留）
         for ev in events:

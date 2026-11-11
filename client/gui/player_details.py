@@ -8,7 +8,9 @@ from PySide6.QtWidgets import (
 
 from client.gui.details import player_ability_mechanisms
 from client.gui.mechanisms import mechanism_panel
-from client.gui.widgets import CardDetailDialog, CardWidget, polish_dialog_buttons
+from client.gui.widgets import (
+    DETAIL_COLUMN_SPACING, CardDetailDialog, CardWidget, polish_dialog_buttons,
+)
 
 
 class PlayerDetailDialog(QDialog):
@@ -20,9 +22,11 @@ class PlayerDetailDialog(QDialog):
         self.setWindowTitle(state.name)
         self.setMinimumSize(520, 680)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         self.summary_label = QLabel(
             f"生命 {state.health}/{state.max_health}　护甲 {state.shield}\n"
-            f"鬼火 {state.orb}　出击次数 {state.assaults_left}\n"
+            f"鬼火 {min(4, state.orb)}　出击次数 {state.assaults_left}\n"
             f"墓地 {len(state.graveyard)}"
         )
         self.summary_label.setWordWrap(True)
@@ -35,7 +39,7 @@ class PlayerDetailDialog(QDialog):
         content = QWidget()
         self.content_layout = QHBoxLayout(content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(0)
+        self.content_layout.setSpacing(DETAIL_COLUMN_SPACING)
         self.field_widgets = []
         art_width = 396
         for field in state.fields:
@@ -57,6 +61,7 @@ class PlayerDetailDialog(QDialog):
             max_height=512, width=art_width + 24)
         if self.ability_panel is not None:
             self.content_layout.addWidget(self.ability_panel)
+        self.content_layout.addStretch(1)
         self.scroll_area.setWidget(content)
         layout.addWidget(self.scroll_area, 1)
         field_columns = min(len(self.field_widgets), 3)

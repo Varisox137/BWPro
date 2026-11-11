@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from client import cli
 from client.gui.cardart import seat_level_color, shikigami_pixmap
 from client.gui.mechanisms import mechanism_panel, shikigami_mechanisms
-from client.gui.widgets import CardWidget, polish_dialog_buttons
+from client.gui.widgets import DETAIL_COLUMN_SPACING, CardWidget, polish_dialog_buttons
 
 
 def player_ability_mechanisms(player, player_index: int, viewer: int) -> list[dict]:
@@ -105,8 +105,11 @@ class ShikigamiDetailDialog(QDialog):
         self.setWindowTitle(definition.name)
         self.setMinimumSize(720 if shiki.form is not None else 520, 680)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         cards = QHBoxLayout()
-        cards.setSpacing(0)
+        cards.setSpacing(DETAIL_COLUMN_SPACING)
+        self.detail_top = cards
         self.column_names = ["main"]
 
         self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=512)
@@ -153,15 +156,16 @@ class ShikigamiDetailDialog(QDialog):
         self.status_panel, self.status_labels = mechanism_panel(
             self.status_mechanisms, self, max_height=512, width=panel_width)
         if self.status_panel is not None:
-            cards.addWidget(self.status_panel, 1)
+            cards.addWidget(self.status_panel, 0, Qt.AlignLeft | Qt.AlignTop)
             self.column_names.append("status")
 
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
             shikigami_mechanisms(game, ref, status_texts=status_texts), self,
             max_height=512, width=panel_width)
         if self.mechanism_panel is not None:
-            cards.addWidget(self.mechanism_panel, 1)
+            cards.addWidget(self.mechanism_panel, 0, Qt.AlignLeft | Qt.AlignTop)
             self.column_names.append("mechanisms")
+        cards.addStretch(1)
         layout.addLayout(cards)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         polish_dialog_buttons(buttons)

@@ -185,7 +185,8 @@ class SettingsView(QWidget):
         button = self.option_buttons[key]
         background = key in ("turn_background", "end_turn_background", "opponent_turn_background")
         turn_style = key in ("end_turn_variant", "opponent_turn_variant")
-        prefix = "defeat" if key == "defeated_variant" else key.split("_")[0]
+        prefix = {"defeated_variant": "defeat", "upgrade_variant": "up"}.get(
+            key, key.split("_")[0])
         names = (["无"] + unnamed_misc_images() if background
                  else turn_button_variants(key == "opponent_turn_variant") if turn_style
                  else animation_variants(prefix))

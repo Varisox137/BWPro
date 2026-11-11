@@ -18,6 +18,10 @@ versions:
           condition: {source_shikigami: self, kind: combat}
           steps:
             - {op: field_op, side: self, pick: all, amount: 1}
+        - when: on_player_damaged
+          condition: {source_shikigami: self, kind: combat}
+          steps:
+            - {op: field_op, side: self, pick: all, amount: 1}
         # 每当你使用幻境牌时，荒获得[迅捷]（一次性类别，出击消耗）
         - when: on_card_played
           condition: {card_type: field, player: self}
