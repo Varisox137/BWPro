@@ -208,14 +208,14 @@ class CardChoiceView(QScrollArea):
     def __init__(self, options, db=None, parent=None, *,
                  frame_variant: str | None = None, button_text: str = "选择"):
         super().__init__(parent)
+        self._syncing_height = False
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setMinimumHeight(475)
         content = QWidget()
         content.setObjectName("choiceContent")
         row = QHBoxLayout(content)
-        row.setContentsMargins(12, 12, 12, 12)
+        row.setContentsMargins(12, 4, 12, 8)
         self.option_widgets = []
         self.option_buttons = {}
         self._wrappers = {}
@@ -241,7 +241,7 @@ class CardChoiceView(QScrollArea):
             wrapper.setMinimumWidth(194)
             column = QVBoxLayout(wrapper)
             column.setContentsMargins(0, 0, 0, 0)
-            column.setSpacing(2)
+            column.setSpacing(0)
             column.addWidget(card, 0, Qt.AlignCenter)
             column.addWidget(button, alignment=Qt.AlignCenter)
             card.clicked.connect(lambda _=None, option=value: self.select(option))
@@ -253,6 +253,36 @@ class CardChoiceView(QScrollArea):
             row.addWidget(wrapper)
         row.addStretch(1)
         self.setWidget(content)
+        self._sync_minimum_height()
+
+    def _sync_minimum_height(self) -> None:
+        if self._syncing_height or self.widget() is None:
+            return
+        content_height = 0
+        for index, wrapper in enumerate(self._wrappers.values()):
+            column = wrapper.layout()
+            margins = column.contentsMargins()
+            button = self.option_buttons[list(self._wrappers)[index]]
+            button_height = 0 if button.isHidden() else button.height() + column.spacing()
+            content_height = max(
+                content_height,
+                self.option_widgets[index].height() + button_height
+                + margins.top() + margins.bottom(),
+            )
+        margins = self.widget().layout().contentsMargins()
+        height = content_height + margins.top() + margins.bottom() + 2 * self.frameWidth()
+        scrollbar = self.horizontalScrollBar()
+        if not scrollbar.isHidden():
+            height += scrollbar.sizeHint().height()
+        self._syncing_height = True
+        self.setMinimumHeight(max(475, height))
+        self._syncing_height = False
+        self.updateGeometry()
+        self.window().updateGeometry()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_minimum_height()
 
     def select(self, value) -> None:
         if self.selected == value:
@@ -271,6 +301,7 @@ class CardChoiceView(QScrollArea):
             if isinstance(card, CardWidget):
                 card.setFixedSize(194 if selected else 180, 421 if selected else 390)
             self.option_buttons[option].setVisible(selected)
+        self._sync_minimum_height()
 
     def confirm(self, value=None) -> None:
         value = self.selected if value is None else value

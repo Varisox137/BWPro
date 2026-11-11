@@ -485,7 +485,7 @@ def test_reconnect_restores_pending_choice(qapp, db, make_game):
     battle.close()
 
 
-def test_online_choice_dialog_click_sends_once_waits_and_reconnects(qapp, db, make_game):
+def test_online_choice_immediate_feedback_sends_once_waits_and_reconnects(qapp, db, make_game):
     game = make_game(mulligan=True)
     field_id = 10010161
     db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
@@ -517,14 +517,17 @@ def test_online_choice_dialog_click_sends_once_waits_and_reconnects(qapp, db, ma
 
     QTest.mouseClick(cards[0], Qt.LeftButton)
     QTest.mouseClick(dialog.option_view.option_buttons[card.uid], Qt.LeftButton)
+    assert sent == []
+    assert dialog.isHidden()
+    assert not dialog.isEnabled()
+    assert battle.choice_dialog is None
+    dialog.option_view.confirm(card.uid)
+    qapp.processEvents()
     assert sent == [{"op": "choose", "player": 1, "uid": card.uid}]
     assert battle._awaiting_state
-    assert not cards[0].isEnabled()
-    assert dialog.isHidden()
     assert battle.choice_dialog is None
     assert battle._choice_key is None
     battle._sync_pending_choice()
-    QTest.mouseClick(cards[0], Qt.LeftButton)
     assert len(sent) == 1
     assert battle.choice_dialog is None
 
@@ -554,6 +557,7 @@ def test_online_choice_dialog_receive_error_restores_retry(qapp, db, make_game):
     first_dialog = battle.choice_dialog
     QTest.mouseClick(first_dialog.findChildren(CardWidget)[0], Qt.LeftButton)
     QTest.mouseClick(first_dialog.option_view.option_buttons[card.uid], Qt.LeftButton)
+    qapp.processEvents()
     command = {"op": "choose", "player": 1, "uid": card.uid}
     assert sent == [command]
 
@@ -564,6 +568,7 @@ def test_online_choice_dialog_receive_error_restores_retry(qapp, db, make_game):
     assert not battle._awaiting_state
     QTest.mouseClick(restored.findChildren(CardWidget)[0], Qt.LeftButton)
     QTest.mouseClick(restored.option_view.option_buttons[card.uid], Qt.LeftButton)
+    qapp.processEvents()
     assert sent == [command, command]
     battle.close()
 

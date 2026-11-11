@@ -1696,7 +1696,7 @@ class BattleScene(QGraphicsScene):
             item.text_color = QColor(self.text_color)
             item.update()
         own_hand_uids = {card.uid for card in game.state.players[viewer].hand}
-        if self.phase != "mulligan" or self.mulligan_uid not in own_hand_uids:
+        if self.phase != "mulligan" or center_hand or self.mulligan_uid not in own_hand_uids:
             self.mulligan_uid = None
         for key, item in self.cards.items():
             if key[0] == "hand":

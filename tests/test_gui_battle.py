@@ -1494,6 +1494,135 @@ def test_last_mulligan_reviews_result_before_handoff(qapp, view):
     assert scene_items(view, "hand", player=1)
 
 
+def test_mulligan_review_scale_is_cleared_before_handoff(qapp, view):
+    start(view)
+    scene = view.battle_scene
+    selected_uid = view.game.current.hand[0].uid
+    scene.select_mulligan(selected_uid)
+    assert scene.cards[("hand", selected_uid)].scale() > 1.0
+
+    assert view.ready()
+    assert view._handoff_pending
+    assert scene.mulligan_uid is None
+    assert all(item.scale() == 1.0 for item in scene_items(view, "hand", player=0))
+
+
+def test_choice_dialog_layout_keeps_six_buttons_visible(qapp, db, view):
+    option_ids = [10010161 + index for index in range(6)]
+    for cid in option_ids:
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    view.game._open_field_summon_pick(0, option_ids)
+    view.refresh()
+    dialog = view.choice_dialog
+    dialog.resize(560, 460)
+    qapp.processEvents()
+    choice = dialog.option_view
+
+    for option_id in option_ids:
+        choice.select(option_id)
+        choice.ensureWidgetVisible(choice._wrappers[option_id])
+        qapp.processEvents()
+        button = choice.option_buttons[option_id]
+        button_rect = button.rect()
+        button_rect.moveTo(button.mapTo(choice.viewport(), button.rect().topLeft()))
+        assert not button.isHidden()
+        assert choice.viewport().rect().contains(button_rect)
+
+    choice.select(option_ids[0])
+    qapp.processEvents()
+    selected_card = choice.option_widgets[0]
+    selected_button = choice.option_buttons[option_ids[0]]
+    content_layout = choice.widget().layout()
+    content_margins = content_layout.contentsMargins()
+    column_layout = choice._wrappers[option_ids[0]].layout()
+    assert content_margins.top() <= 4
+    assert column_layout.spacing() == 0
+    scrollbar = choice.horizontalScrollBar()
+    assert scrollbar.maximum() > 0
+    required_view_height = (
+        selected_card.height() + selected_button.height() + column_layout.spacing()
+        + content_margins.top() + content_margins.bottom()
+        + 2 * choice.frameWidth() + scrollbar.sizeHint().height()
+    )
+    assert choice.minimumHeight() >= required_view_height
+
+    dialog_layout = dialog.layout()
+    dialog_margins = dialog_layout.contentsMargins()
+    title = dialog.findChild(QLabel)
+    required_dialog_height = (
+        title.sizeHint().height() + required_view_height + dialog_layout.spacing()
+        + dialog_margins.top() + dialog_margins.bottom()
+    )
+    assert dialog.sizeHint().height() >= required_dialog_height
+
+
+def test_choice_immediate_feedback_defers_one_answer(qapp, db, view, monkeypatch):
+    option_ids = [10010161 + index for index in range(6)]
+    for cid in option_ids:
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    game = view.game
+    game._open_field_summon_pick(0, option_ids)
+    view.refresh()
+    dialog = view.choice_dialog
+    chosen_id = option_ids[2]
+    answers = []
+    real_answer = view.answer_pending
+
+    def record_answer(value):
+        answers.append(value)
+        return real_answer(value)
+
+    monkeypatch.setattr(view, "answer_pending", record_answer)
+    dialog.option_view.select(chosen_id)
+    dialog.option_view.option_buttons[chosen_id].click()
+    assert dialog.isHidden()
+    assert not dialog.isEnabled()
+    assert answers == []
+    assert game.state.pending_choice is not None
+
+    dialog.option_view.confirm(chosen_id)
+    qapp.processEvents()
+    assert answers == [chosen_id]
+    assert [field.card_id for field in game.current.fields] == [chosen_id]
+    assert game.state.pending_choice is None
+    assert view.choice_dialog is None
+
+
+def test_choice_immediate_feedback_restores_invalid_answer(qapp, db, view, monkeypatch):
+    option_ids = [10010161, 10010162]
+    for cid in option_ids:
+        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
+    start(view, mulligan=False)
+    game = view.game
+    game._open_field_summon_pick(0, option_ids)
+    view.refresh()
+    dialog = view.choice_dialog
+    answers = []
+    real_answer = view.answer_pending
+
+    def record_answer(value):
+        answers.append(value)
+        return real_answer(value)
+
+    monkeypatch.setattr(view, "answer_pending", record_answer)
+    invalid_id = 999999
+    dialog._answer(invalid_id)
+    assert dialog.isHidden()
+    assert not dialog.isEnabled()
+    assert answers == []
+    qapp.processEvents()
+
+    assert answers == [invalid_id]
+    assert game.state.pending_choice["options"] == option_ids
+    restored = view.choice_dialog
+    assert restored is not None
+    assert not restored.isHidden()
+    assert restored.isEnabled()
+    assert not view.error_label.isHidden()
+
+
 def test_second_player_mulligan_review_has_no_turn_banner(qapp, view, monkeypatch):
     start(view)
     view.ready()
@@ -2564,6 +2693,7 @@ def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view
     assert cards[2].cdef.id == chosen_id
     QTest.mouseClick(cards[2], Qt.LeftButton)
     QTest.mouseClick(dialog.option_view.option_buttons[chosen_id], Qt.LeftButton)
+    qapp.processEvents()
     assert [field.card_id for field in game.current.fields] == [chosen_id]
     assert game.state.pending_choice is None
     assert dialog.isHidden()
@@ -2606,6 +2736,7 @@ def test_real_yaml_discard_pick_click_draws_three_and_closes(qapp, gdb, view):
 
     QTest.mouseClick(cards[chosen_index], Qt.LeftButton)
     QTest.mouseClick(dialog.option_view.option_buttons[fld.uid], Qt.LeftButton)
+    qapp.processEvents()
     settle(view)
     assert fld in pa.graveyard
     assert len(pa.hand) == hand_before + 1           # 使用 1、弃 1 后抽 3
@@ -2644,6 +2775,7 @@ def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, v
     assert choice._wrappers[first.uid].graphicsEffect() is None
     assert first.uid not in [card.uid for card in game.current.graveyard]
     QTest.mouseClick(choice.option_buttons[first.uid], Qt.LeftButton)
+    qapp.processEvents()
     assert first.uid in [card.uid for card in game.current.graveyard]
     assert game.state.pending_choice["options"] == [second.uid]
     assert first_dialog.isHidden()
@@ -2658,6 +2790,7 @@ def test_discard_pick_choice_dialog_click_maps_uid_and_renews_dialog(qapp, db, v
     assert len(second_cards) == 1
     QTest.mouseClick(second_cards[0], Qt.LeftButton)
     QTest.mouseClick(second_dialog.option_view.option_buttons[second.uid], Qt.LeftButton)
+    qapp.processEvents()
     assert second.uid in [card.uid for card in game.current.graveyard]
     assert game.state.pending_choice is None
     assert second_dialog.isHidden()
@@ -4129,7 +4262,7 @@ def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
     view.refresh()
     dialog = view.choice_dialog
     assert not dialog.option_view.styleSheet()
-    assert dialog.option_view._wrappers[first.uid].layout().spacing() == 2
+    assert dialog.option_view._wrappers[first.uid].layout().spacing() == 0
     assert dialog.width() <= 720
 
 

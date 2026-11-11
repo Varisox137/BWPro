@@ -63,6 +63,7 @@ class ChoiceDialog(QDialog):
         self.setWindowTitle("结算选择")
         self.setModal(False)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 12)
         kind = pending.get("kind")
         player = view.game.state.players[pending["player"]]
         titles = {
@@ -83,7 +84,6 @@ class ChoiceDialog(QDialog):
         self.option_view = CardChoiceView(options, db=view.db)
         self.option_view.chosen.connect(self._answer)
         self.option_view.detail_clicked.connect(view.show_card_detail)
-        self.option_view.setMinimumHeight(450)
         layout.addWidget(self.option_view, 1)
         if kind == "mulligan_pick":
             done = QPushButton("结束调度")
@@ -96,10 +96,13 @@ class ChoiceDialog(QDialog):
             return
         self.setEnabled(False)
         view = self.parent()
-        if view.answer_pending(value):
-            view._close_choice_dialog(self)
-        else:
-            self.setEnabled(True)
+        view._close_choice_dialog(self)
+
+        def answer() -> None:
+            if not view.answer_pending(value):
+                view._sync_pending_choice()
+
+        QTimer.singleShot(0, answer)
 
     def reject(self) -> None:
         pass
