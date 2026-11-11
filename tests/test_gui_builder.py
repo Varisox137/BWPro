@@ -722,6 +722,77 @@ def test_entity_pixmap_renders_combat_power_and_shield(qapp, tmp_path):
     assert normal.toImage() != combat.toImage()
 
 
+@pytest.mark.parametrize(("field", "value"), (("health", -2), ("power", -1)))
+def test_entity_negative_health_render(qapp, tmp_path, field, value):
+    """动画快照的负数值只钳制显示，不回写事件快照。"""
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=1, eff_power=3,
+                            combat_power=0, health=0, shield=0, ext={})
+    snapshot = dict(power=3, health=0, max_health=4, combat_power=0, shield=0,
+                    defeated=True, countdown=None, revive_countdown=3,
+                    revive_pending=False)
+    snapshot[field] = value
+    original = dict(snapshot)
+    pixmap = cardart.entity_pixmap(
+        shiki, database, library_dir=tmp_path / "empty", snapshot=snapshot)
+    assert pixmap is not None and not pixmap.isNull()
+    assert snapshot == original
+
+
+def test_entity_revive_zero_render(qapp, tmp_path):
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=1, eff_power=3,
+                            combat_power=0, health=0, shield=0, ext={})
+    zero = cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "empty", snapshot={
+        "power": 3, "health": 0, "max_health": 4, "combat_power": 0, "shield": 0,
+        "defeated": True, "countdown": None, "revive_countdown": 0,
+        "revive_pending": True,
+    })
+    assert zero is not None and not zero.isNull()
+
+
+def test_shikigami_evolve_circle_render(qapp, tmp_path, monkeypatch):
+    from client.gui import cardart
+    from bwpdiy.render.assets import AssetLibrary
+
+    circle = portrait.bwpdiy_root() / "assets" / "levels" / "evolve_circle.png"
+    assert circle.is_file()
+    calls = []
+    original_star = AssetLibrary.level_star
+    original_circle = AssetLibrary.level_evolve_circle
+
+    def level_star(self):
+        calls.append("star")
+        return original_star(self)
+
+    def level_evolve_circle(self):
+        calls.append("circle")
+        return original_circle(self)
+
+    monkeypatch.setattr(AssetLibrary, "level_star", level_star)
+    monkeypatch.setattr(AssetLibrary, "level_evolve_circle", level_evolve_circle)
+    definition = factories.shiki(100101, power=3, health=4)
+    awaken = factories.card(10010107, subtype="awaken")
+    database = factories.db_of([definition], [awaken])
+    shiki = SimpleNamespace(id=100101, awakened=awaken.id, level=2, faction="苍叶",
+                            perm_power=0, perm_health=0, eff_power=3, health=4)
+    cardart.clear_cardart_caches()
+    try:
+        pixmap = cardart.shikigami_pixmap(
+            shiki, database, seat=1, library_dir=tmp_path / "empty",
+            cache_dir=tmp_path / "cache")
+        assert pixmap is not None and not pixmap.isNull()
+        assert "star" in calls and "circle" in calls
+    finally:
+        cardart.clear_cardart_caches()
+
+
 def test_portrait_library_success_uses_renderer(qapp, tmp_path, monkeypatch):
     image_path = _external_library(
         tmp_path,

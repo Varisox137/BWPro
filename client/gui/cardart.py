@@ -780,6 +780,11 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   disk_cache: bool = False, show_defeated_countdown: bool = True,
                   snapshot: dict | None = None) -> QPixmap | None:
     """以 BWPDIY render_entity 绘制对局小卡；snapshot 固定动画时点的数值。"""
+    snapshot = dict(snapshot or {})
+    for key in ("power", "health"):
+        value = snapshot.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            snapshot[key] = max(0, value)
     path = None
     try:
         awakened = shiki.awakened is not None

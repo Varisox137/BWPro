@@ -4276,6 +4276,28 @@ def test_combat_visual_defeat_snapshot(qapp, view, monkeypatch):
     assert not scene._move_animations
 
 
+def test_revive_zero_render_animation_chain(qapp, view):
+    """倒计时归零到复活的 200ms 过渡帧始终使用真实小卡，不掉到文字兜底。"""
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    item = scene.cards[("shiki", 0, 0)]
+    expected_size = item.size
+    zero = dict(power=3, health=0, max_health=4, combat_power=0, shield=0,
+                defeated=True, countdown=None, revive_countdown=0,
+                revive_pending=True)
+    revived = dict(zero, health=4, defeated=False, revive_pending=False)
+    for kind, snapshot in (("countdown", zero), ("revive", revived)):
+        scene.play_visual_event({"k": "v", "v": kind, "p": 0, "s": 0, "r": snapshot})
+        animation = scene._visual_animations[-1]
+        assert animation.duration() == 200
+        assert item.pixmap is not None and not item.pixmap.isNull()
+        assert item.size == expected_size
+        animation.setCurrentTime(animation.duration())
+        qapp.processEvents()
+        assert item.pixmap is not None and not item.pixmap.isNull()
+        assert item.size == expected_size
+
+
 def test_parallel_heal_has_following_parallel_refresh_phase(qapp, db, view):
     cid = 10010156
     db.cards[cid] = F.card(cid, token=True, steps=[
