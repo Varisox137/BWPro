@@ -20,8 +20,8 @@ from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
 from client.gui.loading import LoadingIndicator
 from client.gui.portrait import bwpdiy_root
 from client.gui.ui_assets import (
-    cardback_pixmap, damage_number_pixmap, dice_face, heal_number_pixmap,
-    load_gui_settings, turn_pixmap, ui_pixmap,
+    cardback_pixmap, damage_number_pixmap, dice_face, empty_deck_pixmap,
+    heal_number_pixmap, load_gui_settings, turn_pixmap, ui_pixmap,
 )
 from core import targets
 from core.model import Ref
@@ -79,6 +79,18 @@ def combat_position(scene_width: int, top: bool) -> QPointF:
     return QPointF(646 + (scene_width - SCENE_WIDTH) / 2, 220 if top else 460)
 
 
+def deck_back_layout(player: int, index: int, viewer: int,
+                     scene_width: float = SCENE_WIDTH):
+    top = player != viewer
+    position_index = index if top else 2 - index
+    position = QPointF(
+        scene_width - 274 + position_index * 22,
+        (170 + index * 40) if top
+        else (SCENE_HEIGHT - 170 - DECK_BACK_SIZE.height() - (2 - index) * 40))
+    rotation = 15 + position_index * 10
+    return position, (rotation if top else -rotation) + 180, 20 + index if top else 22 - index
+
+
 def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
                      scene_width: float = SCENE_WIDTH) -> dict[tuple, QPointF]:
     extra = scene_width - SCENE_WIDTH
@@ -108,11 +120,8 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         top = pi != viewer
         positions[("player", pi)] = QPointF(12, 4 if top else 766)
         for index in range(3):
-            fan_index = 2 - index if top else index
-            positions[("deck_back", pi, index)] = QPointF(
-                scene_width - 274 + fan_index * 22,
-                (170 + index * 40) if top
-                else (SCENE_HEIGHT - 170 - DECK_BACK_SIZE.height() - (2 - index) * 40))
+            positions[("deck_back", pi, index)] = deck_back_layout(
+                pi, index, viewer, scene_width)[0]
     if game is None:
         return positions
 
@@ -653,6 +662,23 @@ class BattleScene(QGraphicsScene):
         for item in (self.banner_item, self.loading_item, *self.usage_labels):
             item.setDefaultTextColor(QColor(color))
 
+    def _sync_deck_back(self, key: tuple, back: BattleCardItem) -> None:
+        player_index = key[1]
+        player = self.game.state.players[player_index]
+        if player.deck:
+            side = "enemy" if player_index != self.viewer else "own"
+            pixmap = cardback_pixmap(side, landscape=True)
+        else:
+            pixmap = empty_deck_pixmap(
+                player.ext.get("deck_out_burn") is not None, landscape=True)
+        back.set_art(pixmap.transformed(QTransform().rotate(180), Qt.SmoothTransformation))
+        position, rotation, z_value = deck_back_layout(
+            player_index, key[2], self.viewer, self.layout_width)
+        back.setPos(position + QPointF(0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
+        back.setRotation(rotation)
+        back.setZValue(z_value)
+        back.update()
+
     def set_viewport_size(self, width: int, height: int) -> None:
         """宽窗口扩展场景横向布局，避免等比缩放留下两侧信箱边。"""
         layout_width = max(SCENE_WIDTH, SCENE_HEIGHT * width / height)
@@ -669,7 +695,7 @@ class BattleScene(QGraphicsScene):
             if key in positions:
                 item.setPos(positions[key])
         for key, item in self.deck_backs.items():
-            item.setPos(positions[key])
+            self._sync_deck_back(key, item)
         for item in (self.banner_item, self.banner_pixmap_item, self.loading_item):
             if item.isVisible():
                 rect = item.boundingRect()
@@ -757,9 +783,7 @@ class BattleScene(QGraphicsScene):
     def refresh_cardbacks(self) -> None:
         """设置页保存卡背后立即刷新当前对局，无需重建场景。"""
         for key, item in self.deck_backs.items():
-            item.set_art(cardback_pixmap(
-                "enemy" if key[1] != self.viewer else "own", landscape=True))
-            item.update()
+            self._sync_deck_back(key, item)
         for key, item in self.cards.items():
             if key[0] == "hand" and not item.revealed:
                 item.set_art(cardback_pixmap(
@@ -1480,10 +1504,15 @@ class BattleScene(QGraphicsScene):
             self.removeItem(item)
 
         for pi, player in enumerate(game.state.players):
+            count = min(3, len(player.deck))
+            first = 0 if pi == viewer else 3 - count
+            visible_indexes = set(range(first, first + count))
+            if not player.deck:
+                visible_indexes = {0 if pi == viewer else 2}
             for index in range(3):
                 deck_key = ("deck_back", pi, index)
                 back = self.deck_backs.get(deck_key)
-                if not player.deck:
+                if index not in visible_indexes:
                     if back is not None:
                         self.removeItem(back)
                         del self.deck_backs[deck_key]
@@ -1495,15 +1524,7 @@ class BattleScene(QGraphicsScene):
                     back.setTransformOriginPoint(back.boundingRect().center())
                     self.addItem(back)
                     self.deck_backs[deck_key] = back
-                back.set_art(cardback_pixmap(
-                    "enemy" if pi != viewer else "own", landscape=True))
-                back.setPos(positions[deck_key] + QPointF(
-                    0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
-                fan_index = index if pi != viewer else 2 - index
-                rotation = 15 + fan_index * 10
-                back.setRotation(rotation if pi != viewer else -rotation)
-                back.setZValue(20 + index if pi != viewer else 22 - index)
-                back.update()
+                self._sync_deck_back(deck_key, back)
             ref = Ref(player=pi)
             key = ("player", pi)
             item = self.cards.get(key)

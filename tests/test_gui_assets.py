@@ -48,6 +48,7 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
     names = named_cardbacks(root)
     assert "月明风清" in names
     assert "f8694068" not in names
+    assert not any(name.startswith("empty_deck_") for name in names)
     path = tmp_path / "gui.json"
     assert load_gui_settings(path) == {
         "own_cardback": "月明风清", "enemy_cardback": "月明风清",
@@ -57,6 +58,20 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
     }
     save_gui_settings({"own_cardback": "三途花境", "enemy_cardback": "月明风清"}, path)
     assert load_gui_settings(path)["own_cardback"] == "三途花境"
+
+
+def test_empty_deck_pixmap_crops_sidebar_and_uses_cardback_orientation(qapp):
+    from PySide6.QtCore import QRect, Qt
+    from PySide6.QtGui import QTransform
+    from client.gui import ui_assets
+
+    for light in (True, False):
+        name = "light" if light else "dark"
+        source = QPixmap(str(bwpdiy_root() / "assets" / "cardbacks" / f"empty_deck_{name}.png"))
+        cropped = source.copy(QRect(120, 0, 272, 512))
+        assert ui_assets.empty_deck_pixmap(light).toImage() == cropped.toImage()
+        expected = cropped.transformed(QTransform().rotate(-90), Qt.SmoothTransformation)
+        assert ui_assets.empty_deck_pixmap(light, landscape=True).toImage() == expected.toImage()
 
 
 def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypatch):

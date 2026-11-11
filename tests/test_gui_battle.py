@@ -1791,29 +1791,66 @@ def test_hotseat_new_games_use_random_seeds(qapp, view, monkeypatch):
     assert openings[0] != openings[1]
 
 
-def test_deck_backs_are_symmetric_horizontal_cards_and_hide_when_empty(qapp, view):
-    from client.gui.battle_scene import DECK_BACK_SIZE
+def assert_deck_count_layout(scene, own_count, enemy_count):
+    from PySide6.QtGui import QTransform
+    from client.gui.battle_scene import DECK_BACK_SIZE, layout_positions
+    from client.gui.ui_assets import cardback_pixmap
 
-    assert DECK_BACK_SIZE.width() >= 130 and DECK_BACK_SIZE.height() >= 90
+    own_keys = [("deck_back", 0, index) for index in range(min(3, own_count))]
+    enemy_keys = [("deck_back", 1, index)
+                  for index in range(3 - min(3, enemy_count), 3)]
+    if own_count == 0:
+        own_keys = [("deck_back", 0, 0)]
+    if enemy_count == 0:
+        enemy_keys = [("deck_back", 1, 2)]
+    assert sorted(key for key in scene.deck_backs if key[1] == 0) == own_keys
+    assert sorted(key for key in scene.deck_backs if key[1] == 1) == enemy_keys
+
+    positions = layout_positions(scene.game, scene.viewer,
+                                 scene_width=scene.layout_width)
+    for player, count in ((0, own_count), (1, enemy_count)):
+        for index in range(3):
+            key = ("deck_back", player, index)
+            if key not in scene.deck_backs:
+                continue
+            item = scene.deck_backs[key]
+            side = "own" if player == scene.viewer else "enemy"
+            if count == 0:
+                from client.gui.ui_assets import empty_deck_pixmap
+                light = scene.game.state.players[player].ext.get("deck_out_burn") is not None
+                expected = empty_deck_pixmap(light, landscape=True)
+            else:
+                expected = cardback_pixmap(side, landscape=True)
+            expected = expected.transformed(QTransform().rotate(180), Qt.SmoothTransformation)
+            assert item.pixmap.toImage() == expected.toImage()
+            assert item.pos() == positions[key] + QPointF(
+                0, (DECK_BACK_SIZE.height() - item.size.height()) / 2)
+            expected_rotations = (145, 155, 165) if player == scene.viewer else (195, 205, 215)
+            assert item.rotation() == expected_rotations[index]
+            assert item.zValue() == (22 - index if player == scene.viewer else 20 + index)
+
+
+@pytest.mark.parametrize("own_count", (3, 2, 1, 0))
+@pytest.mark.parametrize("enemy_count", (3, 2, 1, 0))
+def test_deck_count_empty_deck_settings_and_resize_share_layout(qapp, view,
+                                                                own_count, enemy_count):
     start(view, mulligan=False)
     scene = view.battle_scene
-    assert len(getattr(scene, "deck_backs", {})) == 6
-    own = [scene.deck_backs[("deck_back", 0, index)] for index in range(3)]
-    enemy = [scene.deck_backs[("deck_back", 1, index)] for index in range(3)]
-    assert all(item.size.width() > item.size.height() for item in own + enemy)
-    assert len({item.x() for item in own}) == 3
-    assert len({item.y() for item in own}) == 3
-    assert len({item.rotation() for item in own}) == 3
-    for index, lower in enumerate(own):
-        upper = enemy[2 - index]
-        assert lower.x() == upper.x()
-        assert lower.y() + upper.y() + lower.size.height() == 900
-        assert lower.rotation() == -upper.rotation()
-    view.game.state.players[0].deck.clear()
+    for player, count in enumerate((own_count, enemy_count)):
+        state = view.game.state.players[player]
+        state.deck[:] = state.deck[:count]
+        if player == 0:
+            state.ext["deck_out_burn"] = 1
+        else:
+            state.ext.pop("deck_out_burn", None)
     view.refresh()
     settle(view)
-    assert not any(key[0] == "deck_back" and key[1] == 0 for key in scene.deck_backs)
-    assert any(key[0] == "deck_back" and key[1] == 1 for key in scene.deck_backs)
+    assert_deck_count_layout(scene, own_count, enemy_count)
+
+    scene.refresh_cardbacks()
+    assert_deck_count_layout(scene, own_count, enemy_count)
+    scene.set_viewport_size(2000, 900)
+    assert_deck_count_layout(scene, own_count, enemy_count)
 
 
 def test_shiki_normal_status_only_shows_core_fields(qapp, db, view):
@@ -3004,19 +3041,21 @@ def test_card_use_animation_uses_integer_height_and_keeps_fallback_art(
     assert not item.pixmap.isNull()
 
 
-def test_hand_animation_hides_pending_draw_and_uses_deck_origin(qapp, view):
+@pytest.mark.parametrize("player,top_index", ((0, 0), (1, 2)))
+def test_hand_animation_hides_pending_draw_and_uses_deck_origin(qapp, view,
+                                                                player, top_index):
     start(view, mulligan=False)
     scene = view.battle_scene
-    deck = max((back for key, back in scene.deck_backs.items()
-                if key[1] == view.viewer), key=lambda back: back.zValue())
-    source = QPointF(deck.pos())
+    owner = view.game.state.players[player]
+    source_key = ("deck_back", player, top_index)
     before = len(view.game.state.timeline)
-    card = view.game.current.deck[0]
-    view.game.current.deck[:] = [card]
-    view.game.draw_cards(view.viewer, 1)
+    card = owner.deck[0]
+    owner.deck[:] = [card]
+    view.game.draw_cards(player, 1)
     entries = view.game.state.timeline[before:]
     scene.sync_state(view.game, view.viewer, {}, True,
                      pending_entries=entries, play_pending=False)
+    source = QPointF(scene.deck_backs[source_key].pos())
     item = scene.cards[("hand", card.uid)]
     target = QPointF(item.pos())
 
@@ -3474,6 +3513,7 @@ def test_battle_uses_configured_cardbacks_and_word_art_controls(qapp, view):
 
 
 def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeypatch):
+    from PySide6.QtGui import QTransform
     from client.gui.settings import SettingsView
     from client.gui.ui_assets import cardback_pixmap, load_gui_settings, unnamed_misc_images
 
@@ -3499,7 +3539,9 @@ def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeyp
     settings = seen["dialog"].findChild(SettingsView)
     settings.choose_cardback("own_cardback")
     deck = view.battle_scene.deck_backs[("deck_back", view.viewer, 0)]
-    assert deck.pixmap.toImage() == cardback_pixmap("own", landscape=True).toImage()
+    expected = cardback_pixmap("own", landscape=True).transformed(
+        QTransform().rotate(180), Qt.SmoothTransformation)
+    assert deck.pixmap.toImage() == expected.toImage()
     assert settings.cardback_buttons["own_cardback"].text() == "三途花境"
 
     default_icon = view.end_turn_button.icon().pixmap(104, 104).toImage()
@@ -4091,7 +4133,7 @@ def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
     assert dialog.width() <= 720
 
 
-def test_deck_backs_match_reference_size_and_orientation(qapp, view):
+def test_deck_orientation_matches_legacy_up_left_rendering(qapp, view):
     from PySide6.QtGui import QTransform
     from client.gui.battle_scene import DECK_BACK_SIZE
     from client.gui.ui_assets import cardback_pixmap
@@ -4102,15 +4144,21 @@ def test_deck_backs_match_reference_size_and_orientation(qapp, view):
              for index in range(3)]
     own = [view.battle_scene.deck_backs[("deck_back", 0, index)]
            for index in range(3)]
-    expected = cardback_pixmap("enemy").transformed(
-        QTransform().rotate(-90), Qt.SmoothTransformation)
-    assert enemy[0].pixmap.toImage() == expected.toImage()
-    assert [item.rotation() for item in enemy] == [15, 25, 35]
-    assert [item.rotation() for item in own] == [-35, -25, -15]
-    assert [item.rotation() for item in own] == [-enemy[2-i].rotation() for i in range(3)]
+    assert [item.rotation() for item in enemy] == [195, 205, 215]
+    assert [item.rotation() for item in own] == [145, 155, 165]
+    assert [item.rotation() for item in own] == [360 - enemy[2-i].rotation()
+                                                for i in range(3)]
+    for side, items, legacy_rotations in (
+            ("enemy", enemy, (15, 25, 35)), ("own", own, (-35, -25, -15))):
+        original = cardback_pixmap(side, landscape=True)
+        for item, legacy_rotation in zip(items, legacy_rotations):
+            assert item.rotation() == legacy_rotation + 180
+            uncompensated = item.pixmap.transformed(
+                QTransform().rotate(180), Qt.SmoothTransformation)
+            assert uncompensated.toImage() == original.toImage()
     assert own[1].pos() - own[0].pos() == own[2].pos() - own[1].pos()
-    assert enemy[0].x() > enemy[1].x() > enemy[2].x()
-    assert own[0].x() < own[1].x() < own[2].x()
+    assert enemy[0].x() < enemy[1].x() < enemy[2].x()
+    assert own[0].x() > own[1].x() > own[2].x()
     assert [item.y() for item in enemy] == sorted(item.y() for item in enemy)
     assert [item.y() for item in own] == sorted(item.y() for item in own)
     assert 120 <= enemy[0].y() < 200

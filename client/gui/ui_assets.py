@@ -58,7 +58,8 @@ def named_cardbacks(root: Path | None = None) -> list[str]:
     if not directory.is_dir():
         return []
     return sorted(path.stem for path in directory.glob("*.png")
-                  if not _HASH_NAME.fullmatch(path.stem))
+                  if not _HASH_NAME.fullmatch(path.stem)
+                  and not path.stem.startswith("empty_deck_"))
 
 
 def gui_settings_path() -> Path:
@@ -181,6 +182,24 @@ def cardback_pixmap(side: str, *, root: Path | None = None,
     if not path.is_file():
         path = assets_root(root) / "cardbacks" / f"{DEFAULT_CARDBACK}.png"
     return _cached_cardback(str(path), path.stat().st_mtime_ns, landscape)
+
+
+@lru_cache(maxsize=4)
+def _cached_empty_deck(path: str, mtime_ns: int, landscape: bool) -> QPixmap:
+    del mtime_ns
+    pixmap = QPixmap(path).copy(QRect(120, 0, 272, 512))
+    if landscape:
+        pixmap = pixmap.transformed(QTransform().rotate(-90), Qt.SmoothTransformation)
+    return pixmap
+
+
+def empty_deck_pixmap(light: bool, *, root: Path | None = None,
+                      landscape: bool = False) -> QPixmap:
+    name = "light" if light else "dark"
+    path = assets_root(root) / "cardbacks" / f"empty_deck_{name}.png"
+    if not path.is_file():
+        return QPixmap()
+    return _cached_empty_deck(str(path), path.stat().st_mtime_ns, landscape)
 
 
 def _signed_number_pixmap(prefix: str, amount: int, max_width: int | None = None, *,
