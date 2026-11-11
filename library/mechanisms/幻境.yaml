@@ -1,0 +1,6 @@
+name: 幻境
+frame: skill
+text: '[[幻境]]处于[[幻境]]区将持续生效。若牌手受到伤害，[[幻境]]区排序在第一位的耐久将受到等量的伤害。[[幻境]]的耐久为0时，将被消灭。'
+badge: null
+chars_per_line: 12
+version_date: '20200624'

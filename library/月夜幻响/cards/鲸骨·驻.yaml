@@ -1,0 +1,15 @@
+type: 战斗
+name: 鲸骨·驻
+level: 1
+rarity: R
+description: ''
+shikigami: 久次良
+power+: 0
+shield+: 2
+version_date: '20200624'
+id: '10030601'
+artwork:
+  images:
+  - path: 10030601.png
+    scale: 0.711
+    offset_y: -76

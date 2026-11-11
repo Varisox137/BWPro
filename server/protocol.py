@@ -31,8 +31,11 @@ def parse_client_message(raw: str | bytes) -> dict[str, Any]:
         raise ValueError(f"消息不是合法 JSON（{e}）") from e
     if not isinstance(msg, dict) or msg.get("type") not in CLIENT_TYPES:
         raise ValueError("未知消息类型")
-    if msg["type"] == "cmd" and not isinstance(msg.get("cmd"), dict):
-        raise ValueError("cmd 消息缺少 cmd 对象")
+    if msg["type"] == "cmd":
+        if not isinstance(msg.get("cmd"), dict):
+            raise ValueError("cmd 消息缺少 cmd 对象")
+        if not isinstance(msg["cmd"].get("op"), str) or not msg["cmd"]["op"]:
+            raise ValueError("cmd.op 须为非空字符串")
     return msg
 
 

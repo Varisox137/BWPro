@@ -1,0 +1,13 @@
+type: 法术
+name: 妖怪屋的醒转
+level: 2
+rarity: R
+description: 移除一个己方角色上的#hj或敌方角色上的#pj，召唤一个「[[妖怪屋]]」并使其#ll和#sm等同于被移除的#hj或#pj。
+shikigami: 天井下
+version_date: '20200624'
+id: '10030904'
+artwork:
+  images:
+  - path: 10030904.png
+    scale: 0.747
+    offset_y: -75

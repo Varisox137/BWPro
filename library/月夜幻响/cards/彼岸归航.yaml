@@ -1,0 +1,14 @@
+type: 幻境
+name: 彼岸归航
+level: 3
+rarity: SSR
+description: 你可以将牌库顶的牌视同手牌使用。当你以此法使用牌时，你受到2点伤害。你牌库顶等级为1的牌不消耗鬼火。
+shikigami: 彼岸花
+durability: 10
+version_date: '20200624'
+id: '10030508'
+artwork:
+  images:
+  - path: 10030508.png
+    scale: 0.711
+    offset_y: -70

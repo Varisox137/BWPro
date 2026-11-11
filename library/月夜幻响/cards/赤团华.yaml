@@ -1,0 +1,15 @@
+type: 形态
+name: 赤团华
+level: 1
+rarity: SR
+description: 每当己方式神攻击时，彼岸花对你造成1点伤害。
+shikigami: 彼岸花
+power: 4
+health: 5
+version_date: '20200624'
+id: '10030501'
+artwork:
+  images:
+  - path: 10030501.png
+    scale: 0.711
+    offset_y: -77

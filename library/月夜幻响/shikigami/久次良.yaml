@@ -1,0 +1,17 @@
+type: 式神
+name: 久次良
+faction: 紫岩
+power: 2
+health: 6
+description: 久次良有#hj时获得1#ll。
+id: '100306'
+version_date: '20200624'
+artwork:
+  images:
+  - path: 100306.png
+    scale: 0.711
+    offset_y: -78
+portrait:
+  scale: 4.324
+  offset_x: 2
+  offset_y: 65

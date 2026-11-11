@@ -1,0 +1,13 @@
+type: 法术
+name: 忘忧的旋律
+level: 3
+rarity: SSR
+description: 选择敌方式神的一张牌名，将其手牌和牌库中所有同名牌移除。
+shikigami: 孟婆
+version_date: '20200624'
+id: '10030808'
+artwork:
+  images:
+  - path: 10030808.png
+    scale: 0.747
+    offset_y: -75

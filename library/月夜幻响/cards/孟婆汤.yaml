@@ -1,0 +1,13 @@
+type: 法术
+name: 孟婆汤
+level: 1
+rarity: R
+description: 选择一个牌手，将他牌库底三张牌移除。
+shikigami: 孟婆
+version_date: '20200624'
+id: '10030801'
+artwork:
+  images:
+  - path: 10030801.png
+    scale: 0.747
+    offset_y: -72

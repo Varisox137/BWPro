@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·天井下
+level: 3
+rarity: SSR
+description: 将你手牌中的「[[妖怪屋·灵力]]」转化为「[[妖怪屋·灵力之泉]]」。[[觉醒]]：己方回合开始或结束时，若你手牌中没有「[[妖怪屋·灵力之泉]]」，将其置入手牌。
+shikigami: 天井下
+version_date: '20200624'
+id: '10030908'
+evolve: true
+power+: 2
+health+: 2
+artwork:
+  images:
+  - path: 10030908.png
+    scale: 0.747
+    offset_y: -70

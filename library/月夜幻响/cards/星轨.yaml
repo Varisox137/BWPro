@@ -1,0 +1,14 @@
+type: 幻境
+name: 星轨
+level: 1
+rarity: R
+description: '[[贯通]]。己方回合开始时，[[投射]]：造成等同于它#nj的伤害，然后自毁。'
+shikigami: 荒
+durability: 4
+version_date: '20200624'
+id: '10030401'
+artwork:
+  images:
+  - path: 10030401.png
+    scale: 0.711
+    offset_y: -72

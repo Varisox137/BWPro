@@ -114,10 +114,10 @@ def gdb():
     return db
 
 
-def _yc_game_20191212(team=YC_TEAM, levels=None):
+def _yc_game_20191212(gdb, team=YC_TEAM, levels=None):
     """20191212 环境对局：萤草基础能力旧版（形态牌恒[瞬发]+使用时抽牌，不要求
     萤草已结附形态）；at_date 从 raw 重建会丢测试注册卡，重新登记形态 A/B。"""
-    db = CardDatabase.load().at_date(20191212)
+    db = gdb.at_date(20191212)
     db.cards[YC_FORM_A] = _yc_form(YC_FORM_A, "测试形态·花")
     db.cards[YC_FORM_B] = _yc_form(YC_FORM_B, "测试形态·叶", steps=[
         Step(op="gain_shield", amount=2, target=TargetSpec(kind="self"))])
@@ -1380,10 +1380,10 @@ def test_player_fragile_not_triggered(real_game):
 # 队伍固定 [萤草, 白狼, 兵俑, 妖刀姬]。
 # ==========================================================================
 
-def test_form_fast_and_draw_on_form_play(real_game):
+def test_form_fast_and_draw_on_form_play(gdb):
     """20191212 版：萤草的形态牌获得[瞬发]（能力光环）且使用时抽一张牌——同形态
     再结附也触发（不要求萤草结附形态）。"""
-    g, pa, pb = _yc_game_20191212(levels={IDX: 1, 1: 1})
+    g, pa, pb = _yc_game_20191212(gdb, levels={IDX: 1, 1: 1})
     hand, orb = len(pa.hand), pa.orb
     play(g, 0, YC_FORM_A)                     # 光环瞬发：首张免费；抽 1
     assert pa.orb == orb and len(pa.hand) == hand + 1
@@ -1614,14 +1614,15 @@ def test_fragile_combat_real_card_gain(real_game, team, cid, amount):
     assert any(f"获得 {amount} 点破甲" in line for line in g.state.settle_log)
 
 
-def test_fragile_combat_armor_offset_and_20191212(real_game):
+def test_fragile_combat_armor_offset_and_20191212(gdb):
     """怪力获得破甲先抵消已有护甲；20191212 版本没有负护甲，不产生破甲。"""
-    g, pa, _pb = _game(real_game, ST_TEAM)
+    g = F.mk_game(gdb, team=ST_TEAM)
+    pa, _pb = F.battle_setup(g)
     pa.shikigami[IDX].shield = 2
     play(g, 0, GL)
     assert pa.shikigami[IDX].shield == 1
 
-    old_db = CardDatabase.load().at_date(20191212)
+    old_db = gdb.at_date(20191212)
     old_game = F.mk_game(old_db, team=ST_TEAM)
     old_pa, _old_pb = F.battle_setup(old_game)
     play(old_game, 0, GL)
@@ -2565,9 +2566,9 @@ def test_choose_target_damage_with_boost_shield(real_game):
     assert pa.assault_boosts == [{"power": 0, "shield": 2}]
 
 
-def test_form_enter_turn_start_heal_all_shikigami(real_game):
+def test_form_enter_turn_start_heal_all_shikigami(gdb):
     """治愈之光（20191212 环境）：[瞬发]进场与己方回合开始时为己方所有式神恢复 2 点生命。"""
-    g, pa, pb = _yc_game_20191212(levels={0: 1, 1: 1})
+    g, pa, pb = _yc_game_20191212(gdb, levels={0: 1, 1: 1})
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, None)   # 白狼 4→1
     orb = pa.orb
     play(g, 0, 10012702)
@@ -2631,10 +2632,10 @@ def test_awaken_form_aura_wildcard(real_game):
     assert pa.orb == orb and len(pa.hand) == hand + 1
 
 
-def test_form_gain_orb_and_generate_three_forms(real_game):
+def test_form_gain_orb_and_generate_three_forms(gdb):
     """安魂之光（20191212 环境）：进场获得 1 鬼火（瞬发由能力光环授予）；
     虹彩：三种形态牌置入手牌。"""
-    g, pa, pb = _yc_game_20191212(levels={0: 3})
+    g, pa, pb = _yc_game_20191212(gdb, levels={0: 3})
     pa.health = 25
     orb = pa.orb
     play(g, 0, 10012706)                      # 光环瞬发首张免费 + 1 鬼火（不再回血）

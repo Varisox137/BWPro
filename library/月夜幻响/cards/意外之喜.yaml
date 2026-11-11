@@ -1,0 +1,13 @@
+type: 法术
+name: 意外之喜
+level: 1
+rarity: R
+description: 抽两张牌，弃一张牌。[[增强]]：若敌方牌库张数≤16，此牌获得[[瞬发]]。
+shikigami: 孟婆
+version_date: '20200624'
+id: '10030802'
+artwork:
+  images:
+  - path: 10030802.png
+    scale: 0.747
+    offset_y: -68

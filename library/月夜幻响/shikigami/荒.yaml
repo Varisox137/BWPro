@@ -1,0 +1,17 @@
+type: 式神
+name: 荒
+faction: 青岚
+power: 2
+health: 6
+description: 每当荒造成战斗伤害时，使己方所有幻境获得1#nj。
+id: '100304'
+version_date: '20200624'
+artwork:
+  images:
+  - path: 100304.png
+    scale: 0.711
+    offset_y: -70
+portrait:
+  scale: 3.735
+  offset_x: -22
+  offset_y: 74

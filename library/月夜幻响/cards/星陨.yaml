@@ -1,0 +1,14 @@
+type: 幻境
+name: 星陨
+level: 2
+rarity: R
+description: 己方回合开始时，随机对一个敌方角色造成2点伤害，重复#nj次，然后自毁。
+shikigami: 荒
+durability: 4
+version_date: '20200624'
+id: '10030404'
+artwork:
+  images:
+  - path: 10030404.png
+    scale: 0.711
+    offset_y: -84

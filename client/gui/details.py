@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout,
 )
 
-from client import cli
 from client.gui.cardart import seat_level_color, shikigami_pixmap
 from client.gui.mechanisms import mechanism_panel, shikigami_mechanisms
 from client.gui.widgets import DETAIL_COLUMN_SPACING, CardWidget, polish_dialog_buttons
@@ -83,6 +82,16 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
     return text
 
 
+def shiki_detail_suffix(game, ref) -> str:
+    player = game.state.players[ref.player]
+    shiki = player.shikigami[ref.shikigami]
+    if shiki.id == 100117:
+        return f"（本局游戏已投出{player.ext.get('dice_six_count', 0)}次6点）"
+    if shiki.id == 100404:
+        return f"（本局游戏已完成{player.quest_counts.get('quest_used', 0)}次委托）"
+    return ""
+
+
 class ShikigamiDetailDialog(QDialog):
     """基础/觉醒主卡、同尺寸形态、额外状态与机制说明。"""
 
@@ -112,7 +121,11 @@ class ShikigamiDetailDialog(QDialog):
         self.detail_top = cards
         self.column_names = ["main"]
 
-        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, seat=ref.shikigami, height=512)
+        suffix = shiki_detail_suffix(game, ref)
+        art_kwargs = {"seat": ref.shikigami, "height": 512}
+        if suffix:
+            art_kwargs["description_suffix"] = suffix
+        self.main_art_pixmap = shikigami_pixmap(shiki, game.db, **art_kwargs)
         self.main_art_label = QLabel()
         self.main_art_label.setAlignment(Qt.AlignCenter)
         if self.main_art_pixmap is not None and not self.main_art_pixmap.isNull():

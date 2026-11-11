@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·荒
+level: 2
+rarity: SR
+description: '[[觉醒]]：每当荒造成战斗伤害时，使己方所有幻境获得1#nj。每当你使用幻境牌时，荒获得[[迅捷]]。'
+shikigami: 荒
+version_date: '20200624'
+id: '10030406'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10030406.png
+    scale: 0.747
+    offset_y: -68

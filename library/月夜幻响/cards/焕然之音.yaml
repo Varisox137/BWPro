@@ -1,0 +1,15 @@
+type: 形态
+name: 焕然之音
+level: 2
+rarity: SR
+description: 己方回合结束时，若你有式神的#hj≥5，抽一张牌。
+shikigami: 天井下
+power: 5
+health: 6
+version_date: '20200624'
+id: '10030906'
+artwork:
+  images:
+  - path: 10030906.png
+    scale: 0.711
+    offset_y: -72

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QPushButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from client import cli, net
+from client import net
 from client.gui.battle import HotseatView
 from client.gui.widgets import show_warning
 from core.engine import Game
@@ -267,9 +267,6 @@ class OnlineBattleView(HotseatView):
         self._render_state()
         self._sync_pending_choice()
 
-    def _show_result(self) -> None:
-        super()._show_result()
-
     def show_game_over(self, winner: int | None, reason: str = "") -> None:
         self._choice_generation += 1
         self._game_over = True
@@ -381,6 +378,7 @@ class OnlineView(QWidget):
         lobby.addLayout(create_row)
         join_row = QHBoxLayout()
         self.token_edit = QLineEdit()
+        self.token_edit.setEchoMode(QLineEdit.Password)
         self.token_edit.setPlaceholderText("重连令牌（首次加入留空）")
         self.join_button = QPushButton("加入 / 重连")
         self.join_button.clicked.connect(self.join_room)
@@ -638,7 +636,6 @@ class OnlineView(QWidget):
         elif kind == "state":
             if self.me is None:
                 return
-            self._apply_env(self.env_date)
             self.battle.receive_trace(msg.get("trace") or [])
             self.battle.set_state(msg["payload"], timer=msg.get("timer"),
                                   log=msg.get("log") or [], timeline=msg.get("timeline") or [])

@@ -1,0 +1,13 @@
+type: 法术
+name: 突
+level: 2
+rarity: SR
+description: 使山风[[倒计时]]-2，过量效果会使其获得等量的#ll和#sm。[[增强]]：你每有一个山风以外的具有[[倒计时]]的未气绝式神，此效果+1。
+shikigami: 山风
+version_date: '20200624'
+id: '10030706'
+artwork:
+  images:
+  - path: 10030706.png
+    scale: 0.747
+    offset_y: -72

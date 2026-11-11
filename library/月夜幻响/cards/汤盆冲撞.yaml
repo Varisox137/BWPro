@@ -1,0 +1,13 @@
+type: 法术
+name: 汤盆冲撞
+level: 2
+rarity: R
+description: '[[投射]]：造成4点伤害。[[增强]]：若敌方牌库张数≤16，此牌伤害翻倍。'
+shikigami: 孟婆
+version_date: '20200624'
+id: '10030805'
+artwork:
+  images:
+  - path: 10030805.png
+    scale: 0.747
+    offset_y: -72

@@ -1,0 +1,13 @@
+type: 法术
+name: 遮雨
+level: 1
+rarity: R
+description: 为你恢复等同于场上最大#hj或#pj的#sm。
+shikigami: 天井下
+version_date: '20200624'
+id: '10030903'
+artwork:
+  images:
+  - path: 10030903.png
+    scale: 0.747
+    offset_y: -75

@@ -1,0 +1,15 @@
+type: 形态
+name: 奈何桥头
+level: 2
+rarity: SR
+description: 每当牌手使用一张牌时，将其手牌和牌库中的同名牌移除。
+shikigami: 孟婆
+power: 4
+health: 6
+version_date: '20200624'
+id: '10030806'
+artwork:
+  images:
+  - path: 10030806.png
+    scale: 0.711
+    offset_y: -74

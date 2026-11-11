@@ -1,0 +1,15 @@
+type: 形态
+name: 鱼鳞之备
+level: 2
+rarity: R
+description: 进场或己方回合开始时若你有幻境，久次良获得2#hj。
+shikigami: 久次良
+power: 4
+health: 6
+version_date: '20200624'
+id: '10030604'
+artwork:
+  images:
+  - path: 10030604.png
+    scale: 0.711
+    offset_y: -76

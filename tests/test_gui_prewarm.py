@@ -119,6 +119,45 @@ def test_prewarm_stats_record_unchanged_manifest_skip(qapp, tmp_path, monkeypatc
     }
 
 
+@pytest.mark.parametrize("unchanged", [False, True])
+def test_prewarm_manifest_replace_failure_preserves_old_and_cleans_temp(
+        qapp, tmp_path, monkeypatch, unchanged):
+    """重建与跳过渲染两分支：replace 失败保留旧 manifest，且不残留临时文件。"""
+    from pathlib import Path
+
+    from client.gui import prewarm
+
+    _configs(tmp_path)
+    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    monkeypatch.setattr(prewarm, "card_pixmap", lambda *_args, **_kwargs: QPixmap(2, 2))
+    monkeypatch.setattr(prewarm, "entity_pixmap", lambda *_args, **_kwargs: QPixmap(2, 2))
+    cache_dir = tmp_path / "cache"
+    prewarm_all(db, tmp_path / "library", cache_dir)
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["sentinel"] = "保留旧文件"
+    old_text = json.dumps(manifest, ensure_ascii=False, indent=2)
+    manifest_path.write_text(old_text, encoding="utf-8")
+    if not unchanged:
+        config = tmp_path / "library" / "项目" / "cards" / "card.yaml"
+        config.write_text(config.read_text(encoding="utf-8") + "\n# 强制重建\n",
+                          encoding="utf-8")
+
+    original_replace = Path.replace
+
+    def fail_manifest_replace(self, target):
+        if self.parent == cache_dir and self.suffix == ".tmp" \
+                and Path(target) == manifest_path:
+            raise OSError("注入 replace 失败")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_manifest_replace)
+    with pytest.raises(OSError, match="注入 replace 失败"):
+        prewarm_all(db, tmp_path / "library", cache_dir)
+    assert manifest_path.read_text(encoding="utf-8") == old_text
+    assert list(cache_dir.glob("*.tmp")) == []
+
+
 def test_prewarm_version_bump_does_not_invalidate_manifest(qapp, tmp_path, monkeypatch):
     from client.gui import prewarm
 
@@ -444,8 +483,7 @@ def test_startup_prewarm_runs_in_background_without_blocking(qapp, db, tmp_path,
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     win.show()
     win.prewarm_resources()
-    assert not win.loading_overlay.isVisible()
-    assert win.statusBar().isVisible() or win._prewarm_timer.isActive()
+    assert win._prewarm_timer.isActive()
     first_timer = win._prewarm_timer
     win.prewarm_resources()
     assert win._prewarm_timer is first_timer

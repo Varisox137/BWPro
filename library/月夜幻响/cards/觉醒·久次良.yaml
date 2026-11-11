@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·久次良
+level: 3
+rarity: SR
+description: '[[觉醒]]：久次良获得等同于其#hj的#ll。'
+shikigami: 久次良
+version_date: '20200624'
+id: '10030607'
+evolve: true
+power+: 1
+health+: 2
+artwork:
+  images:
+  - path: 10030607.png
+    scale: 0.747
+    offset_y: -68

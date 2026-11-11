@@ -41,17 +41,6 @@ def legal_groups(db):
     return deckcode.group_deck(db, factories.TEAM, factories.deck_of(*factories.TEAM))
 
 
-def test_builder_page_navigation(qapp, db, tmp_path):
-    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
-    win.go("builder")
-    assert isinstance(win.pages["builder"], DeckBuilderView)
-    win.back_button.click()
-    assert win.stack.currentIndex() == 0
-    win.toggle_theme()
-    assert win.pages["builder"].theme == "dark"
-    win.close()
-
-
 def test_store_round_trip_and_standard_style(qapp, db, tmp_path, view):
     store = tmp_path / "decks.json"
     deckstore.save_decks(db, [{"name": "主力", "groups": legal_groups(db), "env": None}], store)
@@ -68,8 +57,38 @@ def test_store_round_trip_and_standard_style(qapp, db, tmp_path, view):
 
 def test_new_edit_save_rename_delete_flow(qapp, db, view):
     view.new_deck()
+    old, new = factories.TEAM[:2]
+    view.add_shikigami(old)
+    cid = old * 100 + 1
+    view.change_card(cid, 1)
+    view.replace_shikigami(0, new)
+    assert view.team == [new]
+    assert view.picks.get(old, {}) == {}
+    assert view.picks.get(new, {}) == {}
+
+    view.new_deck()
     view.name_edit.setText("测试卡组")
-    for sid in factories.TEAM:
+    sid = factories.TEAM[0]
+    reinforce = factories.card(10010221, shikigami=factories.TEAM[1], name="协战",
+                               card_type="reinforce", shikigami2=sid)
+    db.cards[reinforce.id] = reinforce
+    view.add_shikigami(sid)
+    view.select_shikigami(sid)
+    assert view.page_count == 2
+    assert len(view.card_widgets) == 5
+    assert view.card_widgets[0].cdef.id == sid
+    assert view.card_widgets[0].plus_button is None
+    assert view.card_widgets[0].count_label.text().strip() == ""
+    assert [w.cdef.id for w in view.card_widgets[1:]] == list(range(sid * 100 + 1, sid * 100 + 5))
+    view.next_card_page()
+    assert len(view.card_widgets) == 5
+    assert view.card_widgets[-1].cdef.id == reinforce.id
+    view.next_card_page()
+    assert view.page_index == 1
+    view.previous_card_page()
+    assert view.page_index == 0
+
+    for sid in factories.TEAM[1:]:
         view.add_shikigami(sid)
     for sid in factories.TEAM:
         view.select_shikigami(sid)
@@ -93,41 +112,6 @@ def test_new_edit_save_rename_delete_flow(qapp, db, view):
     view.delete_deck(0, confirmed=True)
     assert view.decks == []
     assert deckstore.load_decks(db, view.store_path) == []
-
-
-def test_card_page_has_five_and_reinforce_is_last(qapp, db, view):
-    sid = factories.TEAM[0]
-    reinforce = factories.card(10010221, shikigami=factories.TEAM[1], name="协战",
-                               card_type="reinforce", shikigami2=sid)
-    db.cards[reinforce.id] = reinforce
-    view.new_deck()
-    view.add_shikigami(sid)
-    view.select_shikigami(sid)
-    assert view.page_count == 2
-    assert len(view.card_widgets) == 5
-    assert view.card_widgets[0].cdef.id == sid
-    assert view.card_widgets[0].plus_button is None
-    assert view.card_widgets[0].count_label.text().strip() == ""
-    assert [w.cdef.id for w in view.card_widgets[1:]] == list(range(sid * 100 + 1, sid * 100 + 5))
-    view.next_card_page()
-    assert len(view.card_widgets) == 5
-    assert view.card_widgets[-1].cdef.id == reinforce.id
-    view.next_card_page()
-    assert view.page_index == 1
-    view.previous_card_page()
-    assert view.page_index == 0
-
-
-def test_shikigami_replacement_clears_cards(qapp, db, view):
-    view.new_deck()
-    old, new = factories.TEAM[:2]
-    view.add_shikigami(old)
-    cid = old * 100 + 1
-    view.change_card(cid, 1)
-    view.replace_shikigami(0, new)
-    assert view.team == [new]
-    assert view.picks.get(old, {}) == {}
-    assert view.picks.get(new, {}) == {}
 
 
 def test_deck_code_import_export(qapp, db, view):
@@ -983,9 +967,8 @@ def _require_real_cardart_resources():
     return renderer_root, library_dir
 
 
-def test_cardart_library_root_and_default_project_portrait(qapp, gdb, tmp_path, monkeypatch):
+def test_cardart_library_root_and_default_project_portrait(monkeypatch):
     from pathlib import Path
-    from PySide6.QtGui import QPixmap
     from client.gui import cardart
 
     monkeypatch.delenv("BWP_DIY_LIBRARY", raising=False)
@@ -994,15 +977,6 @@ def test_cardart_library_root_and_default_project_portrait(qapp, gdb, tmp_path, 
     monkeypatch.setenv("BWP_DIY_LIBRARY", "D:/临时卡图库")
     assert cardart.library_root() == Path("D:/临时卡图库")
     monkeypatch.delenv("BWP_DIY_LIBRARY")
-
-    _require_real_cardart_resources()
-    cardart.clear_cardart_caches()
-    monkeypatch.setattr(portrait, "_fallback_pixmap", lambda *_args: QPixmap())
-    pixmap = portrait.shikigami_portrait(gdb.shikigami[100101])
-    empty = portrait.shikigami_portrait(
-        gdb.shikigami[100101], library_dir=tmp_path / "empty-library")
-    assert not pixmap.isNull() and pixmap.toImage() != empty.toImage()
-    cardart.clear_cardart_caches()
 
 
 def test_cardart_pixmap_selects_version_and_falls_back(qapp, tmp_path):

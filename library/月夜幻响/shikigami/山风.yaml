@@ -1,0 +1,17 @@
+type: 式神
+name: 山风
+faction: 苍叶
+power: 3
+health: 4
+description: '[[倒计时3]]：发起一次攻击，本次战斗获得[[不屈]]。'
+id: '100307'
+version_date: '20200624'
+artwork:
+  images:
+  - path: 100307.png
+    scale: 0.711
+    offset_y: -77
+portrait:
+  scale: 3.388
+  offset_x: -14
+  offset_y: 42

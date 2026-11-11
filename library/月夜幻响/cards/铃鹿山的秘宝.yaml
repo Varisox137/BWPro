@@ -1,0 +1,14 @@
+type: 幻境
+name: 铃鹿山的秘宝
+level: 3
+rarity: SSR
+description: 你的#sm不会降到1以下。
+shikigami: 久次良
+durability: 10
+version_date: '20200624'
+id: '10030608'
+artwork:
+  images:
+  - path: 10030608.png
+    scale: 0.711
+    offset_y: -85

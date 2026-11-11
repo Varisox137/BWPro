@@ -1,0 +1,13 @@
+type: 法术
+name: 妖怪屋·灵力
+level: 1
+description: 使一个己方式神获得1点#hj或使一个敌方式神获得1点#pj。[[增强]]：每当己方角色的#hj或敌方角色的#pj因回合开始移除时，此牌效果+1。
+shikigami: 天井下
+version_date: '20200624'
+id: '10030951'
+token: true
+artwork:
+  images:
+  - path: 10030951.png
+    scale: 0.747
+    offset_y: -70

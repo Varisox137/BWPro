@@ -26,5 +26,5 @@ versions:
         - when: on_card_played
           condition: {card_type: field, player: self}
           steps:
-            - {op: grant_keyword, keyword: haste, target: {kind: self}}
+            - {op: grant_keyword, keyword: haste, scope: turn, target: {kind: self}}
       text: "[觉醒]：{每当荒造成战斗伤害时，使己方所有幻境获得1耐久。每当你使用幻境牌时，荒获得[迅捷]。}"

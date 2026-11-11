@@ -3798,6 +3798,13 @@ class Game:
         elif self._has_keyword(s, "haste"):
             if "haste" in s.one_shot_keywords:
                 s.one_shot_keywords.remove("haste")
+                entries = p.ext.get("turn_keyword_grants", [])
+                ref = Ref(player=self.state.active, shikigami=i)
+                grant = next((e for e in entries if e["ref"] == ref
+                              and e["keyword"] == "haste" and e["cls"] == "one_shot"
+                              and e["turn"] == self.state.turn), None)
+                if grant is not None:
+                    entries.remove(grant)
             self._log(f"{self.db.shikigami[s.id].name} 的【迅捷】生效，本次出击不消耗鬼火")
         else:
             # 跳跳妹妹基础能力（先天伪关键字 extra_orb_cost）：出击额外消耗 1 点鬼火；
@@ -5195,27 +5202,27 @@ class Game:
         if ev.kind == "combat" and s is not None and self._combat_immune(s):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了本次战斗伤害")
             self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
-                                        "s": ev.victim.shikigami})
+                                        "s": ev.victim.shikigami, "g": ev.visual_group})
             return
         # 非战斗伤害免疫（觉醒·山童类；条目 {"kind": "effect", "from": "enemy"}）：
         # 法术伤害与其他伤害均属"非战斗伤害"（三类化口径），一并免疫
         if ev.kind != "combat" and s is not None and self._effect_immune(s, ev):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了本次伤害")
             self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
-                                        "s": ev.victim.shikigami})
+                                        "s": ev.victim.shikigami, "g": ev.visual_group})
             return
         # 破甲来源免疫（霸主；条目 {"kind": "fragile_source"}）：伤害来源为当前持有
         # 破甲的敌方式神时免疫（伤害类别不限；来源须为式神，牌手来源/无来源不免）
         if s is not None and self._fragile_source_immune(s, ev):
             self._log(f"{self.db.shikigami[s.id].name} 免疫了破甲式神的伤害")
             self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
-                                        "s": ev.victim.shikigami})
+                                        "s": ev.victim.shikigami, "g": ev.visual_group})
             return
         # 牌手级伤害免疫（舍生"本回合你免疫所有伤害"；PlayerState.immunities 按回合号过期）
         if s is None and self._player_immune(p, ev):
             self._log(f"{p.name} 免疫了本次伤害")
             self.state.timeline.append({"k": "v", "v": "immune", "p": ev.victim.player,
-                                        "s": ev.victim.shikigami})
+                                        "s": ev.victim.shikigami, "g": ev.visual_group})
             return
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
         if not skip_before_health:

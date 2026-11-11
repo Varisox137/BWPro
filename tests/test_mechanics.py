@@ -3483,6 +3483,35 @@ def test_field_played_grants_haste_and_attack(db, make_game):
                (s0.keywords, s0.one_shot_keywords, s0.perm_keywords))
 
 
+def test_consumed_turn_haste_does_not_remove_later_regular_haste(real_game):
+    """回合迅捷被出击消耗后，旧账本不得误删同回合后来授予的普通迅捷。"""
+    g = real_game([100304, 100101, 100102, 100103], check_deck=False)
+    pa, _ = F.battle_setup(g, {0: 2})
+    play(g, 0, 10030406)
+    play(g, 0, 10030401)
+    s0 = pa.shikigami[0]
+    assert "haste" in s0.one_shot_keywords
+    orb = pa.orb
+    g.apply({"op": "assault", "index": 0})
+    assert pa.orb == orb and "haste" not in s0.one_shot_keywords
+    g._grant_keyword(s0, "haste")
+    pass_turns(g, 1)
+    assert "haste" in s0.one_shot_keywords
+
+
+def test_awakened_haste_turn(real_game):
+    """觉醒·荒使用幻境牌获得的[迅捷]仅持续当回合。"""
+    g = real_game([100304, 100101, 100102, 100103], check_deck=False)
+    pa, _ = F.battle_setup(g, {0: 2})
+    play(g, 0, 10030406)
+    play(g, 0, 10030401)
+    g._drain_queue()
+    s0 = pa.shikigami[0]
+    assert "haste" in s0.one_shot_keywords
+    pass_turns(g, 1)
+    assert "haste" not in s0.one_shot_keywords
+
+
 def test_awaken_swaps_ability_pseudo_keywords(db, make_game):
     """能力伪关键字觉醒换绑（泷夜叉姬/久次良觉醒型）：觉醒时移除基础式神 def
     携带的伪关键字（power_if_field）、授予觉醒牌 keywords 携带的

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect,
     QHBoxLayout, QLabel, QMessageBox,
@@ -51,10 +50,6 @@ def show_message(parent, title: str, text: str, icon=QMessageBox.Information,
 
 def show_warning(parent, title: str, text: str) -> int:
     return show_message(parent, title, text, QMessageBox.Warning)
-
-
-def show_information(parent, title: str, text: str) -> int:
-    return show_message(parent, title, text, QMessageBox.Information)
 
 
 def ask_confirmation(parent, title: str, text: str) -> int:
@@ -183,13 +178,6 @@ class CardWidget(QFrame):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._fit_art()
-
-    def set_copies(self, copies: int) -> None:
-        self.copies = copies
-        self.count_label.setText(f"已选 {copies}/2")
-        self.setProperty("selected", copies > 0)
-        self.style().unpolish(self)
-        self.style().polish(self)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:

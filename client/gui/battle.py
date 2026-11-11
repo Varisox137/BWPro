@@ -466,7 +466,7 @@ class HotseatView(QWidget):
         if (self.game.state.winner is None and not self._review_mulligan
                 and self._last_turn_key is not None and turn_key != self._last_turn_key
                 and any(entry.get("v") == "turn_start" for entry in entries)):
-            self._render_state(show_turn=False)
+            self._render_state(show_turn=False, preserve_phase=True)
             self.viewer = next_viewer
             self._handoff_waiting = True
             self._handoff_boundary_seen = False
@@ -592,7 +592,7 @@ class HotseatView(QWidget):
             self.end_turn_button.width(), opponent=opponent)))
         self.end_turn_button.setIconSize(self.end_turn_button.size() * 0.92)
 
-    def _render_state(self, play_pending=False, show_turn=True) -> None:
+    def _render_state(self, play_pending=False, show_turn=True, preserve_phase=False) -> None:
         if self._handoff_waiting:
             pending = self.game.state.pending_choice
             if pending is not None and pending["player"] == self.battle_scene.viewer:
@@ -605,7 +605,8 @@ class HotseatView(QWidget):
         game = self.game
         state = game.state
         self.timeline_queue[:] = [entry for entry in self.timeline_queue if entry[1]]
-        self._update_phase_label()
+        if not preserve_phase:
+            self._update_phase_label()
         self.order_label.setText("己方先手" if self.viewer == state.active else "己方后手")
         self.order_label.hide()
         enemy = state.players[1 - self.viewer]

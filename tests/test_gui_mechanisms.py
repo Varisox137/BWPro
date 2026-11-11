@@ -122,6 +122,77 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     dialog.close()
 
 
+def test_shiki_detail_counter_suffixes(qapp):
+    from client.gui.details import shiki_detail_suffix
+
+    db = F.base_db()
+    game = F.mk_game(db)
+    ref = Ref(player=0, shikigami=0)
+    game.current.shikigami[0].id = 100117
+    assert shiki_detail_suffix(game, ref) == "（本局游戏已投出0次6点）"
+    game.current.ext["dice_six_count"] = 3
+    assert shiki_detail_suffix(game, ref) == "（本局游戏已投出3次6点）"
+    game.current.shikigami[0].id = 100404
+    assert shiki_detail_suffix(game, ref) == "（本局游戏已完成0次委托）"
+    game.current.quest_counts["quest_used"] = 2
+    assert shiki_detail_suffix(game, ref) == "（本局游戏已完成2次委托）"
+    game.current.shikigami[0].id = 100101
+    assert shiki_detail_suffix(game, ref) == ""
+
+
+def test_shiki_detail_counter_suffix_passed_to_base_and_awakened_art(qapp, monkeypatch):
+    art_calls = []
+
+    def fake_shikigami_pixmap(_shiki, _db, **kwargs):
+        art_calls.append(kwargs)
+        return QPixmap(360, 512)
+
+    monkeypatch.setattr("client.gui.details.shikigami_pixmap", fake_shikigami_pixmap)
+    for shiki_id, counter_key, expected in (
+        (100117, "dice_six_count", "（本局游戏已投出3次6点）"),
+        (100404, "quest_used", "（本局游戏已完成2次委托）"),
+    ):
+        db = F.base_db()
+        db.shikigami[shiki_id] = F.shiki(shiki_id)
+        awaken_id = shiki_id * 100 + 8
+        db.cards[awaken_id] = F.card(awaken_id, shikigami=shiki_id, subtype="awaken")
+        game = F.mk_game(db)
+        shiki = game.current.shikigami[0]
+        shiki.id = shiki_id
+        if counter_key == "dice_six_count":
+            game.current.ext[counter_key] = 3
+        else:
+            game.current.quest_counts[counter_key] = 2
+        for awakened in (None, awaken_id):
+            shiki.awakened = awakened
+            dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
+            assert art_calls[-1]["description_suffix"] == expected
+            dialog.close()
+
+
+def test_shikigami_counter_suffix_enters_payload_and_cache_key(qapp, tmp_path, monkeypatch):
+    import json
+    from client.gui import cardart
+
+    db = F.base_db()
+    game = F.mk_game(db)
+    rendered = []
+
+    def capture(cache_key, payload_json, _layout_json, _root, *_size_args):
+        rendered.append((cache_key, json.loads(payload_json)))
+        return QPixmap(10, 10)
+
+    monkeypatch.setattr(cardart, "_cached_runtime_card_pixmap", capture)
+    for suffix in ("（计数1）", "（计数2）"):
+        cardart.shikigami_pixmap(
+            game.current.shikigami[0], db, library_dir=tmp_path / "empty",
+            cache_dir=tmp_path / "cache", description_suffix=suffix)
+    assert [payload["description"] for _key, payload in rendered] == [
+        "（计数1）", "（计数2）",
+    ]
+    assert rendered[0][0] != rendered[1][0]
+
+
 def test_render_failure_log_dedup_clear_and_context(tmp_path, caplog):
     import logging
     from client.gui.renderlog import clear_render_log_dedup, log_render_failure

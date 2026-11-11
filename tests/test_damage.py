@@ -779,6 +779,46 @@ def test_damage_total_memo_heal(db, make_game):
     assert s2.health == 7            # 按实际总点数恢复 6（1 + 6）
 
 
+def test_parallel_damage_and_immune_share_visual_group(db, make_game):
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    g._battle_stack.append(0)
+    pa.shikigami[0].immunities.append({"kind": "combat_damage", "turn": g.state.turn})
+    g._run_damage_queue([
+        _DamageEvent(source=None, victim=Ref(player=0, shikigami=0), amount=1, kind="combat"),
+        _DamageEvent(source=None, victim=Ref(player=1, shikigami=0), amount=1, kind="combat"),
+    ])
+    visuals = [e for e in g.state.timeline if e.get("v") in ("immune", "damage")]
+    assert [e["v"] for e in visuals] == ["immune", "damage"]
+    assert visuals[0]["g"] == visuals[1]["g"] is not None
+
+
+@pytest.mark.parametrize("branch", ["effect", "fragile_source", "player"])
+def test_parallel_damage_and_other_immune_share_visual_group(db, make_game, branch):
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    source = None
+    victim = Ref(player=0, shikigami=0)
+    kind = "combat"
+    if branch == "effect":
+        pa.shikigami[0].immunities.append({"kind": "effect"})
+        kind = "effect"
+    elif branch == "fragile_source":
+        pa.shikigami[0].immunities.append({"kind": "fragile_source"})
+        pb.shikigami[0].shield = -1
+        source = Ref(player=1, shikigami=0)
+    else:
+        pa.immunities.append({"kind": "all", "turn": g.state.turn})
+        victim = Ref(player=0, shikigami=None)
+    g._run_damage_queue([
+        _DamageEvent(source=source, victim=victim, amount=1, kind=kind),
+        _DamageEvent(source=None, victim=Ref(player=1, shikigami=0), amount=1, kind=kind),
+    ])
+    visuals = [e for e in g.state.timeline if e.get("v") in ("immune", "damage")]
+    assert [e["v"] for e in visuals] == ["immune", "damage"]
+    assert visuals[0]["g"] == visuals[1]["g"] is not None
+
+
 def test_damage_parallel_queue(db, make_game):
     """并行伤害通道（群鸦乱舞）：parallel=true 的 damage 把全部目标的伤害事件放进
     同一队列结算——气绝统一在队列清空后生成（顺序通道则是逐目标各起队列、先结算的

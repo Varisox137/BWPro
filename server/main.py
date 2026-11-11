@@ -60,6 +60,13 @@ def _text(msg: dict, key: str, maxlen: int) -> str | None:
     return v
 
 
+def _player_name(msg: dict) -> str | None:
+    name = _text(msg, "name", MAX_NAME)
+    if name is not None and any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in name):
+        raise ValueError("字段 name 非法")
+    return name
+
+
 CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫描器，非访问凭证）
 
 AUTH_TIMEOUT = 5.0  # 连接后需在该时间内发送带合法 client 标识的 create/join，否则断联
@@ -133,6 +140,10 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
             return not require_client_ua \
                 or str(msg.get("client", "")).startswith(CLIENT_UA)
 
+        def binding_valid() -> bool:
+            return room is not None and conn is not None \
+                and room.conns[conn.seat] is conn and conn.ws is ws
+
         try:
             while True:
                 raw = await ws.receive_text()
@@ -147,30 +158,35 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                 t = msg["type"]
                 if t == "pong":
                     continue
-                if t in ("create", "join") and not client_ok(msg):
-                    await reject("客户端标识无效，请使用 BWPro CLI 联机")
-                    await ws.close(code=1008)
-                    return
+                if t in ("create", "join"):
+                    if conn is not None:
+                        await reject("当前连接已加入房间")
+                        continue
+                    if not client_ok(msg):
+                        await reject("客户端标识无效，请使用 BWPro CLI 联机")
+                        await ws.close(code=1008)
+                        return
                 if t == "create":
                     if msg.get("debug") and not allow_debug_rooms:
                         await reject("服务器未开放 debug 对局")
                         continue
+                    target_room = None
                     try:
-                        name = _text(msg, "name", MAX_NAME) or "玩家A"
+                        name = _player_name(msg) or "玩家A"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                         want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
                         env_date = _env_date(msg, "env_date")
                         mode = _text(msg, "mode", 10) or "standard"
-                        room = manager.create(debug=bool(msg.get("debug")),
-                                              room_id=want_id, env_date=env_date,
-                                              mode=mode)
-                        conn = await room.join(0, name, ws, deck_code)
+                        target_room = manager.create(debug=bool(msg.get("debug")),
+                                                     room_id=want_id, env_date=env_date,
+                                                     mode=mode)
+                        target_conn = await target_room.join(0, name, ws, deck_code)
                     except ValueError as e:
-                        if room is not None:
-                            manager.remove(room.id)
-                            room = None
+                        if target_room is not None:
+                            manager.remove(target_room.id)
                         await reject(str(e))
                         continue
+                    room, conn = target_room, target_conn
                     print(f"[房间 {room.id}] {name}（{client_ip}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
                           f"{'（debug 对局）' if room.debug else ''}"
@@ -183,20 +199,21 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     try:
                         room_id = _text(msg, "room_id", MAX_ROOM_ID) or ""
                         token = _text(msg, "token", MAX_TOKEN)
-                        name = _text(msg, "name", MAX_NAME) or "玩家B"
+                        name = _player_name(msg) or "玩家B"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                     except ValueError as e:
                         await reject(str(e))
                         continue
-                    room = manager.get(room_id)
-                    if room is None:
+                    target_room = manager.get(room_id)
+                    if target_room is None:
                         await reject("房间不存在")
                         continue
                     if token:  # 断线重连
-                        conn = await room.reconnect(token, ws)
-                        if conn is None:
+                        target_conn = await target_room.reconnect(token, ws)
+                        if target_conn is None:
                             await reject("重连令牌无效")
                             continue
+                        room, conn = target_room, target_conn
                         await conn.send(protocol.joined(
                             room.id, conn.token, conn.seat,
                             player_index=room.seat_to_player[conn.seat],
@@ -208,30 +225,32 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                             await conn.send(room.lobby_msg())
                         continue
                     try:
-                        conn = await room.join(1, name, ws, deck_code)
+                        target_conn = await target_room.join(1, name, ws, deck_code)
                     except ValueError as e:
                         await reject(str(e))
                         continue
+                    room, conn = target_room, target_conn
                     print(f"[房间 {room.id}] {name}（{client_ip}）加入房间", flush=True)
                     await conn.send(protocol.joined(room.id, conn.token, 1,
                                                     debug=room.debug))
                     await room.on_seat_filled()
                 elif t == "ready":  # 准备阶段确认准备（双方都位后有效）
-                    if room is None or conn is None:
-                        await reject("尚未加入房间")
+                    if not binding_valid():
+                        await reject("尚未加入房间或连接已失效")
                         continue
                     await room.lobby_ready(conn.seat)
                 elif t == "leave":  # 准备阶段主动离开：释放座位并断连
-                    if room is not None and conn is not None \
-                            and room.game is None:
+                    if binding_valid() and room.game is None:
                         await conn.send(protocol.left())
                         await room.lobby_leave(conn.seat)
+                        if not any(room.conns):
+                            manager.remove(room.id)
                         return
                     await reject("当前不能离开房间")
                     continue
                 elif t == "env":  # 房主更改对局环境（仅双方均未准备时）
-                    if room is None or conn is None:
-                        await reject("尚未加入房间")
+                    if not binding_valid():
+                        await reject("尚未加入房间或连接已失效")
                         continue
                     try:
                         await room.set_env(conn.seat, _env_date(msg, "date"))
@@ -239,15 +258,15 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject(str(e))
                         continue
                 elif t == "cmd":
-                    if room is None or conn is None:
-                        await reject("尚未加入房间")
+                    if not binding_valid():
+                        await reject("尚未加入房间或连接已失效")
                         continue
                     await room.handle_cmd(conn.seat, msg["cmd"])
         except WebSocketDisconnect:
             pass
         finally:
             watchdog.cancel()
-            if room is not None and conn is not None:
+            if binding_valid():
                 if room.game is None:
                     # 准备阶段断线 = 离开房间：释放座位（无对局可重连）；
                     # 房间空无一人时直接回收

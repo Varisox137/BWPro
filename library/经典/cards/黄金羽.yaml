@@ -10,3 +10,4 @@ artwork:
   - path: 10012651.png
     scale: 0.784
     offset_y: -50
+token: true

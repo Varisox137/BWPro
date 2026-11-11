@@ -1,0 +1,13 @@
+type: 法术
+name: 余辉
+level: 2
+rarity: SR
+description: 弃一张幻境牌，然后抽三张牌。
+shikigami: 荒
+version_date: '20200624'
+id: '10030403'
+artwork:
+  images:
+  - path: 10030403.png
+    scale: 0.747
+    offset_y: -71

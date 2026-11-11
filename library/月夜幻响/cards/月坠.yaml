@@ -1,0 +1,14 @@
+type: 幻境
+name: 月坠
+level: 3
+rarity: SSR
+description: 当此牌获得#nj时，效果+2。自己回合开始时获得3#nj，然后若#nj≥30则自毁并对所有敌方角色造成10点伤害。
+shikigami: 荒
+durability: 15
+version_date: '20200624'
+id: '10030407'
+artwork:
+  images:
+  - path: 10030407.png
+    scale: 0.711
+    offset_y: -67

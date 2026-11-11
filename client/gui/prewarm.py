@@ -35,6 +35,18 @@ def _definition_sha256(definition) -> str:
 logger = logging.getLogger(__name__)
 
 
+def _write_manifest(cache_dir: Path, manifest: dict) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = cache_dir / MANIFEST_NAME
+    temporary_path = manifest_path.with_suffix(".json.tmp")
+    try:
+        temporary_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary_path.replace(manifest_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
 def _manifest_current(cache_dir: Path, manifest: dict) -> bool:
     try:
         current = json.loads((cache_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
@@ -103,12 +115,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
             "skipped": len(pending),
             "deferred": len(definitions) - len(pending),
         }
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path = cache_dir / MANIFEST_NAME
-        temporary_path = manifest_path.with_suffix(".json.tmp")
-        temporary_path.write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-        temporary_path.replace(manifest_path)
+        _write_manifest(cache_dir, manifest)
         yield len(pending), len(pending)
         return entries
     successful_entries = []
@@ -146,9 +153,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
         "skipped": 0,
         "deferred": len(definitions) - len(pending),
     }
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / MANIFEST_NAME).write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_manifest(cache_dir, manifest)
     return successful_entries
 
 

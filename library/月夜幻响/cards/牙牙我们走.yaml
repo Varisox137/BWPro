@@ -1,0 +1,15 @@
+type: 形态
+name: 牙牙我们走
+level: 2
+rarity: R
+description: '[[贯通]]。[[增强]]：若敌方牌库张数≤16，此牌获得3#ll和3#sm。'
+shikigami: 孟婆
+power: 5
+health: 7
+version_date: '20200624'
+id: '10030804'
+artwork:
+  images:
+  - path: 10030804.png
+    scale: 0.711
+    offset_y: -70

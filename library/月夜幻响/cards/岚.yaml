@@ -1,0 +1,13 @@
+type: 法术
+name: 岚
+level: 3
+rarity: SR
+description: 使山风[[倒计时]]-1，重复X次。X为你所有式神当前[[倒计时]]总和。
+shikigami: 山风
+version_date: '20200624'
+id: '10030707'
+artwork:
+  images:
+  - path: 10030707.png
+    scale: 0.747
+    offset_y: -88

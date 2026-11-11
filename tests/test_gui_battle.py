@@ -397,18 +397,13 @@ def test_card_owner_seat_handles_dual_owner_and_replacement(qapp, db, view):
     assert card_owner_seat(view.game, player, db.cards[10010301]) == 2
 
 
-def test_battle_pages_have_no_extra_outer_margin(qapp, db, tmp_path):
-    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
-    for key in ("hotseat", "online"):
-        margins = win.pages[key].layout().contentsMargins()
-        assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (0, 0, 0, 0)
-    win.close()
-
-
 def test_battle_page_has_zero_outer_margins(qapp, db, tmp_path):
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     hotseat = win.pages["hotseat"]
     online = win.pages["online"]
+    for page in (hotseat, online):
+        value = page.layout().contentsMargins()
+        assert (value.left(), value.top(), value.right(), value.bottom()) == (0, 0, 0, 0)
 
     def margins():
         value = win.centralWidget().layout().contentsMargins()
@@ -543,6 +538,16 @@ def test_phase_label_shows_two_lines_and_remaining_upgrades(qapp, view):
     assert '<div style="font-size:20px">升级阶段·剩余 1 次</div>' in view.phase_label.text()
 
 
+def test_handoff_preserves_phase_until_confirmed(qapp, view):
+    start(view, mulligan=False)
+    before = view.phase_label.text()
+    assert view.end_turn()
+    assert view._handoff_pending
+    assert view.phase_label.text() == before
+    view.confirm_handoff()
+    assert "玩家B 回合1" in view.phase_label.text()
+
+
 @pytest.mark.parametrize("attribute", ["keywords", "one_shot_keywords", "perm_keywords"])
 def test_haste_assault_border_is_blue_for_all_keyword_sources(qapp, view, attribute):
     start(view, mulligan=False)
@@ -580,16 +585,40 @@ def test_one_shot_haste_border_returns_yellow_after_assault(qapp, view):
 
 
 @pytest.mark.parametrize("replace_all", [False, True], ids=["ready", "third-replacement"])
-def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all):
+def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all, monkeypatch):
     start(view)
+    game = view.game
+    banner_calls = []
+    messages = []
     for pi in (0, 1):
+        player = game.state.players[pi]
+        if pi == 1:
+            monkeypatch.setattr(
+                view.battle_scene, "show_turn_banner", lambda *_args: banner_calls.append(True))
         if replace_all:
+            replaced_uids = []
             for replacement in range(3):
-                view.mulligan(view.game.state.players[view.viewer].hand[0].uid)
+                old_uid = player.hand[0].uid
+                replaced_uids.append(old_uid)
+                assert view.mulligan(old_uid)
                 if replacement < 2:
                     settle(view)
+            assert all(uid not in {card.uid for card in player.hand} for uid in replaced_uids)
+            remaining = 1
         else:
-            view.ready()
+            old_uid = player.hand[0].uid
+            assert view.mulligan(old_uid)
+            settle(view)
+            assert old_uid not in {card.uid for card in player.hand}
+            selected_uid = player.hand[0].uid
+            view.battle_scene.select_mulligan(selected_uid)
+            assert view.battle_scene.cards[("hand", selected_uid)].scale() > 1.0
+            assert view.ready()
+            remaining = 2
+        message = f"玩家{'AB'[pi]} 调度了一张手牌（剩余 {remaining} 次）"
+        messages.append(message)
+        assert message in log_lines(view)
+        assert view._handoff_pending
         assert view.battle_scene.viewer == pi
         assert view._handoff_stage == "review"
         assert view.handoff_dialog is None
@@ -597,19 +626,31 @@ def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all
         assert not view.battle_scene.ready_item.isVisible()
         assert view.battle_scene.handoff_item.pos() == view.battle_scene.ready_item.pos()
         assert view.handoff_button.text() == "切换玩家"
+        assert view.battle_scene.mulligan_uid is None
         old_hand_items = scene_items(view, "hand", player=pi)
         assert old_hand_items and all(item.y() == 280 for item in old_hand_items)
+        assert all(item.scale() == 1.0 for item in old_hand_items)
         if pi == 1:  # 后手交接预览不重排入手顺序
             assert [item.uid for item in sorted(old_hand_items, key=lambda item: item.x())] == [
-                card.uid for card in sorted(view.game.state.players[1].hand,
-                                            key=lambda card: card.hand_seq)]
+                card.uid for card in sorted(player.hand, key=lambda card: card.hand_seq)]
+            assert banner_calls == []
         view.handoff_button.click()
         assert view._handoff_stage == "transfer"
         assert view.battle_scene.handoff_item.isVisible()
         assert all(item.scene() is None for item in old_hand_items)
         view.handoff_button.click()
+        settle(view)
+        assert player.mulligan_done
+        assert view.viewer == (pi + 1) % 2
+        assert scene_items(view, "hand", player=view.viewer)
+        assert message not in log_lines(view)
         assert not view.battle_scene.handoff_item.isVisible()
-    assert view.game.state.phase != "mulligan"
+    assert game.state.phase == "battle"
+    assert len(scene_items(view, "hand", player=0)) == len(game.state.players[0].hand)
+    game.state.timeline.append({"k": "l", "m": messages[1]})
+    view.refresh()
+    settle(view)
+    assert log_lines(view).count(messages[1]) == 1
 
 
 def test_playable_hand_has_no_blue_frame(qapp, view):
@@ -1704,118 +1745,6 @@ def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
     assert view.order_label.isHidden()
 
 
-def test_last_mulligan_reviews_result_before_handoff(qapp, view):
-    start(view)
-    for index in range(3):
-        card = view.game.state.players[0].hand[0]
-        assert view.mulligan(card.uid)
-        if index < 2:
-            settle(view)
-    assert view._handoff_pending
-    assert scene_items(view, "hand", player=0)
-    assert view.battle_scene.handoff_item.isVisible()
-    view.handoff_button.click()
-    settle(view)
-    assert view.viewer == 1
-    assert scene_items(view, "hand", player=1)
-
-
-def test_mulligan_review_scale_is_cleared_before_handoff(qapp, view):
-    start(view)
-    scene = view.battle_scene
-    selected_uid = view.game.current.hand[0].uid
-    scene.select_mulligan(selected_uid)
-    assert scene.cards[("hand", selected_uid)].scale() > 1.0
-
-    assert view.ready()
-    assert view._handoff_pending
-    assert scene.mulligan_uid is None
-    assert all(item.scale() == 1.0 for item in scene_items(view, "hand", player=0))
-
-
-def test_choice_dialog_layout_keeps_six_buttons_visible(qapp, db, view):
-    option_ids = [10010161 + index for index in range(6)]
-    for cid in option_ids:
-        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
-    start(view, mulligan=False)
-    view.game._open_field_summon_pick(0, option_ids)
-    view.refresh()
-    dialog = view.choice_dialog
-    dialog.resize(560, 460)
-    qapp.processEvents()
-    choice = dialog.option_view
-
-    for option_id in option_ids:
-        choice.select(option_id)
-        choice.ensureWidgetVisible(choice._wrappers[option_id])
-        qapp.processEvents()
-        button = choice.option_buttons[option_id]
-        button_rect = button.rect()
-        button_rect.moveTo(button.mapTo(choice.viewport(), button.rect().topLeft()))
-        assert not button.isHidden()
-        assert choice.viewport().rect().contains(button_rect)
-
-    choice.select(option_ids[0])
-    qapp.processEvents()
-    selected_card = choice.option_widgets[0]
-    selected_button = choice.option_buttons[option_ids[0]]
-    content_layout = choice.widget().layout()
-    content_margins = content_layout.contentsMargins()
-    column_layout = choice._wrappers[option_ids[0]].layout()
-    assert content_margins.top() <= 4
-    assert column_layout.spacing() == 0
-    scrollbar = choice.horizontalScrollBar()
-    assert scrollbar.maximum() > 0
-    required_view_height = (
-        selected_card.height() + selected_button.height() + column_layout.spacing()
-        + content_margins.top() + content_margins.bottom()
-        + 2 * choice.frameWidth() + scrollbar.sizeHint().height()
-    )
-    assert choice.minimumHeight() >= required_view_height
-
-    dialog_layout = dialog.layout()
-    dialog_margins = dialog_layout.contentsMargins()
-    title = dialog.findChild(QLabel)
-    required_dialog_height = (
-        title.sizeHint().height() + required_view_height + dialog_layout.spacing()
-        + dialog_margins.top() + dialog_margins.bottom()
-    )
-    assert dialog.sizeHint().height() >= required_dialog_height
-
-
-def test_choice_immediate_feedback_defers_one_answer(qapp, db, view, monkeypatch):
-    option_ids = [10010161 + index for index in range(6)]
-    for cid in option_ids:
-        db.cards[cid] = F.card(cid, shikigami=100101, card_type="field", intensity=3)
-    start(view, mulligan=False)
-    game = view.game
-    game._open_field_summon_pick(0, option_ids)
-    view.refresh()
-    dialog = view.choice_dialog
-    chosen_id = option_ids[2]
-    answers = []
-    real_answer = view.answer_pending
-
-    def record_answer(value):
-        answers.append(value)
-        return real_answer(value)
-
-    monkeypatch.setattr(view, "answer_pending", record_answer)
-    dialog.option_view.select(chosen_id)
-    dialog.option_view.option_buttons[chosen_id].click()
-    assert dialog.isHidden()
-    assert not dialog.isEnabled()
-    assert answers == []
-    assert game.state.pending_choice is not None
-
-    dialog.option_view.confirm(chosen_id)
-    qapp.processEvents()
-    assert answers == [chosen_id]
-    assert [field.card_id for field in game.current.fields] == [chosen_id]
-    assert game.state.pending_choice is None
-    assert view.choice_dialog is None
-
-
 def test_choice_immediate_feedback_restores_invalid_answer(qapp, db, view, monkeypatch):
     option_ids = [10010161, 10010162]
     for cid in option_ids:
@@ -1873,18 +1802,6 @@ def test_choice_session_boundary_return_to_menu_cancels_answer(
     assert errors == []
     assert view.game is None
     assert view.choice_dialog is None
-
-
-def test_second_player_mulligan_review_has_no_turn_banner(qapp, view, monkeypatch):
-    start(view)
-    view.ready()
-    view.confirm_handoff()
-    view.confirm_handoff()
-    called = []
-    monkeypatch.setattr(view.battle_scene, "show_turn_banner", lambda *_args: called.append(True))
-    view.ready()
-    assert view._handoff_pending
-    assert called == []
 
 
 def test_scene_commands_apply_through_existing_engine(qapp, view):
@@ -2737,26 +2654,6 @@ def test_log_dialog_closes_on_new_game_and_return(qapp, view):
     assert view.log_dialog.isHidden()
 
 
-def test_mulligan_ready_and_replacement(qapp, view):
-    start(view)
-    game = view.game
-    old_uid = game.state.players[0].hand[0].uid
-    view.mulligan(old_uid)
-    settle(view)
-    assert old_uid not in {card.uid for card in game.state.players[0].hand}
-    view.ready()
-    view.confirm_handoff()
-    settle(view)
-    assert game.state.players[0].mulligan_done
-    assert view.viewer == 1
-    view.ready()
-    view.confirm_handoff()
-    settle(view)
-    assert game.state.phase == "battle"
-    assert view.viewer == 0
-    assert len(scene_items(view, "hand", player=0)) == len(game.state.players[0].hand)
-
-
 def test_upgrade_assault_and_end_turn(qapp, view):
     start(view, mulligan=False, config=GameConfig(auto_skip_upgrade=False))
     game = view.game
@@ -2914,7 +2811,7 @@ def test_search_deck_choice_dialog_single_option(qapp, db, view):
     assert game.state.pending_choice is None
 
 
-def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view):
+def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view, monkeypatch):
     """残阳无影候选使用共用卡图横滚视图；真实点击后作答并销毁旧窗。"""
     option_ids = [10010161 + index for index in range(6)]
     for cid in option_ids:
@@ -2932,16 +2829,68 @@ def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view
     qapp.processEvents()
     assert scroll.widget().sizeHint().width() > scroll.viewport().width()
     assert scroll.horizontalScrollBar().maximum() > 0
+
+    choice = dialog.option_view
+    for option_id in option_ids:
+        choice.select(option_id)
+        choice.ensureWidgetVisible(choice._wrappers[option_id])
+        qapp.processEvents()
+        button = choice.option_buttons[option_id]
+        button_rect = button.rect()
+        button_rect.moveTo(button.mapTo(choice.viewport(), button.rect().topLeft()))
+        assert not button.isHidden()
+        assert choice.viewport().rect().contains(button_rect)
+
+    choice.select(option_ids[0])
+    qapp.processEvents()
+    selected_card = choice.option_widgets[0]
+    selected_button = choice.option_buttons[option_ids[0]]
+    content_layout = choice.widget().layout()
+    content_margins = content_layout.contentsMargins()
+    column_layout = choice._wrappers[option_ids[0]].layout()
+    assert content_margins.top() <= 4
+    assert column_layout.spacing() == 0
+    scrollbar = choice.horizontalScrollBar()
+    assert scrollbar.maximum() > 0
+    required_view_height = (
+        selected_card.height() + selected_button.height() + column_layout.spacing()
+        + content_margins.top() + content_margins.bottom()
+        + 2 * choice.frameWidth() + scrollbar.sizeHint().height()
+    )
+    assert choice.minimumHeight() >= required_view_height
+    dialog_layout = dialog.layout()
+    dialog_margins = dialog_layout.contentsMargins()
+    title = dialog.findChild(QLabel)
+    required_dialog_height = (
+        title.sizeHint().height() + required_view_height + dialog_layout.spacing()
+        + dialog_margins.top() + dialog_margins.bottom()
+    )
+    assert dialog.sizeHint().height() >= required_dialog_height
     dialog.reject()
     assert not dialog.isHidden()
 
+    answers = []
+    real_answer = view.answer_pending
+
+    def record_answer(value):
+        answers.append(value)
+        return real_answer(value)
+
+    monkeypatch.setattr(view, "answer_pending", record_answer)
     destroyed = []
     dialog.destroyed.connect(lambda: destroyed.append(True))
     chosen_id = option_ids[2]
     assert cards[2].cdef.id == chosen_id
     QTest.mouseClick(cards[2], Qt.LeftButton)
     QTest.mouseClick(dialog.option_view.option_buttons[chosen_id], Qt.LeftButton)
+    assert dialog.isHidden()
+    assert not dialog.isEnabled()
+    assert answers == []
+    assert game.state.pending_choice is not None
+
+    dialog.option_view.confirm(chosen_id)
     qapp.processEvents()
+    assert answers == [chosen_id]
     assert [field.card_id for field in game.current.fields] == [chosen_id]
     assert game.state.pending_choice is None
     assert dialog.isHidden()
@@ -3799,35 +3748,6 @@ def test_handoff_skips_game_over_and_cleans_up_on_restart_and_return(qapp, view)
     assert not view.battle_scene.handoff_item.isVisible()
     assert view.game is None
     assert view.stack.currentWidget() is view.setup_page
-
-
-def test_mulligan_log_hides_opponent_counts_only_during_startup(qapp, view):
-    start(view)
-    own_uid = view.game.state.players[0].hand[0].uid
-    assert view.mulligan(own_uid)
-    settle(view)
-    own_message = "玩家A 调度了一张手牌（剩余 2 次）"
-    assert own_message in log_lines(view)
-
-    assert view.ready()
-    view.confirm_handoff()
-    settle(view)
-    assert own_message not in log_lines(view)
-    other_uid = view.game.state.players[1].hand[0].uid
-    assert view.mulligan(other_uid)
-    settle(view)
-    other_message = "玩家B 调度了一张手牌（剩余 2 次）"
-    assert other_message in log_lines(view)
-
-    assert view.ready()
-    view.confirm_handoff()
-    settle(view)
-    assert view.game.state.phase == "battle"
-    assert other_message not in log_lines(view)
-    view.game.state.timeline.append({"k": "l", "m": other_message})
-    view.refresh()
-    settle(view)
-    assert log_lines(view).count(other_message) == 1
 
 
 def test_right_click_opens_public_details_without_actions(qapp, view, monkeypatch):

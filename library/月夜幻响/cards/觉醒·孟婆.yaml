@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·孟婆
+level: 3
+rarity: SR
+description: '[[觉醒]]：每当孟婆对敌方牌手造成伤害时，将他牌库底五张牌移除。'
+shikigami: 孟婆
+version_date: '20200624'
+id: '10030807'
+evolve: true
+power+: 1
+health+: 2
+artwork:
+  images:
+  - path: 10030807.png
+    scale: 0.745
+    offset_y: -102

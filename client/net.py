@@ -101,7 +101,7 @@ class NetClient:
             self.token = msg["token"]
             self.seat = msg["seat"]
             self.room_debug = bool(msg.get("debug"))
-            print(f"已加入房间 {self.room_id}（重连令牌：{self.token}）"
+            print(f"已加入房间 {self.room_id}（重连令牌尾号：{self.token[-4:]}）"
                   f"{'【debug 对局】' if self.room_debug else ''}，等待对手……")
         elif t == "lobby":
             # 准备阶段状态更新：ready 为已准备名单（空 = 无人准备、不计时）；
@@ -717,8 +717,8 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
                         print(f"\n** 与服务器的连接已断开{hint}")
                         if client.room_id and client.token:
                             print(f"** 可从主菜单进入 联机对战 → 加入房间，"
-                                  f"输入房间 {client.room_id} 与重连令牌 "
-                                  f"{client.token} 恢复对局")
+                                  f"输入房间 {client.room_id} 与重连令牌尾号 "
+                                  f"{client.token[-4:]} 恢复对局")
 
             threading.Thread(target=recv_loop, daemon=True).start()
             client.input_loop()

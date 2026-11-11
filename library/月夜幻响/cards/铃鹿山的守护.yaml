@@ -1,0 +1,14 @@
+type: 幻境
+name: 铃鹿山的守护
+level: 1
+rarity: SR
+description: 每当己方式神受到伤害时，该式神获得1#hj。
+shikigami: 久次良
+durability: 6
+version_date: '20200624'
+id: '10030602'
+artwork:
+  images:
+  - path: 10030602.png
+    scale: 0.711
+    offset_y: -70

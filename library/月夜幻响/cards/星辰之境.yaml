@@ -1,0 +1,15 @@
+type: 形态
+name: 星辰之境
+level: 2
+rarity: R
+description: '[[增强]]：你每有一个幻境，此牌便获得1#ll和1#sm。'
+shikigami: 荒
+power: 5
+health: 5
+version_date: '20200624'
+id: '10030405'
+artwork:
+  images:
+  - path: 10030405.png
+    scale: 0.711
+    offset_y: -73

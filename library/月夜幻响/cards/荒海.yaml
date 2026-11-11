@@ -1,0 +1,14 @@
+type: 幻境
+name: 荒海
+level: 1
+rarity: R
+description: '[[瞬发]]。被消灭时，将此牌回手并失去此能力。'
+shikigami: 荒
+durability: 1
+version_date: '20200624'
+id: '10030402'
+artwork:
+  images:
+  - path: 10030402.png
+    scale: 0.711
+    offset_y: -72

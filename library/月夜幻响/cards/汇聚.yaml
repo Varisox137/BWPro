@@ -1,0 +1,13 @@
+type: 法术
+name: 汇聚
+level: 3
+rarity: R
+description: '[[瞬发]]。将场上所有的#hj和#pj都转移到一个式神上。'
+shikigami: 天井下
+version_date: '20200624'
+id: '10030907'
+artwork:
+  images:
+  - path: 10030907.png
+    scale: 0.747
+    offset_y: -64

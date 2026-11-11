@@ -672,6 +672,28 @@ def test_state_sanitized_per_viewer(db):
     run(go())
 
 
+def test_state_sanitizes_private_quest_clues_per_viewer():
+    """今日委托线索账本仅所属方可见，原有私密日志仍按 viewer 过滤。"""
+    from server.room import sanitize_state
+
+    payload = {
+        "players": [
+            {"name": "甲", "zones": {}, "ext": {"quest_clues_seen": ["线索甲"]}},
+            {"name": "乙", "zones": {}, "ext": {"quest_clues_seen": ["线索乙"]}},
+        ],
+        "log": ["公开行", "甲方私密行"],
+        "log_vis": [None, 0],
+    }
+    own = sanitize_state(payload, 0)
+    peer = sanitize_state(payload, 1)
+    assert own["players"][0]["ext"]["quest_clues_seen"] == ["线索甲"]
+    assert own["players"][1]["ext"]["quest_clues_seen"] == []
+    assert peer["players"][1]["ext"]["quest_clues_seen"] == ["线索乙"]
+    assert peer["players"][0]["ext"]["quest_clues_seen"] == []
+    assert own["log"] == ["公开行", "甲方私密行"]
+    assert peer["log"] == ["公开行"]
+
+
 def test_mulligan_hidden_from_opponent(db):
     """调度阶段信息隐藏：对方调度行为行（泄露次数）不广播给另一方，
     对方 payload 中剩余调度次数抹除为 0；"完成调度"为无信息状态保留；
@@ -979,6 +1001,231 @@ def test_full_match_flow(server, db):
     assert st2["turn"] == st["turn"]
     a2.ws.close()
     b.ws.close()
+
+
+def _ws_create_room(db, name: str, **extra):
+    client = WsClient()
+    client.send({"type": "create", "name": name,
+                 "deck_code": _deck_code(db), **extra})
+    joined = client.recv_until("joined", "error")
+    assert joined["type"] == "joined"
+    return client, joined
+
+
+def _ws_room(db, *, started: bool = False, mode: str = "standard"):
+    first, joined = _ws_create_room(db, "甲", mode=mode)
+    second = WsClient()
+    second.send({"type": "join", "room_id": joined["room_id"], "name": "乙",
+                 "deck_code": _deck_code(db)})
+    assert second.recv_until("joined", "error")["type"] == "joined"
+    first.recv_until("lobby")
+    if started:
+        first.send({"type": "ready"})
+        second.send({"type": "ready"})
+        first.recv_until("start")
+        second.recv_until("start")
+        first.recv_until("state")
+        second.recv_until("state")
+    return first, second, joined
+
+
+@pytest.mark.parametrize("op", [[], None, {}, ""])
+def test_parse_rejects_invalid_cmd_op(op):
+    raw = json.dumps({"type": "cmd", "cmd": {"op": op}})
+    with pytest.raises(ValueError, match="cmd.op"):
+        protocol.parse_client_message(raw)
+
+
+@pytest.mark.parametrize("op", [[], None, {}, ""])
+def test_malformed_cmd_op_returns_error_and_match_continues(server, db, op):
+    """畸形 op 只回普通 error，不进入 engine_error，之后仍可完成调度。"""
+    first, second, _ = _ws_room(db, started=True)
+    first.send({"type": "cmd", "cmd": {"op": op}})
+    reply = first.recv_until("error", "game_over")
+    assert reply["type"] == "error" and "引擎异常" not in reply["reason"]
+    first.send({"type": "cmd", "cmd": {"op": "ready"}})
+    assert first.recv_until("state", "game_over")["type"] == "state"
+    first.ws.close()
+    second.ws.close()
+
+
+@pytest.mark.parametrize("hello", ["create", "join"])
+@pytest.mark.parametrize("name", ["甲\n乙", "甲\x1b乙", "甲\x85乙"])
+def test_player_name_rejects_unicode_control_characters(server, db, hello, name):
+    """create/join 名称拒绝 C0/C1 控制字符；正常中文由房间建立流程持续覆盖。"""
+    clients = []
+    if hello == "create":
+        client = WsClient()
+        clients.append(client)
+        client.send({"type": "create", "name": name, "deck_code": _deck_code(db)})
+    else:
+        owner, joined = _ws_create_room(db, "甲")
+        clients.append(owner)
+        client = WsClient()
+        clients.append(client)
+        client.send({"type": "join", "room_id": joined["room_id"],
+                     "name": name, "deck_code": _deck_code(db)})
+    assert client.recv_until("joined", "error")["type"] == "error"
+    for item in clients:
+        item.ws.close()
+
+
+@pytest.mark.parametrize("exc_type", [TypeError, ValueError, AttributeError, KeyError])
+def test_command_data_errors_return_generic_error_and_match_continues(db, exc_type):
+    """指令数据异常不得泄露内部细节或终止对局，恢复原指令处理后可继续。"""
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        original_apply = room.game.apply
+
+        def raise_data_error(_cmd):
+            raise exc_type("内部细节")
+
+        room.game.apply = raise_data_error
+        await room.handle_cmd(0, {"op": "ready"})
+        reply = ws0.messages[-1]
+        assert reply["type"] == "error"
+        assert "内部细节" not in reply["reason"] and "引擎异常" not in reply["reason"]
+        assert not any(m["type"] == "game_over" for m in ws0.messages + ws1.messages)
+
+        room.game.apply = original_apply
+        await room.handle_cmd(0, {"op": "ready"})
+        assert ws0.messages[-1]["type"] == "state"
+        room._cancel_timer()
+    run(go())
+
+
+@pytest.mark.parametrize("hello", ["create", "join"])
+def test_room_binding_rejects_second_hello(server, db, hello):
+    """同一 socket 第二次成功 create/join 不得抢占新的房间身份。"""
+    first, second, joined = _ws_room(db)
+    clients = [first, second]
+    caller = first if hello == "create" else second
+    peer = second if hello == "create" else first
+    if hello == "create":
+        caller.send({"type": "create", "name": "丙", "deck_code": _deck_code(db)})
+    else:
+        other, other_joined = _ws_create_room(db, "丙")
+        clients.append(other)
+        caller.send({"type": "join", "room_id": other_joined["room_id"],
+                     "name": "丁", "deck_code": _deck_code(db)})
+    reply = caller.recv_until("joined", "error")
+    assert reply["type"] == "error"
+    caller.send({"type": "ready"})
+    notice = peer.recv_until("notice")
+    assert "已准备" in notice["text"]
+    for client in clients:
+        client.ws.close()
+
+
+def test_room_binding_failed_reconnect_preserves_lobby_binding(server, db):
+    """无效 token 不得把已入座 socket 绑到另一房间操作 ready/env/leave。"""
+    first, second, _ = _ws_room(db, mode="free")
+    other, other_peer, other_joined = _ws_room(db, mode="free")
+    first.send({"type": "join", "room_id": other_joined["room_id"], "token": "bad"})
+    assert first.recv_until("error")["type"] == "error"
+
+    first.send({"type": "env", "date": 20991231})
+    assert "环境" in second.recv_until("notice")["text"]
+    first.send({"type": "ready"})
+    assert "已准备" in second.recv_until("notice")["text"]
+    first.send({"type": "leave"})
+    assert second.recv_until("peer_left")["name"] == "甲"
+    other.send({"type": "ready"})
+    assert "已准备" in other_peer.recv_until("notice")["text"]
+    for client in (second, other, other_peer):
+        client.ws.close()
+
+
+def test_room_binding_failed_reconnect_preserves_started_binding(server, db):
+    """已开局房间的无效重连失败后，cmd 仍只作用于原房间。"""
+    first, second, _ = _ws_room(db, started=True)
+    other, other_peer, other_joined = _ws_room(db, started=True)
+    first.send({"type": "join", "room_id": other_joined["room_id"], "token": "bad"})
+    assert first.recv_until("error")["type"] == "error"
+    first.send({"type": "cmd", "cmd": {"op": "ready"}})
+    assert second.recv_until("state")["type"] == "state"
+    for client in (first, second, other, other_peer):
+        client.ws.close()
+
+
+def test_reconnect_socket_closes_replaced_socket(db):
+    """重连换绑新 socket 后必须关闭旧 socket，阻断旧指令入口。"""
+    async def go():
+        room, old, _ = await _started_room(db)
+        new = FakeWS()
+        conn = await room.reconnect(room.conns[0].token, new)
+        assert conn.ws is new
+        assert old.closed
+        room._cancel_timer()
+    run(go())
+
+
+def test_reconnect_socket_stale_send_failure_preserves_new_socket(db):
+    """旧发送挂起期间完成重连，随后旧发送失败不得清掉新 socket。"""
+    async def go():
+        class PendingFailWS(FakeWS):
+            def __init__(self):
+                super().__init__()
+                self.send_started = asyncio.Event()
+                self.send_release = asyncio.Event()
+
+            async def send_text(self, text: str):
+                self.send_started.set()
+                await self.send_release.wait()
+                raise RuntimeError("旧连接发送失败")
+
+        room = mk_room(db)
+        old = PendingFailWS()
+        conn = await room.join(0, "甲", old, _deck_code(db))
+        pending_send = asyncio.create_task(conn.send(protocol.notice("旧消息")))
+        await old.send_started.wait()
+        new = FakeWS()
+        assert await room.reconnect(conn.token, new) is conn
+        old.send_release.set()
+        await pending_send
+        assert conn.ws is new and conn.connected
+        await conn.send(protocol.notice("新消息"))
+        assert new.messages[-1]["text"] == "新消息"
+    run(go())
+
+
+def test_reconnect_socket_old_command_cannot_act(server, db):
+    """旧 socket 在重连后发送 cmd 只能发现连接已关闭或收到 error。"""
+    import websockets.exceptions
+
+    old, peer, joined = _ws_room(db, started=True)
+    new = WsClient()
+    new.send({"type": "join", "room_id": joined["room_id"], "token": joined["token"]})
+    assert new.recv_until("joined", "error")["type"] == "joined"
+    try:
+        old.send({"type": "cmd", "cmd": {"op": "ready"}})
+        reply = old.recv_until("error", "state")
+    except websockets.exceptions.ConnectionClosed:
+        reply = {"type": "closed"}
+    assert reply["type"] in ("error", "closed")
+    for client in (old, new, peer):
+        client.ws.close()
+
+
+@pytest.mark.parametrize("started", [False, True])
+def test_reconnect_socket_stale_disconnect_preserves_new_socket(server, db, started):
+    """旧 socket 断开不得清理新连接；大厅 ready 与开局 cmd 均继续可用。"""
+    old, peer, joined = _ws_room(db, started=started)
+    new = WsClient()
+    new.send({"type": "join", "room_id": joined["room_id"], "token": joined["token"]})
+    assert new.recv_until("joined", "error")["type"] == "joined"
+    if started:
+        new.recv_until("state")  # 排干重连补发，后续 state 必须来自新指令
+    old.ws.close()
+    time.sleep(0.1)  # 等旧 socket 的断线收尾完成，再验证新连接未被误清理
+    if started:
+        new.send({"type": "cmd", "cmd": {"op": "ready"}})
+        assert new.recv_until("state", "error")["type"] == "state"
+    else:
+        new.send({"type": "ready"})
+        assert "已准备" in peer.recv_until("notice")["text"]
+    for client in (new, peer):
+        client.ws.close()
 
 
 def test_http_probe_gets_403_no_server_header(server):

@@ -1,0 +1,15 @@
+type: 形态
+name: 花开彼岸
+level: 2
+rarity: R
+description: '[[迅捷]]。每当彼岸花受到伤害时，你受到等量的伤害。'
+shikigami: 彼岸花
+power: 7
+health: 5
+version_date: '20200624'
+id: '10030504'
+artwork:
+  images:
+  - path: 10030504.png
+    scale: 0.72
+    offset_y: -72

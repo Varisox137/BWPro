@@ -174,6 +174,12 @@ def test_lobby_messages_render_ready_environment_and_notices(qapp, db, view):
     assert "等待" in view.lobby_status.text()
 
 
+def test_online_token_uses_password_echo_mode(qapp, view):
+    from PySide6.QtWidgets import QLineEdit
+
+    assert view.token_edit.echoMode() == QLineEdit.Password
+
+
 def test_online_battle_notice_is_visible_until_message_is_cleared(qapp, view):
     view.stack.setCurrentWidget(view.battle)
     view.battle.error_label.hide()

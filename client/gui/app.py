@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from client.gui.loading import LoadingIndicator, LoadingOverlay
 from client.gui.prewarm import prewarm_iter
 from core.logging_config import configure_logging
 
@@ -175,16 +174,12 @@ class MainWindow(QMainWindow):
                 else:
                     from client.gui.online import OnlineView
                     self.pages[key] = OnlineView(db, on_back=self.go_menu, **kwargs)
-            else:
-                self.pages[key] = self._make_placeholder(title)
             self.stack.addWidget(self.pages[key])
         self.pages["hotseat"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.pages["hotseat"].state_changed.connect(self._sync_game_menu_button)
         self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.back_button.hide()
         self.set_theme(self.theme)
-        self.loading_overlay = LoadingOverlay(self)
-        self.loading = LoadingIndicator("正在加载卡图", self.loading_overlay.set_text, self)
         self.db = db
         self._prewarm_timer = QTimer(self)
         self._prewarm_timer.setInterval(0)
@@ -307,17 +302,6 @@ class MainWindow(QMainWindow):
             lay.addWidget(btn)
         lay.addStretch(1)
         return page
-
-    def _make_placeholder(self, title: str) -> QWidget:
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(40, 30, 40, 30)
-        lab = QLabel(f"{title}（建设中）")
-        lab.setAlignment(Qt.AlignCenter)
-        lay.addWidget(lab)
-        lay.addStretch(1)
-        return page
-
 
 def main() -> int:
     configure_logging("gui")

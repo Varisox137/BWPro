@@ -1,0 +1,15 @@
+type: 形态
+name: 斩
+level: 2
+rarity: R
+description: 当山风触发[[倒计时]]能力时，本次攻击获得[[必杀]]。
+shikigami: 山风
+power: 3
+health: 8
+version_date: '20200624'
+id: '10030705'
+artwork:
+  images:
+  - path: 10030705.png
+    scale: 0.711
+    offset_y: -76

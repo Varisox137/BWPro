@@ -34,13 +34,6 @@ def view(qapp, db):
     qapp.processEvents()
 
 
-def test_main_window_opens_real_codex(qapp, db, tmp_path):
-    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
-    win.go("codex")
-    assert isinstance(win.pages["codex"], ShikigamiCodexView)
-    win.close()
-
-
 def test_overview_filters_and_shikigami_home(qapp, db, view):
     assert "标准(最新)" in [view.env_combo.itemText(i) for i in range(view.env_combo.count())]
     assert view.pack_combo.itemText(view.pack_combo.findData("01")) == "经典包"
@@ -174,6 +167,8 @@ def test_theme_and_empty_filter(qapp, view):
 def test_mainwindow_applies_codex_selection_theme(qapp, db, tmp_path):
     window = MainWindow(db=db, store_path=tmp_path / "decks.json")
     try:
+        window.go("codex")
+        assert isinstance(window.pages["codex"], ShikigamiCodexView)
         window.set_theme("light")
         assert "#cfe5f7" in window.pages["codex"].styleSheet()
     finally:

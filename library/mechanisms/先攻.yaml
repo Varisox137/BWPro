@@ -1,0 +1,6 @@
+name: 先攻
+frame: skill
+text: 战斗时，对不具[[先攻]]或[[连击]]的角色先造成战斗伤害。
+badge: null
+chars_per_line: 12
+version_date: '20200624'

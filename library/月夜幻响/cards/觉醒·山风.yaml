@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·山风
+level: 3
+rarity: SSR
+description: '[[觉醒]]：[[倒计时3]]：发起一次攻击，本次战斗免疫战斗伤害。你的牌对山风以外的未气绝己方式神造成的减少倒计时效果对山风造成等量效果。（山风气绝时有效）'
+shikigami: 山风
+version_date: '20200624'
+id: '10030708'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10030708.png
+    scale: 0.747
+    offset_y: -74

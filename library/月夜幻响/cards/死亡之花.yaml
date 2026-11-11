@@ -1,0 +1,13 @@
+type: 法术
+name: 死亡之花
+level: 2
+rarity: R
+description: 对一个式神造成2点伤害。[[增强]]：本局游戏你受到过一次己方伤害，此牌便伤害+1。
+shikigami: 彼岸花
+version_date: '20200624'
+id: '10030506'
+artwork:
+  images:
+  - path: 10030506.png
+    scale: 0.747
+    offset_y: -88

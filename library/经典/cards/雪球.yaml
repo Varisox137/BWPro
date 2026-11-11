@@ -1,7 +1,6 @@
 type: 法术
 name: 雪球
 level: 1
-rarity: R
 description: '[[瞬发]]。对一个敌方式神造成1点伤害。'
 shikigami: 雪女
 version_date: '20191212'
@@ -9,5 +8,7 @@ id: '10012151'
 artwork:
   images:
   - path: 10012151.png
-    scale: 0.747
-    offset_y: -72
+    scale: 0.823
+    offset_y: -73
+    offset_x: -3
+token: true

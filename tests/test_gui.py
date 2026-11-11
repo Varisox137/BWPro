@@ -10,6 +10,7 @@ from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
 from client.gui.app import MENU_ENTRIES, MainWindow
+from client.gui.builder import DeckBuilderView
 
 
 @pytest.fixture(scope="module")
@@ -39,8 +40,10 @@ def test_menu_navigation_and_theme(qapp, db, tmp_path):
         assert win.stack.currentIndex() == 0
         assert win.back_button.isHidden()
     win.go("builder")
+    assert isinstance(win.pages["builder"], DeckBuilderView)
     win.theme_button.click()
     assert win.theme == "dark"
+    assert win.pages["builder"].theme == "dark"
     assert "#141121" in win.styleSheet()
     win.theme_button.click()
     assert win.theme == "light"

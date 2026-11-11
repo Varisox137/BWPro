@@ -1,0 +1,17 @@
+type: 式神
+name: 天井下
+faction: 紫岩
+power: 2
+health: 5
+description: 己方回合开始或结束时，若你手牌中没有「[[妖怪屋·灵力]]」，将其置入手牌。
+id: '100309'
+version_date: '20200624'
+artwork:
+  images:
+  - path: 100309.png
+    scale: 0.711
+    offset_y: -75
+portrait:
+  scale: 3.557
+  offset_x: 7
+  offset_y: 47

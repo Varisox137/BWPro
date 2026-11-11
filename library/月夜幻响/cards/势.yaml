@@ -1,0 +1,15 @@
+type: 形态
+name: 势
+level: 1
+rarity: R
+description: '[[贯通]]。当山风[[倒计时]]减少时，获得等量的#ll直到下次攻击后。'
+shikigami: 山风
+power: 3
+health: 6
+version_date: '20200624'
+id: '10030703'
+artwork:
+  images:
+  - path: 10030703.png
+    scale: 0.711
+    offset_y: -73

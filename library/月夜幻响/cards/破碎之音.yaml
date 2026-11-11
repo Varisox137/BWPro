@@ -1,0 +1,15 @@
+type: 形态
+name: 破碎之音
+level: 2
+rarity: SR
+description: 每当你击杀有#pj的式神时，对其牌手造成3点伤害。
+shikigami: 天井下
+power: 6
+health: 5
+version_date: '20200624'
+id: '10030905'
+artwork:
+  images:
+  - path: 10030905.png
+    scale: 0.711
+    offset_y: -75

@@ -1,0 +1,15 @@
+type: 战斗
+name: 鲸骨·开
+level: 2
+rarity: R
+description: '[[增强]]：你每有一个幻境，此牌便获得+1#ll和+1#hj。'
+shikigami: 久次良
+power+: 0
+shield+: 0
+version_date: '20200624'
+id: '10030605'
+artwork:
+  images:
+  - path: 10030605.png
+    scale: 0.711
+    offset_y: -72

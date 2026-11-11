@@ -1,0 +1,14 @@
+type: 幻境
+name: 火照之路
+level: 1
+rarity: SR
+description: 你手牌中的等级为1的牌获得[[瞬发]]与「使用时你受到1点伤害」。
+shikigami: 彼岸花
+durability: 8
+version_date: '20200624'
+id: '10030502'
+artwork:
+  images:
+  - path: 10030502.png
+    scale: 0.711
+    offset_y: -72

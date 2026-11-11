@@ -273,27 +273,25 @@ def _renderer_source_digest(assets: Path) -> str:
     return digest.hexdigest()
 
 
-def _card_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
-    if cache_context is not None and "card_renderer_resources" in cache_context:
-        return cache_context["card_renderer_resources"]
+def _renderer_resources_with_source(
+        assets: Path, cache_context: dict | None, cache_key: str) -> str:
+    if cache_context is not None and cache_key in cache_context:
+        return cache_context[cache_key]
     resources = hashlib.sha256(
         (_renderer_resources(assets, cache_context)
          + _renderer_source_digest(assets)).encode("ascii")).hexdigest()
     if cache_context is not None:
-        cache_context["card_renderer_resources"] = resources
+        cache_context[cache_key] = resources
     return resources
+
+
+def _card_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
+    return _renderer_resources_with_source(assets, cache_context, "card_renderer_resources")
 
 
 def _entity_renderer_resources(assets: Path, cache_context: dict | None = None) -> str:
     """小卡跟踪渲染资源与源码。"""
-    if cache_context is not None and "entity_renderer_resources" in cache_context:
-        return cache_context["entity_renderer_resources"]
-    resources = hashlib.sha256(
-        (_renderer_resources(assets, cache_context)
-         + _renderer_source_digest(assets)).encode("ascii")).hexdigest()
-    if cache_context is not None:
-        cache_context["entity_renderer_resources"] = resources
-    return resources
+    return _renderer_resources_with_source(assets, cache_context, "entity_renderer_resources")
 
 
 def _preflight_card_artwork(library, art: dict) -> None:
@@ -678,7 +676,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                       payload_overrides: dict | None = None,
                       drop_keys: tuple[str, ...] = (),
                       cache_context: dict | None = None,
-                      height: int | None = None) -> QPixmap | None:
+                      height: int | None = None,
+                      description_suffix: str | None = None) -> QPixmap | None:
     path = None
     try:
         if cache_context is None:
@@ -708,6 +707,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
             payload["_placeholder_color"] = _placeholder_color()
         if payload_overrides:
             payload.update(payload_overrides)
+        if description_suffix:
+            payload["description"] = str(payload.get("description", "")) + description_suffix
         for key in drop_keys:
             payload.pop(key, None)
         display_stats = _display_stats(display)
@@ -908,7 +909,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
 
 def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = None,
                      library_dir: Path | None = None, cache_dir: Path | None = None,
-                     height: int | None = None) -> QPixmap | None:
+                     height: int | None = None,
+                     description_suffix: str | None = None) -> QPixmap | None:
     """以 DIY 路线绘制基础/觉醒式神；详情用永久值，场上可用当前值。"""
     definition = db.shikigami[shiki.id]
     awakened = shiki.awakened is not None
@@ -923,12 +925,14 @@ def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = Non
         "level": shiki.level or None,
         "level_color": seat_level_color(seat),
     }
-    size_kwargs = {} if height is None else {"height": height}
+    render_kwargs = {} if height is None else {"height": height}
+    if description_suffix is not None:
+        render_kwargs["description_suffix"] = description_suffix
     return _card_pixmap_impl(
         source, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart",
         {"power": power, "health": health}, overrides,
-        ("rarity", "shikigami", "power+", "health+"), **size_kwargs)
+        ("rarity", "shikigami", "power+", "health+"), **render_kwargs)
 
 
 def clear_cardart_caches() -> None:

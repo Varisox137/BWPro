@@ -1,0 +1,13 @@
+type: 法术
+name: 血华散
+level: 3
+rarity: R
+description: 抽牌直至所抽牌等级总和≥5，对你造成5点伤害。
+shikigami: 彼岸花
+version_date: '20200624'
+id: '10030507'
+artwork:
+  images:
+  - path: 10030507.png
+    scale: 0.747
+    offset_y: -72

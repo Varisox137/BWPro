@@ -1020,6 +1020,67 @@ def test_net_send_cmd_waits_for_reply(db):
     assert len(c.ws.sent) == 1
 
 
+def test_net_token_output_masked_but_reconnect_value_retained(
+        db, monkeypatch, capsys, tmp_path):
+    """加入与断线提示只显示令牌尾号；tee 持久日志同样不含完整令牌。"""
+    import json
+    import logging
+
+    from client import net
+    from core.logging_config import configure_logging, restore_output
+
+    token = "top-secret-token-1234567890abcdef"
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def send(self, raw):
+            self.sent.append(raw)
+
+        def __iter__(self):
+            yield json.dumps({"type": "joined", "room_id": "ABC123",
+                              "token": token, "seat": 0})
+            raise OSError("网络中断")
+
+    clients = []
+    original_client = net.NetClient
+
+    class CapturingClient(original_client):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            clients.append(self)
+
+    answers = iter(["1", "", "1"])
+    monkeypatch.setattr(net, "_input", lambda _prompt: next(answers))
+    monkeypatch.setattr(net, "_open_ws", lambda *_args, **_kwargs: FakeWS())
+    monkeypatch.setattr(net.deckbuilder, "choose_deck",
+                        lambda *_args: ("卡组", "卡组", "deck-code"))
+    monkeypatch.setattr(net, "NetClient", CapturingClient)
+    monkeypatch.setattr(net.tui, "prompt", lambda _prompt: "")
+
+    try:
+        log_path = configure_logging("test", log_dir=tmp_path)
+        net.run(db, "ws://localhost:1037/ws", "甲", False)
+        console = capsys.readouterr().out
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        persistent = log_path.read_text(encoding="utf-8")
+    finally:
+        restore_output()
+
+    assert clients[0].token == token
+    assert token not in console and token[-4:] in console
+    assert token not in persistent and token[-4:] in persistent
+    assert "网络中断" in console
+
+
 def test_net_status_phase_hint(db, make_game):
     """联机状态栏中段即时反映最新阶段：己方升级阶段含剩余次数、
     主要阶段=你的回合、非己方=对手行动中。"""

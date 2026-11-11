@@ -57,6 +57,7 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
         else:
             zones[zone] = [dict(_HIDDEN_CARD) for _ in zones[zone]]
     opponent["mulligans_left"] = 0  # 调度次数对对手隐藏
+    opponent.setdefault("ext", {})["quest_clues_seen"] = []
     for s in opponent.get("shikigami", []):
         for entry in s.get("delayed", []):
             if entry.get("secret"):
@@ -141,11 +142,13 @@ class Connection:
         return self.ws is not None
 
     async def send(self, msg: dict) -> None:
-        if self.ws is not None:
+        ws = self.ws
+        if ws is not None:
             try:
-                await self.ws.send_text(json.dumps(msg, ensure_ascii=False))
+                await ws.send_text(json.dumps(msg, ensure_ascii=False))
             except Exception:
-                self.ws = None  # 发送失败视为断线
+                if self.ws is ws:
+                    self.ws = None  # 发送失败视为断线
 
 
 class Room:
@@ -229,7 +232,13 @@ class Room:
         if seat is None:
             return None
         conn = self.conns[seat]
+        old_ws = conn.ws
         conn.ws = ws
+        if old_ws is not None and old_ws is not ws:
+            try:
+                await old_ws.close(code=1000)
+            except Exception:
+                pass
         self.last_activity = time.time()  # 重连回房也算人员变动
         return conn
 
@@ -455,6 +464,10 @@ class Room:
         except IllegalAction as e:
             if seat is not None:
                 await self.conns[seat].send(protocol.error(str(e)))
+            return
+        except (TypeError, ValueError, AttributeError, KeyError):
+            if seat is not None:
+                await self.conns[seat].send(protocol.error("指令格式或参数非法"))
             return
         except Exception as e:  # 引擎异常：终止对局，避免房间卡死
             self._log(f"引擎异常，对局终止（{e}）")

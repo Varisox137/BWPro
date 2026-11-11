@@ -1,0 +1,14 @@
+type: 幻境
+name: 黄泉花境
+level: 2
+rarity: R
+description: 当此牌的#nj降低时，[[鼓舞]]：+2#ll和+2#hj。
+shikigami: 彼岸花
+durability: 4
+version_date: '20200624'
+id: '10030505'
+artwork:
+  images:
+  - path: 10030505.png
+    scale: 0.747
+    offset_y: -75

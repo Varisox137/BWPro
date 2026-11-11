@@ -1,0 +1,13 @@
+type: 法术
+name: 骚声
+level: 1
+rarity: SR
+description: '[[瞬发]]。移除一个角色上的#hj或#pj，使手牌中的「[[妖怪屋·灵力]]」或「[[妖怪屋·灵力之泉]]」增强等量的效果。'
+shikigami: 天井下
+version_date: '20200624'
+id: '10030901'
+artwork:
+  images:
+  - path: 10030901.png
+    scale: 0.747
+    offset_y: -74

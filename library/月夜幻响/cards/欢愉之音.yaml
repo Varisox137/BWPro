@@ -1,0 +1,15 @@
+type: 形态
+name: 欢愉之音
+level: 1
+rarity: R
+description: 己方角色获得#hj或敌方角色获得#pj时效果+1。
+shikigami: 天井下
+power: 3
+health: 5
+version_date: '20200624'
+id: '10030902'
+artwork:
+  images:
+  - path: 10030902.png
+    scale: 0.784
+    offset_y: -72

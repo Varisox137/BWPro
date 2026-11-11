@@ -1,0 +1,15 @@
+type: 形态
+name: 命运螺旋
+level: 3
+rarity: SR
+description: 当你使用幻境牌时，使荒发动攻击且免疫本次战斗伤害。
+shikigami: 荒
+power: 5
+health: 8
+version_date: '20200624'
+id: '10030408'
+artwork:
+  images:
+  - path: 10030408.png
+    scale: 0.711
+    offset_y: -76

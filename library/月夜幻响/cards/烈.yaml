@@ -1,0 +1,15 @@
+type: 形态
+name: 烈
+level: 1
+rarity: R
+description: 当山风触发[[倒计时]]能力时，永久获得1#ll和1#sm。
+shikigami: 山风
+power: 3
+health: 4
+version_date: '20200624'
+id: '10030701'
+artwork:
+  images:
+  - path: 10030701.png
+    scale: 0.711
+    offset_y: -74

@@ -733,7 +733,7 @@
 | 03 余辉 | ✅ | play_condition {hand_card_type: field}（手牌无幻境牌不可用——match_condition 新键）；discard_pick card_type=field count=1（仅幻境候选，空候选不挂起）→ draw 3 |
 | 04 星陨 | ✅ | 幻境 耐久4；on_turn_start {active: self} → repeat count={field_intensity: self} 套 damage 2 随机敌方角色 + field_op self_field destroy 自毁 |
 | 05 星辰之境 | ✅ | 形态；stat_aura kind=field_count_stats power/health 1（每有一个幻境 +1/+1） |
-| 06 觉醒·荒 | ✅ | 觉醒能力三块：基础同款 on_damage/on_player_damaged（战斗伤害含对牌手 → 全幻境 +1）+ on_card_played {card_type: field, player: self} → grant_keyword haste（使用幻境牌时荒得[迅捷]） |
+| 06 觉醒·荒 | ✅ | 觉醒能力三块：基础同款 on_damage/on_player_damaged（战斗伤害含对牌手 → 全幻境 +1）+ on_card_played {card_type: field, player: self} → grant_keyword haste scope=turn（使用幻境牌时荒得[迅捷]，授予回合结束移除） |
 | 07 月坠 | ✅ | 幻境 耐久15；on_before_field_intensity {field_self} → boost_change +2（"当此牌获得耐久时，效果+2"）；单块 on_turn_start {active: self} 三步：field_op +3 → destroy + damage 全体敌方 10 各带步级条件 field_intensity_ge 30（同块首次判定快照耐久，自毁归零后伤害步仍通过——仅"召唤并炸 3"一步判定，任意途径块已删，定案） |
 | 08 命运螺旋 | ✅ | 形态；on_card_played {card_type: field, player: self} → grant_immunity scope=next_battle + launch_attack（免疫本次战斗伤害并发动攻击） |
 

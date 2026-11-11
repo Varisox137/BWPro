@@ -1,0 +1,15 @@
+type: 形态
+name: 方圆之备
+level: 3
+rarity: SR
+description: 久次良和你的所有幻境获得[[帷幕]]。进场或己方回合开始时若你有幻境，己方所有式神获得3#hj。
+shikigami: 久次良
+power: 5
+health: 8
+version_date: '20200624'
+id: '10030606'
+artwork:
+  images:
+  - path: 10030606.png
+    scale: 0.711
+    offset_y: -69

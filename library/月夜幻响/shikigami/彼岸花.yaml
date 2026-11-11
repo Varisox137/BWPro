@@ -1,0 +1,17 @@
+type: 式神
+name: 彼岸花
+faction: 红莲
+power: 3
+health: 4
+description: 每当你受到己方伤害时，对敌方牌手造成1点伤害。
+id: '100305'
+version_date: '20200624'
+artwork:
+  images:
+  - path: 100305.png
+    scale: 0.711
+    offset_y: -74
+portrait:
+  scale: 2.409
+  offset_x: -7
+  offset_y: 41

@@ -1,0 +1,15 @@
+type: 法术
+name: 觉醒·彼岸花
+level: 1
+rarity: SR
+description: 对双方牌手各造成3点伤害。[[觉醒]]：每当你受到己方伤害时，[[投射]]：造成1点伤害。
+shikigami: 彼岸花
+version_date: '20200624'
+id: '10030503'
+evolve: true
+power+: 1
+artwork:
+  images:
+  - path: 10030503.png
+    scale: 0.747
+    offset_y: -80

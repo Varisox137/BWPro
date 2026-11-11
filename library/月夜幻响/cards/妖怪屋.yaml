@@ -1,0 +1,14 @@
+type: 式神
+name: 妖怪屋
+faction: 红莲
+power: 1
+health: 1
+description: '[[迅捷]]'
+shikigami: 天井下
+version_date: '20200624'
+id: '10030999'
+artwork:
+  images:
+  - path: 10030999.png
+    scale: 0.711
+    offset_y: -104
