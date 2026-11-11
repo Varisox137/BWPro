@@ -903,11 +903,15 @@ def test_online_result_waits_visual_busy(qapp, db, make_game):
     battle.me = 0
     battle.set_state(game.state.model_dump(mode="json"), log=[], timeline=[])
     scene = battle.battle_scene
-    scene.play_visual_event({"v": "damage", "p": 0, "s": 0, "amount": 3})
-    assert scene.visual_busy
 
-    battle.game.state.winner = 0
-    battle.show_game_over(0)
+    enemy = battle.game.state.players[1]
+    battle.game.deal_to_player(1, enemy.health + enemy.shield, None)
+    battle.game._drain_queue()
+    assert battle.game.state.winner == 0
+    payload = battle.game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(battle.game, 0)
+    battle.set_state(payload, log=[], timeline=[])
+    assert scene.visual_busy
     assert battle.result_banner.isHidden()
 
     while scene.visual_busy:

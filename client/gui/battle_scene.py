@@ -1,6 +1,7 @@
 """固定坐标对局场景与卡牌图元。"""
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 
 from PySide6.QtCore import (
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QGraphicsRectItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView,
 )
 
+from client.gui.card_appearance import card_appearance
 from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
 from client.gui.loading import LoadingIndicator
 from client.gui.portrait import bwpdiy_root
@@ -39,6 +41,20 @@ FOCUS_Z = 80
 DRAG_Z = 100
 ENEMY_HAND_Y = -78
 OWN_HAND_Y = 822
+
+
+def _entity_render_signature(shiki, form, seat: int, show_defeated_countdown: bool,
+                             theme: str) -> tuple:
+    return (
+        shiki.id, shiki.awakened, form.id if form is not None else None, shiki.level,
+        shiki.base_power, shiki.base_health, shiki.perm_power, shiki.perm_health,
+        shiki.temp_power, shiki.temp_health, shiki.eff_power, shiki.health,
+        shiki.max_health, shiki.shield, shiki.combat_power, shiki.energy,
+        shiki.countdown, shiki.revive_countdown, shiki.defeated,
+        show_defeated_countdown, seat, theme,
+        tuple(shiki.keywords), tuple(shiki.one_shot_keywords), tuple(shiki.perm_keywords),
+        bool(shiki.ext.get("power_zero")),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -654,8 +670,12 @@ class BattleScene(QGraphicsScene):
 
     def set_text_color(self, color: str, theme: str | None = None) -> None:
         self.text_color = color
+        theme_changed = theme is not None and theme != self.theme
         if theme is not None:
             self.theme = theme
+        if theme_changed:
+            for item in (*self.cards.values(), *self.deck_backs.values()):
+                item._render_signature = None
         for item in self.cards.values():
             item.text_color = QColor(color)
             item.update()
@@ -665,13 +685,16 @@ class BattleScene(QGraphicsScene):
     def _sync_deck_back(self, key: tuple, back: BattleCardItem) -> None:
         player_index = key[1]
         player = self.game.state.players[player_index]
-        if player.deck:
-            side = "enemy" if player_index != self.viewer else "own"
-            pixmap = cardback_pixmap(side, landscape=True)
-        else:
-            pixmap = empty_deck_pixmap(
-                player.ext.get("deck_out_burn") is not None, landscape=True)
-        back.set_art(pixmap.transformed(QTransform().rotate(180), Qt.SmoothTransformation))
+        side = "enemy" if player_index != self.viewer else "own"
+        light = player.ext.get("deck_out_burn") is not None if not player.deck else None
+        cardback = (load_gui_settings()[f"{side}_cardback"] if player.deck else None)
+        signature = (side, bool(player.deck), light, cardback, self.theme)
+        if getattr(back, "_render_signature", None) != signature:
+            pixmap = (cardback_pixmap(side, landscape=True) if player.deck else
+                      empty_deck_pixmap(light, landscape=True))
+            back.set_art(pixmap.transformed(
+                QTransform().rotate(180), Qt.SmoothTransformation))
+            back._render_signature = signature
         position, rotation, z_value = deck_back_layout(
             player_index, key[2], self.viewer, self.layout_width)
         back.setPos(position + QPointF(0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
@@ -780,14 +803,45 @@ class BattleScene(QGraphicsScene):
         proxy.setZValue(60)
         return proxy
 
+    def _hand_render_signature(self, card, revealed: bool, detail: dict,
+                               owner_seat: int | None, own: bool) -> tuple:
+        appearance = card_appearance(card.id) if revealed else None
+        cardback = None if revealed else load_gui_settings()[
+            "own_cardback" if own else "enemy_cardback"]
+        centered = (self.phase == "mulligan" or self.center_hand) and own
+        return (
+            card.id, revealed,
+            json.dumps(detail, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            (appearance["frame_variant"], appearance["art_index"]) if appearance else None,
+            cardback, seat_level_color(owner_seat), centered, 255 if centered else 156,
+            self.theme,
+        )
+
+    def _sync_hand_art(self, item: BattleCardItem, card, cdef, revealed: bool,
+                       detail: dict, owner_seat: int | None, own: bool,
+                       art_context: dict) -> None:
+        signature = self._hand_render_signature(card, revealed, detail, owner_seat, own)
+        if getattr(item, "_render_signature", None) == signature:
+            return
+        height = 255 if (self.phase == "mulligan" or self.center_hand) and own else 156
+        pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
+                              level_color=seat_level_color(owner_seat),
+                              cache_context=art_context, height=height)
+                  if cdef is not None else
+                  cardback_pixmap("own" if own else "enemy"))
+        item.set_art(pixmap)
+        item._render_signature = signature
+
     def refresh_cardbacks(self) -> None:
         """设置页保存卡背后立即刷新当前对局，无需重建场景。"""
         for key, item in self.deck_backs.items():
             self._sync_deck_back(key, item)
         for key, item in self.cards.items():
             if key[0] == "hand" and not item.revealed:
-                item.set_art(cardback_pixmap(
-                    "own" if item.player == self.viewer else "enemy"))
+                own = item.player == self.viewer
+                card = next(card for card in self.game.state.players[item.player].hand
+                            if card.uid == key[1])
+                self._sync_hand_art(item, card, None, False, {}, None, own, {})
                 item.update()
 
     def select_mulligan(self, uid: int) -> None:
@@ -1327,7 +1381,20 @@ class BattleScene(QGraphicsScene):
             shiki, self.db, seat=index, form=form, cache_context={}, height=210,
             show_defeated_countdown=not self.defeat_countdown_hidden(player, index),
             snapshot=snapshot))
+        item._render_signature = None
         item.update()
+
+    def _sync_entity_art(self, item: BattleCardItem, shiki, seat: int, form,
+                         art_context: dict) -> None:
+        show_defeated_countdown = not self.defeat_countdown_hidden(item.player, seat)
+        signature = _entity_render_signature(
+            shiki, form, seat, show_defeated_countdown, self.theme)
+        if getattr(item, "_render_signature", None) == signature:
+            return
+        item.set_art(entity_pixmap(
+            shiki, self.db, seat=seat, form=form, cache_context=art_context, height=210,
+            show_defeated_countdown=show_defeated_countdown))
+        item._render_signature = signature
 
     def _refresh_all_art(self) -> None:
         """动画队列清空后统一更新数值与卡图，避免结算状态抢先显示。"""
@@ -1356,10 +1423,7 @@ class BattleScene(QGraphicsScene):
                 if item is None:
                     continue
                 form = self.db.cards[shiki.form.id] if shiki.form is not None else None
-                item.set_art(entity_pixmap(
-                    shiki, self.db, seat=index, form=form,
-                    cache_context=art_context, height=210,
-                    show_defeated_countdown=not self.defeat_countdown_hidden(pi, index)))
+                self._sync_entity_art(item, shiki, index, form, art_context)
                 item.update()
         self._sync_focus()
         self.animations_settled.emit()
@@ -1429,6 +1493,8 @@ class BattleScene(QGraphicsScene):
         self._visual_items.clear()
         self._visual_events.clear()
         self._visual_queue.clear()
+        for item in (*self.cards.values(), *self.deck_backs.values()):
+            item._render_signature = None
         for key, item in self.cards.items():
             if key[0] == "hand":
                 item.show()
@@ -1576,13 +1642,9 @@ class BattleScene(QGraphicsScene):
                 )
                 form = self.db.cards[shiki.form.id] if shiki.form is not None else None
                 item.cdef = form
-                pixmap = entity_pixmap(
-                    shiki, self.db, seat=index, form=form,
-                    cache_context=art_context, height=210,
-                    show_defeated_countdown=not self.defeat_countdown_hidden(pi, index))
-                if not defer_art or created:
-                    item.set_art(pixmap)
                 item.player = pi
+                if not defer_art or created:
+                    self._sync_entity_art(item, shiki, index, form, art_context)
                 item.index = index
                 item.uid = None
                 item.payload = Ref(player=pi, shikigami=index)
@@ -1622,12 +1684,6 @@ class BattleScene(QGraphicsScene):
                 cdef = self.db.cards[card.id] if revealed else None
                 detail = hand_info.get(card.uid, {}) if own else {}
                 owner_seat = card_owner_seat(game, player, cdef) if cdef is not None else None
-                pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
-                                      level_color=seat_level_color(owner_seat),
-                                      cache_context=art_context,
-                                      height=255 if (game.state.phase == "mulligan" or center_hand) and own else 156)
-                          if cdef is not None else
-                          cardback_pixmap("own" if own else "enemy"))
                 item = self.cards.get(key)
                 if item is None:
                     item = BattleCardItem(key)
@@ -1640,7 +1696,8 @@ class BattleScene(QGraphicsScene):
                 item.cdef = cdef
                 centered = (game.state.phase == "mulligan" or center_hand) and own
                 item.default_size = QSizeF(MULLIGAN_HAND_SIZE if centered else HAND_SIZE)
-                item.set_art(pixmap)
+                self._sync_hand_art(
+                    item, card, cdef, revealed, detail, owner_seat, own, art_context)
                 item.revealed = revealed
                 item.player = pi
                 item.index = None

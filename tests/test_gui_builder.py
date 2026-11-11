@@ -758,10 +758,11 @@ def test_entity_revive_zero_render(qapp, tmp_path):
 
 
 def test_shikigami_evolve_circle_render(qapp, tmp_path, monkeypatch):
+    from pathlib import Path
     from client.gui import cardart
     from bwpdiy.render.assets import AssetLibrary
 
-    circle = portrait.bwpdiy_root() / "assets" / "levels" / "evolve_circle.png"
+    circle = Path(__file__).resolve().parents[1] / "assets" / "levels" / "evolve_circle.png"
     assert circle.is_file()
     calls = []
     original_star = AssetLibrary.level_star

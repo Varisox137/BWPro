@@ -364,7 +364,7 @@ def test_scene_render_failure_has_visible_text_fallback(qapp, view, monkeypatch)
                    for x in range(image.width()) for y in range(image.height()))
 
 
-def test_scene_render_checks_resources_once_per_sync(qapp, view, monkeypatch):
+def test_scene_render_checks_resources_once_per_changed_sync(qapp, view, monkeypatch):
     from client.gui import cardart
 
     start(view, mulligan=False)
@@ -376,6 +376,11 @@ def test_scene_render_checks_resources_once_per_sync(qapp, view, monkeypatch):
         return original(*args)
 
     monkeypatch.setattr(cardart, "_renderer_resource_digest", counted)
+    view.refresh()
+    assert calls == []
+    for player in view.game.state.players:
+        for shiki in player.shikigami:
+            shiki.health -= 1
     view.refresh()
     assert len(calls) == 1
 
@@ -1407,6 +1412,159 @@ def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
     assert (shiki, 2, form) in entity_calls
 
 
+@pytest.fixture
+def render_calls(view, monkeypatch):
+    from client.gui import battle_scene
+
+    calls = {"entity": [], "card": [], "cardback": []}
+    for name in ("entity_pixmap", "card_pixmap", "cardback_pixmap"):
+        original = getattr(battle_scene, name)
+
+        def capture(*args, _original=original, _name=name, **kwargs):
+            calls[_name.removesuffix("_pixmap")].append((args, kwargs))
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(battle_scene, name, capture)
+    return calls
+
+
+def clear_render_calls(calls):
+    for entries in calls.values():
+        entries.clear()
+
+
+def test_scene_unchanged_render_signature_reuses_only_stable_art(
+        qapp, db, view, render_calls, monkeypatch):
+    form = F.card(10010151, token=True, card_type="form", form_power=3, form_health=5)
+    db.cards[form.id] = form
+    start(view, mulligan=False)
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    assert all(not entries for entries in render_calls.values())
+
+    shiki = view.game.current.shikigami[0]
+    for attribute, value in (("health", shiki.health - 1),
+                             ("form", CardInstance(uid=10000, id=form.id)),
+                             ("level", shiki.level + 1)):
+        setattr(shiki, attribute, value)
+        clear_render_calls(render_calls)
+        view.refresh()
+        settle(view)
+        assert [call[0][0] for call in render_calls["entity"]] == [shiki]
+        assert not render_calls["card"] and not render_calls["cardback"]
+
+    card = view.game.current.hand[0]
+    runtime = view.hand_info()
+    monkeypatch.setattr(view, "hand_info", lambda: runtime)
+    runtime[card.uid]["render"] = {"power+": 2, "health+": -1}
+    runtime[card.uid]["keywords"] = [*runtime[card.uid]["keywords"], "瞬发"]
+    usage = runtime[card.uid]["usage"]
+    runtime[card.uid]["usage"] = [dict(option, cost=0) for option in usage]
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    assert [call[0][0].id for call in render_calls["card"]] == [card.id]
+    assert not render_calls["entity"] and not render_calls["cardback"]
+
+
+def test_scene_unchanged_render_signature_invalidates_snapshot_view_and_reset(
+        qapp, view, render_calls):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    shiki = view.game.current.shikigami[0]
+    snapshot = dict(power=shiki.eff_power - shiki.combat_power,
+                    health=shiki.health, max_health=shiki.max_health,
+                    combat_power=shiki.combat_power, shield=shiki.shield,
+                    defeated=shiki.defeated, countdown=shiki.countdown,
+                    revive_countdown=shiki.revive_countdown, revive_pending=False)
+    clear_render_calls(render_calls)
+    scene.play_visual_event({"k": "v", "v": "stat", "p": 0, "s": 0, "r": snapshot})
+    assert [call[0][0] for call in render_calls["entity"]] == [shiki]
+    clear_render_calls(render_calls)
+    for animation in list(scene._visual_animations):
+        animation.setCurrentTime(animation.duration())
+        qapp.processEvents()
+    assert [call[0][0] for call in render_calls["entity"]] == [shiki]
+
+    clear_render_calls(render_calls)
+    view.viewer = 1
+    view.refresh()
+    settle(view)
+    assert all(render_calls.values())
+
+    clear_render_calls(render_calls)
+    scene.reset_animations()
+    view.refresh()
+    settle(view)
+    assert all(render_calls.values())
+
+
+def test_scene_unchanged_render_signature_invalidates_visual_settings(
+        qapp, view, render_calls, monkeypatch):
+    from client.gui import battle_scene
+    from client.gui.card_appearance import save_card_appearance
+    from client.gui.ui_assets import load_gui_settings, named_cardbacks, save_gui_settings
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    clear_render_calls(render_calls)
+    scene.set_text_color("#ffffff", "dark")
+    view.refresh()
+    settle(view)
+    assert all(render_calls.values())
+
+    card = view.game.current.hand[0]
+    save_card_appearance(card.id, "blue")
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    matching_copies = sum(hand_card.id == card.id for hand_card in view.game.current.hand)
+    assert [call[0][0].id for call in render_calls["card"]] == [card.id] * matching_copies
+    assert not render_calls["entity"] and not render_calls["cardback"]
+
+    view._review_mulligan = True
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    assert len(render_calls["card"]) == len(view.game.current.hand)
+    assert not render_calls["entity"] and not render_calls["cardback"]
+
+    view._review_mulligan = False
+    view.refresh()
+    settle(view)
+    enemy_card = view.game.state.players[1].hand[0]
+    enemy_card.mods["revealed"] = True
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    assert [call[0][0].id for call in render_calls["card"]] == [enemy_card.id]
+
+    original_owner_seat = battle_scene.card_owner_seat
+    monkeypatch.setattr(
+        battle_scene, "card_owner_seat",
+        lambda game, player, cdef: 2 if cdef is not None and cdef.id == card.id
+        else original_owner_seat(game, player, cdef))
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    assert [call[0][0].id for call in render_calls["card"]] == [card.id] * matching_copies
+
+    settings = load_gui_settings()
+    settings["enemy_cardback"] = next(
+        name for name in named_cardbacks() if name != settings["enemy_cardback"])
+    save_gui_settings(settings)
+    clear_render_calls(render_calls)
+    scene.refresh_cardbacks()
+    expected_enemy_backs = len(scene.deck_backs) // 2 + len(view.game.state.players[1].hand) - 1
+    assert len(render_calls["cardback"]) == expected_enemy_backs
+    assert not render_calls["entity"] and not render_calls["card"]
+    clear_render_calls(render_calls)
+    view.refresh()
+    settle(view)
+    assert all(not entries for entries in render_calls.values())
+
+
 def test_drag_visuals_cancel_and_hand_left_click_has_no_detail(qapp, view, monkeypatch):
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -1985,17 +2143,18 @@ def assert_deck_count_layout(scene, own_count, enemy_count):
             assert item.zValue() == (22 - index if player == scene.viewer else 20 + index)
 
 
+@pytest.mark.parametrize("burn_value", (0, 1))
 @pytest.mark.parametrize("own_count", (3, 2, 1, 0))
 @pytest.mark.parametrize("enemy_count", (3, 2, 1, 0))
-def test_deck_count_empty_deck_settings_and_resize_share_layout(qapp, view,
-                                                                own_count, enemy_count):
+def test_deck_count_empty_deck_settings_and_resize_share_layout(
+        qapp, view, own_count, enemy_count, burn_value):
     start(view, mulligan=False)
     scene = view.battle_scene
     for player, count in enumerate((own_count, enemy_count)):
         state = view.game.state.players[player]
         state.deck[:] = state.deck[:count]
         if player == 0:
-            state.ext["deck_out_burn"] = 1
+            state.ext["deck_out_burn"] = burn_value
         else:
             state.ext.pop("deck_out_burn", None)
     view.refresh()
@@ -2842,11 +3001,12 @@ def test_hotseat_exit_requires_confirmation(qapp, view, monkeypatch):
 def test_hotseat_result_waits_visual_busy(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
-    scene.play_visual_event({"v": "damage", "p": 0, "s": 0, "amount": 3})
-    assert scene.visual_busy
-
-    view.game.state.winner = 0
+    enemy = view.game.state.players[1]
+    view.game.deal_to_player(1, enemy.health + enemy.shield, None)
+    view.game._drain_queue()
+    assert view.game.state.winner == 0
     view.refresh()
+    assert scene.visual_busy
     assert view.result_banner.isHidden()
 
     while scene.visual_busy:
@@ -4501,25 +4661,48 @@ def test_combat_visual_defeat_snapshot(qapp, view, monkeypatch):
 
 
 def test_revive_zero_render_animation_chain(qapp, view):
-    """倒计时归零到复活的 200ms 过渡帧始终使用真实小卡，不掉到文字兜底。"""
+    """真实回合队列的倒计时归零到复活始终使用 200ms 小卡过渡帧。"""
     start(view, mulligan=False)
     scene = view.battle_scene
     item = scene.cards[("shiki", 0, 0)]
     expected_size = item.size
-    zero = dict(power=3, health=0, max_health=4, combat_power=0, shield=0,
-                defeated=True, countdown=None, revive_countdown=0,
-                revive_pending=True)
-    revived = dict(zero, health=4, defeated=False, revive_pending=False)
-    for kind, snapshot in (("countdown", zero), ("revive", revived)):
-        scene.play_visual_event({"k": "v", "v": kind, "p": 0, "s": 0, "r": snapshot})
-        animation = scene._visual_animations[-1]
-        assert animation.duration() == 200
-        assert item.pixmap is not None and not item.pixmap.isNull()
-        assert item.size == expected_size
-        animation.setCurrentTime(animation.duration())
-        qapp.processEvents()
-        assert item.pixmap is not None and not item.pixmap.isNull()
-        assert item.size == expected_size
+    shiki = view.game.current.shikigami[0]
+    shiki.defeated = True
+    shiki.health = 0
+    shiki.revive_countdown = 1
+    assert view.end_turn()
+    settle(view)
+    assert view.end_turn()
+    assert view._handoff_pending
+    view.confirm_handoff()
+
+    played = []
+    while scene._visual_queue or scene._visual_animations:
+        for animation in list(scene._visual_animations):
+            event = scene._visual_events[animation]
+            target_event = (event.get("v") in ("countdown", "revive")
+                            and (event.get("p"), event.get("s")) == (0, 0))
+            if target_event:
+                if not played:
+                    assert any(queued.get("v") == "revive"
+                               for queued in scene._visual_queue)
+                played.append(event)
+                assert animation.duration() == 200
+                assert item.pixmap is not None and not item.pixmap.isNull()
+                assert item.size == expected_size
+            animation.setCurrentTime(animation.duration())
+            qapp.processEvents()
+            if target_event:
+                assert item.pixmap is not None and not item.pixmap.isNull()
+                assert item.size == expected_size
+
+    assert [event["v"] for event in played] == ["countdown", "revive"]
+    zero, revived = (event["r"] for event in played)
+    assert (zero["defeated"], zero["revive_countdown"], zero["revive_pending"]) \
+        == (True, 0, True)
+    assert (revived["defeated"], revived["revive_countdown"], revived["revive_pending"]) \
+        == (False, 0, False)
+    settle(view)
 
 
 def test_parallel_heal_has_following_parallel_refresh_phase(qapp, db, view):

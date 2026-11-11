@@ -947,6 +947,9 @@ class HotseatView(QWidget):
                 and not self._handoff_waiting and not self.timeline_timer.isActive()):
             self.timeline_timer.start()
         self._update_input_widgets()
+        if self.game.state.winner is not None and self.battle_scene.visual_busy:
+            self.result_banner.hide()
+            self.result_back.hide()
 
     def _render_log(self) -> None:
         self.log_list.clear()

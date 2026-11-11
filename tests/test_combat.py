@@ -331,6 +331,10 @@ def test_unyielding_preserves_original_damage_amount(db, make_game):
     assert shiki.health == 1
     assert dealt == 5
     assert damage_event["amount"] == 5
+    damage_visual = next(entry for entry in g.state.timeline
+                         if entry.get("v") == "damage"
+                         and (entry.get("p"), entry.get("s")) == (1, 0))
+    assert damage_visual["amount"] == 5
     assert shiki.ext["damage_taken_turn"] == 5
     assert any("受到 5 点伤害（生命 3→1）" in line
                for line in g.state.settle_log)
