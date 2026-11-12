@@ -60,7 +60,7 @@ def _paint_placeholder_name(pixmap: QPixmap, name: str, color: str, *, entity: b
     painter.setRenderHint(QPainter.Antialiasing, True)
     rect = (QRectF(pixmap.width() * 0.10, pixmap.height() * 0.12,
                    pixmap.width() * 0.80, pixmap.height() * 0.58) if entity else
-            QRectF(pixmap.width() * 0.15, pixmap.height() * 0.18,
+            QRectF(pixmap.width() * 0.17, pixmap.height() * 0.18,
                    pixmap.width() * 0.70, pixmap.height() * 0.40))
     font = QFont("Microsoft YaHei", max(12, round(rect.height() / 5)), QFont.Normal)
     painter.setFont(font)
@@ -529,6 +529,17 @@ def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _card_cache_path(cache_dir: Path, kind: str, cdef, payload: dict,
+                     height: int | None, cache_key: str) -> Path:
+    """语义前缀便于识别；内容指纹避免配置或渲染器更新后误读旧图。"""
+    frame = payload.get("frame_variant", "norm")
+    if frame not in {"norm", "blue", "black", "red"}:
+        frame = "custom"
+    size = "native" if height is None else height
+    stem = f"{kind}-{cdef.id}@{cdef.version or 0}-{frame}-h{size}-{cache_key}"
+    return cache_dir / f"{stem}.png"
+
+
 def _write_card_png_atomic(pixmap: QPixmap, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temp_name = tempfile.mkstemp(
@@ -542,6 +553,14 @@ def _write_card_png_atomic(pixmap: QPixmap, path: Path) -> None:
         if verified.isNull():
             raise ValueError("卡面临时 PNG 校验失败")
         os.replace(temp_path, path)
+        family, separator, digest = path.stem.rpartition("-")
+        if separator and len(digest) == 64:
+            for old_path in path.parent.glob(f"{family}-*.png"):
+                if old_path != path:
+                    try:
+                        old_path.unlink()
+                    except OSError:
+                        pass
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -751,7 +770,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         if display_stats:
             return _cached_runtime_card_pixmap(
                 cache_key, payload_json, layout_json, root_text, *size_args)
-        cache_path = cache_dir / f"{cache_key}.png"
+        cache_path = _card_cache_path(
+            cache_dir, "card", cdef, payload, height, cache_key)
         return _cached_card_pixmap(
             str(cache_path), payload_json, layout_json, root_text, *size_args,
             entity=cdef.id, config_path=path)
@@ -905,8 +925,10 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             resources, root_text, cache_context, height)
         size_args = () if height is None else (height,)
         if disk_cache:
+            cache_path = _card_cache_path(
+                cache_dir, "entity", source, payload, height, cache_key)
             return _cached_static_entity_pixmap(
-                str(cache_dir / f"{cache_key}.png"), payload_json, state_json,
+                str(cache_path), payload_json, state_json,
                 layout_json, root_text, *size_args, entity=shiki.id, config_path=path)
         return _cached_entity_pixmap(
             cache_key, payload_json, state_json, layout_json, root_text, *size_args)

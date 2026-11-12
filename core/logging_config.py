@@ -34,12 +34,15 @@ def restrict_private_permissions(path: Path, *, directory: bool = False) -> None
         return
     permission = "(OI)(CI)(F)" if directory else "(F)"
     # 目录上 /reset 与后续选项同次调用会被 icacls 拒绝，分开执行。
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     subprocess.run(["icacls", os.fspath(path), "/reset"], check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                   creationflags=creationflags)
     subprocess.run(
         ["icacls", os.fspath(path), "/inheritance:r", "/grant:r",
          f"{getpass.getuser()}:{permission}"],
         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        creationflags=creationflags,
     )
 
 

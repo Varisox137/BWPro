@@ -1275,7 +1275,7 @@ def test_cardart_transparent_fallback_never_writes_disk(qapp, tmp_path, monkeypa
     assert not cache_dir.exists()
 
 
-def test_cardart_fallback_draws_centered_name_with_theme_color(qapp):
+def test_cardart_fallback_draws_name_with_theme_color(qapp):
     from client.gui import cardart
 
     assert hasattr(cardart, "_paint_placeholder_name")
@@ -1283,8 +1283,20 @@ def test_cardart_fallback_draws_centered_name_with_theme_color(qapp):
     pixmap.fill(Qt.transparent)
     cardart._paint_placeholder_name(pixmap, "占位卡名", "#26221c", entity=False)
     image = pixmap.toImage()
-    assert any(image.pixelColor(x, y).alpha() for x in range(90, 151, 5)
-               for y in range(125, 190, 5))
+    assert any(image.pixelColor(x, y).alpha()
+               for x in range(image.width()) for y in range(image.height()))
+
+
+def test_card_placeholder_name_is_offset_right_within_frame(qapp):
+    from client.gui import cardart
+
+    pixmap = QPixmap(500, 700)
+    pixmap.fill(Qt.transparent)
+    cardart._paint_placeholder_name(pixmap, "占位卡名", "#26221c", entity=False)
+    image = pixmap.toImage()
+    xs = [x for x in range(image.width()) for y in range(image.height())
+          if image.pixelColor(x, y).alpha()]
+    assert (min(xs) + max(xs)) / 2 > pixmap.width() * 0.51
 
 
 def test_card_widget_passes_level_color_and_requests_native_art(qapp, db, monkeypatch):
@@ -1629,7 +1641,7 @@ def test_cardart_artwork_and_layout_change_cache_key(qapp, tmp_path):
         cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert artwork_changed is not None
     assert artwork_changed.toImage() != first.toImage()
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert len(list(cache_dir.glob("*.png"))) == 1
 
     config["layout"] = {"elements": {"name": {"pos": [0, 0]}}, "text_regions": {}}
     config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
@@ -1637,32 +1649,33 @@ def test_cardart_artwork_and_layout_change_cache_key(qapp, tmp_path):
         cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert layout_changed is not None
     assert layout_changed.toImage() != artwork_changed.toImage()
-    assert len(list(cache_dir.glob("*.png"))) == 3
+    assert len(list(cache_dir.glob("*.png"))) == 1
     config["layout"]["text_regions"]["unused"] = {"width": 300}
     config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert len(list(cache_dir.glob("*.png"))) == 4
+    assert len(list(cache_dir.glob("*.png"))) == 1
     cardart.clear_cardart_caches()
 
 
-def test_cardart_only_image_content_changes_cache_key(qapp, tmp_path):
+def test_cardart_semantic_cache_name_replaces_stale_image(qapp, tmp_path):
+    import re
     from client.gui import cardart
 
     cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
     cardart.clear_cardart_caches()
     first = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert first is not None
+    first_path = next(cache_dir.glob("*.png"))
+    prefix = f"card-{cdef.id}@{cdef.version}-norm-hnative-"
+    assert re.fullmatch(re.escape(prefix) + r"[0-9a-f]{64}\.png", first_path.name)
     image_path = library_dir / "项目" / "images" / f"{cdef.id}-{cdef.version}.png"
-    stat = image_path.stat()
-    os.utime(image_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
-    assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert len(list(cache_dir.glob("*.png"))) == 1
     Image.new("RGBA", (12, 8), "#993366").save(image_path)
     image_changed = cardart.card_pixmap(
         cdef, database, library_dir=library_dir, cache_dir=cache_dir)
-    assert image_changed is not None
-    assert image_changed.toImage() != first.toImage()
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert image_changed is not None and image_changed.toImage() != first.toImage()
+    paths = list(cache_dir.glob("*.png"))
+    assert len(paths) == 1 and paths[0] != first_path
+    assert paths[0].name.startswith(prefix)
     cardart.clear_cardart_caches()
 
 
@@ -1895,7 +1908,7 @@ def test_cardart_global_layout_content_changes_cache_key(qapp, tmp_path, monkeyp
     global_layout.write_text(json.dumps(layouts, ensure_ascii=False), encoding="utf-8")
     second = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
     assert second is not None and second.toImage() != first.toImage()
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert len(list(cache_dir.glob("*.png"))) == 1
     monkeypatch.setattr(cardart, "_renderer", original_renderer)
     cardart.clear_cardart_caches()
 
@@ -2025,7 +2038,7 @@ def test_cardart_renderer_resources_change_cache_key(qapp, tmp_path, monkeypatch
     assert len(resource_reads) == 3
     assert cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir) is second
     assert len(resource_reads) == 4
-    assert len(list(cache_dir.glob("*.png"))) == 2
+    assert len(list(cache_dir.glob("*.png"))) == 1
     monkeypatch.setattr(cardart, "_renderer", original_renderer)
     cardart.clear_cardart_caches()
 

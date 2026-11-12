@@ -55,7 +55,7 @@ def available_shikigami(db: CardDatabase) -> list:
     """全部可构筑式神（kind=shikigami 且非 WIP 且非未发布，按 id 排序）。
 
     WIP 式神（wip=true 标记的半成品式神——仅基础数据或卡牌未齐）
-    不进构筑可选池；unreleased=true 的未加入游戏条目（哨兵日期 20251212，
+    不进构筑可选池；unreleased=true 的未加入游戏条目（哨兵日期 20201224，
     如纸人武士/天邪鬼军团）同样排除。
     """
     return sorted((d for d in db.shikigami.values()

@@ -1,10 +1,10 @@
 id: 10000203
 name: 天邪鬼青·鸢击
-unreleased: true  # 未加入游戏（哨兵日期 20251212 占位，任何环境不可解析；构筑池排除）
+unreleased: true  # 未加入游戏（哨兵日期 20201224 占位，任何环境不可解析；构筑池排除）
 versions:
-  best: 20251212
+  best: 20201224
   history:
-    - date: 20251212
+    - date: 20201224
       card_type: spell
       rarity: R
       level: 2

@@ -1,6 +1,7 @@
 """主窗口：视图栈 + 主菜单 + 全局浅/深主题。"""
 from __future__ import annotations
 
+import ctypes
 import sys
 import threading
 from pathlib import Path
@@ -114,6 +115,13 @@ def _theme_icon(theme: str) -> QIcon:
 def _application_icon() -> QIcon:
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
     return QIcon(str(root / "assets" / "app_icon.ico"))
+
+
+def _set_windows_application_id() -> None:
+    """固定独立应用标识，避免 Windows 任务栏回退到 Python 或旧程序图标。"""
+    if sys.platform == "win32":
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Varisox137.BWPro.Desktop")
 
 
 class MainWindow(QMainWindow):
@@ -428,6 +436,7 @@ class MainWindow(QMainWindow):
         return page
 
 def main(*, cleanup=None) -> int:
+    _set_windows_application_id()
     configure_logging("gui")
     if cleanup is not None:
         update.schedule_update_cleanup(*cleanup)

@@ -621,7 +621,7 @@ def test_edit_cards_strict_input(db, tmp_path, monkeypatch, capsys):
 def test_available_shikigami_excludes_wip_and_unreleased(gdb):
     """构筑可选池：wip=true 的半成品式神不可选（当前 wip 已清零——04 沧海刀鸣包
     10 式神全部落地去标）；unreleased=true 的未加入游戏式神（纸人武士/天邪鬼军团，
-    哨兵日期 20251212 占位）同样排除。"""
+    哨兵日期 20201224 占位）同样排除。"""
     ids = [d.id for d in deckbuilder.available_shikigami(gdb)]
     wip_ids = {d.id for d in gdb.shikigami.values() if d.wip}
     assert wip_ids == set()  # 04 包完结，wip 清零

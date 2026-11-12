@@ -1,10 +1,10 @@
 id: 10010551
 name: 涅槃业火
-unreleased: true  # 未加入游戏（哨兵日期 20251212 占位，任何环境不可解析；构筑池排除）
+unreleased: true  # 未加入游戏（哨兵日期 20201224 占位，任何环境不可解析；构筑池排除）
 versions:
-  best: 20251212
+  best: 20201224
   history:
-    - date: 20251212
+    - date: 20201224
       card_type: spell
       token: true  # 协战子选项（涅槃明灯 10010521；主牌待青行灯侧子选项"烛火重燃"加入）
       level: 2

@@ -388,7 +388,7 @@ def test_balance_version_real_db(gdb):
     assert not gdb.at_date(20190101).cards
     early = gdb.at_date(20200101)
     assert {100101, 100102, 100103} <= set(early.shikigami)
-    # 未加入游戏条目：最新库仍加载（哨兵日期 20251212 占位 + unreleased 标记）
+    # 未加入游戏条目：最新库仍加载（哨兵日期 20201224 占位 + unreleased 标记）
     assert gdb.cards[10011721].unreleased is True    # 福星高照（协战）
     assert gdb.shikigami[100001].unreleased is True  # 纸人武士
     unrel_cards = {i for i, c in gdb.cards.items() if c.unreleased}

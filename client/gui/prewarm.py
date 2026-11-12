@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import shutil
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -172,9 +173,7 @@ def prewarm_all(db, library_dir: Path | None = None, cache_dir: Path | None = No
 
 
 def clear_cardart_cache(cache_dir: Path) -> None:
+    """清空专用缓存目录，包括旧版本留下的嵌套文件与非 PNG 索引。"""
     cardart.clear_cardart_caches()
-    if not cache_dir.exists():
-        return
-    for path in cache_dir.glob("*.png"):
-        path.unlink(missing_ok=True)
-    (cache_dir / MANIFEST_NAME).unlink(missing_ok=True)
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)

@@ -629,3 +629,26 @@ def test_settings_rebuild_when_background_idle(qapp, db, tmp_path, monkeypatch):
     assert page.rebuild_button.isEnabled()
     assert not page.loading_overlay.isVisible()
     win.close()
+
+
+def test_cardart_clear_removes_all_nested_cache_files(qapp, tmp_path):
+    from client.gui.prewarm import clear_cardart_cache
+
+    nested = tmp_path / "cardart" / "old-version"
+    nested.mkdir(parents=True)
+    (tmp_path / "cardart" / "old.png").write_bytes(b"old")
+    (nested / "obsolete.json").write_text("old", encoding="utf-8")
+    clear_cardart_cache(tmp_path / "cardart")
+    assert not (tmp_path / "cardart").exists()
+
+
+def test_windows_application_id_is_set_for_taskbar_icon(qapp, monkeypatch):
+    from types import SimpleNamespace
+    from client.gui import app
+
+    calls = []
+    monkeypatch.setattr(app.sys, "platform", "win32")
+    monkeypatch.setattr(app.ctypes, "windll", SimpleNamespace(
+        shell32=SimpleNamespace(SetCurrentProcessExplicitAppUserModelID=calls.append)))
+    app._set_windows_application_id()
+    assert calls == ["Varisox137.BWPro.Desktop"]

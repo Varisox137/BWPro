@@ -8,7 +8,7 @@
 - 配置按卡牌/式神 id（兼容名称）和合法 8 位 `version_date` 与引擎快照精确匹配，不以相邻日期代替。名称、类型、等级、稀有度、派系、身材和描述始终由当前引擎定义合成；项目配置只提供 artwork、portrait、layout、faction_style 与 frame_variant。
 - 构筑、详情和热坐/联机手牌共用 `card_pixmap`；基础/觉醒式神及形态共用 `shikigami_pixmap`/`render_entity` 管线；头像使用 `render_portrait`。`hand_cards_info` 同源提供运行时中文数值段与结构化 `render`，实时 `display` 和可选 `description_suffix` 进入渲染负载及缓存键，不回写引擎定义。
 - 各调用点传入原生 `height`，尺寸进入缓存键，成品不做二次重采样。缺配置、版本不匹配或缺插画时仍合成完整卡框与文本，仅插画透明；只有渲染器自身失败才回退文字卡面或空头像，操作与详情仍可用。
-- 静态大卡/小卡默认缓存到 `~/.bwpro/cardart/<sha256>.png`；头像只用内存 LRU。含实时 `display` 的变体使用 256 项有界内存缓存，不逐值写盘。缓存键覆盖规范化负载、实际 layout、配置与原图指纹及渲染资源内容；缓存不依赖 BWPDIY 版本号。manifest 写到 `~/.bwpro/cardart/manifest.json`，记录当前外观、资源指纹、合成时间和成功/失败/跳过统计。
+- 静态大卡/小卡默认缓存到 `~/.bwpro/cardart/<类型>-<id>@<平衡性版本>-<牌框>-h<高度>-<sha256>.png`；内容指纹覆盖规范化负载、实际 layout、配置、原图与渲染资源，同语义前缀的新缓存写入后清理旧指纹文件。头像只用内存 LRU，含实时 `display` 的变体使用 256 项有界内存缓存，不逐值写盘。manifest 写到 `~/.bwpro/cardart/manifest.json`，记录当前外观、资源指纹、合成时间和成功/失败/跳过统计；设置页确认“重新合成”会清空整个专用缓存目录（含旧版本嵌套残留）后重建。
 - 启动预热由 GUI 线程的 `QTimer` 分片执行，只合成当前外观的大卡与式神小卡，不枚举牌框、不预热头像；状态栏显示进度，首屏与页面切换不被模态阻塞。重复启动复用任务，后台活跃时设置页不启动全量重建，关闭窗口停止任务；失败项下次启动重试。
 - 对局图元保存 render signature，签名未变就复用现有 pixmap。签名覆盖卡面数值与状态、运行时详情、牌框/卡背、尺寸、座次和主题；视角切换、场景 reset、主题切换显式失效，动画快照按事件定点失效。性能回归断言 renderer 调用次数，不使用墙钟阈值。
 
@@ -62,5 +62,5 @@
 
 - Windows 独立构建命令：`PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/build_exe.py`。PyInstaller onefile/windowed 包内嵌规则、数据库、`assets/`、`library/` 与 BWPDIY 渲染代码，输出 `releases/BWPro-v<版本>.exe` 和 SHA-256；冻结版从 `sys._MEIPASS` 读取内置资源，全局布局仍读 `~/.bwpdiy/layout.json`。
 - 主窗口启动时自动检查更新，设置页也可手动检查；发现更高版本并经用户确认后，通过 HTTPS 下载与标签严格同名的 EXE/SHA-256 资产并校验内容。冻结版再次确认后退出主程序，由外部更新流程等待、替换并重启；开发环境只下载到 `~/.bwpro/downloads/`，不替换或重启当前程序。关闭窗口会使尚未返回的更新回调失效，取消或失败会清理半成品。
-- 构建默认以隔离 HOME 运行 `--smoke-test`，覆盖数据库加载、大卡/小卡/头像/机制框与主窗口启动。应用与任务栏使用 `assets/app_icon.ico`；冻结版日志写入 `~/.bwpro/logs/`，启动时按最近 7 天且最多 10 份清理旧日志。
+- 构建默认以隔离 HOME 运行 `--smoke-test`，覆盖数据库加载、大卡/小卡/头像/机制框与主窗口启动。应用与任务栏使用 `assets/app_icon.ico`，启动前设置固定 Windows AppID `Varisox137.BWPro.Desktop`；冻结版日志写入 `~/.bwpro/logs/`，启动时按最近 7 天且最多 10 份清理旧日志，Windows 权限命令使用 `CREATE_NO_WINDOW`，不弹出命令行窗口。
 - GUI 测试使用 Qt offscreen 平台，覆盖主窗口、构筑、式神录、热坐、联机、卡图缓存、详情和动画。运行全量测试：`PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m pytest -q`；数据或文本变更另跑 `PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.validate`。
