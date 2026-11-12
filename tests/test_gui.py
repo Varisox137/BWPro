@@ -9,7 +9,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
-from client.gui.app import MENU_ENTRIES, MainWindow
+from client.gui.app import MENU_ENTRIES, THEMES, MainWindow
 from client.gui.builder import DeckBuilderView
 
 
@@ -27,7 +27,8 @@ def test_menu_navigation_and_theme(qapp, db, tmp_path):
     title = win.findChild(QLabel, "title")
     assert title.text() == (
         'BWPro by <a href="https://github.com/Varisox137/BWPro" '
-        'style="text-decoration:underline">Varisox137</a>')
+        f'style="color:{THEMES["light"]["gold"]}; text-decoration:underline">'
+        'Varisox137</a>')
     assert title.openExternalLinks()
     assert win.findChild(QLabel, "githubLink") is None
     assert "（" not in dict((key, sub) for key, _name, sub in MENU_ENTRIES)["codex"]
@@ -48,6 +49,7 @@ def test_menu_navigation_and_theme(qapp, db, tmp_path):
     assert isinstance(win.pages["builder"], DeckBuilderView)
     win.theme_button.click()
     assert win.theme == "dark"
+    assert f'color:{THEMES["dark"]["gold"]}' in title.text()
     assert win.pages["builder"].theme == "dark"
     assert "#141121" in win.styleSheet()
     win.theme_button.click()

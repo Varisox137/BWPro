@@ -219,6 +219,12 @@ class MainWindow(QMainWindow):
         self.theme = theme
         QApplication.instance().setProperty("bwpro_theme", theme)
         self.setStyleSheet(qss(theme))
+        title = self.findChild(QLabel, "title")
+        if title is not None:
+            title.setText(
+                'BWPro by <a href="https://github.com/Varisox137/BWPro" '
+                f'style="color:{THEMES[theme]["gold"]}; text-decoration:underline">'
+                'Varisox137</a>')
         self.theme_button.setIcon(_theme_icon(theme))
         self.theme_button.setIconSize(QSize(20, 20))
         self.theme_button.setToolTip("切换到深色主题" if theme == "light" else "切换到浅色主题")
