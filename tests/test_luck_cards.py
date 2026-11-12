@@ -555,6 +555,42 @@ def test_luck_reroll_visual_precedes_next_original_roll(gdb, monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("zuofu_awakened", [False, True], ids=["base", "awakened"])
+def test_reroll_does_not_drain_unrelated_turn_start_triggers(
+        gdb, monkeypatch, zuofu_awakened):
+    """基础/觉醒座敷重投都不得提前结算另一批山兔回合开始能力。"""
+    g, pa, pb = _game(gdb, ST_TEAM, levels={0: 2, 1: 3 if zuofu_awakened else 1})
+    play(g, 0, JINYUN)
+    play(g, 0, ST_AWAKEN)
+    if zuofu_awakened:
+        play(g, 0, ZFTZ_AWAKEN)
+    _force_dice(monkeypatch, g, [1, 4, 5, 6, 1])
+    g.state.timeline.clear()
+    pass_turns(g, 2)
+    visuals = [entry for entry in g.state.timeline
+               if entry.get("k") == "v" and entry.get("v", "").startswith("luck_")]
+    assert [(entry["v"], entry["p"], entry["s"], entry.get("dice"))
+            for entry in visuals[:6]] == [
+        ("luck_dice", 0, None, 1), ("luck_reroll", 0, None, 5),
+        ("luck_dice", 0, None, 5), ("luck_dice", 1, None, 4),
+        ("luck_result", 0, None, 5), ("luck_result", 1, None, 4),
+    ]
+    assert visuals[6]["v"] == "luck_dice" and visuals[6]["s"] == 0
+
+
+def test_stat_snapshot_records_form_id():
+    """数值动画快照固定形态身份，不能由后续结算的实时形态改写。"""
+    form = F.card(10010101, card_type="form", form_power=2, form_health=5)
+    db = F.db_of([F.shiki()], [form])
+    g = new_game(db, ("A", [100101], []), ("B", [100101], []),
+                 check_deck=False, mulligan=False, shuffle_team=False)
+    shiki = g.state.players[0].shikigami[0]
+    shiki.form = CardInstance(uid=999, id=form.id)
+    assert g._stat_event(Ref(player=0, shikigami=0))["r"]["form"] == form.id
+    shiki.form = None
+    assert g._stat_event(Ref(player=0, shikigami=0))["r"]["form"] is None
+
+
 def test_luck_fail_branch_stuns_attacker(gdb, monkeypatch):
     """家内安全（luck {x:4, on:fail}）：式神攻击后判定失败则攻击者被[眩晕]（stun）。"""
     g, pa, pb = _game(gdb, ZFTZ_TEAM, levels={IDX: 2})

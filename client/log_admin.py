@@ -4,9 +4,7 @@
 """
 from __future__ import annotations
 
-import fnmatch
 import json
-import shutil
 import sys
 import threading
 from datetime import datetime
@@ -22,8 +20,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget, QFileDialog,
 )
 
+from core.logging_config import is_log_filename
+
 _TIMEOUT = 10
-_LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
+_MAX_JSON_BYTES = 2 * 1024 * 1024
+_MAX_DOWNLOAD_BYTES = 2 * 1024 ** 3 - 1
+_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -36,9 +38,13 @@ def normalize_admin_url(raw: str) -> str:
     if not value:
         raise ValueError("服务器地址不能为空")
     if "://" not in value:
-        host = value.split("/", 1)[0]
-        local = host in ("localhost", "127.0.0.1", "[::1]")
-        value = ("http://" if local or ":" in host else "https://") + value
+        authority, separator, suffix = value.partition("/")
+        if authority.count(":") > 1 and not authority.startswith("["):
+            authority = f"[{authority}]"
+            value = authority + (separator + suffix if separator else "")
+        hostname = urlsplit("//" + authority).hostname
+        local = hostname in ("localhost", "127.0.0.1", "::1")
+        value = ("http://" if local else "https://") + value
     try:
         parsed = urlsplit(value)
         scheme = {"ws": "http", "wss": "https"}.get(parsed.scheme, parsed.scheme)
@@ -90,8 +96,11 @@ class LogAdminClient:
 
     def _json(self, path: str) -> dict:
         with self._open(path) as response:
+            data = response.read(_MAX_JSON_BYTES + 1)
+            if len(data) > _MAX_JSON_BYTES:
+                raise RuntimeError(f"日志服务器 {self.base_url} 的 JSON 响应超过 2 MiB")
             try:
-                payload = json.loads(response.read().decode("utf-8"))
+                payload = json.loads(data.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise RuntimeError(
                     f"日志服务器 {self.base_url} 返回了无效 JSON：{error}") from None
@@ -119,8 +128,7 @@ class LogAdminClient:
 
     @staticmethod
     def _validate_download_name(name: str) -> str:
-        if (Path(name).name != name or "/" in name or "\\" in name
-                or not any(fnmatch.fnmatchcase(name, pattern) for pattern in _LOG_PATTERNS)):
+        if not is_log_filename(name):
             raise RuntimeError(f"服务端返回了非日志文件名：{name}")
         return name
 
@@ -144,24 +152,26 @@ class LogAdminClient:
                 self._validate_download_name(download_name)
                 target, output = self._exclusive_target(destination, download_name)
                 with output:
-                    shutil.copyfileobj(response, output, length=64 * 1024)
+                    downloaded = 0
+                    while True:
+                        remaining = _MAX_DOWNLOAD_BYTES - downloaded
+                        chunk = response.read(min(_DOWNLOAD_CHUNK_BYTES, remaining + 1))
+                        if not chunk:
+                            break
+                        downloaded += len(chunk)
+                        if downloaded > _MAX_DOWNLOAD_BYTES:
+                            raise RuntimeError("日志下载超过 2 GiB-1 上限，已中断")
+                        output.write(chunk)
             return target
-        except PermissionError:
+        except Exception as error:
             if target is not None:
                 target.unlink(missing_ok=True)
-            raise
-        except RuntimeError:
-            if target is not None:
-                target.unlink(missing_ok=True)
-            raise
-        except (URLError, OSError) as error:
-            if target is not None:
-                target.unlink(missing_ok=True)
-            reason = getattr(error, "reason", error)
-            raise RuntimeError(f"日志服务器 {self.base_url} 下载失败：{reason}") from None
-        except Exception:
-            if target is not None:
-                target.unlink(missing_ok=True)
+            if isinstance(error, (PermissionError, RuntimeError)):
+                raise
+            if isinstance(error, (URLError, OSError)):
+                reason = getattr(error, "reason", error)
+                raise RuntimeError(
+                    f"日志服务器 {self.base_url} 下载失败：{reason}") from None
             raise
 
 
@@ -313,11 +323,14 @@ class LogAdminWindow(QWidget):
         self._start("preview", load_preview, self._signals.preview_loaded,
                     error_context=(generation, name))
 
+    def _preview_is_current(self, generation: int, name: str) -> bool:
+        selected = self._selected_logs()
+        return (generation == self._preview_generation and bool(selected)
+                and selected[0].get("name") == name)
+
     def _set_preview(self, result: tuple) -> None:
         generation, name, payload = result
-        selected = self._selected_logs()
-        if (generation != self._preview_generation or not selected
-                or selected[0].get("name") != name):
+        if not self._preview_is_current(generation, name):
             return
         self.preview_edit.setPlainText(payload["text"])
         self.status_label.setText("预览已截断，仅显示开头内容；可下载完整日志"
@@ -352,9 +365,7 @@ class LogAdminWindow(QWidget):
     def _set_error(self, operation: str, message: str, error_context) -> None:
         if operation == "preview":
             generation, name = error_context
-            selected = self._selected_logs()
-            if (generation != self._preview_generation or not selected
-                    or selected[0].get("name") != name):
+            if not self._preview_is_current(generation, name):
                 return
         labels = {"list": "获取日志列表失败", "preview": "预览失败", "download": "下载失败"}
         if operation == "list":

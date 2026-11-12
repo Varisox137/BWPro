@@ -55,7 +55,10 @@ if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
 fi
 
 mkdir -p logs
+chmod 700 logs || printf '警告：无法设置日志目录权限，将继续启动\n' >&2
 LOG_FILE="logs/bwpro-launcher-$(date +%Y%m%d-%H%M%S)-$$.log"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE" || printf '警告：无法设置 launcher 日志权限，将继续启动\n' >&2
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 printf '更新 %s/%s，日志：%s\n' "$REMOTE" "$BRANCH" "$LOG_FILE"

@@ -169,6 +169,83 @@ def test_room_broadcasts_server_trace(db):
     run(go())
 
 
+def test_rejected_command_does_not_accumulate_trace_or_log_padding(db, caplog):
+    room, _ws0, _ws1 = run(_started_room(db))
+    with caplog.at_level(logging.INFO, logger="bwpro.battle"):
+        for _ in range(100):
+            run(room.handle_cmd(0, {"op": "unknown", "padding": "x" * 10000}))
+    room._cancel_timer()
+    assert room._trace_pending == []
+    assert "x" * 100 not in caplog.text
+
+
+@pytest.mark.parametrize("error", [ValueError("bad data"), RuntimeError("engine failure")])
+def test_failed_apply_rolls_back_only_new_trace(db, monkeypatch, error):
+    room, _ws0, _ws1 = run(_started_room(db))
+    previous = {"kind": "event", "message": "此前正常动画", "owner": None}
+    room._trace_pending.append(previous)
+
+    def fail_after_trace(_cmd):
+        room.game._trace("op", "失败前产生的部分动画")
+        raise error
+
+    monkeypatch.setattr(room.game, "apply", fail_after_trace)
+    run(room.handle_cmd(0, {"op": "ready"}))
+    room._cancel_timer()
+    assert room._trace_pending == [previous]
+
+
+def test_accepted_command_trace_filters_fields_and_preserves_animation_trace(db):
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        seat = 0
+        player = room.seat_to_player[seat]
+        ws = ws0
+        before = len(ws.messages)
+        await room.handle_cmd(seat, {
+            "op": "ready", "padding": "x" * 10000, "unexpected": {"secret": "y"},
+        })
+        room.game._trace("op", "正常后续动画", owner=player)
+        await room.broadcast_state()
+        messages = [m for m in ws.messages[before:] if m["type"] == "state"]
+        traces = [entry for msg in messages for entry in msg.get("trace", [])]
+        command = next((entry for entry in traces if entry["kind"] == "cmd"), None)
+        assert command is not None, ws.messages[before:]
+        payload = json.loads(command["message"])
+        assert payload == {"op": "ready", "player": player}
+        assert all(len(entry["message"]) <= 4096 for entry in traces)
+        assert any(entry["kind"] != "cmd" for entry in traces)
+        assert "x" * 100 not in json.dumps(traces)
+        room._cancel_timer()
+    run(go())
+
+
+def test_trace_message_bounded_and_normal_pending_never_capped(db):
+    room, _ws0, _ws1 = run(_started_room(db))
+    room.game._trace("event", "x" * 5000)
+    assert len(room._trace_pending[-1]["message"]) == 4096
+    for index in range(1500):
+        room.game._trace("event", f"event-{index}")
+    room._cancel_timer()
+    assert len(room._trace_pending) == 1501
+    assert room._trace_pending[-1]["message"] == "event-1499"
+
+
+def test_rejection_log_truncates_attacker_controlled_fields(db, caplog):
+    room, _ws0, _ws1 = run(_started_room(db))
+    attack = "x" * (1024 * 1024)
+    with caplog.at_level(logging.INFO, logger="bwpro.room"):
+        room._log_rejection(0, {"op": attack, "padding": "y" * 10000},
+                            "未知指令: " + attack)
+    room._cancel_timer()
+    records = [record for record in caplog.records if record.name == "bwpro.room"]
+    assert len(records) == 1
+    assert attack not in caplog.text
+    assert "x" * 65 not in caplog.text
+    assert "y" * 100 not in caplog.text
+    assert len(records[0].getMessage()) <= 256
+
+
 # ---------- 房间管理 ----------
 
 def test_room_id_unique(db):
@@ -378,12 +455,6 @@ def test_debug_room_flag(db):
 
 # ---------- 排障日志 ----------
 
-def test_room_lifecycle_log_keeps_console_output(db, capsys):
-    room = mk_room(db)
-    room._log("生命周期检查")
-    assert capsys.readouterr().out == "[房间 TEST01] 生命周期检查\n"
-
-
 def test_rejected_command_logs_room_context(db, caplog):
     room, _ws0, _ws1 = run(_started_room(db))
     seat = next(s for s in (0, 1)
@@ -414,7 +485,7 @@ def test_engine_exception_logs_room_context_and_traceback(db, caplog):
 def test_log_admin_token_not_captured(tmp_path, monkeypatch):
     path = configure_logging("test", log_dir=tmp_path)
     monkeypatch.setattr("server.log_admin.write_terminal_secret", lambda text: True)
-    monkeypatch.setattr("server.log_admin._restrict_token_permissions", lambda path: None)
+    monkeypatch.setattr("server.log_admin.restrict_private_permissions", lambda path: None)
     try:
         service = LogAdminService(tmp_path, path)
         for handler in logging.getLogger().handlers:
@@ -425,6 +496,14 @@ def test_log_admin_token_not_captured(tmp_path, monkeypatch):
 
 
 # ---------- 断线重连 ----------
+
+def test_reconnect_token_is_short_copyable_hex(db):
+    import re
+
+    room = mk_room(db)
+    conn = run(room.join(0, "甲", FakeWS(), _deck_code(db)))
+    assert re.fullmatch(r"[0-9a-f]{8}", conn.token)
+
 
 def test_reconnect_by_token(db):
     async def go():
@@ -1042,6 +1121,24 @@ def test_websocket_normal_leave_logs_code_and_room(server, db, caplog):
     assert "关闭码=1000" in caplog.text
 
 
+def test_websocket_leave_keeps_socket_for_create_and_join(server, db):
+    client, _joined = _ws_create_room(db, "甲")
+    client.send({"type": "leave"})
+    assert client.recv_until("left")["type"] == "left"
+
+    client.send({"type": "create", "name": "乙", "deck_code": _deck_code(db)})
+    assert client.recv_until("joined", "error")["type"] == "joined"
+    client.send({"type": "leave"})
+    assert client.recv_until("left")["type"] == "left"
+
+    other, other_joined = _ws_create_room(db, "丙")
+    client.send({"type": "join", "room_id": other_joined["room_id"],
+                 "name": "丁", "deck_code": _deck_code(db)})
+    assert client.recv_until("joined", "error")["type"] == "joined"
+    client.ws.close()
+    other.ws.close()
+
+
 def test_full_match_flow(server, db):
     a = WsClient()
     a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db)})
@@ -1617,6 +1714,87 @@ def test_termux_launcher_accepts_equivalent_remote_urls(tmp_path, remote_url):
     assert "远端地址不符合预期" not in result.stderr
 
 
+def test_reconnect_failure_budget_spans_websockets_and_blocks_valid_token(server, db):
+    first, second, joined = _ws_room(db, started=True)
+    first.ws.close()
+    clients = [second]
+    try:
+        for attempt in range(5):
+            client = WsClient()
+            clients.append(client)
+            client.send({"type": "join", "room_id": joined["room_id"],
+                         "token": f"invalid-{attempt}"})
+            assert client.recv_until("error")["reason"] == "重连令牌无效"
+
+        sixth = WsClient()
+        clients.append(sixth)
+        sixth.send({"type": "join", "room_id": joined["room_id"], "token": "invalid-sixth"})
+        assert sixth.recv_until("error")["reason"] == "重连尝试过于频繁，请稍后"
+
+        valid = WsClient()
+        clients.append(valid)
+        valid.send({"type": "join", "room_id": joined["room_id"],
+                    "token": joined["token"]})
+        assert valid.recv_until("error")["reason"] == "重连尝试过于频繁，请稍后"
+    finally:
+        for client in clients:
+            client.ws.close()
+
+
+def test_reconnect_failure_budget_expires_and_success_preserves_window(db, monkeypatch):
+    room = mk_room(db)
+    conn = run(room.join(0, "甲", FakeWS(), _deck_code(db)))
+    now = [1000.0]
+    monkeypatch.setattr("server.room.time.monotonic", lambda: now[0])
+
+    for _ in range(5):
+        room.record_reconnect_failure()
+    assert room.reconnect_throttled()
+    now[0] += 60
+    assert not room.reconnect_throttled()
+    assert run(room.reconnect(conn.token, FakeWS())) is conn
+
+    for _ in range(4):
+        room.record_reconnect_failure()
+    assert not room.reconnect_throttled()
+    assert run(room.reconnect(conn.token, FakeWS())) is conn
+    assert len(room._reconnect_failures) == 4
+    room.record_reconnect_failure()
+    assert room.reconnect_throttled()
+
+
+def test_termux_chmod_failure_warns_and_continues(tmp_path):
+    import os
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).parents[1] / "scripts" / "termux_server.sh"
+    subprocess.run(["git", "init", "-b", "master", str(tmp_path)], check=True,
+                   capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin",
+                    "https://github.com/Varisox137/BWPro.git"], check=True)
+    wrapper = r'''
+chmod() { return 1; }
+git() {
+    if [[ "$1" == "pull" ]]; then
+        printf 'pull reached\n'
+        return 1
+    fi
+    command git "$@"
+}
+export -f chmod git
+exec bash "$1"
+'''
+    result = subprocess.run(
+        ["bash", "-c", wrapper, "bash", str(script)],
+        env={**os.environ, "BWP_REPO_DIR": str(tmp_path)},
+        capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode != 0
+    assert "警告：无法设置日志目录权限" in result.stderr
+    assert "警告：无法设置 launcher 日志权限" in result.stderr
+    assert "pull reached" in result.stdout
+
+
 def test_uvicorn_uses_project_logging_without_tty_probe():
     """uvicorn 不再覆盖项目日志配置，避免 tee stdout 缺少 isatty。"""
     from pathlib import Path
@@ -1694,6 +1872,30 @@ def test_room_sends_opponent_cardback_on_broadcast_and_resync(db):
         await room.resync(room.conns[0])
         assert ws0.messages[-1]["opponent_cardback"] == "三途花境"
         room._cancel_timer()
+    run(go())
+
+
+def test_cardback_snapshot_ignores_reconnect_and_updates_on_new_join(db):
+    async def go():
+        room = mk_room(db)
+        ws0, ws1 = FakeWS(), FakeWS()
+        conn = await room.join(0, "甲", ws0, _deck_code(db), cardback="月明风清")
+        await room.join(1, "乙", ws1, _deck_code(db), cardback="三途花境")
+        await room.start_game()
+
+        await room.reconnect(conn.token, FakeWS())
+        await room.resync(room.conns[1])
+        assert ws1.messages[-1]["opponent_cardback"] == "月明风清"
+        room._cancel_timer()
+
+        next_room = Room("NEXT01", db, rng=random.Random(1))
+        next_ws0, next_ws1 = FakeWS(), FakeWS()
+        await next_room.join(0, "甲", next_ws0, _deck_code(db), cardback="金鱼姬")
+        await next_room.join(1, "乙", next_ws1, _deck_code(db), cardback="三途花境")
+        await next_room.start_game()
+        state = next(msg for msg in next_ws1.messages if msg["type"] == "state")
+        assert state["opponent_cardback"] == "金鱼姬"
+        next_room._cancel_timer()
     run(go())
 
 

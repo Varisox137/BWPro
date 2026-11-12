@@ -9,19 +9,19 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from client.gui.portrait import bwpdiy_code_root  # noqa: E402
+from core.version import VERSION  # noqa: E402
 
-VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 EXE_NAME = f"BWPro-v{VERSION}"
 
 
@@ -79,10 +79,18 @@ def _smoke_test(executable: Path) -> None:
         "USERPROFILE": str(smoke_home),
         "PYTHONIOENCODING": "utf-8",
     })
-    subprocess.run(
-        [str(executable), "--smoke-test"], cwd=smoke_home, env=env,
-        check=True, timeout=180,
-    )
+    command = [str(executable), "--smoke-test"]
+    cache_dir = smoke_home / ".bwpro" / "cardart"
+    subprocess.run(command, cwd=smoke_home, env=env, check=True, timeout=180)
+    first_pngs = set(cache_dir.glob("*.png"))
+    subprocess.run(command, cwd=smoke_home, env=env, check=True, timeout=180)
+    second_pngs = set(cache_dir.glob("*.png"))
+    added = second_pngs - first_pngs
+    assert not added, f"第二次启动新增卡图缓存：{sorted(path.name for path in added)}"
+    manifest = json.loads((cache_dir / "manifest.json").read_text(encoding="utf-8"))
+    stats = manifest["stats"]
+    assert stats["total"] > 0 and stats["failed"] == 0, stats
+    assert stats["skipped"] == stats["total"], stats
 
 
 def main(argv: list[str] | None = None) -> int:

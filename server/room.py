@@ -12,9 +12,9 @@ import asyncio
 import json
 import logging
 import random
+import secrets
 import string
 import time
-import uuid
 
 from core.engine import Game, IllegalAction
 from core.model import GameConfig
@@ -26,6 +26,9 @@ from server import protocol
 logger = logging.getLogger("bwpro.room")
 
 ROOM_ID_ALPHABET = string.ascii_uppercase.replace("I", "").replace("O", "") + "23456789"
+_TRACE_MESSAGE_CHARS = 4096
+_RECONNECT_FAILURE_WINDOW = 60.0
+_RECONNECT_FAILURE_LIMIT = 5
 
 
 def new_room_id(rng: random.Random, length: int = 6) -> str:
@@ -138,7 +141,7 @@ class Connection:
                  cardback: str | None = None) -> None:
         self.seat = seat
         self.name = name
-        self.token = token or uuid.uuid4().hex
+        self.token = token or secrets.token_hex(4)
         self.cardback = cardback
         self.ws = None  # 当前 WebSocket；断线时为 None
 
@@ -190,6 +193,7 @@ class Room:
         self._sent_timeline = 0
         self._trace_pending = []
         self._over_sent = False
+        self._reconnect_failures: list[float] = []
         # 最近人员变动时刻（join/reconnect/lobby_leave 刷新；纯断线 disconnect
         # 不算人员变动、不刷新）——看门狗据此解散长期无变动的未开局房间
         self.last_activity = time.time()
@@ -205,6 +209,18 @@ class Room:
             if c is not None and c.token == token:
                 return c.seat
         return None
+
+    def reconnect_throttled(self) -> bool:
+        now = time.monotonic()
+        self._reconnect_failures = [
+            stamp for stamp in self._reconnect_failures
+            if now - stamp < _RECONNECT_FAILURE_WINDOW
+        ]
+        return len(self._reconnect_failures) >= _RECONNECT_FAILURE_LIMIT
+
+    def record_reconnect_failure(self) -> None:
+        self.reconnect_throttled()
+        self._reconnect_failures.append(time.monotonic())
 
     def _parse_deck(self, deck_code: str | None) -> tuple[list[int], list[int]]:
         """解析卡组码（必须提供，无默认卡组；按房间环境 env_db 校验）；非法抛 ValueError。"""
@@ -264,14 +280,18 @@ class Room:
         print(f"[房间 {self.id}] {msg}", flush=True)
 
     def _trace_sink(self, entry: dict) -> None:
+        entry = dict(entry)
+        entry["message"] = str(entry["message"])[:_TRACE_MESSAGE_CHARS]
         logging.getLogger("bwpro.battle").info(
             "房间 %s %s seq=%s owner=%s：%s", self.id, entry["kind"],
             entry.get("seq"), entry.get("owner"), entry["message"])
         self._trace_pending.append(entry)
 
     def _log_rejection(self, seat: int | None, cmd: dict, reason: str) -> None:
+        op = str(cmd.get("op", ""))[:64]
+        reason = str(reason)[:64]
         logger.info("房间 %s 座位=%s 指令=%s 被拒绝：%s",
-                    self.id, seat, cmd.get("op"), reason)
+                    self.id, seat, op, reason)
 
     def lobby_msg(self) -> dict:
         """当前 lobby 状态消息（广播与重连补发共用）：IDLE/STARTING 不带 deadline。"""
@@ -479,21 +499,25 @@ class Room:
         await self._apply_and_broadcast(None, cmd)
 
     async def _apply_and_broadcast(self, seat: int | None, cmd: dict) -> None:
+        trace_length = len(self._trace_pending)
         try:
             self.game.apply(cmd)
         except IllegalAction as e:
+            del self._trace_pending[trace_length:]
             reason = str(e)
             self._log_rejection(seat, cmd, reason)
             if seat is not None:
                 await self.conns[seat].send(protocol.error(reason))
             return
         except (TypeError, ValueError, AttributeError, KeyError):
+            del self._trace_pending[trace_length:]
             reason = "指令格式或参数非法"
             self._log_rejection(seat, cmd, reason)
             if seat is not None:
                 await self.conns[seat].send(protocol.error(reason))
             return
         except Exception as e:  # 引擎异常：终止对局，避免房间卡死
+            del self._trace_pending[trace_length:]
             logger.exception("房间 %s 引擎异常，对局终止", self.id)
             await self._broadcast(protocol.error(f"引擎异常，对局终止（{e}）"))
             await self._broadcast(protocol.game_over(None, "engine_error"))

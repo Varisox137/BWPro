@@ -21,8 +21,12 @@ from client.log_admin import LogAdminClient, LogAdminWindow, normalize_admin_url
 @pytest.mark.parametrize(("raw", "expected"), [
     ("127.0.0.1", "http://127.0.0.1:1037"),
     ("localhost:1037", "http://localhost:1037"),
+    ("[::1]:1037", "http://[::1]:1037"),
+    ("::1", "http://[::1]:1037"),
     ("bwpro.example", "https://bwpro.example"),
-    ("bwpro.example:8443", "http://bwpro.example:8443"),
+    ("bwpro.example:8443", "https://bwpro.example:8443"),
+    ("192.0.2.10:8443", "https://192.0.2.10:8443"),
+    ("http://bwpro.example:8443", "http://bwpro.example:8443"),
     ("https://bwpro.example", "https://bwpro.example"),
     ("wss://bwpro.example/ws", "https://bwpro.example"),
     ("http://localhost/", "http://localhost:1037"),
@@ -36,6 +40,63 @@ def test_normalize_admin_url(raw, expected):
 def test_normalize_admin_url_rejects_invalid_addresses(raw):
     with pytest.raises(ValueError):
         normalize_admin_url(raw)
+
+
+class _FakeResponse:
+    def __init__(self, payload, download_name="bwpro-test.log"):
+        self.payload = payload
+        self.offset = 0
+        self.read_sizes = []
+        self.headers = self
+
+    def get_filename(self):
+        return self.download_name if hasattr(self, "download_name") else None
+
+    def read(self, size=-1):
+        self.read_sizes.append(size)
+        if size < 0:
+            size = len(self.payload) - self.offset
+        chunk = self.payload[self.offset:self.offset + size]
+        self.offset += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+
+def test_json_response_limit_uses_actual_bytes_not_content_length(monkeypatch):
+    client = LogAdminClient("127.0.0.1", "token")
+    payload = (b'{"logs":[],"padding":"' + b"x" * (2 * 1024 * 1024) + b'"}')
+    response = _FakeResponse(payload)
+    monkeypatch.setattr(client, "_open", lambda _path: response)
+    with pytest.raises(RuntimeError, match="2 MiB"):
+        client.list_logs()
+    assert response.read_sizes
+    assert all(size >= 0 for size in response.read_sizes)
+
+
+def test_download_limit_interrupts_and_removes_partial_file(monkeypatch, tmp_path):
+    monkeypatch.setattr("client.log_admin._MAX_DOWNLOAD_BYTES", 8, raising=False)
+    client = LogAdminClient("127.0.0.1", "token")
+    response = _FakeResponse(b"123456789")
+    response.download_name = "bwpro-test.log"
+    monkeypatch.setattr(client, "_open", lambda _path: response)
+    with pytest.raises(RuntimeError, match="下载"):
+        client.download("bwpro-test.log", tmp_path)
+    assert list(tmp_path.iterdir()) == []
+    assert response.offset == 9
+
+
+@pytest.mark.parametrize("name", [
+    "bwpro-bad:.log", "bwpro-bad\x01.log", "bwpro-bad<.log",
+    "bwpro-test.log ", "bwpro-test.log.",
+])
+def test_download_name_rejects_windows_unsafe_characters(name):
+    with pytest.raises(RuntimeError, match="日志文件名"):
+        LogAdminClient._validate_download_name(name)
 
 
 class LogHandler(BaseHTTPRequestHandler):
@@ -399,31 +460,35 @@ def test_client_refuses_cross_origin_redirect_without_leaking_token(status):
             thread.join(timeout=2)
 
 
-def test_client_download_permission_error_removes_new_partial_file(
-        server, tmp_path, monkeypatch):
-    def fail_copy(_source, _target, length):
-        raise PermissionError("注入写入权限失败")
+def test_client_download_permission_error_removes_new_partial_file(tmp_path, monkeypatch):
+    client = LogAdminClient("127.0.0.1", "token")
+    response = _FakeResponse(b"partial")
+    response.download_name = "bwpro-test.log"
 
-    monkeypatch.setattr("client.log_admin.shutil.copyfileobj", fail_copy)
-    client = LogAdminClient(server.url, "0123456789abcdef")
-    with pytest.raises(PermissionError, match="注入写入权限失败"):
+    def fail_read(_size):
+        raise PermissionError("注入读取权限失败")
+
+    monkeypatch.setattr(response, "read", fail_read)
+    monkeypatch.setattr(client, "_open", lambda _path: response)
+    with pytest.raises(PermissionError, match="注入读取权限失败"):
         client.download("bwpro-test.log", tmp_path)
     assert list(tmp_path.iterdir()) == []
 
 
-def test_client_download_incomplete_read_removes_only_new_partial_file(
-        server, tmp_path, monkeypatch):
+def test_client_download_incomplete_read_removes_only_new_partial_file(tmp_path, monkeypatch):
     from http.client import IncompleteRead
 
     existing = tmp_path / "bwpro-test.log"
     existing.write_bytes(b"existing")
+    client = LogAdminClient("127.0.0.1", "token")
+    response = _FakeResponse(b"partial")
+    response.download_name = "bwpro-test.log"
 
-    def fail_copy(_source, target, length):
-        target.write(b"partial")
+    def fail_read(_size):
         raise IncompleteRead(b"partial", 10)
 
-    monkeypatch.setattr("client.log_admin.shutil.copyfileobj", fail_copy)
-    client = LogAdminClient(server.url, "0123456789abcdef")
+    monkeypatch.setattr(response, "read", fail_read)
+    monkeypatch.setattr(client, "_open", lambda _path: response)
     with pytest.raises(IncompleteRead):
         client.download("bwpro-test.log", tmp_path)
     assert existing.read_bytes() == b"existing"

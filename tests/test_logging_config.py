@@ -6,7 +6,31 @@ import sys
 import time
 from pathlib import Path
 
-from core.logging_config import configure_logging, restore_output
+from core.logging_config import configure_logging, restore_output, write_terminal_secret
+
+
+def test_terminal_secret_writes_to_terminal_not_standard_output(monkeypatch, capsys):
+    writes = []
+
+    class Terminal:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def write(self, text):
+            writes.append(text)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: Terminal())
+    assert write_terminal_secret("秘密") is True
+    assert writes == ["秘密\n"]
+    captured = capsys.readouterr()
+    assert "秘密" not in captured.out
+    assert "秘密" not in captured.err
 
 
 def test_log_file_debug_output_and_cleanup(tmp_path):
@@ -107,3 +131,92 @@ def test_windowed_output_capture_allows_none_streams(monkeypatch):
         sys.stderr.flush()
     finally:
         logging_config.restore_output()
+
+
+def test_posix_log_directory_and_all_surviving_logs_are_private(tmp_path):
+    if os.name == "nt":
+        import pytest
+        pytest.skip("POSIX 权限位仅在 POSIX 检查")
+    import stat
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(mode=0o755)
+    surviving = log_dir / "bwpro-existing.log"
+    surviving.write_text("保留", encoding="utf-8")
+    surviving.chmod(0o644)
+    try:
+        current = configure_logging("private", log_dir=log_dir)
+        assert stat.S_IMODE(log_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(current.stat().st_mode) == 0o600
+        assert stat.S_IMODE(surviving.stat().st_mode) == 0o600
+    finally:
+        restore_output()
+
+
+def test_windows_private_permissions_reset_then_use_current_user_acl(tmp_path, monkeypatch):
+    import subprocess
+    from core import logging_config
+
+    path = tmp_path / "bwpro-private.log"
+    path.write_text("private", encoding="utf-8")
+    monkeypatch.setattr(logging_config.os, "name", "nt")
+    monkeypatch.setattr(logging_config.getpass, "getuser", lambda: "test-user")
+    calls = []
+
+    def record_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(logging_config.subprocess, "run", record_run)
+    logging_config.restrict_private_permissions(path)
+    assert calls == [(
+        ["icacls", os.fspath(path), "/reset", "/inheritance:r", "/grant:r",
+         "test-user:(F)"],
+        {"check": True, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE},
+    )]
+
+
+def test_application_permission_failure_warns_and_logging_continues(
+        tmp_path, monkeypatch, caplog):
+    from core import logging_config
+
+    def fail_permissions(_path, *, directory=False):
+        raise OSError("注入权限失败")
+
+    monkeypatch.setattr(logging_config, "restrict_private_permissions", fail_permissions)
+    with caplog.at_level(logging.WARNING, logger="core.logging_config"):
+        try:
+            path = logging_config.configure_logging("permission-failure", log_dir=tmp_path)
+            assert path.is_file()
+            logging.getLogger("permission.test").warning("日志仍可用")
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            assert "日志仍可用" in path.read_text(encoding="utf-8")
+        finally:
+            logging_config.restore_output()
+    assert "警告" in caplog.text
+    assert "注入权限失败" in caplog.text
+    assert str(tmp_path) in caplog.text
+
+
+def test_update_mode_logs_exception_to_existing_frozen_log_dir(tmp_path, monkeypatch):
+    import client.update
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+
+    def fail_update(*_args):
+        raise OSError("注入更新失败")
+
+    monkeypatch.setattr(client.update, "apply_update", fail_update)
+    try:
+        assert client.update.apply_update_command(["12", "old", "new", "hash"]) == 1
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        logs = list((tmp_path / "home" / ".bwpro" / "logs").glob("bwpro-*.log"))
+        assert len(logs) == 1
+        contents = logs[0].read_text(encoding="utf-8")
+        assert "自动更新失败" in contents
+        assert "注入更新失败" in contents
+    finally:
+        restore_output()

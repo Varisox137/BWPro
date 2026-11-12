@@ -89,7 +89,7 @@ def test_command_trace_precedes_validation(make_game, cmd, terminal):
     assert len(entries) == 1
     assert entries[0]["kind"] == "cmd"
     assert entries[0]["owner"] == 0
-    assert json.loads(entries[0]["message"]) == cmd
+    assert json.loads(entries[0]["message"]) == {"op": cmd["op"]}
 
 
 def test_card_play_has_public_animation_metadata(make_game):

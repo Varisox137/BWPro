@@ -80,6 +80,17 @@ _POOL_DESC = {
 
 
 MAX_QUEUE_ITERATIONS = 1000  # 效果队列死循环保护（DIY 安全网）
+_TRACE_MESSAGE_CHARS = 4096
+_CMD_TRACE_FIELDS = {
+    "play_card": ("op", "player", "uid", "play_from", "play_method", "choice",
+                  "target", "target2"),
+    "assault": ("op", "player", "target", "index"),
+    "upgrade": ("op", "player", "index"),
+    "end_turn": ("op", "player"),
+    "mulligan": ("op", "player", "uid"),
+    "ready": ("op", "player"),
+    "choose": ("op", "player", "uid", "choice"),
+}
 
 # 天然类别为"一次性"的关键字（触发后移除）；其余战斗关键字默认持续性（触发后不移除）。
 # "永久"是授予方式而非关键字属性，由授予方显式指定 cls="perm"。
@@ -1166,11 +1177,12 @@ class Game:
     # ==================== 指令入口 ====================
 
     def _trace(self, kind, message, *, owner=None, seq=None, summary=None):
+        message = str(message)[:_TRACE_MESSAGE_CHARS]
         if self.trace_sink is None:
             logging.getLogger("bwpro.battle").info(
                 "%s seq=%s owner=%s：%s", kind, seq, owner, message)
             return
-        entry = {"kind": kind, "message": str(message), "owner": owner}
+        entry = {"kind": kind, "message": message, "owner": owner}
         if seq is not None:
             entry["seq"] = seq
         if summary is not None:
@@ -1185,7 +1197,10 @@ class Game:
         以 "debug_" 开头的 op 会路由到 core/debug.py 的调试指令注册表。
         """
         op = cmd.get("op", "")
-        self._trace("cmd", json.dumps(cmd, ensure_ascii=False, default=str),
+        fields = _CMD_TRACE_FIELDS.get(
+            op, ("op", "player", "args") if op.startswith("debug_") else ("op", "player"))
+        traced_cmd = {key: cmd[key] for key in fields if key in cmd}
+        self._trace("cmd", json.dumps(traced_cmd, ensure_ascii=False, default=str),
                     owner=cmd.get("player", self.state.active))
         if self.state.winner is not None or self.state.pending_end:
             raise IllegalAction("对局已结束")
@@ -3139,6 +3154,7 @@ class Game:
                 "max_health": base_health if s.defeated else s.max_health,
                 "shield": s.shield, "combat_power": 0 if s.defeated else s.combat_power,
                 "base_power": base_power, "base_health": base_health,
+                "form": s.form.id if s.form is not None else None,
                 "defeated": s.defeated, "revive_countdown": s.revive_countdown,
                 "countdown": s.countdown, "revive_pending": False,
             }

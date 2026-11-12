@@ -16,6 +16,7 @@ versions:
         # 判定时（即时时机）：判定者=己方且将失败（dice_below_x：当前骰点 < 所需 X，
         # targets.py 条件算子）重投一次；强制 6 不豁免本流程（规则要点）
         - when: on_luck_judge
+          mode: atomic
           condition: {judge: self, dice_below_x: true}
           steps:
             - {op: luck_reroll}

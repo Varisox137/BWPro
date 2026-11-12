@@ -66,6 +66,10 @@ def gui_settings_path() -> Path:
     return Path.home() / ".bwpro" / "gui.json"
 
 
+def normalize_player_name(value: str) -> str:
+    return value.strip()[:32] or "玩家"
+
+
 def load_gui_settings(path: Path | None = None) -> dict[str, str]:
     path = path or gui_settings_path()
     settings = {
@@ -83,7 +87,7 @@ def load_gui_settings(path: Path | None = None) -> dict[str, str]:
         value = stored.get(key) if isinstance(stored, dict) else None
         if isinstance(value, str):
             settings[key] = value
-    settings["player_name"] = settings["player_name"].strip()[:32] or "玩家"
+    settings["player_name"] = normalize_player_name(settings["player_name"])
     return settings
 
 
@@ -94,7 +98,7 @@ def save_gui_settings(settings: dict[str, str], path: Path | None = None) -> Non
     for key in current:
         value = settings.get(key)
         if isinstance(value, str):
-            current[key] = (value.strip()[:32] or "玩家") if key == "player_name" else value
+            current[key] = normalize_player_name(value) if key == "player_name" else value
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n",
                          encoding="utf-8")
@@ -143,18 +147,18 @@ def end_turn_button_pixmap(size: int, opponent: bool = False, *,
     word = ui_pixmap(f"turn_buttons/{prefix}{variant}.png", root=root)
     if word.isNull():
         word = ui_pixmap(f"turn_buttons/{prefix}golden.png", root=root)
+    word = word.scaled(
+        round(size * 0.85), round(size * 0.85), Qt.KeepAspectRatio, Qt.SmoothTransformation)
     if not re.fullmatch(r"[0-9a-fA-F]{8}", selected):
-        return word.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return word
     background = ui_pixmap(f"turn_buttons/{selected}.png", root=root)
     if background.isNull() or word.isNull():
-        return word.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return word
     result = QPixmap(size, size)
     result.fill(Qt.transparent)
     painter = QPainter(result)
     background = background.scaled(
         size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-    word = word.scaled(
-        round(size * 0.88), round(size * 0.88), Qt.KeepAspectRatio, Qt.SmoothTransformation)
     painter.drawPixmap((size - background.width()) // 2,
                        (size - background.height()) // 2, background)
     painter.drawPixmap((size - word.width()) // 2, (size - word.height()) // 2, word)

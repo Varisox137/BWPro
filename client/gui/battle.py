@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from client import cli
 from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_seat, usage_target
 from client.gui.cardart import seat_level_color
-from client.gui.details import ShikigamiDetailDialog
+from client.gui.details import ShikigamiDetailDialog, player_ability_mechanisms
 from client.gui.player_details import PlayerDetailDialog
 from client.gui.ui_assets import end_turn_button_pixmap, ui_pixmap
 from client.gui.widgets import CardChoiceView, CardDetailDialog, ask_confirmation, polish_dialog_buttons
@@ -844,6 +844,9 @@ class HotseatView(QWidget):
         ShikigamiDetailDialog(self.game, ref, self.viewer, self).exec()
 
     def show_player_detail(self, pi: int) -> None:
+        state = self.game.state.players[pi]
+        if not state.fields and not player_ability_mechanisms(state, pi, self.viewer):
+            return
         PlayerDetailDialog(self.game, pi, self.viewer, self).exec()
 
     def show_card_detail(self, card) -> None:

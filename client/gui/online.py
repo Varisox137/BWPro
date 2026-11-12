@@ -98,6 +98,7 @@ class OnlineBattleView(HotseatView):
         self._game_over = False
         self._state_rendering = False
         self._deferred_state: tuple | None = None
+        self.playback_allowed = True
         super().__init__(db, on_back=on_back, parent=parent)
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
@@ -133,7 +134,7 @@ class OnlineBattleView(HotseatView):
         self.battle_scene.game_over = False
         self.battle_scene.hide_banner()
         self._close_choice_dialog()
-        if not self.countdown_timer.isActive():
+        if self.playback_allowed and not self.countdown_timer.isActive():
             self.countdown_timer.start()
 
     def _current_viewer(self) -> int:
@@ -187,7 +188,8 @@ class OnlineBattleView(HotseatView):
         finally:
             if loading:
                 self.battle_scene.hide_loading()
-            if self.timeline_queue and not self.timeline_timer.isActive():
+            if (self.playback_allowed and self.timeline_queue
+                    and not self.timeline_timer.isActive()):
                 self.timeline_timer.start()
             self._state_rendering = False
             if self._deferred_state is not None:
@@ -374,6 +376,7 @@ class OnlineView(QWidget):
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("标准模式", "standard")
         self.mode_combo.addItem("自由模式", "free")
+        self.mode_combo.currentIndexChanged.connect(self._render_lobby)
         self.env_edit = QLineEdit()
         self.env_edit.setPlaceholderText("环境别名或 6/8 位日期")
         self.create_button = QPushButton("创建房间")
@@ -384,7 +387,8 @@ class OnlineView(QWidget):
         lobby.addLayout(create_row)
         join_row = QHBoxLayout()
         self.token_edit = QLineEdit()
-        self.token_edit.setEchoMode(QLineEdit.Password)
+        self.token_edit.setEchoMode(QLineEdit.Normal)
+        self.token_edit.setReadOnly(True)
         self.token_edit.setPlaceholderText("重连令牌（首次加入留空）")
         self.join_button = QPushButton("加入 / 重连")
         self.join_button.setFixedSize(160, 36)
@@ -436,8 +440,13 @@ class OnlineView(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self.battle.playback_allowed = True
         if not self.clock.isActive():
             self.clock.start()
+        if not self.battle.countdown_timer.isActive():
+            self.battle.countdown_timer.start()
+        if self.battle.timeline_queue and not self.battle.timeline_timer.isActive():
+            self.battle.timeline_timer.start()
 
     def reload_decks(self) -> None:
         self.entries = [entry for entry in deckstore.load_decks(self.base_db, self.store_path)
@@ -547,16 +556,18 @@ class OnlineView(QWidget):
             self.lobby_error.setText("房间代码须为 6 位大小写字母或数字")
             return False
         mode = self.mode_combo.currentData()
+        if mode == "free" and not self.env_edit.text().strip():
+            self.lobby_error.setText("自由模式必须输入环境别名或日期")
+            return False
         try:
             env = parse_env_input(self.env_edit.text()) if mode == "free" else None
         except ValueError as error:
             self.lobby_error.setText(str(error))
             return False
         msg = {"type": "create", "name": self.player_name, "deck_code": self.deck_code,
-               "debug": False, "client": net.CLIENT_ID, "mode": mode,
-               "cardback": load_gui_settings()["own_cardback"]}
-        if self._client_ip:
-            msg["client_ip"] = self._client_ip
+               "debug": False, "mode": mode,
+               "cardback": load_gui_settings()["own_cardback"],
+               **net.hello_metadata(self._client_ip)}
         if room_id:
             msg["room_id"] = room_id
         if env is not None:
@@ -584,10 +595,8 @@ class OnlineView(QWidget):
             return True
         msg = {"type": "join", "room_id": room_id, "name": self.player_name,
                "deck_code": None if token else self.deck_code,
-               "token": token, "client": net.CLIENT_ID,
-               "cardback": load_gui_settings()["own_cardback"]}
-        if self._client_ip:
-            msg["client_ip"] = self._client_ip
+               "token": token, "cardback": load_gui_settings()["own_cardback"],
+               **net.hello_metadata(self._client_ip)}
         self.bridge.send(msg)
         self.lobby_error.clear()
         return True
@@ -597,7 +606,7 @@ class OnlineView(QWidget):
             self.bridge.send({"type": "ready"})
 
     def leave_room(self) -> None:
-        if self.bridge is not None and self.in_lobby:
+        if self.bridge is not None and self.room_id is not None:
             self.bridge.send({"type": "leave"})
         else:
             self.leave_to_menu()
@@ -645,6 +654,7 @@ class OnlineView(QWidget):
             self.room_label.setText(f"房间 {self.room_id}")
             self.self_label.setText(f"你：{self.player_name}　卡组：{self.deck_name}")
             self.lobby_status.setText("已加入，等待对手……")
+            self._render_lobby()
         elif kind == "lobby":
             self.in_lobby = True
             self.mode = msg.get("mode", "standard")
@@ -712,6 +722,7 @@ class OnlineView(QWidget):
         """离开当前房间但保持服务器连接，停留在可创建/加入的大厅。"""
         self.in_lobby = False
         self.room_id = self.token = self.seat = self.me = None
+        self.token_edit.clear()
         self.lobby_ready = []
         self.lobby_deadline = self.starting_deadline = None
         self.room_label.setText("房间大厅")
@@ -726,10 +737,14 @@ class OnlineView(QWidget):
         own_ready = self.player_name in self.lobby_ready
         self.ready_button.setText("取消准备" if own_ready else "准备")
         self.ready_button.setEnabled(self.in_lobby)
-        self.leave_button.setEnabled(self.in_lobby)
+        self.leave_button.setEnabled(self.room_id is not None)
         self.env_button.setEnabled(self.in_lobby and self.seat == 0
                                    and self.mode == "free" and not self.lobby_ready)
-        self.env_edit.setEnabled(self.seat == 0 and self.mode == "free" and not self.lobby_ready)
+        creating_free = (self.room_id is None and self.bridge is not None
+                         and self.mode_combo.currentData() == "free")
+        owner_can_edit = (self.seat == 0 and self.mode == "free"
+                          and not self.lobby_ready)
+        self.env_edit.setEnabled(creating_free or owner_can_edit)
         deadline = self.starting_deadline or self.lobby_deadline
         if deadline:
             left = max(0, round(deadline - time.time()))
@@ -770,10 +785,7 @@ class OnlineView(QWidget):
 
     def leave_to_menu(self) -> None:
         self._pending_join = False
-        self._expect_close = True
-        if self.bridge is not None:
-            self.bridge.close()
-            self.bridge = None
+        self.battle.playback_allowed = False
         self.battle.timeline_timer.stop()
         self.battle.countdown_timer.stop()
         self.clock.stop()

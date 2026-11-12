@@ -659,6 +659,13 @@ def probe_connection(server_url: str, retries: int = 3) -> str | None:
         return msg
 
 
+def hello_metadata(client_ip: str | None = None) -> dict:
+    metadata = {"client": CLIENT_ID}
+    if client_ip:
+        metadata["client_ip"] = client_ip
+    return metadata
+
+
 def run(db, server_url: str, name: str, debug: bool) -> None:
     """联机入口：创建/加入房间 → 收发线程 + 输入循环。"""
     server_url = normalize_server_url(server_url)
@@ -685,7 +692,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
             return
         _, _, deck_code = picked
         hello = {"type": "create", "name": name, "deck_code": deck_code,
-                 "debug": debug, "client": CLIENT_ID, "mode": mode}
+                 "debug": debug, "mode": mode}
         if room_id:
             hello["room_id"] = room_id
         if env_date:
@@ -701,13 +708,11 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
                 return
             _, _, deck_code = picked
         hello = {"type": "join", "room_id": room_id, "name": name,
-                 "deck_code": deck_code, "token": token, "client": CLIENT_ID}
+                 "deck_code": deck_code, "token": token}
     else:
         print("已取消")
         return
-    client_ip = local_route_ip(server_url)
-    if client_ip:
-        hello["client_ip"] = client_ip
+    hello.update(hello_metadata(local_route_ip(server_url)))
     try:
         # 客户端标识软门槛：create/join 需带 client 字段（server.main.CLIENT_UA 前缀）
         ws = _open_ws(server_url, open_timeout=10.0)

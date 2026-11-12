@@ -18,6 +18,7 @@ def _smoke_test() -> int:
     from client.gui.portrait import (
         bwpdiy_root, library_root, shikigami_portrait,
     )
+    from client.gui.prewarm import prewarm_all
     from core.logging_config import configure_logging
     from core.model import ShikigamiState
     from db.loader import CardDatabase
@@ -30,6 +31,7 @@ def _smoke_test() -> int:
     assert (root / "assets" / "levels" / "base.png").is_file(), root
     assert library_root().is_dir(), library_root()
     assert db.cards and db.shikigami
+    prewarm_all(db)
 
     card = db.cards[min(db.cards)]
     pixmap = card_pixmap(card, db, height=128)
@@ -59,10 +61,20 @@ def _smoke_test() -> int:
 
 
 def main() -> int:
+    if len(sys.argv) >= 2 and sys.argv[1] == "--apply-update":
+        from client.update import apply_update_command
+        return apply_update_command(sys.argv[2:])
+    cleanup = None
+    if len(sys.argv) == 4 and sys.argv[1] == "--cleanup-update":
+        try:
+            cleanup = int(sys.argv[2]), Path(sys.argv[3])
+        except ValueError:
+            pass
+        sys.argv = [sys.argv[0]]
     if "--smoke-test" in sys.argv:
         return _smoke_test()
     from client.gui.app import main as gui_main
-    return gui_main()
+    return gui_main(cleanup=cleanup)
 
 
 if __name__ == "__main__":

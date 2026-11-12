@@ -14,10 +14,11 @@ from PySide6.QtWidgets import (
 from client.gui.loading import LoadingIndicator, LoadingOverlay
 from client.gui.prewarm import MANIFEST_NAME, prewarm_all
 from client.gui.ui_assets import (
-    animation_variants, load_gui_settings, named_cardbacks, save_gui_settings,
-    turn_button_variants, ui_pixmap, unnamed_misc_images,
+    animation_variants, load_gui_settings, named_cardbacks, normalize_player_name,
+    save_gui_settings, turn_button_variants, ui_pixmap, unnamed_misc_images,
 )
 from client.gui.widgets import ask_confirmation, polish_dialog_buttons
+from core.version import VERSION
 
 
 class CardbackPreviewDialog(QDialog):
@@ -117,7 +118,7 @@ class CardbackPreviewDialog(QDialog):
 
 
 class SettingsView(QWidget):
-    def __init__(self, db, parent=None, on_change=None):
+    def __init__(self, db, parent=None, on_change=None, on_check_update=None):
         super().__init__(parent)
         self.db = db
         self.on_change = on_change
@@ -128,6 +129,19 @@ class SettingsView(QWidget):
         title = QLabel("设置")
         title.setObjectName("viewTitle")
         layout.addWidget(title)
+        update_row = QHBoxLayout()
+        self.version_label = QLabel(f"当前版本：{VERSION}")
+        self.update_button = QPushButton("检查更新")
+        self.update_button.setObjectName("small")
+        if on_check_update is not None:
+            self.update_button.clicked.connect(lambda: on_check_update())
+        update_row.addWidget(self.version_label)
+        update_row.addWidget(self.update_button)
+        update_row.addStretch(1)
+        layout.addLayout(update_row)
+        self.update_status_label = QLabel()
+        self.update_status_label.setWordWrap(True)
+        layout.addWidget(self.update_status_label)
         settings = load_gui_settings()
         self.cardback_buttons = {}
         self.option_buttons = {}
@@ -183,7 +197,7 @@ class SettingsView(QWidget):
         self.refresh_status()
 
     def save_player_name(self) -> None:
-        name = self.player_name_edit.text().strip() or "玩家"
+        name = normalize_player_name(self.player_name_edit.text())
         self.player_name_edit.setText(name)
         save_gui_settings({"player_name": name})
 

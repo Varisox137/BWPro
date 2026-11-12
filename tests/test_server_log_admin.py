@@ -3,7 +3,6 @@ import re
 
 import pytest
 
-from core.logging_config import write_terminal_secret
 from server.log_admin import LogAdminService
 
 
@@ -14,33 +13,9 @@ def _avoid_real_windows_acl_changes(monkeypatch):
 
     if os.name == "nt":
         monkeypatch.setattr(
-            "server.log_admin.subprocess.run",
+            "core.logging_config.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0),
         )
-
-
-def test_terminal_secret_writes_to_terminal_not_standard_output(monkeypatch, capsys):
-    writes = []
-
-    class Terminal:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def write(self, text):
-            writes.append(text)
-
-        def flush(self):
-            pass
-
-    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: Terminal())
-    assert write_terminal_secret("秘密") is True
-    assert writes == ["秘密\n"]
-    captured = capsys.readouterr()
-    assert "秘密" not in captured.out
-    assert "秘密" not in captured.err
 
 
 def test_token_rotation_and_log_listing(tmp_path, monkeypatch):
@@ -151,27 +126,6 @@ def test_auth_throttles_after_five_failures_and_success_clears_history(tmp_path,
         assert not service.authenticate("Bearer wrong", "client-a")
     assert not service.authenticate(valid, "client-a")
     assert service.authenticate(valid, "client-b")
-
-
-def test_rotation_invalidates_old_token(tmp_path, monkeypatch):
-    import asyncio
-
-    current = tmp_path / "bwpro-20261111-120000-1.log"
-    current.write_text("当前", encoding="utf-8")
-    monkeypatch.setattr("server.log_admin.write_terminal_secret", lambda text: True)
-    service = LogAdminService(tmp_path, current, rotate_seconds=0.01)
-    old = service.token
-
-    async def scenario():
-        task = asyncio.create_task(service.rotation_loop())
-        await asyncio.sleep(0.03)
-        assert service.token != old
-        assert not service.authenticate(f"Bearer {old}", "test")
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-    asyncio.run(scenario())
 
 
 def _make_api_service(tmp_path, monkeypatch, rotate_seconds=1800.0):
@@ -412,7 +366,9 @@ def test_log_listing_skips_file_deleted_after_discovery(tmp_path, monkeypatch):
     assert [item["name"] for item in service.list_logs()] == [service.current_log.name]
 
 
-def test_preview_returns_404_when_file_disappears_after_validation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("action", ["preview", "download"])
+def test_log_admin_returns_404_when_file_disappears_after_validation(
+        tmp_path, monkeypatch, action):
     from server.main import create_app
     from server.manager import RoomManager
     from tests import factories as F
@@ -428,27 +384,7 @@ def test_preview_returns_404_when_file_disappears_after_validation(tmp_path, mon
     monkeypatch.setattr(service, "log_path", path_then_delete)
     app = create_app(RoomManager(F.base_db()), log_admin=service)
     with _running_server(app) as port:
-        path = f"/api/log-admin/logs/{service.current_log.name}/preview"
-        assert _http_request(port, path, service.token)[:2] == (404, b"")
-
-
-def test_download_returns_404_when_file_disappears_after_validation(tmp_path, monkeypatch):
-    from server.main import create_app
-    from server.manager import RoomManager
-    from tests import factories as F
-
-    service = _make_api_service(tmp_path, monkeypatch)
-    original_log_path = service.log_path
-
-    def path_then_delete(name):
-        path = original_log_path(name)
-        path.unlink()
-        return path
-
-    monkeypatch.setattr(service, "log_path", path_then_delete)
-    app = create_app(RoomManager(F.base_db()), log_admin=service)
-    with _running_server(app) as port:
-        path = f"/api/log-admin/logs/{service.current_log.name}/download"
+        path = f"/api/log-admin/logs/{service.current_log.name}/{action}"
         assert _http_request(port, path, service.token)[:2] == (404, b"")
 
 
@@ -477,28 +413,12 @@ def test_download_streams_complete_file_without_read_bytes(tmp_path, monkeypatch
         assert service.current_log.name in headers["content-disposition"]
 
 
-def test_windows_token_acl_uses_icacls_for_current_user(tmp_path, monkeypatch):
-    import os
-    import subprocess
-
-    from server.log_admin import _restrict_token_permissions
-
-    path = tmp_path / ".log-access-token.test"
-    path.write_text("temporary", encoding="ascii")
-    monkeypatch.setattr("server.log_admin.os.name", "nt")
-    monkeypatch.setattr("server.log_admin.getpass.getuser", lambda: "test-user")
-    calls = []
-
-    def record_run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr("server.log_admin.subprocess.run", record_run)
-    _restrict_token_permissions(path)
-    assert calls == [(
-        ["icacls", os.fspath(path), "/inheritance:r", "/grant:r", "test-user:(F)"],
-        {"check": True, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE},
-    )]
+def test_log_path_rejects_windows_unsafe_names_before_lookup(tmp_path, monkeypatch):
+    service = _make_api_service(tmp_path, monkeypatch)
+    unsafe = tmp_path / "bwpro-invalid:.log"
+    monkeypatch.setattr(service, "_log_files", lambda: [unsafe])
+    with pytest.raises(ValueError, match="日志文件名无效"):
+        service.log_path(unsafe.name)
 
 
 def test_windows_token_acl_failure_aborts_rotation_and_preserves_old_token(
@@ -515,7 +435,7 @@ def test_windows_token_acl_failure_aborts_rotation_and_preserves_old_token(
     def fail_acl(*args, **kwargs):
         raise subprocess.CalledProcessError(1, args[0], stderr=b"denied")
 
-    monkeypatch.setattr("server.log_admin.subprocess.run", fail_acl)
+    monkeypatch.setattr("core.logging_config.subprocess.run", fail_acl)
     with pytest.raises(subprocess.CalledProcessError):
         service.rotate()
     assert service.token == old

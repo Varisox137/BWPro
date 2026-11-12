@@ -1,18 +1,51 @@
 """统一应用日志：DEBUG 文件、控制台 tee、异常记录与启动清理。"""
 from __future__ import annotations
 
+import fnmatch
+import getpass
 import logging
 import os
+import subprocess
 import sys
 import threading
 from datetime import datetime
 from pathlib import Path
 
-_LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
+LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
 _MAX_LOG_AGE_SECONDS = 7 * 86400
 _MAX_LOG_FILES = 10
 _original_stdout = None
 _original_stderr = None
+
+
+def is_log_filename(name: str) -> bool:
+    if not isinstance(name, str) or Path(name).name != name:
+        return False
+    if name.endswith((" ", ".")) or any(
+            ord(char) < 32 or 127 <= ord(char) <= 159 or char in '<>:"/\\|?*'
+            for char in name):
+        return False
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in LOG_PATTERNS)
+
+
+def restrict_private_permissions(path: Path, *, directory: bool = False) -> None:
+    if os.name != "nt":
+        os.chmod(path, 0o700 if directory else 0o600)
+        return
+    permission = "(OI)(CI)(F)" if directory else "(F)"
+    subprocess.run(
+        ["icacls", os.fspath(path), "/reset", "/inheritance:r", "/grant:r",
+         f"{getpass.getuser()}:{permission}"],
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+
+
+def restrict_private_permissions_best_effort(path: Path, *, directory: bool = False) -> None:
+    try:
+        restrict_private_permissions(path, directory=directory)
+    except Exception as error:
+        logging.getLogger(__name__).warning(
+            "警告：无法收紧日志私有权限：%s：%s", path, error)
 
 
 class _Tee:
@@ -82,7 +115,7 @@ def _cleanup_logs(log_dir: Path) -> None:
     """同时应用 7 天时限与 10 份上限（为即将创建的新日志预留 1 份）。"""
     now = datetime.now().timestamp()
     candidates = []
-    for pattern in _LOG_PATTERNS:
+    for pattern in LOG_PATTERNS:
         for path in log_dir.glob(pattern):
             try:
                 stat = path.stat()
@@ -95,11 +128,15 @@ def _cleanup_logs(log_dir: Path) -> None:
                     logging.getLogger(__name__).warning("无法清理旧日志：%s", path)
             else:
                 candidates.append((stat.st_mtime, path))
+    survivors = sorted(candidates, reverse=True)[:_MAX_LOG_FILES - 1]
     for _mtime, path in sorted(candidates, reverse=True)[_MAX_LOG_FILES - 1:]:
         try:
             path.unlink()
         except OSError:
             logging.getLogger(__name__).warning("无法清理超额日志：%s", path)
+    for _mtime, path in survivors:
+        if path.exists():
+            restrict_private_permissions_best_effort(path)
 
 
 def _exception_logger(logger: logging.Logger):
@@ -126,6 +163,7 @@ def configure_logging(component: str, log_dir: Path | None = None) -> Path:
         log_dir = (Path.home() / ".bwpro" / "logs" if getattr(sys, "frozen", False)
                    else Path(__file__).resolve().parents[1] / "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
+    restrict_private_permissions_best_effort(log_dir, directory=True)
     _cleanup_logs(log_dir)
     path = log_dir / f"bwpro-{datetime.now():%Y%m%d-%H%M%S}-{os.getpid()}.log"
     root = logging.getLogger()
@@ -136,6 +174,7 @@ def configure_logging(component: str, log_dir: Path | None = None) -> Path:
             root.removeHandler(handler)
             handler.close()
     handler = logging.FileHandler(path, encoding="utf-8")
+    restrict_private_permissions_best_effort(path)
     handler._bwpro_handler = True
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter(

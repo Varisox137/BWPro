@@ -85,6 +85,16 @@ def save_standard_deck(db, path):
     deckstore.save_decks(db, [{"name": "联机卡组", "groups": groups, "env": None}], path)
 
 
+def wait_for(qapp, predicate, timeout=3):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        qapp.processEvents()
+        time.sleep(0.005)
+    raise AssertionError("等待联机界面状态超时")
+
+
 def test_net_bridge_forwards_messages_and_sends_without_wait(qapp):
     ws = FakeWS([json.dumps({"type": "notice", "text": "公告"}),
                  json.dumps({"type": "lobby", "ready": [], "deadline": None})])
@@ -104,15 +114,6 @@ def test_net_bridge_forwards_messages_and_sends_without_wait(qapp):
 
 
 def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypatch):
-    def wait_for(predicate):
-        deadline = time.monotonic() + 3
-        while time.monotonic() < deadline:
-            if predicate():
-                return
-            qapp.processEvents()
-            time.sleep(0.005)
-        raise AssertionError("等待联机连接结果超时")
-
     view.server_edit.setText("localhost:1037")
     warnings = []
     monkeypatch.setattr("client.gui.online.show_warning",
@@ -120,7 +121,7 @@ def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypa
                         raising=False)
     view.opener = lambda _url: (_ for _ in ()).throw(OSError("拒绝连接"))
     assert view.connect_server()
-    wait_for(lambda: bool(warnings))
+    wait_for(qapp, lambda: bool(warnings))
     assert "拒绝连接" in warnings[-1][1]
     assert view.connect_button.isEnabled()
     assert view.stack.currentWidget() is view.connect_page
@@ -141,7 +142,7 @@ def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypa
     assert not view.connect_server()
     qapp.processEvents()
     release.set()
-    wait_for(lambda: isinstance(view.bridge, FakeBridge))
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge))
     assert view.connect_button.isEnabled()
     assert view.server_url == "ws://localhost:1037/ws"
     assert view.stack.currentWidget() is view.lobby_page
@@ -168,6 +169,7 @@ def test_room_leave_and_navigation_preserve_connection_hierarchy(qapp, view):
     view.stack.setCurrentWidget(view.lobby_page)  # 连接成功后的既有页面切换
     assert view.stack.currentWidget() is view.lobby_page
     view.in_lobby = True
+    view.room_id = "ABC123"
     view.leave_room()
     assert view.bridge.sent == [{"type": "leave"}]
 
@@ -178,11 +180,84 @@ def test_room_leave_and_navigation_preserve_connection_hierarchy(qapp, view):
     assert view.room_id is None and view.token is None
     assert back == []
 
-    assert view.back_to_previous() is False  # 大厅返回 = 断开并回连接页
-    assert view.stack.currentWidget() is view.connect_page
-    assert view.bridge is None and back == []
-    view.leave_to_menu()                     # 未连接的联机页才回主菜单
+    bridge = view.bridge
+    view.leave_to_menu()
     assert back == [True]
+    assert view.bridge is bridge and not bridge.ws.closed
+    assert view.stack.currentWidget() is view.lobby_page
+
+
+def test_joined_owner_can_leave_before_opponent_arrives(qapp, view):
+    view._open_bridge(FakeWS())
+    view.handle_message({"type": "joined", "room_id": "ABC123",
+                         "token": "1234abcd", "seat": 0})
+    assert view.leave_button.isEnabled()
+    view.leave_button.click()
+    assert view.bridge.sent == [{"type": "leave"}]
+    assert not view.bridge.ws.closed
+
+
+def test_leave_clears_token_so_fresh_join_sends_new_identity(qapp, db, view):
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    view._open_bridge(FakeWS())
+    view.handle_message({"type": "joined", "room_id": "ABC123",
+                         "token": "1234abcd", "seat": 0})
+    view.handle_message({"type": "left"})
+
+    assert view.token_edit.text() == ""
+    view.room_edit.setText("DEF456")
+    assert view.join_room()
+    msg = view.bridge.sent[-1]
+    assert msg["type"] == "join" and msg["room_id"] == "DEF456"
+    assert msg["token"] is None
+    assert msg["deck_code"] == view.deck_code
+
+
+def test_environment_edit_tracks_mode_and_room_membership(qapp, view):
+    view._open_bridge(FakeWS())
+    view._render_lobby()
+    view.mode_combo.setCurrentIndex(view.mode_combo.findData("free"))
+    assert view.env_edit.isEnabled()
+    view.mode_combo.setCurrentIndex(view.mode_combo.findData("standard"))
+    assert not view.env_edit.isEnabled()
+    view.mode_combo.setCurrentIndex(view.mode_combo.findData("free"))
+    assert view.env_edit.isEnabled()
+
+    view.handle_message({"type": "joined", "room_id": "ABC123",
+                         "token": "1234abcd", "seat": 0})
+    view.handle_message({"type": "lobby", "ready": [], "deadline": None,
+                         "mode": "free", "env_date": 20191212})
+    assert view.env_edit.isEnabled()
+    view.handle_message({"type": "lobby", "ready": ["玩家"], "deadline": None,
+                         "mode": "free", "env_date": 20191212})
+    assert not view.env_edit.isEnabled()
+    view.handle_message({"type": "left"})
+    assert view.env_edit.isEnabled()
+
+    view.handle_message({"type": "joined", "room_id": "DEF456",
+                         "token": "5678efab", "seat": 1})
+    view.handle_message({"type": "lobby", "ready": [], "deadline": None,
+                         "mode": "free", "env_date": 20191212})
+    assert not view.env_edit.isEnabled()
+    view.handle_message({"type": "left"})
+    assert view.env_edit.isEnabled()
+
+
+def test_free_room_requires_explicit_environment_but_standard_does_not(qapp, db, view):
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    view._open_bridge(FakeWS())
+    view.mode_combo.setCurrentIndex(view.mode_combo.findData("free"))
+    view.env_edit.clear()
+    assert not view.create_room()
+    assert "环境" in view.lobby_error.text()
+    assert view.bridge.sent == []
+
+    view.mode_combo.setCurrentIndex(view.mode_combo.findData("standard"))
+    assert view.create_room()
+    assert view.bridge.sent[-1]["type"] == "create"
+    assert "env_date" not in view.bridge.sent[-1]
 
 
 def test_lobby_messages_render_ready_environment_and_notices(qapp, db, view):
@@ -207,10 +282,11 @@ def test_lobby_messages_render_ready_environment_and_notices(qapp, db, view):
     assert "等待" in view.lobby_status.text()
 
 
-def test_online_token_uses_password_echo_mode(qapp, view):
+def test_online_token_is_copyable_and_read_only(qapp, view):
     from PySide6.QtWidgets import QLineEdit
 
-    assert view.token_edit.echoMode() == QLineEdit.Password
+    assert view.token_edit.echoMode() == QLineEdit.Normal
+    assert view.token_edit.isReadOnly()
 
 
 def test_online_battle_notice_is_visible_until_message_is_cleared(qapp, view):
@@ -779,6 +855,33 @@ def test_online_page_show_restarts_clock_and_environment_updates_scene(qapp, vie
     assert view.battle.battle_scene.db is view.db
 
 
+def test_hidden_online_state_queues_without_restarting_timers(qapp, view, make_game):
+    game = make_game(mulligan=False)
+    view.me = view.battle.me = 0
+    view.show()
+    qapp.processEvents()
+    view.leave_to_menu()
+    view.hide()
+    qapp.processEvents()
+    assert not view.battle.timeline_timer.isActive()
+    assert not view.battle.countdown_timer.isActive()
+
+    view.handle_message({
+        "type": "state", "payload": game.state.model_dump(mode="json"),
+        "timer": {"kind": "turn", "deadline": time.time() + 30},
+        "timeline": [{"m": "隐藏期间结算"}],
+    })
+    assert view.battle.game is not None
+    assert view.battle.timeline_queue
+    assert not view.battle.timeline_timer.isActive()
+    assert not view.battle.countdown_timer.isActive()
+
+    view.show()
+    qapp.processEvents()
+    assert view.battle.timeline_timer.isActive()
+    assert view.battle.countdown_timer.isActive()
+
+
 def test_main_window_online_page_and_theme(qapp, db, tmp_path):
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     view = win.pages["online"]
@@ -796,22 +899,48 @@ def test_main_window_online_page_and_theme(qapp, db, tmp_path):
 
     view.opener = open_socket
     assert view.connect_server()
-    deadline = time.monotonic() + 3
-    while view.bridge is None and time.monotonic() < deadline:
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge))
     assert isinstance(view.bridge, FakeBridge)
+    view.room_id = "ABC123"
+    view.token = "1234abcd"
+    view.battle.timeline_queue.append((None, "待恢复结算"))
     view.battle.timeline_timer.start()
     win.go("online")
     assert win.game_menu_button.isHidden()
     view.stack.setCurrentWidget(view.battle)
     assert not win.game_menu_button.isHidden()
+    bridge = view.bridge
     win.back_button.click()
     assert win.stack.currentIndex() == 0
-    assert sockets[0].closed and view.bridge is None
+    assert not sockets[0].closed and view.bridge is bridge
+    assert view.room_id == "ABC123" and view.token == "1234abcd"
+    assert view.stack.currentWidget() is view.battle
     assert not view.clock.isActive()
     assert not view.battle.timeline_timer.isActive()
     assert not view.battle.countdown_timer.isActive()
+
+    win.show()
+    win.go("online")
+    qapp.processEvents()
+    assert win.stack.currentWidget() is view
+    assert view.stack.currentWidget() is view.battle
+    assert view.clock.isActive()
+    assert view.battle.timeline_timer.isActive()
+    assert view.battle.countdown_timer.isActive()
+
+    win.game_menu_button.click()
+    assert win.stack.currentIndex() == 0
+    assert view.bridge is bridge and not sockets[0].closed
+    assert view.stack.currentWidget() is view.battle
+    assert not view.clock.isActive()
+    assert not view.battle.timeline_timer.isActive()
+    assert not view.battle.countdown_timer.isActive()
+    win.go("online")
+    qapp.processEvents()
+    assert view.stack.currentWidget() is view.battle
+    assert view.clock.isActive()
+    assert view.battle.timeline_timer.isActive()
+    assert view.battle.countdown_timer.isActive()
     win.close()
 
 
@@ -827,12 +956,8 @@ def test_disconnected_join_reopens_socket_and_sends_token(qapp, db, view):
     view.on_disconnected("网络中断")
     assert view.bridge is None
     assert view.join_room()
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        if isinstance(view.bridge, FakeBridge) and view.bridge.sent:
-            break
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent,
+             timeout=2)
     assert isinstance(view.bridge, FakeBridge)
     msg = view.bridge.sent[0]
     assert msg["type"] == "join" and msg["token"] == "令牌"
@@ -1218,20 +1343,14 @@ def test_online_connection_refreshes_name_from_settings(qapp, view, monkeypatch)
     assert not hasattr(view, "name_edit")
     assert view.connect_server()
     assert view.player_name == "设置玩家甲"
-    deadline = time.monotonic() + 2
-    while view.bridge is None and time.monotonic() < deadline:
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge), timeout=2)
     assert isinstance(view.bridge, FakeBridge)
     configured["player_name"] = "设置玩家乙"
     assert view.player_name == "设置玩家甲"  # 已连接后不被设置变更改写
     assert view.back_to_previous() is False
     assert view.connect_server()
     assert view.player_name == "设置玩家乙"
-    deadline = time.monotonic() + 2
-    while view.bridge is None and time.monotonic() < deadline:
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge), timeout=2)
     assert isinstance(view.bridge, FakeBridge)
 
 
@@ -1275,10 +1394,7 @@ def test_online_connection_caches_client_ip_in_background(qapp, db, view, monkey
     monkeypatch.setattr("client.gui.online.net.local_route_ip", route_ip)
     view.opener = lambda _url: FakeWS()
     assert view.connect_server()
-    deadline = time.monotonic() + 2
-    while view.bridge is None and time.monotonic() < deadline:
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge), timeout=2)
     assert isinstance(view.bridge, FakeBridge)
     assert len(calls) == 1 and calls[0][1] == "ws://127.0.0.1:1037/ws"
     assert calls[0][0] != main_thread
@@ -1319,15 +1435,6 @@ def test_online_direct_join_refreshes_new_identity_but_reconnect_preserves_it(
         route_threads.append(threading.get_ident())
         return ""
 
-    def wait_for_join():
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            if isinstance(view.bridge, FakeBridge) and view.bridge.sent:
-                return
-            qapp.processEvents()
-            time.sleep(0.005)
-        raise AssertionError("等待后台连接并加入超时")
-
     monkeypatch.setattr("client.gui.online.net.local_route_ip", route_ip)
     save_standard_deck(db, view.store_path)
     view.reload_decks()
@@ -1336,7 +1443,8 @@ def test_online_direct_join_refreshes_new_identity_but_reconnect_preserves_it(
     view.room_edit.setText("ABC123")
     view.player_name = "旧页面名"
     assert view.join_room()
-    wait_for_join()
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent,
+             timeout=2)
     assert view.bridge.sent[-1]["name"] == "设置新名"
     assert len(route_threads) == 1
 
@@ -1347,7 +1455,8 @@ def test_online_direct_join_refreshes_new_identity_but_reconnect_preserves_it(
     configured["player_name"] = "不应覆盖房间身份"
     view.on_disconnected("网络中断")
     assert view.join_room()
-    wait_for_join()
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent,
+             timeout=2)
     assert view.bridge.sent[-1]["name"] == "已入座身份"
     assert len(route_threads) == 2
     assert all(thread != main_thread for thread in route_threads)
@@ -1377,12 +1486,8 @@ def test_repeated_join_during_connect_preserves_pending_and_auto_joins(
     release.set()
     assert view._pending_join  # 不得因重复点击清除首轮请求
 
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        if isinstance(view.bridge, FakeBridge) and view.bridge.sent:
-            break
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent,
+             timeout=2)
     assert isinstance(view.bridge, FakeBridge)
     assert [msg["type"] for msg in view.bridge.sent] == ["join"]
     assert not view._pending_join
@@ -1404,10 +1509,7 @@ def test_pending_join_cleared_by_navigation_and_explicit_new_connection(
     view._pending_join = True
     assert view.connect_server()
     assert not view._pending_join
-    deadline = time.monotonic() + 2
-    while view.bridge is None and time.monotonic() < deadline:
-        qapp.processEvents()
-        time.sleep(0.005)
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge), timeout=2)
     assert isinstance(view.bridge, FakeBridge)
     assert not view.bridge.sent  # 普通连接不得消费陈旧 join
 

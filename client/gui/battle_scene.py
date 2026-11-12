@@ -99,7 +99,7 @@ def deck_back_layout(player: int, index: int, viewer: int,
                      scene_width: float = SCENE_WIDTH):
     top = player != viewer
     position_index = index if top else 2 - index
-    x, y, direction = ((214, 115, 45), (239, 135, 40), (86, 427, 24.5))[position_index]
+    x, y, direction = ((110, 365, 45), (98, 396, 40), (86, 427, 24.5))[position_index]
     scale = SCENE_HEIGHT / 1280
     center_y = y * scale
     if not top:
@@ -1409,7 +1409,9 @@ class BattleScene(QGraphicsScene):
         if item is None or self.game is None:
             return
         shiki = self.game.state.players[player].shikigami[index]
-        form = self.db.cards[shiki.form.id] if shiki.form is not None else None
+        form_id = (snapshot["form"] if snapshot is not None and "form" in snapshot
+                   else shiki.form.id if shiki.form is not None else None)
+        form = self.db.cards[form_id] if form_id is not None else None
         item.set_art(entity_pixmap(
             shiki, self.db, seat=index, form=form, cache_context={}, height=210,
             show_defeated_countdown=not self.defeat_countdown_hidden(player, index),

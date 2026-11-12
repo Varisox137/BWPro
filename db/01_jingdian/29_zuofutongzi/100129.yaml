@@ -11,6 +11,7 @@ versions:
         # 判定时（即时时机）：判定者=己方且当前骰点=1 重投一次（同一判定中每个来源能力
         # 至多一次）；payload 骰点键名按 dice 假设（契约 §3.3，需引擎侧确认）
         when: on_luck_judge
+        mode: atomic
         condition: {judge: self, dice: 1}
         steps:
           - {op: luck_reroll}

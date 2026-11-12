@@ -2,33 +2,21 @@
 from __future__ import annotations
 
 import asyncio
-import getpass
 import hmac
 import logging
 import os
 import secrets
-import subprocess
 import tempfile
 import time
 from pathlib import Path
 
-from core.logging_config import write_terminal_secret
+from core.logging_config import (
+    LOG_PATTERNS, is_log_filename, restrict_private_permissions, write_terminal_secret,
+)
 
-LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
 PREVIEW_BYTES = 512 * 1024
 AUTH_FAILURE_WINDOW = 60.0
 AUTH_FAILURE_LIMIT = 5
-
-
-def _restrict_token_permissions(path: Path) -> None:
-    if os.name != "nt":
-        os.chmod(path, 0o600)
-        return
-    subprocess.run(
-        ["icacls", os.fspath(path), "/inheritance:r", "/grant:r",
-         f"{getpass.getuser()}:(F)"],
-        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
 
 
 class LogAdminService:
@@ -96,7 +84,7 @@ class LogAdminService:
         temporary_path = Path(temporary_name)
         try:
             with os.fdopen(fd, "w", encoding="ascii") as temporary:
-                _restrict_token_permissions(temporary_path)
+                restrict_private_permissions(temporary_path)
                 temporary.write(candidate + "\n")
                 temporary.flush()
                 os.fsync(temporary.fileno())
@@ -122,7 +110,8 @@ class LogAdminService:
         log_root = self.log_dir.resolve()
         for pattern in LOG_PATTERNS:
             for path in self.log_dir.glob(pattern):
-                if not path.is_file() or path.resolve().parent != log_root:
+                if (not is_log_filename(path.name) or not path.is_file()
+                        or path.resolve().parent != log_root):
                     continue
                 files[path.name] = path
         return [files[name] for name in sorted(files)]
@@ -143,7 +132,7 @@ class LogAdminService:
         return logs
 
     def log_path(self, name: str) -> Path:
-        if Path(name).name != name:
+        if not is_log_filename(name):
             raise ValueError("日志文件名无效")
         for path in self._log_files():
             if path.name == name:

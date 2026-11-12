@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from client.gui.details import player_ability_mechanisms
@@ -20,17 +20,9 @@ class PlayerDetailDialog(QDialog):
         super().__init__(parent)
         state = game.state.players[player]
         self.setWindowTitle(state.name)
-        self.setMinimumSize(520, 680)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
-        self.summary_label = QLabel(
-            f"生命 {state.health}/{state.max_health}　护甲 {state.shield}\n"
-            f"鬼火 {min(4, state.orb)}　出击次数 {state.assaults_left}\n"
-            f"墓地 {len(state.graveyard)}"
-        )
-        self.summary_label.setWordWrap(True)
-        layout.addWidget(self.summary_label)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -66,9 +58,8 @@ class PlayerDetailDialog(QDialog):
         layout.addWidget(self.scroll_area, 1)
         field_columns = min(len(self.field_widgets), 3)
         columns = field_columns + (1 if self.ability_panel is not None else 0)
-        default_width = max(
-            520, columns * (art_width + 24)
-            + max(0, columns - 1) * self.content_layout.spacing() + 48)
+        default_width = (columns * (art_width + 24)
+                         + max(0, columns - 1) * self.content_layout.spacing() + 48)
         self.resize(default_width, 700)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)

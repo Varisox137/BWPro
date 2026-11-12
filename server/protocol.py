@@ -63,7 +63,7 @@ def starting(deadline: float) -> dict:
 
 
 def left() -> dict:
-    """确认离开房间（准备阶段主动 leave 的应答，服务端随后关闭连接）。"""
+    """确认离开房间；当前 WS 保持连接，可继续 create/join。"""
     return {"type": "left"}
 
 

@@ -59,10 +59,6 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
     }
     save_gui_settings({"own_cardback": "三途花境", "enemy_cardback": "月明风清"}, path)
     assert load_gui_settings(path)["own_cardback"] == "三途花境"
-    save_gui_settings({"player_name": "  新玩家  "}, path)
-    assert load_gui_settings(path)["player_name"] == "新玩家"
-    save_gui_settings({"player_name": "   "}, path)
-    assert load_gui_settings(path)["player_name"] == "玩家"
 
 
 def test_empty_deck_pixmap_crops_sidebar_and_uses_cardback_orientation(qapp):
@@ -90,7 +86,9 @@ def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypa
     save_gui_settings({"end_turn_background": names[0]}, path)
     assert load_gui_settings(path)["end_turn_background"] == names[0]
     custom = end_turn_button_pixmap(208)
-    assert custom.size() == default.size() and custom.cacheKey() != default.cacheKey()
+    assert default.width() == default.height() == 177
+    assert custom.width() == custom.height() == 208
+    assert custom.cacheKey() != default.cacheKey()
     save_gui_settings({"end_turn_background": ""}, path)
     assert load_gui_settings(path)["end_turn_background"] == ""
     assert end_turn_button_pixmap(208).toImage() == default.toImage()
@@ -98,6 +96,37 @@ def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypa
     save_gui_settings({"end_turn_variant": "blue", "opponent_turn_variant": "silver"}, path)
     assert end_turn_button_pixmap(208).toImage() != default.toImage()
     assert end_turn_button_pixmap(208, opponent=True).toImage() != opponent_default.toImage()
+
+
+@pytest.mark.parametrize("with_background", [False, True])
+def test_end_turn_word_art_is_85_percent_of_button(
+        qapp, tmp_path, monkeypatch, with_background):
+    from PySide6.QtCore import QRect, Qt
+    from client.gui import ui_assets
+
+    path = tmp_path / "gui.json"
+    monkeypatch.setattr(ui_assets, "gui_settings_path", lambda: path)
+    if with_background:
+        save_gui_settings({"end_turn_background": "aabbccdd"}, path)
+
+    def fake_pixmap(relative, *, root=None):
+        del root
+        if relative.endswith("aabbccdd.png"):
+            pixmap = QPixmap(200, 200)
+            pixmap.fill(Qt.transparent)
+        else:
+            pixmap = QPixmap(100, 40)
+            pixmap.fill(0xFFFFFFFF)
+        return pixmap
+
+    monkeypatch.setattr(ui_assets, "ui_pixmap", fake_pixmap)
+    image = end_turn_button_pixmap(200).toImage()
+    bounds = QRect()
+    for y in range(image.height()):
+        for x in range(image.width()):
+            if image.pixelColor(x, y).alpha():
+                bounds = bounds.united(QRect(x, y, 1, 1))
+    assert (bounds.width(), bounds.height()) == (170, 68)
 
 
 def test_turn_word_art_follows_theme(qapp):

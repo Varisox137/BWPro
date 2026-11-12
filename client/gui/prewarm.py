@@ -101,7 +101,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
     pending = [(definition, entry) for definition, entry in zip(definitions, definition_entries)
                if entry["prewarm"]]
     manifest = {
-        "version": 5,
+        "version": 6,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "renderer_resources": renderer_resources,
         "entity_renderer_resources": entity_renderer_resources,

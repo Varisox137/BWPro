@@ -119,6 +119,55 @@ def test_prewarm_stats_record_unchanged_manifest_skip(qapp, tmp_path, monkeypatc
     }
 
 
+def test_prewarm_reuses_manifest_and_pngs_across_unpack_roots(qapp, tmp_path, monkeypatch):
+    from pathlib import Path
+    from client.gui import cardart, prewarm
+
+    roots = [tmp_path / "_MEI-a", tmp_path / "_MEI-b"]
+    for root in roots:
+        _configs(root)
+        resource = root / "assets" / "frames" / "frame.png"
+        resource.parent.mkdir(parents=True)
+        resource.write_bytes(b"frame")
+        source = root / "bwpdiy" / "render" / "pipeline.py"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"render")
+    original_renderer = cardart._renderer
+    original_renderer(str(prewarm.portrait.bwpdiy_root().resolve()))
+    current_root = roots[0]
+    cache_dir = tmp_path / "cache"
+    renders = []
+    monkeypatch.setattr(prewarm.portrait, "bwpdiy_root", lambda: current_root)
+
+    def renderer(root):
+        return Path(root) / "assets", None, None
+
+    renderer.cache_clear = original_renderer.cache_clear
+    monkeypatch.setattr(cardart, "_renderer", renderer)
+    monkeypatch.setattr(cardart, "_render_card_pixmap",
+                        lambda *_args: renders.append("card") or QPixmap(2, 2))
+    monkeypatch.setattr(cardart, "_render_entity_pixmap",
+                        lambda *_args: renders.append("entity") or QPixmap(2, 2))
+    cardart.clear_cardart_caches()
+    try:
+        db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+        prewarm_all(db, roots[0] / "library", cache_dir)
+        first_pngs = set(cache_dir.glob("*.png"))
+        assert len(first_pngs) == 3
+        assert len(renders) == 3
+
+        current_root = roots[1]
+        prewarm_all(db, roots[1] / "library", cache_dir)
+        assert set(cache_dir.glob("*.png")) == first_pngs
+        assert len(renders) == 3
+        manifest = json.loads((cache_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["stats"] == {
+            "total": 2, "succeeded": 2, "failed": 0, "skipped": 2, "deferred": 0,
+        }
+    finally:
+        cardart.clear_cardart_caches()
+
+
 @pytest.mark.parametrize("unchanged", [False, True])
 def test_prewarm_manifest_replace_failure_preserves_old_and_cleans_temp(
         qapp, tmp_path, monkeypatch, unchanged):

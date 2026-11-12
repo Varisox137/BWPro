@@ -1763,6 +1763,51 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
         cardart.clear_cardart_caches()
 
 
+def test_cardart_cache_key_ignores_temporary_unpack_paths(tmp_path):
+    import json
+    from client.gui import cardart
+
+    keys = []
+    for name in ("_MEI-a", "_MEI-b"):
+        root = tmp_path / name
+        root.mkdir()
+        art_path = root / "a.png"
+        art_path.write_bytes(b"same image")
+        payload = {
+            "_base_dir": str(root),
+            "artwork": {"images": [{"path": str(art_path), "scale": 1.0}]},
+        }
+        keys.append(cardart._card_cache_key(
+            json.dumps(payload, sort_keys=True), "{}", "config", str(art_path),
+            "resources", str(root), height=256))
+    assert keys[0] == keys[1]
+
+
+def test_renderer_digests_ignore_root_and_mtime(tmp_path):
+    from client.gui import cardart
+
+    roots = [tmp_path / "_MEI-a", tmp_path / "_MEI-b"]
+    for index, root in enumerate(roots):
+        resource = root / "assets" / "frames" / "nested" / "frame.png"
+        resource.parent.mkdir(parents=True)
+        resource.write_bytes(b"frame")
+        source = root / "bwpdiy" / "render" / "pipeline.py"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"render")
+        timestamp = 1_700_000_000_000_000_000 + index * 1_000_000
+        os.utime(resource, ns=(timestamp, timestamp))
+        os.utime(source, ns=(timestamp, timestamp))
+
+    first_resources = cardart._renderer_resources(roots[0] / "assets")
+    first_source = cardart._renderer_source_digest(roots[0] / "assets")
+    assert cardart._renderer_resources(roots[1] / "assets") == first_resources
+    assert cardart._renderer_source_digest(roots[1] / "assets") == first_source
+
+    changed = roots[1] / "assets" / "frames" / "nested" / "frame.png"
+    changed.write_bytes(b"framE")
+    assert cardart._renderer_resources(roots[1] / "assets") != first_resources
+
+
 def test_cardart_cache_key_ignores_renderer_version(tmp_path, monkeypatch):
     from client.gui import cardart
 
@@ -1773,10 +1818,10 @@ def test_cardart_cache_key_ignores_renderer_version(tmp_path, monkeypatch):
     art_path.write_bytes(b"art")
     monkeypatch.setattr(bwpdiy, "__version__", "test-v1")
     first = cardart._card_cache_key(
-        "payload", "layout", "config", str(art_path), "resources", "root", {}, 256)
+        "{}", "{}", "config", str(art_path), "resources", "root", {}, 256)
     monkeypatch.setattr(bwpdiy, "__version__", "test-v2")
     second = cardart._card_cache_key(
-        "payload", "layout", "config", str(art_path), "resources", "root", {}, 256)
+        "{}", "{}", "config", str(art_path), "resources", "root", {}, 256)
     assert first == second
 
 

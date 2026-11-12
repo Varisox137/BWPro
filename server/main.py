@@ -296,8 +296,12 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject("房间不存在")
                         continue
                     if token:  # 断线重连
+                        if target_room.reconnect_throttled():
+                            await reject("重连尝试过于频繁，请稍后")
+                            continue
                         target_conn = await target_room.reconnect(token, ws)
                         if target_conn is None:
+                            target_room.record_reconnect_failure()
                             await reject("重连令牌无效")
                             continue
                         room, conn = target_room, target_conn
@@ -329,14 +333,15 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject("尚未加入房间或连接已失效")
                         continue
                     await room.lobby_ready(conn.seat)
-                elif t == "leave":  # 准备阶段主动离开：释放座位并断连
+                elif t == "leave":  # 准备阶段主动离开：释放座位，保持 WS 可再入房
                     if binding_valid() and room.game is None:
                         await conn.send(protocol.left())
                         await room.lobby_leave(conn.seat)
                         if not any(room.conns):
                             manager.remove(room.id)
                         log_close(1000, "主动离开")
-                        return
+                        room = conn = None
+                        continue
                     await reject("当前不能离开房间")
                     continue
                 elif t == "env":  # 房主更改对局环境（仅双方均未准备时）

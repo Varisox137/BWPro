@@ -241,13 +241,15 @@ def _renderer_resource_fingerprint(assets: Path) -> tuple:
 
 
 def _renderer_resource_digest(root_text: str, fingerprint: tuple) -> str:
-    """资源指纹每次都读取内容，避免同 mtime/大小下的陈旧缓存。"""
-    del root_text
+    """资源身份只包含 assets 内相对路径与内容，每次读取避免陈旧缓存。"""
+    root = Path(root_text)
     digest = hashlib.sha256()
-    for path_text, mtime_ns, size in fingerprint:
-        digest.update(path_text.encode("utf-8"))
-        digest.update(f":{mtime_ns}:{size}\0".encode("ascii"))
-        digest.update(Path(path_text).read_bytes())
+    for path_text, _mtime_ns, _size in fingerprint:
+        path = Path(path_text)
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -265,11 +267,13 @@ def _renderer_source_digest(assets: Path) -> str:
     digest = hashlib.sha256()
     source_dir = portrait.bwpdiy_code_root(assets.parent) / "bwpdiy" / "render"
     for path in sorted(source_dir.rglob("*.py")):
-        digest.update(str(path).encode("utf-8"))
+        digest.update(path.relative_to(source_dir).as_posix().encode("utf-8"))
+        digest.update(b"\0")
         try:
             digest.update(path.read_bytes())
         except OSError:
             digest.update(b"<unreadable>")
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -497,6 +501,7 @@ def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
                     art_path: str, renderer_resources: str,
                     root_text: str, cache_context: dict | None = None,
                     height: int | None = None) -> str:
+    del root_text
     if art_path == _TRANSPARENT_ART:
         image_sha256 = "transparent"
     else:
@@ -507,13 +512,16 @@ def _card_cache_key(payload_json: str, layout_json: str, config_sha256: str,
             image_sha256 = hashlib.sha256(Path(art_path).read_bytes()).hexdigest()
             if cache_context is not None:
                 cache_context[key] = image_sha256
+    payload = json.loads(payload_json)
+    payload.pop("_base_dir", None)
+    for image in payload.get("artwork", {}).get("images", []):
+        image.pop("path", None)
     key_data = {
-        "payload": payload_json,
+        "payload": payload,
         "layout": layout_json,
         "config_sha256": config_sha256,
         "image_sha256": image_sha256,
         "renderer_resources": renderer_resources,
-        "renderer_root": root_text,
         "height": height,
     }
     normalized = json.dumps(key_data, ensure_ascii=False, sort_keys=True,

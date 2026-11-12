@@ -684,7 +684,6 @@ def test_hand_deck_text_contrast_and_visible_outer_margins(qapp, view):
     hand = max((item for key, item in scene.cards.items()
                 if key[0] == "hand" and item.player == 0), key=lambda item: item.x())
     assert hand.x() + hand.size.width() == 1588
-    assert scene.end_turn_item.pos() == QPointF(1432, 348)
 
     from client.gui.battle_scene import HAND_SIZE, layout_positions
     wide = layout_positions(view.game, view.viewer, scene_width=1800)
@@ -2055,6 +2054,26 @@ def test_preparation_spread_aligns_combat_and_hand_caption_positions(qapp, view)
     assert not own_rect.intersects(own_deck_rect)
 
 
+def test_deck_back_compact_offsets_preserve_mirror_and_stacking(qapp):
+    from client.gui.battle_scene import deck_back_layout
+
+    expected = (
+        (1442.65625, 199.640625, 225, 20),
+        (1451.09375, 221.4375, 220, 21),
+        (1459.53125, 243.234375, 204.5, 22),
+    )
+    for index, (x, y, rotation, z_value) in enumerate(expected):
+        position, actual_rotation, actual_z = deck_back_layout(1, index, 0)
+        assert position.x() == pytest.approx(x)
+        assert position.y() == pytest.approx(y)
+        assert actual_rotation == rotation and actual_z == z_value
+
+        own_position, own_rotation, own_z = deck_back_layout(0, 2 - index, 0)
+        assert own_position.x() == pytest.approx(x)
+        assert own_position.y() == pytest.approx(790 - y)
+        assert own_rotation == 360 - rotation and own_z == z_value
+
+
 def test_deck_count_labels_clear_rotated_deck_backs(qapp, view):
     from PySide6.QtCore import QRectF
     from PySide6.QtGui import QTransform
@@ -2524,6 +2543,9 @@ def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
     from client.gui.player_details import PlayerDetailDialog
 
     start(view, mulligan=False)
+    view.game.state.players[0].auras.append({
+        "block": F.block(when="on_draw"), "once_key": None, "scope": "game",
+    })
     seen = {}
 
     def capture_exec(dialog):
@@ -2535,7 +2557,7 @@ def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
     dialog = seen["dialog"]
     assert type(dialog) is PlayerDetailDialog
     assert dialog.windowTitle() == "玩家A"
-    assert "生命" in dialog.summary_label.text()
+    assert not hasattr(dialog, "summary_label")
     box = dialog.findChild(QDialogButtonBox)
     close = box.button(QDialogButtonBox.Close)
     assert close.text() == "关闭"
@@ -2543,6 +2565,29 @@ def test_player_detail_uses_silent_standard_dialog(qapp, view, monkeypatch):
     layout = dialog.layout()
     assert layout.itemAt(layout.count() - 1).widget() is box
     assert layout.itemAt(layout.count() - 1).alignment() == Qt.AlignRight
+    dialog.close()
+
+
+def test_player_detail_requires_content_and_single_field_is_compact(qapp, view, monkeypatch):
+    from core.model import FieldState
+
+    start(view, mulligan=False)
+    opened = []
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: opened.append(dialog))
+    view.show_player_detail(0)
+    assert opened == []
+
+    view.db.cards[10010151] = F.card(
+        10010151, name="单幻境", card_type="field", intensity=3, token=True)
+    view.game.state.players[0].fields.append(
+        FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    view.show_player_detail(0)
+    assert len(opened) == 1
+    dialog = opened[0]
+    assert len(dialog.field_widgets) == 1 and dialog.ability_panel is None
+    assert dialog.width() == dialog.field_widgets[0].width() + 48
+    assert dialog.width() < 520
+    assert not hasattr(dialog, "summary_label")
     dialog.close()
 
 
@@ -4493,6 +4538,112 @@ def test_form_art_refreshes_after_card_use(qapp, db, view):
     assert item.pixmap.cacheKey() != original
 
 
+def test_snapshot_missing_form_uses_live_form_but_explicit_none_does_not(
+        qapp, db, view, monkeypatch):
+    """旧快照缺 form 键时兼容实时形态；显式 None 必须固定为无形态。"""
+    from client.gui import battle_scene
+
+    form_id = 10010155
+    db.cards[form_id] = F.card(form_id, token=True, card_type="form",
+                               form_power=2, form_health=6)
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    shiki = view.game.current.shikigami[0]
+    shiki.form = CardInstance(uid=10000, id=form_id)
+    view.refresh()
+    settle(view)
+    snapshot = view.game._stat_event(Ref(player=0, shikigami=0))["r"]
+    legacy_snapshot = dict(snapshot)
+    legacy_snapshot.pop("form")
+
+    rendered = []
+    original = battle_scene.entity_pixmap
+
+    def capture(*args, **kwargs):
+        form = kwargs.get("form")
+        rendered.append(form.id if form is not None else None)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(battle_scene, "entity_pixmap", capture)
+    scene._refresh_defeated_entity(0, 0, snapshot=legacy_snapshot)
+    assert rendered[-1] == form_id
+    scene._refresh_defeated_entity(0, 0, snapshot=dict(snapshot, form=None))
+    assert rendered[-1] is None
+
+
+def test_form_art_waits_for_card_use_and_preserves_pre_form_stat(
+        qapp, db, view, monkeypatch):
+    """出击动画未完即使用形态时，旧数值帧仍显示原式神，进场帧才换形态。"""
+    from client.gui import battle_scene
+
+    form_id = 10010155
+    db.cards[form_id] = F.card(form_id, token=True, card_type="form",
+                               form_power=2, form_health=6)
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    shiki = view.game.current.shikigami[0]
+    shiki.level = 2
+    view.game.current.orb = 2
+    view.game.state.players[1].shikigami[0].level = 1
+    view.game.state.players[1].combat_index = 0
+    view.refresh()
+    settle(view)
+
+    rendered = []
+    original = battle_scene.entity_pixmap
+
+    def capture(*args, **kwargs):
+        form = kwargs.get("form")
+        rendered.append((args[0], form.id if form is not None else None,
+                         kwargs.get("snapshot")))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(battle_scene, "entity_pixmap", capture)
+    assert view.assault(0)
+    view.timeline_timer.stop()
+    old_stat = next(entry for entry in reversed(view.game.state.timeline)
+                    if entry.get("v") == "stat"
+                    and (entry.get("p"), entry.get("s")) == (0, 0))
+    assert not any(event.get("r") is old_stat["r"]
+                   for event in scene._visual_events.values())
+
+    card = F.give(view.game, 0, form_id)
+    assert view.play_card(card.uid, usage_id=None)
+    assert view._usage_pending is None and view.pending_command is None
+    assert shiki.form is not None and shiki.form.id == form_id
+    view.timeline_timer.stop()
+    entries = view.game.state.timeline
+    card_use_index = next(index for index, entry in enumerate(entries)
+                          if entry.get("k") == "a" and entry.get("u") == card.uid)
+    assert entries.index(old_stat) < card_use_index
+
+    def finish_until(snapshot=None, card_uid=None):
+        def started():
+            return any(event.get("r") is snapshot if snapshot is not None
+                       else event.get("u") == card_uid
+                       for event in scene._visual_events.values())
+
+        while not started():
+            animations = list(scene._visual_animations)
+            assert animations or scene._visual_queue
+            for animation in animations:
+                animation.setCurrentTime(animation.duration())
+                qapp.processEvents()
+
+    finish_until(snapshot=old_stat["r"])
+    assert [form for current, form, snapshot in rendered
+            if snapshot is old_stat["r"]] == [None], rendered
+
+    finish_until(card_uid=card.uid)
+    assert not [form for current, form, snapshot in rendered
+                if current is shiki and snapshot is not old_stat["r"] and form == form_id]
+    settle(view)
+    target_renders = [form for current, form, _snapshot in rendered if current is shiki]
+    assert target_renders[-1] == form_id, (target_renders, scene._visual_animations,
+                                           scene._visual_queue, scene._move_animations)
+    assert scene.cards[("shiki", 0, 0)].cdef.id == form_id
+
+
 def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
     field_id = 10010161
     db.cards[field_id] = F.card(field_id, shikigami=100101, card_type="field", intensity=3)
@@ -4506,19 +4657,21 @@ def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
     assert dialog.width() <= 720
 
 
-def test_deck_back_layout_matches_scaled_reference_centers_and_mirror():
+def test_deck_back_layout_and_pixmap_orientation(qapp, view):
+    from PySide6.QtGui import QTransform
     from client.gui.battle_scene import (
         DECK_BACK_SIZE, SCENE_WIDTH, deck_back_layout,
     )
+    from client.gui.ui_assets import cardback_pixmap
 
     scale = 900 / 1280
     reference = {
-        (1, 0): (214, 115, 45, 20),
-        (1, 1): (239, 135, 40, 21),
+        (1, 0): (110, 365, 45, 20),
+        (1, 1): (98, 396, 40, 21),
         (1, 2): (86, 427, 24.5, 22),
         (0, 0): (86, 427, -24.5, 22),
-        (0, 1): (239, 135, -40, 21),
-        (0, 2): (214, 115, -45, 20),
+        (0, 1): (98, 396, -40, 21),
+        (0, 2): (110, 365, -45, 20),
     }
     for scene_width in (SCENE_WIDTH, 1800):
         centers = {}
@@ -4544,12 +4697,6 @@ def test_deck_back_layout_matches_scaled_reference_centers_and_mirror():
             assert own.x() == enemy.x()
             assert own.y() + enemy.y() == 2 * 452
             assert rotations[0, index] + rotations[1, 2 - index] == 360
-
-
-def test_deck_orientation_matches_legacy_up_left_rendering(qapp, view):
-    from PySide6.QtGui import QTransform
-    from client.gui.battle_scene import DECK_BACK_SIZE
-    from client.gui.ui_assets import cardback_pixmap
 
     start(view, mulligan=False)
     assert DECK_BACK_SIZE.width() >= 150

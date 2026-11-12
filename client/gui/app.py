@@ -2,16 +2,19 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
+    QStackedWidget, QVBoxLayout, QWidget,
 )
 
+import client.update as update
 from client.gui.prewarm import prewarm_iter
+from client.gui.widgets import ask_confirmation
 from core.logging_config import configure_logging
 
 # 与 docs/gui-mock/generate.py 两套配色一致
@@ -120,6 +123,11 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(_application_icon())
         self.resize(1600, 900)
         self.theme = "light"
+        self._update_generation = 0
+        self._update_closed = False
+        self._update_checking = False
+        self._update_downloading = False
+        self._update_cancel = None
         central = QWidget(self)
         self.outer = outer = QVBoxLayout(central)
         outer.setContentsMargins(12, 12, 12, 12)
@@ -153,7 +161,8 @@ class MainWindow(QMainWindow):
                     from db.loader import CardDatabase
                     db = CardDatabase.load()
                 from client.gui.settings import SettingsView
-                self.pages[key] = SettingsView(db)
+                self.pages[key] = SettingsView(
+                    db, on_check_update=lambda: self.check_for_updates(manual=True))
             elif key == "codex":
                 if db is None:
                     from db.loader import CardDatabase
@@ -250,7 +259,7 @@ class MainWindow(QMainWindow):
 
     def return_current_game(self) -> None:
         page = self.stack.currentWidget()
-        hook_name = "open_settings" if page is self.pages["hotseat"] else "return_to_menu"
+        hook_name = "open_settings" if page is self.pages["hotseat"] else "leave_to_menu"
         hook = getattr(page, hook_name, None)
         if callable(hook):
             hook()
@@ -258,14 +267,8 @@ class MainWindow(QMainWindow):
             self.go_menu()
 
     def back(self):
-        """统一返回入口；联机大厅先退回连接页，其余页面沿用原清理。"""
+        """统一返回入口；联机页保留连接与房间状态，其余页面沿用原清理。"""
         page = self.stack.currentWidget()
-        back_hook = getattr(page, "back_to_previous", None)
-        if callable(back_hook):
-            if back_hook() is False:
-                return
-            self.go_menu()
-            return
         for hook_name in ("return_to_menu", "leave_to_menu"):
             hook = getattr(page, hook_name, None)
             if callable(hook):
@@ -290,22 +293,125 @@ class MainWindow(QMainWindow):
                     event.ignore()
                     return
                 break
+        self._update_closed = True
+        self._update_generation += 1
+        if self._update_cancel is not None:
+            self._update_cancel.set()
         event.accept()
+
+    def in_battle(self) -> bool:
+        page = self.stack.currentWidget()
+        hotseat = self.pages["hotseat"]
+        online = self.pages["online"]
+        return ((page is hotseat and hotseat.stack.currentWidget() is hotseat.battle_page)
+                or (page is online and online.stack.currentWidget() is online.battle))
+
+    def _update_callback_valid(self, generation: int) -> bool:
+        return not self._update_closed and generation == self._update_generation
+
+    def _post_update_callback(self, generation: int, callback, *args) -> None:
+        def deliver():
+            if self._update_callback_valid(generation):
+                callback(generation, *args)
+        QTimer.singleShot(0, self, deliver)
+
+    def _start_update_worker(self, generation: int, action, callback) -> None:
+        def run():
+            try:
+                result = action()
+            except Exception as error:
+                self._post_update_callback(generation, callback, None, error)
+            else:
+                self._post_update_callback(generation, callback, result, None)
+        threading.Thread(target=run, daemon=True).start()
+
+    def check_for_updates(self, manual: bool = True) -> None:
+        if self._update_closed or self._update_checking or self._update_downloading:
+            return
+        self._update_generation += 1
+        generation = self._update_generation
+        self._update_checking = True
+        settings = self.pages["settings"]
+        settings.update_button.setEnabled(False)
+        if manual:
+            settings.update_status_label.setText("正在检查更新…")
+        self._start_update_worker(
+            generation, update.check_for_update, self._update_check_finished)
+
+    def _update_check_finished(self, generation: int, available, error) -> None:
+        self._update_checking = False
+        settings = self.pages["settings"]
+        settings.update_button.setEnabled(True)
+        if error is not None:
+            if settings.update_status_label.text():
+                settings.update_status_label.setText(f"检查更新失败：{error}")
+            return
+        if available is None:
+            if settings.update_status_label.text():
+                settings.update_status_label.setText("当前已是最新版本")
+            return
+        settings.update_status_label.setText(f"发现新版本：{available.tag}")
+        answer = ask_confirmation(
+            self, "发现新版本", f"当前版本 v{update.VERSION}，发现 {available.tag}。是否下载更新？")
+        if answer == QMessageBox.Yes:
+            self._start_update_download(generation, available)
+
+    def _update_staging_path(self, available) -> Path:
+        if getattr(sys, "frozen", False):
+            executable = Path(sys.executable).resolve()
+            return executable.with_name(executable.name + ".new")
+        return Path.home() / ".bwpro" / "downloads" / (available.exe_name + ".new")
+
+    def _start_update_download(self, generation: int, available) -> None:
+        self._update_downloading = True
+        self._update_cancel = threading.Event()
+        staged = self._update_staging_path(available)
+        settings = self.pages["settings"]
+        settings.update_button.setEnabled(False)
+        settings.update_status_label.setText(f"正在下载 {available.tag}…")
+        self._start_update_worker(
+            generation,
+            lambda: update.download_update(available, staged, cancel_event=self._update_cancel),
+            self._update_download_finished)
+
+    def _update_download_finished(self, generation: int, downloaded, error) -> None:
+        self._update_downloading = False
+        self._update_cancel = None
+        settings = self.pages["settings"]
+        settings.update_button.setEnabled(True)
+        if error is not None:
+            settings.update_status_label.setText(f"更新下载未完成：{error}")
+            return
+        if not getattr(sys, "frozen", False):
+            settings.update_status_label.setText(
+                f"更新已下载并校验：{downloaded.path}\n开发环境不替换或重启当前程序")
+            return
+        warning = "\n当前对局将随主程序退出。" if self.in_battle() else ""
+        answer = ask_confirmation(
+            self, "重启并安装更新",
+            f"{downloaded.available.tag} 已下载并通过 SHA-256 校验。{warning}\n"
+            "是否现在退出主程序、替换旧版本并重启？")
+        if answer != QMessageBox.Yes:
+            settings.update_status_label.setText("更新已下载；未确认重启，当前程序继续运行")
+            return
+        try:
+            update.launch_update(downloaded.path, downloaded.sha256)
+        except Exception as error:
+            settings.update_status_label.setText(f"无法启动更新程序：{error}")
+            return
+        QApplication.quit()
 
     def _make_menu(self) -> QWidget:
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(60, 40, 60, 40)
-        title = QLabel("BWPro by Varisox137")
+        title = QLabel(
+            'BWPro by <a href="https://github.com/Varisox137/BWPro" '
+            'style="text-decoration:underline">Varisox137</a>')
         title.setObjectName("title")
         title.setAlignment(Qt.AlignCenter)
+        title.setOpenExternalLinks(True)
         lay.addWidget(title)
-        github_link = QLabel(
-            '<a href="https://github.com/Varisox137/BWPro">GitHub 项目</a>')
-        github_link.setObjectName("githubLink")
-        github_link.setAlignment(Qt.AlignCenter)
-        github_link.setOpenExternalLinks(True)
-        lay.addWidget(github_link)
         lay.addSpacing(24)
         for key, name, desc in MENU_ENTRIES:
             btn = QPushButton(f"{name}\n{desc}")
@@ -315,11 +421,14 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         return page
 
-def main() -> int:
+def main(*, cleanup=None) -> int:
     configure_logging("gui")
+    if cleanup is not None:
+        update.schedule_update_cleanup(*cleanup)
     app = QApplication(sys.argv)
     app.setWindowIcon(_application_icon())
     win = MainWindow()
     win.show()
     win.prewarm_resources()
+    win.check_for_updates(manual=False)
     return app.exec()
