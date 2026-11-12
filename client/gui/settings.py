@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMessageBox,
+    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QStyle, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -133,13 +133,23 @@ class SettingsView(QWidget):
         self.option_buttons = {}
         self.option_rows = []
 
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("玩家名"))
+        self.player_name_edit = QLineEdit(settings["player_name"])
+        self.player_name_edit.setMaxLength(32)
+        self.player_name_edit.setMaximumWidth(240)
+        self.player_name_edit.editingFinished.connect(self.save_player_name)
+        name_row.addWidget(self.player_name_edit)
+        name_row.addStretch(1)
+        layout.addLayout(name_row)
+
         def add_option_row(entries):
             row = QHBoxLayout()
             for key, label in entries:
                 button = QPushButton(settings[key] or "无")
                 button.setObjectName("small")
                 button.setMaximumWidth(150)
-                if key in ("own_cardback", "enemy_cardback"):
+                if key == "own_cardback":
                     button.clicked.connect(
                         lambda _checked=False, key=key: self.choose_cardback(key))
                     self.cardback_buttons[key] = button
@@ -153,7 +163,7 @@ class SettingsView(QWidget):
             layout.addLayout(row)
             self.option_rows.append(row)
 
-        add_option_row((("own_cardback", "己方卡背"), ("enemy_cardback", "敌方卡背")))
+        add_option_row((("own_cardback", "己方卡背"),))
         add_option_row((("turn_background", "回合按钮底图"),
                         ("end_turn_variant", "结束回合样式"),
                         ("opponent_turn_variant", "对手回合样式")))
@@ -171,6 +181,11 @@ class SettingsView(QWidget):
         layout.addWidget(self.rebuild_button)
         layout.addStretch(1)
         self.refresh_status()
+
+    def save_player_name(self) -> None:
+        name = self.player_name_edit.text().strip() or "玩家"
+        self.player_name_edit.setText(name)
+        save_gui_settings({"player_name": name})
 
     def choose_cardback(self, key: str) -> None:
         button = self.cardback_buttons[key]

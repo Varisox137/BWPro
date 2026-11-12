@@ -1265,3 +1265,77 @@ def test_net_lobby_env_command_alias_and_mode_gate(db, capsys):
     c.handle_line("e 不夜之火")
     assert len(c.ws.sent) == 2
     assert "标准模式使用最新平衡性环境，不可更改" in capsys.readouterr().out
+
+
+def test_local_route_ip_uses_udp_connect_without_sending(monkeypatch):
+    import socket
+    from client import net
+
+    calls = []
+
+    class FakeSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def connect(self, address):
+            calls.append(address)
+
+        def getsockname(self):
+            return ("192.0.2.8", 49152)
+
+    monkeypatch.setattr(socket, "socket", lambda *_args, **_kwargs: FakeSocket())
+    monkeypatch.setattr(
+        socket, "getaddrinfo",
+        lambda host, port, **_kwargs: [(socket.AF_INET, socket.SOCK_DGRAM, 6, "",
+                                        (host, port))])
+    assert net.local_route_ip("wss://example.test:444/ws") == "192.0.2.8"
+    assert calls == [("example.test", 444)]
+
+    monkeypatch.setattr(socket, "getaddrinfo",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("无路由")))
+    assert net.local_route_ip("ws://127.0.0.1:1037/ws") == ""
+
+
+@pytest.mark.parametrize("choice,answers,room_id", [
+    ("create", ["1", "", "1"], None),
+    ("join", ["2", "ABC123", ""], "ABC123"),
+])
+def test_net_hello_includes_best_effort_client_ip(
+        db, monkeypatch, choice, answers, room_id):
+    import json
+    from client import net
+
+    sockets = []
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+            sockets.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __iter__(self):
+            return iter(())
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    monkeypatch.setattr(net, "_input", lambda _prompt: answers.pop(0))
+    monkeypatch.setattr(net, "_open_ws", lambda *_args, **_kwargs: FakeWS())
+    monkeypatch.setattr(net, "local_route_ip", lambda _url: "192.0.2.8", raising=False)
+    monkeypatch.setattr(net.deckbuilder, "choose_deck",
+                        lambda *_args: ("卡组", "卡组", "deck-code"))
+    monkeypatch.setattr(net.tui, "prompt", lambda _prompt: "")
+    net.run(db, "ws://localhost:1037/ws", "甲", False)
+    hello = sockets[0].sent[0]
+    assert hello["type"] == choice
+    assert hello["client_ip"] == "192.0.2.8"
+    if room_id is not None:
+        assert hello["room_id"] == room_id

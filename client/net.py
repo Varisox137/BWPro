@@ -16,8 +16,10 @@ import argparse
 import json
 import os
 import re
+import socket
 import threading
 import time
+from urllib.parse import urlsplit
 
 from client import cli, deckbuilder, tui
 from client.settle import SettlePrinter
@@ -614,6 +616,23 @@ def normalize_server_url(raw: str) -> str:
     return s
 
 
+def local_route_ip(server_url: str) -> str:
+    """通过到服务器地址的 UDP 路由选择获取本地 IP；不发送任何数据。"""
+    try:
+        parsed = urlsplit(server_url)
+        host = parsed.hostname
+        if not host:
+            return ""
+        port = parsed.port or (443 if parsed.scheme in ("wss", "https") else 80)
+        family, socktype, proto, _, address = socket.getaddrinfo(
+            host, port, type=socket.SOCK_DGRAM)[0]
+        with socket.socket(family, socktype, proto) as sock:
+            sock.connect(address)
+            return str(sock.getsockname()[0])
+    except (OSError, ValueError, IndexError):
+        return ""
+
+
 def _open_ws(server_url: str, retries: int = 3, open_timeout: float = 5.0):
     """建立 WS 连接（带客户端标识 UA）；穿透服务对来源 IP 首次请求的间歇
     拦截（提示页等）按 1s 间隔重试。"""
@@ -686,6 +705,9 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
     else:
         print("已取消")
         return
+    client_ip = local_route_ip(server_url)
+    if client_ip:
+        hello["client_ip"] = client_ip
     try:
         # 客户端标识软门槛：create/join 需带 client 字段（server.main.CLIENT_UA 前缀）
         ws = _open_ws(server_url, open_timeout=10.0)

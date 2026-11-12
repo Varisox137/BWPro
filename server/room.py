@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import string
 import time
@@ -21,6 +22,8 @@ from core.setup import new_game
 from client.cli import hand_cards_info
 from db import deckcode
 from server import protocol
+
+logger = logging.getLogger("bwpro.room")
 
 ROOM_ID_ALPHABET = string.ascii_uppercase.replace("I", "").replace("O", "") + "23456789"
 
@@ -131,10 +134,12 @@ def _visible_lines(lines: list[str], vis: list[int | None], viewer: int) -> list
 class Connection:
     """一名玩家的连接槽位（seat 固定，断线只换 ws 不换槽）。"""
 
-    def __init__(self, seat: int, name: str, token: str | None = None) -> None:
+    def __init__(self, seat: int, name: str, token: str | None = None,
+                 cardback: str | None = None) -> None:
         self.seat = seat
         self.name = name
         self.token = token or uuid.uuid4().hex
+        self.cardback = cardback
         self.ws = None  # 当前 WebSocket；断线时为 None
 
     @property
@@ -213,14 +218,15 @@ class Room:
                     f"卡组在当前环境（{self.env_date}）不可用：{e}") from e
             raise
 
-    async def join(self, seat: int, name: str, ws, deck_code: str | None) -> Connection:
+    async def join(self, seat: int, name: str, ws, deck_code: str | None,
+                   cardback: str | None = None) -> Connection:
         """新玩家入座。卡组码非法时抛 ValueError（房间保留，可重新入座）。"""
         if self.game is not None:
             raise ValueError("对局已开始，不能加入")
         if self.conns[seat] is not None:
             raise ValueError("该座位已被占用")
         ids, cards = self._parse_deck(deck_code)  # 先校验再入座
-        conn = Connection(seat, name)
+        conn = Connection(seat, name, cardback=cardback)
         conn.ws = ws
         conn.deck = (ids, cards)
         self.conns[seat] = conn
@@ -256,6 +262,16 @@ class Room:
 
     def _log(self, msg: str) -> None:
         print(f"[房间 {self.id}] {msg}", flush=True)
+
+    def _trace_sink(self, entry: dict) -> None:
+        logging.getLogger("bwpro.battle").info(
+            "房间 %s %s seq=%s owner=%s：%s", self.id, entry["kind"],
+            entry.get("seq"), entry.get("owner"), entry["message"])
+        self._trace_pending.append(entry)
+
+    def _log_rejection(self, seat: int | None, cmd: dict, reason: str) -> None:
+        logger.info("房间 %s 座位=%s 指令=%s 被拒绝：%s",
+                    self.id, seat, cmd.get("op"), reason)
 
     def lobby_msg(self) -> dict:
         """当前 lobby 状态消息（广播与重连补发共用）：IDLE/STARTING 不带 deadline。"""
@@ -422,7 +438,7 @@ class Room:
             seed=self.rng.randrange(2**32),
             config=config,
             first=0,  # by_player 已按先手排序，无需 new_game 再换
-            trace_sink=self._trace_pending.append,
+            trace_sink=self._trace_sink,
         )
         env_note = f"，环境 {self.env_date}" if self.env_date else ""
         self._log(f"对战开始{env_note}：{by_player[0].name}（先手） vs {by_player[1].name}")
@@ -441,12 +457,16 @@ class Room:
         """处理一名玩家的游戏指令。cmd 中的 player 字段被强制改写为该座位对应的
         players 下标（mulligan/ready/debug 指令统一以此为准）。"""
         if self.game is None:
-            await self.conns[seat].send(protocol.error("对局尚未开始"))
+            reason = "对局尚未开始"
+            self._log_rejection(seat, cmd, reason)
+            await self.conns[seat].send(protocol.error(reason))
             return
         # 回合内操作只能由当前行动方发出（热坐共用终端无此问题，联机必须校验）
         if cmd.get("op") in ("play_card", "assault", "upgrade", "end_turn"):
             if self.game.state.active != self.seat_to_player[seat]:
-                await self.conns[seat].send(protocol.error("还没到你的回合"))
+                reason = "还没到你的回合"
+                self._log_rejection(seat, cmd, reason)
+                await self.conns[seat].send(protocol.error(reason))
                 return
         cmd = dict(cmd)
         cmd["player"] = self.seat_to_player[seat]
@@ -462,15 +482,19 @@ class Room:
         try:
             self.game.apply(cmd)
         except IllegalAction as e:
+            reason = str(e)
+            self._log_rejection(seat, cmd, reason)
             if seat is not None:
-                await self.conns[seat].send(protocol.error(str(e)))
+                await self.conns[seat].send(protocol.error(reason))
             return
         except (TypeError, ValueError, AttributeError, KeyError):
+            reason = "指令格式或参数非法"
+            self._log_rejection(seat, cmd, reason)
             if seat is not None:
-                await self.conns[seat].send(protocol.error("指令格式或参数非法"))
+                await self.conns[seat].send(protocol.error(reason))
             return
         except Exception as e:  # 引擎异常：终止对局，避免房间卡死
-            self._log(f"引擎异常，对局终止（{e}）")
+            logger.exception("房间 %s 引擎异常，对局终止", self.id)
             await self._broadcast(protocol.error(f"引擎异常，对局终止（{e}）"))
             await self._broadcast(protocol.game_over(None, "engine_error"))
             self._over_sent = True
@@ -523,9 +547,11 @@ class Room:
             # 己方手牌实时信息（使用方式枚举/数值段等，引擎求值结果随状态下发，
             # 远程客户端不重复实现规则计算；仅含己方手牌，键为 uid）
             payload["hand_info"] = hand_cards_info(self.game, viewer)
-            await c.send(protocol.state(payload, vlog,
-                                        timer=timer, settle=vsettle,
-                                        timeline=vtimeline, trace=vtrace))
+            opponent = self.conns[1 - c.seat]
+            await c.send(protocol.state(
+                payload, vlog, timer=timer, settle=vsettle,
+                timeline=vtimeline, trace=vtrace,
+                opponent_cardback=opponent.cardback if opponent is not None else None))
         if st.winner is not None and not self._over_sent:
             self._over_sent = True
             self._log(f"对战结束：{st.players[st.winner].name} 获胜")
@@ -543,12 +569,14 @@ class Room:
         viewer = self.seat_to_player[conn.seat]
         payload = sanitize_state(base, viewer)
         payload["hand_info"] = hand_cards_info(self.game, viewer)  # 同 broadcast_state
+        opponent = self.conns[1 - conn.seat]
         await conn.send(protocol.state(
             payload,
             # 全量补发同样隐藏对方调度明细与非公开信息行
             _hide_mulligan_log(_visible_lines(list(st.log), list(st.log_vis), viewer),
                                st, viewer),
-            timer=self._current_timer()))
+            timer=self._current_timer(),
+            opponent_cardback=opponent.cardback if opponent is not None else None))
 
     # ---------- 计时器 ----------
 

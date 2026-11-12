@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from client import net
 from client.gui.battle import HotseatView
+from client.gui.ui_assets import load_gui_settings
 from client.gui.widgets import show_warning
 from core.engine import Game
 from core.model import GameState, Ref
@@ -158,7 +159,9 @@ class OnlineBattleView(HotseatView):
             return
         self._state_rendering = True
         self.timeline_timer.stop()
-        self.battle_scene.show_loading("正在准备对局")
+        loading = self.game is None
+        if loading:
+            self.battle_scene.show_loading("正在准备对局")
         try:
             self.payload = payload
             self.server_timer = timer
@@ -182,7 +185,8 @@ class OnlineBattleView(HotseatView):
             self.refresh()
             self._update_countdown()
         finally:
-            self.battle_scene.hide_loading()
+            if loading:
+                self.battle_scene.hide_loading()
             if self.timeline_queue and not self.timeline_timer.isActive():
                 self.timeline_timer.start()
             self._state_rendering = False
@@ -306,8 +310,10 @@ class OnlineView(QWidget):
         self.opener = net._open_ws
         self._connecting = False
         self._connect_thread: threading.Thread | None = None
+        self._client_ip = ""
+        self._pending_join = False
         self.server_url = ""
-        self.player_name = "玩家"
+        self.player_name = load_gui_settings()["player_name"]
         self.deck_name = ""
         self.deck_code: str | None = None
         self.room_id: str | None = None
@@ -343,9 +349,7 @@ class OnlineView(QWidget):
         self.connect_page = QWidget()
         connect = QFormLayout(self.connect_page)
         self.server_edit = QLineEdit("127.0.0.1")
-        self.name_edit = QLineEdit("玩家")
         connect.addRow("服务器地址", self.server_edit)
-        connect.addRow("玩家名", self.name_edit)
         self.connect_button = QPushButton("连接并进入大厅")
         self.connect_button.setFixedSize(200, 36)
         self.connect_button.clicked.connect(self.connect_server)
@@ -460,13 +464,17 @@ class OnlineView(QWidget):
         self.lobby_error.setText("请先选择标准卡组")
         return False
 
-    def connect_server(self) -> bool:
+    def connect_server(self, *, refresh_identity: bool = True) -> bool:
         if self._connecting:
             return False
+        self._pending_join = False
         url = net.normalize_server_url(self.server_edit.text())
         self.server_url = url
-        self.player_name = self.name_edit.text().strip() or "玩家"
+        if refresh_identity:
+            self.player_name = load_gui_settings()["player_name"]
         self._select_deck(self.deck_combo.currentIndex())
+        self._client_ip = ""
+        self._expect_close = False
         self._connecting = True
         self.connect_button.setEnabled(False)
         self.connect_button.setText("正在连接……")
@@ -477,6 +485,7 @@ class OnlineView(QWidget):
             except Exception as error:
                 self.connection_failed.emit(url, str(error))
             else:
+                self._client_ip = net.local_route_ip(url)
                 self.connection_succeeded.emit(ws, url)
 
         self._connect_thread = threading.Thread(target=connect, daemon=True)
@@ -492,11 +501,14 @@ class OnlineView(QWidget):
     def _connection_failed(self, url: str, reason: str) -> None:
         if not self._connecting:
             return
+        self._pending_join = False
         self._reset_connect_button()
         if not self._expect_close:
             show_warning(self, "连接失败", f"无法连接 {url}：{reason}，请修改后重试")
 
     def _connection_succeeded(self, ws, url: str) -> None:
+        pending_join = self._pending_join
+        self._pending_join = False
         if not self._connecting:
             ws.close()
             return
@@ -507,6 +519,8 @@ class OnlineView(QWidget):
         self.server_url = url
         if self._open_bridge(ws):
             self.stack.setCurrentWidget(self.lobby_page)
+            if pending_join:
+                self.join_room()
 
     def _open_bridge(self, ws=None) -> bool:
         if ws is None:
@@ -539,7 +553,10 @@ class OnlineView(QWidget):
             self.lobby_error.setText(str(error))
             return False
         msg = {"type": "create", "name": self.player_name, "deck_code": self.deck_code,
-               "debug": False, "client": net.CLIENT_ID, "mode": mode}
+               "debug": False, "client": net.CLIENT_ID, "mode": mode,
+               "cardback": load_gui_settings()["own_cardback"]}
+        if self._client_ip:
+            msg["client_ip"] = self._client_ip
         if room_id:
             msg["room_id"] = room_id
         if env is not None:
@@ -556,11 +573,22 @@ class OnlineView(QWidget):
         token = self.token_edit.text().strip() or None
         if token is None and not self._require_deck():
             return False
-        if self.bridge is None and not self._open_bridge():
-            return False
-        self.bridge.send({"type": "join", "room_id": room_id, "name": self.player_name,
-                          "deck_code": None if token else self.deck_code,
-                          "token": token, "client": net.CLIENT_ID})
+        if self.bridge is None:
+            if self._connecting:
+                return False
+            if self.server_url:
+                self.server_edit.setText(self.server_url)
+            if not self.connect_server(refresh_identity=token is None):
+                return False
+            self._pending_join = True
+            return True
+        msg = {"type": "join", "room_id": room_id, "name": self.player_name,
+               "deck_code": None if token else self.deck_code,
+               "token": token, "client": net.CLIENT_ID,
+               "cardback": load_gui_settings()["own_cardback"]}
+        if self._client_ip:
+            msg["client_ip"] = self._client_ip
+        self.bridge.send(msg)
         self.lobby_error.clear()
         return True
 
@@ -610,10 +638,10 @@ class OnlineView(QWidget):
             self.seat = msg["seat"]
             self.room_edit.setText(self.room_id)
             self.token_edit.setText(self.token)
+            self.battle.reset_session()
             if "player_index" in msg:
                 self.me = msg["player_index"]
                 self.battle.me = self.me
-                self.battle.reset_session()
             self.room_label.setText(f"房间 {self.room_id}")
             self.self_label.setText(f"你：{self.player_name}　卡组：{self.deck_name}")
             self.lobby_status.setText("已加入，等待对手……")
@@ -647,6 +675,7 @@ class OnlineView(QWidget):
             if self.me is None:
                 return
             self.battle.receive_trace(msg.get("trace") or [])
+            self.battle.battle_scene.set_enemy_cardback(msg.get("opponent_cardback"))
             self.battle.set_state(msg["payload"], timer=msg.get("timer"),
                                   log=msg.get("log") or [], timeline=msg.get("timeline") or [])
             self.stack.setCurrentWidget(self.battle)
@@ -725,6 +754,7 @@ class OnlineView(QWidget):
 
     def back_to_previous(self) -> bool:
         """联机页分层返回：大厅 → 未连接页 → 主菜单。"""
+        self._pending_join = False
         if self.stack.currentWidget() is not self.lobby_page:
             self.leave_to_menu()
             return True
@@ -739,6 +769,7 @@ class OnlineView(QWidget):
         return False
 
     def leave_to_menu(self) -> None:
+        self._pending_join = False
         self._expect_close = True
         if self.bridge is not None:
             self.bridge.close()

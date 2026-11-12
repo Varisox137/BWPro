@@ -73,6 +73,7 @@ def load_gui_settings(path: Path | None = None) -> dict[str, str]:
         "end_turn_background": "", "opponent_turn_background": "", "turn_background": "",
         "end_turn_variant": "golden", "opponent_turn_variant": "golden",
         "defeated_variant": "white", "upgrade_variant": "yellow",
+        "player_name": "玩家",
     }
     try:
         stored = json.loads(path.read_text(encoding="utf-8"))
@@ -82,6 +83,7 @@ def load_gui_settings(path: Path | None = None) -> dict[str, str]:
         value = stored.get(key) if isinstance(stored, dict) else None
         if isinstance(value, str):
             settings[key] = value
+    settings["player_name"] = settings["player_name"].strip()[:32] or "玩家"
     return settings
 
 
@@ -92,7 +94,7 @@ def save_gui_settings(settings: dict[str, str], path: Path | None = None) -> Non
     for key in current:
         value = settings.get(key)
         if isinstance(value, str):
-            current[key] = value
+            current[key] = (value.strip()[:32] or "玩家") if key == "player_name" else value
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n",
                          encoding="utf-8")
@@ -175,12 +177,16 @@ def _cached_cardback(path: str, mtime_ns: int, landscape: bool) -> QPixmap:
 
 
 def cardback_pixmap(side: str, *, root: Path | None = None,
-                    landscape: bool = False) -> QPixmap:
+                    landscape: bool = False, name: str | None = None) -> QPixmap:
     settings = load_gui_settings()
     key = "own_cardback" if side == "own" else "enemy_cardback"
-    path = assets_root(root) / "cardbacks" / f"{settings[key]}.png"
+    selected = settings[key] if name is None else name
+    directory = assets_root(root) / "cardbacks"
+    if selected not in named_cardbacks(directory):
+        selected = DEFAULT_CARDBACK
+    path = directory / f"{selected}.png"
     if not path.is_file():
-        path = assets_root(root) / "cardbacks" / f"{DEFAULT_CARDBACK}.png"
+        path = directory / f"{DEFAULT_CARDBACK}.png"
     return _cached_cardback(str(path), path.stat().st_mtime_ns, landscape)
 
 

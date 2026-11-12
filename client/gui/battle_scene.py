@@ -99,12 +99,14 @@ def deck_back_layout(player: int, index: int, viewer: int,
                      scene_width: float = SCENE_WIDTH):
     top = player != viewer
     position_index = index if top else 2 - index
-    position = QPointF(
-        scene_width - 274 + position_index * 22,
-        (170 + index * 40) if top
-        else (SCENE_HEIGHT - 170 - DECK_BACK_SIZE.height() - (2 - index) * 40))
-    rotation = 15 + position_index * 10
-    return position, (rotation if top else -rotation) + 180, 20 + index if top else 22 - index
+    x, y, direction = ((214, 115, 45), (239, 135, 40), (86, 427, 24.5))[position_index]
+    scale = SCENE_HEIGHT / 1280
+    center_y = y * scale
+    if not top:
+        center_y = 2 * 452 - center_y
+    center = QPointF(scene_width - x * scale, center_y)
+    position = center - QPointF(DECK_BACK_SIZE.width() / 2, DECK_BACK_SIZE.height() / 2)
+    return position, (direction if top else -direction) + 180, 20 + index if top else 22 - index
 
 
 def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
@@ -115,10 +117,10 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("phase",): QPointF(65, 422),
         ("menu",): QPointF(1352 + extra, 16),
         ("log",): QPointF(12, 422),
-        ("end_turn",): QPointF(scene_width - 116, 400),
+        ("end_turn",): QPointF(scene_width - 168, 348),
         ("enemy_hand_label",): QPointF(1530 + extra, 156),
-        ("enemy_deck",): QPointF(1530 + extra, 228),
-        ("own_deck",): QPointF(1530 + extra, 608),
+        ("enemy_deck",): QPointF(scene_width - 330, 268),
+        ("own_deck",): QPointF(scene_width - 330, 572),
         ("hand_caption",): QPointF(1530 + extra, 680),
         ("ready",): QPointF(1328 + extra, 435),
         ("handoff",): QPointF(1216 + extra, 435),
@@ -623,6 +625,7 @@ class BattleScene(QGraphicsScene):
         self.theme = "light"
         self.inputs_open = False
         self.game_over = False
+        self.enemy_cardback: str | None = None
         self.legal_targets: list[Ref] = []
         self.mulligan_uid = None
         self.menu_item = None
@@ -684,6 +687,26 @@ class BattleScene(QGraphicsScene):
         for item in (self.banner_item, self.loading_item, *self.usage_labels):
             item.setDefaultTextColor(QColor(color))
 
+    def _cardback_name(self, player: int) -> str:
+        own = player == self.viewer
+        if not own and self.enemy_cardback is not None:
+            return self.enemy_cardback
+        return load_gui_settings()["own_cardback" if own else "enemy_cardback"]
+
+    def _cardback_pixmap(self, player: int, *, landscape: bool = False) -> QPixmap:
+        own = player == self.viewer
+        return cardback_pixmap(
+            "own" if own else "enemy", landscape=landscape,
+            name=None if own else self.enemy_cardback)
+
+    def set_enemy_cardback(self, name: str | None) -> None:
+        if name == self.enemy_cardback:
+            return
+        self.enemy_cardback = name
+        self._hand_animation_cache.clear()
+        if self.game is not None:
+            self.refresh_cardbacks()
+
     def _sync_deck_back(self, key: tuple, back: BattleCardItem) -> None:
         if self.game is None:
             return
@@ -691,10 +714,10 @@ class BattleScene(QGraphicsScene):
         player = self.game.state.players[player_index]
         side = "enemy" if player_index != self.viewer else "own"
         light = player.ext.get("deck_out_burn") is not None if not player.deck else None
-        cardback = (load_gui_settings()[f"{side}_cardback"] if player.deck else None)
+        cardback = self._cardback_name(player_index) if player.deck else None
         signature = (side, bool(player.deck), light, cardback, self.theme)
         if getattr(back, "_render_signature", None) != signature:
-            pixmap = (cardback_pixmap(side, landscape=True) if player.deck else
+            pixmap = (self._cardback_pixmap(player_index, landscape=True) if player.deck else
                       empty_deck_pixmap(light, landscape=True))
             rotated = (pixmap.transformed(QTransform().rotate(180), Qt.SmoothTransformation)
                        if pixmap is not None else None)
@@ -812,8 +835,8 @@ class BattleScene(QGraphicsScene):
     def _hand_render_signature(self, card, revealed: bool, detail: dict,
                                owner_seat: int | None, own: bool) -> tuple:
         appearance = card_appearance(card.id) if revealed else None
-        cardback = None if revealed else load_gui_settings()[
-            "own_cardback" if own else "enemy_cardback"]
+        player = self.viewer if own else 1 - self.viewer
+        cardback = None if revealed else self._cardback_name(player)
         centered = (self.phase == "mulligan" or self.center_hand) and own
         return (
             card.id, revealed,
@@ -830,11 +853,11 @@ class BattleScene(QGraphicsScene):
         if getattr(item, "_render_signature", None) == signature:
             return
         height = 255 if (self.phase == "mulligan" or self.center_hand) and own else 156
+        player = self.viewer if own else 1 - self.viewer
         pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
                               level_color=seat_level_color(owner_seat),
                               cache_context=art_context, height=height)
-                  if cdef is not None else
-                  cardback_pixmap("own" if own else "enemy"))
+                  if cdef is not None else self._cardback_pixmap(player))
         item.set_art(pixmap)
         item._render_signature = (
             signature if pixmap is not None and not pixmap.isNull() else None)
@@ -1034,8 +1057,9 @@ class BattleScene(QGraphicsScene):
         item.player = player
         item.revealed = source_revealed
         item.text_color = QColor(self.text_color)
-        item.set_art(source_pixmap or cardback_pixmap(
-            "own" if player == self.viewer else "enemy"))
+        if not source_revealed or source_pixmap is None or source_pixmap.isNull():
+            source_pixmap = self._cardback_pixmap(player)
+        item.set_art(source_pixmap)
         item.setAcceptedMouseButtons(Qt.NoButton)
         item.setZValue(DRAG_Z + 10)
         item.setPos(source_pos)
@@ -1188,8 +1212,7 @@ class BattleScene(QGraphicsScene):
                     index = 0 if player == self.viewer else 2
                     source = layout_positions(scene_width=self.layout_width)[
                         ("deck_back", player, index)]
-                    pixmap = cardback_pixmap(
-                        "own" if player == self.viewer else "enemy", landscape=True)
+                    pixmap = self._cardback_pixmap(player, landscape=True)
                     scale = min(DECK_BACK_SIZE.width() / pixmap.width(),
                                 DECK_BACK_SIZE.height() / pixmap.height())
                     item.setPos(source + QPointF(
@@ -1514,6 +1537,7 @@ class BattleScene(QGraphicsScene):
         self._hand_animation_cache.clear()
         self._animation_timeline = None
         self.inputs_open = False
+        self.enemy_cardback = None
         self.game = None
 
     def clear_hands(self) -> None:

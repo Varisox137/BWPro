@@ -23,8 +23,11 @@ def qapp():
 
 def test_menu_navigation_and_theme(qapp, db, tmp_path):
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
-    assert win.windowTitle() == "BWPro"
-    assert win.findChild(QLabel, "title").text() == "BWPro"
+    assert win.windowTitle() == "BWPro by Varisox137"
+    assert win.findChild(QLabel, "title").text() == "BWPro by Varisox137"
+    github_link = win.findChild(QLabel, "githubLink")
+    assert "https://github.com/Varisox137/BWPro" in github_link.text()
+    assert github_link.openExternalLinks()
     assert "（" not in dict((key, sub) for key, _name, sub in MENU_ENTRIES)["codex"]
     assert win.stack.currentIndex() == 0
     assert win.back_button.isHidden()

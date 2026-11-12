@@ -222,7 +222,7 @@ class HotseatView(QWidget):
         self.end_turn_button.setObjectName("endTurnButton")
         self.end_turn_button.clicked.connect(self.end_turn)
         self.battle_scene.end_turn_item = self.battle_scene.add_control(
-            self.end_turn_button, ("end_turn",), (104, 104))
+            self.end_turn_button, ("end_turn",), (208, 208))
 
         self.enemy_hand_label = QLabel()
         self.enemy_hand_label.setObjectName("enemyHandBack")
@@ -350,7 +350,7 @@ class HotseatView(QWidget):
                 background: transparent; border: none;
             }}
             QPushButton#endTurnButton {{
-                background: transparent; border: none; border-radius: 52px; padding: 0;
+                background: transparent; border: none; border-radius: 104px; padding: 0;
             }}
             QLabel#targetHint, QLabel#battleError, QLabel#resultBanner {{
                 color: {colors['text']}; background: transparent; font-weight: 600;
@@ -389,7 +389,7 @@ class HotseatView(QWidget):
             QPushButton:hover {{ background: {colors['panel2']}; }}
         """)
         self.end_turn_button.setStyleSheet(
-            "QPushButton { background: transparent; border: none; border-radius: 52px; padding: 0; }")
+            "QPushButton { background: transparent; border: none; border-radius: 104px; padding: 0; }")
         self._sync_end_turn_art()
 
     def start_hotseat(self) -> bool:

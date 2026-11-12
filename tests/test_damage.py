@@ -819,6 +819,41 @@ def test_parallel_damage_and_other_immune_share_visual_group(db, make_game, bran
     assert visuals[0]["g"] == visuals[1]["g"] is not None
 
 
+def test_sequential_single_damage_queues_use_distinct_visual_groups(db, make_game, monkeypatch):
+    real_id = id
+    monkeypatch.setattr("core.engine.id",
+                        lambda obj: 1 if isinstance(obj, list) else real_id(obj), raising=False)
+    g = make_game()
+    g.state.timeline.clear()
+
+    g.deal_to_player(0, 1, None)
+    g.deal_to_player(0, 1, None)
+
+    damages = [e for e in g.state.timeline if e.get("v") == "damage"]
+    assert len(damages) == 2
+    assert damages[0]["g"] is not None and damages[1]["g"] is not None
+    assert damages[0]["g"] != damages[1]["g"]
+
+
+def test_piercing_overflow_shares_visual_group_and_stat_wave(db, make_game):
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    pb.shikigami[0].health = 2
+    g.state.timeline.clear()
+
+    dealt = g.deal_to_shikigami(
+        Ref(player=1, shikigami=0), 5, Ref(player=0, shikigami=0), piercing=True)
+
+    assert dealt == 5
+    assert pb.shikigami[0].health == 0 and pb.health == 27
+    damages = [e for e in g.state.timeline if e.get("v") == "damage"]
+    stats = [e for e in g.state.timeline if e.get("v") == "stat"]
+    assert [(e["p"], e["s"], e["amount"]) for e in damages] == [(1, 0, 2), (1, None, 3)]
+    assert damages[0]["g"] == damages[1]["g"] is not None
+    assert len(stats) == 2
+    assert stats[0]["g"] == stats[1]["g"] == f"{damages[0]['g']}:stat"
+
+
 def test_damage_parallel_queue(db, make_game):
     """并行伤害通道（群鸦乱舞）：parallel=true 的 damage 把全部目标的伤害事件放进
     同一队列结算——气绝统一在队列清空后生成（顺序通道则是逐目标各起队列、先结算的

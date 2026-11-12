@@ -42,6 +42,18 @@ class _Tee:
             self.buffer = ""
 
 
+def write_terminal_secret(text: str) -> bool:
+    """绕过标准输出捕获，仅向交互终端写秘密。"""
+    target = "CON" if os.name == "nt" else "/dev/tty"
+    try:
+        with open(target, "w", encoding="utf-8") as terminal:
+            terminal.write(text + "\n")
+            terminal.flush()
+        return True
+    except OSError:
+        return False
+
+
 def capture_output() -> None:
     """保留终端行为并捕获 print/标准错误；重复调用不会嵌套 tee。"""
     global _original_stdout, _original_stderr

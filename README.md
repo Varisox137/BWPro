@@ -14,6 +14,7 @@ uv sync --no-dev                     # 或：仅服务端依赖（无 GUI/CLI �
 uv run python -m client.cli          # 主菜单：热座对战 / 卡组构筑 / 联机对战
 uv run python -m server.main         # 联机服务端（默认 127.0.0.1:1037；Termux 见 server/README.md）
 uv run python -m client.net          # 联机客户端（创建/加入房间）
+uv run python -m client.log_admin    # 独立服务器日志运维端
 uv run python -m db.validate         # 校验卡牌数据库
 uv run python -m db.scaffold -h      # 式神/卡牌 yaml 脚手架（生成骨架再补效果块）
 uv run python scripts/build_exe.py   # 构建独立 Windows GUI exe 并自动冒烟测试

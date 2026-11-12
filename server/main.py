@@ -14,23 +14,31 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import json
+import logging
 import threading
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import PlainTextResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from db.loader import CardDatabase
 from server import protocol
+from server.log_admin import LogAdminService
 from server.manager import RoomManager
+
+logger = logging.getLogger("bwpro.server")
 
 # 输入字段长度上限（基本防护：拒绝超长/异常输入）
 MAX_NAME = 32
 MAX_ROOM_ID = 16
 MAX_TOKEN = 64
 MAX_DECK_CODE = 1024
+MAX_CLIENT_IP = 64
+MAX_CARDBACK = 64
 
 
 class RateLimiter:
@@ -67,6 +75,16 @@ def _player_name(msg: dict) -> str | None:
     return name
 
 
+def _reported_client_ip(msg: dict) -> str | None:
+    value = _text(msg, "client_ip", MAX_CLIENT_IP)
+    if value is None:
+        return None
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        raise ValueError("字段 client_ip 非法") from None
+
+
 CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫描器，非访问凭证）
 AUTH_TIMEOUT = 300.0  # 连接后连续 5 分钟未创建/加入房间则断联
 
@@ -85,32 +103,88 @@ def _env_date(msg: dict, key: str) -> int | None:
         raise ValueError("环境日期须为合法的 8 位日期（YYYYMMDD）") from None
 
 
-def _client_ip(ws: WebSocket) -> str:
+def _client_ip(connection: WebSocket | Request) -> str:
     """提取真实来源 IP：穿透/反代边缘做 L7 代理时，TCP 对端永远是本机回环
     （客户端回连 127.0.0.1），真实 IP 只能由边缘透传在 X-Forwarded-For /
     X-Real-IP 头中；取 XFF 首项（原始客户端）。该值由边缘写入、可被伪造，
     仅作日志参考，不可作访问控制依据。"""
-    xff = ws.headers.get("x-forwarded-for")
+    xff = connection.headers.get("x-forwarded-for")
     if xff:
         return xff.split(",")[0].strip()
-    real = ws.headers.get("x-real-ip")
+    real = connection.headers.get("x-real-ip")
     if real:
         return real.strip()
-    return ws.client.host if ws.client else "unknown"
+    return connection.client.host if connection.client else "unknown"
 
 
 def create_app(manager: RoomManager, *, rate_limit: int = 10,
-               require_client_ua: bool = True, allow_debug_rooms: bool = False) -> FastAPI:
+               require_client_ua: bool = True, allow_debug_rooms: bool = False,
+               log_admin: LogAdminService | None = None) -> FastAPI:
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
-        # 看门狗后台任务：周期扫描解散长期无人员变动的未开局房间
-        watchdog = asyncio.create_task(manager.watchdog_loop())
+        tasks = [asyncio.create_task(manager.watchdog_loop())]
+        if log_admin is not None:
+            tasks.append(asyncio.create_task(log_admin.rotation_loop()))
         try:
             yield
         finally:
-            watchdog.cancel()
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     app = FastAPI(title="BWPro 联机服务端", lifespan=_lifespan)
+
+    if log_admin is not None:
+        service = log_admin
+
+        async def require_log_admin_auth(request: Request) -> None:
+            header = request.headers.get("Authorization")
+            client = request.client.host if request.client else "unknown"
+            if not service.authenticate(header, client):
+                raise HTTPException(status_code=401)
+
+        @app.exception_handler(401)
+        async def log_admin_unauthorized(request: Request, exc: HTTPException):
+            return PlainTextResponse("", status_code=401)
+
+        @app.exception_handler(404)
+        async def log_admin_not_found(request: Request, exc: HTTPException):
+            return PlainTextResponse("", status_code=404)
+
+        @app.get("/api/log-admin/logs", dependencies=[Depends(require_log_admin_auth)])
+        async def list_log_admin_logs():
+            return {"logs": service.list_logs()}
+
+        @app.get("/api/log-admin/logs/{name}/preview",
+                 dependencies=[Depends(require_log_admin_auth)])
+        async def preview_log_admin_log(name: str):
+            try:
+                text, truncated = service.preview(name)
+            except (ValueError, FileNotFoundError):
+                raise HTTPException(status_code=404) from None
+            return {"text": text, "truncated": truncated}
+
+        @app.get("/api/log-admin/logs/{name}/download",
+                 dependencies=[Depends(require_log_admin_auth)])
+        async def download_log_admin_log(name: str):
+            try:
+                path = service.log_path(name)
+                source = path.open("rb")
+            except (ValueError, FileNotFoundError):
+                raise HTTPException(status_code=404) from None
+
+            def chunks():
+                with source:
+                    while chunk := source.read(64 * 1024):
+                        yield chunk
+
+            disposition = f"attachment; filename*=utf-8''{quote(path.name, safe='')}"
+            return StreamingResponse(chunks(), headers={"Content-Disposition": disposition})
+
+        @app.get("/api/log-admin/{path:path}",
+                 dependencies=[Depends(require_log_admin_auth)])
+        async def unknown_log_admin_path(path: str):
+            raise HTTPException(status_code=404)
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
@@ -125,6 +199,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
         conn = None
 
         async def reject(reason: str) -> None:
+            logger.info("请求被拒绝：房间=%s 座位=%s 原因=%s",
+                        room.id if room is not None else "-",
+                        conn.seat if conn is not None else "-", reason)
             await ws.send_text(json.dumps(protocol.error(reason), ensure_ascii=False))
 
         async def _auth_watchdog() -> None:
@@ -141,6 +218,11 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
         def binding_valid() -> bool:
             return room is not None and conn is not None \
                 and room.conns[conn.seat] is conn and conn.ws is ws
+
+        def log_close(code: int, reason: str | None) -> None:
+            logger.info("连接关闭：来源=%s 房间=%s 座位=%s 关闭码=%s 原因=%s",
+                        client_ip, room.id if room is not None else "-",
+                        conn.seat if conn is not None else "-", code, reason or "")
 
         try:
             while True:
@@ -163,6 +245,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     if not client_ok(msg):
                         await reject("客户端标识无效，请使用 BWPro CLI 联机")
                         await ws.close(code=1008)
+                        log_close(1008, "客户端标识无效")
                         return
                 if t == "create":
                     if msg.get("debug") and not allow_debug_rooms:
@@ -175,17 +258,21 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
                         env_date = _env_date(msg, "env_date")
                         mode = _text(msg, "mode", 10) or "standard"
+                        reported_ip = _reported_client_ip(msg)
+                        cardback = _text(msg, "cardback", MAX_CARDBACK)
                         target_room = manager.create(debug=bool(msg.get("debug")),
                                                      room_id=want_id, env_date=env_date,
                                                      mode=mode)
-                        target_conn = await target_room.join(0, name, ws, deck_code)
+                        target_conn = await target_room.join(
+                            0, name, ws, deck_code, cardback=cardback)
                     except ValueError as e:
                         if target_room is not None:
                             manager.remove(target_room.id)
                         await reject(str(e))
                         continue
                     room, conn = target_room, target_conn
-                    print(f"[房间 {room.id}] {name}（{client_ip}）创建房间"
+                    source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
+                    print(f"[房间 {room.id}] {name}（{source}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
                           f"{'（debug 对局）' if room.debug else ''}"
                           f"（{room.mode} 模式"
@@ -199,6 +286,8 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         token = _text(msg, "token", MAX_TOKEN)
                         name = _player_name(msg) or "玩家B"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
+                        reported_ip = _reported_client_ip(msg)
+                        cardback = _text(msg, "cardback", MAX_CARDBACK)
                     except ValueError as e:
                         await reject(str(e))
                         continue
@@ -212,6 +301,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                             await reject("重连令牌无效")
                             continue
                         room, conn = target_room, target_conn
+                        logger.info("重连成功：房间=%s 座位=%s", room.id, conn.seat)
                         await conn.send(protocol.joined(
                             room.id, conn.token, conn.seat,
                             player_index=room.seat_to_player[conn.seat],
@@ -223,12 +313,14 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                             await conn.send(room.lobby_msg())
                         continue
                     try:
-                        target_conn = await target_room.join(1, name, ws, deck_code)
+                        target_conn = await target_room.join(
+                            1, name, ws, deck_code, cardback=cardback)
                     except ValueError as e:
                         await reject(str(e))
                         continue
                     room, conn = target_room, target_conn
-                    print(f"[房间 {room.id}] {name}（{client_ip}）加入房间", flush=True)
+                    source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
+                    print(f"[房间 {room.id}] {name}（{source}）加入房间", flush=True)
                     await conn.send(protocol.joined(room.id, conn.token, 1,
                                                     debug=room.debug))
                     await room.on_seat_filled()
@@ -243,6 +335,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await room.lobby_leave(conn.seat)
                         if not any(room.conns):
                             manager.remove(room.id)
+                        log_close(1000, "主动离开")
                         return
                     await reject("当前不能离开房间")
                     continue
@@ -260,8 +353,8 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject("尚未加入房间或连接已失效")
                         continue
                     await room.handle_cmd(conn.seat, msg["cmd"])
-        except WebSocketDisconnect:
-            pass
+        except WebSocketDisconnect as error:
+            log_close(error.code, error.reason)
         finally:
             watchdog.cancel()
             if binding_valid():
@@ -323,7 +416,7 @@ def _debug_console(manager: RoomManager, loop: asyncio.AbstractEventLoop) -> Non
 
 def main() -> None:
     from core.logging_config import configure_logging
-    configure_logging("server")
+    log_path = configure_logging("server")
     parser = argparse.ArgumentParser(description="BWPro 联机服务端")
     parser.add_argument("--host", default="127.0.0.1",
                         help="监听地址；对外服务（含内网穿透）用 0.0.0.0")
@@ -354,11 +447,14 @@ def main() -> None:
     manager = RoomManager(db, turn_timeout=args.turn_timeout,
                           mulligan_timeout=args.mulligan_timeout,
                           max_rooms=args.max_rooms)
+    log_admin = LogAdminService(log_path.parent, log_path)
     app = create_app(manager, rate_limit=args.rate_limit,
                      require_client_ua=not args.no_require_ua,
-                     allow_debug_rooms=args.allow_debug_rooms)
+                     allow_debug_rooms=args.allow_debug_rooms,
+                     log_admin=log_admin)
     config = uvicorn.Config(app, host=args.host, port=args.port,
                             log_config=None,  # 复用项目日志，避免 tee stdout 无 isatty
+                            proxy_headers=False,  # 鉴权限流只认 socket 对端地址
                             ws_ping_interval=10, ws_ping_timeout=5,
                             ws_max_size=1024 * 1024,  # 单条消息最大 1MB
                             server_header=False,  # 不下发 server: uvicorn 响应头

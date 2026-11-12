@@ -315,11 +315,29 @@ def test_settings_option_rows_are_compact(qapp, db):
     view = SettingsView(db)
     view.show()
     qapp.processEvents()
-    assert view.cardback_buttons["own_cardback"].y() == view.cardback_buttons["enemy_cardback"].y()
+    assert set(view.cardback_buttons) == {"own_cardback"}
     turn_keys = ("turn_background", "end_turn_variant", "opponent_turn_variant")
     assert len({view.option_buttons[key].y() for key in turn_keys}) == 1
     assert view.option_buttons["upgrade_variant"].y() == view.option_buttons["defeated_variant"].y()
     assert all(button.width() <= 150 for button in view.option_buttons.values())
+    view.close()
+
+
+def test_settings_player_name_editor_normalizes_and_persists(qapp, db, tmp_path, monkeypatch):
+    from client.gui import ui_assets
+
+    path = tmp_path / "gui.json"
+    monkeypatch.setattr(ui_assets, "gui_settings_path", lambda: path)
+    view = SettingsView(db)
+    assert view.player_name_edit.text() == "玩家"
+    assert view.player_name_edit.maxLength() == 32
+    view.player_name_edit.setText("  设置页玩家  ")
+    view.player_name_edit.editingFinished.emit()
+    assert ui_assets.load_gui_settings(path)["player_name"] == "设置页玩家"
+    view.player_name_edit.setText("   ")
+    view.player_name_edit.editingFinished.emit()
+    assert view.player_name_edit.text() == "玩家"
+    assert ui_assets.load_gui_settings(path)["player_name"] == "玩家"
     view.close()
 
 

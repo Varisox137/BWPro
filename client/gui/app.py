@@ -116,7 +116,7 @@ def _application_icon() -> QIcon:
 class MainWindow(QMainWindow):
     def __init__(self, db=None, store_path=None):
         super().__init__()
-        self.setWindowTitle("BWPro")
+        self.setWindowTitle("BWPro by Varisox137")
         self.setWindowIcon(_application_icon())
         self.resize(1600, 900)
         self.theme = "light"
@@ -296,11 +296,17 @@ class MainWindow(QMainWindow):
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(60, 40, 60, 40)
-        title = QLabel("BWPro")
+        title = QLabel("BWPro by Varisox137")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignCenter)
         lay.addWidget(title)
-        lay.addSpacing(40)
+        github_link = QLabel(
+            '<a href="https://github.com/Varisox137/BWPro">GitHub 项目</a>')
+        github_link.setObjectName("githubLink")
+        github_link.setAlignment(Qt.AlignCenter)
+        github_link.setOpenExternalLinks(True)
+        lay.addWidget(github_link)
+        lay.addSpacing(24)
         for key, name, desc in MENU_ENTRIES:
             btn = QPushButton(f"{name}\n{desc}")
             btn.setMinimumHeight(100)

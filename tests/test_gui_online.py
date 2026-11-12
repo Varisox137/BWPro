@@ -114,7 +114,6 @@ def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypa
         raise AssertionError("等待联机连接结果超时")
 
     view.server_edit.setText("localhost:1037")
-    view.name_edit.setText("玩家")
     warnings = []
     monkeypatch.setattr("client.gui.online.show_warning",
                         lambda _parent, title, text: warnings.append((title, text)),
@@ -435,6 +434,28 @@ def test_online_state_push_clears_pending_usage(qapp, db, make_game):
     assert not battle.battle_scene.usage_items
     assert not battle.battle_scene.usage_labels
     assert battle._inputs_open()
+    battle.close()
+
+
+def test_online_state_push_only_loads_initial_or_reconnect_state(qapp, db, make_game, monkeypatch):
+    game = make_game(mulligan=False)
+    battle = OnlineBattleView(db, send_command=lambda _cmd: None)
+    battle.me = 0
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    calls = []
+    monkeypatch.setattr(battle.battle_scene, "show_loading",
+                        lambda prefix: calls.append(("show", prefix)))
+    monkeypatch.setattr(battle.battle_scene, "hide_loading",
+                        lambda: calls.append(("hide",)))
+
+    battle.set_state(payload, log=[], timeline=[])
+    battle.set_state(payload, log=[], timeline=[])
+    assert calls == [("show", "正在准备对局"), ("hide",)]
+
+    battle.reset_session()
+    battle.set_state(payload, log=[], timeline=[])
+    assert calls == [("show", "正在准备对局"), ("hide",)] * 2
     battle.close()
 
 
@@ -806,6 +827,12 @@ def test_disconnected_join_reopens_socket_and_sends_token(qapp, db, view):
     view.on_disconnected("网络中断")
     assert view.bridge is None
     assert view.join_room()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if isinstance(view.bridge, FakeBridge) and view.bridge.sent:
+            break
+        qapp.processEvents()
+        time.sleep(0.005)
     assert isinstance(view.bridge, FakeBridge)
     msg = view.bridge.sent[0]
     assert msg["type"] == "join" and msg["token"] == "令牌"
@@ -1181,3 +1208,223 @@ def test_online_hand_art_keeps_payload_runtime_separate(
     finally:
         battle.close()
         cardart.clear_cardart_caches()
+
+
+def test_online_connection_refreshes_name_from_settings(qapp, view, monkeypatch):
+    configured = {"player_name": "设置玩家甲"}
+    monkeypatch.setattr("client.gui.online.load_gui_settings",
+                        lambda: configured, raising=False)
+    view.opener = lambda _url: FakeWS()
+    assert not hasattr(view, "name_edit")
+    assert view.connect_server()
+    assert view.player_name == "设置玩家甲"
+    deadline = time.monotonic() + 2
+    while view.bridge is None and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.005)
+    assert isinstance(view.bridge, FakeBridge)
+    configured["player_name"] = "设置玩家乙"
+    assert view.player_name == "设置玩家甲"  # 已连接后不被设置变更改写
+    assert view.back_to_previous() is False
+    assert view.connect_server()
+    assert view.player_name == "设置玩家乙"
+    deadline = time.monotonic() + 2
+    while view.bridge is None and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.005)
+    assert isinstance(view.bridge, FakeBridge)
+
+
+def test_online_hello_reports_cached_client_ip_without_route_probe(qapp, db, view, monkeypatch):
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    view._open_bridge(FakeWS())
+    view.player_name = "当前房间身份"
+    view._client_ip = "192.0.2.8"
+    monkeypatch.setattr("client.gui.online.load_gui_settings",
+                        lambda: {"own_cardback": "三途花境", "player_name": "新设置名"},
+                        raising=False)
+    monkeypatch.setattr("client.gui.online.net.local_route_ip",
+                        lambda _url: pytest.fail("create/join 不得在主线程探测 IP"))
+
+    assert view.create_room()
+    created = view.bridge.sent[-1]
+    assert created["name"] == "当前房间身份"
+    assert created["client_ip"] == "192.0.2.8"
+    assert created["cardback"] == "三途花境"
+
+    view.room_edit.setText("ABC123")
+    view.token_edit.clear()
+    assert view.join_room()
+    joined = view.bridge.sent[-1]
+    assert joined["name"] == "当前房间身份"
+    assert joined["client_ip"] == "192.0.2.8"
+    assert joined["cardback"] == "三途花境"
+
+
+def test_online_connection_caches_client_ip_in_background(qapp, db, view, monkeypatch):
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    main_thread = threading.get_ident()
+    calls = []
+
+    def route_ip(url):
+        calls.append((threading.get_ident(), url))
+        return "192.0.2.9"
+
+    monkeypatch.setattr("client.gui.online.net.local_route_ip", route_ip)
+    view.opener = lambda _url: FakeWS()
+    assert view.connect_server()
+    deadline = time.monotonic() + 2
+    while view.bridge is None and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.005)
+    assert isinstance(view.bridge, FakeBridge)
+    assert len(calls) == 1 and calls[0][1] == "ws://127.0.0.1:1037/ws"
+    assert calls[0][0] != main_thread
+    assert view.create_room()
+    assert view.bridge.sent[-1]["client_ip"] == "192.0.2.9"
+
+
+def test_online_state_applies_and_resets_opponent_cardback(qapp, db, view, make_game):
+    game = make_game(mulligan=False)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    view.me = view.battle.me = 0
+    view.handle_message({"type": "state", "payload": payload,
+                         "opponent_cardback": "三途花境"})
+    assert view.battle.battle_scene.enemy_cardback == "三途花境"
+    view.handle_message({"type": "state", "payload": payload})
+    assert view.battle.battle_scene.enemy_cardback is None
+    view.handle_message({"type": "state", "payload": payload,
+                         "opponent_cardback": "三途花境"})
+    view.handle_message({"type": "joined", "room_id": "NEW123",
+                         "token": "新令牌", "seat": 0})
+    assert view.battle.battle_scene.enemy_cardback is None
+    view.handle_message({"type": "state", "payload": payload,
+                         "opponent_cardback": "三途花境"})
+    view.battle.reset_session()
+    assert view.battle.battle_scene.enemy_cardback is None
+
+
+def test_online_direct_join_refreshes_new_identity_but_reconnect_preserves_it(
+        qapp, db, view, monkeypatch):
+    configured = {"player_name": "设置新名", "own_cardback": "月明风清"}
+    monkeypatch.setattr("client.gui.online.load_gui_settings",
+                        lambda: configured, raising=False)
+    main_thread = threading.get_ident()
+    route_threads = []
+
+    def route_ip(_url):
+        route_threads.append(threading.get_ident())
+        return ""
+
+    def wait_for_join():
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if isinstance(view.bridge, FakeBridge) and view.bridge.sent:
+                return
+            qapp.processEvents()
+            time.sleep(0.005)
+        raise AssertionError("等待后台连接并加入超时")
+
+    monkeypatch.setattr("client.gui.online.net.local_route_ip", route_ip)
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    view.server_url = "ws://localhost:1037/ws"
+    view.opener = lambda _url: FakeWS()
+    view.room_edit.setText("ABC123")
+    view.player_name = "旧页面名"
+    assert view.join_room()
+    wait_for_join()
+    assert view.bridge.sent[-1]["name"] == "设置新名"
+    assert len(route_threads) == 1
+
+    view.player_name = "已入座身份"
+    view.room_id = "ABC123"
+    view.token = "重连令牌"
+    view.token_edit.setText(view.token)
+    configured["player_name"] = "不应覆盖房间身份"
+    view.on_disconnected("网络中断")
+    assert view.join_room()
+    wait_for_join()
+    assert view.bridge.sent[-1]["name"] == "已入座身份"
+    assert len(route_threads) == 2
+    assert all(thread != main_thread for thread in route_threads)
+
+
+def test_repeated_join_during_connect_preserves_pending_and_auto_joins(
+        qapp, db, view, monkeypatch):
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    monkeypatch.setattr("client.gui.online.net.local_route_ip", lambda _url: "")
+    view.server_url = "ws://localhost:1037/ws"
+    view.room_edit.setText("ABC123")
+    started, release = threading.Event(), threading.Event()
+    sockets = []
+
+    def open_socket(_url):
+        started.set()
+        release.wait(2)
+        sockets.append(FakeWS())
+        return sockets[-1]
+
+    view.opener = open_socket
+    assert view.join_room()
+    assert started.wait(1)
+    assert view._pending_join
+    assert not view.join_room()  # 连接中重复点击：直接忽略
+    release.set()
+    assert view._pending_join  # 不得因重复点击清除首轮请求
+
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if isinstance(view.bridge, FakeBridge) and view.bridge.sent:
+            break
+        qapp.processEvents()
+        time.sleep(0.005)
+    assert isinstance(view.bridge, FakeBridge)
+    assert [msg["type"] for msg in view.bridge.sent] == ["join"]
+    assert not view._pending_join
+
+
+def test_pending_join_cleared_by_navigation_and_explicit_new_connection(
+        qapp, view, monkeypatch):
+    view._pending_join = True
+    view.stack.setCurrentWidget(view.lobby_page)
+    assert view.back_to_previous() is False
+    assert not view._pending_join
+
+    view._pending_join = True
+    view.leave_to_menu()
+    assert not view._pending_join
+
+    monkeypatch.setattr("client.gui.online.net.local_route_ip", lambda _url: "")
+    view.opener = lambda _url: FakeWS()
+    view._pending_join = True
+    assert view.connect_server()
+    assert not view._pending_join
+    deadline = time.monotonic() + 2
+    while view.bridge is None and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.005)
+    assert isinstance(view.bridge, FakeBridge)
+    assert not view.bridge.sent  # 普通连接不得消费陈旧 join
+
+
+def test_pending_join_cleared_by_failure_and_cancelled_connection(view, monkeypatch):
+    warnings = []
+    monkeypatch.setattr("client.gui.online.show_warning",
+                        lambda *_args: warnings.append(_args))
+    view._connecting = True
+    view._pending_join = True
+    view._connection_failed("ws://localhost:1037/ws", "失败")
+    assert not view._pending_join and warnings
+
+    ws = FakeWS()
+    view._connecting = True
+    view._pending_join = True
+    view._expect_close = True
+    view._connection_succeeded(ws, "ws://localhost:1037/ws")
+    assert not view._pending_join
+    assert ws.closed and view.bridge is None

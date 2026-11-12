@@ -43,6 +43,30 @@ BWP_HOST=127.0.0.1 BWP_PORT=1038 ./scripts/termux_server.sh
 http(s)://（穿透/反代给出的网址）及裸 host[:port]，自动规范化为
 ws(s)://.../ws，并在询问玩家名/卡组前先试连，失败则要求重新输入。
 
+## 远程日志管理
+
+Termux 服务端启动后，在服务端项目目录读取当前日志提取码：
+
+```bash
+# Termux 服务端
+cat logs/.log-access-token
+```
+
+Windows 开发机使用独立运维端，不需要启动主游戏客户端：
+
+```bash
+# Windows 开发机独立运维端
+uv run python -m client.log_admin
+```
+
+也可直接运行 `python -m client.log_admin`（已安装项目 GUI 依赖的环境）。输入服务器 HTTP(S) 地址和当前提取码后，可刷新日志列表、单击只读预览当前或历史日志，并多选下载完整日志到本地目录；预览最多显示文件开头 512 KiB。
+
+提取码在服务端启动时生成，此后每 30 分钟轮换，轮换后旧码立即失效。新码会直接显示在交互控制台，但不会写入应用日志或经 launcher 的 `tee` 保存；无交互控制台时只显示提取码文件路径。公网使用运维端必须通过 HTTPS 映射或反向代理（与服务端直接 TLS 配置等效），不得用明文 HTTP 传输提取码和日志。
+
+日志管理鉴权失败限流只按 socket 对端地址分桶。经反向代理后，该地址通常是代理的回连地址，因此多个用户可能共享同一限流桶；这是已确认的取舍，不会信任客户端可伪造的 `X-Forwarded-For` 来拆分鉴权桶。
+
+日志管理接口由服务端自身提供。Termux 服务端不需要 PySide6 等 GUI 依赖；只有运行独立运维端的桌面环境需要这些依赖。
+
 ## 内网穿透 / 公网联机
 
 可以。服务端以 `--host 0.0.0.0` 监听（默认端口 1037）后：
@@ -132,8 +156,8 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd", "mode": "standard", "env_date": null }
-{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd", "mode": "standard", "env_date": null, "client_ip": "192.168.1.2", "cardback": "月明风清" }
+{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null, "client_ip": "192.168.1.3", "cardback": "月明风清" }
 { "type": "ready" }
 { "type": "leave" }
 { "type": "env", "date": 20250701 }
@@ -141,6 +165,7 @@ server/
 ```
 
 `deck_code` 为必填（入座时按房间环境校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
+`client_ip` 是客户端通过本地路由 best-effort 取得的自报地址，仅用于创建/加入日志，可伪造，不作访问控制；`cardback` 是己方卡背资源名。两者均可选，新旧客户端/服务端可混用。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
 `create.mode` 可缺省（`standard`）；标准模式忽略 `env_date`（固定最新数据），自由模式
 `create.env_date` 可缺省（最新数据）；`env` 仅自由模式房主在双方均未准备时可用（date 缺省 = 最新）。
@@ -157,7 +182,7 @@ server/
 { "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "mode": "standard", "env_date": null }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
   "timer": { "kind": "turn", "deadline": 1735689600.0 },
-  "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }] }
+  "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }], "opponent_cardback": "月明风清" }
 { "type": "error", "reason": "..." }
 { "type": "notice", "text": "..." }
 { "type": "game_over", "winner": 0, "reason": "player_defeated" }

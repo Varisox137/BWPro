@@ -6,13 +6,16 @@
 """
 import asyncio
 import json
+import logging
 import random
 import threading
 import time
 
 import pytest
 
+from core.logging_config import configure_logging, restore_output
 from server import protocol
+from server.log_admin import LogAdminService
 from server.main import RateLimiter, _text, create_app
 from server.manager import RoomManager
 from server.room import Room, sanitize_trace
@@ -58,6 +61,9 @@ def test_server_message_builders():
     assert protocol.notice("t") == {"type": "notice", "text": "t"}
     assert protocol.game_over(0, "player_defeated")["winner"] == 0
     assert protocol.dissolved("r") == {"type": "dissolved", "reason": "r"}
+    assert "opponent_cardback" not in st
+    assert protocol.state({"turn": 3}, [], opponent_cardback="三途花境")[
+        "opponent_cardback"] == "三途花境"
 
 
 # ==========================================================================
@@ -341,13 +347,19 @@ def test_cmd_player_field_rewritten(db):
     run(go())
 
 
-def test_illegal_cmd_returns_error(db):
+def test_illegal_cmd_returns_error(db, caplog):
     async def go():
         room, ws0, ws1 = await _started_room(db)
         n = len(ws0.messages)
         n1 = len(ws1.messages)
-        await room.handle_cmd(0, {"op": "end_turn"})  # 调度阶段不可用
-        assert ws0.messages[-1]["type"] == "error"
+        with caplog.at_level(logging.INFO, logger="bwpro.room"):
+            await room.handle_cmd(0, {"op": "end_turn"})  # 调度阶段不可用
+        reply = ws0.messages[-1]
+        assert reply["type"] == "error"
+        assert reply["reason"] != "还没到你的回合"  # 确保覆盖引擎 IllegalAction 分支
+        assert room.id in caplog.text and "座位=0" in caplog.text
+        assert "指令=end_turn" in caplog.text
+        assert f"被拒绝：{reply['reason']}" in caplog.text
         assert len(ws1.messages) == n1  # 未向另一连接广播
         assert any(m["type"] == "error" for m in ws0.messages[n:])
     run(go())
@@ -362,6 +374,54 @@ def test_debug_room_flag(db):
         await room2.handle_cmd(0, {"op": "debug_draw", "args": {"player": 0, "count": 1}})
         assert ws0b.messages[-1]["type"] == "error"
     run(go())
+
+
+# ---------- 排障日志 ----------
+
+def test_room_lifecycle_log_keeps_console_output(db, capsys):
+    room = mk_room(db)
+    room._log("生命周期检查")
+    assert capsys.readouterr().out == "[房间 TEST01] 生命周期检查\n"
+
+
+def test_rejected_command_logs_room_context(db, caplog):
+    room, _ws0, _ws1 = run(_started_room(db))
+    seat = next(s for s in (0, 1)
+                if room.seat_to_player[s] != room.game.state.active)
+    with caplog.at_level(logging.INFO, logger="bwpro.room"):
+        run(room.handle_cmd(seat, {"op": "end_turn"}))
+    room._cancel_timer()
+    assert room.id in caplog.text
+    assert f"座位={seat}" in caplog.text
+    assert "end_turn" in caplog.text
+    assert "还没到你的回合" in caplog.text
+
+
+def test_engine_exception_logs_room_context_and_traceback(db, caplog):
+    room, _ws0, _ws1 = run(_started_room(db))
+
+    def raise_engine_error(_cmd):
+        raise RuntimeError("注入引擎故障")
+
+    room.game.apply = raise_engine_error
+    with caplog.at_level(logging.ERROR, logger="bwpro.room"):
+        run(room.handle_cmd(0, {"op": "ready"}))
+    assert f"房间 {room.id} 引擎异常，对局终止" in caplog.text
+    assert "Traceback (most recent call last)" in caplog.text
+    assert "RuntimeError: 注入引擎故障" in caplog.text
+
+
+def test_log_admin_token_not_captured(tmp_path, monkeypatch):
+    path = configure_logging("test", log_dir=tmp_path)
+    monkeypatch.setattr("server.log_admin.write_terminal_secret", lambda text: True)
+    monkeypatch.setattr("server.log_admin._restrict_token_permissions", lambda path: None)
+    try:
+        service = LogAdminService(tmp_path, path)
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        assert service.token not in path.read_text(encoding="utf-8")
+    finally:
+        restore_output()
 
 
 # ---------- 断线重连 ----------
@@ -926,6 +986,62 @@ def server():
     srv.should_exit = True
 
 
+def test_websocket_disconnect_logs_code(server, caplog):
+    with caplog.at_level(logging.INFO, logger="bwpro.server"):
+        client = WsClient()
+        client.ws.close(code=1000)
+        for _ in range(50):
+            if "关闭码=1000" in caplog.text:
+                break
+            time.sleep(0.02)
+    assert "关闭码=1000" in caplog.text
+
+
+def test_websocket_invalid_client_close_logs_code_and_reason(server, db, caplog):
+    client = WsClient()
+    with caplog.at_level(logging.INFO, logger="bwpro.server"):
+        client.send({"type": "create", "deck_code": _deck_code(db),
+                     "client": "Mozilla/5.0"})
+        assert "客户端标识" in client.recv_until("error")["reason"]
+        for _ in range(50):
+            if "关闭码=1008" in caplog.text:
+                break
+            time.sleep(0.02)
+    client.ws.close()
+    assert "房间=-" in caplog.text
+    assert "关闭码=1008" in caplog.text
+    assert "原因=客户端标识无效" in caplog.text
+
+
+def test_websocket_disconnect_logs_room_context_and_reason(server, db, caplog):
+    client, joined = _ws_create_room(db, "日志")
+    with caplog.at_level(logging.INFO, logger="bwpro.server"):
+        client.ws.close(code=1001, reason="客户端离开")
+        for _ in range(50):
+            if "原因=客户端离开" in caplog.text:
+                break
+            time.sleep(0.02)
+    assert joined["room_id"] in caplog.text
+    assert "来源=127.0.0.1" in caplog.text
+    assert "关闭码=1001" in caplog.text
+    assert "原因=客户端离开" in caplog.text
+    assert joined["token"] not in caplog.text
+
+
+def test_websocket_normal_leave_logs_code_and_room(server, db, caplog):
+    first, second, joined = _ws_room(db)
+    with caplog.at_level(logging.INFO, logger="bwpro.server"):
+        first.send({"type": "leave"})
+        assert first.recv_until("left")["type"] == "left"
+        for _ in range(50):
+            if "关闭码=1000" in caplog.text:
+                break
+            time.sleep(0.02)
+    second.ws.close()
+    assert joined["room_id"] in caplog.text
+    assert "关闭码=1000" in caplog.text
+
+
 def test_full_match_flow(server, db):
     a = WsClient()
     a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db)})
@@ -1071,7 +1187,7 @@ def test_player_name_rejects_unicode_control_characters(server, db, hello, name)
 
 
 @pytest.mark.parametrize("exc_type", [TypeError, ValueError, AttributeError, KeyError])
-def test_command_data_errors_return_generic_error_and_match_continues(db, exc_type):
+def test_command_data_errors_return_generic_error_and_match_continues(db, exc_type, caplog):
     """指令数据异常不得泄露内部细节或终止对局，恢复原指令处理后可继续。"""
     async def go():
         room, ws0, ws1 = await _started_room(db)
@@ -1081,10 +1197,15 @@ def test_command_data_errors_return_generic_error_and_match_continues(db, exc_ty
             raise exc_type("内部细节")
 
         room.game.apply = raise_data_error
-        await room.handle_cmd(0, {"op": "ready"})
+        with caplog.at_level(logging.INFO, logger="bwpro.room"):
+            await room.handle_cmd(0, {"op": "ready"})
         reply = ws0.messages[-1]
         assert reply["type"] == "error"
         assert "内部细节" not in reply["reason"] and "引擎异常" not in reply["reason"]
+        assert room.id in caplog.text and "座位=0" in caplog.text
+        assert "指令=ready" in caplog.text
+        assert "被拒绝：指令格式或参数非法" in caplog.text
+        assert "内部细节" not in caplog.text
         assert not any(m["type"] == "game_over" for m in ws0.messages + ws1.messages)
 
         room.game.apply = original_apply
@@ -1502,3 +1623,98 @@ def test_uvicorn_uses_project_logging_without_tty_probe():
 
     source = (Path(__file__).parents[1] / "server" / "main.py").read_text(encoding="utf-8")
     assert "log_config=None" in source
+
+
+def test_room_trace_logs_are_correlated_by_room_id_without_duplicates(db, caplog):
+    async def go():
+        room_a, _, _ = await _started_room(db)
+        room_b, _, _ = await _started_room(db)
+        room_a.id = "ROOM_A"
+        room_b.id = "ROOM_B"
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="bwpro.battle"):
+            room_a.game._trace("event", "房间甲事件", seq=11)
+            room_b.game._trace("event", "房间乙事件", seq=22)
+        records = [record for record in caplog.records
+                   if record.name == "bwpro.battle" and "房间" in record.getMessage()
+                   and ("房间甲事件" in record.getMessage()
+                        or "房间乙事件" in record.getMessage())]
+        assert len(records) == 2
+        assert any("房间 ROOM_A" in record.getMessage()
+                   and "房间甲事件" in record.getMessage() for record in records)
+        assert any("房间 ROOM_B" in record.getMessage()
+                   and "房间乙事件" in record.getMessage() for record in records)
+        assert [entry["message"] for entry in room_a._trace_pending[-1:]] == ["房间甲事件"]
+        assert [entry["message"] for entry in room_b._trace_pending[-1:]] == ["房间乙事件"]
+        room_a._cancel_timer()
+        room_b._cancel_timer()
+    run(go())
+
+
+def test_websocket_reconnect_and_reject_log_context_without_tokens(server, db, caplog):
+    first, second, joined = _ws_room(db, started=True)
+    first.ws.close()
+    replacement = None
+    invalid = None
+    with caplog.at_level(logging.INFO, logger="bwpro.server"):
+        invalid = WsClient()
+        invalid.send({"type": "join", "room_id": joined["room_id"],
+                      "token": "invalid-secret-token"})
+        assert invalid.recv_until("error")["reason"] == "重连令牌无效"
+        assert "房间=- 座位=- 原因=重连令牌无效" in caplog.text
+        assert "invalid-secret-token" not in caplog.text
+
+        replacement = WsClient()
+        replacement.send({"type": "join", "room_id": joined["room_id"],
+                          "token": joined["token"]})
+        assert replacement.recv_until("joined")["seat"] == 0
+        assert f"重连成功：房间={joined['room_id']} 座位=0" in caplog.text
+        assert joined["token"] not in caplog.text
+
+        replacement.send({"type": "ready"})
+        replacement.send({"type": "create", "deck_code": _deck_code(db)})
+        assert replacement.recv_until("error")["reason"] == "当前连接已加入房间"
+        assert (f"房间={joined['room_id']} 座位=0 "
+                "原因=当前连接已加入房间") in caplog.text
+    for client in (invalid, replacement, second):
+        client.ws.close()
+
+
+def test_room_sends_opponent_cardback_on_broadcast_and_resync(db):
+    async def go():
+        room = mk_room(db)
+        ws0, ws1 = FakeWS(), FakeWS()
+        await room.join(0, "甲", ws0, _deck_code(db), cardback="月明风清")
+        await room.join(1, "乙", ws1, _deck_code(db), cardback="三途花境")
+        await room.start_game()
+        first0 = next(msg for msg in ws0.messages if msg["type"] == "state")
+        first1 = next(msg for msg in ws1.messages if msg["type"] == "state")
+        assert first0["opponent_cardback"] == "三途花境"
+        assert first1["opponent_cardback"] == "月明风清"
+        await room.resync(room.conns[0])
+        assert ws0.messages[-1]["opponent_cardback"] == "三途花境"
+        room._cancel_timer()
+    run(go())
+
+
+def test_websocket_hello_logs_validated_client_ip(server, db, capsys):
+    first, joined = _ws_create_room(db, "甲", client_ip="192.0.2.8")
+    second = WsClient()
+    second.send({"type": "join", "room_id": joined["room_id"], "name": "乙",
+                 "deck_code": _deck_code(db), "client_ip": "2001:db8::8"})
+    assert second.recv_until("joined")["type"] == "joined"
+    output = capsys.readouterr().out
+    assert f"{joined['room_id']}] 甲（127.0.0.1，自报 192.0.2.8）创建房间" in output
+    assert f"{joined['room_id']}] 乙（127.0.0.1，自报 2001:db8::8）加入房间" in output
+    first.ws.close()
+    second.ws.close()
+
+
+@pytest.mark.parametrize("value", ["not-an-ip", "1" * 65, 123])
+def test_websocket_rejects_invalid_client_ip(server, db, value):
+    client = WsClient()
+    client.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),
+                 "client_ip": value})
+    reply = client.recv_until("joined", "error")
+    assert reply["type"] == "error" and "client_ip" in reply["reason"]
+    client.ws.close()

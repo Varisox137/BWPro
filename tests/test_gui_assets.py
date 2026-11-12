@@ -55,9 +55,14 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
         "end_turn_background": "", "opponent_turn_background": "", "turn_background": "",
         "end_turn_variant": "golden", "opponent_turn_variant": "golden",
         "defeated_variant": "white", "upgrade_variant": "yellow",
+        "player_name": "玩家",
     }
     save_gui_settings({"own_cardback": "三途花境", "enemy_cardback": "月明风清"}, path)
     assert load_gui_settings(path)["own_cardback"] == "三途花境"
+    save_gui_settings({"player_name": "  新玩家  "}, path)
+    assert load_gui_settings(path)["player_name"] == "新玩家"
+    save_gui_settings({"player_name": "   "}, path)
+    assert load_gui_settings(path)["player_name"] == "玩家"
 
 
 def test_empty_deck_pixmap_crops_sidebar_and_uses_cardback_orientation(qapp):
@@ -81,18 +86,18 @@ def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypa
     monkeypatch.setattr(ui_assets, "gui_settings_path", lambda: path)
     names = unnamed_misc_images()
     assert len(names) > 5 and "immune" not in names
-    default = end_turn_button_pixmap(104)
+    default = end_turn_button_pixmap(208)
     save_gui_settings({"end_turn_background": names[0]}, path)
     assert load_gui_settings(path)["end_turn_background"] == names[0]
-    custom = end_turn_button_pixmap(104)
+    custom = end_turn_button_pixmap(208)
     assert custom.size() == default.size() and custom.cacheKey() != default.cacheKey()
     save_gui_settings({"end_turn_background": ""}, path)
     assert load_gui_settings(path)["end_turn_background"] == ""
-    assert end_turn_button_pixmap(104).toImage() == default.toImage()
-    opponent_default = end_turn_button_pixmap(104, opponent=True)
+    assert end_turn_button_pixmap(208).toImage() == default.toImage()
+    opponent_default = end_turn_button_pixmap(208, opponent=True)
     save_gui_settings({"end_turn_variant": "blue", "opponent_turn_variant": "silver"}, path)
-    assert end_turn_button_pixmap(104).toImage() != default.toImage()
-    assert end_turn_button_pixmap(104, opponent=True).toImage() != opponent_default.toImage()
+    assert end_turn_button_pixmap(208).toImage() != default.toImage()
+    assert end_turn_button_pixmap(208, opponent=True).toImage() != opponent_default.toImage()
 
 
 def test_turn_word_art_follows_theme(qapp):
@@ -244,3 +249,18 @@ def test_combat_movement_and_card_animation_precede_effects(db, make_game):
     damage_index = next(index for index, entry in enumerate(game.state.timeline)
                         if entry.get("k") == "v" and entry.get("v") == "damage")
     assert animation_index < damage_index
+
+
+def test_remote_cardback_override_rejects_unknown_names_and_paths(
+        qapp, tmp_path, monkeypatch):
+    from client.gui import ui_assets
+
+    path = tmp_path / "gui.json"
+    monkeypatch.setattr(ui_assets, "gui_settings_path", lambda: path)
+    remote = next(name for name in named_cardbacks() if name != ui_assets.DEFAULT_CARDBACK)
+    save_gui_settings({"enemy_cardback": remote}, path)
+    default = ui_assets.cardback_pixmap("enemy", name=ui_assets.DEFAULT_CARDBACK)
+    selected = ui_assets.cardback_pixmap("enemy", name=remote)
+    assert selected.cacheKey() != default.cacheKey()
+    for invalid in ("未知卡背", "../gui", "/tmp/secret", "cardbacks/月明风清"):
+        assert ui_assets.cardback_pixmap("enemy", name=invalid).toImage() == default.toImage()

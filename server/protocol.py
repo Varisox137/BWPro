@@ -85,14 +85,16 @@ def start(player_index: int, opponent: str, you_first: bool,
 def state(payload: dict, log: list[str], timer: dict | None = None,
           settle: list[str] | None = None,
           timeline: list[dict] | None = None,
-          trace: list[dict] | None = None) -> dict:
+          trace: list[dict] | None = None,
+          opponent_cardback: str | None = None) -> dict:
     """完整对局状态 + 自上次以来的新增日志。
     timer 非空时附带 {"kind", "deadline"}（客户端倒计时显示用，旧客户端忽略该字段）。
     settle 非空时附带结算明细增量（旧客户端忽略）。
     timeline 非空时附带合并时间线增量（文字 [{"k": "s"|"l", "m"}]，结算/叙事按真实发生
     顺序合流；动画 {"k": "a", "u": uid, "c": card_id, "p": player} 无 m，仅供 GUI
     用牌动画，CLI 与文字播放跳过；log/settle 字段保留兼容）。
-    trace 非空时附带按接收方视角脱敏的运行时追踪增量。"""
+    trace 非空时附带按接收方视角脱敏的运行时追踪增量。
+    opponent_cardback 非空时附带接收者对手的卡背名（仅 GUI 展示，旧客户端忽略）。"""
     msg = {"type": "state", "payload": payload, "log": log}
     if timer is not None:
         msg["timer"] = timer
@@ -102,6 +104,8 @@ def state(payload: dict, log: list[str], timer: dict | None = None,
         msg["timeline"] = timeline
     if trace:
         msg["trace"] = trace
+    if opponent_cardback is not None:
+        msg["opponent_cardback"] = opponent_cardback
     return msg
 
 

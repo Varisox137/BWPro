@@ -170,7 +170,7 @@ class _DamageEvent:
     pre_pierce_amount: int | None = None  # 贯通分配前的原始伤害值（翻倍后口径快照，
     # 光影"贯通场合按贯通分配前的原始伤害值计"，全卡盘点）：仅贯通分配（溢出截断）时
     # 记录；on_damage/on_player_damaged payload 恒带同名键（无贯通时回退 = amount）
-    visual_group: int | None = None  # 同一并行伤害批次的 GUI 动画分组；单事件=None
+    visual_group: int | None = None  # 同一伤害队列（含贯通溢出）的 GUI 动画分组
     zero_visual_emitted: bool = False  # 本伤害事件已补过 -0，后续再次归零不重复
 
     def __post_init__(self) -> None:
@@ -195,6 +195,7 @@ class Game:
         self.db = db
         self.rng = random.Random(seed)
         self.trace_sink = trace_sink
+        self._visual_group_seq = 0
         self.queue: deque[_Pending] = deque()
         self.history: list[str] = []  # 事件名序列（测试/回放用）
         # 响应名额（规则设计评审⑨落地——原版两条规则）：
@@ -1165,15 +1166,16 @@ class Game:
     # ==================== 指令入口 ====================
 
     def _trace(self, kind, message, *, owner=None, seq=None, summary=None):
-        logging.getLogger("bwpro.battle").info(
-            "%s seq=%s owner=%s：%s", kind, seq, owner, message)
-        if self.trace_sink is not None:
-            entry = {"kind": kind, "message": str(message), "owner": owner}
-            if seq is not None:
-                entry["seq"] = seq
-            if summary is not None:
-                entry["summary"] = summary
-            self.trace_sink(entry)
+        if self.trace_sink is None:
+            logging.getLogger("bwpro.battle").info(
+                "%s seq=%s owner=%s：%s", kind, seq, owner, message)
+            return
+        entry = {"kind": kind, "message": str(message), "owner": owner}
+        if seq is not None:
+            entry["seq"] = seq
+        if summary is not None:
+            entry["summary"] = summary
+        self.trace_sink(entry)
 
     def apply(self, cmd: dict) -> None:
         """校验并执行一条指令，然后清空触发队列。CLI 与将来的网络层共用此入口。
@@ -4884,8 +4886,9 @@ class Game:
         由调用方延后统一结算（随机分配伤害：气绝事件按延时时机在效果结束后结算）。
         子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者出现再拆。
         """
-        visual_group = id(events) if len(events) > 1 else None
-        stat_group = f"{visual_group}:stat" if visual_group is not None else None
+        self._visual_group_seq += 1
+        visual_group = self._visual_group_seq
+        stat_group = f"{visual_group}:stat"
         visual_stats: list[dict] = []
         for event in events:
             event.visual_group = visual_group
@@ -5101,7 +5104,8 @@ class Game:
                 dq.append(_DamageEvent(source=ev.source, victim=Ref(player=ev.victim.player),
                                        amount=overflow, kind=ev.kind,
                                        is_counter=ev.is_counter,
-                                       start="pre_shield_2", card=ev.card))
+                                       start="pre_shield_2", card=ev.card,
+                                       visual_group=ev.visual_group))
         # 护甲计算前1（汤盆冲撞[增强]"此牌伤害翻倍"时机锚点，terminology.md 登记）：
         # ①森罗之阵贯通分段保护归零（pre_shield_zero 标记，裁决(4)：贯通修正在前的
         # 额外护甲计算已扣护甲、翻倍后口径的贯通分配已生成溢出事件，此处将命中式神
