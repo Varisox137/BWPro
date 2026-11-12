@@ -1259,6 +1259,32 @@ def test_client_id_soft_gate(server, db):
     d.ws.close()
 
 
+def test_connected_lobby_has_no_auth_timeout(server, db):
+    """已连接但尚未创建/加入房间的大厅不因旧版 5 秒认证看门狗被 1008 关闭。"""
+    import time
+    c = WsClient()
+    time.sleep(5.1)  # 越过旧看门狗期限后仍应能正常创建房间
+    c.send({"type": "create", "name": "甲", "deck_code": _deck_code(db)})
+    assert c.recv_until("joined", "error")["type"] == "joined"
+    c.ws.close()
+
+
+def test_unentered_connection_times_out_after_five_minutes(server, db, monkeypatch):
+    """连接后连续 5 分钟未入房才关闭；测试仅压缩时间，不改变期限口径。"""
+    import websockets.exceptions
+    assert server_main_timeout() == 300.0
+    monkeypatch.setattr("server.main.AUTH_TIMEOUT", 0.05)
+    c = WsClient()
+    with pytest.raises(websockets.exceptions.ConnectionClosedError):
+        c.ws.recv(timeout=1)
+    c.ws.close()
+
+
+def server_main_timeout() -> float:
+    from server.main import AUTH_TIMEOUT
+    return AUTH_TIMEOUT
+
+
 def test_debug_room_rejected_by_default(server, db):
     """debug 建房门控：服务端未开 --allow-debug-rooms 时，create 带 debug=true 被拒。"""
     a = WsClient()

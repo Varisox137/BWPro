@@ -342,11 +342,12 @@ class OnlineView(QWidget):
         outer.addWidget(self.stack)
         self.connect_page = QWidget()
         connect = QFormLayout(self.connect_page)
-        self.server_edit = QLineEdit("ws://127.0.0.1:1037/ws")
+        self.server_edit = QLineEdit("127.0.0.1")
         self.name_edit = QLineEdit("玩家")
         connect.addRow("服务器地址", self.server_edit)
         connect.addRow("玩家名", self.name_edit)
         self.connect_button = QPushButton("连接并进入大厅")
+        self.connect_button.setFixedSize(200, 36)
         self.connect_button.clicked.connect(self.connect_server)
         connect.addRow(self.connect_button)
         self.stack.addWidget(self.connect_page)
@@ -372,6 +373,7 @@ class OnlineView(QWidget):
         self.env_edit = QLineEdit()
         self.env_edit.setPlaceholderText("环境别名或 6/8 位日期")
         self.create_button = QPushButton("创建房间")
+        self.create_button.setFixedSize(140, 36)
         self.create_button.clicked.connect(self.create_room)
         for widget in (self.room_edit, self.mode_combo, self.env_edit, self.create_button):
             create_row.addWidget(widget)
@@ -381,6 +383,7 @@ class OnlineView(QWidget):
         self.token_edit.setEchoMode(QLineEdit.Password)
         self.token_edit.setPlaceholderText("重连令牌（首次加入留空）")
         self.join_button = QPushButton("加入 / 重连")
+        self.join_button.setFixedSize(160, 36)
         self.join_button.clicked.connect(self.join_room)
         join_row.addWidget(self.token_edit)
         join_row.addWidget(self.join_button)
@@ -401,13 +404,20 @@ class OnlineView(QWidget):
         self.leave_button.clicked.connect(self.leave_room)
         self.env_button = QPushButton("房主修改环境")
         self.env_button.clicked.connect(self.change_environment)
-        for widget in (self.ready_button, self.env_button, self.leave_button):
+        for widget, width in ((self.ready_button, 110),
+                              (self.env_button, 150), (self.leave_button, 120)):
+            widget.setFixedSize(width, 36)
             actions.addWidget(widget)
+        actions.addStretch(1)
+        self.leave_button.setEnabled(False)
         lobby.addLayout(actions)
         self.lobby_error = QLabel()
         self.lobby_error.setWordWrap(True)
         lobby.addWidget(self.lobby_error)
         lobby.addStretch(1)
+        for button in (self.connect_button, self.create_button, self.join_button,
+                       self.ready_button, self.env_button, self.leave_button):
+            button.setObjectName("small")
         self.stack.addWidget(self.lobby_page)
 
     def apply_theme(self, theme: str, colors: dict) -> None:
@@ -667,7 +677,19 @@ class OnlineView(QWidget):
             self.lobby_error.setText(f"房间已解散：{msg.get('reason', '')}")
             self.leave_to_menu()
         elif kind == "left":
-            self.leave_to_menu()
+            self._room_left()
+
+    def _room_left(self) -> None:
+        """离开当前房间但保持服务器连接，停留在可创建/加入的大厅。"""
+        self.in_lobby = False
+        self.room_id = self.token = self.seat = self.me = None
+        self.lobby_ready = []
+        self.lobby_deadline = self.starting_deadline = None
+        self.room_label.setText("房间大厅")
+        self.peer_label.setText("对手：等待加入")
+        self.lobby_status.setText("已离开房间，可创建或加入其他房间")
+        self.stack.setCurrentWidget(self.lobby_page)
+        self._render_lobby()
 
     def _render_lobby(self) -> None:
         ready = "、".join(self.lobby_ready) or "无"
@@ -675,6 +697,7 @@ class OnlineView(QWidget):
         own_ready = self.player_name in self.lobby_ready
         self.ready_button.setText("取消准备" if own_ready else "准备")
         self.ready_button.setEnabled(self.in_lobby)
+        self.leave_button.setEnabled(self.in_lobby)
         self.env_button.setEnabled(self.in_lobby and self.seat == 0
                                    and self.mode == "free" and not self.lobby_ready)
         self.env_edit.setEnabled(self.seat == 0 and self.mode == "free" and not self.lobby_ready)
@@ -699,6 +722,21 @@ class OnlineView(QWidget):
             self.lobby_status.setText(f"连接已断开：{reason}。请用原房码和令牌点击“加入 / 重连”")
         else:
             self.lobby_status.setText(f"连接已断开：{reason}")
+
+    def back_to_previous(self) -> bool:
+        """联机页分层返回：大厅 → 未连接页 → 主菜单。"""
+        if self.stack.currentWidget() is not self.lobby_page:
+            self.leave_to_menu()
+            return True
+        self._expect_close = True
+        if self.bridge is not None:
+            self.bridge.close()
+            self.bridge = None
+        self.in_lobby = False
+        self.room_id = self.token = self.seat = self.me = None
+        self.stack.setCurrentWidget(self.connect_page)
+        self._reset_connect_button()
+        return False
 
     def leave_to_menu(self) -> None:
         self._expect_close = True

@@ -664,6 +664,8 @@ def test_normalize_server_url():
     # 裸 host[:port]：带端口默认 ws（本机/局域网），无端口默认 wss（公网域名穿透）
     assert normalize_server_url("a.top:1037") == "ws://a.top:1037/ws"
     assert normalize_server_url("  127.0.0.1:1037  ") == "ws://127.0.0.1:1037/ws"
+    assert normalize_server_url("127.0.0.1") == "ws://127.0.0.1:1037/ws"
+    assert normalize_server_url("localhost") == "ws://localhost:1037/ws"
     assert normalize_server_url("a.top") == "wss://a.top/ws"
     assert normalize_server_url("bwpro.varisox137.top") == "wss://bwpro.varisox137.top/ws"
     # 已带路径则不补 /ws

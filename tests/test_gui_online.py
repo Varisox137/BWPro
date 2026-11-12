@@ -152,6 +152,40 @@ def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypa
     assert not view.join_room()
 
 
+def test_lobby_buttons_are_compact(qapp, view):
+    assert view.server_edit.text() == "127.0.0.1"
+    for button in (view.connect_button, view.create_button, view.join_button,
+                   view.ready_button, view.env_button, view.leave_button):
+        assert button.text()                       # 不得因裁切丢失按钮文案
+        assert button.objectName() == "small"     # 使用小按钮 padding/字体，而非全局大按钮
+        assert button.height() <= 36
+        assert button.width() <= 220
+
+
+def test_room_leave_and_navigation_preserve_connection_hierarchy(qapp, view):
+    back = []
+    view.on_back = lambda: back.append(True)
+    view._open_bridge(FakeWS())
+    view.stack.setCurrentWidget(view.lobby_page)  # 连接成功后的既有页面切换
+    assert view.stack.currentWidget() is view.lobby_page
+    view.in_lobby = True
+    view.leave_room()
+    assert view.bridge.sent == [{"type": "leave"}]
+
+    view.handle_message({"type": "left"})
+    assert not view.in_lobby
+    assert view.stack.currentWidget() is view.lobby_page
+    assert view.bridge is not None       # 仅退出房间，保持服务器连接
+    assert view.room_id is None and view.token is None
+    assert back == []
+
+    assert view.back_to_previous() is False  # 大厅返回 = 断开并回连接页
+    assert view.stack.currentWidget() is view.connect_page
+    assert view.bridge is None and back == []
+    view.leave_to_menu()                     # 未连接的联机页才回主菜单
+    assert back == [True]
+
+
 def test_lobby_messages_render_ready_environment_and_notices(qapp, db, view):
     save_standard_deck(db, view.store_path)
     view.reload_decks()

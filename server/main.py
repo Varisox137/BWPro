@@ -68,9 +68,7 @@ def _player_name(msg: dict) -> str | None:
 
 
 CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫描器，非访问凭证）
-
-AUTH_TIMEOUT = 5.0  # 连接后需在该时间内发送带合法 client 标识的 create/join，否则断联
-
+AUTH_TIMEOUT = 300.0  # 连接后连续 5 分钟未创建/加入房间则断联
 
 def _env_date(msg: dict, key: str) -> int | None:
     """解析 create/env 消息中的环境日期字段：缺省 None（最新）；

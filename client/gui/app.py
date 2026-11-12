@@ -258,8 +258,14 @@ class MainWindow(QMainWindow):
             self.go_menu()
 
     def back(self):
-        """统一返回入口；热坐/联机先执行各自的断线与计时器清理。"""
+        """统一返回入口；联机大厅先退回连接页，其余页面沿用原清理。"""
         page = self.stack.currentWidget()
+        back_hook = getattr(page, "back_to_previous", None)
+        if callable(back_hook):
+            if back_hook() is False:
+                return
+            self.go_menu()
+            return
         for hook_name in ("return_to_menu", "leave_to_menu"):
             hook = getattr(page, hook_name, None)
             if callable(hook):

@@ -595,8 +595,8 @@ def normalize_server_url(raw: str) -> str:
 
     接受 ws://、wss://、http(s)://（内网穿透/反代给出的网址）以及裸
     host[:port]；无路径时自动补 /ws。裸地址省略协议时：带端口默认 ws
-    （本机/局域网，如 127.0.0.1:1037），不带端口默认 wss（公网域名经
-    HTTPS 穿透/反代，TLS 在 443 终止）。
+    （本机/局域网，如 127.0.0.1:1037）；本机主机名可省略端口，其他裸域名
+    不带端口默认 wss（公网域名经 HTTPS 穿透/反代，TLS 在 443 终止）。
     """
     s = raw.strip()
     if s.startswith("https://"):
@@ -605,7 +605,10 @@ def normalize_server_url(raw: str) -> str:
         s = "ws://" + s[len("http://"):]
     if not s.startswith(("ws://", "wss://")):
         host = s.split("/", 1)[0]
-        s = ("ws://" if ":" in host else "wss://") + s
+        if host in ("127.0.0.1", "localhost"):
+            s = "ws://" + s + ":1037"
+        else:
+            s = ("ws://" if ":" in host else "wss://") + s
     if "/" not in s.split("://", 1)[1]:
         s = s + "/ws"
     return s
