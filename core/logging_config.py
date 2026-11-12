@@ -33,8 +33,11 @@ def restrict_private_permissions(path: Path, *, directory: bool = False) -> None
         os.chmod(path, 0o700 if directory else 0o600)
         return
     permission = "(OI)(CI)(F)" if directory else "(F)"
+    # 目录上 /reset 与后续选项同次调用会被 icacls 拒绝，分开执行。
+    subprocess.run(["icacls", os.fspath(path), "/reset"], check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     subprocess.run(
-        ["icacls", os.fspath(path), "/reset", "/inheritance:r", "/grant:r",
+        ["icacls", os.fspath(path), "/inheritance:r", "/grant:r",
          f"{getpass.getuser()}:{permission}"],
         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )

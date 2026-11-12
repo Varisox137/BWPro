@@ -169,11 +169,12 @@ def test_windows_private_permissions_reset_then_use_current_user_acl(tmp_path, m
 
     monkeypatch.setattr(logging_config.subprocess, "run", record_run)
     logging_config.restrict_private_permissions(path)
-    assert calls == [(
-        ["icacls", os.fspath(path), "/reset", "/inheritance:r", "/grant:r",
-         "test-user:(F)"],
-        {"check": True, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE},
-    )]
+    options = {"check": True, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
+    assert calls == [
+        (["icacls", os.fspath(path), "/reset"], options),
+        (["icacls", os.fspath(path), "/inheritance:r", "/grant:r",
+          "test-user:(F)"], options),
+    ]
 
 
 def test_application_permission_failure_warns_and_logging_continues(

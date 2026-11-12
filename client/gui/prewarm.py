@@ -110,7 +110,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
     if not clear and _manifest_current(cache_dir, manifest):
         manifest["stats"] = {
             "total": len(pending),
-            "succeeded": len(entries),
+            "succeeded": len(pending),
             "failed": 0,
             "skipped": len(pending),
             "deferred": len(definitions) - len(pending),
@@ -144,7 +144,9 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
             logger.error("卡图预热失败：%s %s", kind, definition.id)
         yield index, len(pending)
     successful_entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
-    manifest["entries"] = successful_entries
+    # 全成功时保留全部定义（含无需预热项），否则下次会与完整清单失配；
+    # 有失败时沿用仅成功条目 + failures 的重试语义。
+    manifest["entries"] = entries if not failures else successful_entries
     manifest["failures"] = failures
     manifest["stats"] = {
         "total": len(pending),

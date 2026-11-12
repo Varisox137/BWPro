@@ -102,7 +102,7 @@ def test_prewarm_stats_record_unchanged_manifest_skip(qapp, tmp_path, monkeypatc
     from client.gui import prewarm
 
     _configs(tmp_path)
-    db = F.db_of([F.shiki(100101)], [F.card(10010101)])
+    db = F.db_of([F.shiki(100101)], [F.card(10010101), F.card(10010102)])
     calls = []
     monkeypatch.setattr(prewarm, "card_pixmap",
                         lambda *_args, **_kwargs: calls.append("card") or QPixmap(2, 2))
@@ -111,11 +111,11 @@ def test_prewarm_stats_record_unchanged_manifest_skip(qapp, tmp_path, monkeypatc
     prewarm_all(db, tmp_path / "library", tmp_path / "cache")
     calls.clear()
     entries = prewarm_all(db, tmp_path / "library", tmp_path / "cache")
-    assert len(entries) == 2
+    assert len(entries) == 3
     assert calls == []
     manifest = json.loads((tmp_path / "cache" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["stats"] == {
-        "total": 2, "succeeded": 2, "failed": 0, "skipped": 2, "deferred": 0,
+        "total": 2, "succeeded": 2, "failed": 0, "skipped": 2, "deferred": 1,
     }
 
 
