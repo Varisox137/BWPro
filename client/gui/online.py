@@ -350,7 +350,7 @@ class OnlineView(QWidget):
         outer.addWidget(self.stack)
         self.connect_page = QWidget()
         connect = QFormLayout(self.connect_page)
-        self.server_edit = QLineEdit("127.0.0.1")
+        self.server_edit = QLineEdit("bwpro.varisox137.top")
         connect.addRow("服务器地址", self.server_edit)
         self.connect_button = QPushButton("连接并进入大厅")
         self.connect_button.setFixedSize(200, 36)

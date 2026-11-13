@@ -153,7 +153,7 @@ def test_connection_runs_in_background_and_enters_lobby(qapp, db, view, monkeypa
 
 
 def test_lobby_buttons_are_compact(qapp, view):
-    assert view.server_edit.text() == "127.0.0.1"
+    assert view.server_edit.text() == "bwpro.varisox137.top"
     for button in (view.connect_button, view.create_button, view.join_button,
                    view.ready_button, view.env_button, view.leave_button):
         assert button.text()                       # 不得因裁切丢失按钮文案
@@ -1396,7 +1396,7 @@ def test_online_connection_caches_client_ip_in_background(qapp, db, view, monkey
     assert view.connect_server()
     wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge), timeout=2)
     assert isinstance(view.bridge, FakeBridge)
-    assert len(calls) == 1 and calls[0][1] == "ws://127.0.0.1:1037/ws"
+    assert len(calls) == 1 and calls[0][1] == "wss://bwpro.varisox137.top/ws"
     assert calls[0][0] != main_thread
     assert view.create_room()
     assert view.bridge.sent[-1]["client_ip"] == "192.0.2.9"
