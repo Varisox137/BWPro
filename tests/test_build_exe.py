@@ -78,8 +78,8 @@ def test_exe_version_uses_shared_runtime_constant():
     build = importlib.import_module("scripts.build_exe")
     from core.version import VERSION
 
-    assert build.VERSION == VERSION == "0.3.0"
-    assert build.EXE_NAME == "BWPro-v0.3.0"
+    assert build.VERSION == VERSION == "0.3.1"
+    assert build.EXE_NAME == "BWPro-v0.3.1"
 
 
 def test_launcher_dispatches_apply_update_before_gui(monkeypatch):

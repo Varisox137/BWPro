@@ -47,7 +47,7 @@ class FakeResponse(io.BytesIO):
         self.close()
 
 
-def release_payload(tag="v0.3.1", *, exe_url=None, sha_url=None, names=None):
+def release_payload(tag="v0.3.2", *, exe_url=None, sha_url=None, names=None):
     exe_name, sha_name = names or (f"BWPro-{tag}.exe", f"BWPro-{tag}.exe.sha256")
     return {
         "tag_name": tag,
@@ -71,22 +71,22 @@ def opening(payload=None, *, error=None):
 
 def available_update():
     return AvailableUpdate(
-        tag="v0.3.1",
-        exe_name="BWPro-v0.3.1.exe",
+        tag="v0.3.2",
+        exe_name="BWPro-v0.3.2.exe",
         exe_url="https://cdn.example/app.exe",
-        sha256_name="BWPro-v0.3.1.exe.sha256",
+        sha256_name="BWPro-v0.3.2.exe.sha256",
         sha256_url="https://cdn.example/app.sha256",
     )
 
 
 def test_version_is_strict_numeric_and_matches_project_metadata():
-    assert VERSION == "0.3.0"
+    assert VERSION == "0.3.1"
     assert parse_version("v0.10.0") > parse_version("v0.9.9")
-    assert verify_update(VERSION, "v0.3.1") == "v0.3.1"
+    assert verify_update(VERSION, "v0.3.2") == "v0.3.2"
     for invalid in ("0.3.1", "v1.2", "v1.2.3.4", "v01.2.3", "v1.2.3-beta"):
         with pytest.raises(ValueError):
             parse_version(invalid)
-    for not_newer in ("v0.3.0", "v0.2.9"):
+    for not_newer in ("v0.3.1", "v0.3.0"):
         with pytest.raises(ValueError):
             verify_update(VERSION, not_newer)
     import tomllib
@@ -113,7 +113,7 @@ def test_release_check_handles_missing_rate_limited_and_older_releases():
 
 
 def test_release_assets_must_exactly_match_the_strict_tag():
-    found = check_for_update(opener=opening(release_payload()))
+    found = check_for_update("0.3.0", opener=opening(release_payload()))
     assert found == available_update()
 
     bad_payloads = (
@@ -141,7 +141,7 @@ def test_https_redirects_stay_https_without_downgrade():
 def test_download_streams_both_assets_and_stages_verified_exe(tmp_path):
     payload = b"new executable"
     digest = hashlib.sha256(payload).hexdigest()
-    checksum = f"{digest}  BWPro-v0.3.1.exe\n".encode()
+    checksum = f"{digest}  BWPro-v0.3.2.exe\n".encode()
     responses = {
         "https://cdn.example/app.sha256": FakeResponse([checksum[:20], checksum[20:]]),
         "https://cdn.example/app.exe": FakeResponse([payload[:3], payload[3:]]),
@@ -159,7 +159,7 @@ def test_download_streams_both_assets_and_stages_verified_exe(tmp_path):
 
 def test_bad_hash_and_interrupted_download_remove_partial_files(tmp_path):
     payload = b"not the expected executable"
-    checksum = f"{'0' * 64}  BWPro-v0.3.1.exe\n".encode()
+    checksum = f"{'0' * 64}  BWPro-v0.3.2.exe\n".encode()
 
     class Interrupted(FakeResponse):
         def read(self, size=-1):
@@ -194,7 +194,7 @@ def test_cancel_and_actual_byte_limit_clean_partial_download(tmp_path, monkeypat
     staged = tmp_path / "BWPro-v0.3.0.exe.new"
     responses = {
         "https://cdn.example/app.sha256": FakeResponse([
-            f"{hashlib.sha256(b'abc').hexdigest()}  BWPro-v0.3.1.exe\n".encode()]),
+            f"{hashlib.sha256(b'abc').hexdigest()}  BWPro-v0.3.2.exe\n".encode()]),
         "https://cdn.example/app.exe": CancelAfterFirstChunk([b"abc"]),
     }
     with pytest.raises(UpdateCancelled):
@@ -208,7 +208,7 @@ def test_cancel_and_actual_byte_limit_clean_partial_download(tmp_path, monkeypat
     staged = tmp_path / "too-large.new"
     responses = {
         "https://cdn.example/app.sha256": FakeResponse([
-            f"{hashlib.sha256(b'x' * 17).hexdigest()}  BWPro-v0.3.1.exe\n".encode()]),
+            f"{hashlib.sha256(b'x' * 17).hexdigest()}  BWPro-v0.3.2.exe\n".encode()]),
         "https://cdn.example/app.exe": FakeResponse([b"x" * 17], content_length=1),
     }
     with pytest.raises(UpdateError, match="大小上限"):
