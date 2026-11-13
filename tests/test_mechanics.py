@@ -1626,6 +1626,23 @@ def _fawn_cards(db):
         form_power=4, form_health=6, token=True)
 
 
+def test_awaken_revive_playable_when_defeated(real_game):
+    """觉醒·小鹿男含复活效果，所属式神气绝且有鬼火时可主动使用并复活。"""
+    g = real_game([100203, 100101, 100102, 100103], check_deck=False)
+    pa, _ = F.battle_setup(g, {0: 2})
+    s = pa.shikigami[0]
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 99, None)
+    g._drain_queue()
+    assert s.defeated
+    pa.orb = 1
+    card = give(g, 0, 10020306)
+    g.apply({"op": "play_card", "uid": card.uid})
+    assert not s.defeated and s.in_play
+    assert s.health == s.max_health
+    assert pa.orb == 0
+    assert card in pa.graveyard
+
+
 def test_form_death_play_revives_then_attaches(db, make_game):
     """觉醒·小鹿男（form_death_play 旗标）：持有者气绝时其形态牌可用——消耗 3 能量
     （_spend_energy 统一入口，免单/代偿同通道），使用效果前先复活持有者再正常结附；

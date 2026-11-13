@@ -183,6 +183,7 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
     """按默认 12 字/行渲染一次，再将整图等比缩放到卡面宽度的 2/3–1 倍。"""
     panel = QScrollArea(parent)
     panel.setWidgetResizable(True)
+    panel.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     if width is not None:
         panel.setFixedWidth(width)
     panel.setFrameShape(QFrame.NoFrame)
@@ -192,6 +193,7 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
     content = QWidget()
     layout = QVBoxLayout(content)
     layout.setContentsMargins(0, 0, 0, 0)
+    layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     labels = []
     root_text = str(bwpdiy_root().resolve())
     for mechanism in mechanisms:

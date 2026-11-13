@@ -939,7 +939,8 @@ class HotseatView(QWidget):
             self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
 
     def _enqueue_timeline(self) -> None:
-        entries = self.game.state.timeline[self._timeline_seen:]
+        entries = self.battle_scene.order_visual_entries(
+            self.game.state.timeline[self._timeline_seen:])
         self._timeline_seen = len(self.game.state.timeline)
         for entry in entries:
             if self._handoff_waiting and entry.get("v") == "turn_start":

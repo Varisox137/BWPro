@@ -1516,6 +1516,17 @@ def test_dynamic_stat_aura(db, make_game):
     assert b.shield == 0 and b.eff_power == 3    # 破甲消失即恢复
 
 
+def test_combat_damage_temp_grant_insert_before_burst_followup(real_game):
+    """战斗牌受伤临时触发按 insert 结算：原攻击后先结附破甲，爆能追加战斗再吃破甲。"""
+    g = real_game([100206, 100101, 100102, 100103], check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 2})
+    pa.shikigami[0].energy = 4
+    card = give(g, 0, 10020605)
+    g.apply({"op": "play_card", "uid": card.uid, "play_method": "burst"})
+    assert pb.health == 21             # 原攻击 3；追加攻击 4 + 已结附破甲 2
+    assert pb.shield == 0              # 2 破甲由追加攻击消耗，不残留到战斗结束后
+
+
 def test_destroy_on_combat_damage_transformed(db, make_game):
     """夺命型[增强]：击杀账本（kill_total，check_defeated 单点记账）≥2 后，
     该式神造成战斗伤害时消灭受伤角色——式神走 context victim、牌手走

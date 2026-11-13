@@ -182,6 +182,8 @@ def _card_data(cdef, db, config: dict) -> dict:
             if not isinstance(amount, int) or isinstance(amount, bool):
                 continue
             if step.op == "buff_power":
+                if extra.get("perm") or extra.get("scope") == "turn":
+                    continue
                 power += amount
             elif step.op == "gain_shield":
                 shield += amount

@@ -2552,7 +2552,7 @@ class Game:
                               target=TargetSpec(kind="self")))
         if not steps:
             return
-        self.queue.append(_Pending(EffectBlock(steps=steps), ExecContext(
+        self.queue.append(_Pending(EffectBlock(steps=steps, visual="awaken"), ExecContext(
             controller=pi,
             source=Ref(player=pi, shikigami=si), card=card)))
 
@@ -3176,6 +3176,10 @@ class Game:
         if group is None and horizon is not None:
             group = horizon
         event = self._stat_event(ref, group)
+        if self._ctx_stack:
+            block, ctx = self._ctx_stack[-1]
+            if block.model_extra.get("visual") == "awaken" and ctx.card is not None:
+                event["awaken"] = ctx.card.uid
         previous = next((entry for entry in reversed(self.state.timeline)
                          if entry.get("k") == "v"), None)
         if (horizon is not None and previous is not None

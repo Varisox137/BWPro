@@ -1224,6 +1224,8 @@ def test_cardart_engine_payload_mapping(qapp):
         text="[瞬发]获得1点力量、2护甲、3破甲、4能量、5耐久、6战力、7乏力、8赏金与9生命。",
         steps=[factories.Step(op="buff_power", amount=2),
                factories.Step(op="buff_power", amount=-1),
+               factories.Step(op="buff_power", amount=5, perm=True),
+               factories.Step(op="buff_power", amount=7, scope="turn"),
                factories.Step(op="gain_shield", amount=3)])
     database = factories.db_of([primary, secondary], [combat])
     config = {"name": "旧名", "description": "旧文本", "level": 1, "rarity": "R",

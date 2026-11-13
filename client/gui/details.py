@@ -131,7 +131,7 @@ class ShikigamiDetailDialog(QDialog):
         if self.main_art_pixmap is not None and not self.main_art_pixmap.isNull():
             self.main_art_label.setPixmap(self.main_art_pixmap)
             self.main_art_label.setFixedSize(self.main_art_pixmap.size())
-            cards.addWidget(self.main_art_label)
+            cards.addWidget(self.main_art_label, 0, Qt.AlignLeft | Qt.AlignTop)
         else:
             main_card = QFrame()
             main_card.setObjectName("shikigamiMainCard")
@@ -148,7 +148,7 @@ class ShikigamiDetailDialog(QDialog):
             main_label.setAlignment(Qt.AlignCenter)
             main_label.setStyleSheet("color: #f7f0dc; border: none; background: transparent;")
             main_layout.addWidget(main_label)
-            cards.addWidget(main_card)
+            cards.addWidget(main_card, 0, Qt.AlignLeft | Qt.AlignTop)
 
         self.form_card = None
         if shiki.form is not None:
@@ -157,7 +157,7 @@ class ShikigamiDetailDialog(QDialog):
                                         level_color=seat_level_color(ref.shikigami))
             self.form_card.count_label.hide()
             self.form_card.setFixedSize(self.main_art_label.size())
-            cards.addWidget(self.form_card)
+            cards.addWidget(self.form_card, 0, Qt.AlignLeft | Qt.AlignTop)
             self.column_names.append("form")
 
         panel_width = self.main_art_label.width()

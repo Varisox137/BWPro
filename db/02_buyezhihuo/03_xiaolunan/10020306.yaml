@@ -9,6 +9,7 @@ versions:
       awaken_health: 1
       rarity: SR
       level: 2
+      playable_when_defeated: true  # 气绝时可用（卡面包含复活小鹿男）
       effects:
         # 使用先复活小鹿男（不玩了啦"气绝时可用，复活"同通道）
         steps:

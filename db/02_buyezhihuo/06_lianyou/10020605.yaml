@@ -15,6 +15,7 @@ versions:
         # 对敌方角色造成伤害后使其获得 2 点破甲（gain_shield kind=fragile；
         # 绑定本次战斗的一次性临时触发，式神受害者）
         - when: on_damage
+          timing: insert
           condition: {source_shikigami: self, victim_side: enemy}
           steps:
             - {op: gain_shield, amount: 2, kind: fragile,
@@ -22,18 +23,24 @@ versions:
         # 敌方牌手受伤同样赋予（角色含牌手；on_damage 不覆盖牌手受害，
         # damaged_player 取事件受伤牌手）
         - when: on_player_damaged
+          timing: insert
           condition: {source_shikigami: self, player: opponent}
           steps:
             - {op: gain_shield, amount: 2, kind: fragile,
                target: {kind: context, key: damaged_player}}
       methods:
         # [爆能3]：额外使用'三太郎之斧'（use_card_copy：免费使用其复制，战斗牌基础
-        # 方式结算；方式 effects 为追加语义）
+        # 方式结算；delay_grant 挂到原战斗结束后，确保破甲先生效）
         - id: burst
           energy_cost: 3
           effects:
             steps:
-              - {op: use_card_copy, card_id: 10020601}
+              - op: delay_grant
+                when: on_battle_end
+                condition: {attacker_shikigami: self}
+                scope: battle
+                steps:
+                  - {op: use_card_copy, card_id: 10020601}
       text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能3]：{额外使用‘三太郎之斧’。}"
     - date: 20200423
       card_type: combat
@@ -47,6 +54,7 @@ versions:
         # 对敌方角色造成伤害后使其获得 2 点破甲（gain_shield kind=fragile；
         # 绑定本次战斗的一次性临时触发，式神受害者）
         - when: on_damage
+          timing: insert
           condition: {source_shikigami: self, victim_side: enemy}
           steps:
             - {op: gain_shield, amount: 2, kind: fragile,
@@ -54,16 +62,22 @@ versions:
         # 敌方牌手受伤同样赋予（角色含牌手；on_damage 不覆盖牌手受害，
         # damaged_player 取事件受伤牌手）
         - when: on_player_damaged
+          timing: insert
           condition: {source_shikigami: self, player: opponent}
           steps:
             - {op: gain_shield, amount: 2, kind: fragile,
                target: {kind: context, key: damaged_player}}
       methods:
         # [爆能4]：额外使用'三太郎之斧'（use_card_copy：免费使用其复制，战斗牌基础
-        # 方式结算；方式 effects 为追加语义）
+        # 方式结算；delay_grant 挂到原战斗结束后，确保破甲先生效）
         - id: burst
           energy_cost: 4
           effects:
             steps:
-              - {op: use_card_copy, card_id: 10020601}
+              - op: delay_grant
+                when: on_battle_end
+                condition: {attacker_shikigami: self}
+                scope: battle
+                steps:
+                  - {op: use_card_copy, card_id: 10020601}
       text: "对敌方角色造成伤害后，使其获得2点破甲。[爆能4]：{额外使用‘三太郎之斧’。}"

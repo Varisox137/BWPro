@@ -565,6 +565,29 @@ def format_hand_lines(game: Game, p, hand: list, with_usage: bool = True) -> lis
     return out
 
 
+def _enhance_description_suffix(game: Game, p, c) -> str | None:
+    live = _live_enhance(p, c)
+    if not live:
+        return None
+    cd = game.db.cards[c.id]
+    labels = {**_ENHANCE_OP_CN, "buff_power": "力量", "buff_health": "生命",
+              "gain_shield": "护甲"}
+    parts = []
+    for step in cd.effects.steps:
+        extra = step.model_extra or {}
+        amount = extra.get("amount")
+        if not isinstance(amount, dict) or not amount.get("enhance") or step.op not in labels:
+            continue
+        target_kind = getattr(step.target, "kind", None)
+        badge_covered = (cd.card_type == "combat"
+                         and step.op in ("buff_power", "gain_shield")
+                         and target_kind in (None, "self")
+                         and not extra.get("perm") and not extra.get("no_extract"))
+        if not badge_covered:
+            parts.append(f"{labels[step.op]}{live:+d}")
+    return f"（{'，'.join(parts)}）" if parts else None
+
+
 def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
     """联机推送的己方手牌实时信息（桌面 GUI 等远程客户端的展示数据——与
     format_hand_lines 同一批求值函数：usage_options/_card_keywords/_stats_label
@@ -575,6 +598,7 @@ def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
     - stats    数值段文本（战斗牌力量/护甲、形态身材、增强数值等，_stats_label 同口径）
     - render   BWPDIY 卡面数值负载（战斗力量/护甲、形态身材、幻境耐久含实例加成）
     - enhance  实时增强计数（无 = 0）
+    - description_suffix 未被卡面角标覆盖的实时增强数值（无 = None）
     - quest    委托条件进度标签（无 = None）
     - playable 使用条件（play_condition）当前是否满足
     - usage    使用方式枚举（Game.usage_options 原样：常规/爆能等方式与协战子选项
@@ -590,6 +614,7 @@ def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
             "stats": _stats_label(game, p, c, render=render),
             "render": render,
             "enhance": _live_enhance(p, c),
+            "description_suffix": _enhance_description_suffix(game, p, c),
             "quest": _quest_progress(game, p, cd),
             "playable": game._play_condition_met(p, cd, c),
             "usage": game.usage_options(pi, c),

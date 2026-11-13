@@ -98,8 +98,11 @@ def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, mon
     displayed = dialog.card_widget.art_label.pixmap()
     assert displayed.width() / displayed.height() == pytest.approx(263 / 512)
     assert dialog.mechanism_panel.maximumHeight() == 512
+    assert dialog.mechanism_panel.alignment() == (Qt.AlignLeft | Qt.AlignTop)
     assert dialog.mechanism_panel.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
     assert dialog.mechanism_panel.verticalScrollBar().maximum() > 0
+    assert dialog.mechanism_panel.verticalScrollBar().value() == 0
+    assert dialog.mechanism_panel.y() == dialog.card_widget.y()
     dialog.close()
 
 
@@ -119,6 +122,30 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     assert len(dialog.mechanism_labels) == 1
     assert all(not label.pixmap().isNull() for label in dialog.mechanism_labels)
     assert any("测试灵咒说明。" in item["text"] for item in dialog.status_mechanisms)
+    dialog.close()
+
+
+def test_shikigami_mechanism_columns_stay_top_aligned_and_scroll(qapp):
+    from types import SimpleNamespace
+
+    db = F.base_db()
+    game = F.mk_game(db)
+    shiki = game.current.shikigami[0]
+    shiki.keywords.append("haste")
+    for index in range(8):
+        name = f"测试灵咒{index}"
+        shiki.invocations.append({"name": name, "source": None, "player": 0})
+        db.invocations[name] = SimpleNamespace(text="超长机制说明。" * 20)
+    dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
+    dialog.show()
+    qapp.processEvents()
+    for panel in (dialog.status_panel, dialog.mechanism_panel):
+        assert panel.alignment() == (Qt.AlignLeft | Qt.AlignTop)
+        assert panel.y() == dialog.main_art_label.y()
+        assert panel.height() <= 512
+        assert panel.verticalScrollBar().value() == 0
+        assert panel.widget().layout().alignment() == (Qt.AlignLeft | Qt.AlignTop)
+    assert dialog.status_panel.verticalScrollBar().maximum() > 0
     dialog.close()
 
 

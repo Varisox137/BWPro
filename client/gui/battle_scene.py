@@ -375,7 +375,7 @@ class BattleCardItem(QGraphicsObject):
         draw_stat(hp, "health", self.health, 34, 16)
         if self.shield:
             shield = QRectF(hp.left(), hp.top() - 31, 52, 32)
-            draw_stat(shield, "shield", self.shield, 30, 14)
+            draw_stat(shield, "weak" if self.shield < 0 else "shield", self.shield, 30, 14)
 
         side_x = avatar.right() + 8
         orb_size = 14
@@ -1331,6 +1331,30 @@ class BattleScene(QGraphicsScene):
             self._visual_queue.pop(index)
             self._start_visual_event(event)
 
+    @staticmethod
+    def order_visual_entries(entries: list[dict]) -> list[dict]:
+        uses = {entry.get("u") for entry in entries if entry.get("k") == "a"}
+        awakened = {}
+        for entry in entries:
+            uid = entry.get("awaken")
+            if entry.get("v") == "stat" and uid in uses:
+                if uid not in awakened:
+                    awakened[uid] = dict(entry)
+                else:
+                    awakened[uid]["r"] = entry["r"]
+        if not awakened:
+            return list(entries)
+        awakened_uids = set(awakened)
+        ordered = []
+        for entry in entries:
+            if entry.get("v") == "stat" and entry.get("awaken") in awakened_uids:
+                continue
+            ordered.append(entry)
+            uid = entry.get("u") if entry.get("k") == "a" else None
+            if uid in awakened:
+                ordered.append(awakened.pop(uid))
+        return ordered
+
     def play_visual_event(self, event: dict) -> None:
         kind = event.get("v")
         if kind not in ("defeated", "luck", "luck_dice", "luck_reroll", "luck_result",
@@ -1630,8 +1654,16 @@ class BattleScene(QGraphicsScene):
             item.payload = option["id"]
             item.playable = option["ok"]
             item.setOpacity(1 if option["ok"] else 0.6)
-            burst = option["energy"] if type(option["energy"]) is int and option["energy"] > 0 \
-                else None
+            energy = option["energy"]
+            method = next((method for method in cdef.methods
+                           if method.id == option["id"]), None)
+            if energy == "X" and self.game is not None:
+                seat = card_owner_seat(self.game, self.game.current, cdef)
+                burst = self.game.current.shikigami[seat].energy if seat is not None else 0
+            else:
+                is_burst = method is not None and method.energy_cost is not None
+                burst = (energy if type(energy) is int and (energy > 0 or is_burst)
+                         else None)
             item.set_art(card_pixmap(cdef, self.db, cache_context=art_context,
                                      height=MULLIGAN_HAND_SIZE.height(), burst=burst))
             item.setPos(x, 280)
@@ -1640,9 +1672,8 @@ class BattleScene(QGraphicsScene):
             self.addItem(item)
             self.usage_items.append(item)
 
-            energy = f"　能量 {option['energy']}" if option["energy"] else ""
-            reason = "" if option["ok"] else f"\n不可用：{option['reason'] or '当前不可用'}"
-            label = QGraphicsTextItem(f"{option['label']}　鬼火 {option['cost']}{energy}{reason}")
+            reason = "" if option["ok"] else f"不可用：{option['reason'] or '当前不可用'}"
+            label = QGraphicsTextItem(reason)
             label.setFont(QFont("Microsoft YaHei", 12))
             label.setDefaultTextColor(QColor(self.text_color))
             label.setTextWidth(MULLIGAN_HAND_SIZE.width())
@@ -1729,6 +1760,7 @@ class BattleScene(QGraphicsScene):
                     and previous_timeline is not None
                     and timeline[:len(previous_timeline)] == previous_timeline):
                 online_entries = timeline[len(previous_timeline):]
+        online_entries = self.order_visual_entries(online_entries)
         structured_moves = {(entry["p"], entry["s"]): entry.get("zone")
                             for entry in online_entries if entry.get("v") == "move"}
         pending_hand = {entry["u"]: entry for entry in online_entries

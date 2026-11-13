@@ -782,7 +782,18 @@ def test_player_item_paints_health_and_signed_shield_icons(qapp, view, monkeypat
     item.paint(painter, None)
     painter.end()
     assert "stats/health.png" in used
+    assert "stats/weak.png" in used
+    assert "stats/shield.png" not in used
+
+    used.clear()
+    item.shield = 3
+    image = QImage(240, 150, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    item.paint(painter, None)
+    painter.end()
     assert "stats/shield.png" in used
+    assert "stats/weak.png" not in used
 
 
 def test_player_health_icon_preserves_native_aspect(qapp, view, monkeypatch):
@@ -2318,6 +2329,33 @@ def test_card_detail_passes_structured_render_stats(qapp, db, monkeypatch):
     dialog.close()
 
 
+def test_card_detail_appends_only_enhance_missing_from_badges(qapp, db, view, monkeypatch):
+    spell_id, combat_id = 10010151, 10010152
+    db.cards[spell_id] = F.card(spell_id, token=True, steps=[
+        F.Step(op="damage", amount={"enhance": True, "base": 5},
+               target=F.T(kind="all", pool="projectile"))])
+    db.cards[combat_id] = F.card(combat_id, token=True, card_type="combat", steps=[
+        F.Step(op="buff_power", amount={"enhance": True, "base": 1},
+               target=F.T(kind="self"))])
+    start(view, mulligan=False)
+    spell = F.give(view.game, 0, spell_id)
+    combat = F.give(view.game, 0, combat_id)
+    view.game.current.card_mods[spell_id] = {"enhance": 2}
+    view.game.current.card_mods[combat_id] = {"enhance": 2}
+    suffixes = {}
+
+    def capture_pixmap(cdef, _db, **kwargs):
+        suffixes[cdef.id] = kwargs.get("description_suffix")
+        return QPixmap(263, 512)
+
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", capture_pixmap)
+    monkeypatch.setattr(QDialog, "exec", lambda _dialog: QDialog.Rejected)
+    view.show_card_detail(spell)
+    view.show_card_detail(combat)
+    assert suffixes[spell_id] == "（伤害+2）"
+    assert suffixes[combat_id] is None
+
+
 def test_awaken_detail_separates_permanent_and_form_base(qapp, view, monkeypatch):
     start(view, mulligan=False)
     shiki = view.game.state.players[0].shikigami[0]
@@ -3274,15 +3312,27 @@ def test_play_method_and_second_target(qapp, db, view):
     assert view.pending_command is None
 
 
-def test_burst_usage_option_renders_energy_badge(qapp, view, monkeypatch):
+def test_burst_usage_options_render_live_values_without_cost_text(qapp, view, monkeypatch):
+    start(view, mulligan=False)
+    view.game.current.shikigami[0].energy = 3
     seen = []
     monkeypatch.setattr("client.gui.battle_scene.card_pixmap",
                         lambda *_args, **kwargs: seen.append(kwargs))
-    option = {"id": "burst", "label": "爆能", "cost": 1, "energy": 2,
-              "ok": True, "reason": None}
-    cdef = view.db.cards[min(view.db.cards)]
-    view.battle_scene.show_usage_options([option], [cdef])
-    assert seen[0]["burst"] == 2
+    options = [
+        {"id": "burst", "label": "爆能2", "cost": 1, "energy": 2,
+         "ok": True, "reason": None},
+        {"id": "burst", "label": "爆能X", "cost": 1, "energy": "X",
+         "ok": True, "reason": None},
+        {"id": "burst", "label": "爆能0", "cost": 1, "energy": 0,
+         "ok": True, "reason": None},
+    ]
+    cdef = F.card(10010151, token=True, methods=[F.method("burst", energy_cost=0)])
+    view.battle_scene.show_usage_options(options, [cdef, cdef, cdef])
+    assert [call["burst"] for call in seen] == [2, 3, 0]
+    labels = [label.toPlainText() for label in view.battle_scene.usage_labels]
+    assert all(not text for text in labels)
+    assert all(not any(word in text for word in ("爆能", "鬼火", "能量"))
+               for text in labels)
 
 
 def test_usage_options_show_all_central_cards_and_reasons(qapp, db, view):
@@ -4536,6 +4586,36 @@ def test_assault_and_response_animations_use_viewer_sides_and_order(qapp, view):
     qapp.processEvents()
     card_animation = scene._card_use_animations[0]
     assert scene._card_use_sources[card_animation]["big_pos"].x() > scene.sceneRect().center().x()
+
+
+def test_awaken_stats_refresh_together_before_card_effect(qapp, db, view, monkeypatch):
+    awaken_id = 10010153
+    db.cards[awaken_id] = F.card(
+        awaken_id, token=True, subtype="awaken", level=2,
+        awaken_power=1, awaken_health=1,
+        abilities=[F.block(
+            F.Step(op="damage", amount=1, target=F.T(kind="all", pool="enemy_player")),
+            when="on_card_played")])
+    start(view, mulligan=False)
+    view.game.current.shikigami[0].level = 2
+    card = F.give(view.game, 0, awaken_id)
+    played = []
+    original = view.battle_scene.play_visual_event
+
+    def capture(event):
+        played.append(dict(event))
+        return original(event)
+
+    monkeypatch.setattr(view.battle_scene, "play_visual_event", capture)
+    assert view.play_card(card.uid)
+    view.timeline_timer.stop()
+    stats = [entry for entry in played if entry.get("v") == "stat"
+             and (entry.get("p"), entry.get("s")) == (0, 0)]
+    damage = next(entry for entry in played if entry.get("v") == "damage")
+    assert len(stats) == 1, played
+    assert played.index(stats[0]) < played.index(damage)
+    assert stats[0]["r"]["power"] == 4
+    assert stats[0]["r"]["health"] == stats[0]["r"]["max_health"] == 5
 
 
 def test_combat_card_stats_refresh_between_card_and_move(qapp, db, view, monkeypatch):

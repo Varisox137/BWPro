@@ -73,7 +73,8 @@ class CardWidget(QFrame):
 
     def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
                  display=None, level_color=None, art_context: dict | None = None,
-                 art_height: int | None = None, frame_variant: str | None = None):
+                 art_height: int | None = None, frame_variant: str | None = None,
+                 description_suffix: str | None = None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -106,7 +107,8 @@ class CardWidget(QFrame):
         self.stats_label.setObjectName("cardStats")
         self.stats_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.stats_label)
-        self.text_label = QLabel(cdef.text or "（无效果文本）")
+        text = (cdef.text or "（无效果文本）") + (description_suffix or "")
+        self.text_label = QLabel(text)
         self.text_label.setObjectName("cardText")
         self.text_label.setWordWrap(True)
         self.text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -114,6 +116,8 @@ class CardWidget(QFrame):
         self._art_db = db
         self._art_height = art_height
         self._art_options = {"display": display, "level_color": level_color}
+        if description_suffix is not None:
+            self._art_options["description_suffix"] = description_suffix
         if frame_variant is not None:
             self._art_options["frame_variant"] = frame_variant
         if art_context is not None:
@@ -313,8 +317,10 @@ class CardDetailDialog(QDialog):
         layout.setSpacing(8)
         self.detail_top = QHBoxLayout()
         self.detail_top.setSpacing(DETAIL_COLUMN_SPACING)
-        self.card_widget = CardWidget(cdef, db=db, display=(runtime or {}).get("render"),
-                                      level_color=level_color, art_height=512)
+        self.card_widget = CardWidget(
+            cdef, db=db, display=(runtime or {}).get("render"),
+            level_color=level_color, art_height=512,
+            description_suffix=(runtime or {}).get("description_suffix"))
         self.card_widget.count_label.hide()
         art_width = self.card_widget.art_width or 396
         panel_width = art_width + 24
