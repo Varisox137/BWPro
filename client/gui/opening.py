@@ -95,6 +95,8 @@ def opening_order_pixmap(game, viewer: int, scene_width: int = SCENE_WIDTH,
         name = "going_first" if first else "going_second"
         card = ui_pixmap(f"animations/{name}.png")
         if not card.isNull():
+            card = card.scaled(round(card.width() * 0.7), round(card.height() * 0.7),
+                               Qt.KeepAspectRatio, Qt.SmoothTransformation)
             painter.drawPixmap(round(scene_width / 2 - card.width() / 2),
                                round(center_y - card.height() / 2), card)
     if include_badge:

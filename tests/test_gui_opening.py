@@ -73,6 +73,7 @@ def test_opening_sequence_uses_six_fade_stages_and_covers_battle(qapp, db, make_
     scene = BattleScene(db)
     scene.show_opening_sequence(make_game(mulligan=True), 0)
     assert scene._opening_stage == "preview"
+    assert scene._opening_duration == 1000
     assert scene.opening_background.isVisible()
     assert scene.opening_item.opacity() == 0
     assert not scene.opening_accent_item.isVisible()
@@ -86,11 +87,28 @@ def test_opening_sequence_uses_six_fade_stages_and_covers_battle(qapp, db, make_
     assert not scene.opening_background.isVisible()
 
 
-def test_opening_assets_are_not_rescaled(qapp, make_game, monkeypatch):
+def test_opening_going_cards_scale_to_70_percent(qapp, make_game, monkeypatch):
+    from client.gui import opening
+
+    original_scaled = QPixmap.scaled
+    calls = []
+
+    def record_scaled(pixmap, *args, **kwargs):
+        calls.append(args[:2])
+        return original_scaled(pixmap, *args, **kwargs)
+
+    monkeypatch.setattr(QPixmap, "scaled", record_scaled)
+    monkeypatch.setattr(opening, "ui_pixmap", _solid)
+    assert not opening.opening_order_pixmap(
+        make_game(mulligan=True), 0, include_badge=False).isNull()
+    assert calls == [(70, 70), (70, 70)]
+
+
+def test_opening_preview_and_badge_assets_are_not_rescaled(qapp, make_game, monkeypatch):
     from client.gui import opening
 
     def unexpected_scale(*_args, **_kwargs):
-        raise AssertionError("开局素材不得缩放")
+        raise AssertionError("阵容与视角先后手素材不得缩放")
 
     monkeypatch.setattr(QPixmap, "scaled", unexpected_scale)
     monkeypatch.setattr(QPixmap, "scaledToHeight", unexpected_scale)
@@ -98,4 +116,4 @@ def test_opening_assets_are_not_rescaled(qapp, make_game, monkeypatch):
     monkeypatch.setattr(opening, "ui_pixmap", _solid)
     game = make_game(mulligan=True)
     assert not opening.opening_preview_pixmap(game, 0).isNull()
-    assert not opening.opening_order_pixmap(game, 0).isNull()
+    assert not opening.opening_order_badge_pixmap(game, 0).isNull()

@@ -859,7 +859,7 @@ class BattleScene(QGraphicsScene):
         self.banner_item.hide()
         self.banner_pixmap_item.hide()
 
-    def show_opening_sequence(self, game, viewer: int, duration: int = 2400) -> None:
+    def show_opening_sequence(self, game, viewer: int, duration: int = 6000) -> None:
         """阵容→战字→渐隐→先后手→视角字样→渐隐，期间遮住常规界面。"""
         self.hide_banner()
         self._opening_game = game
