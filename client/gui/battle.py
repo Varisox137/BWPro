@@ -534,7 +534,9 @@ class HotseatView(QWidget):
             self.battle_scene.ready_item.hide()
             position = self.battle_scene.ready_item.pos()
         else:
-            position = self.battle_scene.end_turn_item.pos() + QPointF(-112, 35)
+            offset_y = (self.battle_scene.end_turn_item.size().height()
+                        - self.battle_scene.handoff_item.size().height()) / 2
+            position = self.battle_scene.end_turn_item.pos() + QPointF(-112, offset_y)
         self.battle_scene.handoff_item.setPos(position)
         self.battle_scene.handoff_item.show()
         self._update_input_widgets()

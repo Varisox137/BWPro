@@ -38,7 +38,7 @@ def test_log_file_debug_output_and_cleanup(tmp_path):
     log_dir.mkdir()
     old = log_dir / "bwpro_20000101_000000_old.log"
     old.write_text("旧日志", encoding="utf-8")
-    cutoff = time.time() - 15 * 86400
+    cutoff = time.time() - 16 * 86400
     os.utime(old, (cutoff, cutoff))
     for index in range(35):
         path = log_dir / f"bwpro_20260101_0000{index:02d}_test.log"
@@ -54,12 +54,15 @@ def test_log_file_debug_output_and_cleanup(tmp_path):
         assert len(list(log_dir.glob("bwpro_*.log"))) <= 10
         logging.getLogger("test.debug").debug("调试内容")
         logging.getLogger("PIL.PngImagePlugin").debug("STREAM 调试噪声")
+        logging.getLogger("uvicorn.error").debug('PING 127.0.0.1 [True]')
         for handler in logging.getLogger().handlers:
             handler.flush()
         contents = path.read_text(encoding="utf-8")
+        assert logging.getLogger("uvicorn.error").level == logging.INFO
         assert "DEBUG" in contents
         assert "调试内容" in contents
         assert "STREAM 调试噪声" not in contents
+        assert "PING 127.0.0.1" not in contents
         print("控制台同步输出")
         for handler in logging.getLogger().handlers:
             handler.flush()
@@ -68,27 +71,35 @@ def test_log_file_debug_output_and_cleanup(tmp_path):
         restore_output()
 
 
-def test_log_cleanup_applies_age_and_count_to_both_file_patterns(tmp_path):
+def test_log_cleanup_applies_age_and_count_per_log_category(tmp_path):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    expired = time.time() - 15 * 86400
-    for name in ("bwpro-20000101-000000-1.log", "bwpro_20000101_000000_old.log"):
+    expired = time.time() - 16 * 86400
+    for name in ("bwpro-20000101-000000-1.log", "bwpro_20000101_000000_old.log",
+                 "bwpro-launcher-20000101-000000-1.log"):
         path = log_dir / name
         path.write_text("过期", encoding="utf-8")
         os.utime(path, (expired, expired))
-    for index in range(35):
+    for index in range(15):
         name = (f"bwpro-20260101-0000{index:02d}-{index}.log" if index % 2
                 else f"bwpro_20260101_0000{index:02d}_test.log")
         path = log_dir / name
         path.write_text(str(index), encoding="utf-8")
         os.utime(path, (time.time() - index, time.time() - index))
+        launcher = log_dir / f"bwpro-launcher-20260101-0000{index:02d}-{index}.log"
+        launcher.write_text(str(index), encoding="utf-8")
+        os.utime(launcher, (time.time() - index, time.time() - index))
     try:
         current = configure_logging("test", log_dir=log_dir)
-        survivors = list(log_dir.glob("bwpro-*.log")) + list(log_dir.glob("bwpro_*.log"))
-        assert len(survivors) <= 10
-        assert current in survivors
-        assert all("20000101" not in path.name for path in survivors)
-        assert not (log_dir / "bwpro_20260101_000034_test.log").exists()
+        application = [path for path in log_dir.glob("bwpro*.log")
+                       if not path.name.startswith("bwpro-launcher-")]
+        launchers = list(log_dir.glob("bwpro-launcher-*.log"))
+        assert len(application) == 10
+        assert len(launchers) == 10
+        assert current in application
+        assert all("20000101" not in path.name for path in application + launchers)
+        assert not (log_dir / "bwpro_20260101_000014_test.log").exists()
+        assert not (log_dir / "bwpro-launcher-20260101-000014-14.log").exists()
     finally:
         restore_output()
 

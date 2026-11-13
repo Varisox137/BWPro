@@ -643,7 +643,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 ### 统一应用日志
 
 - 桌面客户端、CLI、联机服务端及更新流程统一使用 `core.logging_config.configure_logging` 和 Python `logging`，不再按对局创建独立日志文件；同一进程内多个房间共用当前应用日志，房间日志行携带房间上下文。
-- 源码运行默认写入项目 `logs/bwpro-YYYYMMDD-HHMMSS-PID.log`；冻结版写入 `~/.bwpro/logs/`。启动清理同时处理兼容的 `bwpro-*.log` 与 `bwpro_*.log`，保留最近 7 天且最多 10 份。
+- 源码运行默认写入项目 `logs/bwpro-YYYYMMDD-HHMMSS-PID.log`；冻结版写入 `~/.bwpro/logs/`。启动清理同时处理兼容的 `bwpro-*.log` 与 `bwpro_*.log`，保留最近 15 天内的应用日志与 `bwpro-launcher-*.log` 启动器日志各最多 10 份。`uvicorn.error` 使用 INFO 级别，过滤 WebSocket PING/PONG 心跳 DEBUG 噪声。
 - 文件记录 DEBUG 及以上内容；stdout/stderr 经 tee 原样保留终端行为并写入日志，未处理的主线程与子线程异常也进入日志。日志提取码只直接写交互终端，不进入应用日志或 launcher 的 tee；无交互终端时仅打印提取码文件路径。
 
 ### 运行时追踪

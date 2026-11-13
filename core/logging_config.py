@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 LOG_PATTERNS = ("bwpro-*.log", "bwpro_*.log")
-_MAX_LOG_AGE_SECONDS = 7 * 86400
+_MAX_LOG_AGE_SECONDS = 15 * 86400
 _MAX_LOG_FILES = 10
 _original_stdout = None
 _original_stderr = None
@@ -118,9 +118,9 @@ def restore_output() -> None:
 
 
 def _cleanup_logs(log_dir: Path) -> None:
-    """同时应用 7 天时限与 10 份上限（为即将创建的新日志预留 1 份）。"""
+    """保留 15 天内的应用与 launcher 日志各 10 份（为新应用日志预留 1 份）。"""
     now = datetime.now().timestamp()
-    candidates = []
+    candidates = {"application": [], "launcher": []}
     for pattern in LOG_PATTERNS:
         for path in log_dir.glob(pattern):
             try:
@@ -133,16 +133,19 @@ def _cleanup_logs(log_dir: Path) -> None:
                 except OSError:
                     logging.getLogger(__name__).warning("无法清理旧日志：%s", path)
             else:
-                candidates.append((stat.st_mtime, path))
-    survivors = sorted(candidates, reverse=True)[:_MAX_LOG_FILES - 1]
-    for _mtime, path in sorted(candidates, reverse=True)[_MAX_LOG_FILES - 1:]:
-        try:
-            path.unlink()
-        except OSError:
-            logging.getLogger(__name__).warning("无法清理超额日志：%s", path)
-    for _mtime, path in survivors:
-        if path.exists():
-            restrict_private_permissions_best_effort(path)
+                category = "launcher" if path.name.startswith("bwpro-launcher-") else "application"
+                candidates[category].append((stat.st_mtime, path))
+    for category, entries in candidates.items():
+        limit = _MAX_LOG_FILES - (1 if category == "application" else 0)
+        survivors = sorted(entries, reverse=True)[:limit]
+        for _mtime, path in sorted(entries, reverse=True)[limit:]:
+            try:
+                path.unlink()
+            except OSError:
+                logging.getLogger(__name__).warning("无法清理超额日志：%s", path)
+        for _mtime, path in survivors:
+            if path.exists():
+                restrict_private_permissions_best_effort(path)
 
 
 def _exception_logger(logger: logging.Logger):
@@ -175,6 +178,7 @@ def configure_logging(component: str, log_dir: Path | None = None) -> Path:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
     logging.getLogger("PIL").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.error").setLevel(logging.INFO)
     for handler in list(root.handlers):
         if getattr(handler, "_bwpro_handler", False):
             root.removeHandler(handler)

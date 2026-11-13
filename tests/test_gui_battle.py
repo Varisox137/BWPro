@@ -3705,6 +3705,8 @@ def test_viewer_handoff_freezes_commands_hands_choices_and_timeline(qapp, view):
     assert view.handoff_dialog is None
     assert scene.handoff_item.isVisible()
     assert scene.handoff_item.x() < scene.end_turn_item.x()
+    assert (scene.handoff_item.y() + scene.handoff_item.size().height() / 2
+            == scene.end_turn_item.y() + scene.end_turn_item.size().height() / 2)
     assert view.handoff_button.text() == "切换玩家"
     assert not scene_items(view, "hand")
     assert view.choice_dialog is None
