@@ -174,7 +174,7 @@ class ShikigamiCodexView(QWidget):
         groups = {}
         selected_item = None
         for definition in self.pool:
-            pack_number = str(definition.id)[2:4]
+            pack_number = str(definition.id)[1:4]
             if pack is not None and pack_number != pack:
                 continue
             if faction != "全部派系" and definition.faction != faction:

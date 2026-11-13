@@ -66,8 +66,8 @@ def scaffold_shikigami(
     if faction not in _FACTION_BY_COLOR.values():
         raise ValueError(f"未知派系 {faction}（{sorted(_FACTION_BY_COLOR.values())}）")
     if kind == "shikigami":
-        if not 100_000 <= id <= 199_999:
-            raise ValueError("式神 id 须为 6 位 1avvss")
+        if not 100_000 <= id <= 999_999:
+            raise ValueError("式神 id 须为 6 位 avvvss（首位异画，默认 1）")
         if not slug:
             raise ValueError("须给 --slug（式神名拼音，用于目录名）")
         out_dir = root / pack_dir_name(id) / shiki_dir_name(id, slug)

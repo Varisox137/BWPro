@@ -118,7 +118,7 @@ def _pack_groups(pool: list) -> list[tuple[str, list]]:
     """可构筑式神按版本包分组（db.packs.PACKS 登记序；空包不列出）。"""
     groups = []
     for num in PACKS:
-        members = [d for d in pool if str(d.id)[2:4] == num]
+        members = [d for d in pool if str(d.id)[1:4] == num]
         if members:
             groups.append((PACK_NAMES.get(num, num), members))
     return groups

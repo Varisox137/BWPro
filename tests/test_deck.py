@@ -44,8 +44,8 @@ def test_origin_conflict(db):
 
 
 def test_neutral_banned(db):
-    db.cards[99990001] = F.card(99990001, shikigami=None)
-    errors = validate_deck(db, F.TEAM, F.deck_of(*F.TEAM) + [99990001])
+    db.cards[19990001] = F.card(19990001, shikigami=None)
+    errors = validate_deck(db, F.TEAM, F.deck_of(*F.TEAM) + [19990001])
     assert any("中立牌" in e for e in errors)
 
 

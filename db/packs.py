@@ -1,6 +1,6 @@
 """版本包目录约定：卡牌/式神 YAML 统一存放于 db/<pack>/<seq>_<slug>/。
 
-- <pack> = 2 位版本包编号 + 拼音名（式神/卡牌 id 第 3-4 位决定所属版本包），
+- <pack> = 2 位目录前缀 + 拼音名（id 第 2-4 位的三位版本包编号映射到该前缀），
   编号与目录名的对应关系登记在 PACKS；引入新版本包时先在此登记。
 - <seq>_<slug> = 包内式神编号（id 末两位）+ 式神名拼音（如 01_bailang）。
 - 目录内统一存放 6 位式神 id 的 yaml 与其所有卡牌的 8 位 id yaml
@@ -12,31 +12,31 @@ from __future__ import annotations
 from pathlib import Path
 
 PACKS = {
-    "00": "beginner",      # 新手包
-    "01": "jingdian",      # 经典包
-    "02": "buyezhihuo",    # 不夜之火
-    "03": "yueyehuanxiang",  # 月夜幻响
-    "04": "canghaidaoming",  # 沧海刀鸣（已完结：10 式神全部落地去标）
-    "05": "jiyunyuanjie",  # 吉运缘结（骨架；版本日期 20201224）
+    "000": "beginner",      # 新手包
+    "001": "jingdian",      # 经典包
+    "002": "buyezhihuo",    # 不夜之火
+    "003": "yueyehuanxiang",  # 月夜幻响
+    "004": "canghaidaoming",  # 沧海刀鸣（已完结：10 式神全部落地去标）
+    "005": "jiyunyuanjie",  # 吉运缘结（骨架；版本日期 20201224）
 }
 
 # 版本包中文名（卡组构筑二级目录等展示用；编号与 PACKS 一致）
 PACK_NAMES = {
-    "00": "新手包",
-    "01": "经典包",
-    "02": "不夜之火",
-    "03": "月夜幻响",
-    "04": "沧海刀鸣",
-    "05": "吉运缘结",
+    "000": "新手包",
+    "001": "经典包",
+    "002": "不夜之火",
+    "003": "月夜幻响",
+    "004": "沧海刀鸣",
+    "005": "吉运缘结",
 }
 
 
 def pack_dir_name(sid: int) -> str:
-    """6 位式神 id → 版本包目录名（id 第 3-4 位为版本包编号）。"""
-    num = str(sid)[2:4]
+    """6 位式神 id 第 2-4 位的三位包号 → 现有两位前缀目录。"""
+    num = str(sid)[1:4]
     if num not in PACKS:
         raise ValueError(f"未知版本包编号 {num}（式神 {sid}；请先在 db/packs.py 登记）")
-    return f"{num}_{PACKS[num]}"
+    return f"{int(num):02d}_{PACKS[num]}"
 
 
 def shiki_dir_name(sid: int, slug: str) -> str:

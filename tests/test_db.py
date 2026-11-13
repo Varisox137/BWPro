@@ -85,13 +85,23 @@ def test_validate_summon_rules(db):
 
 
 def test_validate_neutral_format(db):
-    """中立牌 id 须为 9avvvvvv（9 + 1 位异画位 + 6 位数字，自 999999 递减）。"""
-    db.cards[10010196] = F.card(10010196, shikigami=None)       # 中立但首位不是 9
+    """中立牌 id 为 a999xxxx：首位异画、999 版本包、4 位递增序号。"""
+    db.cards[90999999] = F.card(90999999, shikigami=None)       # 旧中立牌号段
     errors = db.validate()
-    assert any("9avvvvvv" in e for e in errors)
-    del db.cards[10010196]
-    db.cards[90999999] = F.card(90999999, shikigami=None)       # 默认异画首个中立 id
+    assert any("a999xxxx" in e for e in errors)
+    del db.cards[90999999]
+    db.cards[19990001] = F.card(19990001, shikigami=None)
+    db.cards[29990002] = F.card(29990002, shikigami=None)       # 中立牌异画
     assert not db.validate()
+
+
+def test_alt_art_uses_first_id_digit_for_shikigami_and_cards(db):
+    from db.packs import pack_dir_name
+
+    db.shikigami[200101] = F.shiki(200101)
+    db.cards[20010101] = F.card(20010101, shikigami=200101)
+    assert not db.validate()
+    assert pack_dir_name(200101) == "01_jingdian"
 
 
 def test_validate_token_suffix(db):

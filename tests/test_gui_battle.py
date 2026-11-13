@@ -200,7 +200,7 @@ def test_scene_hand_order_reveal_and_overlay(qapp, view):
 
 
 def test_own_hand_display_sort_preserves_acquisition_sequence(qapp, db, view):
-    neutral = F.card(90000001, shikigami=None, token=True)
+    neutral = F.card(19990001, shikigami=None, token=True)
     db.cards[neutral.id] = neutral
     start(view, mulligan=False)
     own = view.game.current

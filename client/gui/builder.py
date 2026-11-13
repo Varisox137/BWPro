@@ -123,7 +123,7 @@ class ShikigamiDialog(QDialog):
         self.tree.clear()
         query = self.search_edit.text().strip()
         for number, pack in PACKS.items():
-            members = [d for d in self.pool if str(d.id)[2:4] == number
+            members = [d for d in self.pool if str(d.id)[1:4] == number
                        and (not query or query == d.name)]
             if not members:
                 continue

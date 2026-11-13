@@ -24,7 +24,7 @@ from db.schema import (
     EXCLUSIVE_SUBTYPES,
     FACTIONS,
     KEYWORDS,
-    NEUTRAL_PREFIX,
+    NEUTRAL_PACK,
     RARITIES,
     SUBTYPES,
     CardDef,
@@ -196,8 +196,8 @@ class CardDatabase:
         for s in self.shikigami.values():
             where = f"式神 {s.id}《{s.name}》"
             if s.kind == "shikigami":
-                if not 100_000 <= s.id <= 199_999:
-                    errors.append(f"{where}: 式神 id 须为 1avvss（1 + 1 位异画位 + 2 位卡包 + 2 位序号）")
+                if not 100_000 <= s.id <= 999_999:
+                    errors.append(f"{where}: 式神 id 须为 avvvss（异画位 + 3 位卡包 + 2 位序号，异画默认 1）")
             else:  # summon/transform/replace：8 位 = 从属式神 id + 序号（衍生物/变形物/替换物从 99 开始递减分配；结构与卡牌相同）
                 owner = self.shikigami.get(s.id // 100)
                 if not 10_000_000 <= s.id <= 99_999_999:
@@ -215,8 +215,8 @@ class CardDatabase:
         for c in self.cards.values():
             where = f"卡牌 {c.id}《{c.name}》"
             if c.shikigami is None:
-                if not 90_000_000 <= c.id <= 99_999_999 or c.id // 10_000_000 != NEUTRAL_PREFIX:
-                    errors.append(f"{where}: 中立牌 id 须为 9avvvvvv（9 + 1 位异画位 + 6 位数字，自 999999 递减）")
+                if not 10_000_000 <= c.id <= 99_999_999 or (c.id // 10_000) % 1000 != NEUTRAL_PACK:
+                    errors.append(f"{where}: 中立牌 id 须为 a999xxxx（异画位 + 版本包 999 + 4 位递增序号）")
             else:
                 if c.shikigami not in self.shikigami:
                     errors.append(f"{where}: 所属式神 {c.shikigami} 不存在")

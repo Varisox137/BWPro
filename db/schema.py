@@ -1,12 +1,12 @@
 """卡牌/式神静态数据的 schema 与兼容纪律。
 
-1. id 号段约定（loader 会校验一致性；预留 GUI/美术资产——异画位区分同一数据的不同卡面）：
-   - 式神：6 位数字 1avvss（'1' + 1 位异画位 a（'0' = 默认异画）+ 2 位版本资料包 vv
+1. id 号段约定（loader 会校验一致性；异画位区分同一数据的不同卡面）：
+   - 式神：6 位数字 avvvss（异画位 a（1 = 默认卡面）+ 3 位版本资料包 vvv
      + 2 位包内式神序号 ss）
-   - 卡牌：8 位数字 1avvvvcc（6 位式神 id + 2 位卡牌序号 cc，异画位在式神段内）：
+   - 卡牌：8 位数字 avvvsscc（6 位式神 id + 2 位卡牌序号 cc，异画位在式神段首位）：
      可构筑卡牌 01-08；衍生卡（token）从 51 开始递增；衍生物（召唤物）从 99 开始递减；
      协战牌双式神从属，规则见 docs/rules.md 第十四/十五章。末两位的分配约定保持不变。
-   - 中立牌（无从属式神，实质为系统/效果生成的衍生卡）：8 位数字 9avvvvvv
+   - 中立牌（无从属式神，实质为系统/效果生成的衍生卡）：8 位数字 a999xxxx
      （'9' + 1 位异画位 + 6 位数字，默认异画自 90999999 开始递减分配），无等级
 2. 平衡性多版本：yaml 顶层只保留 id / name / versions 三项，全部规则数据存放在
    versions.history 的版本快照中——每条 = date（8 位日期 YYYYMMDD）+ 该版本的
@@ -118,7 +118,7 @@ FACTION_COLORS = {"红莲": "red", "紫岩": "purple", "青岚": "blue", "苍叶
 RARITIES = frozenset({"R", "SR", "SSR"})  # 良 / 优 / 极（抽卡/账号系统预留）
 # 觉醒牌 = 任意主类型 + tags 含 "awaken"；保留字面量即可，无需单独常量。
 
-NEUTRAL_PREFIX = 9  # 中立牌 id 首位（9avvvvvv：9 + 1 位异画位 + 6 位数字）
+NEUTRAL_PACK = 999  # 中立牌保留版本包；id 为 a999xxxx（首位异画，默认 1）
 
 
 def check_version_date(v: int) -> int:
@@ -381,9 +381,9 @@ class ShikigamiDef(BaseModel):
     @field_validator("id")
     @classmethod
     def _v_id(cls, v: int) -> int:
-        # 式神 6 位（1xxxyy）或召唤物 8 位；7 位非法
+        # 式神 6 位（avvvss，首位异画默认 1）或召唤物 8 位；7 位非法
         if not (100_000 <= v <= 999_999 or 10_000_000 <= v <= 99_999_999):
-            raise ValueError("式神 id 须为 6 位（1xxxyy）或 8 位（召唤物）；7 位 id 非法")
+            raise ValueError("式神 id 须为 6 位（avvvss）或 8 位（召唤物）；7 位 id 非法")
         return v
 
     @field_validator("version")

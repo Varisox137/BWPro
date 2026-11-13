@@ -321,10 +321,10 @@ def test_zero_damage_aborts_resolution(db, make_game):
 
 def test_neutral_card(db, make_game):
     """中立牌：无从属式神、无等级，可正常使用。"""
-    db.cards[99990001] = F.card(99990001, shikigami=None, steps=[F.Step(op="draw", count=1)])
+    db.cards[19990001] = F.card(19990001, shikigami=None, steps=[F.Step(op="draw", count=1)])
     g = make_game()
     a = g.state.players[0]
-    c = give(g, 0, 99990001)
+    c = give(g, 0, 19990001)
     before = len(a.hand)
     g.apply({"op": "play_card", "uid": c.uid})
     assert len(a.hand) == before                           # 用 1 抽 1

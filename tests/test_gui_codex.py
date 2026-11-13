@@ -36,8 +36,8 @@ def view(qapp, db):
 
 def test_overview_filters_and_shikigami_home(qapp, db, view):
     assert "标准(最新)" in [view.env_combo.itemText(i) for i in range(view.env_combo.count())]
-    assert view.pack_combo.itemText(view.pack_combo.findData("01")) == "经典包"
-    view.pack_combo.setCurrentIndex(view.pack_combo.findData("01"))
+    assert view.pack_combo.itemText(view.pack_combo.findData("001")) == "经典包"
+    view.pack_combo.setCurrentIndex(view.pack_combo.findData("001"))
     view.faction_combo.setCurrentText("红莲")
     view.search_edit.setText(db.shikigami[100101].name)
     assert view.shiki_list.topLevelItemCount() == 1

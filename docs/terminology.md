@@ -71,8 +71,8 @@
 | 形态能力 | `abilities`（形态牌） | 形态牌携带的能力块：结附期间生效（与觉醒能力并存，觉醒替换不覆盖；如风符·瞬的回合结束自毁） | ✅ |
 | 标签 | `tags` | 自由字符串标记（觉醒、式神专属标记等） | ✅ |
 | 稀有度 | `rarity` | R/SR/SSR（良/优/极；抽卡/账号系统预留） | 🔧 |
-| 卡包 | `cardpack` | 式神所属版本资料包，即 id 的 vv 段（式神 1avvss / 卡牌 1avvvvcc） | ✅ |
-| 异画 | alt art（id 的 a 位） | 式神/卡牌/中立牌 id 的第 2 位（'0' = 默认卡面）；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留 | 🔧 |
+| 卡包 | `cardpack` | 式神所属版本资料包，即 id 第 2–4 位的 vvv 段（式神 avvvss / 卡牌 avvvsscc；999 保留给中立牌） | ✅ |
+| 异画 | alt art（id 的 a 位） | 所有式神、专属卡牌与中立牌 id 的第 1 位（1 = 默认卡面）；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留；同一数据的不同卡面共享规则数据，为 GUI/美术资产预留 | 🔧 |
 | 平衡性版本 | `versions` | yaml 顶层仅 id/name/versions（+可选 `unreleased` 标记，见「未加入」行），规则数据全部在 versions.history 的版本快照中（每条 = date + 完整数据，不按差量；首条 date = 发布日期）；`best` = 维护者标记的"历史最强"版本日期（仅元数据，解析不用）；加载/解析结果的 `version` = 所取快照 date；卡牌的 shikigami 由 id 推导注入、cost 默认 1，均不入数据；解析规则见 db/versioning.py。真实数据起点 = 20191212 公测开服（历史平衡性数据源见 card_data_raw.md「平衡性调整」节） | ✅ |
 | 环境 | env_date / `CardDatabase.at_date` | 对局/构筑指定的平衡性日期：各 id 取不晚于该日期的最晚版本逐条合并，早于发布日期则该 id 不存在（不可构筑/使用）；联机房间分标准模式（固定最新，不可更改）与自由模式（create 带 env_date；房主在双方未准备时可 `env` 更改），卡组文件按卡组记录 env（v3），热坐恒用最新；环境输入/显示支持别名（经典/不夜之火/月夜幻响/沧海刀鸣/吉运缘结=20201224 等）与 8/6 位日期，解析见 db/envs.py；**客户端派系显示分界** `FACTION_DISPLAY_MIN_DATE=20210330` + `show_faction(date)`（db/envs.py——deckbuilder 与对局渲染按环境日期隐藏派系列，早于分界不显示派系；外来式神手牌按中立色） | ✅ |
 | 派系 | `faction` | 红莲 red / 紫岩 purple / 青岚 blue / 苍叶 green / 无相 white（`FACTION_COLORS`） | ✅ |
@@ -83,7 +83,7 @@
 | 衍生物 | （kind=summon 的衍生） | 序号从 99 开始递减；必须有从属式神 | ✅ |
 | 数据 id | `id` | db 数据与局内对象的数据标识（CardInstance.id / ShikigamiState.id） | ✅ |
 | 对象 id | `uid` | 局内对象引用标识（CardInstance.uid；生成物亦发 uid） | ✅ |
-| 中立牌 | neutral（`shikigami=None`） | id 9avvvvvv（9 + 异画位 + 6 位数字，自 999999 递减）、无等级、系统/效果生成 | ✅ |
+| 中立牌 | neutral（`shikigami=None`） | id a999xxxx（首位异画默认 1 + 保留版本包 999 + 4 位递增序号）、无等级、系统/效果生成 | ✅ |
 | 使用位置 | `play_from` | play_card 参数，默认 hand，任意区域可扩展 | ✅ |
 | 使用方式 | `play_method` / `PlayMethod` / `Game.usage_options` | 多择子选项；仅保留核心方式、参数可变（`param`，如爆能{2}）。扩展字段（不夜之火批次）：爆能英文=burst；`energy_cost`（int=爆能N 额外支付 N 能量 / "all"=爆能X 消耗全部能量、0 能量不可选；方式 `effects` 追加到基础 effects 后，多档独立支付累计）、`keywords`（以该方式使用时临时授予卡牌关键字——森之力爆能档得[瞬发]）。**方式收集合并语义（`_card_methods`，御馔津重构）**：卡牌自带 methods 为底，光环 grant_method 同 id 命中时键级合并（光环只覆盖显式键、text 作后缀追加），无自带同 id 方式时整段授予——逐条登记见「符咒 / 爆能转化」行。**手牌使用方式枚举（裁决(2)）**：`Game.usage_options(pi, card)` 返回该牌当前全部使用方式（常规/各 PlayMethod/协战子选项）+ 各自合法性/原因/鬼火与能量消耗（`_usage_method_error` 与出牌校验同口径、不变异状态）；CLI 热坐/联机手牌"使用方式"列统一渲染（`format_hand_lines`，调度阶段与敌方已展示手牌不渲染）；未来蓄力/赐能/起源等扩展方式在枚举侧追加条目 | ✅ |
 | 气绝时可用 | `playable_when_defeated` | 卡牌字段；与是否响应牌无关 | ✅ |
