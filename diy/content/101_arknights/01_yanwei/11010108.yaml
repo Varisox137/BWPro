@@ -18,4 +18,4 @@ versions:
           steps:
             - {op: grant_keyword, keyword: barrier, target: {kind: context, key: shikigami}}
             - {op: grant_keyword, keyword: haste, target: {kind: context, key: shikigami}}
-      text: "[瞬发]，耐久9。入场时[移动]焰尾。当己方式神退回准备区时，使其获得[屏障]和[迅捷]。"
+      text: "[[瞬发]]。进场时[[移动]]焰尾。己方式神移回准备区时获得[[屏障]]和[[迅捷]]。"

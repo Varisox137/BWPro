@@ -302,12 +302,15 @@ class OnlineView(QWidget):
 
     connection_succeeded = Signal(object, str)
     connection_failed = Signal(str, str)
+    connection_changed = Signal()
 
     def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None,
-                 bridge_factory=NetBridge, parent=None):
+                 bridge_factory=NetBridge, official_db=None, parent=None):
         super().__init__(parent)
-        self.base_db = db
-        self.db = db
+        self.official_db = official_db if official_db is not None else db
+        self.diy_db = db
+        self.base_db = self.official_db
+        self.db = self.base_db
         self.store_path = Path(store_path)
         self.on_back = on_back
         self.bridge_factory = bridge_factory
@@ -317,12 +320,14 @@ class OnlineView(QWidget):
         self._connect_thread: threading.Thread | None = None
         self._client_ip = ""
         self._pending_join = False
+        self._pending_reconnect = False
         self.server_url = ""
         self.player_name = load_gui_settings()["player_name"]
         self.deck_name = ""
         self.deck_code: str | None = None
         self.room_id: str | None = None
         self.token: str | None = None
+        self.reconnect_code: str | None = None
         self.seat: int | None = None
         self.me: int | None = None
         self.mode = "standard"
@@ -374,7 +379,8 @@ class OnlineView(QWidget):
         self.deck_combo = QComboBox()
         self.deck_combo.currentIndexChanged.connect(self._select_deck)
         deck_row = QHBoxLayout()
-        deck_row.addWidget(QLabel("标准卡组"))
+        self.deck_label = QLabel("选择卡组")
+        deck_row.addWidget(self.deck_label)
         deck_row.addWidget(self.deck_combo, 1)
         lobby.addLayout(deck_row)
         create_row = QHBoxLayout()
@@ -395,6 +401,7 @@ class OnlineView(QWidget):
         lobby.addLayout(create_row)
         self.diy_checkbox = QCheckBox("启用 DIY 内容")
         self.diy_checkbox.setChecked(False)
+        self.diy_checkbox.toggled.connect(self._change_diy)
         lobby.addWidget(self.diy_checkbox)
         join_row = QHBoxLayout()
         self.token_edit = QLineEdit()
@@ -438,6 +445,7 @@ class OnlineView(QWidget):
                        self.ready_button, self.env_button, self.leave_button):
             button.setObjectName("small")
         self.stack.addWidget(self.lobby_page)
+        self._render_lobby()
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
@@ -458,6 +466,12 @@ class OnlineView(QWidget):
             self.battle.countdown_timer.start()
         if self.battle.timeline_queue and not self.battle.timeline_timer.isActive():
             self.battle.timeline_timer.start()
+
+    def _change_diy(self) -> None:
+        if self.room_id is not None:
+            return
+        self._set_base_db(self.diy_db if self.diy_checkbox.isChecked() else self.official_db)
+        self.reload_decks()
 
     def reload_decks(self) -> None:
         self.entries = [entry for entry in deckstore.load_decks(self.base_db, self.store_path)
@@ -484,10 +498,12 @@ class OnlineView(QWidget):
         self.lobby_error.setText("请先选择标准卡组")
         return False
 
-    def connect_server(self, *, refresh_identity: bool = True) -> bool:
+    def connect_server(self, *, refresh_identity: bool = True,
+                       reconnect: bool = False) -> bool:
         if self._connecting:
             return False
         self._pending_join = False
+        self._pending_reconnect = reconnect
         url = net.normalize_server_url(self.server_edit.text())
         self.server_url = url
         if refresh_identity:
@@ -505,7 +521,7 @@ class OnlineView(QWidget):
             except Exception as error:
                 self.connection_failed.emit(url, str(error))
             else:
-                self._client_ip = net.local_route_ip(url)
+                self._client_ip = net.public_ip()
                 self.connection_succeeded.emit(ws, url)
 
         self._connect_thread = threading.Thread(target=connect, daemon=True)
@@ -528,7 +544,8 @@ class OnlineView(QWidget):
 
     def _connection_succeeded(self, ws, url: str) -> None:
         pending_join = self._pending_join
-        self._pending_join = False
+        pending_reconnect = self._pending_reconnect
+        self._pending_join = self._pending_reconnect = False
         if not self._connecting:
             ws.close()
             return
@@ -539,8 +556,23 @@ class OnlineView(QWidget):
         self.server_url = url
         if self._open_bridge(ws):
             self.stack.setCurrentWidget(self.lobby_page)
-            if pending_join:
+            self._render_lobby()
+            self.connection_changed.emit()
+            if pending_reconnect:
+                self._send_auto_reconnect()
+            elif pending_join:
                 self.join_room()
+
+    def _send_auto_reconnect(self) -> None:
+        if not self.room_id or not self.reconnect_code or not self._client_ip:
+            self.battle.error_label.setText("无法获取公网 IP，自动重连未完成")
+            return
+        self.bridge.send({
+            "type": "join", "room_id": self.room_id,
+            "reconnect_code": self.reconnect_code,
+            "name": self.player_name, "deck_code": None,
+            **net.hello_metadata(self._client_ip),
+        })
 
     def _open_bridge(self, ws=None) -> bool:
         if ws is None:
@@ -741,13 +773,16 @@ class OnlineView(QWidget):
                 for path in diy_store.downloaded_versions(selected=selected)}
 
     def refresh_downloaded_database(self) -> None:
-        self._set_base_db(diy_runtime.load_database())
+        self.diy_db = diy_runtime.load_database()
+        self._set_base_db(self.diy_db if self.diy_checkbox.isChecked() else self.official_db)
         self._reset_diy_client()
         self.reload_decks()
 
     def handle_message(self, msg: dict) -> None:
         kind = msg.get("type")
         if kind == "joined":
+            if "player_index" not in msg:
+                self.reconnect_code = None
             self.room_id = msg["room_id"]
             self.token = msg["token"]
             self.seat = msg["seat"]
@@ -803,6 +838,7 @@ class OnlineView(QWidget):
             self._render_lobby()
         elif kind == "start":
             self.in_lobby = False
+            self.reconnect_code = msg.get("reconnect_code")
             self.me = msg["player_index"]
             self.battle.me = self.me
             self.battle.reset_session()
@@ -841,9 +877,11 @@ class OnlineView(QWidget):
             else:
                 self.lobby_error.setText(text)
         elif kind == "game_over":
+            self.reconnect_code = None
             self.stack.setCurrentWidget(self.battle)
             self.battle.show_game_over(msg.get("winner"), msg.get("reason", ""))
         elif kind == "dissolved":
+            self.reconnect_code = None
             self.lobby_error.setText(f"房间已解散：{msg.get('reason', '')}")
             self.leave_to_menu()
         elif kind == "left":
@@ -853,6 +891,7 @@ class OnlineView(QWidget):
         """离开当前房间但保持服务器连接，停留在可创建/加入的大厅。"""
         self.in_lobby = False
         self.room_id = self.token = self.seat = self.me = None
+        self.reconnect_code = None
         self.room_diy = False
         self._reset_diy_client()
         self.token_edit.clear()
@@ -865,12 +904,18 @@ class OnlineView(QWidget):
         self._render_lobby()
 
     def _render_lobby(self) -> None:
+        in_room = self.room_id is not None
+        for widget in (self.room_label, self.self_label, self.peer_label,
+                       self.ready_label, self.ready_button, self.leave_button):
+            widget.setVisible(in_room)
+        self.env_button.setVisible(in_room and self.mode == "free")
+        self.diy_checkbox.setEnabled(not in_room)
         ready = "、".join(self.lobby_ready) or "无"
         self.ready_label.setText(f"已准备（{len(self.lobby_ready)}/2）：{ready}")
         own_ready = self.player_name in self.lobby_ready
         self.ready_button.setText("取消准备" if own_ready else "准备")
         self.ready_button.setEnabled(self.in_lobby and not self._diy_syncing)
-        self.leave_button.setEnabled(self.room_id is not None)
+        self.leave_button.setEnabled(in_room)
         self.env_button.setEnabled(self.in_lobby and self.seat == 0
                                    and self.mode == "free" and not self.lobby_ready)
         creating_free = (self.room_id is None and self.bridge is not None
@@ -894,6 +939,12 @@ class OnlineView(QWidget):
         if self._expect_close:
             return
         self.in_lobby = False
+        if self.room_id and self.reconnect_code:
+            self.battle.error_label.setText(f"连接已断开：{reason}；正在自动重连")
+            self.server_edit.setText(self.server_url)
+            self.connect_server(refresh_identity=False, reconnect=True)
+            self.connection_changed.emit()
+            return
         self.stack.setCurrentWidget(self.lobby_page)
         if self.room_id and self.token:
             self.room_edit.setText(self.room_id)
@@ -901,6 +952,7 @@ class OnlineView(QWidget):
             self.lobby_status.setText(f"连接已断开：{reason}。请用原房码和令牌点击“加入 / 重连”")
         else:
             self.lobby_status.setText(f"连接已断开：{reason}")
+        self.connection_changed.emit()
 
     def back_to_previous(self) -> bool:
         """联机页分层返回：大厅 → 未连接页 → 主菜单。"""
@@ -914,10 +966,16 @@ class OnlineView(QWidget):
             self.bridge = None
         self.in_lobby = False
         self.room_id = self.token = self.seat = self.me = None
+        self.reconnect_code = None
         self.room_diy = False
         self._reset_diy_client()
+        self.token_edit.clear()
+        self.lobby_ready = []
+        self.lobby_deadline = self.starting_deadline = None
+        self._render_lobby()
         self.stack.setCurrentWidget(self.connect_page)
         self._reset_connect_button()
+        self.connection_changed.emit()
         return False
 
     def leave_to_menu(self) -> None:

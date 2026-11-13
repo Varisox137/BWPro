@@ -16,4 +16,4 @@ versions:
             scope: battle
             condition: {player_shield_ge: 1}
             target: {kind: self}
-      text: "+0/+2，[贯通]。若己方牌手有护甲，本次战斗获得[连击]。"
+      text: "[[贯通]]。若你有#hj则此牌获得[[连击]]。"

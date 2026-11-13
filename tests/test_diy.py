@@ -72,7 +72,7 @@ def test_runtime_discovers_builtin_and_is_idempotent(diy_db):
     resolved = dated.shikigami[YANWEI]
     assert resolved.author == "962779670"
     assert resolved.version == 20261113
-    assert dated.diy_packs[101]["name"] == "红松移动"
+    assert dated.diy_packs[101]["name"] == "方舟百闻"
 
 
 def test_diy_and_official_ids_are_isolated(diy_db):
@@ -88,7 +88,7 @@ def test_diy_pack_is_available_to_deckbuilder(diy_db):
 
     assert YANWEI in [d.id for d in available_shikigami(diy_db)]
     groups = _pack_groups(diy_db, available_shikigami(diy_db))
-    assert any(name == "红松移动" and [d.id for d in members] == [YANWEI]
+    assert any(name == "方舟百闻" and [d.id for d in members] == [YANWEI]
                for name, members in groups)
     assert [c.id for c in buildable_cards(diy_db, YANWEI)] == list(range(11010101, 11010109))
 

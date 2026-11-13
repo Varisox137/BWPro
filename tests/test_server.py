@@ -46,8 +46,9 @@ def test_server_message_builders():
     j = protocol.joined("ABC123", "tok", 0, debug=True)
     assert (j["type"], j["room_id"], j["token"], j["seat"], j["debug"]) == \
         ("joined", "ABC123", "tok", 0, True)
-    s = protocol.start(1, "乙", False)
+    s = protocol.start(1, "乙", False, reconnect_code="abcd1234")
     assert (s["player_index"], s["opponent"], s["you_first"]) == (1, "乙", False)
+    assert s["reconnect_code"] == "abcd1234"
     st = protocol.state({"turn": 3}, ["x", "y"])
     assert st["payload"]["turn"] == 3 and st["log"] == ["x", "y"]
     assert "timer" not in st  # 缺省不带计时器字段（旧客户端兼容）
@@ -1141,14 +1142,15 @@ def test_websocket_leave_keeps_socket_for_create_and_join(server, db):
 
 def test_full_match_flow(server, db):
     a = WsClient()
-    a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db)})
+    a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),
+            "client_ip": "8.8.8.8"})
     ja = a.recv_until("joined", "error")
     assert ja["type"] == "joined"
-    room_id, token_a = ja["room_id"], ja["token"]
+    room_id = ja["room_id"]
 
     b = WsClient()
     b.send({"type": "join", "room_id": room_id, "name": "乙",
-            "deck_code": _deck_code(db)})
+            "deck_code": _deck_code(db), "client_ip": "8.8.4.4"})
     jb = b.recv_until("joined")
     assert jb["type"] == "joined"
 
@@ -1163,6 +1165,8 @@ def test_full_match_flow(server, db):
     sb = b.recv_until("start")
     assert sa["player_index"] != sb["player_index"]
     assert (sa["you_first"], sb["you_first"]) in ((True, False), (False, True))
+    assert len(sa["reconnect_code"]) == len(sb["reconnect_code"]) == 8
+    assert sa["reconnect_code"] != sb["reconnect_code"]
 
     # 双方都收到初始 state（调度阶段）
     st_a = a.recv_until("state")["payload"]
@@ -1204,10 +1208,17 @@ def test_full_match_flow(server, db):
     st = second.recv_until("state")["payload"]
     assert st["active"] == 1 - me
 
-    # 断线重连：凭房间 id + 令牌恢复
+    # 对局中断线：公网 IP 必须与入座记录匹配，识别码只在 start 后下发
     a.ws.close()
+    wrong_ip = WsClient()
+    wrong_ip.send({"type": "join", "room_id": room_id,
+                   "reconnect_code": sa["reconnect_code"], "client_ip": "1.1.1.1"})
+    assert wrong_ip.recv_until("error")["type"] == "error"
+    wrong_ip.ws.close()
+
     a2 = WsClient()
-    a2.send({"type": "join", "room_id": room_id, "token": token_a})
+    a2.send({"type": "join", "room_id": room_id,
+             "reconnect_code": sa["reconnect_code"], "client_ip": "8.8.8.8"})
     ja2 = a2.recv_until("joined", "error")
     assert ja2["type"] == "joined"
     st2 = a2.recv_until("state")["payload"]

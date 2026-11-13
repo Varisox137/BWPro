@@ -279,6 +279,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject(str(e))
                         continue
                     room, conn = target_room, target_conn
+                    conn.client_ip = reported_ip
                     source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
                     print(f"[房间 {room.id}] {name}（{source}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
@@ -294,6 +295,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     try:
                         room_id = _text(msg, "room_id", MAX_ROOM_ID) or ""
                         token = _text(msg, "token", MAX_TOKEN)
+                        reconnect_code = _text(msg, "reconnect_code", MAX_TOKEN)
                         name = _player_name(msg) or "玩家B"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                         diy = _diy_enabled(msg)
@@ -306,17 +308,24 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     if target_room is None:
                         await reject("房间不存在")
                         continue
-                    if not token and target_room.diy != diy:
+                    if not token and not reconnect_code and target_room.diy != diy:
                         await reject("DIY 房间与普通房间须使用相同的 DIY 选项加入")
                         continue
-                    if token:  # 断线重连
+                    credential = reconnect_code or token
+                    if credential:  # 断线重连；新通道额外绑定入座时的公网 IP
                         if target_room.reconnect_throttled():
                             await reject("重连尝试过于频繁，请稍后")
                             continue
-                        target_conn = await target_room.reconnect(token, ws)
+                        if reconnect_code and not reported_ip:
+                            await reject("自动重连需要公网 IP")
+                            continue
+                        target_conn = await target_room.reconnect(
+                            credential, ws,
+                            client_ip=reported_ip if reconnect_code else None)
                         if target_conn is None:
                             target_room.record_reconnect_failure()
-                            await reject("重连令牌无效")
+                            await reject("重连识别码或公网 IP 无效" if reconnect_code
+                                         else "重连令牌无效")
                             continue
                         room, conn = target_room, target_conn
                         logger.info("重连成功：房间=%s 座位=%s", room.id, conn.seat)
@@ -348,6 +357,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject(str(e))
                         continue
                     room, conn = target_room, target_conn
+                    conn.client_ip = reported_ip
                     source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
                     print(f"[房间 {room.id}] {name}（{source}）加入房间", flush=True)
                     await conn.send(protocol.joined(

@@ -179,6 +179,8 @@ def configure_logging(component: str, log_dir: Path | None = None) -> Path:
     root.setLevel(logging.DEBUG)
     logging.getLogger("PIL").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+    # 原始 WS 帧含重连凭证与私密手牌，不写入 DEBUG 日志。
+    logging.getLogger("websockets").setLevel(logging.INFO)
     for handler in list(root.handlers):
         if getattr(handler, "_bwpro_handler", False):
             root.removeHandler(handler)

@@ -13,13 +13,13 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
-import socket
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from client import cli, deckbuilder, tui
 from client.settle import SettlePrinter
@@ -615,21 +615,19 @@ def normalize_server_url(raw: str) -> str:
     return s
 
 
-def local_route_ip(server_url: str) -> str:
-    """通过到服务器地址的 UDP 路由选择获取本地 IP；不发送任何数据。"""
-    try:
-        parsed = urlsplit(server_url)
-        host = parsed.hostname
-        if not host:
-            return ""
-        port = parsed.port or (443 if parsed.scheme in ("wss", "https") else 80)
-        family, socktype, proto, _, address = socket.getaddrinfo(
-            host, port, type=socket.SOCK_DGRAM)[0]
-        with socket.socket(family, socktype, proto) as sock:
-            sock.connect(address)
-            return str(sock.getsockname()[0])
-    except (OSError, ValueError, IndexError):
-        return ""
+def public_ip(timeout: float = 3.0) -> str:
+    """查询客户端公网 IP；拒绝内网地址，主服务失败时切换备用服务。"""
+    for url in ("https://api.ipify.org", "https://ifconfig.me/ip"):
+        try:
+            request = Request(url, headers={"User-Agent": "BWPro/0.3"})
+            with urlopen(request, timeout=timeout) as response:
+                text = response.read(65).decode("ascii").strip()
+            address = ipaddress.ip_address(text)
+            if address.is_global:
+                return str(address)
+        except (OSError, ValueError, UnicodeError):
+            pass
+    return ""
 
 
 def _open_ws(server_url: str, retries: int = 3, open_timeout: float = 5.0):
@@ -711,7 +709,7 @@ def run(db, server_url: str, name: str, debug: bool) -> None:
     else:
         print("已取消")
         return
-    hello.update(hello_metadata(local_route_ip(server_url)))
+    hello.update(hello_metadata(public_ip()))
     try:
         # 客户端标识软门槛：create/join 需带 client 字段（server.main.CLIENT_UA 前缀）
         ws = _open_ws(server_url, open_timeout=10.0)

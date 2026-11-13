@@ -28,4 +28,4 @@ versions:
               target: {kind: all, pool: self_player}
             - {op: attack_buff, keywords: [remote], target: {kind: self}}
             - {op: launch_attack, shikigami: self}
-      text: "[觉醒]：+1/+1。当焰尾被攻击时，[运势4]：成功则[移动]焰尾并把被攻击目标改为己方牌手。当焰尾移回准备区时，己方牌手获得等同焰尾当前力量的护甲，然后焰尾发起一次具有[远程]的攻击。"
+      text: "[[觉醒]]：焰尾被攻击时[[运势4]]：[[移动]]焰尾并将攻击目标改为己方牌手。当焰尾移回准备区时，你获得等同于焰尾#ll的#hj，然后焰尾发起一次攻击，本次攻击具有[[远程]]。"

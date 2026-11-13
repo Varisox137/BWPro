@@ -16,7 +16,7 @@ def test_exe_data_include_all_standalone_runtime_resources():
     assert any(path.parent == build.ROOT / "assets" / "fonts" for path in sources)
     assert any(build.ROOT / "db" in path.parents and path.suffix == ".yaml"
                for path in sources)
-    assert build.ROOT / "diy" / "content" / "101_movement" / "mechanisms.py" in sources
+    assert build.ROOT / "diy" / "content" / "101_arknights" / "mechanisms.py" in sources
     assert any(build.ROOT / "diy" / "content" in path.parents and path.suffix == ".yaml"
                for path in sources)
     assert any(build.ROOT / "library" in path.parents for path in sources)
@@ -81,8 +81,8 @@ def test_exe_version_uses_shared_runtime_constant():
     build = importlib.import_module("scripts.build_exe")
     from core.version import VERSION
 
-    assert build.VERSION == VERSION == "0.3.2"
-    assert build.EXE_NAME == "BWPro-v0.3.2"
+    assert build.VERSION == VERSION == "0.3.3"
+    assert build.EXE_NAME == "BWPro-v0.3.3"
 
 
 def test_launcher_dispatches_apply_update_before_gui(monkeypatch):

@@ -1267,36 +1267,38 @@ def test_net_lobby_env_command_alias_and_mode_gate(db, capsys):
     assert "标准模式使用最新平衡性环境，不可更改" in capsys.readouterr().out
 
 
-def test_local_route_ip_uses_udp_connect_without_sending(monkeypatch):
-    import socket
+def test_public_ip_rejects_private_address_and_uses_fallback(monkeypatch):
     from client import net
 
     calls = []
 
-    class FakeSocket:
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
             return False
 
-        def connect(self, address):
-            calls.append(address)
+        def read(self, _limit):
+            return self.text.encode("ascii")
 
-        def getsockname(self):
-            return ("192.0.2.8", 49152)
+    def open_url(request, timeout):
+        calls.append((request.full_url, timeout))
+        if len(calls) == 1:
+            return FakeResponse("192.168.1.8")
+        return FakeResponse("8.8.8.8\n")
 
-    monkeypatch.setattr(socket, "socket", lambda *_args, **_kwargs: FakeSocket())
-    monkeypatch.setattr(
-        socket, "getaddrinfo",
-        lambda host, port, **_kwargs: [(socket.AF_INET, socket.SOCK_DGRAM, 6, "",
-                                        (host, port))])
-    assert net.local_route_ip("wss://example.test:444/ws") == "192.0.2.8"
-    assert calls == [("example.test", 444)]
+    monkeypatch.setattr(net, "urlopen", open_url, raising=False)
+    assert net.public_ip() == "8.8.8.8"
+    assert [call[0] for call in calls] == [
+        "https://api.ipify.org", "https://ifconfig.me/ip"]
 
-    monkeypatch.setattr(socket, "getaddrinfo",
-                        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("无路由")))
-    assert net.local_route_ip("ws://127.0.0.1:1037/ws") == ""
+    monkeypatch.setattr(net, "urlopen",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("离线")))
+    assert net.public_ip() == ""
 
 
 @pytest.mark.parametrize("choice,answers,room_id", [
@@ -1329,7 +1331,7 @@ def test_net_hello_includes_best_effort_client_ip(
 
     monkeypatch.setattr(net, "_input", lambda _prompt: answers.pop(0))
     monkeypatch.setattr(net, "_open_ws", lambda *_args, **_kwargs: FakeWS())
-    monkeypatch.setattr(net, "local_route_ip", lambda _url: "192.0.2.8", raising=False)
+    monkeypatch.setattr(net, "public_ip", lambda: "192.0.2.8", raising=False)
     monkeypatch.setattr(net.deckbuilder, "choose_deck",
                         lambda *_args: ("卡组", "卡组", "deck-code"))
     monkeypatch.setattr(net.tui, "prompt", lambda _prompt: "")

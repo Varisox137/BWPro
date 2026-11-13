@@ -268,8 +268,8 @@ def test_shikigami_picker_lists_builtin_diy_pack(qapp):
     picker = ShikigamiDialog(load_database())
     groups = {picker.tree.topLevelItem(i).text(0): picker.tree.topLevelItem(i)
               for i in range(picker.tree.topLevelItemCount())}
-    assert "红松移动" in groups
-    assert groups["红松移动"].child(0).data(0, Qt.UserRole) == 110101
+    assert "方舟百闻" in groups
+    assert groups["方舟百闻"].child(0).data(0, Qt.UserRole) == 110101
     picker.close()
 
 

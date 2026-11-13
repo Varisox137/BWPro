@@ -19,4 +19,4 @@ versions:
             condition: {attacker_shikigami: 110101}
             steps:
               - {op: move}
-      text: "+1/+1。选择一名己方式神，本次攻击结束后使其[移动]。"
+      text: "本次攻击后[[移动]]一名己方式神。"

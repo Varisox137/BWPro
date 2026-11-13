@@ -8,8 +8,9 @@ from pathlib import Path
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QStackedWidget, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
+    QListWidget, QListWidgetItem, QMessageBox, QPushButton, QStackedWidget,
+    QVBoxLayout, QWidget,
 )
 
 from client import cli
@@ -26,6 +27,7 @@ from core.engine import IllegalAction
 from core.model import Ref
 from core.setup import new_game
 from db import deckstore
+from db.envs import available_env_dates, env_label
 
 
 class DeckSelectDialog(QDialog):
@@ -137,9 +139,13 @@ class HotseatView(QWidget):
     state_changed = Signal()
     exit_confirmation = True
 
-    def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None, parent=None):
+    def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None,
+                 official_db=None, parent=None):
         super().__init__(parent)
-        self.db = db
+        self.official_db = official_db if official_db is not None else db
+        self.diy_db = db
+        self.base_db = self.official_db
+        self.db = self.base_db
         self.store_path = Path(store_path)
         self.on_back = on_back
         self.theme = "light"
@@ -184,6 +190,19 @@ class HotseatView(QWidget):
         hint = QLabel("双方依次选择本地标准卡组，在同一设备轮流操作")
         hint.setAlignment(Qt.AlignCenter)
         setup.addWidget(hint)
+        options = QHBoxLayout()
+        options.addStretch(1)
+        options.addWidget(QLabel("环境"))
+        self.env_combo = QComboBox()
+        self.env_combo.setMinimumWidth(190)
+        options.addWidget(self.env_combo)
+        self.diy_checkbox = QCheckBox("DIY")
+        self.diy_checkbox.setChecked(False)
+        self.diy_checkbox.toggled.connect(self._change_content)
+        options.addWidget(self.diy_checkbox)
+        options.addStretch(1)
+        setup.addLayout(options)
+        self._reload_environments()
         self.start_button = QPushButton("开始对战")
         self.start_button.clicked.connect(self.start_hotseat)
         setup.addWidget(self.start_button, alignment=Qt.AlignCenter)
@@ -192,6 +211,26 @@ class HotseatView(QWidget):
         self.battle_page = QWidget()
         self._build_battle_page()
         self.stack.addWidget(self.battle_page)
+
+    def _reload_environments(self) -> None:
+        previous = self.env_combo.currentData()
+        self.env_combo.blockSignals(True)
+        self.env_combo.clear()
+        self.env_combo.addItem(env_label(None), None)
+        for date in available_env_dates(self.base_db):
+            self.env_combo.addItem(env_label(date), date)
+        index = self.env_combo.findData(previous)
+        self.env_combo.setCurrentIndex(max(0, index))
+        self.env_combo.blockSignals(False)
+
+    def _game_database(self):
+        return self.base_db.at_date(self.env_combo.currentData())
+
+    def _change_content(self) -> None:
+        self.base_db = self.diy_db if self.diy_checkbox.isChecked() else self.official_db
+        self.db = self.base_db
+        self.battle_scene.db = self.base_db
+        self._reload_environments()
 
     def _build_battle_page(self) -> None:
         layout = QVBoxLayout(self.battle_page)
@@ -395,20 +434,23 @@ class HotseatView(QWidget):
         self._sync_end_turn_art()
 
     def start_hotseat(self) -> bool:
-        first = DeckSelectDialog(self.db, self.store_path, "玩家A", self)
+        game_db = self._game_database()
+        first = DeckSelectDialog(game_db, self.store_path, "玩家A", self)
         if first.exec() != QDialog.Accepted:
             return False
-        second = DeckSelectDialog(self.db, self.store_path, "玩家B", self)
+        second = DeckSelectDialog(game_db, self.store_path, "玩家B", self)
         if second.exec() != QDialog.Accepted:
             return False
         return self._start_entries(first.selected_entry(), second.selected_entry())
 
     def start_from_decks(self, first_index: int, second_index: int, **kwargs) -> bool:
-        entries = [entry for entry in deckstore.load_decks(self.db, self.store_path)
+        entries = [entry for entry in deckstore.load_decks(self._game_database(), self.store_path)
                    if entry.get("standard")]
         return self._start_entries(entries[first_index], entries[second_index], **kwargs)
 
     def _start_entries(self, entry_a: dict, entry_b: dict, **kwargs) -> bool:
+        self.db = self._game_database()
+        self.battle_scene.db = self.db
         ids_a, cards_a = deckstore.entry_deck(entry_a)
         ids_b, cards_b = deckstore.entry_deck(entry_b)
         self.start_game(("玩家A", ids_a, cards_a), ("玩家B", ids_b, cards_b), **kwargs)

@@ -102,10 +102,13 @@ def peer_left(name: str) -> dict:
 
 
 def start(player_index: int, opponent: str, you_first: bool,
-          env_date: int | None = None, mode: str = "standard") -> dict:
-    """两人就位、随机先手已确定：告知客户端自己的 players 下标与对局环境/模式。"""
+          env_date: int | None = None, mode: str = "standard",
+          reconnect_code: str | None = None) -> dict:
+    """正式开局：下发视角、环境与仅本人可见的 8 位自动重连识别码。"""
     msg = {"type": "start", "player_index": player_index,
            "opponent": opponent, "you_first": you_first, "mode": mode}
+    if reconnect_code is not None:
+        msg["reconnect_code"] = reconnect_code
     if env_date is not None:
         msg["env_date"] = env_date
     return msg

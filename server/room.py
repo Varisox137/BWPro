@@ -143,6 +143,7 @@ class Connection:
         self.name = name
         self.token = token or secrets.token_hex(4)
         self.cardback = cardback
+        self.client_ip: str | None = None  # 入座时客户端自报公网 IP
         self.ws = None  # 当前 WebSocket；断线时为 None
 
     @property
@@ -266,11 +267,14 @@ class Room:
         self.last_activity = time.time()  # 人员变动：刷新看门狗计时
         return conn
 
-    async def reconnect(self, token: str, ws) -> Connection | None:
+    async def reconnect(self, token: str, ws,
+                        client_ip: str | None = None) -> Connection | None:
         seat = self.seat_of_token(token)
         if seat is None:
             return None
         conn = self.conns[seat]
+        if client_ip is not None and (self.game is None or conn.client_ip != client_ip):
+            return None
         old_ws = conn.ws
         conn.ws = ws
         if old_ws is not None and old_ws is not ws:
@@ -707,7 +711,8 @@ class Room:
                 self.seat_to_player[c.seat],
                 self.conns[1 - c.seat].name,
                 self.seat_to_player[c.seat] == 0,
-                env_date=self.env_date, mode=self.mode))
+                env_date=self.env_date, mode=self.mode,
+                reconnect_code=c.token))
         self.reschedule_timer()
         await self.broadcast_state()
 

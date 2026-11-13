@@ -24,4 +24,4 @@ versions:
           - {op: redirect_attack, target: {kind: all, pool: self_player}}
           - {op: move, target: {kind: self}}
           - {op: draw, count: 1}
-      text: "[移动]焰尾，抽一张牌。下个己方回合开始时，若焰尾仍存活，获得1点鬼火。[响应]：{当焰尾被攻击时，将被攻击目标改为己方牌手，并自动[移动]焰尾、抽一张牌。}"
+      text: "[[移动]]焰尾，抽一张牌。下个回合开始时，若焰尾未气绝，你获得1点鬼火。[[响应]]：焰尾被攻击时，自动使用此牌并将攻击目标改为己方牌手。"

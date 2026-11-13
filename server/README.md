@@ -104,15 +104,14 @@ uv run python -m client.log_admin
   供客户端区分与排序，`id=0`、`mods={}`，牌库则全部匿名替换；已展示手牌按规则放行
   真实内容，`hand_info` 仅包含己方手牌，私密线索账本 `quest_clues_seen` 仅所属方可见。
   修改客户端也无法窥探未公开卡牌；墓地与各类计数器按规则为公开信息。
-- **身份与权限**：无登录态；入座下发随机 `player_token`（重连凭证），指令中的
-  `player` 字段由服务端按座位强制改写，回合内操作仅当前行动方可发。每个 WebSocket
-  仅允许一次成功 create/join，房间消息和断线清理同时校验槽位与当前 socket；重连会
-  关闭旧 socket，旧指令、旧发送失败和旧断线均不得影响新连接。重连防猜测按房间共享
-  60 秒滑动窗口：累计 5 次无效 token 后，窗口内所有重连（含合法 token）均返回
-  “重连尝试过于频繁，请稍后”，换 WebSocket 不能绕过；成功重连也不清空失败记录，
-  仅由 60 秒滚动窗口自然过期，避免合法座位协助重置猜测预算。
-  这会暂时暂缓真正玩家的重连，是防止 8 位短码被跨连接猜测的安全/可用性取舍。
-  客户端日志仅显示 token 尾号，GUI 令牌为 8 位小写十六进制，使用不可编辑但可复制的明文框。名称拒绝控制字符；畸形指令仅返回普通错误，不终止对局。
+- **身份与权限**：无登录态；入座生成 8 位小写十六进制凭证，正式 `start` 仅向本人
+  下发对应的 `reconnect_code`。GUI 意外断线后以房码、识别码和 `client_ip` 自动重连，
+  服务端要求对局已开始且公网 IP 与入座记录一致；准备/开始倒计时阶段不使用该通道。
+  旧 CLI 的房间代码+token 手动重连暂时保留。指令中的 `player` 由服务端按座位强制
+  改写；每个 WebSocket 仅允许一次成功 create/join，重连会关闭旧 socket，旧连接不能
+  影响新连接。无效重连按房间共享 60 秒滑动窗口限 5 次，成功也不清空失败记录。
+  原始 WebSocket 帧日志固定为 INFO，避免 DEBUG 记录凭证和私密手牌；应用日志不记录
+  完整凭证。名称拒绝控制字符；畸形指令仅返回普通错误，不终止对局。
 - **传输加密**：支持 wss（服务端直接配 TLS 证书，或经穿透/反代终止 TLS）。
 - **客户端软门槛**：握手一律放行（穿透/反代等中间代理会改写 HTTP 头，不看
   `User-Agent`）；`create`/`join` 消息必须带 `client` 字段且以 `BWPro-CLI`
@@ -128,8 +127,8 @@ uv run python -m client.log_admin
 - **滥用防护**：每连接每秒最多 10 条消息（`--rate-limit`）；单条 WS 消息最大
   1MB；输入字段长度上限（名字 32 / 房间 id 16 / 令牌 64 / 卡组码 1024）；
   房间总数上限 1000（`--max-rooms`）。
-- **传输内容**：房间 id 与 token 经 TLS（wss）时不被窃听；用明文 ws 经公网
-  穿透时建议仅在可信网络或套 TLS。
+- **传输内容**：房间 id、token 与识别码经 TLS（wss）时不被窃听；公网部署应启用
+  TLS。公网 IP 查询会使用第三方 ipify/ifconfig.me 服务。
 
 ## 架构
 
@@ -141,46 +140,36 @@ server/
   protocol.py      # 消息信封构造与客户端消息校验
 ```
 
-- 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交
-  `cmd dict`（与热坐 CLI 同一协议），服务端校验、执行并广播完整 `GameState` JSON
-  + 新增日志。
-- 无登录态：创建房间可自建 6 位字母数字房间代码（缺省随机分配）；凭代码加入；
-  入座时下发 8 位小写十六进制 `token`，断线后凭 房间代码+token 重连（对局与计时器保留，
-  双方断线才回收房间）。
-- **准备阶段**：双方都位后不直接开局、不计时（IDLE）——任一方 `ready` 后对
-  未准备方计 15s 自动准备（COUNTDOWN），双方准备进入 3s 开始倒计时（STARTING）
-  后开局；已准备方可再次 `ready` 取消准备回到无计时状态（开始倒计时中不可取消）；
-  入座后即可 `leave` 主动离开（断线视同离开，含开始倒计时中），座位释放、对手退回
-  等人状态；当前 WebSocket 保持连接，可继续 create/join。准备阶段断线重连补发当前 lobby 状态。
-- **房间看门狗**：未开局房间 10 分钟无人员变动（进房/重连/退房）自动解散
-  （向房内连接推送 `dissolved` 后关闭连接）；已开局房间不适用，清理由双方断线
-  回收等既有机制负责。
-- **对局模式**：创建房间可带 `mode`（`standard`/`free`，缺省 `standard`）。
-  标准模式固定使用最新平衡性数据（env_date 强制为 null、不可更改）；自由模式
-  创建时可带 `env_date`（平衡性版本日期，见 `db/versioning.py`），该房间全部
-  数据按不晚于该日期的最晚版本解析、该日期未发布的卡牌/式神不可用；自由模式
-  双方均未准备时房主可发 `env` 消息更改（更改后重新校验双方已入座卡组，
-  任一不可用则拒绝）；入座卡组校验按房间环境进行，不满足时报错并注明环境日期。
-- 服务端日志：连接来源、建房/加入/准备/离开/开局/终局/房间回收均打印到控制台。
-- 座位（seat）与 `players` 下标的映射在开局随机先手时确定；指令中的 `player`
-  字段由服务端按座位强制改写；回合内操作（play_card/assault/upgrade/end_turn）
-  只能由当前行动方发出。
+- 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交指令，服务端校验、
+  执行并广播按视角脱敏的完整 `GameState` JSON 与新增日志。
+- 创建房间可自建 6 位房码；入座生成 8 位凭证，正式开局仅向本人下发识别码。
+  GUI 以房码、识别码和公网 IP 自动重连；旧 CLI 可继续手动使用房码+token。
+  对局与计时器保留，双方断线才回收房间。
+- **准备阶段**：双方都位后等待准备；任一方准备后对未准备方计 15s，双方准备后
+  3s 开局。开始倒计时前可取消准备；入座后即可离开，断线视同离开并释放座位。
+- **房间看门狗**：未开局房间 10 分钟无人员变动自动解散；已开局房间不适用。
+- **对局模式**：标准模式固定最新环境；自由模式可指定环境，双方未准备时房主可修改，
+  修改前后均按房间环境校验卡组。
+- 座位与 `players` 下标在开局随机先手时确定；回合内操作仅当前行动方可发。
 
 ## 通信协议（WebSocket JSON）
 
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "debug": false, "room_id": "Ab12cd", "mode": "standard", "env_date": null, "client_ip": "192.168.1.2", "cardback": "月明风清" }
-{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "token": null, "client_ip": "192.168.1.3", "cardback": "月明风清" }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "room_id": "Ab12cd", "mode": "standard", "client_ip": "8.8.8.8", "cardback": "月明风清" }
+{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "client_ip": "8.8.4.4", "cardback": "月明风清" }
+{ "type": "join", "room_id": "ABC123", "reconnect_code": "abcd1234", "client_ip": "8.8.8.8" }
 { "type": "ready" }
 { "type": "leave" }
 { "type": "env", "date": 20250701 }
 { "type": "cmd", "cmd": { "op": "end_turn" } }
 ```
 
-`deck_code` 为必填（入座时按房间环境校验，非法/缺失报错，无默认卡组）；仅凭 token 重连时可为 null。
-`client_ip` 是客户端通过本地路由 best-effort 取得的自报地址，仅用于创建/加入日志，可伪造，不作访问控制；不会通过房间状态或对局消息发给对手，仅服务端和持提取码的日志管理员可见。`cardback` 是己方卡背资源名，只在首次 join 时记录，重连不刷新。两者均可选，新旧客户端/服务端可混用。
+`deck_code` 首次入座必填，重连时为 null。`client_ip` 由客户端经 ipify（备用
+ifconfig.me）best-effort 查询并校验为公网地址；它是可伪造的自报值，仅作为自动
+重连的辅助校验与日志信息，不下发给对手。旧 token 重连仍兼容。`cardback` 仅在首次
+join 时记录，重连不刷新。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
 `create.mode` 可缺省（`standard`）；标准模式忽略 `env_date`（固定最新数据），自由模式
 `create.env_date` 可缺省（最新数据）；`env` 仅自由模式房主在双方均未准备时可用（date 缺省 = 最新）。
@@ -194,7 +183,7 @@ server/
 { "type": "starting", "deadline": 1735689600.0 }
 { "type": "peer_left", "name": "乙" }
 { "type": "left" }
-{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "mode": "standard", "env_date": null }
+{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "mode": "standard", "env_date": null, "reconnect_code": "abcd1234" }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
   "timer": { "kind": "turn", "deadline": 1735689600.0 },
   "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }], "opponent_cardback": "月明风清" }

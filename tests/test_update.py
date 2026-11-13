@@ -80,13 +80,13 @@ def available_update():
 
 
 def test_version_is_strict_numeric_and_matches_project_metadata():
-    assert VERSION == "0.3.2"
+    assert VERSION == "0.3.3"
     assert parse_version("v0.10.0") > parse_version("v0.9.9")
-    assert verify_update(VERSION, "v0.3.3") == "v0.3.3"
+    assert verify_update(VERSION, "v0.3.4") == "v0.3.4"
     for invalid in ("0.3.1", "v1.2", "v1.2.3.4", "v01.2.3", "v1.2.3-beta"):
         with pytest.raises(ValueError):
             parse_version(invalid)
-    for not_newer in ("v0.3.1", "v0.3.0"):
+    for not_newer in ("v0.3.3", "v0.3.1", "v0.3.0"):
         with pytest.raises(ValueError):
             verify_update(VERSION, not_newer)
     import tomllib
@@ -123,7 +123,7 @@ def test_release_assets_must_exactly_match_the_strict_tag():
     )
     for payload in bad_payloads:
         with pytest.raises(UpdateError):
-            check_for_update(opener=opening(payload))
+            check_for_update("0.3.0", opener=opening(payload))
 
 
 def test_https_redirects_stay_https_without_downgrade():

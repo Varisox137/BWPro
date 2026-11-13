@@ -1363,8 +1363,8 @@ def test_online_hello_reports_cached_client_ip_without_route_probe(qapp, db, vie
     monkeypatch.setattr("client.gui.online.load_gui_settings",
                         lambda: {"own_cardback": "三途花境", "player_name": "新设置名"},
                         raising=False)
-    monkeypatch.setattr("client.gui.online.net.local_route_ip",
-                        lambda _url: pytest.fail("create/join 不得在主线程探测 IP"))
+    monkeypatch.setattr("client.gui.online.net.public_ip",
+                        lambda: pytest.fail("create/join 不得在主线程探测 IP"))
 
     assert view.create_room()
     created = view.bridge.sent[-1]
@@ -1387,17 +1387,16 @@ def test_online_connection_caches_client_ip_in_background(qapp, db, view, monkey
     main_thread = threading.get_ident()
     calls = []
 
-    def route_ip(url):
-        calls.append((threading.get_ident(), url))
+    def route_ip():
+        calls.append(threading.get_ident())
         return "192.0.2.9"
 
-    monkeypatch.setattr("client.gui.online.net.local_route_ip", route_ip)
+    monkeypatch.setattr("client.gui.online.net.public_ip", route_ip)
     view.opener = lambda _url: FakeWS()
     assert view.connect_server()
     wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge), timeout=2)
     assert isinstance(view.bridge, FakeBridge)
-    assert len(calls) == 1 and calls[0][1] == "wss://bwpro.varisox137.top/ws"
-    assert calls[0][0] != main_thread
+    assert len(calls) == 1 and calls[0] != main_thread
     assert view.create_room()
     assert view.bridge.sent[-1]["client_ip"] == "192.0.2.9"
 
@@ -1431,11 +1430,11 @@ def test_online_direct_join_refreshes_new_identity_but_reconnect_preserves_it(
     main_thread = threading.get_ident()
     route_threads = []
 
-    def route_ip(_url):
+    def route_ip():
         route_threads.append(threading.get_ident())
         return ""
 
-    monkeypatch.setattr("client.gui.online.net.local_route_ip", route_ip)
+    monkeypatch.setattr("client.gui.online.net.public_ip", route_ip)
     save_standard_deck(db, view.store_path)
     view.reload_decks()
     view.server_url = "ws://localhost:1037/ws"
@@ -1466,7 +1465,7 @@ def test_repeated_join_during_connect_preserves_pending_and_auto_joins(
         qapp, db, view, monkeypatch):
     save_standard_deck(db, view.store_path)
     view.reload_decks()
-    monkeypatch.setattr("client.gui.online.net.local_route_ip", lambda _url: "")
+    monkeypatch.setattr("client.gui.online.net.public_ip", lambda: "")
     view.server_url = "ws://localhost:1037/ws"
     view.room_edit.setText("ABC123")
     started, release = threading.Event(), threading.Event()
@@ -1504,7 +1503,7 @@ def test_pending_join_cleared_by_navigation_and_explicit_new_connection(
     view.leave_to_menu()
     assert not view._pending_join
 
-    monkeypatch.setattr("client.gui.online.net.local_route_ip", lambda _url: "")
+    monkeypatch.setattr("client.gui.online.net.public_ip", lambda: "")
     view.opener = lambda _url: FakeWS()
     view._pending_join = True
     assert view.connect_server()
@@ -1627,3 +1626,96 @@ def test_online_reconnect_uses_room_snapshot_hash_without_sync_done(
     assert loaded[-1]["download_versions"] == {201: package["content_hash"]}
     assert not any(msg["type"] == "diy_sync_done" for msg in view.bridge.sent)
     assert view.active_downloads() == {(201, package["content_hash"])}
+
+
+def test_connected_lobby_hides_room_controls_until_joined(qapp, view):
+    view._open_bridge(FakeWS())
+    view.stack.setCurrentWidget(view.lobby_page)
+    view._render_lobby()
+    assert view.deck_label.text() == "选择卡组"
+    for widget in (view.room_label, view.self_label, view.peer_label, view.ready_label,
+                   view.ready_button, view.leave_button, view.env_button):
+        assert widget.isHidden()
+
+    view.handle_message({"type": "joined", "room_id": "ABC123", "token": "令牌", "seat": 0})
+    for widget in (view.room_label, view.self_label, view.peer_label, view.ready_label,
+                   view.ready_button, view.leave_button):
+        assert not widget.isHidden()
+    view.handle_message({"type": "left"})
+    for widget in (view.room_label, view.self_label, view.peer_label, view.ready_label,
+                   view.ready_button, view.leave_button, view.env_button):
+        assert widget.isHidden()
+
+
+def test_main_window_online_back_disconnects_before_returning_to_menu(qapp, db, tmp_path):
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    view = win.pages["online"]
+    win.go("online")
+    assert win.back_button.text() == "返回主菜单"
+    view._open_bridge(FakeWS())
+    view.stack.setCurrentWidget(view.lobby_page)
+    win._sync_game_menu_button()
+    assert win.back_button.text() == "退出服务器"
+
+    bridge = view.bridge
+    win.back_button.click()
+    assert bridge.ws.closed
+    assert view.bridge is None
+    assert view.stack.currentWidget() is view.connect_page
+    assert win.stack.currentWidget() is view
+    assert win.back_button.text() == "返回主菜单"
+    win.back_button.click()
+    assert win.stack.currentIndex() == 0
+    win.close()
+
+
+def test_online_diy_toggle_reloads_matching_decks(qapp, db, tmp_path):
+    sid = 110101
+    diy_db = F.db_of(
+        list(db.shikigami.values()) + [F.shiki(sid, faction="红莲")],
+        list(db.cards.values()) + [F.card(sid * 100 + n, shikigami=sid)
+                                   for n in range(1, 9)],
+    )
+    widget = OnlineView(diy_db, official_db=db, store_path=tmp_path / "decks.json",
+                        bridge_factory=FakeBridge)
+    team = F.TEAM[:3] + [sid]
+    groups = deckcode.group_deck(diy_db, team, F.deck_of(*team))
+    deckstore.save_decks(diy_db, [{"name": "DIY", "groups": groups, "env": None}],
+                         widget.store_path)
+    widget.reload_decks()
+    assert widget.entries == []
+    widget.diy_checkbox.setChecked(True)
+    assert [entry["name"] for entry in widget.entries] == ["DIY"]
+    assert widget.base_db is diy_db
+    widget.diy_checkbox.setChecked(False)
+    assert widget.entries == []
+    assert widget.base_db is db
+    widget.close()
+    widget.deleteLater()
+
+
+def test_online_disconnect_auto_reconnects_with_public_ip_and_start_code(
+        qapp, view, monkeypatch):
+    monkeypatch.setattr("client.gui.online.net.public_ip", lambda: "8.8.8.8", raising=False)
+    view.server_url = "ws://localhost:1037/ws"
+    view.opener = lambda _url: FakeWS()
+    view._open_bridge(FakeWS())
+    view.handle_message({"type": "joined", "room_id": "ABC123", "token": "旧令牌",
+                         "seat": 0, "player_index": 0})
+    view.handle_message({"type": "start", "player_index": 0, "opponent": "乙",
+                         "you_first": True, "reconnect_code": "abcd1234"})
+    view.on_disconnected("网络中断")
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent)
+    msg = view.bridge.sent[-1]
+    assert msg["type"] == "join" and msg["room_id"] == "ABC123"
+    assert msg["reconnect_code"] == "abcd1234"
+    assert msg["client_ip"] == "8.8.8.8"
+    assert "token" not in msg
+
+
+def test_online_lobby_disconnect_does_not_auto_reconnect(qapp, view):
+    view._open_bridge(FakeWS())
+    view.room_id = "ABC123"
+    view.opener = lambda _url: pytest.fail("开局前不应自动重连")
+    view.on_disconnected("网络中断")
+    assert view.bridge is None

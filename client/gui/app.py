@@ -127,8 +127,16 @@ def _set_windows_application_id() -> None:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, db=None, store_path=None):
+    def __init__(self, db=None, store_path=None, official_db=None):
         super().__init__()
+        if db is None:
+            from diy.runtime import load_database
+            db = load_database()
+            if official_db is None:
+                from db.loader import CardDatabase
+                official_db = CardDatabase.load()
+        if official_db is None:
+            official_db = db
         self.setWindowTitle("BWPro by Varisox137")
         self.setWindowIcon(_application_icon())
         self.resize(1600, 900)
@@ -189,16 +197,19 @@ class MainWindow(QMainWindow):
                     self.pages[key] = DeckBuilderView(db, **kwargs)
                 elif key == "hotseat":
                     from client.gui.battle import HotseatView
-                    self.pages[key] = HotseatView(db, on_back=self.go_menu, **kwargs)
+                    self.pages[key] = HotseatView(
+                        db, official_db=official_db, on_back=self.go_menu, **kwargs)
                 else:
                     from client.gui.online import OnlineView
-                    self.pages[key] = OnlineView(db, on_back=self.go_menu, **kwargs)
+                    self.pages[key] = OnlineView(
+                        db, official_db=official_db, on_back=self.go_menu, **kwargs)
             self.stack.addWidget(self.pages[key])
         self.pages["settings"].active_downloads = self.pages["online"].active_downloads
         self.pages["settings"].on_diy_clear = self.pages["online"].refresh_downloaded_database
         self.pages["hotseat"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.pages["hotseat"].state_changed.connect(self._sync_game_menu_button)
         self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)
+        self.pages["online"].connection_changed.connect(self._sync_game_menu_button)
         self.back_button.hide()
         self.set_theme(self.theme)
         self.db = db
@@ -290,7 +301,11 @@ class MainWindow(QMainWindow):
         hotseat = self.pages["hotseat"]
         hotseat_finished = (hotseat_battle and hotseat.game is not None
                             and hotseat.game.state.winner is not None)
+        online_connected = (page is online and not online_battle
+                            and online.stack.currentWidget() is online.lobby_page
+                            and online.bridge is not None)
         self.back_button.setText(
+            "退出服务器" if online_connected else
             "返回主菜单" if not hotseat_battle or hotseat_finished else "退出对局")
         margin = 0 if in_battle else 12
         self.outer.setContentsMargins(margin, margin, margin, margin)
@@ -315,9 +330,9 @@ class MainWindow(QMainWindow):
             self.go_menu()
 
     def back(self):
-        """统一返回入口；联机页保留连接与房间状态，其余页面沿用原清理。"""
+        """统一返回入口；联机大厅先断开连接，再允许返回主菜单。"""
         page = self.stack.currentWidget()
-        for hook_name in ("return_to_menu", "leave_to_menu"):
+        for hook_name in ("back_to_previous", "return_to_menu", "leave_to_menu"):
             hook = getattr(page, hook_name, None)
             if callable(hook):
                 if hook() is False:

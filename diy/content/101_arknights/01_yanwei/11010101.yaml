@@ -12,4 +12,4 @@ versions:
       effects:
         steps:
           - {op: stat_aura, kind: half_player_shield_power, scope: form}
-      text: "焰尾的力量持续等于己方牌手当前护甲的一半（向下取整）。"
+      text: "己方牌手每有2#hj，焰尾便获得1#ll。"

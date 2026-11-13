@@ -13,4 +13,4 @@ versions:
         condition: {shikigami_shikigami: self}
         steps:
           - {op: gain_shield, amount: 2, target: {kind: all, pool: self_player}}
-      text: "当焰尾移回准备区时，己方牌手获得2点护甲。"
+      text: "焰尾移回准备区时，你获得2#hj。"

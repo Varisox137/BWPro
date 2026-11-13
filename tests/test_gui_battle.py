@@ -149,6 +149,47 @@ def test_startup_only_lists_standard_and_enters_game(qapp, db, tmp_path, view):
     assert len(scene_items(view, "shiki")) == 8
 
 
+def test_hotseat_setup_environment_controls_game_database(qapp, db, tmp_path):
+    widget = HotseatView(db, store_path=tmp_path / "decks.json")
+    groups = deckcode.group_deck(db, F.TEAM, F.deck_of(*F.TEAM))
+    deckstore.save_decks(db, [{"name": "标准", "groups": groups, "env": None}],
+                         widget.store_path)
+    assert widget.env_combo.currentData() is None
+    assert not widget.diy_checkbox.isChecked()
+    widget.env_combo.addItem(str(F.VER), F.VER)
+    widget.env_combo.setCurrentIndex(widget.env_combo.count() - 1)
+    widget.start_from_decks(0, 0, first=0, shuffle_team=False)
+    assert widget.base_db is db
+    assert widget.db is not db
+    assert widget.battle_scene.db is widget.db
+    assert set(widget.db.shikigami) == set(db.shikigami)
+    widget.close()
+    widget.deleteLater()
+
+
+def test_hotseat_diy_toggle_refreshes_available_decks(qapp, db, tmp_path):
+    sid = 110101
+    diy_db = F.db_of(
+        list(db.shikigami.values()) + [F.shiki(sid, faction="红莲")],
+        list(db.cards.values()) + [F.card(sid * 100 + n, shikigami=sid)
+                                   for n in range(1, 9)],
+    )
+    widget = HotseatView(diy_db, official_db=db,
+                         store_path=tmp_path / "decks.json")
+    team = F.TEAM[:3] + [sid]
+    groups = deckcode.group_deck(diy_db, team, F.deck_of(*team))
+    deckstore.save_decks(diy_db, [{"name": "DIY", "groups": groups, "env": None}],
+                         widget.store_path)
+    assert DeckSelectDialog(widget._game_database(), widget.store_path, "玩家A").entries == []
+    widget.diy_checkbox.setChecked(True)
+    dialog = DeckSelectDialog(widget._game_database(), widget.store_path, "玩家A")
+    assert [entry["name"] for entry in dialog.entries] == ["DIY"]
+    assert widget.base_db is diy_db
+    dialog.close()
+    widget.close()
+    widget.deleteLater()
+
+
 def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
