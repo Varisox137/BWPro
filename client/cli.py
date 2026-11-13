@@ -5,8 +5,8 @@
 
 运行：uv run python -m client.cli
 一级菜单：卡组构筑（client/deckbuilder.py）/ 本地热坐 / 联机对战（client/net.py，
-服务端见 server/main.py）。数据为正式 YAML（CardDatabase.load：db/cards、
-db/shikigami）；热坐与联机开局前从本地卡组文件（~/.bwpro/decks.json，
+服务端见 server/main.py）。本地数据由 diy.runtime 合并正式与内置 DIY；
+热坐与联机开局前从本地卡组文件（~/.bwpro/decks.json，
 db/deckstore.py）选择卡组，本地无可用卡组或取消选择时不开局、回主菜单。
 
 显示：己方场上式神名与己方手牌卡牌名按座次 1-4 着色（亮黄/亮青/亮紫/亮红）；
@@ -26,7 +26,6 @@ from core.engine import Game, IllegalAction
 from core.model import Ref
 from core.setup import new_game
 from db.envs import show_faction as _show_faction
-from db.loader import CardDatabase
 
 HELP = """指令（括号内为 alias，序号从 1 开始）：
   play (p)   <手牌序号> [子选项] [目标] [目标2] [方式]   使用手牌；如 play 1 e1 或 p 1 e1 burst
@@ -1031,12 +1030,13 @@ def _battle_loop(game: Game, printer: SettlePrinter) -> None:
 
 
 def main() -> None:
-    """一级菜单：卡组构筑 / 本地热坐 / 联机对战。数据为正式 YAML（CardDatabase.load）。"""
+    """一级菜单：卡组构筑 / 本地热坐 / 联机对战。默认合并正式与内置 DIY 数据。"""
     from core.logging_config import configure_logging
     configure_logging("cli")
     if os.name == "nt":
         os.system("")  # 启用 Windows 控制台 ANSI 颜色（Git Bash/WT 原生支持，无副作用）
-    db = CardDatabase.load()
+    from diy.runtime import load_database
+    db = load_database()
     with tui.activate():
         while True:
             tui.set_status(lambda: ("主菜单", "输入 1/2/3 选择，q 退出"))

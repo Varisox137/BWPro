@@ -23,4 +23,4 @@ versions:
         # 将所有己方气绝的式神替换为『棺材』（to_coffin 对未气绝/已离场/召唤物空操作）
         steps:
           - {op: to_coffin, into: 10040299, target: {kind: all, pool: friendly_defeated}}
-      text: "[瞬发]。气绝时可用。将所有己方气绝的式神替换为‘棺材’。"
+      text: "[瞬发]，气绝时可用。将所有己方气绝的式神替换为‘棺材’。"

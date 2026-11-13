@@ -35,7 +35,7 @@ from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, DeckRules, rules_summary, validate_deck
 from db.envs import env_label as _env_label, parse_env_input, show_faction as _show_faction
 from db.loader import CardDatabase
-from db.packs import PACK_NAMES, PACKS
+from db.packs import pack_names_for
 
 # 本地卡组列表中"满足天梯规则"的卡组以亮蓝色标明
 STANDARD_COLOR = 94
@@ -114,13 +114,14 @@ def _print_shikigami(defs: list, marked: set[int] | None = None,
 PAGE_SIZE = 10  # 式神列表每页条数
 
 
-def _pack_groups(pool: list) -> list[tuple[str, list]]:
-    """可构筑式神按版本包分组（db.packs.PACKS 登记序；空包不列出）。"""
+def _pack_groups(db: CardDatabase, pool: list) -> list[tuple[str, list]]:
+    """可构筑式神按版本包分组（官方登记序，DIY 按包号补入；空包不列出）。"""
+    names = pack_names_for(db)
     groups = []
-    for num in PACKS:
+    for num in sorted(names):
         members = [d for d in pool if str(d.id)[1:4] == num]
         if members:
-            groups.append((PACK_NAMES.get(num, num), members))
+            groups.append((names[num], members))
     return groups
 
 
@@ -141,7 +142,7 @@ def _select_shikigami(db: CardDatabase, *, need: int = 1,
     page = 0
     while len(chosen) < need:
         if in_pack is None:
-            groups = _pack_groups(pool)
+            groups = _pack_groups(db, pool)
             print("")
             print(f"—— 选择式神（已选 {len(chosen)}/{need}："
                   f"{'、'.join(d.name for d in chosen) or '无'}）——")

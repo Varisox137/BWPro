@@ -1530,3 +1530,100 @@ def test_pending_join_cleared_by_failure_and_cancelled_connection(view, monkeypa
     view._connection_succeeded(ws, "ws://localhost:1037/ws")
     assert not view._pending_join
     assert ws.closed and view.bridge is None
+
+
+def _sync_test_package(pack_id=201):
+    import yaml
+    from diy.sync import read_package_data
+
+    sid = 100000 + pack_id * 100 + 1
+    return read_package_data({
+        "pack.yaml": yaml.safe_dump({"id": pack_id, "name": "联机同步测试"}),
+        "shiki.yaml": yaml.safe_dump({
+            "id": sid, "name": "同步测试",
+            "versions": {"history": [{"date": 20261113, "power": 3, "health": 4}]},
+        }),
+    })
+
+
+def test_online_diy_option_defaults_off_and_scopes_create_join(qapp, db, view):
+    save_standard_deck(db, view.store_path)
+    view.reload_decks()
+    view._open_bridge(FakeWS())
+    assert not view.diy_checkbox.isChecked()
+    assert view.create_room()
+    assert "diy" not in view.bridge.sent[-1]
+    view.room_edit.setText("ABC123")
+    view.token_edit.clear()
+    assert view.join_room()
+    assert "diy" not in view.bridge.sent[-1]
+
+    view.diy_checkbox.setChecked(True)
+    assert view.create_room()
+    assert view.bridge.sent[-1]["diy"] is True
+    assert view.join_room()
+    assert view.bridge.sent[-1]["diy"] is True
+
+
+def test_online_diy_sync_upload_download_and_done_on_gui_thread(qapp, view, monkeypatch):
+    from diy import runtime as diy_runtime
+    from diy import sync as diy_sync
+
+    package = _sync_test_package()
+    local = {}
+    monkeypatch.setattr(diy_sync, "collect_packages", lambda _roots: dict(local))
+    loaded = []
+    monkeypatch.setattr(diy_runtime, "load_database",
+                        lambda **kwargs: loaded.append(kwargs) or view.base_db)
+    view._open_bridge(FakeWS())
+    view.handle_message({"type": "joined", "room_id": "DIY001", "token": "令牌",
+                         "seat": 0, "diy": True})
+    view.handle_message({"type": "diy_sync_request"})
+    assert view.bridge.sent[-1] == {"type": "diy_manifest", "packs": []}
+    required = [{"pack_id": package["pack_id"],
+                 "content_hash": package["content_hash"]}]
+    view.handle_message({"type": "diy_sync_state", "required": required})
+    assert not any(msg["type"] == "diy_sync_done" for msg in view.bridge.sent)
+    view.handle_message({"type": "diy_package", "package": package})
+    assert loaded[-1]["download_versions"] == {201: package["content_hash"]}
+    assert view.bridge.sent[-1]["type"] == "diy_sync_done"
+    assert view.active_downloads() == {(201, package["content_hash"])}
+
+    local[201] = package
+    view.handle_message({"type": "diy_sync_request"})
+    assert view.bridge.sent[-1]["type"] == "diy_manifest"
+    view.handle_message({"type": "diy_upload_request", "pack_id": 201,
+                         "content_hash": package["content_hash"]})
+    assert view.bridge.sent[-1] == {"type": "diy_pack", "package": package}
+    assert "mechanisms.py" not in view.bridge.sent[-1]["package"]["files"]
+
+
+def test_online_diy_sync_failure_returns_to_lobby_with_reason(qapp, view):
+    view._open_bridge(FakeWS())
+    view.handle_message({"type": "joined", "room_id": "DIY001", "token": "令牌",
+                         "seat": 0, "diy": True})
+    view.handle_message({"type": "diy_sync_failed", "reason": "包版本冲突"})
+    assert view.bridge.sent[-1] == {"type": "leave"}
+    view.handle_message({"type": "left"})
+    assert view.room_id is None
+    assert "包版本冲突" in view.lobby_error.text()
+    assert view.active_downloads() == set()
+
+
+def test_online_reconnect_uses_room_snapshot_hash_without_sync_done(
+        qapp, view, monkeypatch):
+    from diy import runtime as diy_runtime
+
+    package = _sync_test_package()
+    loaded = []
+    monkeypatch.setattr(diy_runtime, "load_database",
+                        lambda **kwargs: loaded.append(kwargs) or view.base_db)
+    view._open_bridge(FakeWS())
+    required = [{"pack_id": 201, "content_hash": package["content_hash"]}]
+    view.handle_message({"type": "joined", "room_id": "DIY001", "token": "令牌",
+                         "seat": 1, "diy": True, "diy_required": required,
+                         "player_index": 1})
+    view.handle_message({"type": "diy_package", "package": package})
+    assert loaded[-1]["download_versions"] == {201: package["content_hash"]}
+    assert not any(msg["type"] == "diy_sync_done" for msg in view.bridge.sent)
+    assert view.active_downloads() == {(201, package["content_hash"])}

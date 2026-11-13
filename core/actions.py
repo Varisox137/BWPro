@@ -19,10 +19,17 @@ from core.model import CardInstance, ExecContext, PlayerState, Ref, ShikigamiSta
 ACTIONS: dict[str, Callable] = {}
 
 
+def register_action(name: str, fn: Callable) -> Callable:
+    existing = ACTIONS.get(name)
+    if existing is not None and existing is not fn:
+        raise ValueError(f"动作注册名冲突: {name}")
+    ACTIONS[name] = fn
+    return fn
+
+
 def action(name: str) -> Callable:
     def deco(fn: Callable) -> Callable:
-        ACTIONS[name] = fn
-        return fn
+        return register_action(name, fn)
 
     return deco
 
@@ -833,9 +840,11 @@ def stat_aura(game, ctx, *, targets: list[Ref], kind: str, scope: str = "form",
     scope="form"（ids_power/ids_energy_power 可选）：绑定来源形态、记 holder，形态离场
     经 _destroy_form 同路径移除（烟雾缭绕）。
     """
+    from core.registry import STAT_AURAS
     if kind not in ("self_hand_count", "enemy_fragile_power", "enemy_stunned_exists",
                     "ext_power", "ids_power", "energy_power", "ids_energy_power",
-                    "field_count_stats", "friendly_invocation", "enemy_deck_invocation"):
+                    "field_count_stats", "friendly_invocation", "enemy_deck_invocation") \
+            and kind not in STAT_AURAS:
         raise ValueError(f"未知 stat_aura 类型: {kind}")
     if kind in ("ids_power", "ids_energy_power"):
         if scope not in ("game", "form"):
@@ -991,7 +1000,7 @@ def reveal(game, ctx, *, targets: list[Ref], mode: str = "event",
 
 @action("grant_keyword")
 def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
-                  scope: str | None = None) -> None:
+                  scope: str | None = None, cls: str | None = None) -> None:
     """授予目标式神一个关键字（按关键字的天然持久性类别入列，见 engine._grant_keyword）。
 
     scope="battle"：战斗作用域条件授予——绑定当前战斗上下文，战斗终止点按实例移除
@@ -1005,7 +1014,8 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
     授予关键字实例、外层战斗终止点核销）。
     scope="turn"：当回合结束移除（惊鸿之舞"所有己方式神本回合获得[帷幕]和[不屈]"——
     触发发生在哪方回合就在那方回合结束点移除，引擎 _remove_turn_keyword_grants 按
-    授予时回合号比对；一次性关键字（[不屈]）被正常消耗后不到回合结束即已移除）。"""
+    授予时回合号比对；一次性关键字（[不屈]）被正常消耗后不到回合结束即已移除）。
+    scope="form"：绑定目标当前形态，形态离场按实例移除；cls 可覆盖天然持久性类别。"""
     for ref in targets:
         if ref.shikigami is None:
             continue
@@ -1016,14 +1026,18 @@ def grant_keyword(game, ctx, *, targets: list[Ref], keyword: str,
             s.ext.setdefault("next_battle_keywords", []).append({"keyword": keyword})
             game._log(f"{game.db.shikigami[s.id].name} 将在其下一次攻击的战斗中获得关键字")
             continue
-        cls = game._grant_keyword(s, keyword)
+        if scope == "form" and s.form is None:
+            raise ValueError("grant_keyword(scope=form) 需要目标当前结附形态")
+        actual_cls = game._grant_keyword(s, keyword, cls)
         if scope == "battle" and game._battle_stack:
             bid = game._battle_stack[-1]
-            game._battle_grants.setdefault(bid, []).append((ref, keyword, cls))
+            game._battle_grants.setdefault(bid, []).append((ref, keyword, actual_cls))
         if scope == "turn":
             game.state.players[ref.player].ext.setdefault(
                 "turn_keyword_grants", []).append(
-                {"ref": ref, "keyword": keyword, "cls": cls, "turn": game.state.turn})
+                {"ref": ref, "keyword": keyword, "cls": actual_cls, "turn": game.state.turn})
+        if scope == "form":
+            s.form.mods.setdefault("granted_keywords", []).append([keyword, actual_cls])
 
 
 @action("trigger_form_countdown")
@@ -3267,8 +3281,9 @@ def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
            steps: list, clear_orb: bool = False) -> None:
     """重复执行一组子步骤（吸魂灯"你每有 1 点鬼火便重复一次"；targets 忽略）。
 
-    count 为整数或 {"orb": true}（解析见 _orb_count）；{"field_intensity": "self"}
-    = 触发来源幻境当前耐久（星陨"重复耐久次"——幻境能力块专用，开始时一次性取值）；
+    count 为整数或 {"orb": true}（解析见 _orb_count）；{"memo": key} = 当前块
+    ctx.memo[key] 的实际计数（缺省 0）；{"field_intensity": "self"} = 触发来源幻境
+    当前耐久（星陨"重复耐久次"——幻境能力块专用，开始时一次性取值）；
     {"event_base_power": key} = 触发事件 key 所指式神的当前基础力量（落英缤纷类，
     开始时一次性取值）。
     子步骤在同一块上下文（共享 ctx.memo）中逐轮顺序执行。clear_orb=True 时先一次性
@@ -3277,7 +3292,9 @@ def repeat(game, ctx, *, targets: list[Ref], count: int | dict,
     """
     from db.schema import Step
     p = game.state.players[ctx.controller]
-    if isinstance(count, dict) and count.get("event_base_power"):
+    if isinstance(count, dict) and count.get("memo") is not None:
+        n = int((ctx.memo or {}).get(count["memo"], 0))
+    elif isinstance(count, dict) and count.get("event_base_power"):
         # 事件 Ref 所指式神的当前基础力量（落英缤纷/晚樱之意"重复该式神基础力量
         # 的次数"——"该式神"= 触发事件角色，复活/气绝事件的 shikigami payload）
         ref = (ctx.event or {}).get(count["event_base_power"])

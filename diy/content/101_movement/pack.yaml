@@ -1,0 +1,9 @@
+id: 101
+name: 红松移动
+theme: 移动与护甲
+author: "962779670"
+requires:
+  actions: [move_combat_all, redirect_attack]
+  conditions: [player_shield_ge]
+  pools: [any_combat]
+  stat_auras: [half_player_shield_power]

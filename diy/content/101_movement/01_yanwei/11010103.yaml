@@ -1,0 +1,22 @@
+id: 11010103
+name: 矫捷如流星
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: combat
+      rarity: R
+      level: 1
+      target: {kind: choose, pool: friendly_shikigami}
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+          - op: delay_grant
+            when: on_battle_end
+            scope: battle
+            bind: chosen
+            condition: {attacker_shikigami: 110101}
+            steps:
+              - {op: move}
+      text: "+1/+1。选择一名己方式神，本次攻击结束后使其[移动]。"

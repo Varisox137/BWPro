@@ -16,6 +16,9 @@ def test_exe_data_include_all_standalone_runtime_resources():
     assert any(path.parent == build.ROOT / "assets" / "fonts" for path in sources)
     assert any(build.ROOT / "db" in path.parents and path.suffix == ".yaml"
                for path in sources)
+    assert build.ROOT / "diy" / "content" / "101_movement" / "mechanisms.py" in sources
+    assert any(build.ROOT / "diy" / "content" in path.parents and path.suffix == ".yaml"
+               for path in sources)
     assert any(build.ROOT / "library" in path.parents for path in sources)
     code_root = build.bwpdiy_code_root(build.ROOT)
     assert code_root / "bwpdiy" / "render" / "default_layout.json" in sources

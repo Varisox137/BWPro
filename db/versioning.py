@@ -1,7 +1,7 @@
 """平衡性多版本：同名卡的 versions 结构与指定日期（环境）解析。
 
-yaml 约定（同 db/schema.py 头部）：文件顶层只保留 id / name / versions 三项
-（另可选 unreleased 标记，见下），全部规则数据存放在 versions.history 的
+yaml 约定（同 db/schema.py 头部）：文件顶层只保留 id / name / versions
+（另可选 unreleased 与式神 author 元数据），全部规则数据存放在 versions.history 的
 版本快照中：
 
     id: 10010101
@@ -30,7 +30,7 @@ from __future__ import annotations
 from db.schema import check_version_date
 
 # 顶层身份字段：版本快照与解析结果中，id/name 恒取顶层值；history 条目不得重复
-IDENTITY_KEYS = frozenset({"id", "name", "versions", "unreleased"})
+IDENTITY_KEYS = frozenset({"id", "name", "versions", "unreleased", "author"})
 
 
 def parse_versions(raw: dict) -> tuple[int | None, list[dict]]:
@@ -47,7 +47,7 @@ def validate_versions(raw: dict) -> list[str]:
     errors: list[str] = []
     extra = set(raw) - IDENTITY_KEYS
     if extra:
-        errors.append(f"顶层只允许 id/name/versions/unreleased，多余字段 {sorted(extra)}")
+        errors.append(f"顶层只允许 id/name/versions/unreleased/author，多余字段 {sorted(extra)}")
     v = raw.get("versions")
     if not isinstance(v, dict):
         return errors + ["缺 versions 块或结构非法"]
@@ -102,8 +102,8 @@ def resolve_at_date(raw: dict, date: int,
             chosen = entry
     if chosen is None:
         return None
-    out = {k: raw[k] for k in ("id", "name", "unreleased")
-           if k in raw}  # 灵咒顶层无 id（仅 name）
+    out = {k: raw[k] for k in ("id", "name", "unreleased", "author")
+           if k in raw}  # 灵咒顶层无 id（仅 name）；author 为可选制作元数据
     out.update({k: v for k, v in chosen.items() if k != "date"})
     out["version"] = chosen["date"]
     return out

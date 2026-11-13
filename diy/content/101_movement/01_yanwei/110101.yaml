@@ -1,0 +1,16 @@
+id: 110101
+name: 焰尾
+author: "962779670"
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      faction: 苍叶
+      power: 3
+      health: 4
+      ability:
+        when: on_leave_combat
+        condition: {shikigami_shikigami: self}
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: all, pool: self_player}}
+      text: "当焰尾移回准备区时，己方牌手获得2点护甲。"

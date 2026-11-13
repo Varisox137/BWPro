@@ -50,9 +50,10 @@ def _add_data(source: Path, destination: str) -> list[str]:
 
 
 def _datas_args() -> list[str]:
-    """内嵌通用素材、规则数据、卡图库与 BWPDIY 默认布局；不含用户全局布局。"""
+    """内嵌通用素材、正式/内置 DIY 规则数据、卡图库与默认布局；不含用户全局布局。"""
     args: list[str] = []
-    for directory in (ROOT / "assets", ROOT / "db", ROOT / "library"):
+    for directory in (ROOT / "assets", ROOT / "db", ROOT / "diy" / "content",
+                      ROOT / "library"):
         for path in sorted(directory.rglob("*")):
             if not path.is_file() or "__pycache__" in path.parts or path.suffix == ".pyc":
                 continue

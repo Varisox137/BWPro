@@ -8,8 +8,8 @@
      协战牌双式神从属，规则见 docs/rules.md 第十四/十五章。末两位的分配约定保持不变。
    - 中立牌（无从属式神，实质为系统/效果生成的衍生卡）：8 位数字 a999xxxx
      （'9' + 1 位异画位 + 6 位数字，默认异画自 90999999 开始递减分配），无等级
-2. 平衡性多版本：yaml 顶层只保留 id / name / versions 三项，全部规则数据存放在
-   versions.history 的版本快照中——每条 = date（8 位日期 YYYYMMDD）+ 该版本的
+2. 平衡性多版本：yaml 顶层只保留 id / name / versions（另可选 unreleased、
+   式神 author 元数据），全部规则数据存放在 versions.history 的版本快照中——每条 = date（8 位日期 YYYYMMDD）+ 该版本的
    全部完整数据（完整快照，不按差量记录），首条目的 date = 发布日期；
    versions.best 为维护者手动标记的"历史最强"版本日期（仅元数据，解析不使用）。
    version 字段不入 yaml：加载/环境解析时 = 所取快照的 date（db/versioning.py）。
@@ -353,6 +353,7 @@ class ShikigamiDef(BaseModel):
     id: int
     version: int
     name: str
+    author: str | None = None  # 制作者元数据；不参与结算，不进入版本快照
     kind: Literal["shikigami", "summon", "transform", "replace"] = "shikigami"  # 式神（非召唤物）/ 召唤物 / 变形物 / 替换物
     # （变形物/替换物：视同召唤物类不入构筑池/测试卡组。变形物由 transform 动作变入，
     # 带快照、untransform/气绝前2 还原；替换物由 replace 动作换入，无快照、不可还原，

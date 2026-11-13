@@ -56,7 +56,7 @@ from __future__ import annotations
 
 from core.model import Ref
 
-POOLS = frozenset({
+POOLS = set({
     "enemy_shikigami",
     "friendly_shikigami",
     "any_shikigami",
@@ -79,6 +79,16 @@ POOLS = frozenset({
     "active_character",
     "enemy_fragile_or_combat",
 })
+POOL_HANDLERS: dict[str, object] = {}
+
+
+def register_pool(name: str, fn) -> object:
+    existing = POOL_HANDLERS.get(name)
+    if existing is not None and existing is not fn:
+        raise ValueError(f"目标池注册名冲突: {name}")
+    POOL_HANDLERS[name] = fn
+    POOLS.add(name)
+    return fn
 
 
 def _veiled_state(s) -> bool:
@@ -103,6 +113,9 @@ def pool_refs(game, pool: str, controller: int, *, targeted: bool = False) -> li
     targeted=True（choose 选择/出击目标等有目标的指定）时，持帷幕的敌方式神不可选。
     """
     enemy = 1 - controller
+    custom = POOL_HANDLERS.get(pool)
+    if custom is not None:
+        return custom(game, controller, targeted=targeted)
 
     def alive_shiki(pi: int) -> list[Ref]:
         return [
@@ -689,8 +702,12 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
     """
     if not condition:
         return True
+    from core.registry import CONDITIONS
     for key, want in condition.items():
-        if key == "any_of":
+        if key in CONDITIONS:
+            if not CONDITIONS[key](game, want, event, controller, holder, chosen):
+                return False
+        elif key == "any_of":
             # 子条件任一命中（OR；舍生响应"生命<=伤害值*2（暴击无贯通）或 <=伤害值"）
             if not any(match_condition(game, sub, event, controller, holder, chosen)
                        for sub in want):

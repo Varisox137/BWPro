@@ -31,6 +31,14 @@ PACK_NAMES = {
 }
 
 
+def pack_names_for(db) -> dict[str, str]:
+    names = dict(PACK_NAMES)
+    for pack_id, metadata in getattr(db, "diy_packs", {}).items():
+        number = f"{int(pack_id):03d}"
+        names[number] = metadata.get("name", number)
+    return names
+
+
 def pack_dir_name(sid: int) -> str:
     """6 位式神 id 第 2-4 位的三位包号 → 现有两位前缀目录。"""
     num = str(sid)[1:4]

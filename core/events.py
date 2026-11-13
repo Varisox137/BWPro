@@ -111,6 +111,16 @@ CORE_EVENTS: frozenset[str] = frozenset({
     "on_luck_effect_after",  # 运势生效后 {judge, source, x, dice}（预留）
 })
 
+
+def register_event(name: str, timing: str = "queue") -> None:
+    if timing not in ("insert", "queue"):
+        raise ValueError(f"事件时机须为 insert/queue: {name}={timing}")
+    existing = EVENT_TIMING.get(name)
+    if existing is not None and existing != timing:
+        raise ValueError(f"事件注册名冲突: {name}")
+    EVENT_TIMING[name] = timing
+
+
 # 各事件的默认时机类别："insert"=即时时机 / "queue"=延时时机（未列出的一律 queue）
 EVENT_TIMING: dict[str, str] = {
     "on_game_start": "insert",       # 游戏开始时：即时时机

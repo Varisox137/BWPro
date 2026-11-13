@@ -2,7 +2,7 @@
 
 你不需要会编程，也不需要手写 YAML。只需把**本文件和一位式神及其 8 张卡牌的原始创意**交给大模型；大模型会按本指南定位并阅读项目核心实现，协助你完善设计、生成 YAML 和测试。
 
-当前 DIY 采用“YAML 数据 + 游戏已有规则组件”的方式，不是自由编写程序。大模型可以帮你组织数据和效果，但不能保证任何想象出来的规则都已经受支持。
+当前 DIY 采用“YAML 数据 + 已注册规则组件”的方式，用户 YAML 不执行任意代码。缺失机制放入对应包/式神目录的可信 `mechanisms.py`，经审查后由本地运行时自动注册；不能保证任何想象出来的规则都已受支持。
 
 ## 一、你需要准备什么
 
@@ -79,7 +79,7 @@
 
 - 公开项目地址为 https://github.com/Varisox137/BWPro 。本地项目不可用时，使用联网工具读取 GitHub 文件；原始文件可按 `https://raw.githubusercontent.com/Varisox137/BWPro/master/<路径>` 获取。不要依赖训练记忆或凭空猜测项目结构。
 - 先阅读核心实现，再判断用户创意如何落地。至少检查 `core/engine.py` 的指令入口、事件发出与队列结算，`core/model.py` 的对象与状态，`core/events.py` 的时机类别，`core/actions.py`、`core/targets.py`、`core/registry.py` 的可用原语和白名单，以及 `db/schema.py`、`db/loader.py`、`db/packs.py` 的数据契约。
-- 按创意寻找并在线阅读最相似的现有式神/卡牌 YAML，核对真实字段写法、op 参数和触发时机；不能只读指南中的结构概述就开始生成。
+- 按创意寻找并在线阅读最相似的现有式神/卡牌 YAML，核对真实字段写法、op 参数和触发时机；本地 DIY 自动发现与合并入口为 `diy/runtime.py`，不能只读指南中的结构概述就开始生成。
 - 如果网络或工具无法取得上述核心实现，应明确说明阻塞并继续与用户确认需求，但不要交付标为“可入库”的 YAML。不得用留空 `effects`/`steps` 的半成品冒充已完成产物。
 - 用自己的话复述式神能力和每张卡牌，分别列明触发时机、控制者、来源、目标、数值、费用、持续时间和效果顺序。不要仅凭关键词名称或相似卡面猜测语义。
 - 主动识别描述中的歧义，例如“回合”属于哪一方、“角色”是否包含牌手、“所有”是否包含气绝或未升级式神、效果能否叠加、离场或气绝后是否保留。
@@ -104,7 +104,7 @@
 PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h
 ```
 
-新式神需要唯一 id、拼音 slug 和已登记的版本包目录。目录结构、id 号段与版本包登记分别见 `db/packs.py` 和脚手架说明。不要覆盖已有文件，也不要复用现有式神或卡牌 id。
+新式神需要唯一 id、拼音 slug 和包目录。正式内容使用 `db/packs.py` 已登记目录；DIY 内容放在 `diy/content/<包id>_<主题>/`，包号默认从 101 起，不登记进官方包清单。不要覆盖已有文件，也不要复用现有式神或卡牌 id。
 
 ### 4. 保持版本数据结构
 
@@ -112,6 +112,7 @@ PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h
 
 - `id`
 - `name`
+- 式神可选 `author`（制作元数据，不进入规则快照）
 - `versions.history` 中的完整版本快照
 - 可选的 `versions.best`
 
@@ -123,7 +124,7 @@ PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h
 
 ### 5. 不修改官方事实来源
 
-`card_data_raw.md` 只用于原版卡牌，任何 agent 不得为了 DIY 修改它。DIY 条目可能产生“raw 无对应条目”的非阻塞警告，这是当前已知行为。
+`card_data_raw.md` 只用于原版卡牌，任何 agent 不得为了 DIY 修改它。DIY 文本不写入该文件，也不接官方 raw 逐字门禁；`diy.runtime.load_database()` 在合并时独立执行 DIY 的 schema 与白名单校验。
 
 不要为了让校验或显示通过而篡改官方文本、删除其他内容或绕过白名单。
 
@@ -131,17 +132,18 @@ PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h
 
 规则 YAML 与卡图配置是两件事：
 
-- 规则数据位于 `db/`。
+- 正式规则数据位于 `db/`，DIY 规则数据位于 `diy/content/`。
 - 卡图、式神立绘与机制框配置位于 `library/`，由 BWPDIY 渲染体系使用。
 - 没有美术配置时仍可使用名称占位卡图进行规则测试。
 - 不要因为缺少图片而跳过规则校验，也不要把图片路径写进引擎效果。
 
 ### 7. 完成后必须验证
 
-运行数据库校验：
+运行官方数据库校验与 DIY 行为测试：
 
 ```bash
 PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.validate
+PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m pytest -q tests/test_diy.py
 ```
 
 为新增机制和实际卡牌行为补充测试。测试应按机制主题组织，不按式神名单独堆叠文件。至少验证：
@@ -162,4 +164,4 @@ uv run python -m client.gui
 
 在卡组构筑中选择该式神并组卡，再进入本地热坐试用。发现效果不符合预期时，把“实际表现”和“你期望的表现”一起交给大模型，比只说“这张卡坏了”更容易修复。
 
-当前 DIY 内容会直接加入项目数据库，没有独立的启用/禁用开关。建议在独立分支或备份中制作，避免与正式内容混在一起。
+本地构筑、热坐和 GUI 默认加载 `diy/content/` 中的内置 DIY。联机时勾选“启用 DIY 内容”后，双方会在准备后同步完整 YAML 包；下载版本保存在用户目录，可在设置页单独清理。

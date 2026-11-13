@@ -1,0 +1,21 @@
+id: 11010108
+name: 红松的骑士
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: field
+      rarity: R
+      level: 3
+      intensity: 9
+      keywords: [fast]
+      effects:
+        steps:
+          - {op: move, target: {kind: self}}
+      abilities:
+        - when: on_leave_combat
+          condition: {shikigami_side: friendly}
+          steps:
+            - {op: grant_keyword, keyword: barrier, target: {kind: context, key: shikigami}}
+            - {op: grant_keyword, keyword: haste, target: {kind: context, key: shikigami}}
+      text: "[瞬发]，耐久9。入场时[移动]焰尾。当己方式神退回准备区时，使其获得[屏障]和[迅捷]。"

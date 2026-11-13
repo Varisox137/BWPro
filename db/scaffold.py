@@ -52,6 +52,7 @@ def scaffold_shikigami(
     faction: str,
     power: int,
     health: int,
+    author: str | None = None,
     kind: str = "shikigami",
     slug: str | None = None,
     with_cards: bool = False,
@@ -83,6 +84,8 @@ def scaffold_shikigami(
     lines = [HEADER]
     lines.append(f"id: {id}\n")
     lines.append(f"name: {name}\n")
+    if author is not None:
+        lines.append(f'author: "{author}"\n')
     lines.append("versions:\n")
     lines.append(f"  best: {_version()}\n")
     lines.append("  history:\n")
@@ -217,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="派系：red=红莲 purple=紫岩 blue=青岚 green=苍叶 white=无相")
     ps.add_argument("--power", type=int, required=True, help="基础力量")
     ps.add_argument("--health", type=int, required=True, help="基础生命")
+    ps.add_argument("--author", default=None, help="可选制作者标识（顶层元数据）")
     ps.add_argument("--kind", default="shikigami", choices=["shikigami", "summon"],
                     help="默认 shikigami；summon=召唤物（id 须 8 位、序号 90-99）")
     ps.add_argument("--with-cards", action="store_true",
@@ -245,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
             written = scaffold_shikigami(
                 DB_ROOT, id=args.id, name=args.name,
                 faction=_FACTION_BY_COLOR[args.faction], power=args.power,
-                health=args.health, kind=args.kind, slug=args.slug,
+                health=args.health, author=args.author, kind=args.kind, slug=args.slug,
                 with_cards=args.with_cards, force=args.force,
             )
         else:

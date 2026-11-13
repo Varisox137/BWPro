@@ -504,3 +504,16 @@
 | 回合方目标池 | `active_character`（目标池） | 当前行动玩家的所有角色（在场式神+牌手）——目标侧随回合方而非效果控制者（凋零之森） | ✅ |
 | 有形态目标过滤 | `has_form`（TargetSpec 过滤键） | 仅结附着形态的式神（牌手滤除——神木诅咒取对象口径）；`prefer_wounded`：候选中存在受伤（生命<上限）或气绝式神时收窄到该子集再交 random 均等取（晚樱之意"优先受伤或气绝式神"，气绝者入池需配 include_defeated_kw）；include_defeated/include_defeated_kw 同步纳入 choose 校验池（spec_pool_refs） | ✅ |
 | 事件基础力量次数 | `{"event_base_power": key}`（repeat count 通道） | 触发事件 key 所指式神的当前基础力量（落英缤纷/晚樱之意"重复该式神基础力量的次数"，"该式神"= 复活/气绝事件角色；开始时一次性取值） | ✅ |
+
+
+## DIY 本地扩展注册
+
+| 术语 | 键 / API | 含义 |
+|---|---|---|
+| DIY 运行时 | `diy.runtime.load_database` / `discover_extensions` | 自动发现包级/式神级可信机制与事件，分别加载后合并正式/DIY 数据并跨来源查重；默认含项目内置 DIY，支持额外可信工作区与环境日期 |
+| 制作元数据 | `ShikigamiDef.author` / 顶层 `author` | 可选作者标识，不参与结算、不进入版本快照；最新与指定日期解析均保留 |
+| 扩展注册 | `register_action` / `register_pool` / `register_condition` / `register_stat_aura` / `register_event` | 同一实现重复注册幂等；同名不同实现或事件时机冲突报错。条件名同步进入 `CONDITION_KEYS`，事件默认时机进入 `EVENT_TIMING` |
+| 攻击目标改写 | `victim_override`（on_before_assault 可变标记） | 在（被）攻击时把本次战斗的被攻击者改为指定 Ref；改写后按有目标战斗处理，不再随战斗区重读原目标 |
+| 形态作用域关键字 | `grant_keyword(scope="form", cls=...)` | 授予目标当前形态期间的关键字，可覆盖天然持久性类别；形态离场按实例移除 |
+| 块内计数重复 | `repeat(count={"memo": key})` | 按当前效果块 `ctx.memo[key]` 的实际计数重复子步骤，缺省 0 |
+| 战斗区条件关键字 | `conditional_keywords` 的 `shikigami_in_combat` | 控制者指定数据 id 的式神当前在战斗区时授予对应卡牌关键字，与条件迷你语言同名算子同义 |

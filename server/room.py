@@ -164,12 +164,24 @@ class Room:
                  turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
                  ready_timeout: float = 15.0, starting_timeout: float = 3.0,
                  env_date: int | None = None, mode: str = "standard",
+                 diy: bool = False, official_db=None,
                  rng: random.Random | None = None) -> None:
         self.id = room_id
         self.db = db
+        self.diy = diy
+        self.official_db = official_db or db
+        self._trusted_db = db
         self.mode = mode  # standard=固定标准环境（最新，不可更改）/ free=自由环境
         self.env_date = env_date  # 对局环境（平衡性版本日期；None = 最新数据）
         self.env_db = db.at_date(env_date)  # 环境下解析后的数据库（构筑校验/开局/渲染用）
+        self.diy_packages: dict[int, dict] = {}
+        self._diy_manifests: dict[int, dict[int, str]] = {}
+        self._diy_required: dict[int, str] = {}
+        self._diy_delivered: set[tuple[int, int]] = set()
+        self._diy_upload_requests: set[tuple[int, int]] = set()
+        self._diy_done: set[int] = set()
+        self._diy_db_ready = False
+        self._diy_completed = False
         self.debug = debug
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
@@ -180,8 +192,8 @@ class Room:
         self.ready_seats: set[int] = set()  # 准备阶段已确认准备的座位
         self._lobby_timer: asyncio.Task | None = None
         self._lobby_deadline: float | None = None
-        # lobby 阶段状态机：idle（无人准备、不计时）→ countdown（一方准备，
-        # 对未准备方计 ready_timeout 秒）→ starting（双方准备，starting_timeout 秒后开局）
+        # lobby：idle → countdown → starting；DIY 房在双方准备后先进入
+        # diy_syncing，完成才进入 starting，失败为 diy_failed 并由客户端退房。
         self._lobby_phase = "idle"
         self.game: Game | None = None
         self.seat_to_player = [0, 1]
@@ -227,9 +239,13 @@ class Room:
         if not deck_code:
             raise ValueError("必须提供卡组码（无默认卡组）")
         try:
+            if self.diy:
+                decoded = deckcode.decode_deck(deck_code)
+                return ([sid for sid, _ in decoded],
+                        [cid for _, cards in decoded for cid in cards])
             return deckcode.deck_from_code(self.env_db, deck_code)
         except ValueError as e:
-            if self.env_date is not None:
+            if self.env_date is not None and not self.diy:
                 raise ValueError(
                     f"卡组在当前环境（{self.env_date}）不可用：{e}") from e
             raise
@@ -241,10 +257,11 @@ class Room:
             raise ValueError("对局已开始，不能加入")
         if self.conns[seat] is not None:
             raise ValueError("该座位已被占用")
-        ids, cards = self._parse_deck(deck_code)  # 先校验再入座
+        ids, cards = self._parse_deck(deck_code)  # DIY 在同步后按房间库复核
         conn = Connection(seat, name, cardback=cardback)
         conn.ws = ws
         conn.deck = (ids, cards)
+        conn.deck_code = deck_code
         self.conns[seat] = conn
         self.last_activity = time.time()  # 人员变动：刷新看门狗计时
         return conn
@@ -297,7 +314,8 @@ class Room:
         """当前 lobby 状态消息（广播与重连补发共用）：IDLE/STARTING 不带 deadline。"""
         ready = [self.conns[s].name for s in sorted(self.ready_seats) if self.conns[s]]
         deadline = self._lobby_deadline if self._lobby_phase == "countdown" else None
-        return protocol.lobby(ready, deadline, env_date=self.env_date, mode=self.mode)
+        return protocol.lobby(ready, deadline, env_date=self.env_date, mode=self.mode,
+                              diy=self.diy)
 
     async def set_env(self, seat: int, date: int | None) -> None:
         """更改对局环境（平衡性版本日期，None = 最新）：仅房主（seat 0）在双方
@@ -317,13 +335,14 @@ class Room:
             return
         from db.deck import validate_deck
         new_db = self.db.at_date(date)
-        for c in self.conns:
-            ids, cards = c.deck
-            errors = validate_deck(new_db, ids, cards)
-            if errors:
-                await self.conns[seat].send(protocol.error(
-                    f"{c.name} 的卡组在环境（{date}）下不可用：{'；'.join(errors)}"))
-                return
+        if not self.diy:  # DIY 未知 id 待同步形成房间库后统一校验
+            for c in self.conns:
+                ids, cards = c.deck
+                errors = validate_deck(new_db, ids, cards)
+                if errors:
+                    await self.conns[seat].send(protocol.error(
+                        f"{c.name} 的卡组在环境（{date}）下不可用：{'；'.join(errors)}"))
+                    return
         self.env_date = date
         self.env_db = new_db
         self._log(f"对局环境已更改为 {date or '最新'}")
@@ -371,7 +390,10 @@ class Room:
         self._lobby_phase = "idle"
 
     async def _enter_starting(self) -> None:
-        """双方均已准备：进入开始倒计时（starting_timeout 秒后开局）。"""
+        """双方均已准备：DIY 先同步，其余房间直接进入开始倒计时。"""
+        if self.diy and not self._diy_completed:
+            await self._begin_diy_sync()
+            return
         self._start_lobby_timer("starting", self.starting_timeout)
         self._log(f"双方已准备，{self.starting_timeout:.0f}s 后开局")
         await self._broadcast(protocol.starting(self._lobby_deadline))
@@ -386,6 +408,9 @@ class Room:
         if seat in self.ready_seats:
             if self._lobby_phase == "starting":
                 await self.conns[seat].send(protocol.error("对局即将开始，不能取消准备"))
+                return
+            if self._lobby_phase in ("diy_syncing", "diy_failed"):
+                await self.conns[seat].send(protocol.error("当前阶段不能取消准备"))
                 return
             self.ready_seats.discard(seat)
             self._cancel_lobby_timer()
@@ -418,6 +443,8 @@ class Room:
         self.conns[seat] = None
         self.ready_seats.discard(seat)
         self._cancel_lobby_timer()
+        if self.diy:
+            self._reset_diy_sync()
         self.last_activity = time.time()  # 人员变动：刷新看门狗计时
         self._log(f"{conn.name} 离开房间")
         peer = self.conns[1 - seat]
@@ -441,10 +468,223 @@ class Room:
                     pass
                 c.ws = None
 
+    # ---------- DIY 房间同步 ----------
+
+    def release_diy_snapshots(self) -> None:
+        self.diy_packages.clear()
+        self._diy_manifests.clear()
+        self._diy_required.clear()
+        self._diy_delivered.clear()
+        self._diy_upload_requests.clear()
+        self._diy_done.clear()
+        self._diy_db_ready = False
+        self._diy_completed = False
+
+    def _reset_diy_sync(self) -> None:
+        self.release_diy_snapshots()
+        self.db = self._trusted_db
+        self.env_db = self.db.at_date(self.env_date)
+
+    async def _begin_diy_sync(self) -> None:
+        self._cancel_lobby_timer()
+        self._reset_diy_sync()
+        self._lobby_phase = "diy_syncing"
+        self._log("双方已准备，开始 DIY 内容同步")
+        await self._broadcast(protocol.diy_sync_request())
+
+    async def resume_diy_sync(self, conn: Connection) -> None:
+        if self._lobby_phase != "diy_syncing":
+            return
+        self._diy_manifests.pop(conn.seat, None)
+        self._diy_done.discard(conn.seat)
+        self._diy_delivered = {item for item in self._diy_delivered
+                               if item[0] != conn.seat}
+        self._diy_upload_requests = {item for item in self._diy_upload_requests
+                                     if item[0] != conn.seat}
+        await conn.send(protocol.diy_sync_request())
+
+    async def resync_diy(self, conn: Connection) -> None:
+        if not self.diy:
+            return
+        for pack_id in sorted(self.diy_packages):
+            await conn.send(protocol.diy_package(self.diy_packages[pack_id]))
+
+    async def _fail_diy_sync(self, reason: str) -> None:
+        if self._lobby_phase != "diy_syncing":
+            return
+        reason = str(reason)[:2000]
+        self._lobby_phase = "diy_failed"
+        self._log(f"DIY 同步失败：{reason}")
+        self.diy_packages.clear()
+        self._diy_db_ready = False
+        await self._broadcast(protocol.diy_sync_failed(reason))
+
+    async def handle_diy_manifest(self, seat: int, entries) -> None:
+        if not self.diy or self._lobby_phase != "diy_syncing":
+            await self.conns[seat].send(protocol.error("当前不在 DIY 同步阶段"))
+            return
+        from diy.sync import validate_manifest
+        try:
+            reported = validate_manifest(entries)
+        except ValueError as error:
+            await self._fail_diy_sync(str(error))
+            return
+        previous = self._diy_manifests.get(seat)
+        if previous == reported:
+            return
+        if previous is not None:
+            await self._fail_diy_sync("同一同步阶段的 DIY 包清单发生变化")
+            return
+        self._diy_manifests[seat] = reported
+        if len(self._diy_manifests) == 2:
+            await self._plan_diy_sync()
+
+    async def _plan_diy_sync(self) -> None:
+        from diy.sync import read_package, validate_package
+        required = {}
+        for reported in self._diy_manifests.values():
+            for pack_id, digest in reported.items():
+                previous = required.get(pack_id)
+                if previous is not None and previous != digest:
+                    await self._fail_diy_sync(
+                        f"DIY 包 {pack_id} 在双方客户端的版本哈希不一致")
+                    return
+                required[pack_id] = digest
+        self._diy_required = required
+        trusted_packs = getattr(self._trusted_db, "diy_packs", {})
+        for pack_id, digest in required.items():
+            cached = self.diy_packages.get(pack_id)
+            if cached is not None and cached["content_hash"] != digest:
+                await self._fail_diy_sync(f"DIY 包 {pack_id} 与房间快照哈希冲突")
+                return
+            if cached is None:
+                trusted = trusted_packs.get(pack_id)
+                if trusted and trusted.get("content_hash") == digest:
+                    try:
+                        self.diy_packages[pack_id] = validate_package(
+                            read_package(trusted["source"]),
+                            expected_pack_id=pack_id, expected_hash=digest)
+                    except (OSError, ValueError) as error:
+                        await self._fail_diy_sync(f"读取可信 DIY 包 {pack_id} 失败：{error}")
+                        return
+            if pack_id not in self.diy_packages:
+                holder = next((seat for seat in (0, 1)
+                               if self._diy_manifests.get(seat, {}).get(pack_id) == digest), None)
+                if holder is None:
+                    await self._fail_diy_sync(f"DIY 包 {pack_id} 没有可用持有方")
+                    return
+                key = (holder, pack_id)
+                if key not in self._diy_upload_requests:
+                    self._diy_upload_requests.add(key)
+                    await self.conns[holder].send(
+                        protocol.diy_upload_request(pack_id, digest))
+        if len(self.diy_packages) == len(required):
+            try:
+                self._refresh_diy_database()
+            except (ValueError, RuntimeError, KeyError, TypeError) as error:
+                await self._fail_diy_sync(str(error))
+                return
+        for seat in (0, 1):
+            for pack_id, digest in required.items():
+                if self._diy_manifests.get(seat, {}).get(pack_id) == digest:
+                    continue
+                package = self.diy_packages.get(pack_id)
+                key = (seat, pack_id)
+                if package is not None and key not in self._diy_delivered:
+                    self._diy_delivered.add(key)
+                    await self.conns[seat].send(protocol.diy_package(package))
+        required_list = [{"pack_id": pack_id, "content_hash": digest}
+                         for pack_id, digest in sorted(required.items())]
+        await self._broadcast(protocol.diy_sync_state(required_list))
+
+    def _refresh_diy_database(self) -> None:
+        if self._diy_db_ready:
+            return
+        import yaml
+        from core.events import CORE_EVENTS
+        from diy.runtime import _merge
+        from diy.sync import database_from_package, validate_capabilities
+
+        trusted_events = set(CORE_EVENTS) | set(self._trusted_db.custom_events)
+        databases = [self.official_db]
+        packs = {}
+        for pack_id in sorted(self._diy_required):
+            package = self.diy_packages[pack_id]
+            validate_capabilities(package, trusted_events=trusted_events)
+            loaded = database_from_package(package)
+            unknown = loaded.custom_events - trusted_events
+            if unknown:
+                raise ValueError(f"DIY 包 {pack_id} 使用未注册事件：{'、'.join(sorted(unknown))}")
+            databases.append(loaded)
+            metadata = yaml.safe_load(package["files"]["pack.yaml"]) or {}
+            packs[pack_id] = {**metadata, "content_hash": package["content_hash"]}
+        merged = _merge(databases)
+        merged.diy_packs = packs
+        self.db = merged
+        self.env_db = merged.at_date(self.env_date)
+        self._diy_db_ready = True
+
+    async def handle_diy_pack(self, seat: int, package) -> None:
+        if not self.diy or self._lobby_phase != "diy_syncing":
+            await self.conns[seat].send(protocol.error("当前不在 DIY 同步阶段"))
+            return
+        from diy.sync import validate_package
+        try:
+            if not isinstance(package, dict):
+                raise ValueError("DIY 包结构非法")
+            pack_id, digest = package.get("pack_id"), package.get("content_hash")
+            if self._diy_required.get(pack_id) != digest \
+                    or self._diy_manifests.get(seat, {}).get(pack_id) != digest:
+                raise ValueError("上传包不在当前同步请求中")
+            if pack_id in self.diy_packages:
+                if self.diy_packages[pack_id]["content_hash"] != digest:
+                    raise ValueError(f"DIY 包 {pack_id} 与房间快照哈希冲突")
+                return
+            validated = validate_package(package, expected_pack_id=pack_id,
+                                         expected_hash=digest)
+            self.diy_packages[pack_id] = validated
+            self._log(f"已校验 DIY 包 {pack_id}（{digest}）")
+        except (ValueError, OSError) as error:
+            await self._fail_diy_sync(str(error))
+            return
+        await self._plan_diy_sync()
+
+    async def handle_diy_sync_done(self, seat: int) -> None:
+        if not self.diy or self._lobby_phase != "diy_syncing":
+            await self.conns[seat].send(protocol.error("当前不在 DIY 同步阶段"))
+            return
+        if seat in self._diy_done:
+            return
+        if not self._diy_db_ready or seat not in self._diy_manifests:
+            await self._fail_diy_sync("DIY 内容尚未同步完成")
+            return
+        for pack_id, digest in self._diy_required.items():
+            if self._diy_manifests[seat].get(pack_id) != digest \
+                    and (seat, pack_id) not in self._diy_delivered:
+                await self._fail_diy_sync(f"客户端尚未接收 DIY 包 {pack_id}")
+                return
+        self._diy_done.add(seat)
+        if self._diy_done != {0, 1}:
+            return
+        for conn in self.conns:
+            try:
+                conn.deck = deckcode.deck_from_code(self.env_db, conn.deck_code)
+            except ValueError as error:
+                await self._fail_diy_sync(
+                    f"{conn.name} 的卡组在同步后的环境（{self.env_date or '最新'}）不可用：{error}")
+                return
+        self._diy_completed = True
+        await self._enter_starting()
+
+    async def handle_diy_sync_error(self, seat: int, reason: str) -> None:
+        name = self.conns[seat].name
+        await self._fail_diy_sync(f"{name} 处理 DIY 内容失败：{str(reason)[:500]}")
+
     # ---------- 开局 ----------
 
     async def start_game(self) -> None:
-        if self.game is not None or not self.full:
+        if self.game is not None or not self.full \
+                or (self.diy and not self._diy_completed):
             return
         self._cancel_lobby_timer()
         first = self.rng.randint(0, 1)  # players[0] 恒为先手

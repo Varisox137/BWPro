@@ -21,6 +21,29 @@
 """
 from __future__ import annotations
 
+from typing import Callable
+
+CONDITIONS: dict[str, Callable] = {}
+STAT_AURAS: dict[str, Callable] = {}
+
+
+def register_condition(name: str, fn: Callable) -> Callable:
+    existing = CONDITIONS.get(name)
+    if existing is not None and existing is not fn:
+        raise ValueError(f"条件注册名冲突: {name}")
+    CONDITIONS[name] = fn
+    CONDITION_KEYS.add(name)
+    return fn
+
+
+def register_stat_aura(name: str, fn: Callable) -> Callable:
+    existing = STAT_AURAS.get(name)
+    if existing is not None and existing is not fn:
+        raise ValueError(f"动态光环注册名冲突: {name}")
+    STAT_AURAS[name] = fn
+    return fn
+
+
 # ---------- ext 键清除时机 ----------
 CLEAR_OWN_TURN_START = "own_turn_start"    # 己方回合开始
 CLEAR_ANY_TURN_START = "any_turn_start"    # 任一回合开始（半回合作用域，双方清除）
@@ -133,7 +156,7 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
 # （field_self/field_intensity_ge 由 _collect_fields 消费，card_in_hand 由
 # _collect_card_triggers 消费）+ 事件字段等值键（含通用后缀家族的具名实例：
 # _side/_kind/_shikigami/_not_shikigami/_not/_has_fragile/_stunned/_ge/_le）。
-CONDITION_KEYS: frozenset[str] = frozenset({
+CONDITION_KEYS: set[str] = set({
     # —— 显式算子（match_condition 具名分支）——
     "active", "player_ext", "turn_mark_not", "turn_count_eq", "orb_ge",
     "assaults_left_ge", "assaults_left_le",
@@ -217,7 +240,7 @@ CONDITIONAL_KEYWORD_KEYS: frozenset[str] = frozenset({
     "keyword",  # 条目授予的关键字（必含）
     "level_ge", "if_alive", "combat_nonempty", "enemy_stunned_nonempty",
     "enemy_hand_all_revealed", "enemy_fragile_ge2", "player_health_ge",
-    "enemy_deck_le", "shikigami_has_form", "friendly_field",
+    "enemy_deck_le", "shikigami_has_form", "shikigami_in_combat", "friendly_field",
     "deck_field_distinct_ge", "dice_six_ge",
     "invocation_on_field",  # 场上有己方式神结附指定灵咒（麓鸣·穿条件[瞬发]）
     "enemy_drew_invocation",  # 对方牌手本回合抽到过结附指定灵咒的牌（惊梦[瞬发]）

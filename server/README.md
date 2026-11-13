@@ -43,6 +43,17 @@ BWP_HOST=127.0.0.1 BWP_PORT=1038 ./scripts/termux_server.sh
 http(s)://（穿透/反代给出的网址）及裸 host[:port]，自动规范化为
 ws(s)://.../ws，并在询问玩家名/卡组前先试连，失败则要求重新输入。
 
+## DIY 房间与内容同步
+
+联机 GUI 的“启用 DIY 内容”默认不选；普通房流程不变。DIY 房在双方准备后进入 `diy_syncing`，完成内容同步和卡组复查后才进入开始倒计时。
+
+- 客户端 → 服务端：`create`/`join` 携带 `diy: true`；同步消息为 `diy_manifest`、`diy_pack`、`diy_sync_done`、`diy_sync_error`。
+- 服务端 → 客户端：`diy_sync_request`、`diy_upload_request`、`diy_package`、`diy_sync_state`、`diy_sync_failed`；重连 `joined` 可携带 `diy_required`。
+- 按完整包同步 YAML 与 `pack.yaml`，不传输或执行 `mechanisms.py`。哈希基于规范化 YAML，排除 `content_hash` 自身；同包不同哈希、跨包实体 id 冲突或缺少已注册机制均拒绝。
+- 服务端只在房间内存保存快照，房间回收即释放；日志不记录完整 YAML。下载端保存到 `~/.bwpro/diy/<包id>/<hash>/`，设置页可仅清理这些下载内容。
+- 日期沿用 `versions.history` 与环境解析；默认创建日期只适用于最新环境，历史环境须显式填写合适日期。同步后重新校验双方卡组。
+- 限制：每方 32 包，每包 128 个 YAML、单文件 256 KiB、总计 512 KiB。完整设计见 `diy/扩展架构设计.md`。
+
 ## 远程日志管理
 
 Termux 服务端启动后，在服务端项目目录读取当前日志提取码：

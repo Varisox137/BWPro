@@ -88,6 +88,13 @@ def _reported_client_ip(msg: dict) -> str | None:
 CLIENT_UA = "BWPro-CLI"  # 客户端标识前缀（软门槛：挡浏览器/扫描器，非访问凭证）
 AUTH_TIMEOUT = 300.0  # 连接后连续 5 分钟未创建/加入房间则断联
 
+def _diy_enabled(msg: dict) -> bool:
+    value = msg.get("diy", False)
+    if not isinstance(value, bool):
+        raise ValueError("字段 diy 须为布尔值")
+    return value
+
+
 def _env_date(msg: dict, key: str) -> int | None:
     """解析 create/env 消息中的环境日期字段：缺省 None（最新）；
     非 int 或非法 8 位日期抛 ValueError。"""
@@ -258,11 +265,12 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
                         env_date = _env_date(msg, "env_date")
                         mode = _text(msg, "mode", 10) or "standard"
+                        diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                         target_room = manager.create(debug=bool(msg.get("debug")),
                                                      room_id=want_id, env_date=env_date,
-                                                     mode=mode)
+                                                     mode=mode, diy=diy)
                         target_conn = await target_room.join(
                             0, name, ws, deck_code, cardback=cardback)
                     except ValueError as e:
@@ -275,10 +283,12 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     print(f"[房间 {room.id}] {name}（{source}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
                           f"{'（debug 对局）' if room.debug else ''}"
+                          f"{'（DIY）' if room.diy else ''}"
                           f"（{room.mode} 模式"
                           f"{f'，环境 {env_date}' if env_date else ''}）", flush=True)
-                    await conn.send(protocol.joined(room.id, conn.token, 0,
-                                                    debug=room.debug))
+                    await conn.send(protocol.joined(
+                        room.id, conn.token, 0, debug=room.debug,
+                        **({"diy": True} if room.diy else {})))
                     await room.on_seat_filled()
                 elif t == "join":
                     try:
@@ -286,6 +296,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         token = _text(msg, "token", MAX_TOKEN)
                         name = _player_name(msg) or "玩家B"
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
+                        diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                     except ValueError as e:
@@ -294,6 +305,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     target_room = manager.get(room_id)
                     if target_room is None:
                         await reject("房间不存在")
+                        continue
+                    if not token and target_room.diy != diy:
+                        await reject("DIY 房间与普通房间须使用相同的 DIY 选项加入")
                         continue
                     if token:  # 断线重连
                         if target_room.reconnect_throttled():
@@ -306,12 +320,23 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                             continue
                         room, conn = target_room, target_conn
                         logger.info("重连成功：房间=%s 座位=%s", room.id, conn.seat)
+                        diy_extra = {}
+                        if room.diy:
+                            diy_extra = {
+                                "diy": True,
+                                "diy_required": [
+                                    {"pack_id": pack_id, "content_hash": digest}
+                                    for pack_id, digest in sorted(room._diy_required.items())],
+                            }
                         await conn.send(protocol.joined(
                             room.id, conn.token, conn.seat,
                             player_index=room.seat_to_player[conn.seat],
-                            debug=room.debug))
+                            debug=room.debug, **diy_extra))
                         if room.game is not None:
+                            await room.resync_diy(conn)
                             await room.resync(conn)  # 全量补发（不动广播游标）
+                        elif room._lobby_phase == "diy_syncing":
+                            await room.resume_diy_sync(conn)
                         elif room.full:
                             # 准备阶段重连：补发当前 lobby 状态（准备名单/倒计时）
                             await conn.send(room.lobby_msg())
@@ -325,8 +350,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     room, conn = target_room, target_conn
                     source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
                     print(f"[房间 {room.id}] {name}（{source}）加入房间", flush=True)
-                    await conn.send(protocol.joined(room.id, conn.token, 1,
-                                                    debug=room.debug))
+                    await conn.send(protocol.joined(
+                        room.id, conn.token, 1, debug=room.debug,
+                        **({"diy": True} if room.diy else {})))
                     await room.on_seat_filled()
                 elif t == "ready":  # 准备阶段确认准备（双方都位后有效）
                     if not binding_valid():
@@ -353,6 +379,18 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     except ValueError as e:
                         await reject(str(e))
                         continue
+                elif t in ("diy_manifest", "diy_pack", "diy_sync_done", "diy_sync_error"):
+                    if not binding_valid():
+                        await reject("尚未加入房间或连接已失效")
+                        continue
+                    if t == "diy_manifest":
+                        await room.handle_diy_manifest(conn.seat, msg.get("packs"))
+                    elif t == "diy_pack":
+                        await room.handle_diy_pack(conn.seat, msg.get("package"))
+                    elif t == "diy_sync_done":
+                        await room.handle_diy_sync_done(conn.seat)
+                    else:
+                        await room.handle_diy_sync_error(conn.seat, msg.get("reason", ""))
                 elif t == "cmd":
                     if not binding_valid():
                         await reject("尚未加入房间或连接已失效")
@@ -364,12 +402,14 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
             watchdog.cancel()
             if binding_valid():
                 if room.game is None:
-                    # 准备阶段断线 = 离开房间：释放座位（无对局可重连）；
-                    # 房间空无一人时直接回收
-                    await room.lobby_leave(conn.seat)
-                    if not any(room.conns):
-                        print(f"[房间 {room.id}] 房间已空，回收", flush=True)
-                        manager.remove(room.id)
+                    if room.diy and room._lobby_phase == "diy_syncing":
+                        room.disconnect(conn)  # 同步快照保留，等待令牌重连
+                    else:
+                        # 普通准备阶段断线 = 离开房间；DIY 同步阶段例外保留座位
+                        await room.lobby_leave(conn.seat)
+                        if not any(room.conns):
+                            print(f"[房间 {room.id}] 房间已空，回收", flush=True)
+                            manager.remove(room.id)
                 else:
                     room.disconnect(conn)
                     manager.sweep()
@@ -449,7 +489,9 @@ def main() -> None:
     import uvicorn
 
     db = CardDatabase.load()
-    manager = RoomManager(db, turn_timeout=args.turn_timeout,
+    from diy.runtime import load_database
+    diy_db = load_database()
+    manager = RoomManager(db, diy_db=diy_db, turn_timeout=args.turn_timeout,
                           mulligan_timeout=args.mulligan_timeout,
                           max_rooms=args.max_rooms)
     log_admin = LogAdminService(log_path.parent, log_path)

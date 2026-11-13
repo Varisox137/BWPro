@@ -262,6 +262,17 @@ def test_shikigami_picker_name_column_is_wide(qapp, db):
     picker.close()
 
 
+def test_shikigami_picker_lists_builtin_diy_pack(qapp):
+    from diy.runtime import load_database
+
+    picker = ShikigamiDialog(load_database())
+    groups = {picker.tree.topLevelItem(i).text(0): picker.tree.topLevelItem(i)
+              for i in range(picker.tree.topLevelItemCount())}
+    assert "红松移动" in groups
+    assert groups["红松移动"].child(0).data(0, Qt.UserRole) == 110101
+    picker.close()
+
+
 def test_editor_card_has_no_outer_frame_and_aligned_stepper(qapp, view):
     view.apply_theme("light", THEMES["light"])
     view.new_deck()

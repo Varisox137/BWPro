@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -22,6 +22,9 @@ from core.engine import Game
 from core.model import GameState, Ref
 from db import deckstore
 from db.envs import parse_env_input
+from diy import runtime as diy_runtime
+from diy import store as diy_store
+from diy import sync as diy_sync
 
 
 class NetBridge(QObject):
@@ -324,6 +327,11 @@ class OnlineView(QWidget):
         self.me: int | None = None
         self.mode = "standard"
         self.env_date: int | None = None
+        self.room_diy = False
+        self._diy_local: dict[int, dict] = {}
+        self._diy_required: dict[int, str] | None = None
+        self._diy_done_key = None
+        self._diy_syncing = False
         self.lobby_ready: list[str] = []
         self.lobby_deadline: float | None = None
         self.starting_deadline: float | None = None
@@ -385,6 +393,9 @@ class OnlineView(QWidget):
         for widget in (self.room_edit, self.mode_combo, self.env_edit, self.create_button):
             create_row.addWidget(widget)
         lobby.addLayout(create_row)
+        self.diy_checkbox = QCheckBox("启用 DIY 内容")
+        self.diy_checkbox.setChecked(False)
+        lobby.addWidget(self.diy_checkbox)
         join_row = QHBoxLayout()
         self.token_edit = QLineEdit()
         self.token_edit.setEchoMode(QLineEdit.Normal)
@@ -572,6 +583,8 @@ class OnlineView(QWidget):
             msg["room_id"] = room_id
         if env is not None:
             msg["env_date"] = env
+        if self.diy_checkbox.isChecked():
+            msg["diy"] = True
         self.bridge.send(msg)
         self.lobby_error.clear()
         return True
@@ -597,6 +610,8 @@ class OnlineView(QWidget):
                "deck_code": None if token else self.deck_code,
                "token": token, "cardback": load_gui_settings()["own_cardback"],
                **net.hello_metadata(self._client_ip)}
+        if self.diy_checkbox.isChecked():
+            msg["diy"] = True
         self.bridge.send(msg)
         self.lobby_error.clear()
         return True
@@ -639,12 +654,108 @@ class OnlineView(QWidget):
         self.battle.db = self.db
         self.battle.battle_scene.db = self.db
 
+    def _set_base_db(self, db) -> None:
+        self.base_db = db
+        self.db = db.at_date(self.env_date)
+        self.battle.db = self.db
+        self.battle.battle_scene.db = self.db
+
+    def _reset_diy_client(self) -> None:
+        self._diy_local = {}
+        self._diy_required = None
+        self._diy_done_key = None
+        self._diy_syncing = False
+
+    def _collect_diy_packages(self) -> dict[int, dict]:
+        packages = diy_sync.collect_packages([diy_runtime.BUILTIN_CONTENT_ROOT])
+        for path in diy_store.downloaded_versions():
+            package = diy_sync.read_package(path)
+            pack_id = package["pack_id"]
+            previous = packages.get(pack_id)
+            if previous is not None:
+                if previous["content_hash"] != package["content_hash"]:
+                    raise ValueError(f"DIY 包 {pack_id} 的自有与下载版本冲突")
+                continue
+            packages[pack_id] = package
+        return packages
+
+    def _report_diy_manifest(self) -> None:
+        try:
+            self._diy_local = self._collect_diy_packages()
+            packs = diy_sync.package_manifest(self._diy_local)
+        except (OSError, ValueError, RuntimeError) as error:
+            self._diy_client_error(str(error))
+            return
+        self._diy_syncing = True
+        self._diy_required = None
+        self._diy_done_key = None
+        self.lobby_status.setText("正在同步 DIY 内容：已上报本地包清单")
+        self.bridge.send({"type": "diy_manifest", "packs": packs})
+
+    def _send_diy_package(self, pack_id: int, digest: str) -> None:
+        package = self._diy_local.get(pack_id)
+        if package is None or package["content_hash"] != digest:
+            self._diy_client_error(f"本地找不到服务器请求的 DIY 包 {pack_id}（{digest}）")
+            return
+        self.bridge.send({"type": "diy_pack", "package": package})
+
+    def _receive_diy_package(self, package: dict) -> None:
+        try:
+            validated = diy_sync.validate_package(package)
+            pack_id, digest = validated["pack_id"], validated["content_hash"]
+            if self._diy_required is None \
+                    or self._diy_required.get(pack_id) != digest:
+                raise ValueError("收到未在当前同步清单中的 DIY 包")
+            diy_store.save_download(validated)
+            self._diy_local[pack_id] = validated
+            self._set_base_db(diy_runtime.load_database(
+                download_versions=dict(self._diy_required)))
+        except (OSError, ValueError, RuntimeError) as error:
+            self._diy_client_error(f"DIY 包下载或加载失败：{error}")
+            return
+        self.lobby_status.setText(f"已下载并校验 DIY 包 {pack_id}")
+        self._maybe_finish_diy_sync()
+
+    def _maybe_finish_diy_sync(self) -> None:
+        if not self._diy_syncing or self._diy_required is None:
+            return
+        key = tuple(sorted(self._diy_required.items()))
+        if key == self._diy_done_key:
+            return
+        if any(self._diy_local.get(pack_id, {}).get("content_hash") != digest
+               for pack_id, digest in key):
+            return
+        self._diy_done_key = key
+        self.bridge.send({"type": "diy_sync_done"})
+
+    def _diy_client_error(self, reason: str) -> None:
+        self.lobby_error.setText(f"DIY 同步失败：{reason}")
+        if self.bridge is not None:
+            self.bridge.send({"type": "diy_sync_error", "reason": reason})
+
+    def active_downloads(self) -> set[tuple[int, str]]:
+        if self.room_id is None or not self.room_diy:
+            return set()
+        selected = self._diy_required
+        return {(int(path.parent.name), path.name)
+                for path in diy_store.downloaded_versions(selected=selected)}
+
+    def refresh_downloaded_database(self) -> None:
+        self._set_base_db(diy_runtime.load_database())
+        self._reset_diy_client()
+        self.reload_decks()
+
     def handle_message(self, msg: dict) -> None:
         kind = msg.get("type")
         if kind == "joined":
             self.room_id = msg["room_id"]
             self.token = msg["token"]
             self.seat = msg["seat"]
+            self.room_diy = bool(msg.get("diy"))
+            self.diy_checkbox.setChecked(self.room_diy)
+            self._reset_diy_client()
+            if self.room_diy and "diy_required" in msg:
+                self._diy_required = diy_sync.validate_manifest(msg["diy_required"])
             self.room_edit.setText(self.room_id)
             self.token_edit.setText(self.token)
             self.battle.reset_session()
@@ -658,6 +769,7 @@ class OnlineView(QWidget):
         elif kind == "lobby":
             self.in_lobby = True
             self.mode = msg.get("mode", "standard")
+            self.room_diy = bool(msg.get("diy"))
             self._apply_env(msg.get("env_date"))
             if self.mode == "free" and self.env_date is not None:
                 self.env_edit.setText(str(self.env_date))
@@ -667,7 +779,25 @@ class OnlineView(QWidget):
             self.peer_label.setText("对手：已就位（卡组由服务端校验）")
             self.stack.setCurrentWidget(self.lobby_page)
             self._render_lobby()
+        elif kind == "diy_sync_request":
+            self._report_diy_manifest()
+        elif kind == "diy_upload_request":
+            self._send_diy_package(msg.get("pack_id"), msg.get("content_hash"))
+        elif kind == "diy_sync_state":
+            try:
+                self._diy_required = diy_sync.validate_manifest(msg.get("required"))
+            except ValueError as error:
+                self._diy_client_error(str(error))
+            else:
+                self._maybe_finish_diy_sync()
+        elif kind == "diy_package":
+            self._receive_diy_package(msg.get("package"))
+        elif kind == "diy_sync_failed":
+            self._diy_syncing = False
+            self.lobby_error.setText(f"DIY 同步失败：{msg.get('reason', '未知错误')}")
+            self.leave_room()
         elif kind == "starting":
+            self._diy_syncing = False
             self.starting_deadline = msg.get("deadline")
             self.lobby_deadline = None
             self._render_lobby()
@@ -694,6 +824,7 @@ class OnlineView(QWidget):
             self.lobby_ready = []
             self.lobby_deadline = None
             self.starting_deadline = None
+            self._reset_diy_client()
             self.peer_label.setText("对手：等待加入")
             self.lobby_status.setText(f"{msg.get('name', '对手')} 已离开，等待新对手")
             self._render_lobby()
@@ -722,6 +853,8 @@ class OnlineView(QWidget):
         """离开当前房间但保持服务器连接，停留在可创建/加入的大厅。"""
         self.in_lobby = False
         self.room_id = self.token = self.seat = self.me = None
+        self.room_diy = False
+        self._reset_diy_client()
         self.token_edit.clear()
         self.lobby_ready = []
         self.lobby_deadline = self.starting_deadline = None
@@ -736,7 +869,7 @@ class OnlineView(QWidget):
         self.ready_label.setText(f"已准备（{len(self.lobby_ready)}/2）：{ready}")
         own_ready = self.player_name in self.lobby_ready
         self.ready_button.setText("取消准备" if own_ready else "准备")
-        self.ready_button.setEnabled(self.in_lobby)
+        self.ready_button.setEnabled(self.in_lobby and not self._diy_syncing)
         self.leave_button.setEnabled(self.room_id is not None)
         self.env_button.setEnabled(self.in_lobby and self.seat == 0
                                    and self.mode == "free" and not self.lobby_ready)
@@ -750,6 +883,8 @@ class OnlineView(QWidget):
             left = max(0, round(deadline - time.time()))
             prefix = "对局开始" if self.starting_deadline else "自动准备"
             self.lobby_status.setText(f"{prefix}倒计时：{left} 秒")
+        elif self._diy_syncing:
+            self.lobby_status.setText("正在同步并校验 DIY 内容，完成后进入开始倒计时")
         elif self.in_lobby:
             self.lobby_status.setText("双方已就位，请准备；一方准备后另一方 15 秒自动准备")
 
@@ -779,6 +914,8 @@ class OnlineView(QWidget):
             self.bridge = None
         self.in_lobby = False
         self.room_id = self.token = self.seat = self.me = None
+        self.room_diy = False
+        self._reset_diy_client()
         self.stack.setCurrentWidget(self.connect_page)
         self._reset_connect_button()
         return False

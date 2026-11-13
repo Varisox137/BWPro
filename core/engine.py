@@ -413,6 +413,7 @@ class Game:
         for s in holders:
             s.ext["dyn_power"] = 0
             s.ext["dyn_health"] = 0
+        from core.registry import STAT_AURAS
         for pi, pl in enumerate(self.state.players):
             for aura in pl.ext.get("stat_auras", []):
                 kind = aura.get("kind")
@@ -436,6 +437,9 @@ class Game:
                 src = self.state.players[hp].shikigami[hs]
                 if not src.in_play:
                     continue  # 持有者未在场：光环不生效
+                if kind in STAT_AURAS:
+                    STAT_AURAS[kind](self, aura, pi, src)
+                    continue
                 if kind == "self_hand_count":
                     # 闻世：每有一张其他手牌此牌便 +1/+1（形态在场上，手牌皆为"其他"）
                     n = len(self.state.players[hp].hand)
@@ -894,6 +898,10 @@ class Game:
                 ai = next((i for i, s in enumerate(p.shikigami) if s.id == want), None)
                 if ai is None or p.shikigami[ai].form is None:
                     continue
+            if ck.get("shikigami_in_combat") is not None and not self._match(
+                    {"shikigami_in_combat": ck["shikigami_in_combat"]}, {},
+                    self.state.players.index(p)):
+                continue
             if ck.get("friendly_field") and not p.fields:
                 continue  # 你有幻境（曜断型条件[瞬发]）
             if ck.get("deck_field_distinct_ge") is not None:
@@ -3538,11 +3546,19 @@ class Game:
         # ---- （被）攻击时（即时时机）----
         cancel_marker = {"cancelled": False}  # 取消本次攻击旗标（cancel_attack 响应置位）
         replace_marker = {"active": False}    # 攻击替换旗标（attack_replace 能力置位）
+        victim_override = {"ref": None}       # 被攻击目标改写（通用扩展标记）
         self.emit("on_before_assault", attacker=atk_ref,
                   victim=Ref(player=def_pi, shikigami=vic_idx), origin=origin,
-                  battle=self._battle_stack[-1],
-                  cancel=cancel_marker, attack_replace=replace_marker)
+                  battle=self._battle_stack[-1], cancel=cancel_marker,
+                  attack_replace=replace_marker, victim_override=victim_override)
         self._drain_queue()
+        override = victim_override["ref"]
+        if isinstance(override, Ref):
+            target = override
+            def_pi = override.player
+            d = self.state.players[def_pi]
+            vic_idx = override.shikigami
+            self._log("本次战斗的被攻击目标已改写")
         if attacker.defeated or attacker.despawned:
             self._log("攻击方在伤害结算前气绝/离场，战斗中止")
             return
@@ -4221,6 +4237,8 @@ class Game:
         for kw in cdef.keywords:
             if kw not in CARD_LEVEL_KEYWORDS:
                 self._remove_keyword(s, kw)
+        for kw, cls in old.mods.get("granted_keywords", []):
+            self._remove_keyword(s, kw, cls)
         s.ext.pop("power_zero", None)  # 力量覆写随形态离场清除（power_override）
         s.faction = s.perm_faction  # 结附期临时派系覆写（faction_override tag）随形态离场还原
         s.keep_fragile = False  # 破甲保留（肿胀体质）随形态离场解除——"形态在场时"语义

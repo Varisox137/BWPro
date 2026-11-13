@@ -1388,3 +1388,13 @@ payload 的 victim_invocations）/ `turn_count_eq` / `from_coffin_not` /
   不洗牌；复用 `pick_generate` 通道（pool=[两断/罗城门/影杀]，>1 候选挂起
   pending kind="pick_generate"）。"鬼切的战斗牌获得[瞬发]"= card_aura 既有
   通道（keywords=[fast], card_type=combat, shikigami=self, scope=ability）。
+
+
+## 三十五、本地 DIY 扩展运行时（已实现）
+
+- 正式内容仍由 `CardDatabase.load()` 单独加载；`diy.runtime.load_database()` 默认把正式内容与 `diy/content/` 内置 DIY 合并，也可用 `content_roots` 追加可信本地工作区、`include_builtin=False` 排除内置包、`at_date` 直接解析环境。各来源分别 strict 加载，合并时跨来源检查式神/卡牌/灵咒冲突，并再次执行全库 schema、事件、op、目标与白名单校验。
+- 自动发现按“包目录先于子目录、同层路径排序”加载 `mechanisms.py` 与 `events.yaml`，不维护中央 DIY 包清单。只有可信本地审查代码可被导入；用户 YAML 和未来的网络内容不执行 Python。重复加载同一路径复用模块，注册接口对同一实现幂等，同名不同实现报错。
+- 通用注册点：`core.actions.register_action`、`core.targets.register_pool`、`core.registry.register_condition` / `register_stat_aura`、`core.events.register_event`。条件注册同步加入 loader 白名单；动态光环经 `stat_aura` 的自定义 kind 进入 `_refresh_stat_auras`；事件声明同步登记 insert/queue 默认时机。
+- `ShikigamiDef.author` 是可选顶层制作元数据，随最新/指定日期解析保留，不进入 `versions.history` 规则快照；脚手架 `--author` 与版本校验同步支持。DIY 文本不接 `card_data_raw.md` 逐字门禁，官方 `db.validate` 与 DIY 运行时校验保持分离。
+- 通用组合扩展：`on_before_assault` 携带可变 `victim_override`，效果可改写本次战斗的被攻击目标；`grant_keyword(scope="form", cls=...)` 支持指定持久性类别并随目标当前形态离场按实例移除；`repeat(count={"memo": key})` 读取块内实际计数；`conditional_keywords` 可复用 `shikigami_in_combat` 条件。
+- 本地构筑、热坐与 GUI 默认使用合并数据库；包分组名称来自运行时 `diy_packs` 元数据，环境解析继续保留。联机 DIY 房间在双方准备后、开始倒计时前同步完整包；服务端仅以房间内存快照保存规范化 YAML，校验内容哈希、能力与 id 冲突，房间回收即释放。下载包保存到 `~/.bwpro/diy/<包id>/<hash>/`，不执行其中代码；设置页可仅清理联机下载内容。详见 `diy/扩展架构设计.md`。

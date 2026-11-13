@@ -1,0 +1,34 @@
+id: 11010105
+name: 红松林
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: spell
+      rarity: R
+      level: 2
+      keywords: [trigger]
+      conditional_keywords:
+        - {keyword: fast, shikigami_in_combat: 110101}
+      effects:
+        steps:
+          - op: move_combat_all
+            target: {kind: all, pool: any_combat}
+            memo: combat_moves
+          - op: repeat
+            count: {memo: combat_moves}
+            steps:
+              - {op: damage, amount: 1, target: {kind: all, pool: enemy_shikigami}}
+      response:
+        when: on_before_assault
+        condition: {victim_side: friendly, victim_kind: shikigami}
+        steps:
+          - {op: cancel_attack}
+          - op: move_combat_all
+            target: {kind: all, pool: any_combat}
+            memo: combat_moves
+          - op: repeat
+            count: {memo: combat_moves}
+            steps:
+              - {op: damage, amount: 1, target: {kind: all, pool: enemy_shikigami}}
+      text: "[移动]双方战斗区的所有式神，每实际[移动]一名式神便对所有敌方式神造成1点伤害。[增强]：若焰尾在战斗区，此牌获得[瞬发]。[响应]：{当己方式神被攻击时，取消本次战斗并自动执行上述效果。}"

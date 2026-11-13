@@ -26,7 +26,6 @@ from client.settle import SettlePrinter
 from core.engine import Game
 from core.model import GameState
 from db.envs import env_label, parse_env_input
-from db.loader import CardDatabase
 
 CLIENT_ID = "BWPro-CLI/1.0"  # 客户端标识：服务端软门槛（server.main.CLIENT_UA 前缀）
 
@@ -781,7 +780,8 @@ def main() -> None:
     args = parser.parse_args()
     if os.name == "nt":
         os.system("")  # 启用 Windows 控制台 ANSI 颜色
-    db = CardDatabase.load()
+    from diy.runtime import load_database
+    db = load_database()
     name = args.name or (_input("玩家名 > ") or "玩家")
     run(db, args.server, name, args.debug)
 

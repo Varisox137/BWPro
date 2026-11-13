@@ -17,11 +17,12 @@ WATCHDOG_INTERVAL = 30.0  # 看门狗扫描间隔（秒）
 
 
 class RoomManager:
-    def __init__(self, db, *, turn_timeout: float = 120.0,
+    def __init__(self, db, *, diy_db=None, turn_timeout: float = 120.0,
                  mulligan_timeout: float = 30.0, starting_timeout: float = 3.0,
                  max_rooms: int = 1000,
                  lobby_idle_timeout: float = LOBBY_IDLE_TIMEOUT) -> None:
         self.db = db
+        self.diy_db = diy_db
         self.turn_timeout = turn_timeout
         self.mulligan_timeout = mulligan_timeout
         self.starting_timeout = starting_timeout
@@ -31,7 +32,8 @@ class RoomManager:
         self._rng = random.Random()
 
     def create(self, *, debug: bool = False, room_id: str | None = None,
-               env_date: int | None = None, mode: str = "standard") -> Room:
+               env_date: int | None = None, mode: str = "standard",
+               diy: bool = False) -> Room:
         """创建房间：room_id 为空随机分配；指定时须满足 6 位字母数字且不冲突。
         mode ∈ {standard, free}：standard=固定标准环境（最新数据，env_date 强制
         None 且不可更改）；free=自由模式，env_date 指定初始环境（None = 最新）。"""
@@ -50,11 +52,12 @@ class RoomManager:
             room_id = new_room_id(self._rng)
             while room_id in self.rooms:
                 room_id = new_room_id(self._rng)
-        room = Room(room_id, self.db, debug=debug,
+        database = (self.diy_db or self.db) if diy else self.db
+        room = Room(room_id, database, debug=debug,
                     turn_timeout=self.turn_timeout,
                     mulligan_timeout=self.mulligan_timeout,
                     starting_timeout=self.starting_timeout,
-                    env_date=env_date, mode=mode)
+                    env_date=env_date, mode=mode, diy=diy, official_db=self.db)
         self.rooms[room_id] = room
         return room
 
@@ -62,7 +65,9 @@ class RoomManager:
         return self.rooms.get(room_id)
 
     def remove(self, room_id: str) -> None:
-        self.rooms.pop(room_id, None)
+        room = self.rooms.pop(room_id, None)
+        if room is not None:
+            room.release_diy_snapshots()
 
     def sweep(self) -> None:
         """回收已被遗弃（双方断线）的房间。"""

@@ -1,0 +1,31 @@
+id: 11010104
+name: 觉醒.焰尾
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: spell
+      subtype: awaken
+      rarity: SSR
+      level: 2
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, perm: true, target: {kind: self}}
+          - {op: buff_health, amount: 1, perm: true, target: {kind: self}}
+      abilities:
+        - when: on_before_assault
+          condition: {victim_side: friendly, victim_shikigami: self}
+          luck: 4
+          steps:
+            - {op: move, target: {kind: self}}
+            - {op: redirect_attack, target: {kind: all, pool: self_player}}
+        - when: on_leave_combat
+          timing: insert
+          condition: {shikigami_shikigami: self}
+          steps:
+            - op: gain_shield
+              amount: {power_of: self}
+              target: {kind: all, pool: self_player}
+            - {op: attack_buff, keywords: [remote], target: {kind: self}}
+            - {op: launch_attack, shikigami: self}
+      text: "[觉醒]：+1/+1。当焰尾被攻击时，[运势4]：成功则[移动]焰尾并把被攻击目标改为己方牌手。当焰尾移回准备区时，己方牌手获得等同焰尾当前力量的护甲，然后焰尾发起一次具有[远程]的攻击。"

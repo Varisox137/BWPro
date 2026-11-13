@@ -88,6 +88,8 @@ class CardDatabase:
         # （+ 可选 unreleased 未发布标记），
         # 先解析最新版本快照（含未发布条目），再按有无 card_type 区分卡牌/式神定义
         for f in sorted(root.rglob("*.yaml")):
+            if f.name == "pack.yaml":
+                continue
             if f.name == "events.yaml":
                 for entry in yaml.safe_load(f.read_text(encoding="utf-8")) or []:
                     custom_events.add(entry["name"])
@@ -168,6 +170,7 @@ class CardDatabase:
                           invocations=invocations,
                           raw_invocations=dict(self.raw_invocations),
                           paths=dict(self.paths))
+        db.diy_packs = dict(getattr(self, "diy_packs", {}))
         errors = db.validate()
         if errors:
             raise RuntimeError(f"环境 {date} 解析结果校验失败：\n" + "\n".join(errors))

@@ -12,7 +12,7 @@ from client.gui.appearance import CardAppearanceDialog
 from client.gui.loading import LoadingIndicator
 from client.gui.widgets import CardDetailDialog, CardWidget, fill_card_row
 from db.envs import available_env_dates, env_label, parse_env_input
-from db.packs import PACK_NAMES, PACKS
+from db.packs import pack_names_for
 
 CARD_PAGE_SIZE = 5
 
@@ -66,8 +66,8 @@ class ShikigamiCodexView(QWidget):
         filters.addWidget(self.env_combo)
         self.pack_combo = QComboBox()
         self.pack_combo.addItem("全部版本包", None)
-        for number in PACKS:
-            self.pack_combo.addItem(PACK_NAMES[number], number)
+        for number, name in pack_names_for(self.db).items():
+            self.pack_combo.addItem(name, number)
         self.pack_combo.currentIndexChanged.connect(self._render_shiki_list)
         filters.addWidget(self.pack_combo)
         self.faction_combo = QComboBox()
@@ -172,6 +172,7 @@ class ShikigamiCodexView(QWidget):
         self.shiki_list.blockSignals(True)
         self.shiki_list.clear()
         groups = {}
+        pack_names = pack_names_for(self.db)
         selected_item = None
         for definition in self.pool:
             pack_number = str(definition.id)[1:4]
@@ -182,7 +183,7 @@ class ShikigamiCodexView(QWidget):
             if query and definition.name != query:
                 continue
             if pack_number not in groups:
-                group = QTreeWidgetItem([PACK_NAMES.get(pack_number, pack_number)])
+                group = QTreeWidgetItem([pack_names.get(pack_number, pack_number)])
                 self.shiki_list.addTopLevelItem(group)
                 groups[pack_number] = group
             item = QTreeWidgetItem([definition.name])

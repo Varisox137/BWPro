@@ -1,0 +1,31 @@
+id: 11010107
+name: 焰心
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: form
+      rarity: SR
+      level: 3
+      form_power: 4
+      form_health: 8
+      effects:
+        luck: 4
+        steps:
+          - op: grant_keyword
+            keyword: unyielding
+            scope: form
+            cls: continuous
+            target: {kind: self}
+      abilities:
+        - when: on_player_damaged
+          condition: {player: self}
+          steps:
+            - {op: move, into_combat: true, target: {kind: self}}
+        - when: on_enter_combat
+          condition: {shikigami_shikigami: self}
+          steps:
+            - op: gain_shield
+              amount: {power_of: self}
+              target: {kind: all, pool: self_player}
+      text: "入场时[运势4]：成功则焰尾在此形态期间获得[不屈]。己方牌手受到伤害后，将准备区的焰尾移入战斗区。当焰尾进入战斗区时，己方牌手获得等同其当前力量的护甲。"

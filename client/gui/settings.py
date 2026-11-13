@@ -20,6 +20,7 @@ from client.gui.ui_assets import (
 )
 from client.gui.widgets import ask_confirmation, polish_dialog_buttons
 from core.version import VERSION
+from diy import store as diy_store
 
 
 class CardbackPreviewDialog(QDialog):
@@ -119,10 +120,15 @@ class CardbackPreviewDialog(QDialog):
 
 
 class SettingsView(QWidget):
-    def __init__(self, db, parent=None, on_change=None, on_check_update=None):
+    def __init__(self, db, parent=None, on_change=None, on_check_update=None,
+                 download_root=None, active_downloads=None, on_diy_clear=None):
         super().__init__(parent)
         self.db = db
         self.on_change = on_change
+        self.download_root = Path(download_root) if download_root is not None \
+            else diy_store.download_root()
+        self.active_downloads = active_downloads or (lambda: set())
+        self.on_diy_clear = on_diy_clear
         self.cache_dir = Path.home() / ".bwpro" / "cardart"
         self.loading_overlay = LoadingOverlay(self)
         self.loading = LoadingIndicator("正在重建卡图", self.loading_overlay.set_text, self)
@@ -199,6 +205,10 @@ class SettingsView(QWidget):
         self.rebuild_button.setObjectName("small")
         self.rebuild_button.clicked.connect(self.rebuild)
         layout.addWidget(self.rebuild_button)
+        self.clear_diy_button = QPushButton("清除联机下载的 DIY 内容")
+        self.clear_diy_button.setObjectName("small")
+        self.clear_diy_button.clicked.connect(self.clear_diy_downloads)
+        layout.addWidget(self.clear_diy_button)
         layout.addStretch(1)
         self.refresh_status()
 
@@ -273,6 +283,32 @@ class SettingsView(QWidget):
             self.status_label.setText("\n".join(lines))
         except (OSError, ValueError, TypeError):
             self.status_label.setText("卡图缓存：尚未生成\n启动时会自动检查并合成已配置资源")
+
+    def clear_diy_downloads(self) -> None:
+        try:
+            stats = diy_store.download_stats(self.download_root)
+            active = set(self.active_downloads())
+            if active and diy_store.downloaded_versions(
+                    root=self.download_root, selected=dict(active)):
+                self.status_label.setText("当前房间正在使用相关下载包，请先离开该 DIY 房间")
+                return
+            if not stats["versions"]:
+                self.status_label.setText("没有可清理的联机下载 DIY 内容")
+                return
+            answer = ask_confirmation(
+                self, "清除联机下载的 DIY 内容",
+                f"将删除 {stats['packs']} 个下载包（{stats['versions']} 个版本），"
+                f"占用 {stats['bytes']} 字节。自有 DIY 内容不会删除，是否继续？")
+            if answer != QMessageBox.Yes:
+                return
+            removed = diy_store.clear_downloaded(self.download_root, active=active)
+        except (OSError, ValueError) as error:
+            self.status_label.setText(f"清理联机下载 DIY 内容失败：{error}")
+            return
+        self.status_label.setText(
+            f"已清除 {removed['packs']} 个联机下载包，释放 {removed['bytes']} 字节；自有内容已保留")
+        if self.on_diy_clear is not None:
+            self.on_diy_clear()
 
     def rebuild(self) -> None:
         if getattr(self.window(), "_prewarm_running", False):

@@ -22,7 +22,7 @@ from client.gui.widgets import (
 from db import deckcode, deckstore
 from db.deck import STANDARD_RULES, rules_summary, validate_deck
 from db.envs import available_env_dates, env_label, parse_env_input
-from db.packs import PACK_NAMES, PACKS
+from db.packs import pack_names_for
 
 CARD_PAGE_SIZE = 5
 DECK_PAGE_SIZE = 4
@@ -97,6 +97,7 @@ class ShikigamiDialog(QDialog):
         self.setWindowTitle("选择式神")
         self.resize(720, 600)
         self.selected_id: int | None = None
+        self.db = db
         self.pool = [d for d in available_shikigami(db)
                      if not exclude or d.id not in exclude]
         layout = QVBoxLayout(self)
@@ -122,12 +123,12 @@ class ShikigamiDialog(QDialog):
     def populate(self) -> None:
         self.tree.clear()
         query = self.search_edit.text().strip()
-        for number, pack in PACKS.items():
+        for number, name in pack_names_for(self.db).items():
             members = [d for d in self.pool if str(d.id)[1:4] == number
                        and (not query or query == d.name)]
             if not members:
                 continue
-            group = QTreeWidgetItem([PACK_NAMES.get(number, number), "", ""])
+            group = QTreeWidgetItem([name, "", ""])
             self.tree.addTopLevelItem(group)
             for definition in members:
                 item = QTreeWidgetItem(group, [definition.name, definition.faction,

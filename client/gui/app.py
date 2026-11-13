@@ -168,21 +168,21 @@ class MainWindow(QMainWindow):
         for key, title, _sub in MENU_ENTRIES:
             if key == "settings":
                 if db is None:
-                    from db.loader import CardDatabase
-                    db = CardDatabase.load()
+                    from diy.runtime import load_database
+                    db = load_database()
                 from client.gui.settings import SettingsView
                 self.pages[key] = SettingsView(
                     db, on_check_update=lambda: self.check_for_updates(manual=True))
             elif key == "codex":
                 if db is None:
-                    from db.loader import CardDatabase
-                    db = CardDatabase.load()
+                    from diy.runtime import load_database
+                    db = load_database()
                 from client.gui.codex import ShikigamiCodexView
                 self.pages[key] = ShikigamiCodexView(db)
             elif key in ("builder", "hotseat", "online"):
                 if db is None:
-                    from db.loader import CardDatabase
-                    db = CardDatabase.load()
+                    from diy.runtime import load_database
+                    db = load_database()
                 kwargs = {} if store_path is None else {"store_path": store_path}
                 if key == "builder":
                     from client.gui.builder import DeckBuilderView
@@ -194,6 +194,8 @@ class MainWindow(QMainWindow):
                     from client.gui.online import OnlineView
                     self.pages[key] = OnlineView(db, on_back=self.go_menu, **kwargs)
             self.stack.addWidget(self.pages[key])
+        self.pages["settings"].active_downloads = self.pages["online"].active_downloads
+        self.pages["settings"].on_diy_clear = self.pages["online"].refresh_downloaded_database
         self.pages["hotseat"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.pages["hotseat"].state_changed.connect(self._sync_game_menu_button)
         self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)

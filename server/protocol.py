@@ -6,9 +6,11 @@ client 标识字段，服务端软门槛校验前缀 BWPro-CLI，见 server.main
 准备后对未准备方计 15s，双方准备后 3s 开始倒计时开局，期间可离开；env 为房主
 在双方均未准备时更改对局环境（平衡性版本日期，date 缺省 = 最新；标准模式房间
 不可更改），create 可带 env_date 指定初始环境与 mode 指定模式
-（standard=固定标准环境，默认 / free=自由环境））
+（standard=固定标准环境，默认 / free=自由环境））。create/join 的 diy=true 进入 DIY 房；
+同步消息为 diy_manifest / diy_pack / diy_sync_done / diy_sync_error。
 服务端 → 客户端：joined / lobby / starting / left / state / log / error / game_over /
-notice / dissolved / ping
+notice / dissolved / ping；DIY 同步另含 diy_sync_request / diy_upload_request /
+diy_package / diy_sync_state / diy_sync_failed。
 
 所有消息均为 JSON object，必带 "type" 字段。游戏指令复用 core.engine.Game.apply
 的 cmd dict 协议（{"op": ...}），原样嵌在 {"type": "cmd", "cmd": {...}} 中。
@@ -20,7 +22,10 @@ import json
 from typing import Any
 
 # 客户端消息类型
-CLIENT_TYPES = {"create", "join", "ready", "leave", "env", "cmd", "pong"}
+CLIENT_TYPES = {
+    "create", "join", "ready", "leave", "env", "cmd", "pong",
+    "diy_manifest", "diy_pack", "diy_sync_done", "diy_sync_error",
+}
 
 
 def parse_client_message(raw: str | bytes) -> dict[str, Any]:
@@ -46,7 +51,8 @@ def joined(room_id: str, token: str, seat: int, **extra) -> dict:
 
 
 def lobby(ready: list[str], deadline: float | None,
-          env_date: int | None = None, mode: str = "standard") -> dict:
+          env_date: int | None = None, mode: str = "standard",
+          diy: bool = False) -> dict:
     """双方都位、进入准备阶段：ready 为已准备玩家名列表（空 = 无人准备、不计时）；
     deadline 为未准备方自动准备的 unix 时刻（15s，仅一方已准备时非空）；
     env_date 为对局环境（平衡性版本日期；None = 最新数据，字段省略）；
@@ -54,12 +60,35 @@ def lobby(ready: list[str], deadline: float | None,
     msg = {"type": "lobby", "ready": ready, "deadline": deadline, "mode": mode}
     if env_date is not None:
         msg["env_date"] = env_date
+    if diy:
+        msg["diy"] = True
     return msg
 
 
 def starting(deadline: float) -> dict:
     """双方均已准备：deadline 为对局正式开始的 unix 时刻（3s 倒计时）。"""
     return {"type": "starting", "deadline": deadline}
+
+
+def diy_sync_request() -> dict:
+    return {"type": "diy_sync_request"}
+
+
+def diy_upload_request(pack_id: int, content_hash: str) -> dict:
+    return {"type": "diy_upload_request", "pack_id": pack_id,
+            "content_hash": content_hash}
+
+
+def diy_package(package: dict) -> dict:
+    return {"type": "diy_package", "package": package}
+
+
+def diy_sync_state(required: list[dict]) -> dict:
+    return {"type": "diy_sync_state", "required": required}
+
+
+def diy_sync_failed(reason: str) -> dict:
+    return {"type": "diy_sync_failed", "reason": reason}
 
 
 def left() -> dict:

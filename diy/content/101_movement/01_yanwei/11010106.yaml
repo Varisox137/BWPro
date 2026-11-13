@@ -1,0 +1,19 @@
+id: 11010106
+name: 先锋剑术
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: combat
+      rarity: SR
+      level: 2
+      keywords: [piercing]
+      effects:
+        steps:
+          - {op: gain_shield, amount: 2, target: {kind: self}}
+          - op: grant_keyword
+            keyword: combo
+            scope: battle
+            condition: {player_shield_ge: 1}
+            target: {kind: self}
+      text: "+0/+2，[贯通]。若己方牌手有护甲，本次战斗获得[连击]。"

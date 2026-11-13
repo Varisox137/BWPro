@@ -691,3 +691,46 @@ def test_frozen_exe_uses_window_icon_without_fixed_application_id(qapp, monkeypa
         shell32=SimpleNamespace(SetCurrentProcessExplicitAppUserModelID=calls.append)))
     app._set_windows_application_id()
     assert calls == []
+
+
+def test_settings_clear_only_downloaded_diy_with_count_and_size(
+        qapp, db, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from diy.store import save_download
+    from tests.test_diy_sync import make_package, write_package
+
+    root = tmp_path / "downloads"
+    package = make_package(201)
+    save_download(package, root=root)
+    own = write_package(tmp_path / "own", make_package(202))
+    confirmations = []
+    monkeypatch.setattr("client.gui.settings.ask_confirmation",
+                        lambda _parent, title, text: confirmations.append((title, text))
+                        or QMessageBox.Yes)
+    refreshed = []
+    view = SettingsView(db, download_root=root, on_diy_clear=lambda: refreshed.append(True))
+    view.clear_diy_button.click()
+    assert "1" in confirmations[0][1] and "字节" in confirmations[0][1]
+    assert not list(root.rglob("pack.yaml"))
+    assert (own / "pack.yaml").exists()
+    assert refreshed == [True]
+    view.close()
+
+
+def test_settings_download_cleanup_blocked_by_active_room(qapp, db, tmp_path, monkeypatch):
+    from diy.store import save_download
+    from tests.test_diy_sync import make_package
+
+    root = tmp_path / "downloads"
+    package = make_package(201)
+    save_download(package, root=root)
+    confirmations = []
+    monkeypatch.setattr("client.gui.settings.ask_confirmation",
+                        lambda *args: confirmations.append(args))
+    view = SettingsView(db, download_root=root,
+                        active_downloads=lambda: {(201, package["content_hash"])})
+    view.clear_diy_button.click()
+    assert not confirmations
+    assert "离开" in view.status_label.text()
+    assert list(root.rglob("pack.yaml"))
+    view.close()

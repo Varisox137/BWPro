@@ -21,11 +21,11 @@ def _smoke_test() -> int:
     from client.gui.prewarm import prewarm_all
     from core.logging_config import configure_logging
     from core.model import ShikigamiState
-    from db.loader import CardDatabase
+    from diy.runtime import load_database
 
     configure_logging("gui-smoke")
     app = QApplication([])
-    db = CardDatabase.load()
+    db = load_database()
     root = bwpdiy_root()
     assert (root / "assets" / "frames").is_dir(), root
     assert (root / "assets" / "levels" / "base.png").is_file(), root

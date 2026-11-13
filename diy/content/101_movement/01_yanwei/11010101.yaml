@@ -1,0 +1,15 @@
+id: 11010101
+name: 红松骑士团团长
+versions:
+  best: 20261113
+  history:
+    - date: 20261113
+      card_type: form
+      rarity: R
+      level: 1
+      form_power: 3
+      form_health: 6
+      effects:
+        steps:
+          - {op: stat_aura, kind: half_player_shield_power, scope: form}
+      text: "焰尾的力量持续等于己方牌手当前护甲的一半（向下取整）。"
