@@ -81,6 +81,7 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     assert all("height" not in call[2] for call in big_cards)
     small_cards = [call for call in calls if call[0] == "entity"]
     assert all(call[2]["disk_cache"] for call in small_cards)
+    assert all(call[2]["image_only"] for call in calls)
     assert len({id(call[2]["cache_context"]) for call in calls}) == 1
     assert "portrait_config_fingerprint" in calls[0][2]["cache_context"]
     assert progress[-1] == (2, 2)
@@ -535,51 +536,70 @@ def test_battle_loading_has_fullscreen_background(qapp, db, tmp_path):
 
 
 def test_startup_prewarm_runs_in_background_without_blocking(qapp, db, tmp_path, monkeypatch):
-    consumed = []
+    import threading
+    import time
+    from client.gui import app
 
-    def fake_prewarm(db_arg):
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+    warnings = []
+
+    def fake_prewarm(db_arg, on_progress):
         assert db_arg is db
-        for current in range(1, 4):
-            consumed.append(current)
-            yield current, 3
+        calls.append("started")
+        started.set()
+        on_progress(1, 3)
+        assert release.wait(2)
+        on_progress(2, 3)
+        on_progress(3, 3)
         return ["done"]
 
-    monkeypatch.setattr("client.gui.app.prewarm_iter", fake_prewarm, raising=False)
-    monkeypatch.setattr("client.gui.app.prewarm_all",
-                        lambda *_args, **_kwargs: pytest.fail("启动不应同步预热"), raising=False)
+    def pump_until(condition):
+        deadline = time.monotonic() + 3
+        while not condition() and time.monotonic() < deadline:
+            qapp.processEvents()
+        assert condition()
+
+    monkeypatch.setattr(app, "prewarm_all", fake_prewarm)
+    monkeypatch.setattr(app, "show_warning", lambda *args: warnings.append(args))
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     win.show()
     win.prewarm_resources()
-    assert win._prewarm_timer.isActive()
-    first_timer = win._prewarm_timer
+    assert started.wait(2)
+    pump_until(lambda: win.statusBar().currentMessage() == "卡图后台同步 1/3")
+    assert win._prewarm_running
     win.prewarm_resources()
-    assert win._prewarm_timer is first_timer
+    assert calls == ["started"]
     menu_button = next(button for button in win.stack.widget(0).findChildren(QPushButton)
                        if button.text().startswith("式神录\n"))
-
-    for current in range(1, 4):
-        qapp.processEvents()
-        assert consumed == list(range(1, current + 1))
-        assert win.statusBar().currentMessage() == f"卡图后台同步 {current}/3"
-        if current == 1:
-            menu_button.click()
-            assert win.stack.currentWidget() is win.pages["codex"]
-
-    qapp.processEvents()
-    assert consumed == [1, 2, 3]
-    assert not win._prewarm_timer.isActive()
-    assert win._prewarm_iterator is None
+    menu_button.click()
+    assert win.stack.currentWidget() is win.pages["codex"]
+    win.go_menu()
+    for key in ("hotseat", "online"):
+        win.go(key)
+        assert win.stack.currentIndex() == 0
+    assert len(warnings) == 2
+    release.set()
+    pump_until(lambda: not win._prewarm_running)
     assert win.statusBar().currentMessage() == ""
+    win.go("hotseat")
+    assert win.stack.currentWidget() is win.pages["hotseat"]
     win.close()
 
 
 def test_background_prewarm_blocks_manual_rebuild(qapp, db, tmp_path, monkeypatch):
+    import threading
     from client.gui import settings
 
-    monkeypatch.setattr("client.gui.app.prewarm_iter",
-                        lambda _db: iter([(1, 1)]), raising=False)
-    monkeypatch.setattr("client.gui.app.prewarm_all",
-                        lambda *_args, **_kwargs: pytest.fail("启动不应同步预热"), raising=False)
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_prewarm(*_args, **_kwargs):
+        started.set()
+        release.wait(2)
+
+    monkeypatch.setattr("client.gui.app.prewarm_all", fake_prewarm)
     calls = []
     monkeypatch.setattr(settings, "prewarm_all",
                         lambda *args, **kwargs: calls.append((args, kwargs)) or [])
@@ -587,29 +607,35 @@ def test_background_prewarm_blocks_manual_rebuild(qapp, db, tmp_path, monkeypatc
                         lambda *_args: pytest.fail("后台预热时不应询问全量重建"))
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     win.prewarm_resources()
-    first_timer = win._prewarm_timer
+    assert started.wait(2)
     win.go("settings")
     page = win.pages["settings"]
     page.rebuild()
     assert calls == []
     assert "后台预热进行中" in page.status_label.text()
-    assert win._prewarm_timer is first_timer
-    assert first_timer.isActive()
+    assert win._prewarm_running
     win.close()
+    release.set()
 
 
-def test_background_prewarm_close_stops_timer(qapp, db, tmp_path, monkeypatch):
-    monkeypatch.setattr("client.gui.app.prewarm_iter",
-                        lambda _db: iter([(1, 1)]), raising=False)
-    monkeypatch.setattr("client.gui.app.prewarm_all",
-                        lambda *_args, **_kwargs: pytest.fail("启动不应同步预热"), raising=False)
+def test_background_prewarm_close_invalidates_worker(qapp, db, tmp_path, monkeypatch):
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_prewarm(*_args, **_kwargs):
+        started.set()
+        release.wait(2)
+
+    monkeypatch.setattr("client.gui.app.prewarm_all", fake_prewarm)
     win = MainWindow(db=db, store_path=tmp_path / "decks.json")
     win.prewarm_resources()
-    timer = win._prewarm_timer
-    assert timer.isActive()
+    assert started.wait(2)
+    assert win._prewarm_running
     win.close()
-    assert not timer.isActive()
-    assert win._prewarm_iterator is None
+    assert not win._prewarm_running
+    release.set()
 
 
 def test_settings_rebuild_when_background_idle(qapp, db, tmp_path, monkeypatch):

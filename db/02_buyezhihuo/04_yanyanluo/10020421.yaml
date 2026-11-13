@@ -1,6 +1,7 @@
 # 骨架（db.scaffold），效果未实现——raw 标记未加入
 id: 10020421
 name: 日霭相织
+unreleased: true  # 原始数据标记“未加入”
 versions:
   best: 20200327
   history:

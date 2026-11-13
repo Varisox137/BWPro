@@ -124,7 +124,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
     for index, ((kind, definition), entry) in enumerate(pending, 1):
         pixmaps = [card_pixmap(
             definition, db, library_dir=library_dir, cache_dir=cache_dir,
-            cache_context=art_context)]
+            cache_context=art_context, image_only=True)]
         if kind == "shikigami":
             shiki = SimpleNamespace(
                 id=definition.id, awakened=None, level=0,
@@ -132,7 +132,7 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
                 health=definition.health, shield=0, ext={})
             pixmaps.append(entity_pixmap(
                 shiki, db, height=210, library_dir=library_dir, cache_dir=cache_dir,
-                cache_context=art_context, disk_cache=True))
+                cache_context=art_context, disk_cache=True, image_only=True))
         if all(pixmap is not None and not pixmap.isNull() for pixmap in pixmaps):
             successful_entries.append(entry)
         else:

@@ -5,7 +5,7 @@ rarity: SR
 description: 对一个式神造成1点伤害并[[眩晕]]它。[[响应]]：当一个敌方式神升级时，额外消耗3#nl，自动对该式神使用。
 shikigami: 日和坊
 version_date: '20200327'
-id: '10020502'
+id: '10020503'
 artwork:
   images:
   - path: 10020502.png

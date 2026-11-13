@@ -529,6 +529,8 @@ def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
 def test_buildable_cards_reinforce_listed_under_both_owners(gdb):
     """协战牌同时列入两位所属式神的可选卡牌（海国共主 = 铃鹿御前 & 大岳丸）；
     unreleased 协战牌（风之乐章 10012421，哨兵日期占位）不列入。"""
+    # 正向双归属测试使用测试内可用副本；实际海国共主仍为未加入。
+    gdb.cards[10020721] = gdb.cards[10020721].model_copy(update={"unreleased": False})
     assert any(c.id == 10020721 for c in deckbuilder.buildable_cards(gdb, 100207))
     assert any(c.id == 10020721 for c in deckbuilder.buildable_cards(gdb, 100408))
     assert not any(c.id == 10012421 for c in deckbuilder.buildable_cards(gdb, 100124))
@@ -538,6 +540,7 @@ def test_buildable_cards_reinforce_listed_under_both_owners(gdb):
 def test_buildable_cards_main_first_reinforce_last(gdb):
     """可携带卡牌排序：本家 8 张（01-08）按 id 升序在前，协战牌列最后——
     协战第二所属式神（鸮羽共鸣主式神 id 更小）的列表中协战牌不再排最前。"""
+    gdb.cards[10030721] = gdb.cards[10030721].model_copy(update={"unreleased": False})
     shanfeng = deckbuilder.buildable_cards(gdb, 100307)
     assert [c.id for c in shanfeng[:8]] == [10030700 + n for n in range(1, 9)]
     assert shanfeng[-1].id == 10030721           # 鸮羽共鸣列最后

@@ -1,6 +1,15 @@
+from pathlib import Path
+
 import pytest
 
 from tests import factories
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path, monkeypatch):
+    """所有测试使用临时 HOME，避免卡图、卡组与设置写入真实用户目录。"""
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
 
 
 @pytest.fixture

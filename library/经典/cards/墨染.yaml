@@ -5,7 +5,7 @@ rarity: SR
 description: 对一个式神造成等同于你手牌数量一半的伤害。
 shikigami: 书翁
 version_date: '20191212'
-id: '10011805'
+id: '10011804'
 artwork:
   images:
   - path: 10011805.png

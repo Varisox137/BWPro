@@ -1,6 +1,7 @@
 # 骨架（db.scaffold），效果未实现——raw 标记未加入
 id: 10020751
 name: 裂甲归潮
+unreleased: true  # 原始数据标记“未加入”
 versions:
   best: 20200928
   history:

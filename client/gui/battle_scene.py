@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from functools import lru_cache
 
 from PySide6.QtCore import (
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QGraphicsRectItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView,
 )
 
+from client.gui import opening
 from client.gui.card_appearance import card_appearance
 from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
 from client.gui.loading import LoadingIndicator
@@ -32,7 +34,17 @@ SCENE_WIDTH = 1600
 SCENE_HEIGHT = 900
 HAND_SIZE = QSizeF(110, 156)
 MULLIGAN_HAND_SIZE = QSizeF(180, 255)
-DECK_BACK_SIZE = QSizeF(160, 114)
+END_TURN_SIZE = 208
+# 参考点仅保存相对回合按钮中心的偏移；水平偏移可整体调整牌库位置。
+_DECK_REFERENCE_OFFSETS = ((127, -203), (60, -351), (-25, -399), (-71, -423))
+_DECK_REFERENCE_ANGLES = (25, 40, 45)
+_DECK_SCALE = SCENE_HEIGHT / 1280
+_DECK_CARD_WIDTH = math.hypot(
+    _DECK_REFERENCE_OFFSETS[1][0] - _DECK_REFERENCE_OFFSETS[0][0],
+    _DECK_REFERENCE_OFFSETS[1][1] - _DECK_REFERENCE_OFFSETS[0][1])
+_DECK_CARD_HEIGHT = round(512 * _DECK_CARD_WIDTH / 276)
+DECK_BACK_SIZE = QSizeF(_DECK_CARD_WIDTH * _DECK_SCALE, _DECK_CARD_HEIGHT * _DECK_SCALE)
+_DECK_HORIZONTAL_SHIFT = 0.0
 SHIKI_SIZE = QSizeF(148, 210)
 PLAYER_SIZE = QSizeF(210, 130)
 HAND_Z = 40
@@ -95,18 +107,44 @@ def combat_position(scene_width: int, top: bool) -> QPointF:
     return QPointF(646 + (scene_width - SCENE_WIDTH) / 2, 220 if top else 460)
 
 
+def _end_turn_center(scene_width: float) -> QPointF:
+    return QPointF(scene_width - 168 + END_TURN_SIZE / 2,
+                   348 + END_TURN_SIZE / 2)
+
+
+def _deck_reference_cards() -> tuple[tuple[float, float, float], ...]:
+    """返回三组卡牌相对按钮中心的 w/h 与顶边顺时针旋转角。"""
+    cards = []
+    for index, angle in enumerate(_DECK_REFERENCE_ANGLES):
+        tr = _DECK_REFERENCE_OFFSETS[index + 1]
+        # 第一个 TL 也只用于量距；实际顶点统一由对应参考线的垂线校正。
+        tl = (tr[0] + _DECK_CARD_WIDTH * math.sin(math.radians(angle)),
+              tr[1] + _DECK_CARD_WIDTH * math.cos(math.radians(angle)))
+        top_w, top_h = tr[0] - tl[0], tr[1] - tl[1]
+        down_w = top_h / _DECK_CARD_WIDTH * _DECK_CARD_HEIGHT
+        down_h = -top_w / _DECK_CARD_WIDTH * _DECK_CARD_HEIGHT
+        center_w = (tl[0] + tr[0] + down_w) / 2
+        center_h = (tl[1] + tr[1] + down_h) / 2
+        rotation = math.degrees(math.atan2(top_h, -top_w))
+        cards.append((center_w, center_h, rotation))
+    return tuple(cards)
+
+
 def deck_back_layout(player: int, index: int, viewer: int,
                      scene_width: float = SCENE_WIDTH):
     top = player != viewer
     position_index = index if top else 2 - index
-    x, y, direction = ((110, 365, 45), (98, 396, 40), (86, 427, 24.5))[position_index]
-    scale = SCENE_HEIGHT / 1280
-    center_y = y * scale
+    center_w, center_h, rotation = _deck_reference_cards()[position_index]
+    button_center = _end_turn_center(scene_width)
+    center = QPointF(
+        button_center.x() - center_w * _DECK_SCALE + _DECK_HORIZONTAL_SHIFT,
+        button_center.y() + center_h * _DECK_SCALE)
     if not top:
-        center_y = 2 * 452 - center_y
-    center = QPointF(scene_width - x * scale, center_y)
+        center.setY(2 * button_center.y() - center.y())
+        rotation = -rotation
+    center = QPointF(round(center.x()), round(center.y()))
     position = center - QPointF(DECK_BACK_SIZE.width() / 2, DECK_BACK_SIZE.height() / 2)
-    return position, (direction if top else -direction) + 180, 20 + index if top else 22 - index
+    return position, rotation, 22 - index if top else 20 + index
 
 
 def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
@@ -117,11 +155,12 @@ def layout_positions(game=None, viewer: int = 0, center_hand: bool = False,
         ("phase",): QPointF(65, 422),
         ("menu",): QPointF(1352 + extra, 16),
         ("log",): QPointF(12, 422),
-        ("end_turn",): QPointF(scene_width - 168, 348),
-        ("enemy_hand_label",): QPointF(1530 + extra, 156),
-        ("enemy_deck",): QPointF(scene_width - 330, 268),
-        ("own_deck",): QPointF(scene_width - 330, 572),
-        ("hand_caption",): QPointF(1530 + extra, 680),
+        ("end_turn",): _end_turn_center(scene_width) - QPointF(
+            END_TURN_SIZE / 2, END_TURN_SIZE / 2),
+        ("enemy_hand_label",): QPointF(scene_width - 250, 156),
+        ("enemy_deck",): QPointF(scene_width - 250, 268),
+        ("own_deck",): QPointF(scene_width - 250, 572),
+        ("own_hand_label",): QPointF(scene_width - 250, 680),
         ("ready",): QPointF(1328 + extra, 435),
         ("handoff",): QPointF(1216 + extra, 435),
         ("mulligan",): QPointF(730 + center_shift, 610),
@@ -319,8 +358,9 @@ class BattleCardItem(QGraphicsObject):
         def draw_stat(box, icon_name, value, icon_size, text_size):
             icon = ui_pixmap(f"stats/{icon_name}.png").scaled(
                 icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            icon_rect = QRectF(box.center().x() - icon_size / 2,
-                               box.center().y() - icon_size / 2, icon_size, icon_size)
+            icon_rect = QRectF(box.center().x() - icon.width() / 2,
+                               box.center().y() - icon.height() / 2,
+                               icon.width(), icon.height())
             painter.drawPixmap(icon_rect, icon, QRectF(icon.rect()))
             stat_font = QFont(_stat_font_family(), text_size)
             painter.setFont(stat_font)
@@ -655,6 +695,26 @@ class BattleScene(QGraphicsScene):
         self.banner_timer.setInterval(30)
         self.banner_timer.timeout.connect(self._advance_banner)
         self._banner_frame = self._banner_frames = 0
+        self.opening_background = QGraphicsRectItem(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
+        self.opening_background.setZValue(DRAG_Z + 27)
+        self.opening_background.setAcceptedMouseButtons(Qt.NoButton)
+        self.opening_background.hide()
+        self.addItem(self.opening_background)
+        self.opening_item = BattleVisualItem()
+        self.opening_item.setZValue(DRAG_Z + 28)
+        self.opening_item.hide()
+        self.addItem(self.opening_item)
+        self.opening_accent_item = BattleVisualItem()
+        self.opening_accent_item.setZValue(DRAG_Z + 29)
+        self.opening_accent_item.hide()
+        self.addItem(self.opening_accent_item)
+        self.opening_timer = QTimer(self)
+        self.opening_timer.setInterval(30)
+        self.opening_timer.timeout.connect(self._advance_opening)
+        self._opening_stage = None
+        self._opening_game = None
+        self._opening_viewer = 0
+        self._opening_frame = self._opening_frames = 0
         self.loading_item = QGraphicsTextItem()
         self.loading_item.setFont(QFont("Microsoft YaHei", 32, QFont.Bold))
         self.loading_item.setDefaultTextColor(QColor("#f3d56b"))
@@ -717,16 +777,14 @@ class BattleScene(QGraphicsScene):
         cardback = self._cardback_name(player_index) if player.deck else None
         signature = (side, bool(player.deck), light, cardback, self.theme)
         if getattr(back, "_render_signature", None) != signature:
-            pixmap = (self._cardback_pixmap(player_index, landscape=True) if player.deck else
-                      empty_deck_pixmap(light, landscape=True))
-            rotated = (pixmap.transformed(QTransform().rotate(180), Qt.SmoothTransformation)
-                       if pixmap is not None else None)
-            back.set_art(rotated)
+            pixmap = (self._cardback_pixmap(player_index) if player.deck else
+                      empty_deck_pixmap(light))
+            back.set_art(pixmap)
             back._render_signature = (
-                signature if rotated is not None and not rotated.isNull() else None)
+                signature if pixmap is not None and not pixmap.isNull() else None)
         position, rotation, z_value = deck_back_layout(
             player_index, key[2], self.viewer, self.layout_width)
-        back.setPos(position + QPointF(0, (DECK_BACK_SIZE.height() - back.size.height()) / 2))
+        back.setPos(position)
         back.setRotation(rotation)
         back.setZValue(z_value)
         back.update()
@@ -800,6 +858,84 @@ class BattleScene(QGraphicsScene):
         self._banner_frame = self._banner_frames = 0
         self.banner_item.hide()
         self.banner_pixmap_item.hide()
+
+    def show_opening_sequence(self, game, viewer: int, duration: int = 2400) -> None:
+        """阵容→战字→渐隐→先后手→视角字样→渐隐，期间遮住常规界面。"""
+        self.hide_banner()
+        self._opening_game = game
+        self._opening_viewer = viewer
+        self._opening_duration = max(120, round(duration / 6))
+        self.opening_background.setRect(self.sceneRect())
+        self.opening_background.setBrush(
+            QColor("#f3efe8" if self.theme == "light" else "#141121"))
+        self.opening_background.show()
+        self.opening_item.set_layers([(
+            opening.opening_preview_pixmap(
+                game, viewer, round(self.layout_width), include_battle=False),
+            QPointF())])
+        self.opening_accent_item.set_layers([(
+            opening.opening_battle_pixmap(round(self.layout_width)), QPointF())])
+        self._set_opening_stage("preview")
+        self.opening_timer.start()
+
+    def _set_opening_stage(self, stage: str) -> None:
+        self._opening_stage = stage
+        self._opening_frame = 0
+        self._opening_frames = max(1, round(
+            self._opening_duration / self.opening_timer.interval()))
+        self.opening_item.show()
+        self.opening_item.setOpacity(0 if stage in ("preview", "order") else 1)
+        if stage in ("preview_battle", "preview_out", "order_badge", "order_out"):
+            self.opening_accent_item.show()
+            self.opening_accent_item.setOpacity(0 if stage in ("preview_battle", "order_badge") else 1)
+        else:
+            self.opening_accent_item.hide()
+        if stage == "order":
+            self.opening_item.set_layers([(
+                opening.opening_order_pixmap(
+                    self._opening_game, self._opening_viewer, round(self.layout_width),
+                    include_badge=False),
+                QPointF())])
+        elif stage == "order_badge":
+            self.opening_accent_item.set_layers([(
+                opening.opening_order_badge_pixmap(
+                    self._opening_game, self._opening_viewer, round(self.layout_width)),
+                QPointF())])
+
+    def _advance_opening(self) -> None:
+        if self._opening_game is None:
+            return
+        if self._opening_frame < self._opening_frames:
+            self._opening_frame += 1
+            progress = self._opening_frame / self._opening_frames
+            fading_out = self._opening_stage in ("preview_out", "order_out")
+            opacity = 1 - progress if fading_out else progress
+            if self._opening_stage in ("preview", "order"):
+                self.opening_item.setOpacity(opacity)
+            else:
+                self.opening_item.setOpacity(opacity if fading_out else 1)
+                self.opening_accent_item.setOpacity(opacity)
+            return
+        next_stage = {
+            "preview": "preview_battle",
+            "preview_battle": "preview_out",
+            "preview_out": "order",
+            "order": "order_badge",
+            "order_badge": "order_out",
+        }.get(self._opening_stage)
+        if next_stage is None:
+            self.hide_opening()
+        else:
+            self._set_opening_stage(next_stage)
+
+    def hide_opening(self) -> None:
+        self.opening_timer.stop()
+        self._opening_stage = None
+        self._opening_game = None
+        self._opening_frame = self._opening_frames = 0
+        self.opening_item.hide()
+        self.opening_accent_item.hide()
+        self.opening_background.hide()
 
     def show_loading(self, prefix: str) -> None:
         self.loading.start(prefix)
@@ -1212,11 +1348,12 @@ class BattleScene(QGraphicsScene):
                     index = 0 if player == self.viewer else 2
                     source = layout_positions(scene_width=self.layout_width)[
                         ("deck_back", player, index)]
-                    pixmap = self._cardback_pixmap(player, landscape=True)
+                    pixmap = self._cardback_pixmap(player)
                     scale = min(DECK_BACK_SIZE.width() / pixmap.width(),
                                 DECK_BACK_SIZE.height() / pixmap.height())
                     item.setPos(source + QPointF(
-                        0, (DECK_BACK_SIZE.height() - pixmap.height() * scale) / 2))
+                        (DECK_BACK_SIZE.width() - pixmap.width() * scale) / 2,
+                        (DECK_BACK_SIZE.height() - pixmap.height() * scale) / 2))
             else:
                 source = self.cards.get(("player", player))
                 if source is not None:
@@ -1506,6 +1643,7 @@ class BattleScene(QGraphicsScene):
         self.usage_labels.clear()
 
     def reset_animations(self) -> None:
+        self.hide_opening()
         self.clear_usage_options()
         for animation in self._move_animations.values():
             animation.stop()
@@ -1609,10 +1747,9 @@ class BattleScene(QGraphicsScene):
 
         for pi, player in enumerate(game.state.players):
             count = min(3, len(player.deck))
-            first = 0 if pi == viewer else 3 - count
-            visible_indexes = set(range(first, first + count))
+            visible_indexes = set(range(count))
             if not player.deck:
-                visible_indexes = {0 if pi == viewer else 2}
+                visible_indexes = {0}
             for index in range(3):
                 deck_key = ("deck_back", pi, index)
                 back = self.deck_backs.get(deck_key)

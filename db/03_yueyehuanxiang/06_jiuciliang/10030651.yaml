@@ -1,6 +1,7 @@
 # 骨架（db.scaffold），效果未实现——raw 海潮深渊本体待蟹姬入库后补
 id: 10030651
 name: 鲸甲引潮
+unreleased: true  # 原始数据标记“未加入”
 versions:
   best: 20200928
   history:

@@ -56,13 +56,20 @@ def _play_reinforce(g, player: int, main_id: int, choice: int, target: Ref | Non
 
 # ---------- 构筑归属 ----------
 
-HGGZ = 10020721   # 海国共主（协战：铃鹿御前 100207 / 大岳丸 100408，已上线）
-XYGM = 10030721   # 鸮羽共鸣（协战：山风 100307 / 薰 100405，已上线）
+HGGZ = 10020721   # 海国共主（协战：铃鹿御前 100207 / 大岳丸 100408，未加入）
+XYGM = 10030721   # 鸮羽共鸣（协战：山风 100307 / 薰 100405，未加入）
+
+
+def _use_test_reinforce_copies(gdb, *card_ids):
+    """正向构筑规则使用测试内可用副本，不改变真实数据的未加入标记。"""
+    for card_id in card_ids:
+        gdb.cards[card_id] = gdb.cards[card_id].model_copy(update={"unreleased": False})
 
 
 def test_deck_reinforce_counts_toward_owner(gdb):
     """协战牌计入所属式神 8 张（挂到剩余配额较多的在队所属式神名下）：海国共主×2
     补足大岳丸 6 张、鸮羽共鸣×2 补足薰 6 张——整组 32 张合法。"""
+    _use_test_reinforce_copies(gdb, HGGZ, XYGM)
     team = [100207, 100408, 100405, 100205]  # 铃鹿御前/大岳丸/薰/日和坊（紫岩+红莲）
     cards = ([10020701, 10020702, 10020703, 10020704] * 2
              + [10040801, 10040802, 10040803] * 2 + [HGGZ, HGGZ]
@@ -73,6 +80,7 @@ def test_deck_reinforce_counts_toward_owner(gdb):
 
 def test_deck_reinforce_single_owner_and_limit(gdb):
     """双归属任一出战即可编入（队无大岳丸时海国共主仍合法）；同名限 2。"""
+    _use_test_reinforce_copies(gdb, HGGZ)
     team = [100207, 100307, 100405, 100101]  # 铃鹿御前/山风/薰/白狼（紫岩+苍叶）
     cards = ([10020701, 10020702, 10020703] * 2 + [HGGZ, HGGZ]
              + [10030701, 10030702, 10030703, 10030704] * 2
@@ -89,6 +97,7 @@ def test_deck_reinforce_single_owner_and_limit(gdb):
 
 def test_deck_reinforce_no_owner_rejected(gdb):
     """两位所属式神均未出战：不可编入。"""
+    _use_test_reinforce_copies(gdb, HGGZ)
     cards = ([10010101, 10010102, 10010103, 10010104] * 2
              + [10010201, 10010202, 10010203, 10010204] * 2
              + [10012301, 10012302, 10012303, 10012304] * 2

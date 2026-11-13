@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
 )
 
 import client.update as update
-from client.gui.prewarm import prewarm_iter
-from client.gui.widgets import ask_confirmation
+from client.gui.prewarm import prewarm_all
+from client.gui.widgets import ask_confirmation, show_warning
 from core.logging_config import configure_logging
 
 # 与 docs/gui-mock/generate.py 两套配色一致
@@ -198,30 +198,57 @@ class MainWindow(QMainWindow):
         self.back_button.hide()
         self.set_theme(self.theme)
         self.db = db
-        self._prewarm_timer = QTimer(self)
-        self._prewarm_timer.setInterval(0)
-        self._prewarm_timer.timeout.connect(self._advance_prewarm)
-        self._prewarm_iterator = None
+        self._prewarm_running = False
+        self._prewarm_generation = 0
+        self._prewarm_thread = None
 
     def prewarm_resources(self) -> None:
-        if self._prewarm_timer.isActive():
+        if self._prewarm_running:
             return
-        self._prewarm_iterator = prewarm_iter(self.db)
-        self._prewarm_timer.start()
+        self._prewarm_running = True
+        self._prewarm_generation += 1
+        generation = self._prewarm_generation
 
-    def _advance_prewarm(self) -> None:
-        try:
-            current, total = next(self._prewarm_iterator)
-        except StopIteration:
-            self._finish_prewarm()
-        else:
+        def run():
+            try:
+                prewarm_all(
+                    self.db,
+                    on_progress=lambda current, total: self._post_prewarm_callback(
+                        generation, self._prewarm_progress, current, total))
+            except Exception as error:
+                self._post_prewarm_callback(generation, self._prewarm_complete, error)
+            else:
+                self._post_prewarm_callback(generation, self._prewarm_complete, None)
+
+        self._prewarm_thread = threading.Thread(
+            target=run, name="bwpro-cardart-prewarm", daemon=True)
+        self._prewarm_thread.start()
+
+    def _post_prewarm_callback(self, generation: int, callback, *args) -> None:
+        def deliver():
+            if generation == self._prewarm_generation:
+                callback(*args)
+        QTimer.singleShot(0, self, deliver)
+
+    def _prewarm_progress(self, current: int, total: int) -> None:
+        if self._prewarm_running:
             self.statusBar().showMessage(f"卡图后台同步 {current}/{total}")
 
-    def _finish_prewarm(self) -> None:
-        self._prewarm_timer.stop()
-        self._prewarm_iterator = None
-        self.statusBar().clearMessage()
+    def _prewarm_complete(self, error: Exception | None) -> None:
+        self._prewarm_thread = None
+        self._prewarm_running = False
+        if error is None:
+            self.statusBar().clearMessage()
+        else:
+            self.statusBar().showMessage(f"卡图后台同步失败：{error}")
         self.pages["settings"].refresh_status()
+
+    def _finish_prewarm(self) -> None:
+        """关闭窗口后忽略工作线程回调；后台线程自行结束，不阻塞退出。"""
+        self._prewarm_generation += 1
+        self._prewarm_running = False
+        self._prewarm_thread = None
+        self.statusBar().clearMessage()
 
     def set_theme(self, theme: str):
         self.theme = theme
@@ -267,6 +294,9 @@ class MainWindow(QMainWindow):
         self.chrome.setContentsMargins(chrome_margin, chrome_margin, chrome_margin, 0)
 
     def go(self, key: str):
+        if key in ("hotseat", "online") and self._prewarm_running:
+            show_warning(self, "卡图尚未加载完毕", "请等待后台卡图合成完成后再进入对战。")
+            return
         self.stack.setCurrentWidget(self.pages[key])
         self.back_button.show()
         self._sync_game_menu_button()

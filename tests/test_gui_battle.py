@@ -1,4 +1,5 @@
 """桌面 GUI 本地热坐对战测试（QT_QPA_PLATFORM=offscreen）。"""
+import math
 import os
 
 import pytest
@@ -7,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QFontMetrics, QImage, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QImage, QPainter, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox, QScrollArea,
@@ -670,7 +671,7 @@ def test_hand_deck_text_contrast_and_visible_outer_margins(qapp, view):
     start(view, mulligan=False)
     view.apply_theme("light", THEMES["light"])
     for label in (view.enemy_hand_label, view.enemy_deck_label,
-                  view.own_deck_label, view.hand_caption, view.phase_label,
+                  view.own_deck_label, view.own_hand_label, view.phase_label,
                   view.order_label, view.upgrade_label):
         assert f"color: {THEMES['light']['text']}" in label.styleSheet()
         assert "font-weight: 600" in label.styleSheet()
@@ -686,6 +687,9 @@ def test_hand_deck_text_contrast_and_visible_outer_margins(qapp, view):
     assert hand.x() + hand.size.width() == 1588
 
     from client.gui.battle_scene import HAND_SIZE, layout_positions
+    positions = layout_positions(view.game, view.viewer)
+    for key in ("enemy_hand_label", "enemy_deck", "own_deck", "own_hand_label"):
+        assert positions[(key,)].x() == 1350
     wide = layout_positions(view.game, view.viewer, scene_width=1800)
     rightmost_hand = max(wide[("hand", card.uid)].x()
                          for card in view.game.current.hand) + HAND_SIZE.width()
@@ -779,6 +783,41 @@ def test_player_item_paints_health_and_signed_shield_icons(qapp, view, monkeypat
     painter.end()
     assert "stats/health.png" in used
     assert "stats/shield.png" in used
+
+
+def test_player_health_icon_preserves_native_aspect(qapp, view, monkeypatch):
+    from client.gui import battle_scene
+
+    start(view, mulligan=False)
+    item = view.battle_scene.cards[("player", view.viewer)]
+    item.shield = 0
+    original = battle_scene.ui_pixmap
+    color = QColor("#123456")
+
+    def native_pixmap(relative, **kwargs):
+        if relative == "stats/health.png":
+            pixmap = QPixmap(63, 77)
+            pixmap.fill(color)
+            return pixmap
+        return original(relative, **kwargs)
+
+    monkeypatch.setattr(battle_scene, "ui_pixmap", native_pixmap)
+    image = QImage(240, 150, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    item.paint(painter, None)
+    painter.end()
+    xs = []
+    ys = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            if image.pixelColor(x, y) == color:
+                xs.append(x)
+                ys.append(y)
+    width = max(xs) - min(xs) + 1
+    height = max(ys) - min(ys) + 1
+    assert height == 34
+    assert width / height == pytest.approx(63 / 77, abs=0.025)
 
 
 def test_card_detail_hides_deck_builder_copy_count(qapp, view, monkeypatch):
@@ -956,7 +995,7 @@ def test_player_orb_and_turn_button_stay_bounded(qapp, view):
     assert "border-radius: 104px" in view.styleSheet()
     assert "text-align: center" in view.styleSheet()
     assert view.end_turn_button.mask().isNull()
-    assert view.end_turn_button.iconSize() == view.end_turn_button.size() * 0.92
+    assert view.end_turn_button.iconSize() == view.end_turn_button.size()
 
 
 def test_battle_window_minimum_height_fits_common_900px_window(qapp, db, tmp_path):
@@ -1036,7 +1075,7 @@ def test_scene_labels_do_not_occlude_shikigami(qapp, view):
                     if hasattr(item, "widget") and item.widget() is widget)
 
     shiki_rects = [item.sceneBoundingRect() for item in scene_items(view, "shiki")]
-    for widget in (view.phase_label, view.hand_caption):
+    for widget in (view.phase_label, view.own_hand_label):
         rect = proxy(widget).sceneBoundingRect()
         assert all(not rect.intersects(shiki_rect) for shiki_rect in shiki_rects)
     assert view.target_label.isHidden()
@@ -1182,11 +1221,15 @@ def test_scene_loading_lifecycle(qapp, view):
 def test_opening_and_turn_start_banners(qapp, view):
     start(view)
     scene = view.battle_scene
-    assert scene.banner_item.toPlainText() == "己方先手"
-    assert scene.banner_item.isVisible() and scene.banner_timer.isActive()
-    scene.hide_banner()
+    assert scene._opening_stage == "preview"
+    assert scene.opening_item.isVisible() and scene.opening_timer.isActive()
+    while scene._opening_stage != "order":
+        scene._opening_frame = scene._opening_frames
+        scene._advance_opening()
+    assert scene._opening_stage == "order"
+    scene.hide_opening()
     start(view, mulligan=False)
-    scene.hide_banner()
+    scene.hide_opening()
     view.end_turn()
     settle(view)
     assert scene.banner_pixmap_item.property("assetName") == "your_turn_dark"
@@ -2019,10 +2062,10 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
         f"敌方手牌\n{len(view.game.state.players[1].hand)} 张")
     assert view.enemy_deck_label.text() == f"敌方牌库\n{len(view.game.state.players[1].deck)} 张"
     assert view.own_deck_label.text() == f"己方牌库\n{len(view.game.state.players[0].deck)} 张"
-    assert view.hand_caption.text() == f"己方手牌\n{len(view.game.current.hand)}/12 张"
+    assert view.own_hand_label.text() == f"己方手牌\n{len(view.game.current.hand)}/12 张"
 
 
-def test_preparation_spread_aligns_combat_and_hand_caption_positions(qapp, view):
+def test_preparation_spread_aligns_combat_and_own_hand_label_positions(qapp, view):
     from PySide6.QtCore import QRectF
     from client.gui.battle_scene import SHIKI_SIZE, layout_positions
 
@@ -2037,10 +2080,10 @@ def test_preparation_spread_aligns_combat_and_hand_caption_positions(qapp, view)
     combat_center = combat_positions[("shiki", 0, 0)].x() + SHIKI_SIZE.width() / 2
     assert ready_center == combat_center == 720
     enemy = positions[("enemy_hand_label",)]
-    own = positions[("hand_caption",)]
-    assert enemy == QPointF(1530, 156)
-    assert own == QPointF(1530, 680)
-    for label in (view.enemy_hand_label, view.hand_caption):
+    own = positions[("own_hand_label",)]
+    assert enemy == QPointF(1350, 156)
+    assert own == QPointF(1350, 680)
+    for label in (view.enemy_hand_label, view.own_hand_label):
         assert (label.width(), label.height()) == (68, 64)
     enemy_rect = QRectF(enemy.x(), enemy.y(), 68, 64)
     own_rect = QRectF(own.x(), own.y(), 68, 64)
@@ -2054,24 +2097,32 @@ def test_preparation_spread_aligns_combat_and_hand_caption_positions(qapp, view)
     assert not own_rect.intersects(own_deck_rect)
 
 
-def test_deck_back_compact_offsets_preserve_mirror_and_stacking(qapp):
-    from client.gui.battle_scene import deck_back_layout
+def test_deck_back_reference_geometry_mirrors_about_end_turn_button(qapp):
+    from client.gui.battle_scene import (
+        DECK_BACK_SIZE, END_TURN_SIZE, deck_back_layout, layout_positions,
+    )
 
     expected = (
-        (1442.65625, 199.640625, 225, 20),
-        (1451.09375, 221.4375, 220, 21),
-        (1459.53125, 243.234375, 204.5, 22),
+        (1508.885429, 196.179688, -65, 22),
+        (1540.885429, 177.179688, -50, 21),
+        (1562.885429, 164.179688, -45, 20),
     )
+    button_center = layout_positions()[("end_turn",)] + QPointF(
+        END_TURN_SIZE / 2, END_TURN_SIZE / 2)
     for index, (x, y, rotation, z_value) in enumerate(expected):
         position, actual_rotation, actual_z = deck_back_layout(1, index, 0)
         assert position.x() == pytest.approx(x)
         assert position.y() == pytest.approx(y)
-        assert actual_rotation == rotation and actual_z == z_value
+        assert actual_rotation == pytest.approx(rotation) and actual_z == z_value
+        enemy_center = position + QPointF(
+            DECK_BACK_SIZE.width() / 2, DECK_BACK_SIZE.height() / 2)
 
         own_position, own_rotation, own_z = deck_back_layout(0, 2 - index, 0)
-        assert own_position.x() == pytest.approx(x)
-        assert own_position.y() == pytest.approx(790 - y)
-        assert own_rotation == 360 - rotation and own_z == z_value
+        own_center = own_position + QPointF(
+            DECK_BACK_SIZE.width() / 2, DECK_BACK_SIZE.height() / 2)
+        assert own_center.x() == pytest.approx(enemy_center.x())
+        assert own_center.y() + enemy_center.y() == pytest.approx(2 * button_center.y())
+        assert own_rotation == pytest.approx(-rotation) and own_z == z_value
 
 
 def test_deck_count_labels_clear_rotated_deck_backs(qapp, view):
@@ -2098,7 +2149,7 @@ def test_deck_count_labels_clear_rotated_deck_backs(qapp, view):
                     DECK_BACK_SIZE.width(), DECK_BACK_SIZE.height()))
                 back_rect.translate(center)
                 assert not label_rect.intersects(back_rect)
-            assert positions[(key,)] == QPointF(scene_width - 330, expected_y)
+            assert positions[(key,)] == QPointF(scene_width - 250, expected_y)
             assert label_rect.center().y() == expected_y + 32
 
 
@@ -2128,17 +2179,15 @@ def test_hotseat_new_games_use_random_seeds(qapp, view, monkeypatch):
 
 
 def assert_deck_count_layout(scene, own_count, enemy_count):
-    from PySide6.QtGui import QTransform
-    from client.gui.battle_scene import DECK_BACK_SIZE, layout_positions
+    from client.gui.battle_scene import layout_positions
     from client.gui.ui_assets import cardback_pixmap
 
     own_keys = [("deck_back", 0, index) for index in range(min(3, own_count))]
-    enemy_keys = [("deck_back", 1, index)
-                  for index in range(3 - min(3, enemy_count), 3)]
+    enemy_keys = [("deck_back", 1, index) for index in range(min(3, enemy_count))]
     if own_count == 0:
         own_keys = [("deck_back", 0, 0)]
     if enemy_count == 0:
-        enemy_keys = [("deck_back", 1, 2)]
+        enemy_keys = [("deck_back", 1, 0)]
     assert sorted(key for key in scene.deck_backs if key[1] == 0) == own_keys
     assert sorted(key for key in scene.deck_backs if key[1] == 1) == enemy_keys
 
@@ -2154,17 +2203,15 @@ def assert_deck_count_layout(scene, own_count, enemy_count):
             if count == 0:
                 from client.gui.ui_assets import empty_deck_pixmap
                 light = scene.game.state.players[player].ext.get("deck_out_burn") is not None
-                expected = empty_deck_pixmap(light, landscape=True)
+                expected = empty_deck_pixmap(light)
             else:
-                expected = cardback_pixmap(side, landscape=True)
-            expected = expected.transformed(QTransform().rotate(180), Qt.SmoothTransformation)
+                expected = cardback_pixmap(side)
             assert item.pixmap.toImage() == expected.toImage()
-            assert item.pos() == positions[key] + QPointF(
-                0, (DECK_BACK_SIZE.height() - item.size.height()) / 2)
-            expected_rotations = ((155.5, 140, 135) if player == scene.viewer
-                                  else (225, 220, 204.5))
-            assert item.rotation() == expected_rotations[index]
-            assert item.zValue() == (22 - index if player == scene.viewer else 20 + index)
+            assert item.pos() == positions[key]
+            expected_rotations = ((45, 50, 65) if player == scene.viewer
+                                  else (-65, -50, -45))
+            assert item.rotation() == pytest.approx(expected_rotations[index])
+            assert item.zValue() == (20 + index if player == scene.viewer else 22 - index)
 
 
 @pytest.mark.parametrize("burn_value", (0, 1))
@@ -3454,7 +3501,7 @@ def test_card_use_animation_uses_integer_height_and_keeps_fallback_art(
     assert not item.pixmap.isNull()
 
 
-@pytest.mark.parametrize("player,top_index", ((0, 0), (1, 2)))
+@pytest.mark.parametrize("player,top_index", ((0, 0), (1, 0)))
 def test_hand_animation_hides_pending_draw_and_uses_deck_origin(qapp, view,
                                                                 player, top_index):
     start(view, mulligan=False)
@@ -3897,7 +3944,6 @@ def test_battle_uses_configured_cardbacks_and_word_art_controls(qapp, view):
 
 
 def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeypatch):
-    from PySide6.QtGui import QTransform
     from client.gui.settings import SettingsView
     from client.gui.ui_assets import cardback_pixmap, load_gui_settings, unnamed_misc_images
 
@@ -3923,8 +3969,7 @@ def test_hotseat_game_settings_refresh_cardbacks_immediately(qapp, view, monkeyp
     settings = seen["dialog"].findChild(SettingsView)
     settings.choose_cardback("own_cardback")
     deck = view.battle_scene.deck_backs[("deck_back", view.viewer, 0)]
-    expected = cardback_pixmap("own", landscape=True).transformed(
-        QTransform().rotate(180), Qt.SmoothTransformation)
+    expected = cardback_pixmap("own")
     assert deck.pixmap.toImage() == expected.toImage()
     assert settings.cardback_buttons["own_cardback"].text() == "三途花境"
 
@@ -4658,64 +4703,46 @@ def test_choice_view_has_no_background_and_compact_layout(qapp, db, view):
 
 
 def test_deck_back_layout_and_pixmap_orientation(qapp, view):
-    from PySide6.QtGui import QTransform
     from client.gui.battle_scene import (
-        DECK_BACK_SIZE, SCENE_WIDTH, deck_back_layout,
+        DECK_BACK_SIZE, END_TURN_SIZE, SCENE_WIDTH, deck_back_layout, layout_positions,
     )
     from client.gui.ui_assets import cardback_pixmap
 
     scale = 900 / 1280
     reference = {
-        (1, 0): (110, 365, 45, 20),
-        (1, 1): (98, 396, 40, 21),
-        (1, 2): (86, 427, 24.5, 22),
-        (0, 0): (86, 427, -24.5, 22),
-        (0, 1): (98, 396, -40, 21),
-        (0, 2): (110, 365, -45, 20),
+        (1, 0): (1566, 302, -65, 22),
+        (1, 1): (1598, 283, -50, 21),
+        (1, 2): (1620, 270, -45, 20),
+        (0, 0): (1620, 634, 45, 20),
+        (0, 1): (1598, 621, 50, 21),
+        (0, 2): (1566, 602, 65, 22),
     }
     for scene_width in (SCENE_WIDTH, 1800):
-        centers = {}
-        rotations = {}
+        button_center = layout_positions(scene_width=scene_width)[("end_turn",)] + QPointF(
+            END_TURN_SIZE / 2, END_TURN_SIZE / 2)
         for (player, index), (x, y, direction, z_value) in reference.items():
             position, rotation, actual_z = deck_back_layout(
                 player, index, 0, scene_width)
-            expected_center = QPointF(scene_width - x * scale, y * scale)
-            if player == 0:
-                expected_center.setY(2 * 452 - expected_center.y())
-            assert position == expected_center - QPointF(
-                DECK_BACK_SIZE.width() / 2, DECK_BACK_SIZE.height() / 2)
+            expected_center = QPointF(x + scene_width - SCENE_WIDTH, y)
             center = position + QPointF(
                 DECK_BACK_SIZE.width() / 2, DECK_BACK_SIZE.height() / 2)
-            assert center == expected_center
-            assert rotation == direction + 180
+            assert center.x() == pytest.approx(expected_center.x())
+            assert center.y() == pytest.approx(expected_center.y())
+            if player == 0:
+                assert center.y() + reference[1, 2 - index][1] == pytest.approx(
+                    2 * button_center.y())
+            assert rotation == pytest.approx(direction)
             assert actual_z == z_value
-            centers[player, index] = center
-            rotations[player, index] = rotation
-        for index in range(3):
-            own = centers[0, index]
-            enemy = centers[1, 2 - index]
-            assert own.x() == enemy.x()
-            assert own.y() + enemy.y() == 2 * 452
-            assert rotations[0, index] + rotations[1, 2 - index] == 360
 
     start(view, mulligan=False)
-    assert DECK_BACK_SIZE.width() >= 150
-    enemy = [view.battle_scene.deck_backs[("deck_back", 1, index)]
-             for index in range(3)]
-    own = [view.battle_scene.deck_backs[("deck_back", 0, index)]
-           for index in range(3)]
-    assert [item.rotation() for item in enemy] == [225, 220, 204.5]
-    assert [item.rotation() for item in own] == [155.5, 140, 135]
-    assert [item.rotation() for item in own] == [360 - enemy[2-i].rotation()
-                                                for i in range(3)]
-    for side, items, legacy_rotations in (
-            ("enemy", enemy, (45, 40, 24.5)), ("own", own, (-24.5, -40, -45))):
-        original = cardback_pixmap(side, landscape=True)
-        for item, legacy_rotation in zip(items, legacy_rotations):
-            assert item.rotation() == legacy_rotation + 180
-            uncompensated = item.pixmap.transformed(
-                QTransform().rotate(180), Qt.SmoothTransformation)
-            assert uncompensated.toImage() == original.toImage()
+    assert DECK_BACK_SIZE.width() == pytest.approx(math.hypot(67, 148) * scale)
+    assert DECK_BACK_SIZE.height() == pytest.approx(301 * scale)
+    for player in (0, 1):
+        side = "own" if player == view.viewer else "enemy"
+        original = cardback_pixmap(side)
+        for index in range(3):
+            item = view.battle_scene.deck_backs[("deck_back", player, index)]
+            assert item.pixmap.toImage() == original.toImage()
 
 
 def test_move_visual_uses_event_zone_instead_of_final_state(qapp, view):
@@ -5012,7 +5039,6 @@ def test_zero_damage_visual_has_centered_signed_zero(qapp, view):
 
 
 def test_runtime_enemy_cardback_covers_backs_hands_and_use_animation(qapp, view):
-    from PySide6.QtGui import QTransform
     from client.gui.ui_assets import (
         DEFAULT_CARDBACK, cardback_pixmap, named_cardbacks,
     )
@@ -5024,8 +5050,7 @@ def test_runtime_enemy_cardback_covers_backs_hands_and_use_animation(qapp, view)
     scene.enemy_cardback = remote
     scene.refresh_cardbacks()
     expected = cardback_pixmap("enemy", name=remote)
-    expected_deck = cardback_pixmap("enemy", name=remote, landscape=True).transformed(
-        QTransform().rotate(180), Qt.SmoothTransformation)
+    expected_deck = cardback_pixmap("enemy", name=remote)
     enemy = 1 - view.viewer
     assert scene.deck_backs[("deck_back", enemy, 0)].pixmap.toImage() == expected_deck.toImage()
     assert scene.deck_backs[("deck_back", view.viewer, 0)].pixmap.toImage() == own_before

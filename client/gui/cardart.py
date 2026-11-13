@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 from PIL import Image, ImageOps
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from client.gui import portrait
@@ -51,6 +51,25 @@ def _grayscale_artwork(image: Image.Image) -> Image.Image:
     gray = Image.blend(gray, Image.new("L", source.size, 235), 0.35)
     result = gray.convert("RGBA")
     result.putalpha(source.getchannel("A"))
+    return result
+
+
+def _overlay_unyielding(image: Image.Image, root: Path) -> Image.Image:
+    """将“不屈”素材按非透明紧边界覆盖到小卡中心。"""
+    path = root / "assets" / "misc" / "unyielding.png"
+    if not path.is_file():
+        return image
+    overlay = Image.open(path).convert("RGBA")
+    bbox = overlay.getchannel("A").getbbox()
+    if bbox:
+        overlay = overlay.crop(bbox)
+    scale = max(image.width / overlay.width, image.height / overlay.height)
+    size = (max(1, round(overlay.width * scale)),
+            max(1, round(overlay.height * scale)))
+    overlay = overlay.resize(size, Image.Resampling.LANCZOS)
+    result = image.convert("RGBA")
+    result.alpha_composite(overlay, ((image.width - size[0]) // 2,
+                                     (image.height - size[1]) // 2))
     return result
 
 
@@ -379,7 +398,7 @@ def _element_compat(element: dict) -> dict:
 
 
 def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
-                        height: int | None = None) -> QPixmap | None:
+                        height: int | None = None) -> QImage | None:
     payload = {}
     try:
         payload = json.loads(payload_json)
@@ -414,20 +433,20 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
                 pipeline.render_element = original_render_element
         buffer = BytesIO()
         image.save(buffer, "PNG")
-        pixmap = QPixmap()
-        if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
+        output = QImage()
+        if not output.loadFromData(buffer.getvalue(), "PNG"):
             raise ValueError("卡面 PNG 解码失败")
         if transparent:
-            _paint_placeholder_name(pixmap, payload["name"],
+            _paint_placeholder_name(output, payload["name"],
                                     payload.get("_placeholder_color", "#26221c"), entity=False)
-        return pixmap
+        return output
     except Exception as error:
         log_render_failure("card", payload.get("name") or "unknown", root_text, error)
         return None
 
 
 def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
-                          root_text: str, height: int | None = None) -> QPixmap | None:
+                          root_text: str, height: int | None = None) -> QImage | None:
     payload = {}
     try:
         payload = json.loads(payload_json)
@@ -483,15 +502,17 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
             finally:
                 entity.get_library = original_get_library
                 entity.load_card_artwork = original_load_artwork
+        if payload.get("_unyielding"):
+            image = _overlay_unyielding(image, Path(root_text))
         buffer = BytesIO()
         image.save(buffer, "PNG")
-        pixmap = QPixmap()
-        if not pixmap.loadFromData(buffer.getvalue(), "PNG"):
+        output = QImage()
+        if not output.loadFromData(buffer.getvalue(), "PNG"):
             raise ValueError("式神小卡 PNG 解码失败")
         if transparent:
-            _paint_placeholder_name(pixmap, payload["name"],
+            _paint_placeholder_name(output, payload["name"],
                                     payload.get("_placeholder_color", "#26221c"), entity=True)
-        return pixmap
+        return output
     except Exception as error:
         log_render_failure("entity", payload.get("name") or "unknown", root_text, error)
         return None
@@ -536,20 +557,21 @@ def _card_cache_path(cache_dir: Path, kind: str, cdef, payload: dict,
     if frame not in {"norm", "blue", "black", "red"}:
         frame = "custom"
     size = "native" if height is None else height
-    stem = f"{kind}-{cdef.id}@{cdef.version or 0}-{frame}-h{size}-{cache_key}"
+    identity = f"{cdef.id}" if kind == "entity" else f"{cdef.id}@{cdef.version or 0}"
+    stem = f"{kind}-{identity}-{frame}-h{size}-{cache_key}"
     return cache_dir / f"{stem}.png"
 
 
-def _write_card_png_atomic(pixmap: QPixmap, path: Path) -> None:
+def _write_card_png_atomic(image: QImage, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temp_name = tempfile.mkstemp(
         dir=path.parent, prefix=f".{path.stem}.", suffix=".tmp")
     os.close(descriptor)
     temp_path = Path(temp_name)
     try:
-        if not pixmap.save(str(temp_path), "PNG"):
+        if not image.save(str(temp_path), "PNG"):
             raise ValueError("卡面 PNG 写入失败")
-        verified = QPixmap(str(temp_path))
+        verified = QImage(str(temp_path))
         if verified.isNull():
             raise ValueError("卡面临时 PNG 校验失败")
         os.replace(temp_path, path)
@@ -593,28 +615,28 @@ def _cache_successful_pixmap(function):
 def _cached_card_pixmap(cache_path_text: str, payload_json: str,
                         layout_json: str, root_text: str,
                         height: int | None = None, *, entity="unknown",
-                        config_path=None) -> QPixmap | None:
+                        config_path=None) -> QImage | None:
     cache_path = Path(cache_path_text)
     try:
-        cached = QPixmap(str(cache_path))
+        cached = QImage(str(cache_path))
         if not cached.isNull():
             return cached
     except Exception as error:
         log_cache_failure("read", "card-cache", entity, root_text, error, config_path)
-    pixmap = _render_card_pixmap(payload_json, layout_json, root_text, height)
-    if pixmap is None:
+    image = _render_card_pixmap(payload_json, layout_json, root_text, height)
+    if image is None:
         return None
     try:
-        _write_card_png_atomic(pixmap, cache_path)
+        _write_card_png_atomic(image, cache_path)
     except Exception as error:
         log_cache_failure("write", "card-cache", entity, root_text, error, config_path)
-    return pixmap
+    return image
 
 
 @_cache_successful_pixmap
 def _cached_runtime_card_pixmap(cache_key: str, payload_json: str,
                                 layout_json: str, root_text: str,
-                                height: int | None = None) -> QPixmap | None:
+                                height: int | None = None) -> QImage | None:
     """运行时变体仅驻留有界内存，避免每种实时数值都永久写盘。"""
     del cache_key  # 仅作为 LRU 的身份键，不映射磁盘文件
     return _render_card_pixmap(payload_json, layout_json, root_text, height)
@@ -623,7 +645,7 @@ def _cached_runtime_card_pixmap(cache_key: str, payload_json: str,
 @_cache_successful_pixmap
 def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
                           layout_json: str, root_text: str,
-                          height: int | None = None) -> QPixmap | None:
+                          height: int | None = None) -> QImage | None:
     del cache_key
     return _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
 
@@ -632,23 +654,23 @@ def _cached_entity_pixmap(cache_key: str, payload_json: str, state_json: str,
 def _cached_static_entity_pixmap(cache_path_text: str, payload_json: str, state_json: str,
                                  layout_json: str, root_text: str,
                                  height: int | None = None, *, entity="unknown",
-                                 config_path=None) -> QPixmap | None:
+                                 config_path=None) -> QImage | None:
     """基础小卡可跨进程复用；运行时小卡仍只使用内存缓存。"""
     cache_path = Path(cache_path_text)
     try:
-        cached = QPixmap(str(cache_path))
+        cached = QImage(str(cache_path))
         if not cached.isNull():
             return cached
     except Exception as error:
         log_cache_failure("read", "entity-cache", entity, root_text, error, config_path)
-    pixmap = _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
-    if pixmap is None:
+    image = _render_entity_pixmap(payload_json, state_json, layout_json, root_text, height)
+    if image is None:
         return None
     try:
-        _write_card_png_atomic(pixmap, cache_path)
+        _write_card_png_atomic(image, cache_path)
     except Exception as error:
         log_cache_failure("write", "entity-cache", entity, root_text, error, config_path)
-    return pixmap
+    return image
 
 
 def _validate_layout(layout: dict) -> None:
@@ -698,13 +720,33 @@ def _transparent_art() -> dict:
             "scale": 1.0, "rotate": 0}
 
 
+_image_pixmap_cache = {}
+
+
+def _image_to_pixmap(image: QImage) -> QPixmap:
+    key = image.cacheKey()
+    if key not in _image_pixmap_cache:
+        if len(_image_pixmap_cache) >= 256:
+            _image_pixmap_cache.pop(next(iter(_image_pixmap_cache)))
+        _image_pixmap_cache[key] = QPixmap.fromImage(image)
+    return _image_pixmap_cache[key]
+
+
+def _as_pixmap(image):
+    """仅在 GUI 调用边界转换，并复用同一 QImage 对应的 QPixmap。"""
+    if image is None or isinstance(image, QPixmap):
+        return image
+    return _image_to_pixmap(image)
+
+
 def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                       display: dict[str, int] | None,
                       payload_overrides: dict | None = None,
                       drop_keys: tuple[str, ...] = (),
                       cache_context: dict | None = None,
                       height: int | None = None,
-                      description_suffix: str | None = None) -> QPixmap | None:
+                      description_suffix: str | None = None,
+                      image_only: bool = False) -> QPixmap | QImage | None:
     path = None
     try:
         if cache_context is None:
@@ -768,21 +810,24 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
             resources, root_text, cache_context, height)
         size_args = () if height is None else (height,)
         if display_stats:
-            return _cached_runtime_card_pixmap(
+            image = _cached_runtime_card_pixmap(
                 cache_key, payload_json, layout_json, root_text, *size_args)
-        cache_path = _card_cache_path(
-            cache_dir, "card", cdef, payload, height, cache_key)
-        return _cached_card_pixmap(
-            str(cache_path), payload_json, layout_json, root_text, *size_args,
-            entity=cdef.id, config_path=path)
+        else:
+            cache_path = _card_cache_path(
+                cache_dir, "card", cdef, payload, height, cache_key)
+            image = _cached_card_pixmap(
+                str(cache_path), payload_json, layout_json, root_text, *size_args,
+                entity=cdef.id, config_path=path)
+        return image if image_only else _as_pixmap(image)
     except Exception as error:
         log_render_failure("card", cdef.id, portrait.bwpdiy_root(), error, path)
         pixmap_height = 504 if height is None else height
         pixmap_width = 360 if height is None else round(pixmap_height * 5 / 7)
-        pixmap = QPixmap(pixmap_width, pixmap_height)
-        pixmap.fill(Qt.transparent)
-        _paint_placeholder_name(pixmap, cdef.name, _placeholder_color(), entity=False)
-        return pixmap
+        surface = QImage(pixmap_width, pixmap_height) if image_only else QPixmap(
+            pixmap_width, pixmap_height)
+        surface.fill(Qt.transparent)
+        _paint_placeholder_name(surface, cdef.name, _placeholder_color(), entity=False)
+        return surface
 
 
 def card_pixmap(cdef, db, *, library_dir: Path | None = None,
@@ -790,8 +835,9 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 display: dict[str, int] | None = None,
                 level_color: str | None = None, burst: int | None = None,
                 cache_context: dict | None = None,
-                height: int | None = None, frame_variant: str | None = None) -> QPixmap | None:
-    """按原生高度合成；静态卡面使用磁盘缓存，同页可复用资源校验。"""
+                height: int | None = None, frame_variant: str | None = None,
+                image_only: bool = False) -> QPixmap | QImage | None:
+    """按原生高度合成；静态卡面使用磁盘缓存，后台任务可取 QImage。"""
     overrides = {"level_color": level_color} if level_color is not None else {}
     if burst is not None:
         overrides["burst"] = burst
@@ -800,14 +846,15 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
     return _card_pixmap_impl(
         cdef, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,
-        cache_context=cache_context, height=height)
+        cache_context=cache_context, height=height, image_only=image_only)
 
 
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   library_dir: Path | None = None, cache_dir: Path | None = None,
                   cache_context: dict | None = None, height: int | None = None,
                   disk_cache: bool = False, show_defeated_countdown: bool = True,
-                  snapshot: dict | None = None) -> QPixmap | None:
+                  snapshot: dict | None = None,
+                  image_only: bool = False) -> QPixmap | QImage | None:
     """以 BWPDIY render_entity 绘制对局小卡；snapshot 固定动画时点的数值。"""
     snapshot = dict(snapshot or {})
     for key in ("power", "health"):
@@ -908,6 +955,9 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             "shield_color": None,
             "art_scale": art.get("scale", 1.0),
         }
+        payload["_unyielding"] = any(
+            "unyielding" in getattr(shiki, field, ())
+            for field in ("keywords", "one_shot_keywords", "perm_keywords"))
         payload["_entity_state"] = state
         root_text = str(portrait.bwpdiy_root().resolve())
         assets, _library, _render = _renderer(root_text)
@@ -927,11 +977,13 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         if disk_cache:
             cache_path = _card_cache_path(
                 cache_dir, "entity", source, payload, height, cache_key)
-            return _cached_static_entity_pixmap(
+            image = _cached_static_entity_pixmap(
                 str(cache_path), payload_json, state_json,
                 layout_json, root_text, *size_args, entity=shiki.id, config_path=path)
-        return _cached_entity_pixmap(
-            cache_key, payload_json, state_json, layout_json, root_text, *size_args)
+        else:
+            image = _cached_entity_pixmap(
+                cache_key, payload_json, state_json, layout_json, root_text, *size_args)
+        return image if image_only else _as_pixmap(image)
     except Exception as error:
         log_render_failure("entity", shiki.id, portrait.bwpdiy_root(), error, path)
         return None
@@ -966,6 +1018,7 @@ def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = Non
 
 
 def clear_cardart_caches() -> None:
+    _image_pixmap_cache.clear()
     _cached_card_pixmap.cache_clear()
     _cached_runtime_card_pixmap.cache_clear()
     _cached_entity_pixmap.cache_clear()

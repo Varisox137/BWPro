@@ -61,6 +61,13 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
     assert load_gui_settings(path)["own_cardback"] == "三途花境"
 
 
+def test_cardbacks_use_same_body_size_despite_decorative_alpha(qapp):
+    from client.gui.ui_assets import cardback_pixmap
+
+    for name in named_cardbacks():
+        assert cardback_pixmap("own", name=name).size().toTuple() == (276, 512)
+
+
 def test_empty_deck_pixmap_crops_sidebar_and_uses_cardback_orientation(qapp):
     from PySide6.QtCore import QRect, Qt
     from PySide6.QtGui import QTransform
@@ -69,7 +76,7 @@ def test_empty_deck_pixmap_crops_sidebar_and_uses_cardback_orientation(qapp):
     for light in (True, False):
         name = "light" if light else "dark"
         source = QPixmap(str(bwpdiy_root() / "assets" / "cardbacks" / f"empty_deck_{name}.png"))
-        cropped = source.copy(QRect(120, 0, 272, 512))
+        cropped = source.copy(QRect(112, 0, 276, 512))
         assert ui_assets.empty_deck_pixmap(light).toImage() == cropped.toImage()
         expected = cropped.transformed(QTransform().rotate(-90), Qt.SmoothTransformation)
         assert ui_assets.empty_deck_pixmap(light, landscape=True).toImage() == expected.toImage()
@@ -86,7 +93,7 @@ def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypa
     save_gui_settings({"end_turn_background": names[0]}, path)
     assert load_gui_settings(path)["end_turn_background"] == names[0]
     custom = end_turn_button_pixmap(208)
-    assert default.width() == default.height() == 177
+    assert default.width() == default.height() == 125
     assert custom.width() == custom.height() == 208
     assert custom.cacheKey() != default.cacheKey()
     save_gui_settings({"end_turn_background": ""}, path)
@@ -99,7 +106,7 @@ def test_end_turn_background_is_optional_and_persistent(qapp, tmp_path, monkeypa
 
 
 @pytest.mark.parametrize("with_background", [False, True])
-def test_end_turn_word_art_is_85_percent_of_button(
+def test_end_turn_word_art_is_60_percent_of_button(
         qapp, tmp_path, monkeypatch, with_background):
     from PySide6.QtCore import QRect, Qt
     from client.gui import ui_assets
@@ -126,7 +133,7 @@ def test_end_turn_word_art_is_85_percent_of_button(
         for x in range(image.width()):
             if image.pixelColor(x, y).alpha():
                 bounds = bounds.united(QRect(x, y, 1, 1))
-    assert (bounds.width(), bounds.height()) == (170, 68)
+    assert (bounds.width(), bounds.height()) == (120, 48)
 
 
 def test_turn_word_art_follows_theme(qapp):

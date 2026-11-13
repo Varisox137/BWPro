@@ -459,6 +459,27 @@ def test_entity_pixmap_uses_shikigami_art_config(qapp, tmp_path):
     assert first.toImage() != empty.toImage()
 
 
+def test_unyielding_entity_overlay_changes_art_and_cache_identity(qapp, tmp_path):
+    from client.gui import cardart
+
+    _external_library(
+        tmp_path,
+        "id: 100101\nname: 测试\nversion_date: 20260720\n"
+        "artwork:\n  images:\n    - path: art.png\n",
+    )
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    values = dict(id=100101, awakened=None, level=0, eff_power=3,
+                  combat_power=0, health=4, shield=0, ext={})
+    base = cardart.entity_pixmap(
+        SimpleNamespace(**values), database, library_dir=tmp_path / "library")
+    for field in ("keywords", "one_shot_keywords", "perm_keywords"):
+        current = SimpleNamespace(**values, **{field: ["unyielding"]})
+        changed = cardart.entity_pixmap(
+            current, database, library_dir=tmp_path / "library")
+        assert changed.toImage() != base.toImage()
+
+
 def test_shikigami_card_art_uses_shikigami_config(qapp, tmp_path):
     from client.gui import cardart
 
@@ -1049,6 +1070,19 @@ def test_cardart_native_height_supports_stat_layout(qapp, gdb):
     pixmap = cardart.card_pixmap(gdb.cards[10010103], gdb, height=255)
     assert pixmap is not None and not pixmap.isNull()
     assert pixmap.height() == 255
+
+
+def test_cardart_image_only_render_avoids_gui_pixmap(qapp, gdb, tmp_path, monkeypatch):
+    from PySide6.QtGui import QImage
+    from client.gui import cardart
+
+    def unexpected_pixmap(*_args):
+        raise AssertionError("后台渲染不得创建 QPixmap")
+
+    monkeypatch.setattr(cardart, "QPixmap", unexpected_pixmap)
+    image = cardart.card_pixmap(
+        gdb.cards[10010103], gdb, cache_dir=tmp_path / "cache", image_only=True)
+    assert isinstance(image, QImage) and not image.isNull()
 
 
 def test_cardart_native_height_and_size_cache(qapp, tmp_path, monkeypatch):
@@ -1679,6 +1713,18 @@ def test_cardart_semantic_cache_name_replaces_stale_image(qapp, tmp_path):
     cardart.clear_cardart_caches()
 
 
+def test_entity_cache_name_omits_balance_version(tmp_path):
+    from types import SimpleNamespace
+    from client.gui import cardart
+
+    first = cardart._card_cache_path(
+        tmp_path, "entity", SimpleNamespace(id=100101, version=20191212), {}, 210, "abc")
+    second = cardart._card_cache_path(
+        tmp_path, "entity", SimpleNamespace(id=100101, version=20200120), {}, 210, "abc")
+    assert first == second
+    assert first.name == "entity-100101-norm-h210-abc.png"
+
+
 def test_cardart_same_mtime_image_change_does_not_reuse_artwork(qapp, tmp_path):
     from PySide6.QtGui import QPixmap
     from client.gui import cardart
@@ -1763,8 +1809,8 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
         second.join(2)
         assert not first.is_alive() and not second.is_alive()
         assert results["A"] is not None and results["B"] is not None
-        assert results["A"].toImage().pixelColor(8, 8).name() == expected["A"]
-        assert results["B"].toImage().pixelColor(8, 8).name() == expected["B"]
+        assert results["A"].pixelColor(8, 8).name() == expected["A"]
+        assert results["B"].pixelColor(8, 8).name() == expected["B"]
         assert pipeline.get_library is original_get_library
     finally:
         allow_a_return.set()
@@ -2225,7 +2271,7 @@ def test_cardart_cache_io_failure_log_has_direction_and_context(
     def fail_pixmap(_path):
         raise PermissionError("cache denied")
 
-    monkeypatch.setattr(cardart, "QPixmap", fail_pixmap)
+    monkeypatch.setattr(cardart, "QImage", fail_pixmap)
     cardart.clear_cardart_caches()
     if cache_kind == "card":
         monkeypatch.setattr(cardart, "_render_card_pixmap", lambda *_args: rendered)

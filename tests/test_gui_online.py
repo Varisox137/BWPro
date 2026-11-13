@@ -299,14 +299,14 @@ def test_online_battle_notice_is_visible_until_message_is_cleared(qapp, view):
     assert view.battle.error_label.isHidden()
 
 
-def test_online_hand_caption_and_deck_label_use_shared_layout(qapp, db):
+def test_online_own_hand_label_and_deck_label_use_shared_layout(qapp, db):
     from client.gui.battle_scene import layout_positions
 
     battle = OnlineBattleView(db, send_command=lambda _command: None)
     positions = layout_positions()
-    assert positions[("enemy_hand_label",)] == QPointF(1530, 156)
-    assert positions[("hand_caption",)] == QPointF(1530, 680)
-    for label in (battle.enemy_hand_label, battle.hand_caption,
+    assert positions[("enemy_hand_label",)] == QPointF(1350, 156)
+    assert positions[("own_hand_label",)] == QPointF(1350, 680)
+    for label in (battle.enemy_hand_label, battle.own_hand_label,
                   battle.enemy_deck_label, battle.own_deck_label):
         assert (label.width(), label.height()) == (68, 64)
     battle.close()

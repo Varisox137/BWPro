@@ -393,7 +393,7 @@ def test_balance_version_real_db(gdb):
     assert gdb.shikigami[100001].unreleased is True  # 纸人武士
     unrel_cards = {i for i, c in gdb.cards.items() if c.unreleased}
     unrel_shiki = {i for i, s in gdb.shikigami.items() if s.unreleased}
-    assert len(unrel_cards) == 31 and len(unrel_shiki) == 2
+    assert len(unrel_cards) == 44 and len(unrel_shiki) == 2
     latest = gdb.at_date(20991231)  # 晚于哨兵日期：unreleased 条目仍不可用
     assert set(latest.cards) == set(gdb.cards) - unrel_cards
     assert set(latest.shikigami) == set(gdb.shikigami) - unrel_shiki

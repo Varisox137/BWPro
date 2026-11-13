@@ -22,6 +22,19 @@ def qapp():
     app.processEvents()
 
 
+def test_library_config_ids_match_engine_names(gdb):
+    from pathlib import Path
+    import yaml
+
+    by_name = {}
+    for definition in (*gdb.cards.values(), *gdb.shikigami.values()):
+        by_name.setdefault(definition.name, set()).add(str(definition.id))
+    for path in Path("library").glob("*/*/*.yaml"):
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if isinstance(config, dict) and config.get("name") in by_name:
+            assert str(config.get("id")) in by_name[config["name"]], path
+
+
 def test_appearance_store_is_sparse_and_validated(tmp_path):
     path = tmp_path / "appearance.json"
     save_card_appearance(10010101, "blue", path=path)

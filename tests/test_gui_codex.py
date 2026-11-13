@@ -173,3 +173,13 @@ def test_mainwindow_applies_codex_selection_theme(qapp, db, tmp_path):
         assert "#cfe5f7" in window.pages["codex"].styleSheet()
     finally:
         window.close()
+
+
+def test_raw_unreleased_reinforce_cards_are_hidden(qapp, gdb):
+    view = ShikigamiCodexView(gdb)
+    try:
+        for sid, card_id in ((100204, 10020421), (100207, 10020721), (100307, 10030721)):
+            view.select_shikigami(sid)
+            assert card_id not in {card.id for card in view._current_cards()}
+    finally:
+        view.close()

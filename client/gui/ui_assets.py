@@ -6,7 +6,6 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QPainter, QPixmap, QTransform
 
@@ -148,7 +147,7 @@ def end_turn_button_pixmap(size: int, opponent: bool = False, *,
     if word.isNull():
         word = ui_pixmap(f"turn_buttons/{prefix}golden.png", root=root)
     word = word.scaled(
-        round(size * 0.85), round(size * 0.85), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        round(size * 0.60), round(size * 0.60), Qt.KeepAspectRatio, Qt.SmoothTransformation)
     if not re.fullmatch(r"[0-9a-fA-F]{8}", selected):
         return word
     background = ui_pixmap(f"turn_buttons/{selected}.png", root=root)
@@ -169,12 +168,8 @@ def end_turn_button_pixmap(size: int, opponent: bool = False, *,
 @lru_cache(maxsize=16)
 def _cached_cardback(path: str, mtime_ns: int, landscape: bool) -> QPixmap:
     del mtime_ns
-    pixmap = QPixmap(path)
-    with Image.open(path) as image:
-        bbox = image.convert("RGBA").getchannel("A").getbbox()
-    if bbox:
-        left, top, right, bottom = bbox
-        pixmap = pixmap.copy(QRect(left, top, right - left, bottom - top))
+    # 所有卡背共用中央牌体区域，装饰性透明外延不参与尺寸计算。
+    pixmap = QPixmap(path).copy(QRect(112, 0, 276, 512))
     if landscape:
         pixmap = pixmap.transformed(QTransform().rotate(-90), Qt.SmoothTransformation)
     return pixmap
@@ -197,7 +192,7 @@ def cardback_pixmap(side: str, *, root: Path | None = None,
 @lru_cache(maxsize=4)
 def _cached_empty_deck(path: str, mtime_ns: int, landscape: bool) -> QPixmap:
     del mtime_ns
-    pixmap = QPixmap(path).copy(QRect(120, 0, 272, 512))
+    pixmap = QPixmap(path).copy(QRect(112, 0, 276, 512))
     if landscape:
         pixmap = pixmap.transformed(QTransform().rotate(-90), Qt.SmoothTransformation)
     return pixmap

@@ -7,7 +7,7 @@ shikigami: 日和坊
 power: 1
 health: 7
 version_date: '20200327'
-id: '10020503'
+id: '10020502'
 artwork:
   images:
   - path: 10020503.png

@@ -1,5 +1,6 @@
 id: 10040351
 name: 落英缤纷
+unreleased: true  # 原始数据标记“未加入”
 versions:
   best: 20200928
   history:

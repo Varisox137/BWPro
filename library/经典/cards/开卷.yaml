@@ -5,7 +5,7 @@ rarity: R
 description: 抽两张牌。
 shikigami: 书翁
 version_date: '20191212'
-id: '10011804'
+id: '10011803'
 artwork:
   images:
   - path: 10011804.png

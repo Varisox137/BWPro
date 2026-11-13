@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
 )
 
 from client import cli
-from client.gui.battle_scene import DRAG_Z, BattleScene, BattleView, card_owner_seat, usage_target
+from client.gui.battle_scene import (
+    DRAG_Z, END_TURN_SIZE, BattleScene, BattleView, card_owner_seat, usage_target,
+)
 from client.gui.cardart import seat_level_color
 from client.gui.details import ShikigamiDetailDialog, player_ability_mechanisms
 from client.gui.player_details import PlayerDetailDialog
@@ -222,7 +224,7 @@ class HotseatView(QWidget):
         self.end_turn_button.setObjectName("endTurnButton")
         self.end_turn_button.clicked.connect(self.end_turn)
         self.battle_scene.end_turn_item = self.battle_scene.add_control(
-            self.end_turn_button, ("end_turn",), (208, 208))
+            self.end_turn_button, ("end_turn",), (END_TURN_SIZE, END_TURN_SIZE))
 
         self.enemy_hand_label = QLabel()
         self.enemy_hand_label.setObjectName("enemyHandBack")
@@ -247,9 +249,9 @@ class HotseatView(QWidget):
             self.battle_scene.add_control(button, (key,), (120, 32))
         self.cancel_target_button.clicked.connect(self.cancel_targeting)
         self.default_target_button.clicked.connect(self.confirm_default_target)
-        self.hand_caption = QLabel()
-        self.hand_caption.setAlignment(Qt.AlignCenter)
-        self.battle_scene.add_control(self.hand_caption, ("hand_caption",), (68, 64))
+        self.own_hand_label = QLabel()
+        self.own_hand_label.setAlignment(Qt.AlignCenter)
+        self.battle_scene.add_control(self.own_hand_label, ("own_hand_label",), (68, 64))
         self.ready_button = QPushButton("确认调度")
         self.ready_button.setObjectName("battleSmall")
         self.ready_button.clicked.connect(self.ready)
@@ -360,7 +362,7 @@ class HotseatView(QWidget):
             QPushButton#battleSmall {{ padding: 4px; font-size: 12px; text-align: center; }}
         """)
         for label in (self.enemy_hand_label, self.enemy_deck_label,
-                      self.own_deck_label, self.hand_caption,
+                      self.own_deck_label, self.own_hand_label,
                       self.target_label, self.error_label):
             label.setStyleSheet(
                 f"background: transparent; color: {colors['text']}; font-weight: 600;")
@@ -505,7 +507,7 @@ class HotseatView(QWidget):
 
     def _clear_hand(self) -> None:
         self.battle_scene.clear_hands()
-        self.hand_caption.clear()
+        self.own_hand_label.clear()
 
     def _begin_handoff(self, preserve_hand: bool = False) -> None:
         self.timeline_timer.stop()
@@ -590,7 +592,7 @@ class HotseatView(QWidget):
         self.end_turn_button.setProperty("assetName", name)
         self.end_turn_button.setIcon(QIcon(end_turn_button_pixmap(
             self.end_turn_button.width(), opponent=opponent)))
-        self.end_turn_button.setIconSize(self.end_turn_button.size() * 0.92)
+        self.end_turn_button.setIconSize(self.end_turn_button.size())
 
     def _render_state(self, play_pending=False, show_turn=True, preserve_phase=False) -> None:
         if self._handoff_waiting:
@@ -614,7 +616,7 @@ class HotseatView(QWidget):
         self.enemy_hand_label.setText(f"敌方手牌\n{len(enemy.hand)} 张")
         self.enemy_deck_label.setText(f"敌方牌库\n{len(enemy.deck)} 张")
         self.own_deck_label.setText(f"己方牌库\n{len(own.deck)} 张")
-        self.hand_caption.setText(f"己方手牌\n{len(own.hand)}/12 张")
+        self.own_hand_label.setText(f"己方手牌\n{len(own.hand)}/12 张")
         inputs = self._inputs_open()
         self.battle_scene.legal_targets = list(self.legal_targets)
         info = {} if state.pending_choice else self.hand_info()
@@ -632,8 +634,7 @@ class HotseatView(QWidget):
         if track_turn:
             self._last_turn_key = turn_key
         if self._opening_banner_pending:
-            order_text = "己方先手" if self.viewer == state.active else "己方后手"
-            self.battle_scene.show_banner(order_text, 1200)
+            self.battle_scene.show_opening_sequence(self.game, self.viewer)
             self._opening_banner_pending = False
         self.end_turn_button.setEnabled(inputs and state.phase == "battle")
         self._sync_end_turn_art()

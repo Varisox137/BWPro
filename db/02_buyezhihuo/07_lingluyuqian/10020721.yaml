@@ -1,6 +1,7 @@
 # 骨架（db.scaffold），效果未实现——协战本体（04 沧海刀鸣副侧入库后补齐）
 id: 10020721
 name: 海国共主
+unreleased: true  # 原始数据标记“未加入”
 versions:
   best: 20200928
   history:
