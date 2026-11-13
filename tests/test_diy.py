@@ -191,20 +191,24 @@ def test_leave_combat_base_armor_and_defeat_boundary(diy_db):
     assert yan.defeated
 
 
-def test_form_power_tracks_half_player_armor_and_overrides_stats(diy_db):
+def test_form_power_adds_half_player_armor_to_base(diy_db):
     g = _game(diy_db)
     pa, yan = g.state.players[0], g.state.players[0].shikigami[0]
-    pa.shield = 5
-    yan.perm_power = 4
-    yan.temp_power = 2
     F.play(g, 0, 11010101)
     assert yan.form.id == 11010101
-    assert yan.eff_power == 2
+    assert yan.eff_power == 3                    # 0 护甲时仍为形态基础 3
+    pa.shield = 5
+    g._refresh_stat_auras()
+    assert yan.eff_power == 3 + 2
     pa.shield = 8
     g._refresh_stat_auras()
-    assert yan.eff_power == 4
+    assert yan.eff_power == 3 + 4
     yan.combat_power = 3
-    assert yan.eff_power == 7
+    assert yan.eff_power == 3 + 4 + 3
+    yan.perm_power = 4
+    yan.temp_power = 2
+    g._refresh_stat_auras()
+    assert yan.eff_power == 3 + 4 + 4 + 2 + 3     # 光环与其他力量来源叠加
     g._destroy_form(pa, 0, "test")
     assert yan.eff_power == 3 + 4 + 2 + 3
 

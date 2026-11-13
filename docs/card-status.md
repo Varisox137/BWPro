@@ -308,7 +308,7 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | on_heal {source_shikigami: self, target_side: friendly, target_kind: shikigami} / on_shikigami_revived {source_shikigami: self, shikigami_side: friendly} → 临时 +1 力量（revive op 补 source/reason="effect" 传递；倒计时复活 source=None 不触发） |
 | 01 桃之馨息 | ✅ | choose any_character heal 5 |
-| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，命中才洗牌库、未命中不洗——维护者定案）；全卡盘点(1)：选择目标 include_defeated——可选任一己方式神（含已升级的气绝者；未升级/离场不可选） |
+| 02 花信风 | ✅ | [瞬发]；search_deck 新 op（按选择目标式神 id 滤牌库 rng.choice 入手，命中才洗牌库、未命中不洗——维护者定案）；选择目标 any_state——可选任一己方式神（含未升级与未离场气绝者；仅离场不可选） |
 | 03 丰实 | ✅ | id 按 raw 卡序重排（原 04）：形态 3/7：进场与 on_turn_start {player: self} → heal 3，friendly_injured 池 + TargetSpec {random: 1} 键（rng.sample，repeat 每轮重解析重随机） |
 | 04 桃之夭夭 | ✅ | id 按 raw 卡序重排（原 03）：cost 0 + keywords [inspire]（鼓舞关键字登记）；basic_boost +2/+2 出击加成 |
 | 05 桃语春风 | ✅ | choose friendly_defeated 新池 revive + grant_keyword haste（迅捷天然一次性类别） |

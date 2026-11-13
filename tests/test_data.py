@@ -2032,15 +2032,20 @@ def test_search_deck_miss_no_shuffle(real_game):
     assert len(pa.hand) == hand0                              # 未补牌（give 补的已打出）
 
 
-def test_search_deck_target_include_defeated(real_game):
-    """检索目标含气绝（花信风，全卡盘点(1)）："任一己方式神（无论是否在场（已升级）、
-    是否未气绝）"——已升级的气绝己方式神是合法选择目标，检索其牌照常。"""
-    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 1, 1: 1})
+def test_search_deck_target_any_state(real_game):
+    """检索目标含未升级与气绝（花信风）：任一己方式神均可选并检索其牌。"""
+    g, pa, pb = _game(real_game, THY_TEAM, {IDX: 1})
+    hand0 = {c.uid for c in pa.hand}
+    play(g, 0, HUAXIN, target=Ref(player=0, shikigami=1))       # 0 级白狼也可选
+    drawn = [c for c in pa.hand if c.uid not in hand0]
+    assert len(drawn) == 1 and drawn[0].id // 100 == 100101
+
+    pa.shikigami[1].level = 1
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 99, None)   # 白狼气绝
     hand0 = {c.uid for c in pa.hand}
-    play(g, 0, HUAXIN, target=Ref(player=0, shikigami=1))       # 气绝的白狼仍为合法目标
+    play(g, 0, HUAXIN, target=Ref(player=0, shikigami=1))       # 气绝后仍为合法目标
     drawn = [c for c in pa.hand if c.uid not in hand0]
-    assert len(drawn) == 1 and drawn[0].id // 100 == 100101     # 检索到白狼的牌
+    assert len(drawn) == 1 and drawn[0].id // 100 == 100101
 
 
 def test_random_injured_heal(real_game):
