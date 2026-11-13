@@ -1,0 +1,15 @@
+type: 形态
+name: 祸根
+level: 3
+rarity: R
+description: ''
+shikigami: 人面树
+power: 4
+health: 12
+version_date: '20200928'
+id: '10040106'
+artwork:
+  images:
+  - path: 10040106.png
+    scale: 0.711
+    offset_y: -77

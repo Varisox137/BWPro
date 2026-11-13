@@ -1,0 +1,13 @@
+type: 法术
+name: 灾厄之花
+level: 2
+rarity: R
+description: 使一个式神获得‘在他下个回合结束时，对自己造成等同于其#sm的伤害’。
+shikigami: 人面树
+version_date: '20200928'
+id: '10040105'
+artwork:
+  images:
+  - path: 10040105.png
+    scale: 0.747
+    offset_y: -88

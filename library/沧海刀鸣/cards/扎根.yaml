@@ -1,0 +1,15 @@
+type: 形态
+name: 扎根
+level: 1
+rarity: R
+description: 己方回合开始时不会从战斗区移回准备区。
+shikigami: 人面树
+power: 2
+health: 7
+version_date: '20200928'
+id: '10040101'
+artwork:
+  images:
+  - path: 10040101.png
+    scale: 0.711
+    offset_y: -82

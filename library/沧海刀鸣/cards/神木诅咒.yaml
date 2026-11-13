@@ -1,0 +1,13 @@
+type: 法术
+name: 神木诅咒
+level: 1
+rarity: SR
+description: 使一个形态变成‘[[诅咒之木]]’。
+shikigami: 人面树
+version_date: '20200928'
+id: '10040102'
+artwork:
+  images:
+  - path: 10040102.png
+    scale: 0.747
+    offset_y: -78

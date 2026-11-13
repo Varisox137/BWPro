@@ -1,0 +1,17 @@
+type: 式神
+name: 人面树
+faction: 紫岩
+power: 1
+health: 6
+description: 敌方回合开始时，恢复全部#sm。
+id: '100401'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100401.png
+    scale: 0.711
+    offset_y: -76
+portrait:
+  scale: 4.118
+  offset_x: -2
+  offset_y: 45

@@ -1,0 +1,15 @@
+type: 法术
+name: 觉醒·人面树
+level: 3
+rarity: SR
+description: '[[觉醒]]：每个回合开始时，恢复全部#sm。人面树的#ll等于其#sm。'
+shikigami: 人面树
+version_date: '20200928'
+id: '10040108'
+evolve: true
+health+: 2
+artwork:
+  images:
+  - path: 10040108.png
+    scale: 0.747
+    offset_y: -75
