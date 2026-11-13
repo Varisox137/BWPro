@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton, QStyle, QToolButton, QVBoxLayout, QWidget,
 )
 
+from client.gui import notices
 from client.gui.loading import LoadingIndicator, LoadingOverlay
 from client.gui.prewarm import MANIFEST_NAME, prewarm_all
 from client.gui.ui_assets import (
@@ -137,6 +138,11 @@ class SettingsView(QWidget):
             self.update_button.clicked.connect(lambda: on_check_update())
         update_row.addWidget(self.version_label)
         update_row.addWidget(self.update_button)
+        self.operation_help_button = QPushButton("操作说明")
+        self.operation_help_button.setObjectName("small")
+        self.operation_help_button.clicked.connect(
+            lambda: notices.show_text_dialog(self, "操作说明", notices.HELP_TEXT))
+        update_row.addWidget(self.operation_help_button)
         update_row.addStretch(1)
         layout.addLayout(update_row)
         self.update_status_label = QLabel()

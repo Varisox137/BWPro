@@ -55,7 +55,7 @@ def test_named_cardbacks_and_persistent_defaults(tmp_path):
         "end_turn_background": "", "opponent_turn_background": "", "turn_background": "",
         "end_turn_variant": "golden", "opponent_turn_variant": "golden",
         "defeated_variant": "white", "upgrade_variant": "yellow",
-        "player_name": "玩家",
+        "player_name": "玩家", "last_started_version": "",
     }
     save_gui_settings({"own_cardback": "三途花境", "enemy_cardback": "月明风清"}, path)
     assert load_gui_settings(path)["own_cardback"] == "三途花境"

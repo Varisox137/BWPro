@@ -76,7 +76,7 @@ def load_gui_settings(path: Path | None = None) -> dict[str, str]:
         "end_turn_background": "", "opponent_turn_background": "", "turn_background": "",
         "end_turn_variant": "golden", "opponent_turn_variant": "golden",
         "defeated_variant": "white", "upgrade_variant": "yellow",
-        "player_name": "玩家",
+        "player_name": "玩家", "last_started_version": "",
     }
     try:
         stored = json.loads(path.read_text(encoding="utf-8"))

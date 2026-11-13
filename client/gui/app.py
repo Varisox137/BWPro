@@ -14,7 +14,9 @@ from PySide6.QtWidgets import (
 )
 
 import client.update as update
+from client.gui import notices
 from client.gui.prewarm import prewarm_all
+from client.gui.ui_assets import load_gui_settings, save_gui_settings
 from client.gui.widgets import ask_confirmation, show_warning
 from core.logging_config import configure_logging
 
@@ -327,6 +329,22 @@ class MainWindow(QMainWindow):
         self.back_button.hide()
         self._sync_game_menu_button()
 
+    def show_release_notes_once(self) -> None:
+        """仅在本机最高启动版本低于当前版本时展示一次更新说明。"""
+        last = load_gui_settings()["last_started_version"]
+        try:
+            seen = update.parse_version(last if last.startswith("v") else f"v{last}")
+        except ValueError:
+            seen = None
+        current = update.parse_version(f"v{update.VERSION}")
+        if seen is not None and seen >= current:
+            return
+        notices.show_text_dialog(
+            self, f"BWPro v{update.VERSION} 最近更新",
+            notices.RELEASE_NOTES.get(
+                update.VERSION, "本版本包含最新的规则、界面与稳定性改进。"))
+        save_gui_settings({"last_started_version": update.VERSION})
+
     def closeEvent(self, event):
         self._finish_prewarm()
         page = self.stack.currentWidget()
@@ -475,5 +493,6 @@ def main(*, cleanup=None) -> int:
     win = MainWindow()
     win.show()
     win.prewarm_resources()
+    win.show_release_notes_once()
     win.check_for_updates(manual=False)
     return app.exec()
