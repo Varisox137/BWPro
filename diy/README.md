@@ -2,12 +2,14 @@
 
 非技术用户请先阅读《[DIY 式神与卡牌指南](DIY指南.md)》；该文件可直接连同式神与卡牌创意交给大模型。
 
+完整的内容分包、机制注册、联机同步与清理方案见《[DIY 扩展架构设计](扩展架构设计.md)》（设计稿，尚未实现）。
+
 ## 契约
 
-自定义卡牌 DSL / 编辑器只允许编译到以下既有原语，**引擎不需要为 DIY 升级**：
+自定义卡牌 DSL / 编辑器只允许编译到已注册原语；新增机制须按扩展架构放入对应内容包或式神目录，不在中央文件中累积：
 
-- 动作：`core.actions.ACTIONS` 注册表内的 op（damage / heal / draw / buff_attack / gain_armor / emit / ...）
-- 事件：`core.events.CORE_EVENTS` ∪ `db/events.yaml` 声明的自定义事件
+- 动作：`core.actions.ACTIONS` 注册表内的 op（含按设计注册的 DIY op）
+- 事件：`core.events.CORE_EVENTS` ∪ `db/events.yaml` 及 DIY 内容目录声明的事件
 - 目标：`core.targets` 的 kind/pool 体系
 - 结算：EffectBlock 的 `mode`（interleaved/atomic）与 `timing`（insert/queue）
 
