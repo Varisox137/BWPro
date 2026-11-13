@@ -27,20 +27,23 @@ from core.engine import IllegalAction
 from core.model import Ref
 from core.setup import new_game
 from db import deckstore
+from db.deck import STANDARD_RULES
 from db.envs import available_env_dates, env_label
 
 
 class DeckSelectDialog(QDialog):
-    """开局卡组选择：仅列满足当前标准规则的本地卡组。"""
+    """开局卡组选择：仅列符合当前数据环境与卡组规则的本地卡组。"""
 
-    def __init__(self, db, store_path: Path, player_name: str, parent=None):
+    def __init__(self, db, store_path: Path, player_name: str, parent=None,
+                 rules=STANDARD_RULES):
         super().__init__(parent)
         self.setWindowTitle(f"{player_name} 选择卡组")
         self.resize(520, 480)
-        self.entries = [entry for entry in deckstore.load_decks(db, store_path)
+        self.entries = [entry for entry in deckstore.load_decks(db, store_path, rules=rules)
                         if entry.get("standard")]
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"{player_name}：仅显示标准卡组"))
+        rule_text = "标准卡组" if rules is not None else "当前可用的卡组"
+        layout.addWidget(QLabel(f"{player_name}：仅显示{rule_text}"))
         self.list = QListWidget()
         for entry in self.entries:
             QListWidgetItem(f"{entry['name']}（{len(deckstore.entry_deck(entry)[1])} 张）",
@@ -187,15 +190,20 @@ class HotseatView(QWidget):
         title.setObjectName("viewTitle")
         title.setAlignment(Qt.AlignCenter)
         setup.addWidget(title)
-        hint = QLabel("双方依次选择本地标准卡组，在同一设备轮流操作")
+        hint = QLabel("双方依次选择本地卡组，在同一设备轮流操作")
         hint.setAlignment(Qt.AlignCenter)
         setup.addWidget(hint)
         options = QHBoxLayout()
         options.addStretch(1)
-        options.addWidget(QLabel("环境"))
+        options.addWidget(QLabel("数据环境"))
         self.env_combo = QComboBox()
         self.env_combo.setMinimumWidth(190)
         options.addWidget(self.env_combo)
+        options.addWidget(QLabel("卡组规则"))
+        self.rules_combo = QComboBox()
+        self.rules_combo.addItem("标准", "standard")
+        self.rules_combo.addItem("自由", "free")
+        options.addWidget(self.rules_combo)
         self.diy_checkbox = QCheckBox("DIY")
         self.diy_checkbox.setChecked(False)
         self.diy_checkbox.toggled.connect(self._change_content)
@@ -225,6 +233,9 @@ class HotseatView(QWidget):
 
     def _game_database(self):
         return self.base_db.at_date(self.env_combo.currentData())
+
+    def current_rules(self):
+        return STANDARD_RULES if self.rules_combo.currentData() == "standard" else None
 
     def _change_content(self) -> None:
         self.base_db = self.diy_db if self.diy_checkbox.isChecked() else self.official_db
@@ -435,16 +446,18 @@ class HotseatView(QWidget):
 
     def start_hotseat(self) -> bool:
         game_db = self._game_database()
-        first = DeckSelectDialog(game_db, self.store_path, "玩家A", self)
+        rules = self.current_rules()
+        first = DeckSelectDialog(game_db, self.store_path, "玩家A", self, rules=rules)
         if first.exec() != QDialog.Accepted:
             return False
-        second = DeckSelectDialog(game_db, self.store_path, "玩家B", self)
+        second = DeckSelectDialog(game_db, self.store_path, "玩家B", self, rules=rules)
         if second.exec() != QDialog.Accepted:
             return False
         return self._start_entries(first.selected_entry(), second.selected_entry())
 
     def start_from_decks(self, first_index: int, second_index: int, **kwargs) -> bool:
-        entries = [entry for entry in deckstore.load_decks(self._game_database(), self.store_path)
+        entries = [entry for entry in deckstore.load_decks(
+            self._game_database(), self.store_path, rules=self.current_rules())
                    if entry.get("standard")]
         return self._start_entries(entries[first_index], entries[second_index], **kwargs)
 
@@ -457,6 +470,7 @@ class HotseatView(QWidget):
         return True
 
     def start_game(self, p1: tuple, p2: tuple, seed: int | None = None, **kwargs) -> None:
+        kwargs.setdefault("check_deck", self.current_rules() is not None)
         self._choice_generation += 1
         if seed is None:
             seed = secrets.randbits(32)

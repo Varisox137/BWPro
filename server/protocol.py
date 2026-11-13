@@ -52,12 +52,10 @@ def joined(room_id: str, token: str, seat: int, **extra) -> dict:
 
 def lobby(ready: list[str], deadline: float | None,
           env_date: int | None = None, mode: str = "standard",
-          diy: bool = False) -> dict:
-    """双方都位、进入准备阶段：ready 为已准备玩家名列表（空 = 无人准备、不计时）；
-    deadline 为未准备方自动准备的 unix 时刻（15s，仅一方已准备时非空）；
-    env_date 为对局环境（平衡性版本日期；None = 最新数据，字段省略）；
-    mode 为房间模式（standard=固定标准环境 / free=自由环境，房主可更换）。"""
-    msg = {"type": "lobby", "ready": ready, "deadline": deadline, "mode": mode}
+          diy: bool = False, rules_mode: str = "standard") -> dict:
+    """准备阶段：mode 控制数据环境，rules_mode 独立控制卡组规则。"""
+    msg = {"type": "lobby", "ready": ready, "deadline": deadline, "mode": mode,
+           "rules_mode": rules_mode}
     if env_date is not None:
         msg["env_date"] = env_date
     if diy:
@@ -103,10 +101,11 @@ def peer_left(name: str) -> dict:
 
 def start(player_index: int, opponent: str, you_first: bool,
           env_date: int | None = None, mode: str = "standard",
-          reconnect_code: str | None = None) -> dict:
-    """正式开局：下发视角、环境与仅本人可见的 8 位自动重连识别码。"""
+          reconnect_code: str | None = None, rules_mode: str = "standard") -> dict:
+    """正式开局：下发视角、数据环境、卡组规则与本人自动重连识别码。"""
     msg = {"type": "start", "player_index": player_index,
-           "opponent": opponent, "you_first": you_first, "mode": mode}
+           "opponent": opponent, "you_first": you_first, "mode": mode,
+           "rules_mode": rules_mode}
     if reconnect_code is not None:
         msg["reconnect_code"] = reconnect_code
     if env_date is not None:

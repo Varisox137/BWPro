@@ -61,6 +61,22 @@ def qss(theme: str) -> str:
     QComboBox QAbstractItemView::item:selected {{
         background: {selection_bg}; color: {selection_text}; border: none;
     }}
+    QComboBox {{
+        background: {t['panel']}; color: {t['text']};
+        border: 1px solid {t['line']}; border-radius: 5px; padding: 4px 8px;
+    }}
+    QComboBox:hover {{ background: {t['panel2']}; border-color: {t['gold']}; }}
+    QComboBox QAbstractItemView {{
+        background: {t['panel']}; color: {t['text']}; border: 1px solid {t['line']};
+    }}
+    QCheckBox {{ color: {t['text']}; background: transparent; spacing: 6px; }}
+    QCheckBox::indicator {{
+        width: 14px; height: 14px; background: {t['panel']};
+        border: 1px solid {t['gold']}; border-radius: 3px;
+    }}
+    QCheckBox::indicator:hover {{ background: {t['panel2']}; }}
+    QCheckBox::indicator:checked {{ background: {t['gold']}; }}
+    QCheckBox:disabled, QComboBox:disabled {{ color: {t['dim']}; }}
     QLabel#title {{ color: {t['gold']}; font-size: 40px; }}
     QLabel#subtitle {{ color: {t['dim']}; font-size: 16px; }}
     QLabel {{ font-size: 15px; }}

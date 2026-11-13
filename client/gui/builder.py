@@ -251,7 +251,14 @@ class DeckBuilderView(QWidget):
         self.env_combo.setMinimumWidth(190)
         self.env_combo.activated.connect(self.change_environment)
         self.env_combo.lineEdit().editingFinished.connect(self.change_environment)
+        top.addWidget(QLabel("数据环境"))
         top.addWidget(self.env_combo)
+        self.rules_combo = QComboBox()
+        self.rules_combo.addItem("标准", "standard")
+        self.rules_combo.addItem("自由", "free")
+        self.rules_combo.currentIndexChanged.connect(self._change_rules)
+        top.addWidget(QLabel("卡组规则"))
+        top.addWidget(self.rules_combo)
         save_button = QPushButton("保存")
         save_button.setObjectName("small")
         save_button.clicked.connect(self.save_editor)
@@ -295,11 +302,11 @@ class DeckBuilderView(QWidget):
         center.addWidget(self.selected_bar)
         body.addLayout(center, 1)
         layout.addLayout(body, 1)
-        rules = QLabel("标准规则：" + "；".join(rules_summary(STANDARD_RULES))
-                       + "（超限仅提示，不阻止保存）")
-        rules.setObjectName("rulesHint")
-        rules.setWordWrap(True)
-        layout.addWidget(rules)
+        self.rules_hint = QLabel()
+        self.rules_hint.setObjectName("rulesHint")
+        self.rules_hint.setWordWrap(True)
+        layout.addWidget(self.rules_hint)
+        self._change_rules()
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.theme = theme
@@ -480,6 +487,17 @@ class DeckBuilderView(QWidget):
     def current_env(self) -> int | None:
         text = self.env_combo.currentText().split("(", 1)[0].strip()
         return None if text == "标准" else parse_env_input(text)
+
+    def current_rules(self):
+        return STANDARD_RULES if self.rules_combo.currentData() == "standard" else None
+
+    def _change_rules(self, *_args) -> None:
+        if self.current_rules() is None:
+            text = "自由规则：仅校验当前数据环境可用性与卡牌归属"
+        else:
+            text = "标准规则：" + "；".join(rules_summary(STANDARD_RULES))
+        self.rules_hint.setText(text + "（仅提示，不阻止保存）")
+        self._update_validation()
 
     def change_environment(self, *_args) -> None:
         try:
@@ -690,8 +708,10 @@ class DeckBuilderView(QWidget):
         edb = self.db.at_date(self.current_env())
         card_ids = [cid for sid in self.team for cid, n in self.picks.get(sid, {}).items()
                     for _ in range(n)]
-        errors = validate_deck(edb, self.team, card_ids, STANDARD_RULES)
-        self.standard_label.setText("✓ 标准卡组" if not errors else "非标准卡组：" + "；".join(errors))
+        errors = validate_deck(edb, self.team, card_ids, self.current_rules())
+        label = "标准卡组" if self.current_rules() is not None else "自由卡组"
+        self.standard_label.setText(f"✓ {label}" if not errors
+                                    else "不符合当前卡组规则：" + "；".join(errors))
         self.standard_label.setProperty("standard", not errors)
 
     def save_editor(self) -> bool:

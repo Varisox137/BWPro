@@ -8,7 +8,7 @@ import base64
 import json
 import zlib
 
-from db.deck import validate_deck
+from db.deck import STANDARD_RULES, validate_deck
 
 
 def group_deck(db, shikigami_ids: list[int],
@@ -60,12 +60,14 @@ def decode_deck(code: str) -> list[tuple[int, list[int]]]:
     return deck
 
 
-def deck_from_code(db, code: str) -> tuple[list[int], list[int]]:
-    """解码并按组卡规则校验，返回 (式神 id 列表, 卡牌 id 列表)；不合法抛 ValueError。"""
+def deck_from_code(db, code: str, rules=STANDARD_RULES) -> tuple[list[int], list[int]]:
+    """解码并按组卡规则校验；rules=None 仅校验环境可用性与卡牌归属。"""
+    if rules is None:
+        return available_deck_from_code(db, code)
     deck = decode_deck(code)
     shikigami_ids = [sid for sid, _ in deck]
     card_ids = [cid for _, cards in deck for cid in cards]
-    errors = validate_deck(db, shikigami_ids, card_ids)
+    errors = validate_deck(db, shikigami_ids, card_ids, rules)
     if errors:
         raise ValueError("卡组不合法：" + "；".join(errors))
     return shikigami_ids, card_ids

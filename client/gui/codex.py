@@ -56,6 +56,7 @@ class ShikigamiCodexView(QWidget):
         title.setObjectName("viewTitle")
         overview.addWidget(title)
         filters = QHBoxLayout()
+        filters.addWidget(QLabel("数据环境"))
         self.env_combo = QComboBox()
         self.env_combo.setEditable(True)
         self.env_combo.addItem(env_label(None), None)
@@ -86,6 +87,7 @@ class ShikigamiCodexView(QWidget):
         self.shiki_list = QTreeWidget()
         self.shiki_list.setHeaderHidden(True)
         self.shiki_list.setIndentation(10)
+        self.shiki_list.setAutoScroll(False)  # 首次绘制不得抢滚动、改变点击目标
         self.shiki_list.currentItemChanged.connect(self._select_shiki_item)
         tree_column.addWidget(self.shiki_list, 1)
         self.empty_label = QLabel("没有符合筛选条件的式神")

@@ -21,6 +21,7 @@ from core.model import GameConfig
 from core.setup import new_game
 from client.cli import hand_cards_info
 from db import deckcode
+from db.deck import STANDARD_RULES
 from server import protocol
 
 logger = logging.getLogger("bwpro.room")
@@ -165,15 +166,17 @@ class Room:
                  turn_timeout: float = 120.0, mulligan_timeout: float = 30.0,
                  ready_timeout: float = 15.0, starting_timeout: float = 3.0,
                  env_date: int | None = None, mode: str = "standard",
-                 diy: bool = False, official_db=None,
+                 diy: bool = False, official_db=None, rules_mode: str = "standard",
                  rng: random.Random | None = None) -> None:
         self.id = room_id
         self.db = db
         self.diy = diy
         self.official_db = official_db or db
         self._trusted_db = db
-        self.mode = mode  # standard=固定标准环境（最新，不可更改）/ free=自由环境
-        self.env_date = env_date  # 对局环境（平衡性版本日期；None = 最新数据）
+        self.mode = mode  # standard=固定最新数据 / free=可选历史数据环境
+        self.rules_mode = rules_mode
+        self.deck_rules = STANDARD_RULES if rules_mode == "standard" else None
+        self.env_date = env_date  # 数据环境（平衡性版本日期；None = 最新数据）
         self.env_db = db.at_date(env_date)  # 环境下解析后的数据库（构筑校验/开局/渲染用）
         self.diy_packages: dict[int, dict] = {}
         self._diy_manifests: dict[int, dict[int, str]] = {}
@@ -244,7 +247,7 @@ class Room:
                 decoded = deckcode.decode_deck(deck_code)
                 return ([sid for sid, _ in decoded],
                         [cid for _, cards in decoded for cid in cards])
-            return deckcode.deck_from_code(self.env_db, deck_code)
+            return deckcode.deck_from_code(self.env_db, deck_code, rules=self.deck_rules)
         except ValueError as e:
             if self.env_date is not None and not self.diy:
                 raise ValueError(
@@ -319,7 +322,7 @@ class Room:
         ready = [self.conns[s].name for s in sorted(self.ready_seats) if self.conns[s]]
         deadline = self._lobby_deadline if self._lobby_phase == "countdown" else None
         return protocol.lobby(ready, deadline, env_date=self.env_date, mode=self.mode,
-                              diy=self.diy)
+                              diy=self.diy, rules_mode=self.rules_mode)
 
     async def set_env(self, seat: int, date: int | None) -> None:
         """更改对局环境（平衡性版本日期，None = 最新）：仅房主（seat 0）在双方
@@ -337,15 +340,14 @@ class Room:
             await self.conns[seat].send(
                 protocol.error("双方均未准备时才能更改环境（请先取消准备）"))
             return
-        from db.deck import validate_deck
         new_db = self.db.at_date(date)
         if not self.diy:  # DIY 未知 id 待同步形成房间库后统一校验
             for c in self.conns:
-                ids, cards = c.deck
-                errors = validate_deck(new_db, ids, cards)
-                if errors:
+                try:
+                    c.deck = deckcode.deck_from_code(new_db, c.deck_code, rules=self.deck_rules)
+                except ValueError as error:
                     await self.conns[seat].send(protocol.error(
-                        f"{c.name} 的卡组在环境（{date}）下不可用：{'；'.join(errors)}"))
+                        f"{c.name} 的卡组在环境（{date}）下不可用：{error}"))
                     return
         self.env_date = date
         self.env_db = new_db
@@ -672,7 +674,8 @@ class Room:
             return
         for conn in self.conns:
             try:
-                conn.deck = deckcode.deck_from_code(self.env_db, conn.deck_code)
+                conn.deck = deckcode.deck_from_code(
+                    self.env_db, conn.deck_code, rules=self.deck_rules)
             except ValueError as error:
                 await self._fail_diy_sync(
                     f"{conn.name} 的卡组在同步后的环境（{self.env_date or '最新'}）不可用：{error}")
@@ -702,6 +705,7 @@ class Room:
             seed=self.rng.randrange(2**32),
             config=config,
             first=0,  # by_player 已按先手排序，无需 new_game 再换
+            check_deck=False,  # 入座/环境变更/DIY 同步时已按房间规则校验
             trace_sink=self._trace_sink,
         )
         env_note = f"，环境 {self.env_date}" if self.env_date else ""
@@ -712,7 +716,7 @@ class Room:
                 self.conns[1 - c.seat].name,
                 self.seat_to_player[c.seat] == 0,
                 env_date=self.env_date, mode=self.mode,
-                reconnect_code=c.token))
+                reconnect_code=c.token, rules_mode=self.rules_mode))
         self.reschedule_timer()
         await self.broadcast_state()
 

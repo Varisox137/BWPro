@@ -149,8 +149,9 @@ server/
   3s 开局。开始倒计时前可取消准备；入座后即可离开。等待对手的房主断线时保留座位
   与 token，可用原房码+token 恢复；其他准备阶段断线视同离开并释放座位。
 - **房间看门狗**：未开局房间 10 分钟无人员变动自动解散（含等待中的空房）；已开局房间不适用。
-- **对局模式**：标准模式固定最新环境；自由模式可指定环境，双方未准备时房主可修改，
-  修改前后均按房间环境校验卡组。
+- **数据环境与卡组规则**：`mode` 仅控制平衡性数据（standard=最新，free=可选日期）；
+  `rules_mode` 独立控制组卡规则（standard=4 式神、各 8 卡、至多 2 派系等，free=仅校验
+  当前环境可用性与卡牌归属）。创建后房主修改数据环境时会按同一卡组规则重新校验。
 - 座位与 `players` 下标在开局随机先手时确定；回合内操作仅当前行动方可发。
 
 ## 通信协议（WebSocket JSON）
@@ -158,7 +159,7 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "room_id": "Ab12cd", "mode": "standard", "client_ip": "8.8.8.8", "cardback": "月明风清" }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "room_id": "Ab12cd", "mode": "standard", "rules_mode": "standard", "client_ip": "8.8.8.8", "cardback": "月明风清" }
 { "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "client_ip": "8.8.4.4", "cardback": "月明风清" }
 { "type": "join", "room_id": "ABC123", "reconnect_code": "abcd1234", "client_ip": "8.8.8.8" }
 { "type": "ready" }
@@ -173,18 +174,19 @@ ifconfig.me）best-effort 查询并校验为公网地址；它是可伪造的自
 join 时记录，重连不刷新。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
 `create.mode` 可缺省（`standard`）；标准模式忽略 `env_date`（固定最新数据），自由模式
-`create.env_date` 可缺省（最新数据）；`env` 仅自由模式房主在双方均未准备时可用（date 缺省 = 最新）。
+`create.env_date` 可缺省（最新数据）；`create.rules_mode` 缺省为 `standard`，与 `mode`
+相互独立。`env` 仅自由数据环境的房主在双方均未准备时可用（date 缺省 = 最新）。
 `ready` 仅双方都位后有效；`leave` 在已入座且开局前有效。`left` 应答后 WebSocket 不断开，可继续 create/join。
 
 服务端 → 客户端：
 
 ```json
 { "type": "joined", "room_id": "...", "token": "...", "seat": 0, "debug": false }
-{ "type": "lobby", "ready": ["甲"], "deadline": 1735689600.0, "mode": "standard", "env_date": null }
+{ "type": "lobby", "ready": ["甲"], "deadline": 1735689600.0, "mode": "standard", "rules_mode": "standard", "env_date": null }
 { "type": "starting", "deadline": 1735689600.0 }
 { "type": "peer_left", "name": "乙" }
 { "type": "left" }
-{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "mode": "standard", "env_date": null, "reconnect_code": "abcd1234" }
+{ "type": "start", "player_index": 0, "opponent": "乙", "you_first": true, "mode": "standard", "rules_mode": "standard", "env_date": null, "reconnect_code": "abcd1234" }
 { "type": "state", "payload": { "..." : "GameState JSON" }, "log": ["..."],
   "timer": { "kind": "turn", "deadline": 1735689600.0 },
   "settle": ["..."], "timeline": [{ "k": "s", "m": "..." }], "opponent_cardback": "月明风清" }

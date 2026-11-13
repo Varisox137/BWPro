@@ -21,6 +21,7 @@ from client.gui.widgets import show_warning
 from core.engine import Game
 from core.model import GameState, Ref
 from db import deckstore
+from db.deck import STANDARD_RULES
 from db.envs import parse_env_input
 from diy import runtime as diy_runtime
 from diy import store as diy_store
@@ -388,16 +389,25 @@ class OnlineView(QWidget):
         self.room_edit.setPlaceholderText("自定义 6 位房码（留空随机）")
         self.room_edit.setMaxLength(6)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("标准模式", "standard")
-        self.mode_combo.addItem("自由模式", "free")
+        self.mode_combo.addItem("最新数据", "standard")
+        self.mode_combo.addItem("自选日期", "free")
         self.mode_combo.currentIndexChanged.connect(self._render_lobby)
         self.env_edit = QLineEdit()
-        self.env_edit.setPlaceholderText("环境别名或 6/8 位日期")
+        self.env_edit.setPlaceholderText("数据环境别名或 6/8 位日期")
+        self.rules_combo = QComboBox()
+        self.rules_combo.addItem("标准", "standard")
+        self.rules_combo.addItem("自由", "free")
+        self.rules_combo.currentIndexChanged.connect(self._change_rules)
         self.create_button = QPushButton("创建房间")
         self.create_button.setFixedSize(140, 36)
         self.create_button.clicked.connect(self.create_room)
-        for widget in (self.room_edit, self.mode_combo, self.env_edit, self.create_button):
-            create_row.addWidget(widget)
+        create_row.addWidget(self.room_edit)
+        create_row.addWidget(QLabel("数据环境"))
+        create_row.addWidget(self.mode_combo)
+        create_row.addWidget(self.env_edit)
+        create_row.addWidget(QLabel("卡组规则"))
+        create_row.addWidget(self.rules_combo)
+        create_row.addWidget(self.create_button)
         lobby.addLayout(create_row)
         self.diy_checkbox = QCheckBox("启用 DIY 内容")
         self.diy_checkbox.setChecked(False)
@@ -473,8 +483,16 @@ class OnlineView(QWidget):
         self._set_base_db(self.diy_db if self.diy_checkbox.isChecked() else self.official_db)
         self.reload_decks()
 
+    def current_rules(self):
+        return STANDARD_RULES if self.rules_combo.currentData() == "standard" else None
+
+    def _change_rules(self, *_args) -> None:
+        if self.room_id is None:
+            self.reload_decks()
+
     def reload_decks(self) -> None:
-        self.entries = [entry for entry in deckstore.load_decks(self.base_db, self.store_path)
+        self.entries = [entry for entry in deckstore.load_decks(
+            self.base_db, self.store_path, rules=self.current_rules())
                         if entry.get("standard")]
         self.deck_combo.clear()
         for entry in self.entries:
@@ -608,7 +626,7 @@ class OnlineView(QWidget):
             self.lobby_error.setText(str(error))
             return False
         msg = {"type": "create", "name": self.player_name, "deck_code": self.deck_code,
-               "debug": False, "mode": mode,
+               "debug": False, "mode": mode, "rules_mode": self.rules_combo.currentData(),
                "cardback": load_gui_settings()["own_cardback"],
                **net.hello_metadata(self._client_ip)}
         if room_id:
@@ -787,6 +805,8 @@ class OnlineView(QWidget):
             self.token = msg["token"]
             self.seat = msg["seat"]
             self.room_diy = bool(msg.get("diy"))
+            self.rules_combo.setCurrentIndex(self.rules_combo.findData(
+                msg.get("rules_mode", "standard")))
             self.diy_checkbox.setChecked(self.room_diy)
             self._reset_diy_client()
             if self.room_diy and "diy_required" in msg:
@@ -804,6 +824,8 @@ class OnlineView(QWidget):
         elif kind == "lobby":
             self.in_lobby = True
             self.mode = msg.get("mode", "standard")
+            self.rules_combo.setCurrentIndex(self.rules_combo.findData(
+                msg.get("rules_mode", "standard")))
             self.room_diy = bool(msg.get("diy"))
             self._apply_env(msg.get("env_date"))
             if self.mode == "free" and self.env_date is not None:
@@ -843,6 +865,8 @@ class OnlineView(QWidget):
             self.battle.me = self.me
             self.battle.reset_session()
             self.mode = msg.get("mode", "standard")
+            self.rules_combo.setCurrentIndex(self.rules_combo.findData(
+                msg.get("rules_mode", "standard")))
             self._apply_env(msg.get("env_date"))
             self.battle.server_timer = None
             self.stack.setCurrentWidget(self.battle)
@@ -910,6 +934,7 @@ class OnlineView(QWidget):
             widget.setVisible(in_room)
         self.env_button.setVisible(in_room and self.mode == "free")
         self.diy_checkbox.setEnabled(not in_room)
+        self.rules_combo.setEnabled(not in_room)
         ready = "、".join(self.lobby_ready) or "无"
         self.ready_label.setText(f"已准备（{len(self.lobby_ready)}/2）：{ready}")
         own_ready = self.player_name in self.lobby_ready

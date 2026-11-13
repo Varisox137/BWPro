@@ -172,6 +172,15 @@ def test_environment_options_are_unique(qapp, view):
     assert len(dates) == len(set(dates))
 
 
+def test_deck_rules_are_independent_of_data_environment(qapp, view):
+    assert view.rules_combo.currentData() == "standard"
+    view.rules_combo.setCurrentIndex(view.rules_combo.findData("free"))
+    view.new_deck()
+    view.add_shikigami(100101)
+    assert view.current_rules() is None
+    assert view.standard_label.text().startswith("✓")
+
+
 def test_invalid_environment_restores_last_valid_value(qapp, view, monkeypatch):
     warnings = []
     monkeypatch.setattr("client.gui.builder.show_warning",

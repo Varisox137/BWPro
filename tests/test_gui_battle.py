@@ -190,6 +190,30 @@ def test_hotseat_diy_toggle_refreshes_available_decks(qapp, db, tmp_path):
     widget.deleteLater()
 
 
+def test_hotseat_free_rules_include_nonstandard_diy_deck(qapp, db, tmp_path):
+    sid = 110101
+    diy_db = F.db_of(
+        list(db.shikigami.values()) + [F.shiki(sid, faction="红莲")],
+        list(db.cards.values()) + [F.card(sid * 100 + n, shikigami=sid)
+                                   for n in range(1, 9)],
+    )
+    widget = HotseatView(diy_db, official_db=db,
+                         store_path=tmp_path / "decks.json")
+    team = F.TEAM[:3] + [sid]
+    cards = F.deck_of(*team)[:-1]
+    groups = deckcode.group_deck(diy_db, team, cards)
+    deckstore.save_decks(diy_db, [{"name": "自由DIY", "groups": groups, "env": None}],
+                         widget.store_path)
+    widget.diy_checkbox.setChecked(True)
+    widget.rules_combo.setCurrentIndex(widget.rules_combo.findData("free"))
+    dialog = DeckSelectDialog(widget._game_database(), widget.store_path, "玩家A",
+                              rules=widget.current_rules())
+    assert [entry["name"] for entry in dialog.entries] == ["自由DIY"]
+    dialog.close()
+    widget.close()
+    widget.deleteLater()
+
+
 def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

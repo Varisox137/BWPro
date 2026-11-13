@@ -1694,6 +1694,26 @@ def test_online_diy_toggle_reloads_matching_decks(qapp, db, tmp_path):
     widget.deleteLater()
 
 
+def test_online_free_rules_include_nonstandard_diy_deck(qapp, db, tmp_path):
+    sid = 110101
+    diy_db = F.db_of(
+        list(db.shikigami.values()) + [F.shiki(sid, faction="红莲")],
+        list(db.cards.values()) + [F.card(sid * 100 + n, shikigami=sid)
+                                   for n in range(1, 9)],
+    )
+    widget = OnlineView(diy_db, official_db=db, store_path=tmp_path / "decks.json",
+                        bridge_factory=FakeBridge)
+    team = F.TEAM[:3] + [sid]
+    groups = deckcode.group_deck(diy_db, team, F.deck_of(*team)[:-1])
+    deckstore.save_decks(diy_db, [{"name": "自由DIY", "groups": groups, "env": None}],
+                         widget.store_path)
+    widget.diy_checkbox.setChecked(True)
+    widget.rules_combo.setCurrentIndex(widget.rules_combo.findData("free"))
+    assert [entry["name"] for entry in widget.entries] == ["自由DIY"]
+    widget.close()
+    widget.deleteLater()
+
+
 def test_online_disconnect_auto_reconnects_with_public_ip_and_start_code(
         qapp, view, monkeypatch):
     monkeypatch.setattr("client.gui.online.net.public_ip", lambda: "8.8.8.8", raising=False)

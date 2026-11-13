@@ -1159,6 +1159,27 @@ def test_waiting_creator_disconnect_keeps_room_for_token_reconnect(server, db):
     replacement.ws.close()
 
 
+def test_free_deck_rules_are_independent_of_data_environment(server, db):
+    from db import deckcode
+
+    code = deckcode.encode_deck([(F.TEAM[0], [])])
+    first = WsClient()
+    first.send({"type": "create", "name": "甲", "deck_code": code,
+                "rules_mode": "free"})
+    joined = first.recv_until("joined", "error")
+    assert joined["type"] == "joined"
+
+    second = WsClient()
+    second.send({"type": "join", "room_id": joined["room_id"], "name": "乙",
+                 "deck_code": code})
+    assert second.recv_until("joined", "error")["type"] == "joined"
+    first.send({"type": "ready"})
+    second.send({"type": "ready"})
+    assert first.recv_until("start")["rules_mode"] == "free"
+    second.ws.close()
+    first.ws.close()
+
+
 def test_full_match_flow(server, db):
     a = WsClient()
     a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),

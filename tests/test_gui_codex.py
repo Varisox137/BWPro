@@ -183,3 +183,27 @@ def test_raw_unreleased_reinforce_cards_are_hidden(qapp, gdb):
             assert card_id not in {card.id for card in view._current_cards()}
     finally:
         view.close()
+
+
+def test_first_diy_mouse_click_keeps_selection(qapp):
+    from diy.runtime import load_database
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = ShikigamiCodexView(load_database())
+    view.resize(1200, 800)
+    view.show()
+    qapp.processEvents()
+    items = [view.shiki_list.topLevelItem(i).child(j)
+             for i in range(view.shiki_list.topLevelItemCount())
+             for j in range(view.shiki_list.topLevelItem(i).childCount())]
+    target = next(item for item in items if item.data(0, Qt.UserRole) == 110101)
+    view.shiki_list.scrollToItem(target)
+    qapp.processEvents()
+    QTest.mouseClick(view.shiki_list.viewport(), Qt.LeftButton, Qt.NoModifier,
+                     view.shiki_list.visualItemRect(target).center())
+    qapp.processEvents()
+    assert view.selected_sid == 110101
+    assert view.shiki_list.currentItem().data(0, Qt.UserRole) == 110101
+    view.close()
+    view.deleteLater()

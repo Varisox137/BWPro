@@ -5,9 +5,9 @@
      "decks": [[is_standard, {"name": str, "groups": groups, "env": int|null}], ...]}
 其中 groups 为 db/deckcode.py 的分组结构 [[shiki_id, [card_id, ...]], ...]；
 env 为该卡组的构筑环境（平衡性版本日期 YYYYMMDD，null = 最新数据），构筑/校验
-均按 db.at_date(env) 解析（db/versioning.py）；is_standard 是"是否满足天梯组卡
-规则"的缓存标记——每次加载与保存时都按当前规则与卡牌数据库（含环境）重新校验
-（规则/数据变更后标记自动刷新）。
+均按 db.at_date(env) 解析（db/versioning.py）；is_standard 默认表示"是否满足天梯组卡
+规则"，加载/保存按调用方指定规则与卡牌数据库（含环境）重新校验；rules=None 时
+仅校验当前环境可用性与卡牌归属（规则/数据变更后标记自动刷新）。
 
 文件数据不符合应有格式：提示"本地卡组文件异常"并删除该文件（返回空列表）。
 保存为原子写入；文件/目录不存在时自动创建。
@@ -63,7 +63,14 @@ def check_deck(db, groups: list, rules: DeckRules = STANDARD_RULES,
     """该分组卡组是否满足给定组卡规则（按其环境 env 解析数据，None = 最新）。"""
     ids = [sid for sid, _ in groups]
     cards = [cid for _, cs in groups for cid in cs]
-    return not validate_deck(db.at_date(env) if env else db, ids, cards, rules)
+    edb = db.at_date(env) if env else db
+    if rules is None:
+        try:
+            deckcode.available_deck_from_code(edb, deckcode.encode_deck(groups))
+        except ValueError:
+            return False
+        return True
+    return not validate_deck(edb, ids, cards, rules)
 
 
 def entry_deck(entry: dict) -> tuple[list[int], list[int]]:

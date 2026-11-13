@@ -265,12 +265,13 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         want_id = _text(msg, "room_id", MAX_ROOM_ID) or None
                         env_date = _env_date(msg, "env_date")
                         mode = _text(msg, "mode", 10) or "standard"
+                        rules_mode = _text(msg, "rules_mode", 10) or "standard"
                         diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                         target_room = manager.create(debug=bool(msg.get("debug")),
                                                      room_id=want_id, env_date=env_date,
-                                                     mode=mode, diy=diy)
+                                                     mode=mode, diy=diy, rules_mode=rules_mode)
                         target_conn = await target_room.join(
                             0, name, ws, deck_code, cardback=cardback)
                     except ValueError as e:
@@ -289,6 +290,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                           f"{f'，环境 {env_date}' if env_date else ''}）", flush=True)
                     await conn.send(protocol.joined(
                         room.id, conn.token, 0, debug=room.debug,
+                        rules_mode=room.rules_mode,
                         **({"diy": True} if room.diy else {})))
                     await room.on_seat_filled()
                 elif t == "join":
@@ -340,7 +342,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await conn.send(protocol.joined(
                             room.id, conn.token, conn.seat,
                             player_index=room.seat_to_player[conn.seat],
-                            debug=room.debug, **diy_extra))
+                            debug=room.debug, rules_mode=room.rules_mode, **diy_extra))
                         if room.game is not None:
                             await room.resync_diy(conn)
                             await room.resync(conn)  # 全量补发（不动广播游标）
@@ -362,6 +364,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                     print(f"[房间 {room.id}] {name}（{source}）加入房间", flush=True)
                     await conn.send(protocol.joined(
                         room.id, conn.token, 1, debug=room.debug,
+                        rules_mode=room.rules_mode,
                         **({"diy": True} if room.diy else {})))
                     await room.on_seat_filled()
                 elif t == "ready":  # 准备阶段确认准备（双方都位后有效）
