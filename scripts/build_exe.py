@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,25 @@ from client.gui.portrait import bwpdiy_code_root  # noqa: E402
 from core.version import VERSION  # noqa: E402
 
 EXE_NAME = f"BWPro-v{VERSION}"
+
+
+def _prune_releases(releases: Path, keep_minor: int = 5) -> None:
+    """每个二级版本只留最新补丁，并且总共只留最近 keep_minor 个二级版本。"""
+    candidates = []
+    for path in releases.glob("BWPro-v*.exe"):
+        match = re.fullmatch(r"BWPro-v(\d+)\.(\d+)\.(\d+)\.exe", path.name)
+        if match:
+            candidates.append((tuple(map(int, match.groups())), path))
+    latest = {}
+    for version, path in candidates:
+        minor = version[:2]
+        if minor not in latest or version > latest[minor][0]:
+            latest[minor] = (version, path)
+    keep = {latest[minor][1] for minor in sorted(latest)[-keep_minor:]}
+    for _version, path in candidates:
+        if path not in keep:
+            path.unlink(missing_ok=True)
+            path.with_name(path.name + ".sha256").unlink(missing_ok=True)
 
 
 def _add_data(source: Path, destination: str) -> list[str]:
@@ -107,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     checksum.write_text(f"{digest}  {destination.name}\n", encoding="utf-8", newline="\n")
     if not options.no_smoke:
         _smoke_test(destination)
+    _prune_releases(releases)
     print(f"已输出：{destination}（{destination.stat().st_size / 1024 / 1024:.1f} MB）")
     print(f"SHA-256：{checksum}")
     if not options.no_smoke:

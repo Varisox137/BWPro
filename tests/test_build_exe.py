@@ -115,3 +115,25 @@ def test_launcher_passes_hidden_cleanup_to_normal_gui_startup(monkeypatch, tmp_p
 
     assert gui_launcher.main() == 0
     assert calls == [(88, updater_dir)]
+
+
+def test_prune_releases_keeps_latest_patch_and_five_minor_series(tmp_path):
+    build = importlib.import_module("scripts.build_exe")
+    versions = ("0.1.0", "0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.5.0", "0.6.0")
+    for version in versions:
+        exe = tmp_path / f"BWPro-v{version}.exe"
+        exe.write_bytes(version.encode())
+        exe.with_name(exe.name + ".sha256").write_text(version, encoding="utf-8")
+    unrelated = tmp_path / "notes.txt"
+    unrelated.write_text("保留", encoding="utf-8")
+
+    build._prune_releases(tmp_path)
+
+    assert {path.name for path in tmp_path.glob("*.exe")} == {
+        "BWPro-v0.2.0.exe", "BWPro-v0.3.1.exe", "BWPro-v0.4.0.exe",
+        "BWPro-v0.5.0.exe", "BWPro-v0.6.0.exe",
+    }
+    assert not (tmp_path / "BWPro-v0.3.0.exe.sha256").exists()
+    assert not (tmp_path / "BWPro-v0.1.0.exe.sha256").exists()
+    assert (tmp_path / "BWPro-v0.3.1.exe.sha256").is_file()
+    assert unrelated.read_text(encoding="utf-8") == "保留"
