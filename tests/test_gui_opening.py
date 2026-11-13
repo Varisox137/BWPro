@@ -65,7 +65,7 @@ def test_opening_order_uses_actual_first_player_and_viewer(qapp, make_game, monk
         ]
 
 
-def test_opening_sequence_uses_six_fade_stages_and_covers_battle(qapp, db, make_game, monkeypatch):
+def test_opening_sequence_uses_timed_fade_and_hold_stages(qapp, db, make_game, monkeypatch):
     from client.gui import opening
 
     monkeypatch.setattr(opening, "entity_pixmap", _solid)
@@ -73,15 +73,28 @@ def test_opening_sequence_uses_six_fade_stages_and_covers_battle(qapp, db, make_
     scene = BattleScene(db)
     scene.show_opening_sequence(make_game(mulligan=True), 0)
     assert scene._opening_stage == "preview"
-    assert scene._opening_duration == 1000
+    assert scene._opening_frames == round(500 / scene.opening_timer.interval())
     assert scene.opening_background.isVisible()
     assert scene.opening_item.opacity() == 0
     assert not scene.opening_accent_item.isVisible()
-    expected = ["preview_battle", "preview_out", "order", "order_badge", "order_out", None]
-    for stage in expected:
+    expected = [
+        ("preview_hold", 1500), ("preview_battle", 300),
+        ("preview_battle_hold", 1200), ("preview_out", 500),
+        ("order", 500), ("order_hold", 1000),
+        ("order_badge", 500), ("order_badge_hold", 1000),
+        ("order_out", 500), (None, 0),
+    ]
+    for stage, duration in expected:
         scene._opening_frame = scene._opening_frames
         scene._advance_opening()
         assert scene._opening_stage == stage
+        if stage is None:
+            continue
+        assert scene._opening_frames == round(duration / scene.opening_timer.interval())
+        if stage.endswith("_hold"):
+            assert scene.opening_item.opacity() == 1
+            if stage in ("preview_battle_hold", "order_badge_hold"):
+                assert scene.opening_accent_item.opacity() == 1
     assert not scene.opening_item.isVisible()
     assert not scene.opening_accent_item.isVisible()
     assert not scene.opening_background.isVisible()
@@ -117,3 +130,21 @@ def test_opening_preview_and_badge_assets_are_not_rescaled(qapp, make_game, monk
     game = make_game(mulligan=True)
     assert not opening.opening_preview_pixmap(game, 0).isNull()
     assert not opening.opening_order_badge_pixmap(game, 0).isNull()
+
+
+def test_battle_view_clips_items_to_scene_rect(qapp, db):
+    from PySide6.QtCore import QPoint
+    from client.gui.battle_scene import BattleView
+
+    scene = BattleScene(db)
+    view = BattleView(scene)
+    view.resize(1800, 1000)
+    view.show()
+    qapp.processEvents()
+    scene_rect = view.mapFromScene(scene.sceneRect()).boundingRect()
+    mask = view.viewport().mask()
+    assert not mask.isEmpty()
+    assert mask.boundingRect() == scene_rect
+    assert not mask.contains(QPoint(0, 0))
+    assert mask.contains(scene_rect.center())
+    view.close()

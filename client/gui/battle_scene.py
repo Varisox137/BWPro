@@ -11,7 +11,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QFontDatabase, QImage, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QTransform,
+    QPen, QPixmap, QRegion, QTransform,
 )
 from PySide6.QtWidgets import (
     QApplication, QGraphicsObject, QGraphicsPathItem, QGraphicsPixmapItem,
@@ -619,6 +619,9 @@ class BattleView(QGraphicsView):
         if viewport.width() > 0 and viewport.height() > 0:
             self.scene().set_viewport_size(viewport.width(), viewport.height())
         self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
+        # QGraphicsView 默认仍会绘制 sceneRect 外的图元；显式裁剪两侧留白。
+        scene_rect = self.mapFromScene(self.scene().sceneRect()).boundingRect()
+        self.viewport().setMask(QRegion(scene_rect))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -859,12 +862,17 @@ class BattleScene(QGraphicsScene):
         self.banner_item.hide()
         self.banner_pixmap_item.hide()
 
-    def show_opening_sequence(self, game, viewer: int, duration: int = 6000) -> None:
-        """阵容→战字→渐隐→先后手→视角字样→渐隐，期间遮住常规界面。"""
+    def show_opening_sequence(self, game, viewer: int) -> None:
+        """按独立的渐现、保持、渐隐时长展示阵容与先后手。"""
         self.hide_banner()
         self._opening_game = game
         self._opening_viewer = viewer
-        self._opening_duration = max(120, round(duration / 6))
+        self._opening_stage_durations = {
+            "preview": 500, "preview_hold": 1500,
+            "preview_battle": 300, "preview_battle_hold": 1200, "preview_out": 500,
+            "order": 500, "order_hold": 1000,
+            "order_badge": 500, "order_badge_hold": 1000, "order_out": 500,
+        }
         self.opening_background.setRect(self.sceneRect())
         self.opening_background.setBrush(
             QColor("#f3efe8" if self.theme == "light" else "#141121"))
@@ -882,12 +890,14 @@ class BattleScene(QGraphicsScene):
         self._opening_stage = stage
         self._opening_frame = 0
         self._opening_frames = max(1, round(
-            self._opening_duration / self.opening_timer.interval()))
+            self._opening_stage_durations[stage] / self.opening_timer.interval()))
         self.opening_item.show()
         self.opening_item.setOpacity(0 if stage in ("preview", "order") else 1)
-        if stage in ("preview_battle", "preview_out", "order_badge", "order_out"):
+        if stage in ("preview_battle", "preview_battle_hold", "preview_out",
+                     "order_badge", "order_badge_hold", "order_out"):
             self.opening_accent_item.show()
-            self.opening_accent_item.setOpacity(0 if stage in ("preview_battle", "order_badge") else 1)
+            self.opening_accent_item.setOpacity(
+                0 if stage in ("preview_battle", "order_badge") else 1)
         else:
             self.opening_accent_item.hide()
         if stage == "order":
@@ -907,6 +917,8 @@ class BattleScene(QGraphicsScene):
             return
         if self._opening_frame < self._opening_frames:
             self._opening_frame += 1
+            if self._opening_stage.endswith("_hold"):
+                return
             progress = self._opening_frame / self._opening_frames
             fading_out = self._opening_stage in ("preview_out", "order_out")
             opacity = 1 - progress if fading_out else progress
@@ -917,11 +929,15 @@ class BattleScene(QGraphicsScene):
                 self.opening_accent_item.setOpacity(opacity)
             return
         next_stage = {
-            "preview": "preview_battle",
-            "preview_battle": "preview_out",
+            "preview": "preview_hold",
+            "preview_hold": "preview_battle",
+            "preview_battle": "preview_battle_hold",
+            "preview_battle_hold": "preview_out",
             "preview_out": "order",
-            "order": "order_badge",
-            "order_badge": "order_out",
+            "order": "order_hold",
+            "order_hold": "order_badge",
+            "order_badge": "order_badge_hold",
+            "order_badge_hold": "order_out",
         }.get(self._opening_stage)
         if next_stage is None:
             self.hide_opening()
