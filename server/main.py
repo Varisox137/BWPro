@@ -412,10 +412,12 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
             watchdog.cancel()
             if binding_valid():
                 if room.game is None:
-                    if room.diy and room._lobby_phase == "diy_syncing":
-                        room.disconnect(conn)  # 同步快照保留，等待令牌重连
+                    waiting_creator = conn.seat == 0 and room.conns[1] is None
+                    if waiting_creator or (room.diy and room._lobby_phase == "diy_syncing"):
+                        # 等待对手的房主、DIY 同步中断者保留座位与令牌；
+                        # 空房不立即删除，由未开局看门狗按时限回收。
+                        room.disconnect(conn)
                     else:
-                        # 普通准备阶段断线 = 离开房间；DIY 同步阶段例外保留座位
                         await room.lobby_leave(conn.seat)
                         if not any(room.conns):
                             print(f"[房间 {room.id}] 房间已空，回收", flush=True)

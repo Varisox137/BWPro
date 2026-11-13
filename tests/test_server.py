@@ -1140,6 +1140,25 @@ def test_websocket_leave_keeps_socket_for_create_and_join(server, db):
     other.ws.close()
 
 
+def test_waiting_creator_disconnect_keeps_room_for_token_reconnect(server, db):
+    client, joined = _ws_create_room(db, "甲")
+    client.ws.close()
+    time.sleep(0.1)  # 等待服务端断线清理；不得立即删除空房间
+
+    replacement = WsClient()
+    replacement.send({"type": "join", "room_id": joined["room_id"],
+                      "token": joined["token"]})
+    assert replacement.recv_until("joined", "error")["type"] == "joined"
+
+    second = WsClient()
+    second.send({"type": "join", "room_id": joined["room_id"], "name": "乙",
+                 "deck_code": _deck_code(db)})
+    assert second.recv_until("joined", "error")["type"] == "joined"
+    replacement.recv_until("lobby")
+    second.ws.close()
+    replacement.ws.close()
+
+
 def test_full_match_flow(server, db):
     a = WsClient()
     a.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),
