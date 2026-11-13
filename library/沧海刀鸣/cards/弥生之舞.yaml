@@ -1,0 +1,15 @@
+type: 形态
+name: 弥生之舞
+level: 1
+rarity: R
+description: 当己方式神攻击后，使其恢复3#sm。（无论是否气绝）
+shikigami: 樱花妖
+power: 2
+health: 6
+version_date: '20200928'
+id: '10040302'
+artwork:
+  images:
+  - path: 10040302.png
+    scale: 0.711
+    offset_y: -90

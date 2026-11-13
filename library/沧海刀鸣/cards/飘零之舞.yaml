@@ -1,0 +1,15 @@
+type: 形态
+name: 飘零之舞
+level: 3
+description: '[[迅捷]]，[[远程]]，攻击式神时获得[[连击]]。出击时可以指定攻击任何其他角色。攻击其他己方角色时改为其恢复等量于伤害的#sm。'
+shikigami: 樱花妖
+power: 3
+health: 7
+version_date: '20200928'
+id: '10040308'
+rarity: SSR
+artwork:
+  images:
+  - path: 10040308.png
+    scale: 0.711
+    offset_y: -74

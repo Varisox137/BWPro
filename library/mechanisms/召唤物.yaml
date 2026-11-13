@@ -1,0 +1,9 @@
+name: 召唤物
+frame: skill
+text: '[[召唤物]]属于式神的一种，与普通式神一样可以发起攻击。
+
+  [[召唤物]]进场时直接进入战斗区，若其他式神进入战斗区将其替换时将直接离场。'
+badge: null
+chars_per_line: 12
+global: true
+version_date: '20191212'

@@ -1,0 +1,13 @@
+type: 法术
+name: 棺封
+level: 2
+rarity: SR
+description: 消灭一个式神。若该式神不是召唤物，将其替换为‘[[棺材]]’。
+shikigami: 跳跳哥哥
+version_date: '20200928'
+id: '10040206'
+artwork:
+  images:
+  - path: 10040206.png
+    scale: 0.747
+    offset_y: -76

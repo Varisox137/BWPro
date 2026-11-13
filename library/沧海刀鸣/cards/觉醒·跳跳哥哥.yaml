@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·跳跳哥哥
+level: 3
+rarity: SSR
+description: 不能在跳跳哥哥有[[倒计时]]时使用。[[觉醒]]：跳跳哥哥出击或使用战斗牌时改为结附‘[[迟钝]]’。
+shikigami: 跳跳哥哥
+version_date: '20200928'
+id: '10040208'
+evolve: true
+power+: 10
+health+: 10
+artwork:
+  images:
+  - path: 10040208.png
+    scale: 0.747
+    offset_y: -102

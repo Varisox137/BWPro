@@ -1,0 +1,13 @@
+type: 法术
+name: 樱吹雪
+level: 3
+rarity: SR
+description: 对所有敌方式神造成2点伤害，若击杀式神，重复此效果一次。为所有己方式神恢复3#sm，若复活式神，重复此效果一次。
+shikigami: 樱花妖
+version_date: '20200928'
+id: '10040307'
+artwork:
+  images:
+  - path: 10040307.png
+    scale: 0.747
+    offset_y: -88

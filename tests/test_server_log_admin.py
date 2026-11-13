@@ -23,10 +23,15 @@ def test_token_rotation_and_log_listing(tmp_path, monkeypatch):
     current.write_text("当前", encoding="utf-8")
     (tmp_path / "bwpro-launcher-20261111-115959-2.log").write_text("启动", encoding="utf-8")
     (tmp_path / "notes.txt").write_text("不开放", encoding="utf-8")
-    monkeypatch.setattr("server.log_admin.write_terminal_secret", lambda text: True)
+    messages = []
+    monkeypatch.setattr("server.log_admin.write_terminal_secret",
+                        lambda text: messages.append(text) or True)
     service = LogAdminService(tmp_path, current)
     first = service.token
     assert re.fullmatch(r"[0-9a-f]{16}", first)
+    assert re.fullmatch(
+        rf"\[\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}\]日志提取码更新：{first}",
+        messages[-1])
     assert service.rotate() != first
     assert service.token != first
     assert (tmp_path / ".log-access-token").read_text(encoding="ascii") == service.token + "\n"

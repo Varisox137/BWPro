@@ -1,0 +1,13 @@
+type: 法术
+name: 不弃
+level: 1
+rarity: R
+description: 使一个非召唤物式神获得‘本回合气绝时，替换为“[[棺材]]”’。[[响应]]：当跳跳哥哥将气绝时，自动对其使用。
+shikigami: 跳跳哥哥
+version_date: '20200928'
+id: '10040203'
+artwork:
+  images:
+  - path: 10040203.png
+    scale: 0.747
+    offset_y: -88

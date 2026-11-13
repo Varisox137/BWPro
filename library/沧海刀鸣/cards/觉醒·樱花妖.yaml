@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·樱花妖
+level: 1
+rarity: SR
+description: '[[觉醒]]：樱花妖可以为己方气绝式神恢复#sm，若如此做，改为使其[[倒计时]]-1；可以对敌方气绝式神造成伤害，若如此做，改为使其[[倒计时]]+1。'
+shikigami: 樱花妖
+version_date: '20200928'
+id: '10040305'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10040305.png
+    scale: 0.747
+    offset_y: -87

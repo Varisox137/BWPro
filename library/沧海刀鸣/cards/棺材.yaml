@@ -1,0 +1,17 @@
+type: 式神
+name: 棺材
+faction: 红莲
+power: 0
+health: 3
+description: '不能攻击。
+
+  [[倒计时1]]：移除此牌，复活原式神。若该式神是跳跳哥哥、跳跳妹妹或跳跳弟弟，使其立刻发动攻击，本次战斗获得[[不屈]]。'
+shikigami: 跳跳哥哥
+version_date: '20200928'
+id: '10040299'
+special_type: 变形物
+artwork:
+  images:
+  - path: 10040299.png
+    scale: 0.711
+    offset_y: -68

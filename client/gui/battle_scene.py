@@ -1959,7 +1959,15 @@ class BattleScene(QGraphicsScene):
                              and any(option["ok"] for option in usage))))
                 item.targetable = False
                 x = positions[key].x() + (0 if centered else item.default_size.width() - item.size.width())
-                item.setPos(x, positions[key].y())
+                target_pos = QPointF(x, positions[key].y())
+                move_animation = self._move_animations.get(item)
+                if move_animation is not None:
+                    move_animation.setEndValue(target_pos)
+                else:
+                    item.setPos(target_pos)
+                for queued in self._visual_queue:
+                    if queued.get("v") == "_move" and queued.get("item") is item:
+                        queued["target"] = QPointF(target_pos)
                 item.setZValue(HAND_Z + order / 1000)
                 item.update()
                 self.loading_tick()

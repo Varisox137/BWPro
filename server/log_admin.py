@@ -100,7 +100,8 @@ class LogAdminService:
         except BaseException:
             temporary_path.unlink(missing_ok=True)
             raise
-        if not write_terminal_secret(f"日志提取码：{candidate}"):
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        if not write_terminal_secret(f"[{timestamp}]日志提取码更新：{candidate}"):
             print(f"日志提取码已写入：{path}", flush=True)
         self._token = candidate
         return candidate

@@ -1,0 +1,13 @@
+type: 法术
+name: 绽放
+level: 2
+rarity: SR
+description: 复活所有式神，每个式神对其牌手造成等同于其气绝倒计时的伤害。
+shikigami: 樱花妖
+version_date: '20200928'
+id: '10040303'
+artwork:
+  images:
+  - path: 10040303.png
+    scale: 0.747
+    offset_y: -95

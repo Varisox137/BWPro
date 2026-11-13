@@ -1,0 +1,9 @@
+name: 迟钝
+frame: invocation
+text: '[[倒计时2]]：发起一次攻击。生效后移除。[[眩晕]]。'
+badge: null
+chars_per_line: 12
+global: false
+project: 沧海刀鸣
+shikigami: 跳跳哥哥
+version_date: '20200928'

@@ -3652,6 +3652,33 @@ def test_hand_animation_multiple_draws_are_fifo_and_leave_single_items(qapp, vie
                    for candidate in scene.items()) == 1
 
 
+def test_hand_move_animation_uses_latest_layout_target(qapp, view):
+    from client.gui.battle_scene import layout_positions
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    before = len(view.game.state.timeline)
+    view.game.draw_cards(view.viewer, 1)
+    entries = view.game.state.timeline[before:]
+    event = next(entry for entry in entries if entry.get("v") == "hand")
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=entries, play_pending=False)
+    item = scene.cards[("hand", event["u"])]
+    scene.play_visual_event(event)
+    animation = scene._move_animations[item]
+
+    view.game.draw_cards(view.viewer, 1)
+    scene.sync_state(view.game, view.viewer, {}, True,
+                     pending_entries=[], play_pending=False)
+    expected = layout_positions(view.game, view.viewer,
+                                scene_width=scene.layout_width)[("hand", item.uid)]
+    expected += QPointF(item.default_size.width() - item.size.width(), 0)
+    assert animation.endValue() == expected
+    animation.setCurrentTime(180)
+    qapp.processEvents()
+    assert item.pos() == expected
+
+
 def test_hand_animation_reset_and_handoff_leave_no_hidden_items(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

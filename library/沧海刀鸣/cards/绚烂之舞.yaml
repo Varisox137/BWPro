@@ -1,0 +1,15 @@
+type: 形态
+name: 绚烂之舞
+level: 2
+rarity: R
+description: 当敌方式神攻击后，对其造成2点伤害。（无论是否气绝）
+shikigami: 樱花妖
+power: 3
+health: 6
+version_date: '20200928'
+id: '10040304'
+artwork:
+  images:
+  - path: 10040304.png
+    scale: 0.711
+    offset_y: -99

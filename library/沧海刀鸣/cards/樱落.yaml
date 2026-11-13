@@ -1,0 +1,13 @@
+type: 法术
+name: 樱落
+level: 1
+rarity: R
+description: 对一个敌方式神造成3点伤害，或对一个己方式神恢复6#sm。
+shikigami: 樱花妖
+version_date: '20200928'
+id: '10040301'
+artwork:
+  images:
+  - path: 10040301.png
+    scale: 0.747
+    offset_y: -96

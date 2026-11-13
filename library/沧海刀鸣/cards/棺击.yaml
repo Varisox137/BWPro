@@ -1,0 +1,15 @@
+type: 战斗
+name: 棺击
+level: 1
+rarity: R
+description: 于跳跳哥哥使用此牌，结附‘[[迟钝]]’期间每有一个其他式神气绝，跳跳哥哥便获得1#ll和1#sm。
+shikigami: 跳跳哥哥
+power+: 0
+shield+: 0
+version_date: '20200928'
+id: '10040201'
+artwork:
+  images:
+  - path: 10040201.png
+    scale: 0.711
+    offset_y: -72

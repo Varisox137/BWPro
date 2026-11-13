@@ -1,0 +1,17 @@
+type: 式神
+name: 樱花妖
+faction: 紫岩
+power: 2
+health: 5
+description: 樱花妖可以为己方气绝式神恢复#sm，若如此做，改为使其[[倒计时]]-1。
+id: '100403'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100403.png
+    scale: 0.711
+    offset_y: -80
+portrait:
+  scale: 3.073
+  offset_x: -5
+  offset_y: 54
