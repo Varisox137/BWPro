@@ -118,8 +118,8 @@ def _application_icon() -> QIcon:
 
 
 def _set_windows_application_id() -> None:
-    """固定独立应用标识，避免 Windows 任务栏回退到 Python 或旧程序图标。"""
-    if sys.platform == "win32":
+    """开发环境避免回退 Python 图标；冻结版让任务栏直接使用窗口图标。"""
+    if sys.platform == "win32" and not hasattr(sys, "_MEIPASS"):
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             "Varisox137.BWPro.Desktop")
 

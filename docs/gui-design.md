@@ -63,5 +63,5 @@
 
 - Windows 独立构建命令：`PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/build_exe.py`。PyInstaller onefile/windowed 包内嵌规则、数据库、`assets/`、`library/` 与 BWPDIY 渲染代码，输出 `releases/BWPro-v<版本>.exe` 和 SHA-256；冻结版从 `sys._MEIPASS` 读取内置资源，全局布局仍读 `~/.bwpdiy/layout.json`。
 - 主窗口启动时自动检查更新，设置页也可手动检查；发现更高版本并经用户确认后，通过 HTTPS 下载与标签严格同名的 EXE/SHA-256 资产并校验内容。冻结版再次确认后退出主程序，由外部更新流程等待、替换并重启；开发环境只下载到 `~/.bwpro/downloads/`，不替换或重启当前程序。关闭窗口会使尚未返回的更新回调失效，取消或失败会清理半成品。
-- 构建默认以隔离 HOME 运行 `--smoke-test`，覆盖数据库加载、大卡/小卡/头像/机制框与主窗口启动。应用与任务栏使用 `assets/app_icon.ico`，启动前设置固定 Windows AppID `Varisox137.BWPro.Desktop`；冻结版日志写入 `~/.bwpro/logs/`，启动时按最近 7 天且最多 10 份清理旧日志，Windows 权限命令使用 `CREATE_NO_WINDOW`，不弹出命令行窗口。
+- 构建默认以隔离 HOME 运行 `--smoke-test`，覆盖数据库加载、大卡/小卡/头像/机制框与主窗口启动。应用与任务栏使用 `assets/app_icon.ico`；开发环境启动前设置固定 Windows AppID `Varisox137.BWPro.Desktop`，冻结版不覆盖系统分配的 AppID，避免任务栏沿用失效的快捷方式/图标缓存而忽略窗口图标。冻结版日志写入 `~/.bwpro/logs/`，启动时按最近 7 天且最多 10 份清理旧日志，Windows 权限命令使用 `CREATE_NO_WINDOW`，不弹出命令行窗口。
 - GUI 测试使用 Qt offscreen 平台，并通过自动临时 HOME 隔离卡图、卡组和设置，覆盖主窗口、构筑、式神录、热坐、联机、卡图缓存、详情和动画。运行全量测试：`PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m pytest -q`；数据或文本变更另跑 `PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.validate`。

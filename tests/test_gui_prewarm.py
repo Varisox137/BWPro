@@ -678,3 +678,16 @@ def test_windows_application_id_is_set_for_taskbar_icon(qapp, monkeypatch):
         shell32=SimpleNamespace(SetCurrentProcessExplicitAppUserModelID=calls.append)))
     app._set_windows_application_id()
     assert calls == ["Varisox137.BWPro.Desktop"]
+
+
+def test_frozen_exe_uses_window_icon_without_fixed_application_id(qapp, monkeypatch):
+    from types import SimpleNamespace
+    from client.gui import app
+
+    calls = []
+    monkeypatch.setattr(app.sys, "platform", "win32")
+    monkeypatch.setattr(app.sys, "_MEIPASS", "frozen", raising=False)
+    monkeypatch.setattr(app.ctypes, "windll", SimpleNamespace(
+        shell32=SimpleNamespace(SetCurrentProcessExplicitAppUserModelID=calls.append)))
+    app._set_windows_application_id()
+    assert calls == []
