@@ -129,6 +129,28 @@ def test_package_validation_rejects_code_and_hash_mismatch():
         validate_package({**package, "content_hash": "f" * 64})
 
 
+def test_import_shared_package_from_json_and_zip(tmp_path):
+    from diy.store import downloaded_versions, import_package
+
+    root = tmp_path / "downloads"
+    json_package = make_package(203)
+    json_path = tmp_path / "shared.json"
+    json_path.write_text(json.dumps(json_package, ensure_ascii=False), encoding="utf-8")
+    imported_json = import_package(json_path, root=root)
+
+    zip_package = make_package(204)
+    zip_path = tmp_path / "shared.zip"
+    import zipfile
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for name, text in zip_package["files"].items():
+            archive.writestr(f"分享包/{name}", text)
+    imported_zip = import_package(zip_path, root=root)
+
+    assert imported_json in downloaded_versions(root=root)
+    assert imported_zip in downloaded_versions(root=root)
+    assert {path.parent.name for path in (imported_json, imported_zip)} == {"203", "204"}
+
+
 def test_download_store_atomic_versions_and_owned_content_cleanup(tmp_path):
     from diy.store import clear_downloaded, download_stats, save_download
 

@@ -48,6 +48,8 @@ def qss(theme: str) -> str:
     selection_bg = "#cfe5f7" if theme == "light" else "#294c68"
     selection_text = "#17344d" if theme == "light" else t["text"]
     selection_hover = "rgba(207, 229, 247, 128)" if theme == "light" else "rgba(41, 76, 104, 128)"
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    checkmark = (root / "assets" / "icons" / "checkmark.svg").as_posix()
     return f"""
     QMainWindow, QWidget {{ background: {t['bg']}; color: {t['text']}; }}
     QListWidget, QTreeWidget {{ outline: none; }}
@@ -75,7 +77,7 @@ def qss(theme: str) -> str:
         border: 1px solid {t['gold']}; border-radius: 3px;
     }}
     QCheckBox::indicator:hover {{ background: {t['panel2']}; }}
-    QCheckBox::indicator:checked {{ background: {t['gold']}; }}
+    QCheckBox::indicator:checked {{ background: {t['panel']}; image: url("{checkmark}"); }}
     QCheckBox:disabled, QComboBox:disabled {{ color: {t['dim']}; }}
     QLabel#title {{ color: {t['gold']}; font-size: 40px; }}
     QLabel#subtitle {{ color: {t['dim']}; font-size: 16px; }}
@@ -221,7 +223,8 @@ class MainWindow(QMainWindow):
                         db, official_db=official_db, on_back=self.go_menu, **kwargs)
             self.stack.addWidget(self.pages[key])
         self.pages["settings"].active_downloads = self.pages["online"].active_downloads
-        self.pages["settings"].on_diy_clear = self.pages["online"].refresh_downloaded_database
+        self.pages["settings"].on_diy_clear = self.refresh_diy_content
+        self.pages["online"].on_diy_change = self.refresh_diy_content
         self.pages["hotseat"].stack.currentChanged.connect(self._sync_game_menu_button)
         self.pages["hotseat"].state_changed.connect(self._sync_game_menu_button)
         self.pages["online"].stack.currentChanged.connect(self._sync_game_menu_button)
@@ -229,9 +232,22 @@ class MainWindow(QMainWindow):
         self.back_button.hide()
         self.set_theme(self.theme)
         self.db = db
+        self.official_db = official_db
         self._prewarm_running = False
         self._prewarm_generation = 0
         self._prewarm_thread = None
+
+    def refresh_diy_content(self) -> None:
+        """导入、下载或清理 DIY 后统一刷新全部本机视图。"""
+        from db.loader import CardDatabase
+        from diy.runtime import load_database
+
+        self.db = load_database()
+        self.official_db = CardDatabase.load()
+        self.pages["builder"].set_database(self.db)
+        self.pages["codex"].set_database(self.db)
+        self.pages["hotseat"].set_databases(self.db, self.official_db)
+        self.pages["online"].set_databases(self.db, self.official_db)
 
     def prewarm_resources(self) -> None:
         if self._prewarm_running:

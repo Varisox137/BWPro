@@ -98,6 +98,7 @@ def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, mon
     displayed = dialog.card_widget.art_label.pixmap()
     assert displayed.width() / displayed.height() == pytest.approx(263 / 512)
     assert dialog.mechanism_panel.maximumHeight() == 512
+    assert dialog.mechanism_panel.height() == 512  # 与大卡图底部对齐
     assert dialog.mechanism_panel.alignment() == (Qt.AlignLeft | Qt.AlignTop)
     assert dialog.mechanism_panel.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
     assert dialog.mechanism_panel.verticalScrollBar().maximum() > 0

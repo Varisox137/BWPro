@@ -6,9 +6,13 @@ import os
 import shutil
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
-from diy.sync import read_package, validate_package
+from diy.sync import (
+    MAX_PACK_BYTES, MAX_PACK_FILE_BYTES, MAX_PACK_FILES,
+    read_package, read_package_data, validate_package,
+)
 
 MARKER_NAME = ".download.json"
 
@@ -50,6 +54,53 @@ def save_download(package: dict, *, root: Path | str | None = None) -> Path:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
     return target
+
+
+def _read_zip_package(path: Path) -> dict:
+    files = {}
+    with zipfile.ZipFile(path) as archive:
+        entries = [info for info in archive.infolist()
+                   if not info.is_dir() and info.filename.endswith(".yaml")]
+        if len(entries) > MAX_PACK_FILES:
+            raise ValueError("DIY ZIP 文件数超过上限")
+        pack_entries = [info for info in entries
+                        if info.filename == "pack.yaml"
+                        or info.filename.endswith("/pack.yaml")]
+        if len(pack_entries) != 1:
+            raise ValueError("DIY ZIP 必须且只能包含一个 pack.yaml")
+        prefix = pack_entries[0].filename[:-len("pack.yaml")]
+        total = 0
+        for info in entries:
+            if not info.filename.startswith(prefix):
+                raise ValueError("DIY ZIP 不得包含多个内容包")
+            if info.file_size > MAX_PACK_FILE_BYTES:
+                raise ValueError(f"DIY 文件 {info.filename} 超过大小上限")
+            total += info.file_size
+            if total > MAX_PACK_BYTES:
+                raise ValueError("DIY ZIP 总大小超过上限")
+            name = info.filename[len(prefix):]
+            files[name] = archive.read(info).decode("utf-8")
+    return read_package_data(files)
+
+
+def import_package(source: Path | str, *, root: Path | str | None = None) -> Path:
+    """从目录、协议 JSON 或单包 ZIP 导入只读 DIY 内容并纳入下载存储。"""
+    source = Path(source)
+    if source.is_dir():
+        package = read_package(source)
+    elif source.suffix.lower() == ".json":
+        package = validate_package(json.loads(source.read_text(encoding="utf-8")))
+    elif source.suffix.lower() == ".zip":
+        package = _read_zip_package(source)
+    else:
+        raise ValueError("DIY 导入须为包目录、.json 或 .zip 文件")
+    from core.events import CORE_EVENTS, EVENT_TIMING
+    from diy.runtime import _merge, load_database
+    from diy.sync import database_from_package, validate_capabilities
+
+    validate_capabilities(package, trusted_events=set(CORE_EVENTS) | set(EVENT_TIMING))
+    _merge([load_database(), database_from_package(package)])
+    return save_download(package, root=root)
 
 
 def downloaded_versions(*, root: Path | str | None = None,

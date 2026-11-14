@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 _VERSION_PATTERN = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 
 

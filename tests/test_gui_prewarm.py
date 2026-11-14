@@ -717,6 +717,24 @@ def test_settings_clear_only_downloaded_diy_with_count_and_size(
     view.close()
 
 
+def test_settings_import_shared_diy_package_refreshes_views(qapp, db, tmp_path, monkeypatch):
+    from tests.test_diy_sync import make_package
+
+    package = make_package(203)
+    source = tmp_path / "shared.json"
+    source.write_text(json.dumps(package, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr("client.gui.settings.QFileDialog.getOpenFileName",
+                        lambda *args: (str(source), "DIY 内容包 (*.json *.zip)"))
+    refreshed = []
+    view = SettingsView(db, download_root=tmp_path / "downloads",
+                        on_diy_clear=lambda: refreshed.append(True))
+    view.import_diy_button.click()
+    assert refreshed == [True]
+    assert list((tmp_path / "downloads").rglob("pack.yaml"))
+    assert "已导入" in view.status_label.text()
+    view.close()
+
+
 def test_settings_download_cleanup_blocked_by_active_room(qapp, db, tmp_path, monkeypatch):
     from diy.store import save_download
     from tests.test_diy_sync import make_package

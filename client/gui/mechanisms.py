@@ -189,7 +189,7 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
     panel.setFrameShape(QFrame.NoFrame)
     panel.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
     panel.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-    panel.setMaximumHeight(max_height)
+    panel.setFixedHeight(max_height)  # 与相邻大卡图同高、底部对齐
     content = QWidget()
     layout = QVBoxLayout(content)
     layout.setContentsMargins(0, 0, 0, 0)

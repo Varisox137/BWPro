@@ -306,8 +306,9 @@ class OnlineView(QWidget):
     connection_changed = Signal()
 
     def __init__(self, db, store_path: Path = deckstore.PATH, on_back=None,
-                 bridge_factory=NetBridge, official_db=None, parent=None):
+                 bridge_factory=NetBridge, official_db=None, on_diy_change=None, parent=None):
         super().__init__(parent)
+        self.on_diy_change = on_diy_change
         self.official_db = official_db if official_db is not None else db
         self.diy_db = db
         self.base_db = self.official_db
@@ -758,6 +759,8 @@ class OnlineView(QWidget):
                 raise ValueError("收到未在当前同步清单中的 DIY 包")
             diy_store.save_download(validated)
             self._diy_local[pack_id] = validated
+            if self.on_diy_change is not None:
+                self.on_diy_change()
             self._set_base_db(diy_runtime.load_database(
                 download_versions=dict(self._diy_required)))
         except (OSError, ValueError, RuntimeError) as error:
@@ -790,11 +793,15 @@ class OnlineView(QWidget):
         return {(int(path.parent.name), path.name)
                 for path in diy_store.downloaded_versions(selected=selected)}
 
-    def refresh_downloaded_database(self) -> None:
-        self.diy_db = diy_runtime.load_database()
+    def set_databases(self, diy_db, official_db) -> None:
+        self.diy_db = diy_db
+        self.official_db = official_db
         self._set_base_db(self.diy_db if self.diy_checkbox.isChecked() else self.official_db)
         self._reset_diy_client()
         self.reload_decks()
+
+    def refresh_downloaded_database(self) -> None:
+        self.set_databases(diy_runtime.load_database(), self.official_db)
 
     def handle_message(self, msg: dict) -> None:
         kind = msg.get("type")

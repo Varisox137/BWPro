@@ -340,6 +340,22 @@ class DeckBuilderView(QWidget):
         self.decks = deckstore.load_decks(self.db, self.store_path)
         self.show_list()
 
+    def set_database(self, db) -> None:
+        """导入或清理 DIY 后刷新可用数据，并保留当前编辑页。"""
+        self.db = db
+        self.decks = deckstore.load_decks(db, self.store_path)
+        if self.stack.currentWidget() is self.list_page:
+            self._render_decks()
+        edb = db.at_date(self.current_env())
+        self.team = [sid for sid in self.team if sid in edb.shikigami]
+        self.picks = {sid: Counter({cid: count for cid, count in self.picks.get(sid, {}).items()
+                                    if cid in edb.cards}) for sid in self.team}
+        if self.selected_sid not in self.team:
+            self.selected_sid = self.team[0] if self.team else None
+        self._render_shiki_list()
+        self._render_cards()
+        self._update_validation()
+
     def show_list(self) -> None:
         self.stack.setCurrentWidget(self.list_page)
         self._render_decks()
@@ -557,6 +573,21 @@ class DeckBuilderView(QWidget):
         self._mark_dirty()
         return True
 
+    def remove_shikigami(self, slot: int) -> bool:
+        if not 0 <= slot < len(self.team):
+            return False
+        removed = self.team.pop(slot)
+        self.picks.pop(removed, None)
+        if self.selected_sid == removed:
+            index = min(slot, len(self.team) - 1)
+            self.selected_sid = self.team[index] if index >= 0 else None
+        self.page_index = 0
+        self._render_shiki_list()
+        self._render_cards()
+        self._update_validation()
+        self._mark_dirty()
+        return True
+
     def _render_shiki_list(self) -> None:
         self.shiki_list.blockSignals(True)
         self.shiki_list.clear()
@@ -572,6 +603,17 @@ class DeckBuilderView(QWidget):
             count_label = QLabel(f"{count}/8")
             count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row_layout.addWidget(count_label)
+            for text, tooltip, callback in (
+                    ("换", "替换此式神", lambda checked=False, index=len(self.team) - 1:
+                     self.choose_shikigami(index)),
+                    ("删", "移除此式神", lambda checked=False, index=len(self.team) - 1:
+                     self.remove_shikigami(index))):
+                button = QPushButton(text)
+                button.setObjectName("small")
+                button.setToolTip(tooltip)
+                button.setFixedSize(26, 22)
+                button.clicked.connect(callback)
+                row_layout.addWidget(button)
             item.setSizeHint(row_widget.sizeHint())
             self.shiki_list.setItemWidget(item, row_widget)
         if len(self.team) < 4:

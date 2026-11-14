@@ -164,6 +164,22 @@ def test_deck_short_name_reserves_second_line(qapp, db, tmp_path, view):
     assert deck_name.alignment() & Qt.AlignTop
 
 
+def test_editor_remove_and_replace_buttons(qapp, view):
+    view.new_deck()
+    first, second = factories.TEAM[:2]
+    view.add_shikigami(first)
+    row = view.shiki_list.itemWidget(view.shiki_list.item(0))
+    buttons = [child for child in row.children() if hasattr(child, "clicked")]
+    buttons = [child for child in row.children() if hasattr(child, "clicked")]
+    assert len(buttons) == 2
+    replace_button, remove_button = buttons
+    assert replace_button.text() == "换" and remove_button.text() == "删"
+    view.replace_shikigami(0, second)
+    view.remove_shikigami(0)
+    assert view.team == []
+    assert view.selected_sid is None
+
+
 def test_environment_options_are_unique(qapp, view):
     view.new_deck()
     texts = [view.env_combo.itemText(i) for i in range(view.env_combo.count())]

@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QStyle, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -205,7 +205,11 @@ class SettingsView(QWidget):
         self.rebuild_button.setObjectName("small")
         self.rebuild_button.clicked.connect(self.rebuild)
         layout.addWidget(self.rebuild_button)
-        self.clear_diy_button = QPushButton("清除联机下载的 DIY 内容")
+        self.import_diy_button = QPushButton("导入 DIY 内容包（.json / .zip）")
+        self.import_diy_button.setObjectName("small")
+        self.import_diy_button.clicked.connect(self.import_diy_package)
+        layout.addWidget(self.import_diy_button)
+        self.clear_diy_button = QPushButton("清除获取的 DIY 内容")
         self.clear_diy_button.setObjectName("small")
         self.clear_diy_button.clicked.connect(self.clear_diy_downloads)
         layout.addWidget(self.clear_diy_button)
@@ -283,6 +287,21 @@ class SettingsView(QWidget):
             self.status_label.setText("\n".join(lines))
         except (OSError, ValueError, TypeError):
             self.status_label.setText("卡图缓存：尚未生成\n启动时会自动检查并合成已配置资源")
+
+    def import_diy_package(self) -> None:
+        source, _filter = QFileDialog.getOpenFileName(
+            self, "导入 DIY 内容包", "", "DIY 内容包 (*.json *.zip)")
+        if not source:
+            return
+        try:
+            target = diy_store.import_package(source, root=self.download_root)
+            if self.on_diy_clear is not None:
+                self.on_diy_clear()
+        except (OSError, ValueError, RuntimeError) as error:
+            self.status_label.setText(f"DIY 导入失败：{error}")
+            return
+        self.status_label.setText(
+            f"已导入 DIY 包 {target.parent.name}，可在式神录、构筑与对局中使用")
 
     def clear_diy_downloads(self) -> None:
         try:

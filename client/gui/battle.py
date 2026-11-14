@@ -237,6 +237,11 @@ class HotseatView(QWidget):
     def current_rules(self):
         return STANDARD_RULES if self.rules_combo.currentData() == "standard" else None
 
+    def set_databases(self, diy_db, official_db) -> None:
+        self.diy_db = diy_db
+        self.official_db = official_db
+        self._change_content()
+
     def _change_content(self) -> None:
         self.base_db = self.diy_db if self.diy_checkbox.isChecked() else self.official_db
         self.db = self.base_db

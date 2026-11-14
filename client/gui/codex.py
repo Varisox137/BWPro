@@ -149,6 +149,33 @@ class ShikigamiCodexView(QWidget):
             QLabel#loadingLabel {{ color: {colors['gold']}; font-size: 28px; }}
         """)
 
+    def set_database(self, db) -> None:
+        """刷新导入/下载内容，并保留数据环境与当前查看位置。"""
+        self.db = db
+        self.edb = db.at_date(self.current_env())
+        self.pool = available_shikigami(self.edb)
+        if self.selected_sid not in self.edb.shikigami:
+            self.selected_sid = self.pool[0].id if self.pool else None
+        pack = self.pack_combo.currentData()
+        self.pack_combo.blockSignals(True)
+        self.pack_combo.clear()
+        self.pack_combo.addItem("全部版本包", None)
+        for number, name in pack_names_for(db).items():
+            self.pack_combo.addItem(name, number)
+        self.pack_combo.setCurrentIndex(max(0, self.pack_combo.findData(pack)))
+        self.pack_combo.blockSignals(False)
+        faction = self.faction_combo.currentText()
+        self.faction_combo.blockSignals(True)
+        self.faction_combo.clear()
+        self.faction_combo.addItem("全部派系")
+        for name in sorted({definition.faction for definition in self.pool}):
+            self.faction_combo.addItem(name)
+        self.faction_combo.setCurrentText(faction)
+        self.faction_combo.blockSignals(False)
+        self._render_shiki_list()
+        if self.stack.currentWidget() is self.home_page and self.selected_sid is not None:
+            self.show_shikigami_cards()
+
     def current_env(self) -> int | None:
         text = self.env_combo.currentText().split("(", 1)[0].strip()
         return None if text == "标准" else parse_env_input(text)

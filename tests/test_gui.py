@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QLabel
 
 from client.gui.app import MENU_ENTRIES, THEMES, MainWindow
 from client.gui.builder import DeckBuilderView
+from tests import factories as F
 
 
 @pytest.fixture(scope="module")
@@ -60,6 +61,7 @@ def test_menu_navigation_and_theme(qapp, db, tmp_path):
     assert "QComboBox:hover" in win.styleSheet()
     assert "QCheckBox::indicator:checked" in win.styleSheet()
     assert THEMES["light"]["gold"] in win.styleSheet()
+    assert "checkmark.svg" in win.styleSheet()
     assert "#cfe5f7" in win.styleSheet()
     win.go("settings")
     win.set_theme("dark")
@@ -182,4 +184,22 @@ def test_background_update_errors_do_not_block_or_prompt(qapp, db, tmp_path, mon
     win.check_for_updates(manual=False)
     process_update_callback(qapp)
     assert win.pages["settings"].update_button.isEnabled()
+    win.close()
+
+
+def test_diy_refresh_updates_all_local_views(qapp, db, tmp_path, monkeypatch):
+    diy_db = F.db_of(
+        list(db.shikigami.values()) + [F.shiki(110101)],
+        list(db.cards.values()) + [F.card(11010101, shikigami=110101)],
+    )
+    monkeypatch.setattr("diy.runtime.load_database", lambda: diy_db)
+    monkeypatch.setattr("db.loader.CardDatabase.load", classmethod(lambda _cls: db))
+    win = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    win.refresh_diy_content()
+    assert win.pages["builder"].db is diy_db
+    assert win.pages["codex"].db is diy_db
+    assert win.pages["hotseat"].diy_db is diy_db
+    assert win.pages["online"].diy_db is diy_db
+    assert win.pages["hotseat"].official_db is db
+    assert win.pages["online"].official_db is db
     win.close()
