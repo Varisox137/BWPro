@@ -883,6 +883,9 @@ class HotseatView(QWidget):
         if self.pending_command is None or ref not in self.legal_targets:
             return False
         command = dict(self.pending_command)
+        if not self.target_specs and command.get("op") == "assault":
+            command["target"] = ref
+            return self.apply_command(command)
         command[self.target_specs[0][0]] = ref
         self.target_specs.pop(0)
         if self.target_specs:

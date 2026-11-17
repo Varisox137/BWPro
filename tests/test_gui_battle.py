@@ -2952,6 +2952,23 @@ def test_battle_timeline_not_duplicated_in_application_log(qapp, view, caplog):
                    and "升至 1 级" in record.message for record in caplog.records)
 
 
+def test_hunt_click_target_completes_optional_assault(qapp, view):
+    start(view, mulligan=False)
+    game = view.game
+    game.current.shikigami[0].keywords.append("hunt")
+    view.refresh()
+    settle(view)
+
+    assert view.assault(0) is True
+    assert view.pending_command == {"op": "assault", "index": 0}
+    target = Ref(player=1, shikigami=0)
+    assert target in view.legal_targets
+    assert view.choose_target(target) is True
+    settle(view)
+    assert game.current.combat_index == 0
+    assert view.pending_command is None
+
+
 def test_play_card_with_target_mode(qapp, db, view):
     cid = 10010151
     db.cards[cid] = F.card(cid, token=True,
