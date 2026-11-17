@@ -651,6 +651,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 - 引擎结构化 `trace` 条目包含 `kind/message/owner`，事件可另带 `seq/summary`：事件序号从 1 起严格递增，绑定到 `GameState.emit_seq`；`cmd` 在校验前记录实际上报的指令，`event` 记录实际发出的事件名、payload 与事件序号，`op` 只记录实际执行的原子操作及解析后的参数、目标，条件不满足而跳过的操作不记录。
 - 本地热坐由引擎 cmd/event/op `trace` 写入统一应用日志，timeline 仅用于局内显示。联机仅写服务端过滤后下发的 `trace`：服务端按接收方视角过滤后放入 state 消息，`owner` 与接收方不符的条目直接丢弃，无 `owner` 的公开条目将 `message` 降为 `summary`，不下发完整 payload。
 - 客户端只透传记录过滤后的条目、只上传 cmd，不根据 timeline 或本地镜像重建事件/op；timeline 不能替代运行时追踪或绕过隐私过滤。对局文字记录、结构化视觉事件与应用日志各自承担不同用途。
+- GUI 动画诊断使用 `bwpro.animation` DEBUG 日志：进程内追踪 ID 关联 timeline 下标与排队、开始、跳过、结束、取消状态，并记录公开目标、并行组和队列深度；该通道只描述呈现，不回写引擎状态或泄露额外手牌信息。
 
 ### 视觉事件与呈现快照
 

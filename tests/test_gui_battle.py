@@ -4195,6 +4195,43 @@ def test_visual_events_are_nonblocking_and_not_added_to_text_log(qapp, view):
     assert not scene._visual_animations
 
 
+def test_visual_trace_links_timeline_queue_and_finish(qapp, view, caplog):
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    caplog.set_level("DEBUG", logger="bwpro.animation")
+    index = len(view.game.state.timeline)
+    view.game.state.timeline.append(
+        {"k": "v", "v": "damage", "p": view.viewer, "s": 0, "amount": 2})
+    view.refresh()
+    first = scene._visual_animations[0]
+    first_event = scene._visual_events[first]
+    assert first_event["_t"] == index
+    first_trace = first_event["_trace"]
+
+    scene.play_visual_event({"v": "heal", "p": view.viewer, "s": 0,
+                             "amount": 1, "_t": index + 1})
+    queued = scene._visual_queue[0]
+    queued_trace = queued["_trace"]
+    first.setCurrentTime(first.duration())
+    qapp.processEvents()
+    second = scene._visual_animations[0]
+    second.setCurrentTime(second.duration())
+    qapp.processEvents()
+
+    messages = [record.getMessage() for record in caplog.records
+                if record.name == "bwpro.animation"]
+    assert any(f"id={first_trace} stage=start timeline={index} kind=damage" in message
+               for message in messages)
+    assert any(f"id={queued_trace} stage=wait timeline={index + 1} kind=heal" in message
+               for message in messages)
+    assert any(f"id={first_trace} stage=finish timeline={index} kind=damage" in message
+               for message in messages)
+    assert any(f"id={queued_trace} stage=start timeline={index + 1} kind=heal" in message
+               for message in messages)
+    assert any(f"id={queued_trace} stage=finish timeline={index + 1} kind=heal" in message
+               for message in messages)
+
+
 def test_luck_visuals_play_sequentially(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene

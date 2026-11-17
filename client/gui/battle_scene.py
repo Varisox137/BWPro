@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from functools import lru_cache
 
@@ -29,6 +30,8 @@ from client.gui.ui_assets import (
 )
 from core import targets
 from core.model import Ref
+
+_LOGGER = logging.getLogger("bwpro.animation")
 
 SCENE_WIDTH = 1600
 SCENE_HEIGHT = 900
@@ -658,6 +661,7 @@ class BattleScene(QGraphicsScene):
         self._visual_items: dict[QVariantAnimation, BattleVisualItem] = {}
         self._visual_events: dict[QVariantAnimation, dict] = {}
         self._visual_queue: list[dict] = []
+        self._visual_trace_seq = 0
         self._defeat_visuals: set[tuple[int, int]] = set()
         self.usage_items: list[BattleCardItem] = []
         self.usage_labels: list[QGraphicsTextItem] = []
@@ -1130,6 +1134,9 @@ class BattleScene(QGraphicsScene):
         self.set_focus(items)
 
     def _stop_move_animation(self, item: BattleCardItem, *, refresh=True) -> None:
+        for event in self._visual_queue:
+            if event.get("v") == "_move" and event.get("item") is item:
+                self._trace_visual("cancel", event)
         self._visual_queue[:] = [event for event in self._visual_queue
                                  if not (event.get("v") == "_move"
                                          and event.get("item") is item)]
@@ -1138,24 +1145,28 @@ class BattleScene(QGraphicsScene):
             animation.stop()
             if animation in self._visual_animations:
                 self._visual_animations.remove(animation)
-            self._visual_events.pop(animation, None)
+            event = self._visual_events.pop(animation, {})
+            self._trace_visual("cancel", event)
             animation.deleteLater()
             self._start_queued_visuals()
             if refresh:
                 self._refresh_all_art()
 
     def _animate_position(self, item: BattleCardItem, target: QPointF,
-                          group=None) -> None:
+                          group=None, timeline_index=None, trace_id=None) -> None:
         self._visual_queue[:] = [event for event in self._visual_queue
                                  if not (event.get("v") == "_move"
                                          and event.get("item") is item)]
         start = QPointF(item.pos())
         if start == target and item not in self._move_animations:
             item.setPos(target)
+            if trace_id is not None:
+                self._trace_visual("skip", {"v": "_move", "item": item,
+                                            "_t": timeline_index, "_trace": trace_id})
             return
         self._queue_or_start_visual(
             {"v": "_move", "item": item, "start": start, "target": QPointF(target),
-             "g": group})
+             "g": group, "_t": timeline_index, "_trace": trace_id})
 
     def _start_move_event(self, event: dict) -> None:
         item = event["item"]
@@ -1176,18 +1187,19 @@ class BattleScene(QGraphicsScene):
             del self._move_animations[item]
             if animation in self._visual_animations:
                 self._visual_animations.remove(animation)
-            self._visual_events.pop(animation, None)
+            event = self._visual_events.pop(animation, {})
+            self._trace_visual("finish", event)
             animation.deleteLater()
             self._start_queued_visuals()
             self._refresh_all_art()
 
     def animate_card_use(self, uid: int, card_id: int, player: int,
-                         response: bool = False) -> None:
+                         response: bool = False, timeline_index: int | None = None) -> None:
         if response:
-            self.play_visual_event({"v": "response", "p": player})
+            self.play_visual_event({"v": "response", "p": player, "_t": timeline_index})
         self._queue_or_start_visual(
             {"v": "_card_use", "u": uid, "c": card_id, "p": player,
-             "response": response})
+             "response": response, "_t": timeline_index})
 
     def _start_card_use_event(self, event: dict) -> None:
         uid, card_id, player = event["u"], event["c"], event["p"]
@@ -1277,7 +1289,8 @@ class BattleScene(QGraphicsScene):
         self._card_use_animations.remove(animation)
         if animation in self._visual_animations:
             self._visual_animations.remove(animation)
-        self._visual_events.pop(animation, None)
+        event = self._visual_events.pop(animation, {})
+        self._trace_visual("finish", event)
         item = self._card_use_items.pop(animation)
         self._card_use_sources.pop(animation, None)
         if item.scene() is self:
@@ -1314,11 +1327,29 @@ class BattleScene(QGraphicsScene):
         group = event.get("g")
         return group is not None and all(current.get("g") == group for current in active)
 
+    def _trace_visual(self, stage: str, event: dict) -> None:
+        _LOGGER.debug(
+            "动画追踪 id=%s stage=%s timeline=%s kind=%s group=%s target=%s "
+            "amount=%s dice=%s queued=%d active=%d",
+            event.get("_trace"), stage, event.get("_t"), event.get("v"),
+            event.get("g"), self._visual_target_key(event), event.get("amount"),
+            event.get("dice"), len(self._visual_queue), len(self._visual_animations))
+
+    def _start_traced_visual(self, event: dict) -> None:
+        stage = "delegate" if event.get("v") in ("move", "hand") else "start"
+        self._trace_visual(stage, event)
+        self._start_visual_event(event)
+
     def _queue_or_start_visual(self, event: dict) -> None:
+        event = dict(event)
+        if event.get("_trace") is None:
+            self._visual_trace_seq += 1
+            event["_trace"] = self._visual_trace_seq
         if self._animation_can_start(event):
-            self._start_visual_event(event)
+            self._start_traced_visual(event)
         else:
-            self._visual_queue.append(dict(event))
+            self._trace_visual("wait", event)
+            self._visual_queue.append(event)
 
     def _start_queued_visuals(self) -> None:
         """默认全局 FIFO；同组事件可越过其他组的等待项并行播放。"""
@@ -1329,7 +1360,7 @@ class BattleScene(QGraphicsScene):
                 index += 1
                 continue
             self._visual_queue.pop(index)
-            self._start_visual_event(event)
+            self._start_traced_visual(event)
 
     @staticmethod
     def order_visual_entries(entries: list[dict]) -> list[dict]:
@@ -1378,6 +1409,7 @@ class BattleScene(QGraphicsScene):
             item = self.cards.get(("hand", uid))
             if (item is None or self.game is None
                     or uid not in {card.uid for card in self.game.state.players[player].hand}):
+                self._trace_visual("skip", event)
                 return
             target = QPointF(item.pos())
             if event.get("from") == "deck":
@@ -1399,7 +1431,9 @@ class BattleScene(QGraphicsScene):
                 if source is not None:
                     item.setPos(source.pos())
             item.show()
-            self._animate_position(item, target, group=event.get("g"))
+            self._animate_position(item, target, group=event.get("g"),
+                                   timeline_index=event.get("_t"),
+                                   trace_id=event.get("_trace"))
             return
         if kind in ("stat", "countdown", "countdown_proc", "revive"):
             player = int(event.get("p", self.viewer))
@@ -1474,7 +1508,11 @@ class BattleScene(QGraphicsScene):
                 target = positions[("shiki", player, index)]
                 if event.get("zone") == "combat":
                     target = combat_position(self.layout_width, player != self.viewer)
-                self._animate_position(item, target, group=event.get("g"))
+                self._animate_position(item, target, group=event.get("g"),
+                                       timeline_index=event.get("_t"),
+                                       trace_id=event.get("_trace"))
+            else:
+                self._trace_visual("skip", event)
             return
         if kind == "_move":
             self._start_move_event(event)
@@ -1490,6 +1528,7 @@ class BattleScene(QGraphicsScene):
         if kind == "response":
             center = self.sceneRect().center()
         elif target is None:
+            self._trace_visual("skip", event)
             return
         else:
             center = target.sceneBoundingRect().center()
@@ -1570,6 +1609,7 @@ class BattleScene(QGraphicsScene):
         self._visual_animations.remove(animation)
         item = self._visual_items.pop(animation)
         event = self._visual_events.pop(animation, {})
+        self._trace_visual("finish", event)
         if event.get("v") == "defeated":
             key = (int(event.get("p", 0)), int(event.get("s", 0)))
             self._defeat_visuals.discard(key)
@@ -1690,6 +1730,8 @@ class BattleScene(QGraphicsScene):
         self.usage_labels.clear()
 
     def reset_animations(self) -> None:
+        for event in (*self._visual_events.values(), *self._visual_queue):
+            self._trace_visual("cancel", event)
         self.hide_opening()
         self.clear_usage_options()
         for animation in self._move_animations.values():
@@ -1760,6 +1802,9 @@ class BattleScene(QGraphicsScene):
                     and previous_timeline is not None
                     and timeline[:len(previous_timeline)] == previous_timeline):
                 online_entries = timeline[len(previous_timeline):]
+        timeline_indexes = {id(entry): index for index, entry in enumerate(timeline)}
+        online_entries = [dict(entry, _t=timeline_indexes.get(id(entry), entry.get("_t")))
+                          for entry in online_entries]
         online_entries = self.order_visual_entries(online_entries)
         structured_moves = {(entry["p"], entry["s"]): entry.get("zone")
                             for entry in online_entries if entry.get("v") == "move"}
@@ -1913,9 +1958,13 @@ class BattleScene(QGraphicsScene):
                     self.addItem(item)
                     self.cards[key] = item
                 hand_event = pending_hand.get(card.uid)
-                if hand_event is not None and getattr(item, "_hand_event", None) is not hand_event:
-                    item._hand_event = hand_event
-                    item.hide()
+                if hand_event is not None:
+                    timeline_index = hand_event.get("_t")
+                    event_key = (card.uid, timeline_index if timeline_index is not None
+                                 else id(hand_event))
+                    if getattr(item, "_hand_event_key", None) != event_key:
+                        item._hand_event_key = event_key
+                        item.hide()
                 item.cdef = cdef
                 centered = (game.state.phase == "mulligan" or center_hand) and own
                 item.default_size = QSizeF(MULLIGAN_HAND_SIZE if centered else HAND_SIZE)
@@ -1995,6 +2044,7 @@ class BattleScene(QGraphicsScene):
         for entry in online_entries if play_pending else ():
             if entry.get("k") == "a":
                 self.animate_card_use(entry["u"], entry["c"], entry["p"],
-                                      response=bool(entry.get("r")))
+                                      response=bool(entry.get("r")),
+                                      timeline_index=entry.get("_t"))
             elif entry.get("k") == "v":
                 self.play_visual_event(entry)

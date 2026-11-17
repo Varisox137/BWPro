@@ -993,15 +993,18 @@ class HotseatView(QWidget):
     def _dispatch_timeline_entry(self, entry: dict) -> None:
         if entry.get("k") == "a":
             self.battle_scene.animate_card_use(
-                entry["u"], entry["c"], entry["p"], response=bool(entry.get("r")))
+                entry["u"], entry["c"], entry["p"], response=bool(entry.get("r")),
+                timeline_index=entry.get("_t"))
         elif entry.get("k") == "v":
             self.battle_scene.play_visual_event(entry)
         else:
             self.timeline_queue.append((entry.get("o"), entry.get("m", "")))
 
     def _enqueue_timeline(self) -> None:
-        entries = self.battle_scene.order_visual_entries(
-            self.game.state.timeline[self._timeline_seen:])
+        start = self._timeline_seen
+        entries = self.battle_scene.order_visual_entries([
+            dict(entry, _t=start + index)
+            for index, entry in enumerate(self.game.state.timeline[start:])])
         self._timeline_seen = len(self.game.state.timeline)
         for entry in entries:
             if self._handoff_waiting and entry.get("v") == "turn_start":
