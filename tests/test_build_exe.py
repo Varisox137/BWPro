@@ -120,6 +120,30 @@ def test_launcher_passes_hidden_cleanup_to_normal_gui_startup(monkeypatch, tmp_p
     assert calls == [(88, updater_dir)]
 
 
+def test_exe_prunes_releases_before_smoke_failure(tmp_path, monkeypatch):
+    build = importlib.import_module("scripts.build_exe")
+    built = tmp_path / "dist" / "BWPro-v0.3.5.exe"
+    built.parent.mkdir()
+    built.write_bytes(b"new")
+    old = tmp_path / "releases" / "BWPro-v0.3.4.exe"
+    old.parent.mkdir()
+    old.write_bytes(b"old")
+    old.with_name(old.name + ".sha256").write_text("old", encoding="utf-8")
+    monkeypatch.setattr(build, "ROOT", tmp_path)
+    monkeypatch.setattr(build, "_build", lambda: built)
+
+    def fail_smoke(_executable):
+        raise RuntimeError("smoke failed")
+
+    monkeypatch.setattr(build, "_smoke_test", fail_smoke)
+    with pytest.raises(RuntimeError, match="smoke failed"):
+        build.main([])
+
+    assert not old.exists()
+    assert not old.with_name(old.name + ".sha256").exists()
+    assert (tmp_path / "releases" / built.name).is_file()
+
+
 def test_prune_releases_keeps_latest_patch_and_five_minor_series(tmp_path):
     build = importlib.import_module("scripts.build_exe")
     versions = ("0.1.0", "0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.5.0", "0.6.0")

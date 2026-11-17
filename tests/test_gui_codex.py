@@ -175,6 +175,31 @@ def test_mainwindow_applies_codex_selection_theme(qapp, db, tmp_path):
         window.close()
 
 
+def test_codex_leave_and_reenter_resets_browsing_state(qapp, db, tmp_path):
+    window = MainWindow(db=db, store_path=tmp_path / "decks.json")
+    try:
+        window.go("codex")
+        page = window.pages["codex"]
+        first_sid = page.pool[0].id
+        page.env_combo.setEditText("20260720")
+        page.change_environment()
+        page.pack_combo.setCurrentIndex(1)
+        page.faction_combo.setCurrentIndex(1)
+        page.search_edit.setText("不存在的式神")
+        page.show_shikigami_cards()
+        window.back()
+        window.go("codex")
+        assert page.stack.currentWidget() is page.overview_page
+        assert page.env_combo.currentIndex() == 0
+        assert page.pack_combo.currentIndex() == 0
+        assert page.faction_combo.currentIndex() == 0
+        assert page.search_edit.text() == ""
+        assert page.selected_sid == first_sid
+        assert page.page_index == 0
+    finally:
+        window.close()
+
+
 def test_raw_unreleased_reinforce_cards_are_hidden(qapp, gdb):
     view = ShikigamiCodexView(gdb)
     try:

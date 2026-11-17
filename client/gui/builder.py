@@ -25,7 +25,7 @@ from db.envs import available_env_dates, env_label, parse_env_input
 from db.packs import pack_names_for
 
 CARD_PAGE_SIZE = 5
-DECK_PAGE_SIZE = 4
+DECK_PAGE_SIZE = 5
 
 
 def _clear_layout(layout) -> None:
@@ -270,7 +270,7 @@ class DeckBuilderView(QWidget):
         layout.addWidget(self.standard_label)
         body = QHBoxLayout()
         self.shiki_list = QListWidget()
-        self.shiki_list.setFixedWidth(180)
+        self.shiki_list.setFixedWidth(240)
         self.shiki_list.currentRowChanged.connect(self._select_shiki_row)
         self.shiki_list.itemDoubleClicked.connect(self._replace_shiki_item)
         body.addWidget(self.shiki_list)
@@ -377,6 +377,7 @@ class DeckBuilderView(QWidget):
             if answer == QMessageBox.Save and not self.save_editor():
                 return False
         self.dirty = False
+        self.deck_page_index = 0
         self.reload_decks()
         return True
 
@@ -604,14 +605,15 @@ class DeckBuilderView(QWidget):
             count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row_layout.addWidget(count_label)
             for text, tooltip, callback in (
-                    ("换", "替换此式神", lambda checked=False, index=len(self.team) - 1:
+                    ("更换", "替换此式神", lambda checked=False, index=len(self.team) - 1:
                      self.choose_shikigami(index)),
-                    ("删", "移除此式神", lambda checked=False, index=len(self.team) - 1:
+                    ("移除", "移除此式神", lambda checked=False, index=len(self.team) - 1:
                      self.remove_shikigami(index))):
                 button = QPushButton(text)
                 button.setObjectName("small")
                 button.setToolTip(tooltip)
-                button.setFixedSize(26, 22)
+                button.setFixedSize(48, 26)
+                button.setStyleSheet("QPushButton { padding: 1px 2px; }")
                 button.clicked.connect(callback)
                 row_layout.addWidget(button)
             item.setSizeHint(row_widget.sizeHint())

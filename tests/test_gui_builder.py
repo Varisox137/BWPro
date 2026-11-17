@@ -173,7 +173,8 @@ def test_editor_remove_and_replace_buttons(qapp, view):
     buttons = [child for child in row.children() if hasattr(child, "clicked")]
     assert len(buttons) == 2
     replace_button, remove_button = buttons
-    assert replace_button.text() == "换" and remove_button.text() == "删"
+    assert replace_button.text() == "更换" and remove_button.text() == "移除"
+    assert replace_button.width() >= 48 and remove_button.width() >= 48
     view.replace_shikigami(0, second)
     view.remove_shikigami(0)
     assert view.team == []
@@ -326,7 +327,7 @@ def test_editor_five_cards_fit_1200px_window_with_aligned_counts(qapp, db, tmp_p
     qapp.processEvents()
     assert win.width() == 1200
     assert len(page.card_widgets) == 5
-    assert page.shiki_list.width() <= 180
+    assert page.shiki_list.width() <= 240
     area = page.card_area
     assert all(widget.x() >= 0 and widget.x() + widget.width() <= area.width()
                for widget in page.card_widgets)
@@ -375,6 +376,19 @@ def test_editor_card_batch_checks_art_resources_once(qapp, view, monkeypatch):
     assert len(view.card_widgets) == 5
     assert len(digest_calls) == 1
     assert len(fingerprint_calls) == 1
+
+
+def test_deck_list_five_per_page_and_leave_resets_page(qapp, db, view):
+    entries = [{"name": f"卡组{index}", "groups": legal_groups(db), "env": None}
+               for index in range(6)]
+    deckstore.save_decks(db, entries, view.store_path)
+    view.reload_decks()
+    assert len(view.deck_frames) == 5
+    view.turn_deck_page(1)
+    assert len(view.deck_frames) == 1
+    assert view.leave_to_menu() is True
+    assert view.deck_page_index == 0
+    assert len(view.deck_frames) == 5
 
 
 def test_builder_leave_discard_and_reenter_returns_list(qapp, db, tmp_path, monkeypatch):

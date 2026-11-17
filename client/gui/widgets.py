@@ -60,6 +60,7 @@ def ask_confirmation(parent, title: str, text: str) -> int:
 def fill_card_row(layout, widgets: list["CardWidget"], page_size: int = 5) -> None:
     """按固定列数等宽排卡；不足页用空列保持相同列宽并左对齐。"""
     for widget in widgets:
+        widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         layout.addWidget(widget, 1)
     for _ in range(page_size - len(widgets)):
         layout.addWidget(QWidget(), 1)

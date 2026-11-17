@@ -126,9 +126,9 @@ def main(argv: list[str] | None = None) -> int:
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     checksum = destination.with_name(destination.name + ".sha256")
     checksum.write_text(f"{digest}  {destination.name}\n", encoding="utf-8", newline="\n")
+    _prune_releases(releases)
     if not options.no_smoke:
         _smoke_test(destination)
-    _prune_releases(releases)
     print(f"已输出：{destination}（{destination.stat().st_size / 1024 / 1024:.1f} MB）")
     print(f"SHA-256：{checksum}")
     if not options.no_smoke:

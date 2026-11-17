@@ -235,6 +235,23 @@ class ShikigamiCodexView(QWidget):
             if sid is not None:
                 self.select_shikigami(sid)
 
+    def leave_to_menu(self) -> bool:
+        """返回主菜单后清除筛选与浏览位置，下次从默认总览进入。"""
+        for combo in (self.env_combo, self.pack_combo, self.faction_combo):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+        self.search_edit.blockSignals(True)
+        self.search_edit.clear()
+        self.search_edit.blockSignals(False)
+        self.edb = self.db
+        self.pool = available_shikigami(self.edb)
+        self.selected_sid = self.pool[0].id if self.pool else None
+        self.page_index = 0
+        self.stack.setCurrentWidget(self.overview_page)
+        self._render_shiki_list()
+        return True
+
     def show_overview(self) -> None:
         self.stack.setCurrentWidget(self.overview_page)
 
