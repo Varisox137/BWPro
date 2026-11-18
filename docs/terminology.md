@@ -509,7 +509,7 @@
 
 | 术语 | 键 / API | 含义 |
 |---|---|---|
-| DIY 运行时 | `diy.runtime.load_database` / `discover_extensions` | 自动发现包级/式神级可信机制与事件，分别加载后合并正式/DIY 数据并跨来源查重；默认含项目内置 DIY，支持额外可信工作区与环境日期 |
+| DIY 运行时 | `diy.runtime.load_database` / `discover_extensions` | 自动发现包级/式神级可信机制与事件，分别加载后合并正式/DIY 数据并跨来源查重；默认含 `~/.bwpro/diy/own/` 自有内容，支持额外可信工作区与环境日期；EXE 不内置 DIY 数据 |
 | 制作元数据 | `ShikigamiDef.author` / 顶层 `author` | 可选作者标识，不参与结算、不进入版本快照；最新与指定日期解析均保留 |
 | 扩展注册 | `register_action` / `register_pool` / `register_condition` / `register_stat_aura` / `register_event` | 同一实现重复注册幂等；同名不同实现或事件时机冲突报错。条件名同步进入 `CONDITION_KEYS`，事件默认时机进入 `EVENT_TIMING` |
 | 攻击目标改写 | `victim_override`（on_before_assault 可变标记） | 在（被）攻击时把本次战斗的被攻击者改为指定 Ref；改写后按有目标战斗处理，不再随战斗区重读原目标 |

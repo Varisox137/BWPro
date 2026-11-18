@@ -393,12 +393,13 @@ def test_trusted_pack_reuse_rechecks_current_disk_hash(db, tmp_path):
 
 
 def test_builtin_trusted_pack_reuses_server_content_and_starts():
-    from diy.runtime import load_database
+    from diy.runtime import BUILTIN_CONTENT_ROOT, load_database
     from diy.sync import read_package
 
     from db.loader import CardDatabase
 
-    trusted = load_database()
+    trusted = load_database(content_roots=[BUILTIN_CONTENT_ROOT],
+                            include_builtin=False, include_downloaded=False)
     official = CardDatabase.load()
     package = read_package(trusted.diy_packs[101]["source"])
     official_groups = []

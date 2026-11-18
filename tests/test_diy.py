@@ -14,8 +14,9 @@ ENEMY_TEAM = [100102, 100103, 100111, 100114]
 
 @pytest.fixture(scope="session")
 def diy_db():
-    from diy.runtime import load_database
-    return load_database()
+    from diy.runtime import BUILTIN_CONTENT_ROOT, load_database
+    return load_database(content_roots=[BUILTIN_CONTENT_ROOT],
+                         include_builtin=False, include_downloaded=False)
 
 
 @pytest.fixture(autouse=True)
@@ -60,9 +61,10 @@ def _force_dice(g, monkeypatch, value):
 
 
 def test_runtime_discovers_builtin_and_is_idempotent(diy_db):
-    from diy.runtime import load_database
+    from diy.runtime import BUILTIN_CONTENT_ROOT, load_database
 
-    again = load_database()
+    again = load_database(content_roots=[BUILTIN_CONTENT_ROOT],
+                          include_builtin=False, include_downloaded=False)
     assert YANWEI in diy_db.shikigami
     assert set(range(11010101, 11010109)) <= set(diy_db.cards)
     assert YANWEI in again.shikigami
@@ -73,6 +75,16 @@ def test_runtime_discovers_builtin_and_is_idempotent(diy_db):
     assert resolved.author == "962779670"
     assert resolved.version == 20261113
     assert dated.diy_packs[101]["name"] == "方舟百闻"
+
+
+def test_own_content_uses_global_directory(monkeypatch):
+    from diy import runtime
+
+    assert runtime.own_content_root() == Path.home() / ".bwpro" / "diy" / "own"
+    monkeypatch.setattr(runtime, "own_content_root",
+                        lambda: runtime.BUILTIN_CONTENT_ROOT)
+    db = runtime.load_database(include_downloaded=False)
+    assert db.cards[11010104].name == "觉醒·焰尾"
 
 
 def test_diy_and_official_ids_are_isolated(diy_db):
@@ -125,7 +137,7 @@ def test_runtime_discovers_pack_then_shikigami_extensions(diy_db, tmp_path):
 
 
 def test_runtime_rejects_cross_source_id_conflict(tmp_path):
-    from diy.runtime import load_database
+    from diy.runtime import BUILTIN_CONTENT_ROOT, load_database
 
     pack = tmp_path / "102_conflict"
     pack.mkdir()
@@ -135,7 +147,8 @@ def test_runtime_rejects_cross_source_id_conflict(tmp_path):
         "    - date: 20261113\n      faction: 苍叶\n      power: 1\n      health: 1\n",
         encoding="utf-8")
     with pytest.raises(RuntimeError, match="110101") as exc:
-        load_database(content_roots=[tmp_path])
+        load_database(content_roots=[BUILTIN_CONTENT_ROOT, tmp_path],
+                      include_builtin=False, include_downloaded=False)
     assert "110101.yaml" in str(exc.value)
 
 

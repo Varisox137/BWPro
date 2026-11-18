@@ -243,6 +243,20 @@ def test_perspective_reuses_slots_and_continuous_ellipse(qapp, view):
     assert scene.cards[("player", 0)].y() < scene.cards[("player", 1)].y()
 
 
+def test_hand_status_badges():
+    from client.gui.battle_scene import hand_card_status
+
+    card = CardInstance(uid=1, id=10010101)
+    assert hand_card_status(card) is None
+    card.mods["revealed"] = True
+    assert hand_card_status(card) == "shown"
+    card.invocations = [{"name": "梦魇"}]
+    assert hand_card_status(card) == "multi_status"
+    card.mods.clear()
+    assert hand_card_status(card) == "nightmare"
+    assert hand_card_status(card, invocation_names=[]) is None
+
+
 def test_scene_hand_order_reveal_and_overlay(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -258,10 +272,36 @@ def test_scene_hand_order_reveal_and_overlay(qapp, view):
     assert [item.revealed for item in enemy_items] == [False, True, False, False, False]
     assert enemy_items[1].cdef.id == revealed.id
     assert enemy_items[1].payload is revealed
+    assert enemy_items[1]._render_signature[2] == "shown"
     assert all(item.cdef is None and item.payload is None for item in
                (enemy_items[0], *enemy_items[2:]))
     assert enemy_items[0].zValue() > scene.cards[("shiki", 1, 0)].zValue()
     assert scene.cards[("hand", own.hand[0].uid)].boundingRect().height() <= 170
+
+
+def test_nightmare_snapshot_cleared_after_damage(qapp, view):
+    from PySide6.QtCore import QVariantAnimation
+    from client.gui.battle_scene import BattleVisualItem
+
+    start(view, mulligan=False)
+    scene = view.battle_scene
+    card = view.game.current.hand[0]
+    scene.sync_state(
+        view.game, 0, view.hand_info(), True,
+        pending_entries=[{"k": "v", "v": "hand", "p": 0, "u": card.uid,
+                          "from": "deck", "inv": ["梦魇"]}])
+    item = scene.cards[("hand", card.uid)]
+    assert item._render_signature[2] == "nightmare"
+    assert card.invocations == []
+
+    animation = QVariantAnimation()
+    visual = BattleVisualItem()
+    scene.addItem(visual)
+    scene._visual_items[animation] = visual
+    scene._visual_events[animation] = {"v": "damage", "u": card.uid}
+    scene._visual_animations.append(animation)
+    scene._finish_visual(animation)
+    assert item._render_signature[2] is None
 
 
 def test_own_hand_display_sort_preserves_acquisition_sequence(qapp, db, view):
@@ -1542,8 +1582,8 @@ def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
 
     calls = []
 
-    def capture_pixmap(cdef, database, *, display=None, level_color=None, cache_context=None,
-                       height=None):
+    def capture_pixmap(cdef, database, *, display=None, level_color=None, status=None,
+                       cache_context=None, height=None):
         calls.append((cdef, display, level_color))
         return None
 

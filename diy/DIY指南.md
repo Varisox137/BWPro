@@ -104,7 +104,7 @@
 PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h
 ```
 
-新式神需要唯一 id、拼音 slug 和包目录。正式内容使用 `db/packs.py` 已登记目录；DIY 内容放在 `diy/content/<包id>_<主题>/`，包号默认从 101 起，不登记进官方包清单。不要覆盖已有文件，也不要复用现有式神或卡牌 id。
+新式神需要唯一 id、拼音 slug 和包目录。正式内容使用 `db/packs.py` 已登记目录；DIY 内容放在 `~/.bwpro/diy/own/<包id>_<主题>/`，包号默认从 101 起，不登记进官方包清单。不要覆盖已有文件，也不要复用现有式神或卡牌 id。
 
 ### 4. 保持版本数据结构
 
@@ -132,7 +132,7 @@ PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m db.scaffold -h
 
 规则 YAML 与卡图配置是两件事：
 
-- 正式规则数据位于 `db/`，DIY 规则数据位于 `diy/content/`。
+- 正式规则数据位于 `db/`，DIY 规则数据位于 `~/.bwpro/diy/own/`。
 - 卡图、式神立绘与机制框配置位于 `library/`，由 BWPDIY 渲染体系使用。
 - 没有美术配置时仍可使用名称占位卡图进行规则测试。
 - 不要因为缺少图片而跳过规则校验，也不要把图片路径写进引擎效果。
@@ -164,4 +164,4 @@ uv run python -m client.gui
 
 在卡组构筑中选择该式神并组卡，再进入本地热坐试用。发现效果不符合预期时，把“实际表现”和“你期望的表现”一起交给大模型，比只说“这张卡坏了”更容易修复。
 
-本地构筑、热坐和 GUI 默认加载 `diy/content/` 中的内置 DIY。联机时勾选“启用 DIY 内容”后，双方会在准备后同步完整 YAML 包；下载版本保存在用户目录，可在设置页单独清理。
+本地构筑、热坐和 GUI 默认加载 `~/.bwpro/diy/own/` 中的自有 DIY。联机时勾选“启用 DIY 内容”后，双方会在准备后同步完整 YAML 包；下载版本保存在用户目录，可在设置页单独清理。

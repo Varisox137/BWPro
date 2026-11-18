@@ -15,8 +15,13 @@ import yaml
 from core.events import register_event
 from db.loader import CardDatabase, DB_ROOT
 
-BUILTIN_CONTENT_ROOT = Path(__file__).parent / "content"
+BUILTIN_CONTENT_ROOT = Path(__file__).parent / "content"  # 仓库内示例/测试内容，不随 EXE 发布
 _MECHANISM_MODULES: dict[str, object] = {}
+
+
+def own_content_root() -> Path:
+    """本机原创 DIY 根目录；与版本化下载存储同级隔离。"""
+    return Path.home() / ".bwpro" / "diy" / "own"
 
 
 def discover_extensions(root: Path | str) -> tuple[list[Path], list[Path]]:
@@ -117,7 +122,10 @@ def load_database(
 
     roots = [Path(p) for p in (content_roots or ())]
     if include_builtin:
-        roots.insert(0, BUILTIN_CONTENT_ROOT)
+        # 参数名为兼容保留；默认自有内容读取全局目录，不再依赖仓库/EXE 内路径
+        own_root = own_content_root()
+        if own_root.is_dir():
+            roots.insert(0, own_root)
     for root in roots:
         if not root.is_dir():
             raise RuntimeError(f"DIY 内容目录不存在：{root}")

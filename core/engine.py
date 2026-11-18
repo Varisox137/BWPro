@@ -2857,6 +2857,8 @@ class Game:
                        from_zone=src_zone, to_zone=to_zone, reason=reason)
         self.emit("on_card_move", **payload)    # 牌移动后（即时时机）
         self.emit("on_card_moved", **payload)   # 牌移动后（延时时机；灵咒挂点）
+        hand_invocations = ([inv["name"] for inv in card.invocations]
+                            if to_zone == "hand" else [])
         if to_zone == "hand":
             self._proc_invocations_on_move(p, card, reason, payload,
                                            horizon=invocation_horizon)
@@ -2865,8 +2867,12 @@ class Game:
                       f"【{self.db.cards[card.id].name}】置入墓地（爆牌）")
             self.move_card(p, card, "graveyard", reason="hand_cap")
         if to_zone == "hand" and not burst:
-            self.state.timeline.append({"k": "v", "v": "hand", "p": pi, "u": card.uid,
-                                        "from": src_zone, "reason": reason})
+            event = {"k": "v", "v": "hand", "p": pi, "u": card.uid,
+                     "from": src_zone, "reason": reason}
+            if hand_invocations:
+                # 入手时快照供抽牌动画使用；实际结算仍在抽到触发前移除灵咒
+                event["inv"] = hand_invocations
+            self.state.timeline.append(event)
 
     def _proc_invocations_on_move(self, p: PlayerState, card: CardInstance,
                                   reason: str | None, payload: dict,
@@ -5288,7 +5294,8 @@ class Game:
                          f"（生命 {s.health + health_loss}→{s.health}）")
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
                                         "s": ev.victim.shikigami, "amount": ev.amount,
-                                        "g": ev.visual_group})
+                                        "g": ev.visual_group,
+                                        "u": ev.card.uid if ev.card is not None else None})
             visual_stats.append(self._stat_event(
                 ev.victim, f"{ev.visual_group}:stat" if ev.visual_group is not None else None))
             # 不再写 _log 孪生行：数值明细归 settle 通道，避免联机端双通道重复打印
@@ -5338,7 +5345,8 @@ class Game:
             self._settle(f"【伤害】{p.name} 受到 {ev.amount} 点伤害"
                          f"（生命 {old_health}→{p.health}）")
             self.state.timeline.append({"k": "v", "v": "damage", "p": ev.victim.player,
-                                        "s": None, "amount": ev.amount, "g": ev.visual_group})
+                                        "s": None, "amount": ev.amount, "g": ev.visual_group,
+                                        "u": ev.card.uid if ev.card is not None else None})
             visual_stats.append(self._stat_event(
                 ev.victim, f"{ev.visual_group}:stat" if ev.visual_group is not None else None))
             # 幻境耐久扣减（规范第三条：扣减生命完成后立即，早于"受到伤害后"延时时机）

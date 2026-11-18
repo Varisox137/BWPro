@@ -289,9 +289,11 @@ def test_shikigami_picker_name_column_is_wide(qapp, db):
 
 
 def test_shikigami_picker_lists_builtin_diy_pack(qapp):
-    from diy.runtime import load_database
+    from diy.runtime import BUILTIN_CONTENT_ROOT, load_database
 
-    picker = ShikigamiDialog(load_database())
+    db = load_database(content_roots=[BUILTIN_CONTENT_ROOT],
+                       include_builtin=False, include_downloaded=False)
+    picker = ShikigamiDialog(db)
     groups = {picker.tree.topLevelItem(i).text(0): picker.tree.topLevelItem(i)
               for i in range(picker.tree.topLevelItemCount())}
     assert "方舟百闻" in groups

@@ -91,6 +91,19 @@ def card_owner_seat(game, player, cdef) -> int | None:
     return None
 
 
+def hand_card_status(card, *, invocation_names=None) -> str | None:
+    """手牌大卡临时状态；入手动画可用快照覆盖已经移除的牌库灵咒。"""
+    names = ([entry.get("name") for entry in card.invocations]
+             if invocation_names is None else invocation_names)
+    shown = bool(card.mods.get("revealed"))
+    nightmare = "梦魇" in names
+    if shown and nightmare:
+        return "multi_status"
+    if shown:
+        return "shown"
+    return "nightmare" if nightmare else None
+
+
 def display_hand(game, pi: int, viewer: int, preserve_order: bool = False):
     """敌方、调度与中央交接预览保留入手序；常态己方仅显示排序。"""
     player = game.state.players[pi]
@@ -989,13 +1002,14 @@ class BattleScene(QGraphicsScene):
         return proxy
 
     def _hand_render_signature(self, card, revealed: bool, detail: dict,
-                               owner_seat: int | None, own: bool) -> tuple:
+                               owner_seat: int | None, own: bool,
+                               status: str | None) -> tuple:
         appearance = card_appearance(card.id) if revealed else None
         player = self.viewer if own else 1 - self.viewer
         cardback = None if revealed else self._cardback_name(player)
         centered = (self.phase == "mulligan" or self.center_hand) and own
         return (
-            card.id, revealed,
+            card.id, revealed, status,
             json.dumps(detail, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
             (appearance["frame_variant"], appearance["art_index"]) if appearance else None,
             cardback, seat_level_color(owner_seat), centered, 255 if centered else 156,
@@ -1004,14 +1018,16 @@ class BattleScene(QGraphicsScene):
 
     def _sync_hand_art(self, item: BattleCardItem, card, cdef, revealed: bool,
                        detail: dict, owner_seat: int | None, own: bool,
-                       art_context: dict) -> None:
-        signature = self._hand_render_signature(card, revealed, detail, owner_seat, own)
+                       art_context: dict, *, invocation_names=None) -> None:
+        status = hand_card_status(card, invocation_names=invocation_names)
+        signature = self._hand_render_signature(
+            card, revealed, detail, owner_seat, own, status)
         if getattr(item, "_render_signature", None) == signature:
             return
         height = 255 if (self.phase == "mulligan" or self.center_hand) and own else 156
         player = self.viewer if own else 1 - self.viewer
         pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
-                              level_color=seat_level_color(owner_seat),
+                              level_color=seat_level_color(owner_seat), status=status,
                               cache_context=art_context, height=height)
                   if cdef is not None else self._cardback_pixmap(player))
         item.set_art(pixmap)
@@ -1614,6 +1630,12 @@ class BattleScene(QGraphicsScene):
             key = (int(event.get("p", 0)), int(event.get("s", 0)))
             self._defeat_visuals.discard(key)
             self._refresh_defeated_entity(*key, snapshot=event.get("r"))
+        if event.get("v") == "damage" and event.get("u") is not None:
+            # 梦魇：入手快照标记保留到该牌伤害动画结束，再按当前实例状态重绘
+            hand = self.cards.get(("hand", event["u"]))
+            refresh = getattr(hand, "_hand_refresh", None)
+            if hand is not None and refresh is not None:
+                self._sync_hand_art(hand, *refresh, {})
         if item.scene() is self:
             self.removeItem(item)
         animation.deleteLater()
@@ -1966,10 +1988,13 @@ class BattleScene(QGraphicsScene):
                         item._hand_event_key = event_key
                         item.hide()
                 item.cdef = cdef
+                item._hand_refresh = (card, cdef, revealed, detail, owner_seat, own)
                 centered = (game.state.phase == "mulligan" or center_hand) and own
                 item.default_size = QSizeF(MULLIGAN_HAND_SIZE if centered else HAND_SIZE)
                 self._sync_hand_art(
-                    item, card, cdef, revealed, detail, owner_seat, own, art_context)
+                    item, card, cdef, revealed, detail, owner_seat, own, art_context,
+                    invocation_names=(hand_event.get("inv", [])
+                                      if hand_event is not None else None))
                 item.revealed = revealed
                 item.player = pi
                 item.index = None

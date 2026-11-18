@@ -718,7 +718,7 @@ class OnlineView(QWidget):
         self._diy_syncing = False
 
     def _collect_diy_packages(self) -> dict[int, dict]:
-        packages = diy_sync.collect_packages([diy_runtime.BUILTIN_CONTENT_ROOT])
+        packages = diy_sync.collect_packages([diy_runtime.own_content_root()])
         for path in diy_store.downloaded_versions():
             package = diy_sync.read_package(path)
             pack_id = package["pack_id"]

@@ -146,6 +146,17 @@ def test_turn_word_art_follows_theme(qapp):
     assert light.toImage() == expected.toImage()
 
 
+@pytest.mark.parametrize("status", ["shown", "nightmare", "multi_status"])
+def test_card_status_badges_render(qapp, tmp_path, status):
+    from client.gui.cardart import card_pixmap
+    from db.loader import CardDatabase
+
+    db = CardDatabase.load()
+    image = card_pixmap(db.cards[10040603], db, cache_dir=tmp_path,
+                        status=status, height=156, image_only=True)
+    assert image is not None and not image.isNull()
+
+
 def test_engine_emits_structured_defeat_and_luck_events(db, make_game):
     game = make_game()
     shiki = game.state.players[0].shikigami[0]

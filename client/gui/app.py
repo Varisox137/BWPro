@@ -249,7 +249,7 @@ class MainWindow(QMainWindow):
         self.pages["hotseat"].set_databases(self.db, self.official_db)
         self.pages["online"].set_databases(self.db, self.official_db)
 
-    def prewarm_resources(self) -> None:
+    def prewarm_resources(self, *, clear: bool = False) -> None:
         if self._prewarm_running:
             return
         self._prewarm_running = True
@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
         def run():
             try:
                 prewarm_all(
-                    self.db,
+                    self.db, clear=clear,
                     on_progress=lambda current, total: self._post_prewarm_callback(
                         generation, self._prewarm_progress, current, total))
             except Exception as error:
@@ -280,15 +280,20 @@ class MainWindow(QMainWindow):
     def _prewarm_progress(self, current: int, total: int) -> None:
         if self._prewarm_running:
             self.statusBar().showMessage(f"卡图后台同步 {current}/{total}")
+            self.pages["settings"].loading.set_progress(current, total)
 
     def _prewarm_complete(self, error: Exception | None) -> None:
         self._prewarm_thread = None
         self._prewarm_running = False
+        settings = self.pages["settings"]
+        settings.loading.stop()
+        settings.loading_overlay.hide()
+        settings.rebuild_button.setEnabled(True)
         if error is None:
             self.statusBar().clearMessage()
         else:
             self.statusBar().showMessage(f"卡图后台同步失败：{error}")
-        self.pages["settings"].refresh_status()
+        settings.refresh_status()
 
     def _finish_prewarm(self) -> None:
         """关闭窗口后忽略工作线程回调；后台线程自行结束，不阻塞退出。"""

@@ -545,7 +545,7 @@ def test_startup_prewarm_runs_in_background_without_blocking(qapp, db, tmp_path,
     calls = []
     warnings = []
 
-    def fake_prewarm(db_arg, on_progress):
+    def fake_prewarm(db_arg, on_progress, clear=False):
         assert db_arg is db
         calls.append("started")
         started.set()
@@ -646,14 +646,13 @@ def test_settings_rebuild_when_background_idle(qapp, db, tmp_path, monkeypatch):
     page = win.pages["settings"]
     assert isinstance(page, SettingsView)
     calls = []
+    monkeypatch.setattr(win, "prewarm_resources",
+                        lambda clear=False: calls.append(clear))
     monkeypatch.setattr(settings, "prewarm_all",
-                        lambda *args, **kwargs: calls.append((args, kwargs)) or [])
+                        lambda *args, **kwargs: pytest.fail("重建不得阻塞主线程"))
     monkeypatch.setattr(settings, "ask_confirmation", lambda *_args: QMessageBox.Yes)
     page.rebuild()
-    assert len(calls) == 1
-    assert calls[0][1]["clear"] is True
-    assert page.rebuild_button.isEnabled()
-    assert not page.loading_overlay.isVisible()
+    assert calls == [True]
     win.close()
 
 

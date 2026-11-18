@@ -211,11 +211,13 @@ def test_raw_unreleased_reinforce_cards_are_hidden(qapp, gdb):
 
 
 def test_first_diy_mouse_click_keeps_selection(qapp):
-    from diy.runtime import load_database
+    from diy.runtime import BUILTIN_CONTENT_ROOT, load_database
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
 
-    view = ShikigamiCodexView(load_database())
+    db = load_database(content_roots=[BUILTIN_CONTENT_ROOT],
+                       include_builtin=False, include_downloaded=False)
+    view = ShikigamiCodexView(db)
     view.resize(1200, 800)
     view.show()
     qapp.processEvents()

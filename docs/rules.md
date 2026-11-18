@@ -1390,7 +1390,7 @@ payload 的 victim_invocations）/ `turn_count_eq` / `from_coffin_not` /
 
 ## 三十五、本地 DIY 扩展运行时（已实现）
 
-- 正式内容仍由 `CardDatabase.load()` 单独加载；`diy.runtime.load_database()` 默认把正式内容与 `diy/content/` 内置 DIY 合并，也可用 `content_roots` 追加可信本地工作区、`include_builtin=False` 排除内置包、`at_date` 直接解析环境。各来源分别 strict 加载，合并时跨来源检查式神/卡牌/灵咒冲突，并再次执行全库 schema、事件、op、目标与白名单校验。
+- 正式内容仍由 `CardDatabase.load()` 单独加载；`diy.runtime.load_database()` 默认把正式内容与 `~/.bwpro/diy/own/` 自有 DIY 合并，也可用 `content_roots` 追加可信本地工作区、`include_builtin=False` 排除默认自有目录、`at_date` 直接解析环境。仓库 `diy/content/` 仅供开发示例与测试，不随 EXE 打包。各来源分别 strict 加载，合并时跨来源检查式神/卡牌/灵咒冲突，并再次执行全库 schema、事件、op、目标与白名单校验。
 - 自动发现按“包目录先于子目录、同层路径排序”加载 `mechanisms.py` 与 `events.yaml`，不维护中央 DIY 包清单。只有可信本地审查代码可被导入；用户 YAML 和未来的网络内容不执行 Python。重复加载同一路径复用模块，注册接口对同一实现幂等，同名不同实现报错。
 - 通用注册点：`core.actions.register_action`、`core.targets.register_pool`、`core.registry.register_condition` / `register_stat_aura`、`core.events.register_event`。条件注册同步加入 loader 白名单；动态光环经 `stat_aura` 的自定义 kind 进入 `_refresh_stat_auras`；事件声明同步登记 insert/queue 默认时机。
 - `ShikigamiDef.author` 是可选顶层制作元数据，随最新/指定日期解析保留，不进入 `versions.history` 规则快照；脚手架 `--author` 与版本校验同步支持。DIY 文本不接 `card_data_raw.md` 逐字门禁，官方 `db.validate` 与 DIY 运行时校验保持分离。

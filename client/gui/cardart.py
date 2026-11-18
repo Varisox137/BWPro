@@ -836,13 +836,15 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 cache_dir: Path | None = None,
                 display: dict[str, int] | None = None,
                 level_color: str | None = None, burst: int | None = None,
-                cache_context: dict | None = None,
+                status: str | None = None, cache_context: dict | None = None,
                 height: int | None = None, frame_variant: str | None = None,
                 image_only: bool = False) -> QPixmap | QImage | None:
     """按原生高度合成；静态卡面使用磁盘缓存，后台任务可取 QImage。"""
     overrides = {"level_color": level_color} if level_color is not None else {}
     if burst is not None:
         overrides["burst"] = burst
+    if status is not None:
+        overrides["status"] = status
     if frame_variant is not None:
         overrides["frame_variant"] = frame_variant
     return _card_pixmap_impl(

@@ -2159,6 +2159,12 @@ def test_deck_invocation_attach_and_draw(db, make_game):
     assert card.invocations == []  # 入手移除
     assert pb.ext["drew_invocation_turn"] == ["梦魇"]  # 惊梦账本
     assert "on_invocation_drawn" in g.history
+    hand_event = next(e for e in g.state.timeline
+                      if e.get("v") == "hand" and e.get("u") == card.uid)
+    assert hand_event["inv"] == ["梦魇"]  # 抽牌动画保留入手时标记快照
+    damage_event = next(e for e in g.state.timeline
+                        if e.get("v") == "damage" and e.get("u") == card.uid)
+    assert damage_event["amount"] == 3  # 伤害动画结束后移除该快照标记
 
 
 def test_deck_invocation_leave_deck_removal(db, make_game):

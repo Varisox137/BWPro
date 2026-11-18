@@ -340,15 +340,8 @@ class SettingsView(QWidget):
         self.rebuild_button.setEnabled(False)
         self.loading.start()
         self.loading_overlay.show()
-        try:
-            prewarm_all(self.db, clear=True,
-                        on_progress=lambda current, total: (
-                            self.loading.set_progress(current, total), self.loading.tick()))
-        finally:
-            self.loading.stop()
-            self.loading_overlay.hide()
-            self.rebuild_button.setEnabled(True)
-            self.refresh_status()
+        # 与启动预热共用后台线程；返回主菜单和关闭窗口都不等待合成结束
+        self.window().prewarm_resources(clear=True)
 
     def apply_theme(self, theme: str, colors: dict) -> None:
         self.setStyleSheet(f"""
