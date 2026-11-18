@@ -1702,6 +1702,44 @@ def test_method_keywords_grant_fast_for_this_play(db, make_game):
     assert s.energy == 1                   # 无爆能消耗
 
 
+def test_charge_form_timing(real_game):
+    """祈晴在己方回合结束抽牌；滋养进场及己方回合开始获得鬼火；
+    晴雨在每个回合开始时消耗能量并治疗其他己方角色。"""
+    team = [100205, 100101, 100102, 100125]
+
+    g = real_game(team, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    s = pa.shikigami[0]
+    s.energy = 4
+    F.play(g, 0, 10020502)
+    hand0 = len(pa.hand)
+    F.pass_turns(g, 1)
+    assert s.energy == 0 and len(pa.hand) == hand0 + 1
+
+    g = real_game(team, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 2})
+    s = pa.shikigami[0]
+    s.energy = 8
+    pa.orb = 1
+    F.play(g, 0, 10020505)
+    assert s.energy == 4 and pa.orb == 1  # 支付出牌1火后，进场获得1火
+    F.pass_turns(g, 2)
+    assert s.energy == 1  # 基础能力充能1，形态效果消耗4
+
+    g = real_game(team, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 3, 1: 1})
+    s = pa.shikigami[0]
+    s.energy = 3
+    pa.health = 27
+    pa.shikigami[1].health = 1
+    enemy_health = pb.shikigami[1].health
+    F.play(g, 0, 10020508)
+    F.pass_turns(g, 1)  # 敌方回合开始也触发
+    assert s.energy == 0
+    assert pa.health == 30 and pa.shikigami[1].health == 4
+    assert pb.shikigami[1].health == enemy_health
+
+
 # ---------- TargetSpec keyword 过滤 / heal full / cancel_attack / attack_replace ----------
 
 KW_BUFF = 10010193           # 假"使有[充能]的式神获得力量"

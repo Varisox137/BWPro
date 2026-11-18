@@ -9,10 +9,11 @@ versions:
       level: 3
       keywords: [piercing, combo]
       effects:
-        # -1/+2（战斗牌数值通道）；double_damage_vs_fragile = 对有破甲的式神造成
-        # 双倍伤害（战斗流程提取步，不按普通 step 执行）
+        # -1/+2（战斗牌数值通道）；攻击有破甲的式神时获得[暴击]（战斗流程
+        # 在确定实际交战目标后求值，条件授予不与其他暴击来源重复翻倍）
         steps:
           - {op: buff_power, amount: -1, target: {kind: self}}
           - {op: gain_shield, amount: 2, target: {kind: self}}
-          - {op: double_damage_vs_fragile}
-      text: "[贯通]，[连击]。对有破甲的式神造成双倍伤害。"
+          - {op: grant_keyword, keyword: critical, target: {kind: self},
+             condition: {defender_has_fragile: true, defender_kind: shikigami}}
+      text: "[贯通]，[连击]。攻击有破甲的式神时获得[暴击]。"

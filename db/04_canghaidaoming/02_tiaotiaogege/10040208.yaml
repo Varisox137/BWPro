@@ -10,12 +10,9 @@ versions:
       awaken_health: 10
       rarity: SSR
       level: 3
-      # 不能在跳跳哥哥有[倒计时]时使用（shikigami_countdown_free 按数据 id 读控制者
-      # 式神倒计时；未出战/气绝视为无倒计时，可用）
-      play_condition: {shikigami_countdown_free: 100402}
       # 觉醒换绑能力伪关键字：按冒号前缀匹配移除基础 replace_action:迟钝 再授予
       # 同名（不重复；觉醒·樱花妖 heal_defeated_countdown 先例）
       keywords: ["replace_action:迟钝"]
       effects:
         steps: []
-      text: "不能在跳跳哥哥有[倒计时]时使用。[觉醒]：{跳跳哥哥出击或使用战斗牌时改为结附‘迟钝’。}"
+      text: "[觉醒]：{跳跳哥哥出击或使用战斗牌时改为结附‘迟钝’。}"

@@ -2,7 +2,7 @@ type: 法术
 name: 花云之誓
 level: 2
 rarity: R
-description: 随机一项：为一个己方角色恢复2#sm；或对一个敌方角色造成1点伤害。重复6次。
+description: 随机一项：为一个己方角色恢复2#sm；或对一个敌方角色造成1点伤害。重复7次。
 shikigami: 樱花妖
 version_date: '20200928'
 id: '10040306'

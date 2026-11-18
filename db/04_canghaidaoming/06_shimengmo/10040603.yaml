@@ -7,6 +7,7 @@ versions:
       card_type: combat
       rarity: SR
       level: 1
+      keywords: [trigger]
       conditional_mods:
         # [增强]：本回合若敌方抽到过结附'梦魇'的牌（enemy_drew_invocation 读
         # 对方 ext["drew_invocation_turn"] 账本——抽到触发点记账），enhance+3
@@ -22,4 +23,10 @@ versions:
           - {op: buff_power, amount: 2, target: {kind: self}}
           - {op: gain_shield, amount: {enhance: true, base: 0},
              target: {kind: self}}
-      text: "[增强]：{本回合若敌方抽到过结附‘梦魇’的牌，此牌获得+3护甲并获得[瞬发]。}"
+      response:
+        # 敌方抽到结附‘梦魇’的牌时自动使用；非攻击时机的响应战斗牌
+        # 由引擎结算为一次新战斗，效果块沿用主动使用的 +2/+0 与增强
+        when: on_invocation_drawn
+        condition: {player: opponent, invocation: 梦魇}
+        steps: []
+      text: "[增强]：{本回合若敌方抽到过结附‘梦魇’的牌，此牌获得+3护甲并获得[瞬发]}。[响应]：{当敌方抽到结附‘梦魇’的牌时，自动使用此牌。}"

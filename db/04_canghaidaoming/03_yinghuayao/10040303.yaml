@@ -9,6 +9,11 @@ versions:
       level: 2
       effects:
         steps:
-          # 复活双方全部气绝式神；每个被复活者对其牌手造成=复活前气绝倒计时的伤害
-          - {op: mass_revive, side: all, countdown_damage: true}
-      text: "复活所有式神，每个式神对其牌手造成等同于其气绝倒计时的伤害。"
+          # 为己方所有式神恢复3点生命，重复一次；气绝式神仍按樱花妖基础/
+          # 觉醒能力转为倒计时变化，两段各自并行治疗
+          - op: repeat
+            count: 2
+            steps:
+              - {op: heal, amount: 3, allow_defeated: true, parallel: true,
+                 target: {kind: all, pool: friendly_shikigami, include_defeated_kw: true}}
+      text: "为己方所有式神恢复3点生命，重复此效果一次。"

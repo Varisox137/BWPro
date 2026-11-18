@@ -5,7 +5,7 @@ rarity: R
 description: '[[增强]]：本回合鸦天狗每[[移动]]过一次，此牌获得+2#ll。'
 shikigami: 鸦天狗
 power+: 0
-shield+: 1
+shield+: 0
 version_date: '20200327'
 id: '10020102'
 artwork:

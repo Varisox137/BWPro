@@ -3073,21 +3073,6 @@ def convert_damage(game, ctx, *, targets: list[Ref], to: str = "fragile") -> Non
     game._battle_convert[game._battle_stack[-1]] = ctx.source
 
 
-@action("double_damage_vs_fragile")
-def double_damage_vs_fragile(game, ctx, *, targets: list[Ref]) -> None:
-    """破甲双倍标记（targets 忽略）：登记到当前战斗上下文（战斗 id → 攻击者 Ref）——
-    仅此战斗牌发起的战斗中，攻击者本人对具有破甲的式神造成的战斗伤害翻倍（义道；
-    反击不翻倍，嵌套/插入战斗不继承；伤害管线于[暴击]时机=扣减生命前2读取，
-    战斗终止点清除）。
-
-    主动使用战斗牌时由战斗牌流程提取本步绑定该次战斗（不按普通 step 执行）；
-    响应插入使用时作为普通动作执行，登记到被插入的当前战斗。
-    """
-    if not game._battle_stack:
-        return
-    game._battle_double_fragile[game._battle_stack[-1]] = ctx.source
-
-
 @action("launch_attack")
 def launch_attack(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
                   at: str | None = None, at_index: int = 0,
@@ -3410,30 +3395,6 @@ def revive(game, ctx, *, targets: list[Ref]) -> None:
         if not s.defeated or s.despawned:
             continue
         game._revive(p, ref.player, ref.shikigami, source=ctx.source, reason="effect")
-
-@action("mass_revive")
-def mass_revive(game, ctx, *, targets: list[Ref], side: str = "all",
-                countdown_damage: bool = False) -> None:
-    """复活全部（或指定方）已气绝式神（绽放"复活所有式神"；targets 忽略）。
-
-    side="all"（缺省，双方）/ "self"（控制者方）。按牌手 0→1、座次顺序逐个走
-    _revive 复活流程（未离场、等级 ≥1 的气绝式神；无气绝者空过）。
-    countdown_damage=True：全部复活完毕后，每个被复活者对其牌手造成等同于其
-    复活前气绝倒计时的伤害（快照在复活前取；来源 = 该式神）——绽放"每个式神
-    对其牌手造成等同于其气绝倒计时的伤害"。
-    """
-    sides = (0, 1) if side == "all" else (ctx.controller,)
-    revived: list[tuple[int, int, int]] = []  # (牌手, 座次, 复活前气绝倒计时)
-    for pi in sides:
-        p = game.state.players[pi]
-        for i, s in enumerate(p.shikigami):
-            if s.defeated and not s.despawned and s.level >= 1:
-                revived.append((pi, i, s.revive_countdown))
-                game._revive(p, pi, i, source=ctx.source, reason="effect")
-    if countdown_damage:
-        for pi, i, cd in revived:
-            if cd > 0:
-                game.deal_to_player(pi, cd, Ref(player=pi, shikigami=i))
 
 
 @action("reattach_form")

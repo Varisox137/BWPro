@@ -23,11 +23,11 @@ versions:
           condition: {player: self}
           steps:
             - {op: heal, amount: 3, target: {kind: self}}
-        # 每个回合结束时（双方回合结束都触发）：消耗 3 能量，恢复所有其他己方角色
+        # 每个回合开始时（双方回合开始都触发）：消耗 3 能量，恢复所有其他己方角色
         # 3 点生命（gate：付不起则不恢复）
-        - when: on_turn_end
+        - when: on_turn_start
           steps:
             - {op: spend_energy, amount: 3, gate: true}
             - {op: heal, amount: 3, parallel: true,
                target: {kind: all, pool: friendly_others_character}}
-      text: "当己方其他角色受到伤害时，日和坊恢复3点生命。每个回合结束时，消耗3能量，恢复所有其他己方角色3点生命。"
+      text: "当己方其他角色受到伤害时，日和坊恢复3点生命。每个回合开始时，消耗3能量，恢复所有其他己方角色3点生命。"

@@ -11,14 +11,14 @@ versions:
         steps:
           - {op: buff_power, amount: 2, target: {kind: all, pool: friendly_shikigami}}
           - {op: buff_health, amount: 2, target: {kind: all, pool: friendly_shikigami}}
-          # [增强]：{本局游戏中若三目已用过四张委托牌，便额外…}——步级条件（不满足
+          # [增强]：{本局游戏中若三目已用过五张委托牌，便额外…}——步级条件（不满足
           # 跳过；quest_used 账本 = 使用过的委托牌（subtype=quest）张数）
           - op: buff_power
-            condition: {quest_count_ge: {kind: quest_used, count: 4}}
+            condition: {quest_count_ge: {kind: quest_used, count: 5}}
             amount: 3
             target: {kind: all, pool: friendly_shikigami}
           - op: buff_health
-            condition: {quest_count_ge: {kind: quest_used, count: 4}}
+            condition: {quest_count_ge: {kind: quest_used, count: 5}}
             amount: 3
             target: {kind: all, pool: friendly_shikigami}
-      text: "使所有己方式神获得2力量和2生命。[增强]：{本局游戏中若三目已用过四张委托牌，便额外使所有己方式神获得3力量和3生命。}"
+      text: "使所有己方式神获得2力量和2生命。[增强]：{本局游戏中若三目已用过五张委托牌，便额外使所有己方式神获得3力量和3生命。}"

@@ -20,4 +20,4 @@ versions:
           condition: {attacker_shikigami: self, victim_kind: shikigami}
           steps:
             - {op: grant_keyword, keyword: combo, scope: battle, target: {kind: self}}
-      text: "[迅捷]，[远程]，攻击式神时获得[连击]。出击时可以指定攻击任何其他角色。攻击其他己方角色时改为其恢复等量于伤害的生命。"
+      text: "[迅捷]，[远程]，攻击式神时获得[连击]。出击时可以指定攻击任一其他角色。攻击其他己方角色时改为为其恢复等量于伤害的生命。"

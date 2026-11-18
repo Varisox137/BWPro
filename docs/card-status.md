@@ -563,7 +563,7 @@
 | 05 贪食鬼 | ✅ | 打敌方战斗区 3 + 牌手回 3；[爆能X] 追加 {burst_x} 伤害 |
 | 06 觉醒·烟烟罗 | ✅ | +1/+1；使用获得 2 能量；on_energy_gained → 再获得等量（{event: amount}，emit_event=false） |
 | 07 无孔不入 | ✅ | 形态 3/6：进场与己方回合开始召唤分身（summon inherit_stats 继承口径同 02——含护甲照搬/眩晕同步/来源气绝分支，全卡盘点(16)） |
-| 08 暴躁鬼 | ✅ | 投射 3 + delay_grant（分神气绝时获得 3 能量）；[爆能X] 追加 {burst_x} 伤害 |
+| 08 暴躁鬼 | ✅ | 投射 4；[爆能X] 追加 {burst_x} 伤害 |
 | 99 烟烟罗的分身 | ✅ | 召唤物 2/4，先天[充能]；mirror_spell（复制烟烟罗使用的法术——全卡盘点(9)(10)大修：按原牌**相同使用方式**复制、爆能方式照常支付/免单（爆能X按分身自身能量读，口径挂起 questions.md）、继承原牌实例 mods/灵咒、**觉醒牌可复制**（_awaken_rebind 完整换绑，subtype_not 排除已删）；主动/响应/自动使用均触发，mirror_copy 标记防递归不连锁，维护者定案；目标沿用原选否则随机重选） |
 
 ## 日和坊（100205）
@@ -572,13 +572,13 @@
 | --- | --- | --- |
 | 基础能力 | ✅ | 先天[充能]；生命代偿引擎硬编码 id 100205（**仅日和坊本人**支付能量不足时以其生命 1:1 代偿，非伤害、代偿后须余 ≥1 生命——全卡盘点(12)收窄，其他己方角色不再代偿） |
 | 01 沐浴阳光 | ✅ | 双快照：20200327 无[瞬发] / 20200423 加[瞬发]（best 保持 20200327）；heal full=true（恢复至满）+ 各 +1 能量；目标池 friendly_shikigami + TargetSpec keyword=charge 过滤（己方[充能]式神） |
-| 02 祈晴 | ✅ | 形态 1/7：己方回合开始 spend_energy 4 gate → 抽 1 |
+| 02 祈晴 | ✅ | 形态 1/7：己方回合结束 spend_energy 4 gate → 抽 1 |
 | 03 阳炎 | ✅ | 双快照：20200327 1 级响应带"额外消耗3能量"（energy_ge: 3 门控 + spend_energy 3 gate）/ 20200423 2 级、响应去耗能（best 保持 20200327）；[响应]（on_upgrade）：打升级式神 1 + 眩晕之 |
 | 04 冬日暖阳 | ✅ | 己方[充能]式神各 +1/+1 + 2 能量 |
-| 05 滋养 | ✅ | 形态 2/7：己方回合开始 spend_energy 4 gate → +1 鬼火 |
+| 05 滋养 | ✅ | 形态 2/7：进场和己方回合开始 spend_energy 4 gate → +1 鬼火 |
 | 06 日出有曜 | ✅ | [瞬发]；单目标（全场未气绝角色、敌我均可——维护者定案，原方式B回退偏差消除）双 step：reset_stats（力量/生命回基础值+清护甲破甲，非伤害/治疗事件；对牌手空操作）/ clear_boosts（显式选牌手才生效、选式神空操作、无目标才回退控制者） |
 | 07 觉醒·日和坊 | ✅ | [瞬发] +0/+3；ext["energy_free_turn"]（每回合一次、不分敌我回合：己方式神耗能量效果免单；爆能X免单时 X 按当前能量读、消耗 0） |
-| 08 晴雨 | ✅ | 形态 3/8：己方其他角色受伤时自回 3；每回合结束 spend_energy 3 gate → 其他己方角色回 3 |
+| 08 晴雨 | ✅ | 形态 3/8：己方其他角色受伤时自回 3；每回合开始 spend_energy 3 gate → 其他己方角色回 3 |
 
 ## 镰鼬（100206）
 
@@ -606,7 +606,7 @@
 | 05 觉醒·铃鹿御前 | ✅ | +0/+1；abilities 双块同基础能力管线：gain_shield fragile {event: amount, cap: 3}（事件引用封顶新形式——维护者定案(3)确认）；20200624 快照使用效果投射 2→1（best 仍 20200520） |
 | 06 无往 | ✅ | 战斗 +0/+2 甲；choose 新目标池 enemy_fragile_or_combat（敌方有破甲的在场式神或敌方战斗区式神，或关系）→ 打 2；帷幕过滤已有（目标池经 alive_shiki targeted 通道天然排除帷幕式神——全卡盘点实测无洞），test_pool_enemy_fragile_or_combat_veiled 锁定 |
 | 07 归乡 | ✅ | 形态 4/8：on_before_assault {attacker_shikigami: self} 投射 3（生生不息同管线，无能量消耗） |
-| 08 义道 | ✅ | 战斗 -1/+2 甲，keywords [piercing, combo]；新 op double_damage_vs_fragile 为战斗牌专用提取步——按[暴击]时机（扣减生命前2 挂点）：本张战斗牌发起的战斗内、铃鹿御前本人、kind=combat（反击不豁免——2026-08 裁决；实际不可达：反击来源≠登记攻击者）、victim=持破甲式神 ×2，嵌套/插入战斗不继承（维护者定案(2)） |
+| 08 义道 | ✅ | 战斗 -1/+2 甲，keywords [piercing, combo]；grant_keyword critical 条件授予（defender_has_fragile + defender_kind=shikigami）——攻击有破甲的式神时本次战斗获得[暴击]，牌手不触发 |
 
 （02 不夜之火 7 式神落地：前 6 式神各 8 卡（= 48 卡）+ 铃鹿御前 8 卡 = 56 卡 + 召唤物 2（烬染不夜 10020299、烟烟罗的分身 10020499）；前 6 式神 date/best=20200327、铃鹿御前 date/best=20200520。萤草 100127 加 20200327 快照见经典包萤草节。）
 
@@ -778,11 +778,11 @@
 | 式神 | 派系 | raw 数据 | 备注 |
 |------|------|----------|------|
 | 01 人面树（100401） | 紫岩 | 完整 | **已落地**（rules.md 第三十四章）：8 卡全效果 + 51 诅咒之木——扎根 tags no_retreat（形态不移回）、神木诅咒 switch_form 形态切换 + 结附期派系临时覆写（faction_override）、神木庇佑 combat_base_health（以生命造战斗伤害）、灾厄之花 delay_grant bind=chosen + {health_of: self}、凋零之森幻境 active_character 池 + {half_health_of: target} 逐目标、觉醒 power_eq_health（力量=生命覆写） |
-| 02 跳跳哥哥（100402） | 红莲 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒迟钝（眩晕+倒计时2 once 生效后移除）+ 棺材占位实体 10040299——replace_action 伪关键字（出击/战斗牌改为结附）、不弃 ext coffin_on_defeat 响应旗标/罡身阵形态 tag、死而复生/棺封 to_coffin（keep_combat 按 defeated_in_combat 进战斗区）、coffin_revive 归零复活+跳跳家族立刻攻击[不屈]、棺击 holder_has_invocation 门控、释煞阵 0928 SR 改版（双方回合开始对敌方所有角色造伤 + 击杀者 source_shikigami: self 门控 countdown_delta -1；原 holder_countdown 键随之废除）、觉醒 play_condition shikigami_countdown_free；迟钝归零先移除灵咒（含解眩晕）再攻击+全同名移除、灵咒倒计时批次晚于非灵咒、棺材被击杀发气绝事件+记击杀账本、不弃 not_summon 目标过滤（定案(1)(6)(8)(9)(12)）；平衡性：死而复生 20201029 加[瞬发]（best=20201029） |
-| 03 樱花妖（100403） | 紫岩 | 完整 | **已落地**（rules.md 第三十四章）：8 卡全效果 + 51 落英缤纷/52 晚樱之意协战子卡——气绝转化伪关键字 heal/damage_defeated_countdown（觉醒换绑双通道，按结算时能力在场判定且分侧向）、绽放 mass_revive（复活+倒计时造伤）、樱吹雪 0928 分池（伤害 enemy_shikigami / 治疗 friendly_shikigami，均 include_defeated_kw 门控） + repeat_on_kill/repeat_on_revive 次数参数化（"重复此效果一次"=至多 1 次，伤害波全部重复完才进治疗波）、落英缤纷⇄晚樱之意 event_base_power 次数 + turn_mark 门控 + switch_form 互切 + 羁绊（friendly_injured+include_player 含牌手）、飘零之舞 assault_any_target/friendly_combat_heal。新裁决批：目标入池门控改 **include_defeated_kw**（定案(2) 按持有者法效放行——heal_defeated_countdown 放行己方气绝 / damage_defeated_countdown 放行敌方气绝，持有者气绝即关门；樱落/花云之誓/樱吹雪/落英缤纷/晚樱之意五卡换用）；飘零之舞气绝目标同口径放行（打己方气绝转化倒计时 -1、打敌方气绝转化倒计时 +1、气绝目标不反击） |
+| 02 跳跳哥哥（100402） | 红莲 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒迟钝（[唯一]+眩晕+倒计时2 once 生效后移除）+ 棺材占位实体 10040299——replace_action 伪关键字（出击/战斗牌改为结附）、不弃 ext coffin_on_defeat 响应旗标/罡身阵形态 tag、死而复生/棺封 to_coffin（keep_combat 按 defeated_in_combat 进战斗区）、coffin_revive 归零复活+跳跳家族立刻攻击[不屈]、棺击 holder_has_invocation 门控、释煞阵双方回合开始造伤+击杀倒计时缩减；迟钝归零先移除灵咒（含解眩晕）再攻击+全同名移除、灵咒倒计时批次晚于非灵咒、棺材被击杀发气绝事件+记击杀账本、不弃 not_summon 目标过滤；平衡性：死而复生 20201029 加[瞬发]（best=20201029） |
+| 03 樱花妖（100403） | 紫岩 | 完整 | **已落地**（rules.md 第三十四章）：8 卡全效果 + 51 落英缤纷/52 晚樱之意协战子卡——气绝转化伪关键字 heal/damage_defeated_countdown（觉醒换绑双通道，按结算时能力在场判定且分侧向）、绽放 repeat 两段群体治疗（气绝目标逐段转化）、樱吹雪 0928 分池（伤害 enemy_shikigami / 治疗 friendly_shikigami，均 include_defeated_kw 门控） + repeat_on_kill/repeat_on_revive 次数参数化（"重复此效果一次"=至多 1 次，伤害波全部重复完才进治疗波）、落英缤纷⇄晚樱之意 event_base_power 次数 + turn_mark 门控 + switch_form 互切 + 羁绊（friendly_injured+include_player 含牌手）、飘零之舞 assault_any_target/friendly_combat_heal。新裁决批：目标入池门控改 **include_defeated_kw**（定案(2) 按持有者法效放行——heal_defeated_countdown 放行己方气绝 / damage_defeated_countdown 放行敌方气绝，持有者气绝即关门；樱落/花云之誓/樱吹雪/落英缤纷/晚樱之意五卡换用）；飘零之舞气绝目标同口径放行（打己方气绝转化倒计时 -1、打敌方气绝转化倒计时 +1、气绝目标不反击） |
 | 04 三目（100404） | 紫岩 | 完整 | **已落地**（委托机制，rules.md 第三十三章）：基础能力（开局/使用紧急委托随机生成）+ 8 卡全效果 + 衍生牌 51-66（紧急委托×4 条件增益/今日委托×7 每日替换/线索×5 觉醒选择生成不可重复）。新裁决批：委托牌/线索 on_card_played 生成触发**气绝时仍有效**（trigger_when_defeated）；委托叁改 **any_action** 口径（出击/战斗牌/法术牌/响应全计）；今日肆 offdeck 改按名口径（**deck_names** 捕获入卡组牌名，使用衍生/生成牌同计）；今日柒改 **round** 账本计数（`_start_turn` 记账、多事多忙敌方回合同计，round_ge 条件键删除改 `{quest_count_ge: {kind: round}}`）；线索·判明打 3 改 **choose any_character** 选择目标 |
 | 05 薰（100405） | 紫岩 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒鸮之守护（[唯一]+on_damage_start reduce_damage 1）——攻击账本 ext last_attacker（0928 口径：仅出击/战斗牌记账，_resolve_combat origin 单点；觉醒·薰"攻击时"挂攻击前 on_before_assault 优先级1——出击/战斗牌同走，原"行动前" on_before_card_played 事件随之废除）、鸮之庇佑结附+不屈双效果、鸮之利爪/警惕/庇佑 stat_aura friendly_invocation（含 keywords 光环 inv_aura_kw 持续授予）、干扰投掷 no_damage_vs_inv 禁伤（定案(7) 改结附己方牌手、气绝/复活不丢失） + victim_has_invocation 响应、祈愿之翼 inv_override（unique 降级+attach_all_friendly 全体结附）、决意 has_invocation same_source 过滤；平衡性：决意 20201015 触发改"己方回合开始时"（双快照） |
-| 06 食梦貘（100406） | 紫岩 | 完整 | **已落地**（rules.md 第三十七章）：8 卡全效果 + 牌库灵咒'梦魇'（invocations.yaml：unique=none，draw_trigger 抽到对敌方牌手造 3 伤后移除；离库静默清除）——attach_deck_invocation 牌库结附（基础能力 on_player_damaged kind=combat 门控）、入眠/食梦/觉醒结附 3 张、on_invocation_drawn 事件+惊梦回合账本 drew_invocation_turn（enemy_drew_invocation 条件/伪关键字[瞬发]+conditional_mods[增强]）、梦中低语/梦境浮现/永眠之梦幻境监听（card_shikigami 消灭）、支配者 stat_aura enemy_deck_invocation（敌方牌库每张'梦魇'+1/+1）+ redirect_deck_invocation 受伤改移除牌库标记牌、deck_invocation_count 计数（食梦奶量） |
+| 06 食梦貘（100406） | 紫岩 | 完整 | **已落地**（rules.md 第三十七章）：8 卡全效果 + 牌库灵咒'梦魇'（invocations.yaml：unique=none，draw_trigger 抽到对敌方牌手造 3 伤后移除；离库静默清除）——attach_deck_invocation 牌库结附（基础能力 on_player_damaged kind=combat 门控）、入眠/食梦/觉醒结附 3 张、on_invocation_drawn 事件+惊梦响应战斗/回合账本 drew_invocation_turn（enemy_drew_invocation 条件/伪关键字[瞬发]+conditional_mods[增强]）、梦中低语/梦境浮现/永眠之梦幻境监听（card_shikigami 消灭）、支配者 stat_aura enemy_deck_invocation（敌方牌库每张'梦魇'+1/+1）+ redirect_deck_invocation 受伤改移除牌库标记牌、deck_invocation_count 计数（食梦奶量） |
 | 07 御馔津（100407） | 青岚 | 完整 | **已落地**（rules.md 第三十六章）：8 卡全效果——[充能]先天（2026-08 裁决：御馔津能力只剩[充能]）+符咒子类型 talisman（驱魔符/封魔符/破魔符）+**爆能转化单卡自带**（三张符咒各带 methods [爆能3]转战斗牌选目标攻击，方式 effects 替换原效果、仍是符咒子类型，裁决(9)；觉醒版经 card_aura grant_method 同 id 键级合并只追加 battle_immunity+text 后缀）、丰穗 pick_generate 符咒三选一+3能量、奉祝之愿 cast_ledger 符咒账本（talisman_ledger 按序记账至多3种，出击对目标依次自动使用，裁决(10)）、御狩之愿[连击]战斗授予、狐狩界 burst_discount 爆能-1可叠加+符咒[瞬发]（裁决(11)）、破魔符 crit_pierce_mark（[暴击] critical 关键字落地：伤害事件"伤害开始时"按受伤者标记置位[暴击][贯通]——暴击为事件属性、任意伤害类型翻倍（2026-08 裁决），防守侧反击天然不生效、贯通分配按翻倍后口径——裁决(3)(4) 定案）、驱魔符 defeat_on_damage（受伤即气绝，同必杀通道）、封魔符眩晕+power_override 响应；平衡性：丰穗 20201015 改"3能量+抽1"（双快照）、破魔符 20201015 爆能转化 +3/+1→+1/+1（**只落 10040708 自带方式快照**——重构后 100407/10040706 的 @20201015 传导快照已删，best 均保持 20200928） |
 | 08 大岳丸（100408） | 红莲 | 完整 | **已落地**（rules.md 第三十二/三十五章）：8 卡全效果 + 灵咒八尺琼曲玉（[唯一]+1力量）+ 衍生 51 挪移——基础/觉醒 inv_mod 持有方修饰（结附于大岳丸时效果+1，scope=ability 随能力离场）、觉醒 inv_bonus_on_kill 击杀加成（bonus 继承/重置语义）、麓鸣·穿/袭 invocation_on_field 条件[瞬发]/[增强]（袭在结附前以 grant_immunity scope=next_battle 判定既有灵咒）、麓鸣·灭 target2 双选择目标（chosen_index+launch_attack at_index）、麓鸣·轰战斗牌 ctx.chosen + delay_grant bind=chosen、无尽剑狱 attach_invocation grant_keywords 持续眩晕 |
 | 09 鬼切（100409） | 青岚 | 完整 | **已落地**（rules.md 第三十七章）：8 卡全效果 + 鬼斩三灵咒（invocations.yaml：髭切 insert 反打+announce_invocation+next_battle 免疫、友切 on_before_card_play 敌方法术门控截击 card_shikigami、狮子之子敌方回合结束空场 +2 攻）——choose_invocation/detach_invocation 回合开始选择结附/敌方回合结束移除（>1 候选挂 invocation_pick 交互）、复仇之刃 virtual_combat 视同战斗区、刀鸣之刃 inv_trigger_echo 触发双发、散华之刃 power_on_enemy_turn:3、鬼刃·两断/罗城门/影杀[响应]灵咒联动（on_invocation_trigger insert 覆盖块分派；罗城门 counter_on_kill 击杀反制进行中的使用、影杀三连 launch_attack）、觉醒 pick_generate 选择凭空生成战斗牌置入手牌（不检索不洗牌）+战斗牌[瞬发] card_aura；友切定案(4)：任意方式/位置使用的法术专属牌均触发（_emit_before_card_play 统一发点）+ ignore_veil 帷幕放行；平衡性：髭切/友切 20201224 加"敌方回合"限定+免疫扩为所有伤害（双快照，best 保持 20200928） |

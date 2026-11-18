@@ -2,7 +2,7 @@ type: 形态
 name: 祈晴
 level: 1
 rarity: R
-description: 己方回合开始时，消耗4#nl，抽一张牌。
+description: 己方回合结束时，消耗4#nl，抽一张牌。
 shikigami: 日和坊
 power: 1
 health: 7

@@ -248,9 +248,6 @@ class Game:
         self._battle_counter_piercing: set[int] = set()
         # 蚀刃毒羽：battle id → [(目标 Ref, 破甲量, 来源 Ref)]，"攻击时"登记、战斗结束后回赋
         self._battle_echo: dict[int, list[tuple[Ref, int, Ref | None]]] = {}
-        # 义道：battle id → 攻击者 Ref——仅此战斗牌发起的战斗（嵌套/插入不继承）中，
-        # 攻击者本人对有破甲的式神造成的战斗伤害翻倍（[暴击]时机=扣减生命前2；终止点清除）
-        self._battle_double_fragile: dict[int, Ref] = {}
         # 交战目标改换登记（声东击西 battle_retarget）：battle id -> [改换者 Ref]
         self._battle_retarget: dict[int, list[Ref]] = {}
         # 战斗结束后的追加攻击登记：battle id → [攻击者 Ref]（followup_attack 动作登记；
@@ -2668,10 +2665,9 @@ class Game:
             self._visual_stat(atk_ref)
         # 战斗牌授予的关键字（fast/trigger 为卡牌级，不授予）与作用域战斗伤害免疫，
         # 均绑定本次战斗上下文，终止点移除（rules.md 第十三章战斗牌分支"直到本次战斗结束后"）；
-        # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑"若攻击有破甲的
-        # 角色，获得吸血"），battle_immunity step 可带 Step.condition（鸩羽的条件免疫），
-        # convert_damage step = 毒蚀伤害→破甲转化、counter_piercing step = 反击贯通、
-        # double_damage_vs_fragile step = 义道破甲双倍——五者在此提取，不再按普通 step 执行
+        # 效果块中的 grant_keyword step = 战斗作用域条件授予（致命诱惑/义道），
+        # battle_immunity step 可带 Step.condition（鸩羽的条件免疫），convert_damage step =
+        # 毒蚀伤害→破甲转化、counter_piercing step = 反击贯通——均在此提取，不再按普通 step 执行
         grants = tuple((k, None) for k in cdef.keywords if k not in CARD_LEVEL_KEYWORDS)
         grants += tuple(((st.model_extra or {}).get("keyword"), st.condition)
                         for st in block.steps if st.op == "grant_keyword")
@@ -2682,7 +2678,6 @@ class Game:
                         for st in block.steps if st.op == "multi_strike"), 1)
         convert = any(st.op == "convert_damage" for st in block.steps)
         counter_piercing = any(st.op == "counter_piercing" for st in block.steps)
-        double_fragile = any(st.op == "double_damage_vs_fragile" for st in block.steps)
         def finish() -> None:
             # rules.md 第十三章战斗牌分支：战斗牌先移至墓地，再发起战斗（战斗中的墓地计数等效果可见此牌）
             self.move_card(p, card, "graveyard")
@@ -2716,7 +2711,7 @@ class Game:
                 return
             self._resolve_combat(atk_ref, s, grant_keywords=grants, immunities=imms,
                                  temp_grants=tuple(cdef.temp_grants), convert=convert,
-                                 counter_piercing=counter_piercing, double_fragile=double_fragile,
+                                 counter_piercing=counter_piercing,
                                  target=hunt_target, origin="card", strikes=strikes,
                                  card_power=power)
             s.combat_power = 0
@@ -2734,8 +2729,7 @@ class Game:
                     and not (st.op == "buff_power" and (st.model_extra or {}).get("perm"))):
                 continue  # 战力/护甲已提取（永久力量增益与 no_extract 标记步属常规效果步，不提取）
             if st.op in ("grant_keyword", "battle_immunity", "convert_damage",
-                         "counter_piercing", "double_damage_vs_fragile", "attack_buff",
-                         "multi_strike"):
+                         "counter_piercing", "attack_buff", "multi_strike"):
                 continue  # 战斗流程专用步：已提取绑定战斗上下文 / 既有挂账路径
             effect_steps.append(st)
         self._resolve_block(block.model_copy(update={"steps": effect_steps}), ctx)
@@ -3297,7 +3291,6 @@ class Game:
                         temp_grants: tuple[EffectBlock, ...] = (),
                         convert: bool = False,
                         counter_piercing: bool = False,
-                        double_fragile: bool = False,
                         target: Ref | None = None,
                         origin: str = "effect",
                         strikes: int = 1,
@@ -3316,8 +3309,6 @@ class Game:
         击杀抽牌）；convert = 毒蚀：本战斗中鸩参与（来源或受伤者）的战斗伤害转化为
         等量破甲（"护甲计算前1"锚点读取，终止点清除登记）；
         counter_piercing = 反击贯通：本战斗中被攻击方的反击伤害具有贯通（终止点清除标记）。
-        double_fragile = 义道：仅此战斗中攻击者本人对有破甲的式神造成的战斗伤害翻倍
-        （[暴击]时机=扣减生命前2；反击/嵌套/插入战斗不翻倍；终止点清除标记）。
         target = 有目标的战斗的战斗目标（追猎；None = 无目标战斗，被攻击者按敌方战斗区/直击
         决定）；origin = 发起方式（"assault" 出击 / "card" 战斗牌 / "effect" 效果发起）——
         帷幕再校验时出击取消战斗、其余改为无目标战斗（帷幕定义见 docs/rules.md）；
@@ -3378,8 +3369,6 @@ class Game:
             self._battle_convert[bid] = atk_ref  # 毒蚀：伤害→破甲转化（伤害管线读取，参与者=鸩）
         if counter_piercing:
             self._battle_counter_piercing.add(bid)  # 反击贯通（反击事件生成/贯通修正读取）
-        if double_fragile:
-            self._battle_double_fragile[bid] = atk_ref  # 义道：破甲双倍（[暴击]时机读取）
         for block in temp_grants:
             self.state.temp_grants.append(TempGrant(
                 block=block, controller=atk_ref.player, holder=atk_ref, battle=bid,
@@ -3408,7 +3397,6 @@ class Game:
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
             self._battle_convert.pop(bid, None)  # 毒蚀转化标记随战斗结束清除
             self._battle_counter_piercing.discard(bid)  # 反击贯通标记随战斗结束清除
-            self._battle_double_fragile.pop(bid, None)  # 义道破甲双倍标记随战斗结束清除
             self._battle_strikes.pop(bid, None)  # 多段攻击登记随战斗结束清除
             self._battle_echo.pop(bid, None)  # 战斗终止时未回赋的蚀刃毒羽登记一并丢弃
             self._battle_retarget.pop(bid, None)  # 交战目标改换登记随战斗终止清理
@@ -4976,31 +4964,15 @@ class Game:
                   amount=ev.amount, kind=ev.kind, piercing=ev.piercing,
                   battle=self._battle_stack[-1] if self._battle_stack else None)
 
-    def _damage_double_modifiers(self, ev: _DamageEvent,
-                                 s: ShikigamiState | None) -> None:
+    def _damage_double_modifiers(self, ev: _DamageEvent) -> None:
         """"扣减生命前2"伤害翻倍修饰（[暴击] 时机锚点，裁决(3)；terminology.md 登记）。
 
-        两个修饰同挂点叠乘：
-        - 义道——本战斗牌发起的战斗中，攻击者本人（ev.source == 登记攻击者）对具有
-          破甲的式神造成的战斗伤害翻倍（kind=combat 限本战斗；反击同属战斗伤害
-          不豁免——2026-08 裁决（实际不可达：反击来源=被攻击者 ≠ 登记攻击者）；嵌套/
-          插入战斗按战斗 id 精确匹配不继承；贯通路径破甲未被消耗按当前 shield<0
-          判定，非贯通按本事件已消耗的 ev.fragile 判定）；
-        - [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
-          裁决(4)）：**携带暴击属性的伤害事件 ×2，伤害类型不限、反击同享**
-          （2026-08 裁决：[暴击][贯通]是伤害事件本身的属性——法术/其他类伤害
-          携带暴击属性同样翻倍；反击携带暴击属性也翻倍，为[暴击]形态铺路）；
-          多来源共存不叠加（布尔判定，裁决(3)）。
+        [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
+        裁决(4)）：携带暴击属性的伤害事件 ×2，伤害类型不限、反击同享；多来源共存不叠加。
 
-        贯通路径在贯通修正批次提前执行本系列（贯通分配按翻倍后口径）；限原始事件
+        贯通路径在贯通修正批次提前执行（贯通分配按翻倍后口径）；限原始事件
         （start="full"——贯通溢出/转移衍生的新事件不再二次翻倍）。
         """
-        if (s is not None and ev.kind == "combat" and self._battle_stack
-                and (s.shield < 0 or ev.fragile > 0)):
-            atk = self._battle_double_fragile.get(self._battle_stack[-1])
-            if atk is not None and ev.source == atk:
-                ev.amount *= 2
-                self._log(f"义道：本次伤害翻倍至 {ev.amount} 点")
         if ev.start == "full":
             has_crit = ev.crit_pierce
             if not has_crit and ev.source is not None and ev.source.shikigami is not None:
@@ -5127,7 +5099,7 @@ class Game:
                     self._visual_damage_zero(ev)
             # 提前结算"扣减生命前"批次，后续不再结算该批次
             self._emit_damage_batch("on_before_health", ev)
-            self._damage_double_modifiers(ev, s)
+            self._damage_double_modifiers(ev)
             skip_before_health = True
             if ev.amount <= 0:
                 return
@@ -5269,7 +5241,7 @@ class Game:
         # 批次 6：扣减生命前（已被贯通修正提前结算则跳过）；此刻起视为造成/受到过伤害，伤害值锁定
         if not skip_before_health:
             self._emit_damage_batch("on_before_health", ev)
-            self._damage_double_modifiers(ev, s)
+            self._damage_double_modifiers(ev)
         if ev.amount <= 0:
             return
         # 批次 7：合并——队列中 (来源, 受伤者, 伤害分类) 均相同的伤害事件合并进最前者
@@ -6585,15 +6557,16 @@ class Game:
                 self.move_card(p, ctx.card, "graveyard")
                 self._log(f"【{cdef.name}】的使用被无效化")
                 return True
-        if cdef.response is not None:
-            # 带 response 覆盖块的响应牌（魔音扰心型 + 鬼斩响应三连——两断/罗城门/影杀）：
-            # 按覆盖块效果结算（落墓地走 steps），不走战斗/形态分派——响应战斗牌
-            # 不发起战斗，其"攻击"语义由覆盖块内的显式动作（attack_buff/launch_attack）
-            # 组合表达。现有 19 张覆盖块全是法术，本分派对存量数据无影响。
+        if cdef.response is not None and (cdef.card_type != "combat" or cdef.response.steps):
+            # 非空 response 覆盖块：按覆盖块效果结算（落墓地走 steps），不走战斗/形态
+            # 分派——鬼斩响应战斗牌的攻击由块内 attack_buff/launch_attack 显式表达。
+            # 惊梦的响应块为空，仅声明触发时机，继续走正常战斗牌分派并发起新战斗。
             # 使用后事件/弹回由调用方（_resolve_block_inner 尾部）统一处理。
             self.move_card(p, ctx.card, "graveyard")
             return False
         if cdef.card_type == "combat" and si is not None:
+            # 与主动使用同一装配点：条件增强/打出时快照先于战斗数值提取（惊梦+3护甲）
+            self._materialize(p, ctx.card, cdef)
             # 仅"（被）攻击时"时机触发的响应战斗牌插入当前战斗（rules.md 第二章响应备注）；
             # 其余时机（偷袭"敌方战斗区式神气绝时"等）即使战斗中触发，也不插入——
             # 按完整战斗事件流程发起一次新战斗（嵌套战斗，正常反击）

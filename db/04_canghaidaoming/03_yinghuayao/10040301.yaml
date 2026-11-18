@@ -24,6 +24,6 @@ versions:
           target: {kind: choose, pool: friendly_shikigami, include_defeated_kw: true}
           effects:
             steps:
-              - {op: heal, amount: 6, allow_defeated: true}
-          text: 对一个己方式神恢复6点生命
-      text: "对一个敌方式神造成3点伤害，或对一个己方式神恢复6点生命。"
+              - {op: heal, amount: 5, allow_defeated: true}
+          text: 对一个己方式神恢复5点生命
+      text: "对一个敌方式神造成3点伤害，或对一个己方式神恢复5点生命。"

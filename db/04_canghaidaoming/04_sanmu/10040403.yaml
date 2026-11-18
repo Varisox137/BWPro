@@ -7,8 +7,8 @@ versions:
       card_type: form
       rarity: SR
       level: 1
-      form_power: 3
-      form_health: 6
+      form_power: 2
+      form_health: 5
       tags: [revive_on_defeat]  # 气绝时复活三目（引擎 check_defeated 读取：
       # 气绝流程完成后经 _revive 复活；形态已正常消灭）
       effects:

@@ -287,22 +287,7 @@ def test_damage_defeated_countdown(db, make_game):
     assert es.revive_countdown == 5  # op 参数通道
 
 
-# ---------- 绽放（mass_revive op）与樱吹雪（repeat_on_kill/repeat_on_revive） ----------
-
-def test_mass_revive_countdown_damage(db, make_game):
-    """绽放"复活所有式神，每个式神对其牌手造成等同于其气绝倒计时的伤害"：
-    双方气绝者全部复活（快照复活前倒计时），随后各自对其牌手造伤。"""
-    db.cards[10010151] = F.card(10010151, token=True,
-                                steps=[F.Step(op="mass_revive",
-                                              countdown_damage=True)])
-    g = make_game()
-    pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
-    _kill(g, 0, 1, countdown=2)
-    _kill(g, 1, 0)  # 倒计时 3
-    F.play(g, 0, 10010151)
-    assert not pa.shikigami[1].defeated and not pb.shikigami[0].defeated
-    assert pa.health == 28  # 己方式神倒计时 2 → 对己方牌手 2
-    assert pb.health == 27  # 敌方式神倒计时 3 → 对敌方牌手 3
+# ---------- 樱吹雪（repeat_on_kill/repeat_on_revive） ----------
 
 
 def test_repeat_on_kill(db, make_game):
@@ -2235,6 +2220,19 @@ def test_enemy_drew_invocation_fast_and_ledger_clear(db, make_game):
     assert not pb.ext.get("drew_invocation_turn")
 
 
+def test_invocation_drawn_response_combat(real_game):
+    """惊梦（10040603）：敌方回合抽到结附梦魇的牌时自动使用战斗牌，
+    获得增强护甲并发起一次新攻击。"""
+    g, pa, pb = _rg(real_game, [100406, 100101, 100102, 100125], levels={0: 1})
+    card = F.give(g, 0, 10040603)
+    g.attach_invocation("梦魇", player=0, card=pb.deck[0])
+    pa.orb = 1
+    F.pass_turns(g, 1)
+    assert card in pa.graveyard
+    assert pa.shikigami[0].shield == 3
+    assert pb.health == 23  # 梦魇3伤 + 惊梦4点战斗伤害
+
+
 # ---------- 支配者（enemy_deck_invocation 光环 + redirect_deck_invocation 替换） ----------
 
 def test_enemy_deck_invocation_aura(db, make_game):
@@ -2933,16 +2931,18 @@ def test_real_after_assault_convert(real_game):
     assert es.defeated and es.revive_countdown == 4  # 绚烂之舞转化 +1
 
 
-def test_real_mass_revive(real_game):
-    """绽放（10040303）：复活双方气绝式神，每个被复活者按其复活前倒计时对各自
-    牌手造伤。"""
-    g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 2, 2: 1})  # 兵俑 lv1 才可被复活
-    _kill(g, 0, 2, countdown=2)  # 己方兵俑 cd2
+def test_real_repeat_heal_all_friendly(real_game):
+    """绽放（10040303）：为己方所有式神恢复3生命并重复一次；气绝目标经基础
+    能力逐段减少倒计时，敌方气绝式神不受影响，也不再对牌手造成倒计时伤害。"""
+    g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 2, 1: 1, 2: 1})
+    pa.shikigami[1].health = 1
+    _kill(g, 0, 2, countdown=2)  # 己方兵俑 cd2，两段后复活
     _kill(g, 1, 1)  # 敌方白狼 cd3
     F.play(g, 0, 10040303)
-    assert not pa.shikigami[2].defeated and not pb.shikigami[1].defeated
-    assert pa.health == 28  # 兵俑倒计时 2 → 己方牌手 2
-    assert pb.health == 27  # 白狼倒计时 3 → 敌方牌手 3
+    assert pa.shikigami[1].health == 4
+    assert not pa.shikigami[2].defeated and pa.shikigami[2].health == 6
+    assert pb.shikigami[1].defeated and pb.shikigami[1].revive_countdown == 3
+    assert pa.health == 30 and pb.health == 30
 
 
 def test_real_wave_repeat(real_game):
@@ -2991,7 +2991,7 @@ def test_real_switch_form_chain(real_game):
     b_total = sum(x.health for x in pb.shikigami)  # 5+6+6+4=21
     F.play(g, 0, 10040303)  # 绽放复活茨木 → 落英缤纷触发
     assert not pa.shikigami[3].defeated
-    assert pa.health == 29  # 复活者倒计时 1 → 对己方牌手 1
+    assert pa.health == 30  # 新版绽放不再有倒计时造伤
     # 茨木基础力量 3 → 随机对敌方式神 1 伤 ×3（总量断言规避随机）
     assert sum(x.health for x in pb.shikigami) == b_total - 3
     assert s.form.id == 10040352  # 切晚樱之意
@@ -3018,9 +3018,9 @@ def test_real_invocations_loaded(gdb):
     """三张灵咒定义入库：字段与 text（逐字 = card_data_raw.md）校验；环境解析
     at_date 在发布日期前不可用、当日可用。"""
     d = gdb.invocations["迟钝"]
-    assert d.keywords == ["stun"]
+    assert d.unique == "unique" and d.keywords == ["stun"]
     assert d.abilities[0].countdown == 2 and d.abilities[0].once
-    assert d.text == "[倒计时2]：{发起一次攻击}。生效后移除。[眩晕]。"
+    assert d.text == "[唯一]。[眩晕]。[倒计时2]：{使跳跳哥哥发起一次攻击}。生效后移除。"
     x = gdb.invocations["鸮之守护"]
     assert x.unique == "unique" and x.abilities[0].when == "on_damage_start"
     assert x.text == "[唯一]。受到伤害时减少1点。"
@@ -3087,7 +3087,7 @@ def test_real_coffin_entity_loaded(gdb):
     assert ab.countdown == 1 and ab.once
     assert ab.steps[0].op == "coffin_revive" and ab.steps[0].target.kind == "self"
     assert d.text == ("不能攻击。[倒计时1]：{移除此牌，复活原式神。"
-                      "若该式神是跳跳哥哥、跳跳妹妹或跳跳弟弟，使其立刻发动攻击，"
+                      "若该式神是跳跳哥哥、跳跳妹妹或跳跳弟弟，使其发起一次攻击，"
                       "本次战斗获得[不屈]。}")
     assert 10040299 not in gdb.at_date(20200624).shikigami  # 发布前环境不可用
 

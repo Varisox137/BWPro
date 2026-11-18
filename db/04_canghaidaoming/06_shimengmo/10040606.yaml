@@ -7,7 +7,7 @@ versions:
       card_type: field
       rarity: SR
       level: 2
-      intensity: 8
+      intensity: 6
       effects:
         steps: []
       abilities:

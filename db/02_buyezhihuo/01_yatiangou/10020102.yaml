@@ -13,5 +13,4 @@ versions:
         steps:
           - {op: buff_power, amount: {ext: move_count_turn}, target: {kind: self}}
           - {op: buff_power, amount: {ext: move_count_turn}, target: {kind: self}}
-          - {op: gain_shield, amount: 1, target: {kind: self}}
       text: "[增强]：{本回合鸦天狗每[移动]过一次，此牌获得+2力量。}"

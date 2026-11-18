@@ -17,4 +17,4 @@ versions:
              target: {kind: all, pool: friendly_shikigami, keyword: charge}}
           - {op: gain_energy, amount: 2,
              target: {kind: all, pool: friendly_shikigami, keyword: charge}}
-      text: "使所有己方有[充能]的式神各获得1点力量、1点生命与2点能量。"
+      text: "使己方所有有[充能]的式神各获得1点力量、1点生命与2点能量。"

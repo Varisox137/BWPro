@@ -2,7 +2,7 @@ type: 形态
 name: 罡身阵
 level: 2
 rarity: R
-description: 跳跳哥哥将气绝时，改为将其替换为‘[[棺材]]’。
+description: 跳跳哥哥气绝时将其变为‘[[棺材]]’。
 shikigami: 跳跳哥哥
 power: 7
 health: 6

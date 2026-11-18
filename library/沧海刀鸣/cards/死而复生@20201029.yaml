@@ -2,7 +2,7 @@ type: 法术
 name: 死而复生
 level: 2
 rarity: SR
-description: '[[瞬发]]，气绝时可用。将所有己方气绝的式神替换为‘[[棺材]]’。'
+description: '[[瞬发]]，气绝时可用。将所有己方气绝的式神变为‘[[棺材]]’。'
 shikigami: 跳跳哥哥
 version_date: '20201029'
 id: '10040204'

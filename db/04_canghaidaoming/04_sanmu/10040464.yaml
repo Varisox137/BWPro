@@ -20,4 +20,4 @@ versions:
             steps:
               - {op: revive, target: {kind: all, pool: friendly_defeated, shikigami: 100404}}
               - {op: quest_complete, mode: random}
-      text: "[条件]：{本局游戏三目使用过五张委托牌}。己方回合结束时，复活三目，随机完成一个紧急委托。"
+      text: "[条件]：{本局游戏三目使用过五张委托牌}。本局游戏中己方回合结束时，复活三目并随机完成一个紧急委托。"

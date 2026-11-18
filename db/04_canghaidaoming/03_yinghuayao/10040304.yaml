@@ -8,7 +8,7 @@ versions:
       rarity: R
       level: 2
       form_power: 3
-      form_health: 6
+      form_health: 7
       effects:
         steps: []
       abilities:

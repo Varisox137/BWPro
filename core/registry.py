@@ -209,7 +209,7 @@ CONDITION_KEYS: set[str] = set({
     "dice", "judge", "gained", "old", "in_combat", "summon",
     "golden_feather", "card_revealed", "pre_play_form",
     "attacker_side", "victim_side", "source_side", "target_side", "shikigami_side",
-    "attacker_kind", "victim_kind", "source_kind", "target_kind",
+    "attacker_kind", "victim_kind", "source_kind", "target_kind", "defender_kind",
     "attacker_shikigami", "victim_shikigami", "source_shikigami",
     "target_shikigami", "shikigami_shikigami",
     "attacker_not_shikigami", "victim_not_shikigami", "shikigami_not_shikigami",

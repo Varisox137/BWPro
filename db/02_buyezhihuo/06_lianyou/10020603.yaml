@@ -30,4 +30,4 @@ versions:
           - {op: cancel_attack}
           - {op: grant_immunity, kind: combat_damage, scope: next_battle, target: {kind: self}}
           - {op: launch_attack, at: other_enemy}
-      text: "镰鼬本次的交战目标改为另一个敌方角色并免疫战斗伤害。[响应]：{当镰鼬被攻击时，自动使用此牌。}"
+      text: "镰鼬本次的交战目标改为另一个随机敌方角色并免疫战斗伤害。[响应]：{当镰鼬被攻击时，自动使用此牌。}"

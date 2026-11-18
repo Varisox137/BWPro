@@ -2,7 +2,7 @@ type: 形态
 name: 滋养
 level: 2
 rarity: SR
-description: 己方回合开始时，消耗4#nl，获得1点鬼火。
+description: 进场和己方回合开始时，消耗4#nl，获得1点鬼火。
 shikigami: 日和坊
 power: 2
 health: 7

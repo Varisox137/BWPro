@@ -10,12 +10,15 @@ versions:
       form_power: 2
       form_health: 7
       effects:
-        steps: []  # 无进场效果
+        # 进场同样消耗 4 能量获得 1 点鬼火（gate：付不起则不获得）
+        steps:
+          - {op: spend_energy, amount: 4, gate: true}
+          - {op: gain_orb, amount: 1}
       abilities:
-        # 己方回合开始时消耗 4 能量获得 1 点鬼火（gate：付不起则不获得）
+        # 己方回合开始时消耗 4 能量获得 1 点鬼火
         - when: on_turn_start
           condition: {player: self}
           steps:
             - {op: spend_energy, amount: 4, gate: true}
             - {op: gain_orb, amount: 1}
-      text: "己方回合开始时，消耗4能量，获得1点鬼火。"
+      text: "进场和己方回合开始时，消耗4能量，获得1点鬼火。"

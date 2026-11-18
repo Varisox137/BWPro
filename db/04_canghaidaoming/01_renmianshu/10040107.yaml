@@ -18,4 +18,4 @@ versions:
           steps:
             - {op: damage, amount: {half_health_of: target},
                target: {kind: all, pool: active_character}}
-      text: "当每个牌手的回合开始时，对他所有角色造成等同于他自身一半生命的伤害。"
+      text: "当每个牌手的回合开始时，对他所有角色造成等同于该角色自身一半生命的伤害。"

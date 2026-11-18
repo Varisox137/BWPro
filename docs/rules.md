@@ -800,7 +800,7 @@ on_before_draw(X)…(1) 依次先发 → **移动事件与灵咒均倒序**（�
 
 - **破甲来源免疫**：grant_immunity 新 kind="fragile_source"（霸主）——免疫当前持有破甲的**敌方式神**造成的任意种类伤害（战斗/效果不限类别；牌手来源不免疫——"有破甲的敌方式神"明文，维护者定案确认）；scope="form" 绑定来源形态、随形态离场清除（`_fragile_source_immune` 在伤害管线免疫判定段）。
 - **光影（单伤害事件触发）**：temp_grants 双块挂 on_damage/on_player_damaged（条件 kind:combat + source_shikigami: self + pre_pierce_amount_ge:6）——按单个伤害事件判定，**贯通场合按贯通分配前的原始伤害值计**（全卡盘点新口径：`_DamageEvent.pre_pierce_amount` 在贯通分配溢出截断时快照原始值，on_damage/on_player_damaged payload 恒带同名键、无贯通时 = amount）：原始 6→式神 4+牌手 2 时式神段以 6 触发、溢出段自身 2 不触发；连击两段各 ≥6 各触发一次；回血=floor(该次伤害/2)（贯通时为原始值一半），经数值通道 `{"event": "pre_pierce_amount", "half": true}`（与 cap 同修饰位、cap 先截后减）。全局 amount_ge 语义不变。
-- **破甲双倍** `double_damage_vs_fragile`（义道"对有破甲的式神造成双倍伤害"）：战斗牌专用提取步——按**[暴击]时机**（伤害事件"扣减生命前2"挂点，`Game._damage_double_modifiers`）：仅本张战斗牌发起的战斗内、攻击者本人（`ev.source==atk`）、kind=combat、victim=持破甲式神才 ×2；反击伤害的来源是被攻击者、天然不命中攻击者判定（2026-08 随[暴击]反击生效裁决删去 is_counter 显式豁免，行为不变）；嵌套/插入战斗按战斗 id 精确匹配不继承（维护者定案）。[暴击]关键字本体（critical）已落地（破魔符/破魔箭 crit_pierce_mark 通道，见第三十六章与 terminology「暴击」条）。
+- **义道条件暴击**：沿用战斗牌 `grant_keyword` 条件授予通道，在确定实际交战目标后以 `defender_has_fragile + defender_kind=shikigami` 判定，本次战斗获得[暴击]；牌手持破甲不触发，多来源暴击不重复翻倍。旧专用 op `double_damage_vs_fragile` 已随改版删除。
 
 ### 十、伤害事件终止（cancel_damage，同生共死重做）
 
@@ -1150,11 +1150,8 @@ terminology.md「逐目标动态数值」「回合方目标池」「有形态目
   口径：伤害池 = 所有敌方式神 enemy_shikigami、治疗池 = 所有己方式神
   friendly_shikigami，均按 include_defeated_kw 门控放行气绝者入池；伤害段
   全部重复完才进治疗段；上限 10 次防死循环）。
-- `mass_revive(side=all|self, countdown_damage=False)` op（绽放"复活所有式神，
-  每个式神对其牌手造成等同于其气绝倒计时的伤害"）：指定方全部气绝未离场
-  式神按牌手 0→1、座次顺序逐个复活；countdown_damage=True 时全部复活完毕后，
-  每个被复活者对其牌手造成等同于其**复活前**气绝倒计时的伤害（快照在复活
-  前取，伤害来源=该式神）；无气绝者空过。
+- 绽放为 `repeat(count=2)` 包裹两段并行群体治疗：每段为己方所有式神恢复 3 生命，
+  气绝目标经樱花妖能力逐段转化；旧 `mass_revive` 专用 op 已随改版删除。
 
 ### 五、飘零之舞（出击任意目标 + 己方攻击转化）
 
@@ -1181,8 +1178,8 @@ terminology.md「逐目标动态数值」「回合方目标池」「有形态目
   '回合结束时'触发"，己方回合内使用时本回合结束即触发。
 - 凋零之森"他自身一半生命"解读为**每个目标角色各自**当前生命的一半。
 - 待确认项（神木诅咒/落英缤纷形态切换结附是否生命回满、落英缤纷/晚樱之意
-  "每个己方回合一次"以 turn_mark 半回合粒度近似的出入、绽放复活与造伤次序、
-  神木庇佑授予是否永久）统一见 questions.md 待确认节。
+  "每个己方回合一次"以 turn_mark 半回合粒度近似的出入、神木庇佑授予是否永久）
+  统一见 questions.md 待确认节。
 
 ## 三十五、跳跳哥哥/薰/大岳丸机制（04 沧海刀鸣批次，已实现）
 
@@ -1368,10 +1365,10 @@ payload 的 victim_invocations）/ `turn_count_eq` / `from_coffin_not` /
 
 ### 三、鬼斩响应三连（两断/罗城门/影杀）
 
-- **响应分派改动**：`_settle_response_card` 置顶上分支——cdef.response 非
-  None 的响应牌一律落墓地走覆盖块 steps，**不走战斗/形态分派**（响应战斗牌
-  不发起战斗；攻击语义由覆盖块内 attack_buff/launch_attack 组合表达）。机制
-  键义见 terminology.md「响应覆盖块分派 / 反制」行。
+- **响应分派改动**：`_settle_response_card` 置顶上分支——非空 response 覆盖块
+  落墓地走覆盖块 steps，不走战斗/形态分派（鬼斩响应战斗牌的攻击语义由块内
+  attack_buff/launch_attack 组合表达）；惊梦的空响应块只声明时机，仍走正常
+  战斗牌分派、装配条件增强并发起新战斗。键义见 terminology.md 对应行。
 - **影杀次序定案**：响应本身不产新战斗、仅给狮子灵咒战斗 +2（合计 +4）；两次
   复制打击延时到狮子1 的"战斗结束后"（on_battle_end，攻击增益已在终止点核销）
   各带战斗牌 +2 依次发起；刀鸣复制的狮子2 最后（仅灵咒 +2）。另：

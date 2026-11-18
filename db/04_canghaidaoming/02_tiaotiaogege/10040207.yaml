@@ -23,4 +23,4 @@ versions:
           condition: {source_shikigami: self}
           steps:
             - {op: countdown_delta, amount: -1, target: {kind: self}}
-      text: "每个回合开始时，对敌方所有角色造成1点伤害。跳跳哥哥每消灭一个式神，他的[倒计时]-1。"
+      text: "每个回合开始时，对所有敌方角色造成1点伤害。跳跳哥哥每消灭一个式神，他的[倒计时]-1。"
