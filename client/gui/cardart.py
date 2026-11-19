@@ -9,6 +9,7 @@ import re
 import sys
 import tempfile
 import threading
+from contextvars import ContextVar
 from functools import lru_cache, wraps
 from io import BytesIO
 from pathlib import Path
@@ -34,7 +35,9 @@ _ICON_NAMES = {"力量": "ll", "生命": "sm", "护甲": "hj", "破甲": "pj",
                "能量": "nl", "耐久": "nj", "战力": "zl", "乏力": "fl", "赏金": "sj"}
 _KEYWORD_RE = re.compile(r"(?<!\[)\[([^\[\]\n]+)\](?!\])")
 _ICON_RE = re.compile("|".join(_ICON_NAMES))
-_RENDER_LOCK = threading.RLock()
+_RENDER_LOCK = threading.RLock()  # 仅保护兼容包装的一次性安装
+_RENDER_LIBRARY = ContextVar("bwpro_render_library", default=None)
+_RENDER_COMPAT_READY = False
 _TRANSPARENT_ART = "__BWPRO_TRANSPARENT__"
 _SEAT_LEVEL_COLORS = ("yellow", "cyan", "purple", "red")
 
@@ -399,6 +402,65 @@ def _element_compat(element: dict) -> dict:
     return element
 
 
+def _context_library(original, assets_dir: Path):
+    library = _RENDER_LIBRARY.get()
+    return library if library is not None else original(assets_dir)
+
+
+def _transparent_artwork(card: dict) -> bool:
+    images = card.get("artwork", {}).get("images") or []
+    return bool(images) and images[0].get("path") == _TRANSPARENT_ART
+
+
+def _load_card_artwork_compat(original, card: dict, library):
+    if _transparent_artwork(card):
+        return (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    return original(card, library)
+
+
+def _load_entity_artwork_compat(original, card: dict, library):
+    if _transparent_artwork(card):
+        return (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    original_size, image = original(card, library)
+    if card.get("_defeated"):
+        image = _grayscale_artwork(image)
+    return original_size, image
+
+
+def _install_render_compat() -> None:
+    """安装一次线程本地分派，避免合成期间互换 BWPDIY 模块函数。"""
+    global _RENDER_COMPAT_READY
+    if _RENDER_COMPAT_READY:
+        return
+    with _RENDER_LOCK:
+        if _RENDER_COMPAT_READY:
+            return
+        from bwpdiy.render import entity, pipeline
+
+        original_pipeline_get_library = pipeline.get_library
+        original_entity_get_library = entity.get_library
+        original_pipeline_load = pipeline.load_card_artwork
+        original_entity_load = entity.load_card_artwork
+        original_scale_layout = pipeline.scale_layout
+        original_render_element = pipeline.render_element
+
+        pipeline.get_library = lambda assets_dir: _context_library(
+            original_pipeline_get_library, assets_dir)
+        entity.get_library = lambda assets_dir: _context_library(
+            original_entity_get_library, assets_dir)
+        pipeline.load_card_artwork = lambda card, library: _load_card_artwork_compat(
+            original_pipeline_load, card, library)
+        entity.load_card_artwork = lambda card, library: _load_entity_artwork_compat(
+            original_entity_load, card, library)
+        pipeline.scale_layout = lambda layout, factor: _scale_layout_compat(
+            original_scale_layout, layout, factor)
+        pipeline.render_element = (
+            lambda canvas, library, name, element, card, ctx=None, **kwargs:
+            original_render_element(
+                canvas, library, name, _element_compat(element), card, ctx, **kwargs))
+        _RENDER_COMPAT_READY = True
+
+
 def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
                         height: int | None = None) -> QImage | None:
     payload = {}
@@ -406,33 +468,18 @@ def _render_card_pixmap(payload_json: str, layout_json: str, root_text: str,
         payload = json.loads(payload_json)
         layout = json.loads(layout_json)
         assets, _shared_library, render = _renderer(root_text)
-        from bwpdiy.render import pipeline
+        _install_render_compat()
         library = _asset_library(assets)
         art = payload["artwork"]["images"][0]
         transparent = art["path"] == _TRANSPARENT_ART
-        with _RENDER_LOCK:
-            original_get_library = pipeline.get_library
-            original_load_artwork = pipeline.load_card_artwork
-            original_scale_layout = pipeline.scale_layout
-            original_render_element = pipeline.render_element
-            pipeline.get_library = lambda _assets: library
-            pipeline.scale_layout = lambda layout, factor: _scale_layout_compat(
-                original_scale_layout, layout, factor)
-            pipeline.render_element = lambda canvas, lib, name, elem, card, ctx=None, **kwargs: (
-                original_render_element(canvas, lib, name, _element_compat(elem), card, ctx, **kwargs))
-            if transparent:
-                pipeline.load_card_artwork = lambda _card, _lib: (
-                    (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
-            try:
-                if not transparent:
-                    _preflight_card_artwork(library, art)
-                options = {} if height is None else {"height": height}
-                image = render(payload, assets, layout=layout, **options)
-            finally:
-                pipeline.get_library = original_get_library
-                pipeline.load_card_artwork = original_load_artwork
-                pipeline.scale_layout = original_scale_layout
-                pipeline.render_element = original_render_element
+        token = _RENDER_LIBRARY.set(library)
+        try:
+            if not transparent:
+                _preflight_card_artwork(library, art)
+            options = {} if height is None else {"height": height}
+            image = render(payload, assets, layout=layout, **options)
+        finally:
+            _RENDER_LIBRARY.reset(token)
         buffer = BytesIO()
         image.save(buffer, "PNG")
         output = QImage()
@@ -456,54 +503,40 @@ def _render_entity_pixmap(payload_json: str, state_json: str, layout_json: str,
         layout = json.loads(layout_json)
         assets, _shared_library, _render = _renderer(root_text)
         from bwpdiy.render import entity
+        _install_render_compat()
         library = _asset_library(assets)
         art = payload["artwork"]["images"][0]
         transparent = art["path"] == _TRANSPARENT_ART
-        with _RENDER_LOCK:
-            original_get_library = entity.get_library
-            original_load_artwork = entity.load_card_artwork
-            entity.get_library = lambda _assets: library
-            if transparent:
-                entity.load_card_artwork = lambda _card, _lib: (
-                    (1, 1), Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
-            if payload.get("_defeated"):
-                load_artwork = entity.load_card_artwork
-
-                def load_grayscale(card, lib):
-                    original, image = load_artwork(card, lib)
-                    return original, _grayscale_artwork(image)
-
-                entity.load_card_artwork = load_grayscale
-            try:
-                if not transparent:
-                    _preflight_card_artwork(library, art)
-                    # 普通卡面允许缩放后留白；对局小卡必须覆盖整个内窗。
-                    original, rotated = library.artwork(Path(art["path"]), art.get("rotate", 0))
-                    window = layout.get("art_window", entity._DEFAULT_LAYOUT["art_window"])
-                    window_width, window_height = window["width"], window["height"]
-                    ratio = window_width / 512
-                    offset_x = art.get("offset_x", 0) * ratio
-                    offset_y = (art.get("offset_y", 0) * ratio + window["offset_y"]
-                                + window_height * entity.ENTITY_ART_Y_BIAS)
-                    if window["frame_center"]:
-                        frame = entity._normalize_frame(library.frame(
-                            entity.TYPE_FRAME_CODE[payload["type"]],
-                            payload.get("frame_variant", "norm")))
-                        _, frame_cy = entity.frame_art_window_center(frame)
-                        offset_y += (256 - frame_cy) * ratio
-                    cover = max(window_width / original[0], window_height / original[1])
-                    base_width, base_height = rotated.width * cover, rotated.height * cover
-                    required = max(
-                        1.0,
-                        (window_width + 2 * abs(offset_x)) / base_width,
-                        (window_height + 2 * abs(offset_y)) / base_height,
-                    )
-                    state["art_scale"] = max(state["art_scale"], required)
-                options = {} if height is None else {"height": height}
-                image = entity.render_entity(payload, state, assets, layout=layout, **options)
-            finally:
-                entity.get_library = original_get_library
-                entity.load_card_artwork = original_load_artwork
+        token = _RENDER_LIBRARY.set(library)
+        try:
+            if not transparent:
+                _preflight_card_artwork(library, art)
+                # 普通卡面允许缩放后留白；对局小卡必须覆盖整个内窗。
+                original, rotated = library.artwork(Path(art["path"]), art.get("rotate", 0))
+                window = layout.get("art_window", entity._DEFAULT_LAYOUT["art_window"])
+                window_width, window_height = window["width"], window["height"]
+                ratio = window_width / 512
+                offset_x = art.get("offset_x", 0) * ratio
+                offset_y = (art.get("offset_y", 0) * ratio + window["offset_y"]
+                            + window_height * entity.ENTITY_ART_Y_BIAS)
+                if window["frame_center"]:
+                    frame = entity._normalize_frame(library.frame(
+                        entity.TYPE_FRAME_CODE[payload["type"]],
+                        payload.get("frame_variant", "norm")))
+                    _, frame_cy = entity.frame_art_window_center(frame)
+                    offset_y += (256 - frame_cy) * ratio
+                cover = max(window_width / original[0], window_height / original[1])
+                base_width, base_height = rotated.width * cover, rotated.height * cover
+                required = max(
+                    1.0,
+                    (window_width + 2 * abs(offset_x)) / base_width,
+                    (window_height + 2 * abs(offset_y)) / base_height,
+                )
+                state["art_scale"] = max(state["art_scale"], required)
+            options = {} if height is None else {"height": height}
+            image = entity.render_entity(payload, state, assets, layout=layout, **options)
+        finally:
+            _RENDER_LIBRARY.reset(token)
         if payload.get("_unyielding"):
             image = _overlay_unyielding(image, Path(root_text))
         buffer = BytesIO()

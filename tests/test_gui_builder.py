@@ -1806,7 +1806,7 @@ def test_cardart_same_mtime_image_change_does_not_reuse_artwork(qapp, tmp_path):
     cardart.clear_cardart_caches()
 
 
-def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monkeypatch):
+def test_cardart_concurrent_render_isolates_thread_libraries(qapp, tmp_path, monkeypatch):
     import json
     import threading
     from client.gui import cardart
@@ -1816,14 +1816,12 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
     original_renderer(str(portrait.bwpdiy_root().resolve()))
     from bwpdiy.render import pipeline
 
-    original_get_library = pipeline.get_library
     art_path = tmp_path / "art.png"
     Image.new("RGBA", (8, 8), "#336699").save(art_path)
     assets = {"A": tmp_path / "assets-a", "B": tmp_path / "assets-b"}
     expected = {"A": "#336699", "B": "#993366"}
     a_enter = threading.Event()
     b_enter = threading.Event()
-    serialized = threading.Event()
     allow_a_return = threading.Event()
     allow_b_return = threading.Event()
     results = {}
@@ -1833,8 +1831,6 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
         key = "A" if assets_dir == assets["A"] else "B"
         if key == "A":
             a_enter.set()
-            if not b_enter.wait(0.2):
-                serialized.set()
             allow_a_return.wait()
         else:
             b_enter.set()
@@ -1856,7 +1852,7 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
         first.start()
         assert a_enter.wait(2)
         second.start()
-        assert serialized.wait(1) or b_enter.is_set()
+        assert b_enter.wait(1), "两个独立渲染上下文应能并行进入渲染"
         allow_a_return.set()
         first.join(2)
         allow_b_return.set()
@@ -1865,13 +1861,13 @@ def test_cardart_concurrent_render_restores_shared_library(qapp, tmp_path, monke
         assert results["A"] is not None and results["B"] is not None
         assert results["A"].pixelColor(8, 8).name() == expected["A"]
         assert results["B"].pixelColor(8, 8).name() == expected["B"]
-        assert pipeline.get_library is original_get_library
+        # 上下文外仍回退 BWPDIY 自身的共享资源库。
+        assert pipeline.get_library(assets["A"]).root == assets["A"]
     finally:
         allow_a_return.set()
         allow_b_return.set()
         first.join(2)
         second.join(2)
-        pipeline.get_library = original_get_library
         monkeypatch.setattr(cardart, "_renderer", original_renderer)
         cardart.clear_cardart_caches()
 

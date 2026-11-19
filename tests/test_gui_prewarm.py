@@ -82,8 +82,9 @@ def test_prewarm_writes_manifest_and_tracks_changes(qapp, tmp_path, monkeypatch)
     small_cards = [call for call in calls if call[0] == "entity"]
     assert all(call[2]["disk_cache"] for call in small_cards)
     assert all(call[2]["image_only"] for call in calls)
-    assert len({id(call[2]["cache_context"]) for call in calls}) == 1
-    assert "portrait_config_fingerprint" in calls[0][2]["cache_context"]
+    contexts = [call[2]["cache_context"] for call in calls]
+    assert len({id(context) for context in contexts}) == 2  # 每个定义独立，大小卡共享
+    assert all("portrait_config_fingerprint" in context for context in contexts)
     assert progress[-1] == (2, 2)
     manifest = json.loads((tmp_path / "cache" / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["entries"]) == 2
@@ -751,3 +752,45 @@ def test_settings_download_cleanup_blocked_by_active_room(qapp, db, tmp_path, mo
     assert "离开" in view.status_label.text()
     assert list(root.rglob("pack.yaml"))
     view.close()
+
+
+def test_prewarm_uses_bounded_parallel_workers(qapp, tmp_path, monkeypatch):
+    import threading
+    from PySide6.QtGui import QImage
+    from client.gui import prewarm
+    from tests.test_gui_builder import _cardart_config
+
+    library_dir = tmp_path / "library"
+    for card_id in (10010101, 10010102):
+        _cardart_config(library_dir, card_id, F.VER, "#336699")
+    db = F.db_of([], [F.card(10010101), F.card(10010102)])
+    monkeypatch.setattr(prewarm, "_prewarm_workers", lambda: 2, raising=False)
+    barrier = threading.Barrier(2)
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    daemon_states = []
+
+    def render(*_args, **_kwargs):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+            daemon_states.append(threading.current_thread().daemon)
+        try:
+            barrier.wait(timeout=2)
+            image = QImage(2, 2, QImage.Format_ARGB32)
+            image.fill(0)
+            return image
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(prewarm, "card_pixmap", render)
+    progress = []
+    entries = prewarm_all(db, library_dir, tmp_path / "cache",
+                          on_progress=lambda current, total: progress.append((current, total)))
+    assert max_active == 2
+    assert all(daemon_states)  # 关闭主窗口后不得由预热工作线程阻止进程退出
+    assert [entry["id"] for entry in entries] == [10010101, 10010102]
+    assert progress == [(1, 2), (2, 2)]

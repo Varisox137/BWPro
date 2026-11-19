@@ -4,8 +4,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
+import threading
 from collections.abc import Iterator
+from queue import Queue
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,6 +60,59 @@ def _manifest_current(cache_dir: Path, manifest: dict) -> bool:
             and all(current.get(key) == manifest[key]
                     for key in ("version", "renderer_resources",
                                 "entity_renderer_resources", "entries")))
+
+
+def _prewarm_workers() -> int:
+    """限制资源占用，避免批量预热与 GUI 争夺全部核心。"""
+    return min(4, max(1, (os.cpu_count() or 2) // 2))
+
+
+def _render_definition(item, db, library_dir: Path, cache_dir: Path,
+                       art_context: dict) -> tuple[dict, dict | None]:
+    (kind, definition), entry = item
+    failure = {"kind": kind, "id": definition.id, "version": definition.version}
+    try:
+        context = dict(art_context)
+        pixmaps = [card_pixmap(
+            definition, db, library_dir=library_dir, cache_dir=cache_dir,
+            cache_context=context, image_only=True)]
+        if kind == "shikigami":
+            shiki = SimpleNamespace(
+                id=definition.id, awakened=None, level=0,
+                eff_power=definition.power, combat_power=0,
+                health=definition.health, shield=0, ext={})
+            pixmaps.append(entity_pixmap(
+                shiki, db, height=210, library_dir=library_dir, cache_dir=cache_dir,
+                cache_context=context, disk_cache=True, image_only=True))
+    except Exception:
+        logger.exception("卡图预热异常：%s %s", kind, definition.id)
+        return entry, {**failure, "reason": "渲染异常（详见日志）"}
+    if all(pixmap is not None and not pixmap.isNull() for pixmap in pixmaps):
+        return entry, None
+    logger.error("卡图预热失败：%s %s", kind, definition.id)
+    return entry, {**failure, "reason": "渲染返回空图"}
+
+
+def _parallel_results(pending, db, library_dir: Path, cache_dir: Path,
+                      art_context: dict, workers: int) -> Iterator[tuple[dict, dict | None]]:
+    """有界守护线程池；主窗口退出时不需要等待尚未完成的合成。"""
+    items = iter(pending)
+    item_lock = threading.Lock()
+    results = Queue()
+
+    def run():
+        while True:
+            with item_lock:
+                item = next(items, None)
+            if item is None:
+                return
+            results.put(_render_definition(
+                item, db, library_dir, cache_dir, art_context))
+
+    for index in range(workers):
+        threading.Thread(target=run, name=f"bwpro-cardart-{index + 1}", daemon=True).start()
+    for _ in pending:
+        yield results.get()
 
 
 def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = None,
@@ -121,30 +177,17 @@ def prewarm_iter(db, library_dir: Path | None = None, cache_dir: Path | None = N
         return entries
     successful_entries = []
     failures = []
-    for index, ((kind, definition), entry) in enumerate(pending, 1):
-        pixmaps = [card_pixmap(
-            definition, db, library_dir=library_dir, cache_dir=cache_dir,
-            cache_context=art_context, image_only=True)]
-        if kind == "shikigami":
-            shiki = SimpleNamespace(
-                id=definition.id, awakened=None, level=0,
-                eff_power=definition.power, combat_power=0,
-                health=definition.health, shield=0, ext={})
-            pixmaps.append(entity_pixmap(
-                shiki, db, height=210, library_dir=library_dir, cache_dir=cache_dir,
-                cache_context=art_context, disk_cache=True, image_only=True))
-        if all(pixmap is not None and not pixmap.isNull() for pixmap in pixmaps):
+    results = _parallel_results(
+        pending, db, library_dir, cache_dir, art_context,
+        workers=min(_prewarm_workers(), len(pending))) if pending else ()
+    for index, (entry, failure) in enumerate(results, 1):
+        if failure is None:
             successful_entries.append(entry)
         else:
-            failures.append({
-                "kind": kind,
-                "id": definition.id,
-                "version": definition.version,
-                "reason": "渲染返回空图",
-            })
-            logger.error("卡图预热失败：%s %s", kind, definition.id)
+            failures.append(failure)
         yield index, len(pending)
     successful_entries.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
+    failures.sort(key=lambda entry: (entry["kind"], entry["id"], entry["version"]))
     # 全成功时保留全部定义（含无需预热项），否则下次会与完整清单失配；
     # 有失败时沿用仅成功条目 + failures 的重试语义。
     manifest["entries"] = entries if not failures else successful_entries
