@@ -479,3 +479,43 @@ def test_replace_transform_kind_guard():
         errors = db.validate()
         assert any(f"kind={op}" in e for e in errors), errors
     assert F.db_of(shiki, [ok]).validate() == []
+
+
+def test_raw_stat_badges_align_across_card_types(tmp_path):
+    """raw 的式神/形态/觉醒/战斗/幻境角标逐版本进入硬校验。"""
+    from types import SimpleNamespace
+    from db.rawtext import check_text_alignment
+
+    raw_path = tmp_path / "raw.md"
+    raw_path.write_text(
+        "#### 01 测试\n"
+        "- 100101 测试 红莲\n  - 20191212：3/4 “基础”\n"
+        "- 01 战斗样例\n  - 20191212：R 1 战斗 +1/+2 “战斗”\n"
+        "- 02 形态样例\n  - 20191212：R 1 形态 4/6 “形态”\n"
+        "- 03 觉醒样例\n  - 20191212：R 1 法术/觉醒 +2/+3 “觉醒”\n"
+        "- 04 幻境样例\n  - 20191212：R 1 幻境 8 “幻境”\n",
+        encoding="utf-8")
+
+    def snapshot(card_type, text, **stats):
+        return {"date": 20191212, "card_type": card_type, "rarity": "R", "level": 1,
+                "effects": {"steps": []}, "text": text, **stats}
+
+    cards = {
+        10010101: {"id": 10010101, "name": "战斗样例", "versions": {"history": [
+            snapshot("combat", "战斗", steps=[])]}},
+        10010102: {"id": 10010102, "name": "形态样例", "versions": {"history": [
+            snapshot("form", "形态", form_power=3, form_health=5)]}},
+        10010103: {"id": 10010103, "name": "觉醒样例", "versions": {"history": [
+            snapshot("spell", "觉醒", subtype="awaken", awaken_power=1, awaken_health=1)]}},
+        10010104: {"id": 10010104, "name": "幻境样例", "versions": {"history": [
+            snapshot("field", "幻境", intensity=7)]}},
+    }
+    # 战斗角标由常规 self 力量/护甲步表达；这里故意写成 +0/+0，应报 +1/+2 不一致。
+    cards[10010101]["versions"]["history"][0]["effects"] = {"steps": [
+        {"op": "buff_power", "amount": 0, "target": {"kind": "self"}},
+        {"op": "gain_shield", "amount": 0, "target": {"kind": "self"}}]}
+    shikigami = {100101: {"id": 100101, "name": "测试", "versions": {"history": [
+        {"date": 20191212, "power": 2, "health": 4, "text": "基础"}]}}}
+    db = SimpleNamespace(raw_cards=cards, raw_shikigami=shikigami, raw_invocations={})
+    errors, _warnings = check_text_alignment(db, raw_path)
+    assert len([error for error in errors if "角标" in error]) == 5

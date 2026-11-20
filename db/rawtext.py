@@ -1,7 +1,8 @@
-"""card_data_raw.md 解析与 db yaml text 逐字对齐校验（db.validate 硬门禁）。
+"""card_data_raw.md 解析与 db yaml text/角标逐版本对齐校验（db.validate 硬门禁）。
 
 raw 是唯一事实来源（AGENTS.md 内容约定）：式神/卡牌/灵咒 yaml 各版本快照的
-text 字段须逐字等于 raw 对应条目引号内原文（全角引号“”内文本，含嵌套引号——
+text 字段须逐字等于 raw 对应条目引号内原文；式神与形态力量/生命、觉醒永久
+力量/生命、战斗牌力量/护甲、幻境耐久也须与 raw 角标一致（全角引号“”内文本，含嵌套引号——
 如『替换为「棺材」』，提取时按深度配对；raw 有个别把闭引号误写成开引号的行，
 深度配对失败时回退取行内最后一个引号字符为闭引号）。
 
@@ -31,6 +32,22 @@ class RawEntry:
     dated: dict[int, str | None] = field(default_factory=dict)  # 版本日期 → 引号文本
                                                                  # （None = 该日期仅调整说明，无引号文本）
     undated: str | None = None                 # 无日期文本（新手包行内条 / 未加入协战子卡单条）
+    dated_stats: dict[int, tuple[str, int, int | None] | None] = field(default_factory=dict)
+    undated_stats: tuple[str, int, int | None] | None = None
+
+    def stats_at(self, date: int | None, kind: str) -> tuple[int, int | None] | None:
+        """该版本 raw 角标；未登记该日期或此类条目无角标时返回 None。"""
+        if not self.dated_stats:
+            stat = self.undated_stats
+            return stat[1:] if stat is not None and stat[0] == kind else None
+        if date not in self.dated_stats:
+            return None
+        stat = self.dated_stats[date]
+        if stat is None:
+            earlier = [d for d in self.dated_stats if date is not None and d < date
+                       and self.dated_stats[d] is not None]
+            stat = self.dated_stats[max(earlier)] if earlier else self.undated_stats
+        return stat[1:] if stat is not None and stat[0] == kind else None
 
     def text_at(self, date: int | None) -> tuple[bool, str | None]:
         """该日期应使用的文本。返回 (该日期已在 raw 登记, 文本)。
@@ -85,6 +102,25 @@ def _clean_name(name: str) -> str:
     return name.strip()
 
 
+def _extract_stats(line: str) -> tuple[str, int, int | None] | None:
+    """提取 raw 行内角标：式神/形态力量生命、觉醒永久加成、战斗力量护甲、幻境耐久。"""
+    match = re.search(r"：\s*(-?\d+)/(-?\d+)(?=\s|“|$)", line)
+    if match is None:
+        match = re.search(r"^\d{6}\s+\S+\s+\S+\s+(-?\d+)/(-?\d+)(?=\s|“|$)", line)
+    if match is not None:
+        return "shikigami", int(match[1]), int(match[2])
+    for kind, pattern in (
+        ("awaken", r"法术/觉醒\s+([+-]?\d+)\s*/\s*([+-]?\d+)"),
+        ("combat", r"\b战斗\s+([+-]?\d+)\s*/\s*([+-]?\d+)"),
+        ("form", r"\b形态\s+(-?\d+)\s*/\s*(-?\d+)"),
+    ):
+        match = re.search(pattern, line)
+        if match is not None:
+            return kind, int(match[1]), int(match[2])
+    match = re.search(r"\b幻境\s+(\d+)(?=\s|“|$)", line)
+    return ("field", int(match[1]), None) if match is not None else None
+
+
 def parse_raw(path: Path = RAW_PATH) -> list[RawEntry]:
     """解析 card_data_raw.md：#### 式神节下的 `- ` 条目行 + `  - ` 版本行。"""
     entries: list[RawEntry] = []
@@ -126,14 +162,19 @@ def parse_raw(path: Path = RAW_PATH) -> list[RawEntry]:
             q = _extract_quoted(body)
             if q is not None:
                 current.undated = q
+            current.undated_stats = _extract_stats(body)
             continue
         m = re.match(r"^  - (?:(\d{8})：)?", line)
         if m and current is not None:
             q = _extract_quoted(line)
             if m.group(1):
-                current.dated[int(m.group(1))] = q  # 无引号文本记 None（仅调整说明）
-            elif q is not None:
-                current.undated = q
+                date = int(m.group(1))
+                current.dated[date] = q  # 无引号文本记 None（仅调整说明）
+                current.dated_stats[date] = _extract_stats(line)
+            else:
+                if q is not None:
+                    current.undated = q
+                current.undated_stats = _extract_stats(line)
     return entries
 
 
@@ -153,9 +194,64 @@ def _snapshots(raw: dict) -> list[dict]:
     return (raw.get("versions") or {}).get("history") or []
 
 
+def _combat_stats(snap: dict) -> tuple[int, int | None]:
+    """按引擎战斗牌角标提取口径，静态求值 self 力量/一次性护甲步。"""
+    power = shield = 0
+    for step in (snap.get("effects") or {}).get("steps") or []:
+        target = step.get("target")
+        if target is not None and target.get("kind") != "self":
+            continue
+        if step.get("perm") or step.get("no_extract") or step.get("condition"):
+            continue
+        amount = step.get("amount", 0)
+        if isinstance(amount, dict):
+            amount = amount.get("base", 0)
+        if step.get("op") == "buff_power":
+            power += int(amount)
+        elif step.get("op") == "gain_shield":
+            shield += int(amount)
+    return power, shield
+
+
+def _compare_stats(label: str, snap: dict, entry: RawEntry, errors: list[str]) -> None:
+    card_type = snap.get("card_type")
+    kind = ("shikigami" if card_type is None else
+            "awaken" if snap.get("subtype") == "awaken" else
+            "combat" if card_type == "combat" else
+            "form" if card_type == "form" else
+            "field" if card_type == "field" else None)
+    if kind is None:
+        return
+    expected = entry.stats_at(snap.get("date"), kind)
+    if expected is None:
+        return
+    if kind == "shikigami":
+        actual = int(snap.get("power", 0)), int(snap.get("health", 0))
+        raw_text = f"{expected[0]}/{expected[1]}"
+        yaml_text = f"{actual[0]}/{actual[1]}"
+    elif kind == "form":
+        actual = int(snap.get("form_power", 0)), int(snap.get("form_health", 0))
+        raw_text = f"{expected[0]}/{expected[1]}"
+        yaml_text = f"{actual[0]}/{actual[1]}"
+    elif kind == "awaken":
+        actual = int(snap.get("awaken_power", 0)), int(snap.get("awaken_health", 0))
+        raw_text = f"{expected[0]:+d}/{expected[1]:+d}"
+        yaml_text = f"{actual[0]:+d}/{actual[1]:+d}"
+    elif kind == "combat":
+        actual = _combat_stats(snap)
+        raw_text = f"{expected[0]:+d}/{expected[1]:+d}"
+        yaml_text = f"{actual[0]:+d}/{actual[1]:+d}"
+    else:
+        actual = (int(snap.get("intensity", 0)), None)
+        raw_text, yaml_text = str(expected[0]), str(actual[0])
+    if actual != expected:
+        errors.append(f"{label} @{snap.get('date')}: 角标 ≠ raw"
+                      f"（yaml: {yaml_text} / raw: {raw_text}）")
+
+
 def _compare_entry(label: str, raw: dict, entry: RawEntry,
                    errors: list[str], warnings: list[str]) -> None:
-    """逐版本比对一个 yaml 与一条 raw 条目的 text。"""
+    """逐版本比对一个 yaml 与一条 raw 条目的 text 与角标。"""
     for snap in _snapshots(raw):
         date = snap.get("date")
         ytext = snap.get("text")
@@ -171,6 +267,7 @@ def _compare_entry(label: str, raw: dict, entry: RawEntry,
             errors.append(f"{at}: raw 有引号文本但 yaml 缺 text: “{rtext}”")
         elif ytext != rtext:
             errors.append(f"{at}: text ≠ raw（yaml: “{ytext}” / raw: “{rtext}”）")
+        _compare_stats(label, snap, entry, errors)
     ydates = {s.get("date") for s in _snapshots(raw)}
     for d in entry.dated:
         if d not in ydates:

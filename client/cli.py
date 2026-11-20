@@ -464,16 +464,17 @@ def _field_lines(game: Game, p) -> list[str]:
     return lines
 
 
-def _quest_progress(game: Game, p, cd) -> str | None:
-    """委托条件进度标签（三目委托机制；format_hand_lines 数据段读取）：
-    quest_count_ge → "委托:<行为><已计>/<需求>[✓]"；其它条件无标签。"""
+def _quest_progress(game: Game, p, cd, card=None) -> str | None:
+    """委托条件进度标签；紧急委托读当前手牌实例，其余读牌手全局账本。"""
     pc = cd.play_condition
     if not pc:
         return None
     if "quest_count_ge" in pc:
         q = pc["quest_count_ge"]
         kind, need = q.get("kind"), int(q.get("count", 0))
-        have = p.quest_counts.get(kind, 0)
+        have = (card.mods.get("quest_progress", {}).get(kind, 0)
+                if card is not None and "urgent_quest" in cd.tags
+                else p.quest_counts.get(kind, 0))
         label = _QUEST_KIND_LABELS.get(kind, str(kind))
         mark = " ✓" if have >= need else ""
         return f"委托:{label}{have}/{need}{mark}"
@@ -532,7 +533,7 @@ def format_hand_lines(game: Game, p, hand: list, with_usage: bool = True) -> lis
         live = _live_enhance(p, c)
         if live:
             parts.append(f"增强+{live}")
-        quest = _quest_progress(game, p, cd)
+        quest = _quest_progress(game, p, cd, c)
         if quest:
             parts.append(quest)
         return " ".join(parts)
@@ -566,26 +567,96 @@ def format_hand_lines(game: Game, p, hand: list, with_usage: bool = True) -> lis
 
 
 def _enhance_description_suffix(game: Game, p, c) -> str | None:
-    live = _live_enhance(p, c)
-    if not live:
-        return None
+    """角标未覆盖的实时增强与条件计数；只读现有实例修饰/账本。"""
     cd = game.db.cards[c.id]
+    live = _live_enhance(p, c)
+    if c.id == 10030506 and p.ext.get("self_damage_taken"):
+        live += 1  # 死亡之花的条件增强在手牌中尚未装配
     labels = {**_ENHANCE_OP_CN, "buff_power": "力量", "buff_health": "生命",
               "gain_shield": "护甲"}
     parts = []
-    for step in cd.effects.steps:
-        extra = step.model_extra or {}
-        amount = extra.get("amount")
-        if not isinstance(amount, dict) or not amount.get("enhance") or step.op not in labels:
-            continue
-        target_kind = getattr(step.target, "kind", None)
-        badge_covered = (cd.card_type == "combat"
-                         and step.op in ("buff_power", "gain_shield")
-                         and target_kind in (None, "self")
-                         and not extra.get("perm") and not extra.get("no_extract"))
-        if not badge_covered:
-            parts.append(f"{labels[step.op]}{live:+d}")
-    return f"（{'，'.join(parts)}）" if parts else None
+    if live:
+        if c.id in (10011108, 10012703):
+            parts.append(f"效果{live:+d}")  # 轮回/萤火点点的泛用效果增强
+        else:
+            for step in cd.effects.steps:
+                extra = step.model_extra or {}
+                amount = extra.get("amount")
+                if not isinstance(amount, dict) or not amount.get("enhance") \
+                        or step.op not in labels:
+                    continue
+                target_kind = getattr(step.target, "kind", None)
+                badge_covered = (cd.card_type == "combat"
+                                 and step.op in ("buff_power", "gain_shield")
+                                 and target_kind in (None, "self")
+                                 and not extra.get("perm") and not extra.get("no_extract"))
+                if not badge_covered:
+                    parts.append(f"{labels[step.op]}{live:+d}")
+    damage_boost = int(c.mods.get("damage_boost", 0))
+    if damage_boost and any(step.op == "damage" for step in cd.effects.steps):
+        parts.append(f"伤害{damage_boost:+d}")
+    shield_boost = int(c.mods.get("shield_boost", 0))
+    if shield_boost and c.id in (10030951, 10030952):
+        parts.append(f"效果{shield_boost:+d}")
+
+    special = []
+    if c.id == 10010408:
+        special.append(f"已使用{p.card_mods.get(c.id, {}).get('spell_count', 0)}次法术")
+    elif c.id == 10011303:
+        history = p.ext.get("dice_history", [])
+        if history:
+            special.append(f"已投出：{','.join(str(value) for value in history)}")
+    elif c.id == 10011608:
+        seat = _seat_map(p).get(cd.shikigami)
+        bonus = p.shikigami[seat].perm_power if seat is not None else 0
+        if bonus:
+            special.append(f"伤害{bonus:+d}")
+    elif c.id == 10011804:
+        special.append(f"造成{len(p.hand) // 2}点伤害")
+    elif c.id == 10012904:
+        special.append(f"已成功{sum(q.ext.get('luck_success_game', 0)
+                                  for q in game.state.players)}次")
+    elif c.id == 10013006:
+        special.append(f"已造成{p.ext.get('yaohu_damage_count', 0)}次伤害")
+    elif c.id == 10030706:
+        count = sum(1 for shiki in p.shikigami
+                    if shiki.in_play and shiki.countdown_block is not None
+                    and shiki.id != cd.shikigami)
+        if count:
+            special.append(f"效果{count:+d}")
+    elif c.id == 10012403:
+        history = set(p.ext.get("countdown_history", []))
+        replay = (
+            (100124, "为所有己方角色恢复3点生命"),
+            (10012401, "造成4点伤害，随机分配给所有敌方角色"),
+            (10012406, "己方其他式神倒计时-1并获得1力量与1生命"),
+            (10012407, "抽一张牌，获得1点鬼火"),
+        )
+        special.extend(f"[倒计时3]：{{{text}}}" for source, text in replay
+                       if source in history)
+
+    quest = cd.play_condition or {}
+    if "quest_count_ge" in quest:
+        spec = quest["quest_count_ge"]
+        kind = spec["kind"]
+        have = (c.mods.get("quest_progress", {}).get(kind, 0)
+                if "urgent_quest" in cd.tags else p.quest_counts.get(kind, 0))
+        if kind == "round":
+            text = f"剩余{max(0, int(spec['count']) - have)}回合"
+        else:
+            label = {
+                "assault": f"已出击{have}次", "draw": f"已抽{have}张牌",
+                "play": f"已使用{have}张牌", "damage": f"已造成{have}点伤害",
+                "effect_damage": f"已造成{have}点伤害", "attack": f"已攻击{have}次",
+                "form_play": f"已使用{have}张牌", "offdeck_play": f"已使用{have}张牌",
+                "enemy_defeat": f"已消灭{have}名式神", "revive": f"已复活{have}名式神",
+                "quest_used": f"已使用过{have}张牌",
+            }.get(kind, f"{kind}:{have}")
+            text = label
+        special.append(text)
+    suffix = f"（{'，'.join(parts)}）" if parts else ""
+    suffix += "".join(f"（{text}）" for text in special)
+    return suffix or None
 
 
 def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
@@ -615,7 +686,7 @@ def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
             "render": render,
             "enhance": _live_enhance(p, c),
             "description_suffix": _enhance_description_suffix(game, p, c),
-            "quest": _quest_progress(game, p, cd),
+            "quest": _quest_progress(game, p, cd, c),
             "playable": game._play_condition_met(p, cd, c),
             "usage": game.usage_options(pi, c),
         }

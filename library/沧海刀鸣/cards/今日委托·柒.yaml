@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·柒
+level: 1
+description: '[[条件]]：还需5回合可用（在牌库也有效）。[[瞬发]]。抽一张牌。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040461'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040461.png
+    scale: 0.747
+    offset_y: -92

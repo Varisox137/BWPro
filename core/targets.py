@@ -599,9 +599,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
       Step 级条件专用（崩雪"已眩晕则消灭、否则眩晕"两段 steps）；事件触发块无 chosen
     - {chosen_has_fragile: true|false} ：卡牌选择目标（chosen）中是否有破甲角色——
       Step 级条件专用（蛇行击 2019"若其有破甲则……"）；事件触发块无 chosen
-    - {chosen_side: friendly|enemy|any} ：事件 payload 的选择目标（on_card_played 的
-      chosen）恰好一个且为式神、归属匹配——记仇"对单个己方式神使用的法术"类
-      事件条件（响应/延迟监听用；与 Step 级 chosen_* 键不同，本键读事件）
+    - {chosen_side: friendly|enemy|any} ：唯一选择目标为式神且归属匹配；事件条件读
+      on_card_played payload（记仇），Step 级条件读当前 ctx.chosen（按敌我分派效果）
     - {combat_opponent_stunned: true|false} ：能力持有者（holder）参与事件中的战斗
       （为 attacker 或 victim）且交战对方处于眩晕（双向判定；对方可为牌手）——
       雪童子"与眩晕的敌方角色交战时"类，挂 on_before_assault
@@ -824,9 +823,8 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if game.state.players[controller].kill_total < int(want):
                 return False
         elif key == "quest_count_ge":
-            # 委托条件账本（三目委托机制；play_condition/步骤门控共用）：
-            # 控制者 PlayerState.quest_counts[kind] ≥ count。值 = {"kind": 行为种类,
-            # "count": n}；行为种类见 model.PlayerState.quest_counts 注释
+            # 日常委托/步骤条件读牌手全局账本；紧急委托的 play_condition 由
+            # Game._play_condition_met 改读当前手牌实例 quest_progress。
             cnt = game.state.players[controller].quest_counts.get(want["kind"], 0)
             if cnt < int(want["count"]):
                 return False
@@ -1058,11 +1056,11 @@ def match_condition(game, condition: dict | None, event: dict, controller: int,
             if matched != bool(want):
                 return False
         elif key == "chosen_side":
-            # 事件 payload 的选择目标（on_card_played 携带 chosen）：恰好一个且指向
-            # 式神，归属与 want（friendly|enemy|any）匹配——记仇"对单个己方式神使用
-            # 的法术"（响应/延迟监听的事件条件；与 Step 级 chosen_* 键读法不同，
-            # 本键读事件中的选择目标）
+            # 事件条件读 on_card_played payload；Step 级条件回退读当前选择目标。
+            # 恰好一个且指向式神，归属与 want（friendly|enemy|any）匹配。
             refs = event.get("chosen")
+            if refs is None:
+                refs = chosen
             if (not isinstance(refs, (list, tuple)) or len(refs) != 1
                     or not isinstance(refs[0], Ref) or refs[0].shikigami is None):
                 return False

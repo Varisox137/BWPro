@@ -214,6 +214,15 @@ def mechanism_panel(mechanisms: list[dict], parent=None, *, chars_per_line: int 
     if not labels:
         panel.deleteLater()
         return None, []
+    required_height = (sum(label.pixmap().height() for label in labels)
+                       + layout.spacing() * (len(labels) - 1))
+    if width is not None and required_height > max_height:
+        # 需要纵向滚动条时预留其宽度，避免机制图被视口右侧裁切。
+        usable_width = max(1, width - panel.verticalScrollBar().sizeHint().width())
+        for label in labels:
+            pixmap = label.pixmap()
+            if pixmap.width() > usable_width:
+                label.setPixmap(pixmap.scaledToWidth(usable_width, Qt.SmoothTransformation))
     layout.addStretch(1)
     panel.setWidget(content)
     return panel, labels

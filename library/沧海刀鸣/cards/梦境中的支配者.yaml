@@ -1,0 +1,15 @@
+type: 形态
+name: 梦境中的支配者
+level: 3
+rarity: SSR
+description: 敌方牌库中每有一张结附‘[[梦魇]]’的牌，此牌便获得1#ll与1#sm。当食梦貘受到伤害时，改为从敌方牌库移除等量结附‘[[梦魇]]’的牌。（最大为3）
+shikigami: 食梦貘
+power: 0
+health: 0
+version_date: '20200928'
+id: '10040608'
+artwork:
+  images:
+  - path: 10040608.png
+    scale: 0.711
+    offset_y: -92

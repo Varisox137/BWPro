@@ -1,0 +1,15 @@
+type: 形态
+name: 鸮之利爪
+level: 2
+rarity: SR
+description: 结附‘[[鸮之守护]]’的己方式神获得2#ll。
+shikigami: 薰
+power: 3
+health: 6
+version_date: '20200928'
+id: '10040504'
+artwork:
+  images:
+  - path: 10040504.png
+    scale: 0.711
+    offset_y: -80

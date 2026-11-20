@@ -1,0 +1,17 @@
+type: 式神
+name: 食梦貘
+faction: 紫岩
+power: 2
+health: 6
+description: 当食梦貘对敌方牌手造成战斗伤害时，随机使敌方牌库里一张牌结附‘[[梦魇]]’。
+id: '100406'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100406.png
+    scale: 0.711
+    offset_y: -76
+portrait:
+  scale: 2.655
+  offset_x: -6
+  offset_y: 6

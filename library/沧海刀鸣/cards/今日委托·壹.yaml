@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·壹
+level: 1
+description: '[[条件]]：己方还需造成了25点非战斗伤害（在牌库也有效）。对所有敌方角色造成3点伤害。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040455'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040455.png
+    scale: 0.747
+    offset_y: -92

@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·肆
+level: 1
+description: '[[条件]]：还需使用6张阵容套牌以外的卡牌（在牌库也有效）。造成6点伤害。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040458'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040458.png
+    scale: 0.747
+    offset_y: -92

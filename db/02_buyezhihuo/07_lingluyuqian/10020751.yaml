@@ -10,5 +10,6 @@ versions:
       token: true  # 协战子选项（海国共主 主式神侧）
       level: 2
       effects:
-        steps: []
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
       text: "[贯通]。若攻击目标有破甲，则铃鹿御前获得等量护甲。[羁绊]：{将‘八尺琼曲玉’结附于铃鹿御前}。"

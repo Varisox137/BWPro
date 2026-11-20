@@ -7,18 +7,12 @@ versions:
       card_type: spell
       token: true
       level: 1
-      target: {kind: choose, pool: friendly_shikigami}
+      target: {kind: choose, pool: any_shikigami}
       effects:
-        # 使一个己方式神获得1点护甲（基础方式）；[增强] 见 triggers 卡牌触发器
+        # 单一目标按敌我分派护甲/破甲；[增强] 见 triggers 卡牌触发器
         steps:
-          - {op: gain_shield, amount: 1}
-      methods:
-        # 多择另一用法：使一个敌方式神获得1点破甲（方式 target/effects 整体覆盖）
-        - id: fragile
-          target: {kind: choose, pool: enemy_shikigami}
-          effects:
-            steps:
-              - {op: gain_shield, amount: 1, kind: fragile}
+          - {op: gain_shield, amount: 1, condition: {chosen_side: friendly}}
+          - {op: gain_shield, amount: 1, kind: fragile, condition: {chosen_side: enemy}}
       triggers:
         # [增强] 每当己方角色的护甲或敌方角色的破甲因回合开始移除时，此牌效果+1：
         # on_shield_changed reason=turn_start_clear 且 gained=false 两情形（己方护甲

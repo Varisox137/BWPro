@@ -1,0 +1,9 @@
+name: 鸮之守护
+frame: invocation
+text: '[[唯一]]。受到伤害时减少1点。'
+badge: null
+chars_per_line: 12
+global: false
+project: 沧海刀鸣
+shikigami: 薰
+version_date: '20200928'

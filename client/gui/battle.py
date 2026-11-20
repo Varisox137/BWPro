@@ -705,7 +705,12 @@ class HotseatView(QWidget):
         self.ready_button.setEnabled(inputs and state.phase == "mulligan")
         targeting = self.pending_command is not None
         self.cancel_target_button.setVisible(targeting or self._usage_pending is not None)
-        self.default_target_button.setVisible(targeting and self.pending_command.get("op") == "assault")
+        default_assault = False
+        if targeting and self.pending_command.get("op") == "assault":
+            attacker = own.shikigami[self.pending_command["index"]]
+            keywords = attacker.keywords + attacker.one_shot_keywords + attacker.perm_keywords
+            default_assault = "assault_any_target" not in keywords
+        self.default_target_button.setVisible(default_assault)
         self.target_label.setText("请选择高亮目标" if targeting else "")
         self.target_label.setVisible(targeting)
         self.error_label.setVisible(bool(self.error_label.text()))
@@ -791,16 +796,27 @@ class HotseatView(QWidget):
             return self.apply_command(command)
         shiki = self.game.current.shikigami[index]
         keywords = shiki.keywords + shiki.one_shot_keywords + shiki.perm_keywords
-        if "hunt" in keywords:
+        legal = []
+        label = ""
+        if "assault_any_target" in keywords:
+            legal = targets.pool_refs(self.game, "any_character",
+                                      self.game.state.active, targeted=True)
+            legal += targets.gated_defeated_refs(self.game, "any_character",
+                                                 self.game.state.active)
+            legal = [ref for ref in legal if ref != Ref(player=self.game.state.active,
+                                                        shikigami=index)]
+            label = "选择任一其他角色，或使用默认战斗区"
+        elif "hunt" in keywords:
             legal = targets.pool_refs(self.game, "enemy_shikigami",
                                       self.game.state.active, targeted=True)
-            if legal:
-                self.pending_command = command
-                self.target_specs = []
-                self.legal_targets = legal
-                self.target_label.setText("追猎：选择敌方目标，或使用默认战斗区")
-                self._render_state()
-                return True
+            label = "追猎：选择敌方目标，或使用默认战斗区"
+        if legal:
+            self.pending_command = command
+            self.target_specs = []
+            self.legal_targets = legal
+            self.target_label.setText(label)
+            self._render_state()
+            return True
         return self.apply_command(command)
 
     def _clear_usage(self) -> None:

@@ -1,0 +1,15 @@
+type: 法术
+name: 祈愿之翼
+level: 3
+rarity: SSR
+description: '‘[[鸮之守护]]’失去[[唯一]]但效果不能叠加。
+
+  本局游戏中当己方式神结附‘[[鸮之守护]]’时，改为使己方全体式神结附。'
+shikigami: 薰
+version_date: '20200928'
+id: '10040507'
+artwork:
+  images:
+  - path: 10040507.png
+    scale: 0.747
+    offset_y: -91

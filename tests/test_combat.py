@@ -24,9 +24,9 @@ ENEMY_PLAYER = T(kind="all", pool="enemy_player")
 
 # ---------- 连击 / 先攻 ----------
 
-def test_combo_kill_no_counter(db, make_game):
-    """连击：先攻阶段消灭被攻击者，不吃反击；无贯通则战斗终止——不进第二段，
-    on_after_assault 等后续时机不结算（定案(6)，与先攻一致）。"""
+def test_combo_kill_second_strike_still_resolves(db, make_game):
+    """连击：先攻阶段消灭被攻击者后仍执行第二段；无贯通时第二段继续以原角色为目标，
+    气绝伤害拦截/转化照常，战斗后时机不提前终止。"""
     g = make_game()
     move(g, 1, 0)
     b = g.state.players[1].shikigami[0]
@@ -37,7 +37,8 @@ def test_combo_kill_no_counter(db, make_game):
     g.apply({"op": "assault", "index": 0})
     assert b.defeated
     assert a.health == 4  # 未吃反击
-    assert "on_after_assault" not in g.history  # 战斗终止：后续时机不结算
+    assert g.current.quest_counts["attack"] == 2
+    assert "on_after_assault" in g.history
 
 
 def test_combo_kill_revive_second_strike_original(db, make_game, monkeypatch):
@@ -1944,3 +1945,24 @@ def test_stat_merge_does_not_cross_silent_damage_step(db, make_game):
              if e.get("v") == "stat" and e.get("p") == 0 and e.get("s") == 0]
     assert len(stats) == 2
     assert [(e["r"]["power"], e["r"]["health"]) for e in stats] == [(4, 4), (4, 5)]
+
+
+def test_conditional_combat_stats_not_extracted_as_base(db, make_game):
+    """羁绊等条件力量/护甲不计入基础角标，也不无条件提取；满足条件时按普通步骤结算。"""
+    cid = 10010163
+    db.cards[cid] = F.card(
+        cid, card_type="combat", token=True,
+        steps=[F.Step(op="gain_shield", amount=2, target=SELF,
+                      condition={"shikigami_active": 100109})])
+    db.shikigami[100109] = F.shiki(100109)
+    g = make_game()
+    pa, _pb = F.battle_setup(g)
+    card = F.give(g, 0, cid)
+    cdef = db.cards[cid]
+    assert g.combat_card_stats(cdef.effects, card, pa.shikigami[0], pa) == (0, 0)
+    g.apply({"op": "play_card", "uid": card.uid})
+    assert pa.shikigami[0].shield == 0
+    pa.shikigami[1].id = 100109
+    pa.shikigami[1].level = 1
+    play(g, 0, cid)
+    assert pa.shikigami[0].shield == 2

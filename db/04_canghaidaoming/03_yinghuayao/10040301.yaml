@@ -7,23 +7,10 @@ versions:
       card_type: spell
       rarity: R
       level: 1
+      # 双方式神同池；气绝入池按樱花妖基础/觉醒能力分侧门控，帷幕照常过滤敌方目标
+      target: {kind: choose, pool: any_shikigami, include_defeated_kw: true}
       effects:
-        steps: []  # 双择效果见 methods（萤火点点 10012703 先例：敌我分支目标池不同，
-        # 单 choose + Step 条件无"选择目标敌我归属"键——chosen_side 只读事件 payload，
-        # 卡牌自身 effects 块 ctx.event 为 None，不可用）
-      methods:
-        - id: damage
-          target: {kind: choose, pool: enemy_shikigami}
-          effects:
-            steps:
-              - {op: damage, amount: 3}
-          text: 对一个敌方式神造成3点伤害
-        - id: heal
-          # 气绝己方式神入池按樱花妖门控（定案(2)：include_defeated_kw——己方气绝入池
-          # iff heal_defeated_countdown 在场）；转化通道结算时能力在场判定不变
-          target: {kind: choose, pool: friendly_shikigami, include_defeated_kw: true}
-          effects:
-            steps:
-              - {op: heal, amount: 5, allow_defeated: true}
-          text: 对一个己方式神恢复5点生命
-      text: "对一个敌方式神造成3点伤害，或对一个己方式神恢复5点生命。"
+        steps:
+          - {op: heal, amount: 5, allow_defeated: true, condition: {chosen_side: friendly}}
+          - {op: damage, amount: 3, condition: {chosen_side: enemy}}
+      text: "对一个敌方式神造成3点伤害，或为一个己方式神恢复5点生命。"

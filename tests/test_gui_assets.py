@@ -244,7 +244,7 @@ def test_hand_visual_events_cover_draw_generate_return_and_skip_burst(db, make_g
     game.state.timeline.clear()
     drawn = player.deck[0]
     game.draw_cards(0, 1)
-    generated = CardInstance(uid=game.state.next_uid, id=10010151)
+    generated = CardInstance(uid=game.state.next_uid, id=drawn.id)
     game.state.next_uid += 1
     game.move_card(player, generated, "hand", reason="generate")
     returned = player.hand[0]

@@ -652,9 +652,9 @@ def test_assault_boost_assault_only(db, make_game):
     play(g, 0, cid)
     s.countdown = 1
     pass_turns(g, 2)
-    assert pa.assault_boosts == [{"power": 3, "shield": 3}]
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(3, 3)]
     play(g, 0, combat_cid)      # 战斗牌直击牌手：不消耗出击加成
-    assert pa.assault_boosts == [{"power": 3, "shield": 3}]
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(3, 3)]
     assert pl.health == 27       # 未获加成：形态身材 3 力量直击
     g.apply({"op": "assault", "index": LIDX})
     assert pa.assault_boosts == []
@@ -680,7 +680,7 @@ def test_boost_on_combat_card_consumes_boost(db, make_game):
     pa.assault_boosts = [{"power": 2, "shield": 0}]
     play(g, 0, combat_cid)                   # 无旗标：不消耗（2 力量直击）
     assert pl.health == 28
-    assert pa.assault_boosts == [{"power": 2, "shield": 0}]
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(2, 0)]
     play(g, 0, flag_cid)                     # 登记旗标
     play(g, 0, combat_cid)                   # 战斗牌消耗鼓舞：2+2 力量直击
     assert pl.health == 28 - 4
@@ -700,11 +700,11 @@ def test_boost_no_consume_keeps_boosts(db, make_game):
     play(g, 0, flag_cid)
     g.apply({"op": "assault", "index": LIDX})   # 2+2 力量直击
     assert pl.health == 26
-    assert pa.assault_boosts == [{"power": 2, "shield": 0}]  # 未消耗
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(2, 0)]  # 未消耗
     pass_turns(g, 2)
     g.apply({"op": "assault", "index": LIDX})   # 下回合出击仍生效
     assert pl.health == 22
-    assert pa.assault_boosts == [{"power": 2, "shield": 0}]
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(2, 0)]
 
 
 def test_inspire_bonus_adds_to_basic_boost(db, make_game):
@@ -719,10 +719,10 @@ def test_inspire_bonus_adds_to_basic_boost(db, make_game):
     g, pa, s = _lk_setup(db, make_game, level=1)
     play(g, 0, flag_cid)
     play(g, 0, boost_cid)
-    assert pa.assault_boosts == [{"power": 3, "shield": 1}]  # 2+1 / 0+1
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(3, 1)]  # 2+1 / 0+1
     play(g, 0, flag_cid)                     # 旗标叠加：再 +1/+1
     play(g, 0, boost_cid)
-    assert pa.assault_boosts[-1] == {"power": 4, "shield": 2}
+    assert (pa.assault_boosts[-1]["power"], pa.assault_boosts[-1]["shield"]) == (4, 2)
 
 
 # ---------- 离场/消灭触发（一目连基础能力） ----------

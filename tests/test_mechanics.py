@@ -864,6 +864,7 @@ def test_on_kill_random_aura_fixed_once_key(real_game):
     assert len(keys) == 2                      # 固定项 + 一项随机豪焰
     assert keys & {"haoyan_cd", "haoyan_pow", "haoyan_heal", "haoyan_burn"}
     pass_turns(g, 2)
+    pb.shikigami[1].base_power = 0  # 隔离反击，避免旧版错误无条件羁绊护甲影响断言
     s = pa.shikigami[0]
     temp_before = s.temp_power
     play(g, 0, 10010301, target=Ref(player=1, shikigami=1))  # 鬼之手（战斗牌，选取目标）→ 固定项触发
@@ -4340,7 +4341,7 @@ def test_stat_merge_shield_final_snapshot(real_game):
 
 
 def test_stat_merge_multi_target_refresh_stays_parallel(db, make_game):
-    """多目标刷新不跨目标合并，同一效果单元的全部 stat 共享动画组。"""
+    """多目标各自合并力量/生命/护甲刷新，同一效果单元只产生一轮并行 stat。"""
     target = T(kind="all", pool="friendly_shikigami")
     db.cards[10010151] = F.card(10010151, token=True, steps=[
         F.Step(op="buff_power", amount=1, perm=True, target=target),
@@ -4353,5 +4354,26 @@ def test_stat_merge_multi_target_refresh_stays_parallel(db, make_game):
         s.level = 1
     play(g, 0, 10010151)
     stats = [e for e in g.state.timeline if e.get("v") == "stat"]
-    assert len(stats) == 12
+    assert len(stats) == 4
     assert len({e.get("g") for e in stats}) == 1 and stats[0]["g"] is not None
+
+
+def test_step_chosen_side_branches_without_usage_methods(db, make_game):
+    """单一选择目标按敌我分派步骤，不需要拆成多择使用方式。"""
+    cid = 10010191
+    db.cards[cid] = F.card(cid, token=True,
+                           target=T(kind="choose", pool="any_shikigami"), steps=[
+        F.Step(op="gain_shield", amount=1, condition={"chosen_side": "friendly"}),
+        F.Step(op="gain_shield", amount=1, kind="fragile",
+               condition={"chosen_side": "enemy"}),
+    ])
+    g = make_game()
+    pa, pb = F.battle_setup(g)
+    card = give(g, 0, cid)
+    play(g, 0, cid, target={"player": 0, "shikigami": 0})
+    assert pa.shikigami[0].shield == 1 and pb.shikigami[0].shield == 0
+    pa.orb = 2
+    card = give(g, 0, cid)
+    play(g, 0, cid, target={"player": 1, "shikigami": 0})
+    assert pa.shikigami[0].shield == 1 and pb.shikigami[0].shield == -1
+    assert not db.cards[cid].methods

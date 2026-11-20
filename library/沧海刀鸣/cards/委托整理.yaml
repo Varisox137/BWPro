@@ -1,0 +1,13 @@
+type: 法术
+name: 委托整理
+level: 1
+rarity: R
+description: 完成你手牌里一张‘[[紧急委托]]’。
+shikigami: 三目
+version_date: '20200928'
+id: '10040401'
+artwork:
+  images:
+  - path: 10040401.png
+    scale: 0.747
+    offset_y: -78

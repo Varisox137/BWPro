@@ -1,0 +1,15 @@
+type: 法术
+name: 蜃楼观光
+level: 3
+rarity: SR
+description: '使所有己方式神获得2#ll和2#sm。
+
+  [[增强]]：本局游戏中若三目已用过五张委托牌，便额外使所有己方式神获得3#ll和3#sm。'
+shikigami: 三目
+version_date: '20200928'
+id: '10040407'
+artwork:
+  images:
+  - path: 10040407.png
+    scale: 0.75
+    offset_y: -87

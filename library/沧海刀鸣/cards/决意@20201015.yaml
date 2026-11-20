@@ -1,0 +1,15 @@
+type: 形态
+name: 决意
+level: 1
+rarity: R
+description: 己方回合开始时，使你结附‘[[鸮之守护]]’的式神获得1#sm。
+shikigami: 薰
+power: 1
+health: 1
+version_date: '20201015'
+id: '10040502'
+artwork:
+  images:
+  - path: 10040502.png
+    scale: 0.711
+    offset_y: -81

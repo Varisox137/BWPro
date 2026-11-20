@@ -2489,9 +2489,9 @@ def test_awaken_detail_separates_permanent_and_form_base(qapp, view, monkeypatch
     assert f"生命 {definition.health + 4}" in dialog.main_card_text
     assert "力量 12" not in dialog.main_card_text
     assert "觉醒" in dialog.main_card_text
-    assert dialog.form_card.cdef.form_power == 2
-    assert dialog.form_card.cdef.form_health == 6
-    assert dialog.form_card.count_label.isHidden()
+    assert form.form_power == 2
+    assert form.form_health == 6
+    assert dialog.form_art_label.size() == dialog.main_art_label.size()
 
     awaken.name = "觉醒·巫蛊师"
     view.show_shiki_detail(Ref(player=0, shikigami=0))
@@ -2604,9 +2604,9 @@ def test_shiki_runtime_details_cover_registered_state(qapp, db, view, monkeypatc
     assert "派系 青岚" not in text
     assert "延迟能力" in text and "on_battle_end" in text and "次数 2" in text
     assert "玩家B" in text and db.shikigami[view.game.state.players[1].shikigami[0].id].name in text
-    assert "灵咒 1：测试灵咒" in text and "灵咒原文" in text
-    assert "来源 玩家B" in text and db.shikigami[view.game.state.players[1].shikigami[1].id].name in text
-    assert "眩晕：normal" in text
+    assert any(item["name"] == "测试灵咒" and "灵咒原文" in item["text"]
+               for item in dialog.status_mechanisms)
+    assert "类型：normal" in text
     assert all(word not in text for word in (
         "护甲/破甲", "能量", "永久修正", "临时修正", "动态光环合计", "力量覆写",
         "贯通", "屏障", "迅捷", "免疫", "气绝", "倒计时",
@@ -2628,7 +2628,7 @@ def test_shiki_detail_omits_empty_optional_columns(qapp, view, monkeypatch, empt
 
     start(view, mulligan=False)
     if empty_column == "status":
-        monkeypatch.setattr("client.gui.details.shiki_status_lines", lambda *_args: [])
+        monkeypatch.setattr("client.gui.details.shiki_status_mechanisms", lambda *_args: [])
     if empty_column == "mechanisms":
         monkeypatch.setattr("client.gui.details.shikigami_mechanisms", lambda *_args, **_kwargs: [])
     dialog = ShikigamiDetailDialog(view.game, Ref(player=0, shikigami=0), 0, view)
@@ -5333,3 +5333,57 @@ def test_runtime_enemy_cardback_covers_backs_hands_and_use_animation(qapp, view)
     assert scene._card_use_items[animation].pixmap.cacheKey() == expected.cacheKey()
     animation.setCurrentTime(animation.duration())
     qapp.processEvents()
+
+
+def test_assault_any_target_offers_other_characters(qapp, view):
+    """任意目标出击的 GUI 与引擎同池：排除自身、含双方牌手，敌方帷幕过滤。"""
+    start(view, mulligan=False)
+    game = view.game
+    for player in game.state.players:
+        for shiki in player.shikigami:
+            shiki.level = 1
+    game.current.shikigami[0].keywords.append("assault_any_target")
+    game.state.players[1].shikigami[0].keywords.append("veil")
+    assert view.assault(0)
+    legal = view.legal_targets
+    assert Ref(player=0, shikigami=0) not in legal
+    assert Ref(player=0) in legal and Ref(player=1) in legal
+    assert Ref(player=0, shikigami=1) in legal
+    assert Ref(player=1, shikigami=0) not in legal
+    assert Ref(player=1, shikigami=1) in legal
+    assert not view.default_target_button.isVisible()
+    assert view.battle_scene.focus_overlay.isVisible()
+
+
+def test_early_attack_replaces_combat_zone_in_visual_order(qapp, view, monkeypatch):
+    """回合开始等早期攻击：先播原战斗区退回，再播攻击者进入战斗区。"""
+    from client.gui.battle_scene import combat_position
+
+    start(view, mulligan=False)
+    game = view.game
+    for player in game.state.players:
+        for shiki in player.shikigami:
+            shiki.level = 1
+    F.move(game, 0, 1)
+    view.refresh()
+    settle(view)
+    attacker = game.current.shikigami[0]
+    attacker.countdown = 0
+    attacker.countdown_initial = 3
+    attacker.countdown_source = attacker.id
+    attacker.countdown_block = F.block(F.Step(op="launch_attack", shikigami="self"))
+    game._countdown_zero(0, 0)
+    calls = []
+    original = view.battle_scene._animate_position
+
+    def record(item, target, **kwargs):
+        calls.append((item.payload, target))
+        return original(item, target, **kwargs)
+
+    monkeypatch.setattr(view.battle_scene, "_animate_position", record)
+    view.refresh()
+    settle(view)
+    moves = [(ref, target) for ref, target in calls if ref.shikigami in (0, 1)]
+    assert [ref.shikigami for ref, _target in moves[:2]] == [1, 0]
+    assert moves[0][1] != combat_position(view.battle_scene.layout_width, False)
+    assert moves[1][1] == combat_position(view.battle_scene.layout_width, False)

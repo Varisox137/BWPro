@@ -1,0 +1,15 @@
+type: 形态
+name: 平和猫又屋
+level: 1
+rarity: SR
+description: 气绝时，复活三目。
+shikigami: 三目
+power: 2
+health: 5
+version_date: '20200928'
+id: '10040403'
+artwork:
+  images:
+  - path: 10040403.png
+    scale: 0.711
+    offset_y: -67

@@ -871,6 +871,7 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 level_color: str | None = None, burst: int | None = None,
                 status: str | None = None, cache_context: dict | None = None,
                 height: int | None = None, frame_variant: str | None = None,
+                description_suffix: str | None = None,
                 image_only: bool = False) -> QPixmap | QImage | None:
     """按原生高度合成；静态卡面使用磁盘缓存，后台任务可取 QImage。"""
     overrides = {"level_color": level_color} if level_color is not None else {}
@@ -883,7 +884,8 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
     return _card_pixmap_impl(
         cdef, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,
-        cache_context=cache_context, height=height, image_only=image_only)
+        cache_context=cache_context, height=height, description_suffix=description_suffix,
+        image_only=image_only)
 
 
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,

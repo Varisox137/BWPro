@@ -1,0 +1,16 @@
+type: 法术
+name: 线索·研习
+level: 1
+description: '[[条件]]：本局游戏三目使用过七张委托牌。
+
+  本局游戏中当己方式神使用牌时，对敌方牌手造成3点伤害。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040465'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040465.png
+    scale: 0.747
+    offset_y: -72

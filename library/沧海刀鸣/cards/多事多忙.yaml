@@ -1,0 +1,15 @@
+type: 形态
+name: 多事多忙
+level: 2
+rarity: SR
+description: 你的委托条件也可以由敌方完成。
+shikigami: 三目
+power: 3
+health: 6
+version_date: '20200928'
+id: '10040404'
+artwork:
+  images:
+  - path: 10040404.png
+    scale: 0.711
+    offset_y: -83

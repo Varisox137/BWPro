@@ -1,0 +1,7 @@
+name: 暴击
+frame: skill
+text: 具有[[暴击]]的卡牌或式神，对敌方造成的伤害翻倍。
+badge: null
+chars_per_line: 12
+global: true
+version_date: '20200520'

@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·贰
+level: 1
+description: '[[条件]]：己方式神还需攻击10次（在牌库也有效）。[[鼓舞]]：获得+5#ll和+5#hj。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040456'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040456.png
+    scale: 0.747
+    offset_y: -92

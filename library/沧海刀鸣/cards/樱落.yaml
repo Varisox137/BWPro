@@ -2,7 +2,7 @@ type: 法术
 name: 樱落
 level: 1
 rarity: R
-description: 对一个敌方式神造成3点伤害，或对一个己方式神恢复5#sm。
+description: 对一个敌方式神造成3点伤害，或为一个己方式神恢复5#sm。
 shikigami: 樱花妖
 version_date: '20200928'
 id: '10040301'

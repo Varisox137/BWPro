@@ -11,8 +11,12 @@ versions:
       target: {kind: choose, pool: any_shikigami}
       effects:
         steps:
-          # 破甲条件在伤害前判定（破甲受伤即消耗）：有破甲→移回手牌 + 伤害+1
-          - {op: bounce_self, condition: {chosen_has_fragile: true}}
+          # 破甲条件在伤害前登记（破甲受伤即消耗）：本牌结算完成后原实例伤害+1并回手
+          - op: defer_steps
+            condition: {chosen_has_fragile: true}
+            steps:
+              - {op: add_mod, to: instance, key: damage_boost, amount: 1}
+              - {op: bounce_self}
           - {op: damage, amount: 1, condition: {chosen_has_fragile: true}}
           - {op: damage, amount: 1}
       text: "[瞬发]。对一个式神造成1点伤害。[增强]：{若其有破甲则将此牌移回手上并伤害+1。}"

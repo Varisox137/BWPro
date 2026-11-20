@@ -79,6 +79,9 @@ class ShikigamiState(BaseModel):
     perm_health: int = 0
     temp_power: int = 0  # 临时增减益修正（气绝时清除）
     temp_health: int = 0  # 临时生命上限修正（气绝时清除）
+    stat_mods: list[dict[str, Any]] = Field(default_factory=list)  # 普通力量/生命修正来源账本：
+    # {"power", "health", "perm", "scope", "source_name", "text"}；数值仍由 perm/temp 字段结算，
+    # 本列表仅供详情展示与按作用域清除，不参与加减计算
     combat_power: int = 0  # 本次战斗的战力加成（战斗后清除）
     keywords: list[str] = Field(default_factory=list)  # 持续性关键字实例（可重复多重集；触发后不移除；气绝时清除）
     one_shot_keywords: list[str] = Field(default_factory=list)  # 一次性关键字实例（迅捷/不屈/屏障等；触发后移除；气绝时清除）
@@ -280,8 +283,8 @@ class PlayerState(BaseModel):
     # 仅统计有来源的消灭并按来源归属牌手分桶，消灭己方式神如伤害转移同样计入来源方）：
     kill_total: int = 0  # 本局以己方角色为来源消灭的式神总数（夺命"你消灭过13个式神"）
     kill_by: dict[int, int] = Field(default_factory=dict)  # 分桶：来源式神当前数据 id → 消灭数（禁锢之刀）
-    # 委托条件账本（三目委托机制；引擎 _quest_tick 统一记账，跨区域有效——"在牌库也
-    # 有效"）：行为种类 → 累计次数。种类：assault 出击 / draw 抽牌 / play 使用牌（不限
+    # 委托全局账本（日常委托/能力计数；紧急委托改用各手牌实例 mods["quest_progress"]，
+    # 仅在手牌时累计）：行为种类 → 累计次数。种类：assault 出击 / draw 抽牌 / play 使用牌（不限
     # 主动/响应/自动，定案(3)）/ damage 累计伤害 / effect_damage 非战斗伤害 /
     # attack 攻击次数 / form_play 形态牌 / offdeck_play 阵容套牌以外卡牌（同名牌不在
     # deck_names 即计，定案(5)）/ enemy_defeat 敌方式神气绝 / revive 己方式神复活 /

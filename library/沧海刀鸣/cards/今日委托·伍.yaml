@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·伍
+level: 1
+description: '[[条件]]：还需使5个敌方式神气绝（在牌库也有效）。消灭一个没有形态的式神。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040459'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040459.png
+    scale: 0.747
+    offset_y: -92

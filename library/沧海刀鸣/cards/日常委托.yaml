@@ -1,0 +1,14 @@
+type: 法术
+name: 日常委托
+level: 1
+rarity: R
+description: 此牌的效果每天会随机改变。
+shikigami: 三目
+version_date: '20200928'
+id: '10040402'
+artwork:
+  images:
+  - path: 10040402.png
+    scale: 0.747
+    offset_y: -92
+special_type: 委托

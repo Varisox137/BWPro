@@ -1,0 +1,15 @@
+type: 形态
+name: 鸮之警惕
+level: 2
+rarity: R
+description: 结附‘[[鸮之守护]]’的己方式神获得[[帷幕]]。
+shikigami: 薰
+power: 4
+health: 5
+version_date: '20200928'
+id: '10040505'
+artwork:
+  images:
+  - path: 10040505.png
+    scale: 0.711
+    offset_y: -76

@@ -1,0 +1,16 @@
+type: 法术
+name: 紧急委托·壹
+level: 1
+description: '[[瞬发]]
+
+  [[条件]]：己方式神出击两次。使三目永久获得1#ll和1#sm。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040451'
+artwork:
+  images:
+  - path: 10040451.png
+    scale: 0.747
+    offset_y: -80
+special_type: 委托

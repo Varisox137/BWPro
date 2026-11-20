@@ -7,8 +7,8 @@ def main() -> None:
     # strict=False 让 loader 不抛异常；我们再手动 validate 一次，以便打印友好错误列表。
     db = CardDatabase.load(strict=False)
     errors = db.validate()
-    # 硬门禁（AGENTS.md 内容约定）：yaml text 逐字 = card_data_raw.md 引号内原文；
-    # README 不出现具体式神/卡牌名
+    # 硬门禁（AGENTS.md 内容约定）：yaml text 与力量/生命/护甲/耐久角标逐版本
+    # 对齐 card_data_raw.md；README 不出现具体式神/卡牌名
     text_errors, text_warnings = check_text_alignment(db)
     errors += text_errors
     errors += check_readme_names(db)

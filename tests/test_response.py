@@ -252,7 +252,7 @@ def test_response_combat_non_attack_timing_keeps_boost(db, make_game):
     assert a.shikigami[BAI_IDX].defeated
     assert any(c.id == RESP for c in b.graveyard)   # 响应战斗牌已使用
     assert a.health == 29                             # B 兵俑 1 力量直击（未获 +2）
-    assert b.assault_boosts == [{"power": 2, "shield": 0}]  # 响应使用不消耗出击加成
+    assert [(boost["power"], boost["shield"]) for boost in b.assault_boosts] == [(2, 0)]  # 响应使用不消耗出击加成
 
 
 # ---------- 3. 风符·瞬（响应形态牌插入使用） ----------

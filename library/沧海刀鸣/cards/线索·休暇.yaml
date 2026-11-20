@@ -1,0 +1,16 @@
+type: 法术
+name: 线索·休暇
+level: 1
+description: '[[条件]]：本局游戏三目使用过五张委托牌。
+
+  本局游戏中己方回合结束时，复活三目并随机完成一个[[紧急委托]]。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040464'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040464.png
+    scale: 0.747
+    offset_y: -72

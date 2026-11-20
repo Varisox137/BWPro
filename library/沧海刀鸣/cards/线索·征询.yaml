@@ -1,0 +1,16 @@
+type: 法术
+name: 线索·征询
+level: 1
+description: '[[条件]]：本局游戏三目使用过三张委托牌。
+
+  本局游戏中当三目使用委托牌时，抽两张牌。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040463'
+artwork:
+  images:
+  - path: 10040463.png
+    scale: 0.784
+    offset_y: -94
+special_type: 委托

@@ -1,0 +1,16 @@
+type: 战斗
+name: 惊梦
+level: 1
+rarity: SR
+description: '[[增强]]：本回合若敌方抽到过结附‘[[梦魇]]’的牌，此牌获得+3#hj并获得[[瞬发]]。[[响应]]：当敌方抽到结附‘[[梦魇]]’的牌时，自动使用此牌。'
+shikigami: 食梦貘
+power+: 2
+shield+: 0
+version_date: '20200928'
+id: '10040603'
+artwork:
+  images:
+  - offset_x: 0
+    offset_y: -86
+    path: 10040603.png
+    scale: 0.711

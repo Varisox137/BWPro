@@ -1,0 +1,17 @@
+type: 式神
+name: 三目
+faction: 紫岩
+power: 2
+health: 5
+description: 游戏开始时或三目使用紧急委托时，随机将一张‘[[紧急委托]]’置入手牌。
+id: '100404'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100404.png
+    scale: 0.72
+    offset_y: -82
+portrait:
+  scale: 2.409
+  offset_x: 16
+  offset_y: 11

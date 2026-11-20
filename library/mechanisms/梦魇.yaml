@@ -1,0 +1,9 @@
+name: 梦魇
+frame: invocation
+text: 当敌方抽到结附‘[[梦魇]]’的牌时，对敌方牌手造成3点伤害。当结附‘[[梦魇]]’的牌离开牌库时，移除结附于其上的‘[[梦魇]]’。
+badge: null
+chars_per_line: 12
+global: false
+project: 沧海刀鸣
+shikigami: 食梦貘
+version_date: '20200928'

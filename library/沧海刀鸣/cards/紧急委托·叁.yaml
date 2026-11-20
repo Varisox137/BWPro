@@ -1,0 +1,16 @@
+type: 法术
+name: 紧急委托·叁
+level: 1
+description: '[[瞬发]]
+
+  [[条件]]：使用了四张牌。使三目永久获得1#ll和1#sm。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040453'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040453.png
+    offset_y: -80
+    scale: 0.747

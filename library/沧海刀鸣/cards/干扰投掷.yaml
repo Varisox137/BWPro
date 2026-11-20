@@ -1,0 +1,13 @@
+type: 法术
+name: 干扰投掷
+level: 1
+rarity: R
+description: 对一个式神造成1点伤害并使其本回合不能对结附‘[[鸮之守护]]’的式神造成伤害。[[响应]]：当敌方式神攻击你结附‘[[鸮之守护]]’的式神时，自动对其使用。
+shikigami: 薰
+version_date: '20200928'
+id: '10040503'
+artwork:
+  images:
+  - path: 10040503.png
+    scale: 0.747
+    offset_y: -85

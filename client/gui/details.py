@@ -3,19 +3,19 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout,
+    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QLayout, QVBoxLayout,
 )
 
-from client.gui.cardart import seat_level_color, shikigami_pixmap
+from client.gui.cardart import card_pixmap, seat_level_color, shikigami_pixmap
 from client.gui.mechanisms import mechanism_panel, shikigami_mechanisms
-from client.gui.widgets import DETAIL_COLUMN_SPACING, CardWidget, polish_dialog_buttons
+from client.gui.widgets import DETAIL_COLUMN_SPACING, polish_dialog_buttons
 
 
 def player_ability_mechanisms(player, player_index: int, viewer: int) -> list[dict]:
     entries = list(player.auras) + [
         entry for entry in player.delayed
         if not entry.get("secret") or player_index == viewer
-    ]
+    ] + [entry for entry in player.card_auras if entry.get("scope") == "game"]
     entries.extend({"source_name": "眩晕", "text": str(entry.get("kind", "未标明类型"))}
                    for entry in player.ext.get("stuns", []))
     return [
@@ -28,8 +28,46 @@ def player_ability_mechanisms(player, player_index: int, viewer: int) -> list[di
     ]
 
 
-def shiki_status_lines(game, ref, viewer) -> list[str]:
-    """仅展示卡牌赋予的延迟能力与灵咒，不展开内部数值状态。"""
+def _stat_mod_mechanisms(shiki) -> list[dict]:
+    """普通力量/生命修正按来源与作用域合并，攻击后到期强化另列。"""
+    grouped = {}
+    for mod in shiki.stat_mods:
+        key = (mod.get("source_name"), mod.get("text"), bool(mod.get("perm")),
+               mod.get("scope"))
+        entry = grouped.setdefault(key, {"power": 0, "health": 0})
+        entry["power"] += int(mod.get("power", 0))
+        entry["health"] += int(mod.get("health", 0))
+    entries = []
+    for (source_name, source_text, permanent, scope), amounts in grouped.items():
+        parts = []
+        if amounts["power"]:
+            parts.append(f"力量 {amounts['power']:+d}")
+        if amounts["health"]:
+            parts.append(f"生命上限 {amounts['health']:+d}")
+        duration = ("永久" if permanent else
+                    {"turn": "本回合", "battle": "本次战斗"}.get(scope, "临时"))
+        entries.append({
+            "name": source_name or "身材修正", "frame": "skill",
+            "text": f"{duration}　{'　'.join(parts)}\n{source_text or '（无来源文本）'}",
+        })
+    for buff in shiki.attack_buffs:
+        if not buff.get("power") and not buff.get("keywords"):
+            continue
+        parts = []
+        if buff.get("power"):
+            parts.append(f"力量 {int(buff['power']):+d}")
+        if buff.get("keywords"):
+            parts.append("关键字 " + "、".join(keyword for keyword, _cls in buff["keywords"]))
+        entries.append({
+            "name": buff.get("source_name") or "攻击强化", "frame": "skill",
+            "text": f"直到下一次攻击后　{'　'.join(parts)}\n"
+                    f"{buff.get('text') or '（无来源文本）'}",
+        })
+    return entries
+
+
+def shiki_status_mechanisms(game, ref, viewer) -> list[dict]:
+    """延迟能力、身材修正、眩晕与灵咒按来源命名；完全相同项合并计数。"""
     shiki = game.state.players[ref.player].shikigami[ref.shikigami]
     db = game.db
 
@@ -48,7 +86,7 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
         source = player.shikigami[si]
         return f"{player.name}·{db.shikigami[source.id].name}"
 
-    text = []
+    entries = []
     for index, delayed in enumerate(shiki.delayed, 1):
         block = delayed.get("block") or {}
         when = block.get("when") if isinstance(block, dict) else block.when
@@ -61,25 +99,32 @@ def shiki_status_lines(game, ref, viewer) -> list[str]:
             chosen = ref_label(delayed.get("chosen"))
         if chosen:
             parts.append(f"目标 {chosen}")
-        text.append("　".join(parts))
+        entries.append({
+            "name": db.cards[origin].name if origin in db.cards else "延迟能力",
+            "frame": "skill", "text": "　".join(parts),
+        })
+    entries.extend(_stat_mod_mechanisms(shiki))
     if shiki.stuns:
         kinds = "、".join(str(entry.get("kind", "未标明类型")) for entry in shiki.stuns)
-        text.append(f"眩晕：{kinds}")
-    for index, invocation in enumerate(shiki.invocations, 1):
+        entries.append({"name": "眩晕", "frame": "skill", "text": f"类型：{kinds}"})
+    grouped = {}
+    for invocation in shiki.invocations:
         name = invocation.get("name", "")
-        parts = [f"灵咒 {index}：{name}"]
-        source = ref_label(invocation.get("source"))
-        if source:
-            parts.append(f"来源 {source}")
-        elif invocation.get("player") is not None:
-            pi = invocation["player"]
-            if 0 <= pi < len(game.state.players):
-                parts.append(f"来源 {game.state.players[pi].name}")
-        text.append("　".join(parts))
         idef = db.invocations.get(name)
-        if idef is not None and idef.text:
-            text.append(idef.text)
-    return text
+        text = idef.text if idef is not None and idef.text else "（无灵咒文本）"
+        bonus = int(invocation.get("bonus", 0))
+        if bonus:
+            text += f"（效果+{bonus}）"
+        key = (name, text)
+        if key not in grouped:
+            grouped[key] = {"name": name, "frame": "invocation", "text": text, "count": 0}
+        grouped[key]["count"] += 1
+    for entry in grouped.values():
+        count = entry.pop("count")
+        if count > 1:
+            entry["name"] += f"×{count}"
+        entries.append(entry)
+    return entries
 
 
 def shiki_detail_suffix(game, ref) -> str:
@@ -88,7 +133,18 @@ def shiki_detail_suffix(game, ref) -> str:
     if shiki.id == 100117:
         return f"（本局游戏已投出{player.ext.get('dice_six_count', 0)}次6点）"
     if shiki.id == 100404:
-        return f"（本局游戏已完成{player.quest_counts.get('quest_used', 0)}次委托）"
+        return f"（本局游戏已使用过{player.quest_counts.get('quest_used', 0)}张牌）"
+    if shiki.id == 100128 and shiki.awakened == 10012805:
+        return f"（效果+{shiki.ext.get('zhen_proc', 0)}）"
+    return ""
+
+
+def form_detail_suffix(game, ref) -> str:
+    """形态自身光环的动态数值（不进手牌角标的来源说明）。"""
+    shiki = game.state.players[ref.player].shikigami[ref.shikigami]
+    if shiki.form is not None and shiki.form.id == 10011507:
+        count = game.state.players[ref.player].ext.get("lianmo_used_game", 0)
+        return f"（战斗牌额外+{count}/+{count}）"
     return ""
 
 
@@ -112,8 +168,9 @@ class ShikigamiDetailDialog(QDialog):
             f"力量 {power}　生命 {health}\n{ability_text}"
         )
         self.setWindowTitle(definition.name)
-        self.setMinimumSize(720 if shiki.form is not None else 520, 680)
+        self.setMinimumWidth(720 if shiki.form is not None else 520)
         layout = QVBoxLayout(self)
+        layout.setSizeConstraint(QLayout.SetFixedSize)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
         cards = QHBoxLayout()
@@ -150,22 +207,30 @@ class ShikigamiDetailDialog(QDialog):
             main_layout.addWidget(main_label)
             cards.addWidget(main_card, 0, Qt.AlignLeft | Qt.AlignTop)
 
-        self.form_card = None
+        self.form_card = self.form_art_label = None
+        self.form_art_pixmap = None
         if shiki.form is not None:
             form_def = game.db.cards[shiki.form.id]
-            self.form_card = CardWidget(form_def, db=game.db,
-                                        level_color=seat_level_color(ref.shikigami))
-            self.form_card.count_label.hide()
-            self.form_card.setFixedSize(self.main_art_label.size())
-            cards.addWidget(self.form_card, 0, Qt.AlignLeft | Qt.AlignTop)
+            self.form_art_pixmap = card_pixmap(
+                form_def, game.db, height=512,
+                level_color=seat_level_color(ref.shikigami),
+                description_suffix=form_detail_suffix(game, ref))
+            self.form_art_label = QLabel()
+            self.form_art_label.setAlignment(Qt.AlignCenter)
+            self.form_art_label.setFixedSize(self.main_art_label.size())
+            if self.form_art_pixmap is not None and not self.form_art_pixmap.isNull():
+                self.form_art_pixmap = self.form_art_pixmap.scaled(
+                    self.main_art_label.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+                self.form_art_label.setPixmap(self.form_art_pixmap)
+            else:
+                self.form_art_label.setText(form_def.name)
+            self.form_card = self.form_art_label
+            cards.addWidget(self.form_art_label, 0, Qt.AlignLeft | Qt.AlignTop)
             self.column_names.append("form")
 
         panel_width = self.main_art_label.width()
-        status_texts = shiki_status_lines(game, ref, viewer)
-        self.status_mechanisms = [
-            {"name": "额外状态", "frame": "skill", "text": line}
-            for line in status_texts
-        ]
+        self.status_mechanisms = shiki_status_mechanisms(game, ref, viewer)
+        status_texts = [entry["text"] for entry in self.status_mechanisms]
         self.status_panel, self.status_labels = mechanism_panel(
             self.status_mechanisms, self, max_height=512, width=panel_width)
         if self.status_panel is not None:

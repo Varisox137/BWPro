@@ -1,0 +1,20 @@
+type: 法术
+name: 觉醒·三目
+level: 3
+rarity: SSR
+description: '选择一张‘[[线索]]’置入手牌。
+
+  （不可重复）
+
+  [[觉醒]]：三目使用[[紧急委托]]时，随机将一张[[紧急委托]]置入手牌。三目所有的委托牌不消耗鬼火。'
+shikigami: 三目
+version_date: '20200928'
+id: '10040408'
+evolve: true
+power+: 2
+health+: 2
+artwork:
+  images:
+  - path: 10040408.png
+    scale: 0.747
+    offset_y: -102

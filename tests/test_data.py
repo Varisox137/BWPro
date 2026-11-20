@@ -2426,6 +2426,24 @@ def test_damage_to_fragile_on_all_enemy_characters(real_game):
     assert any(c.id == 10011401 for c in pa.hand)            # 弹回回手
 
 
+def test_fragile_conditional_return_preserves_card_instance():
+    """旧版蛇行击命中破甲目标后，原卡牌实例伤害+1并回手，不入墓也不生成复制。"""
+    old_db = CardDatabase.load().at_date(20191212)
+    g = F.mk_game(old_db, team=QJ_TEAM)
+    pa, pb = F.battle_setup(g)
+    play(g, 0, 10011402)
+    original = give(g, 0, 10011401)
+    g.apply({"op": "play_card", "uid": original.uid,
+             "target": Ref(player=1, shikigami=0)})
+    assert original in pa.hand
+    assert original not in pa.graveyard
+    assert not original.generated
+    assert not any(card.generated and card.id == 10011401 for card in pa.hand)
+    assert original.mods["damage_boost"] == 1
+    from client.cli import _enhance_description_suffix
+    assert "伤害+1" in _enhance_description_suffix(g, pa, original)
+
+
 def test_grant_fragile_then_aoe_has_fragile_filter(real_game):
     """焚身之火：使一个角色获得 2 破甲，然后对所有有破甲的敌方角色造成 3 点伤害
     （无破甲者不受影响；刚被赋予破甲的选择目标被命中）。"""
@@ -2568,7 +2586,7 @@ def test_choose_target_damage_with_boost_shield(real_game):
     play(g, 0, 10012701, target=Ref(player=1, shikigami=0))
     assert pb.shikigami[0].health == 3         # 萤草 5→3
     assert pb.health == 30                     # 不再走投射打玩家
-    assert pa.assault_boosts == [{"power": 0, "shield": 2}]
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(0, 2)]
 
 
 def test_form_enter_turn_start_heal_all_shikigami(gdb):
@@ -2606,9 +2624,9 @@ def test_form_basic_boost_power_and_shield(real_game):
     """勇气之光：进场与己方回合开始 [鼓舞]+2战力（[瞬发]由萤草能力光环授予）。"""
     g, pa, pb = _game(real_game, YC_TEAM, {0: 2})
     play(g, 0, 10012704)
-    assert pa.assault_boosts == [{"power": 2, "shield": 0}]
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(2, 0)]
     pass_turns(g, 2)
-    assert pa.assault_boosts == [{"power": 2, "shield": 0}] * 2
+    assert [(b["power"], b["shield"]) for b in pa.assault_boosts] == [(2, 0)] * 2
 
 
 def test_power_zero_turn_via_response(real_game):

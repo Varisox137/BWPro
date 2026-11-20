@@ -1103,6 +1103,14 @@ class BattleScene(QGraphicsScene):
                 items.append(self.mulligan_item)
             if self.ready_item.isVisible():
                 items.append(self.ready_item)
+        elif self.legal_targets:
+            items = []
+            for ref in self.legal_targets:
+                key = (("player", ref.player) if ref.shikigami is None
+                       else ("shiki", ref.player, ref.shikigami))
+                item = self.cards.get(key)
+                if item is not None:
+                    items.append(item)
         else:
             items = []
         if items:

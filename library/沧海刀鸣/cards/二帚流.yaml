@@ -1,0 +1,15 @@
+type: 战斗
+name: 二帚流
+level: 2
+rarity: R
+description: 本次战斗三目获得免疫所有伤害且造成伤害时伤害改为1。攻击5次。
+shikigami: 三目
+power+: 0
+shield+: 0
+version_date: '20200928'
+id: '10040405'
+artwork:
+  images:
+  - path: 10040405.png
+    scale: 0.711
+    offset_y: -78

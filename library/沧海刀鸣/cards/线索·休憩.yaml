@@ -1,0 +1,14 @@
+type: 法术
+name: 线索·休憩
+level: 1
+description: 本局游戏中当三目使用委托牌时，为你恢复3#sm。
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040462'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040462.png
+    scale: 0.747
+    offset_y: -92

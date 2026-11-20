@@ -19,9 +19,9 @@ versions:
         # 复活→触发整波重复），结算时樱花妖能力离场（气绝/离场）则不转化。
         steps:
           # 对所有敌方式神造成2点伤害，若击杀式神，重复此效果一次
-          - {op: damage, amount: 2, repeat_on_kill: 1,
+          - {op: damage, amount: 2, repeat_on_kill: 1, parallel: true,
              target: {kind: all, pool: enemy_shikigami, include_defeated_kw: true}}
           # 为所有己方式神恢复3点生命，若复活式神，重复此效果一次
-          - {op: heal, amount: 3, repeat_on_revive: 1,
+          - {op: heal, amount: 3, repeat_on_revive: 1, parallel: true,
              target: {kind: all, pool: friendly_shikigami, include_defeated_kw: true}}
       text: "对所有敌方式神造成2点伤害，若击杀式神，重复此效果一次。为所有己方式神恢复3点生命，若复活式神，重复此效果一次。"

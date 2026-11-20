@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·陆
+level: 1
+description: '[[条件]]：还需使4个己方式神复活（在牌库也有效）。[[瞬发]]。复活一个己方式神并使其获得[[迅捷]]。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040460'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040460.png
+    offset_y: -92
+    scale: 0.747

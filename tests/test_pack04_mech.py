@@ -449,6 +449,8 @@ def test_assault_any_target(db, make_game):
     g = make_game()
     pa, pb = F.battle_setup(g, levels={0: 1, 1: 1})
     own = pa.shikigami[1]  # 1/6
+    with pytest.raises(Exception, match="必须选择"):
+        g.apply({"op": "assault", "index": 0})  # 任意目标出击为强制选择，无默认战斗区
     g.apply({"op": "assault", "index": 0,
              "target": Ref(player=0, shikigami=1)})
     assert own.health == 3            # 受到 3 战斗伤害
@@ -2881,18 +2883,21 @@ def test_real_power_eq_health(real_game):
     s.perm_power += 1
     g._refresh_stat_auras()
     assert s.eff_power == 5
+    F.play(g, 0, 10040108)  # 再次觉醒：永久生命变化后立即刷新力量，无需等回合结束
+    assert s.max_health == 10
+    assert s.eff_power == s.health == 7
 
 
 def test_real_spell_methods(real_game):
     """樱落（10040301）双择：damage 对敌方式神 3 伤 / heal 为己方式神恢复 6（封顶）。"""
     g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 1, 1: 1})  # 白狼 lv1 在场才入目标池
     c = F.give(g, 0, 10040301)
-    g.apply({"op": "play_card", "uid": c.uid, "play_method": "damage",
+    g.apply({"op": "play_card", "uid": c.uid,
              "target": Ref(player=1, shikigami=1)})
     assert pb.shikigami[1].health == 1  # 敌方白狼 4→1
     pa.shikigami[1].health = 2
     c = F.give(g, 0, 10040301)
-    g.apply({"op": "play_card", "uid": c.uid, "play_method": "heal",
+    g.apply({"op": "play_card", "uid": c.uid,
              "target": Ref(player=0, shikigami=1)})
     assert pa.shikigami[1].health == 4  # 2+6 封顶 max 4
 
@@ -2904,12 +2909,12 @@ def test_real_heal_defeated_countdown(real_game):
     _kill(g, 0, 2)  # 己方兵俑气绝，倒计时 3
     s = pa.shikigami[2]
     c = F.give(g, 0, 10040301)
-    g.apply({"op": "play_card", "uid": c.uid, "play_method": "heal",
+    g.apply({"op": "play_card", "uid": c.uid,
              "target": Ref(player=0, shikigami=2)})
     assert s.defeated and s.revive_countdown == 2  # 转化 -1 而非回血
     s.revive_countdown = 1
     c = F.give(g, 0, 10040301)
-    g.apply({"op": "play_card", "uid": c.uid, "play_method": "heal",
+    g.apply({"op": "play_card", "uid": c.uid,
              "target": Ref(player=0, shikigami=2)})
     assert not s.defeated and s.health == s.max_health == 6  # 减到 0 复活满血
 
@@ -3127,15 +3132,15 @@ def test_real_clue_damage_choose_target(real_game):
 
 def test_real_assault_defeated_gate(real_game):
     """飘零之舞（10040308，定案(2)）：出击目标含气绝者按樱花妖门控——己方气绝
-    （基础/觉醒在场）可指定，攻击己方气绝转化为恢复→气绝倒计时 -1、无反击；
-    敌方气绝仅觉醒（damage_defeated_countdown 在场）后可指定，战斗伤害转化
-    倒计时 +1；未觉醒指定敌方气绝非法。"""
+    （基础/觉醒在场）可指定，攻击己方气绝转化为恢复→每段气绝倒计时 -1、无反击；
+    敌方气绝仅觉醒（damage_defeated_countdown 在场）后可指定，每段战斗伤害转化
+    倒计时 +1；连击两段均不因气绝状态变化而跳过，未觉醒指定敌方气绝非法。"""
     g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 3, 2: 1})
     F.play(g, 0, 10040308)  # 飘零之舞结附樱花妖
     _kill(g, 0, 2)  # 己方兵俑气绝 cd3
     g.apply({"op": "assault", "index": 0,
              "target": {"player": 0, "shikigami": 2}})  # 攻击己方气绝兵俑
-    assert pa.shikigami[2].revive_countdown == 2  # 恢复转化 -1
+    assert pa.shikigami[2].revive_countdown == 1  # 连击两段恢复转化各 -1
     assert pa.shikigami[0].health == 7  # 无反击（3/7 形态满血）
     # 未觉醒：敌方气绝不可指定
     F.pass_turns(g, 2)  # 回到己方回合
@@ -3148,7 +3153,7 @@ def test_real_assault_defeated_gate(real_game):
     hp0 = pa.shikigami[0].health
     g.apply({"op": "assault", "index": 0,
              "target": {"player": 1, "shikigami": 1}})
-    assert pb.shikigami[1].revive_countdown == 4  # 伤害转化 +1
+    assert pb.shikigami[1].revive_countdown == 5  # 连击两段伤害转化各 +1
     assert pa.shikigami[0].health == hp0  # 气绝者不反击
 
 
@@ -3167,3 +3172,46 @@ def test_real_battle_immunity_requires_preexisting_invocation(real_game):
     F.move(g2, 1, 1)
     F.play(g2, 0, 10040803)
     assert pa2.shikigami[0].health == 4  # 使用前已有：免疫反击
+
+
+def test_parallel_wave_conversions_share_visual_groups(real_game):
+    """樱吹雪每波伤害/治疗及气绝倒计时转化均为同组并行动画。"""
+    g, pa, pb = _rg(real_game, YHY_TEAM, levels={0: 3, 2: 1})
+    F.play(g, 0, 10040305)
+    for index in range(4):
+        _kill(g, 1, index)
+    _kill(g, 0, 2, countdown=2)
+    for index, shiki in enumerate(pa.shikigami):
+        if not shiki.defeated:
+            shiki.health = 1
+    g.state.timeline.clear()
+    F.play(g, 0, 10040307)
+    damage_wave = [entry for entry in g.state.timeline
+                   if entry.get("k") == "v" and entry.get("v") == "countdown"
+                   and entry.get("p") == 1]
+    assert len(damage_wave) == 4
+    assert len({entry.get("g") for entry in damage_wave}) == 1
+    assert damage_wave[0].get("g") is not None
+    heal_wave = [entry for entry in g.state.timeline
+                 if entry.get("k") == "v" and entry.get("p") == 0
+                 and entry.get("v") in ("heal", "countdown")]
+    assert any(entry["v"] == "heal" for entry in heal_wave)
+    assert any(entry["v"] == "countdown" for entry in heal_wave)
+    assert len({entry.get("g") for entry in heal_wave}) == 1
+    assert heal_wave[0].get("g") is not None
+
+
+def test_parallel_aoe_stat_changes_share_visual_group(real_game):
+    """蜃楼观光的力量/生命与全部己方式神在同一组同步刷新。"""
+    g, pa, _pb = _rg(real_game, SM_TEAM, levels={0: 3, 1: 1, 2: 1, 3: 1})
+    g.state.timeline.clear()
+    F.play(g, 0, 10040407)
+    stats = [entry for entry in g.state.timeline
+             if entry.get("k") == "v" and entry.get("v") == "stat"
+             and entry.get("p") == 0]
+    assert len(stats) == 4
+    assert len({entry.get("g") for entry in stats}) == 1
+    assert stats[0].get("g") is not None
+    assert all(entry["r"]["power"] == pa.shikigami[entry["s"]].eff_power
+               and entry["r"]["max_health"] == pa.shikigami[entry["s"]].max_health
+               for entry in stats)

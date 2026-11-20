@@ -185,12 +185,11 @@ def test_quest_play_condition_gate(db, make_game):
     q = give(g, 0, 10010157)
     with pytest.raises(IllegalAction):
         g.apply({"op": "play_card", "uid": q.uid})
-    pa.quest_counts["assault"] = 99
+    q.mods["quest_progress"] = {"assault": 99}
     g.apply({"op": "play_card", "uid": q.uid})
     assert q not in pa.hand
     # quest_done 置位（委托整理"视为达成"）：条件不满足也可用
     q2 = give(g, 0, 10010157)
-    pa.quest_counts["assault"] = 0
     with pytest.raises(IllegalAction):
         g.apply({"op": "play_card", "uid": q2.uid})
     q2.mods["quest_done"] = True
@@ -201,8 +200,10 @@ def test_quest_play_condition_gate(db, make_game):
 def test_quest_round_count_gate(db, make_game):
     """round 账本（今日委托·柒"还需N回合可用"，定案(5)）：己方回合开始 +1；
     多事多忙在场时敌方回合开始也 +1。"""
-    _quest(db, 10010158, cond={"quest_count_ge": {"kind": "round", "count": 2}},
-           steps=[F.Step(op="draw", count=1)])
+    db.cards[10010158] = F.card(
+        10010158, subtype="quest", token=True,
+        play_condition={"quest_count_ge": {"kind": "round", "count": 2}},
+        steps=[F.Step(op="draw", count=1)])
     db.cards[10010252] = F.card(10010252, shikigami=100102, token=True,
                                 card_type="form", form_power=1, form_health=1,
                                 tags=["quest_enemy"])
@@ -494,9 +495,33 @@ def test_quest_progress_label(db, make_game):
     _quest(db, 10010171, cond={"quest_count_ge": {"kind": "assault", "count": 2}})
     g = make_game()
     pa, _ = battle_setup(g)
-    give(g, 0, 10010171)
+    card = give(g, 0, 10010171)
     line = next(l for l in format_hand_lines(g, pa, pa.hand) if "委托" in l)
     assert "委托:出击0/2" in line
-    pa.quest_counts["assault"] = 2
+    card.mods["quest_progress"] = {"assault": 2}
     line = next(l for l in format_hand_lines(g, pa, pa.hand) if "委托" in l)
     assert "委托:出击2/2 ✓" in line
+
+
+def test_urgent_quest_progress_is_per_hand_instance(db, make_game):
+    """紧急委托仅从身处手牌时累计；多张同步推进，多事多忙合并敌方行为。"""
+    _quest(db, 10010172, cond={"quest_count_ge": {"kind": "assault", "count": 2}})
+    db.cards[10010252] = F.card(10010252, shikigami=100102, token=True,
+                                card_type="form", form_power=1, form_health=1,
+                                tags=["quest_enemy"])
+    g = make_game()
+    pa, pb = battle_setup(g)
+    first = give(g, 0, 10010172)
+    g.apply({"op": "assault", "index": 0})
+    second = give(g, 0, 10010172)
+    assert first.mods["quest_progress"]["assault"] == 1
+    assert "quest_progress" not in second.mods
+    pa.shikigami[1].level = 1  # 委托持有方的多事多忙须在场
+    pa.shikigami[1].form = CardInstance(uid=g.state.next_uid, id=10010252)
+    g.state.next_uid += 1
+    pass_turns(g, 1)
+    g.apply({"op": "assault", "index": 0})
+    assert first.mods["quest_progress"]["assault"] == 2
+    assert second.mods["quest_progress"]["assault"] == 1
+    assert g._play_condition_met(pa, db.cards[first.id], first)
+    assert not g._play_condition_met(pa, db.cards[second.id], second)

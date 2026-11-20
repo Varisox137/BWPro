@@ -1,0 +1,13 @@
+type: 法术
+name: 温柔的守护
+level: 1
+rarity: R
+description: '[[瞬发]]。使一个己方式神结附‘[[鸮之守护]]’。抽一张牌。'
+shikigami: 薰
+version_date: '20200928'
+id: '10040501'
+artwork:
+  images:
+  - path: 10040501.png
+    scale: 0.747
+    offset_y: -90

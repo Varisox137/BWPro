@@ -612,3 +612,47 @@ def test_shikigami_has_form_condition(db, make_game):
     assert pa.card_mods[cid]["enhance"] == 1
     pass_turns(g, 2)
     assert pa.card_mods[cid]["enhance"] == 2
+
+
+def test_dynamic_description_suffix_uses_existing_ledgers(db, make_game):
+    """角标外的增强/条件计数进入卡面括号；大合奏按固定能力顺序逐项列出。"""
+    from client.cli import _enhance_description_suffix
+
+    for cid, kw in (
+        (10010408, {}), (10030103, {"steps": [F.dmg(1)]}),
+        (10030951, {"steps": [F.Step(op="gain_shield", amount=1)]}),
+        (10011804, {}), (10011303, {}), (10012403, {}),
+        (10011108, {"steps": [F.Step(op="set_health", amount={"enhance": True, "base": 10})]}),
+        (10040451, {"tags": ["urgent_quest"],
+                    "play_condition": {"quest_count_ge": {"kind": "assault", "count": 2}}}),
+    ):
+        db.cards[cid] = F.card(cid, token=True, **kw)
+    g = make_game()
+    p, _ = F.battle_setup(g)
+    card = give(g, 0, 10010408)
+    p.card_mods[card.id] = {"spell_count": 3}
+    assert _enhance_description_suffix(g, p, card) == "（已使用3次法术）"
+    card = give(g, 0, 10011108)
+    p.card_mods[card.id] = {"enhance": 2}
+    assert _enhance_description_suffix(g, p, card) == "（效果+2）"
+    card = give(g, 0, 10030103)
+    card.mods["damage_boost"] = 2
+    assert _enhance_description_suffix(g, p, card) == "（伤害+2）"
+    card = give(g, 0, 10030951)
+    card.mods["shield_boost"] = 2
+    assert _enhance_description_suffix(g, p, card) == "（效果+2）"
+    card = give(g, 0, 10040451)
+    card.mods["quest_progress"] = {"assault": 2}
+    assert _enhance_description_suffix(g, p, card) == "（已出击2次）"
+    p.ext["dice_history"] = [1, 6, 1]
+    card = give(g, 0, 10011303)
+    assert "已投出：1,6,1" in _enhance_description_suffix(g, p, card)
+    p.ext["countdown_history"] = [10012407, 100124, 10012401]
+    card = give(g, 0, 10012403)
+    suffix = _enhance_description_suffix(g, p, card)
+    assert suffix.index("为所有己方角色恢复3点生命") < suffix.index("造成4点伤害") \
+        < suffix.index("抽一张牌，获得1点鬼火")
+    assert "神乐歌" not in suffix
+    hand_size = len(p.hand)
+    card = give(g, 0, 10011804)
+    assert _enhance_description_suffix(g, p, card) == f"（造成{hand_size // 2}点伤害）"

@@ -8,7 +8,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from client.gui.details import ShikigamiDetailDialog
 from client.gui.widgets import CardDetailDialog
@@ -59,7 +59,9 @@ def test_card_mechanisms_use_yaml_text_and_first_occurrence_order(qapp, monkeypa
     # 默认 12 字/行只渲染一次，显示时整体缩放，顺序保持不变。
     assert [name for name, _text in rendered] == ["贯通", "瞬发", "连击"]
     assert rendered[1][1] == "每回合使用的第一张[[瞬发]]牌不消耗鬼火。"
-    assert all(label.pixmap().width() == dialog.mechanism_panel.width()
+    dialog.show()
+    qapp.processEvents()
+    assert all(label.pixmap().width() <= dialog.mechanism_panel.viewport().width()
                for label in dialog.mechanism_labels)
     dialog.close()
 
@@ -112,7 +114,10 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     game = F.mk_game(db)
     shiki = game.current.shikigami[0]
     shiki.keywords.append("haste")
-    shiki.invocations.append({"name": "测试灵咒", "source": None, "player": 0})
+    shiki.invocations.extend([
+        {"name": "测试灵咒", "source": None, "player": 0},
+        {"name": "测试灵咒", "source": None, "player": 0},
+    ])
     from types import SimpleNamespace
     db.invocations["测试灵咒"] = SimpleNamespace(text="测试灵咒说明。")
     dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
@@ -123,6 +128,7 @@ def test_shikigami_detail_renders_runtime_keyword_and_invocation(qapp):
     assert len(dialog.mechanism_labels) == 1
     assert all(not label.pixmap().isNull() for label in dialog.mechanism_labels)
     assert any("测试灵咒说明。" in item["text"] for item in dialog.status_mechanisms)
+    assert [item["name"] for item in dialog.status_mechanisms] == ["测试灵咒×2"]
     dialog.close()
 
 
@@ -161,9 +167,15 @@ def test_shiki_detail_counter_suffixes(qapp):
     game.current.ext["dice_six_count"] = 3
     assert shiki_detail_suffix(game, ref) == "（本局游戏已投出3次6点）"
     game.current.shikigami[0].id = 100404
-    assert shiki_detail_suffix(game, ref) == "（本局游戏已完成0次委托）"
+    assert shiki_detail_suffix(game, ref) == "（本局游戏已使用过0张牌）"
     game.current.quest_counts["quest_used"] = 2
-    assert shiki_detail_suffix(game, ref) == "（本局游戏已完成2次委托）"
+    assert shiki_detail_suffix(game, ref) == "（本局游戏已使用过2张牌）"
+    game.current.shikigami[0].id = 100128
+    game.current.shikigami[0].awakened = 10012805
+    game.current.shikigami[0].ext["zhen_proc"] = 4
+    assert shiki_detail_suffix(game, ref) == "（效果+4）"
+    game.current.shikigami[0].awakened = None
+    assert shiki_detail_suffix(game, ref) == ""
     game.current.shikigami[0].id = 100101
     assert shiki_detail_suffix(game, ref) == ""
 
@@ -178,7 +190,7 @@ def test_shiki_detail_counter_suffix_passed_to_base_and_awakened_art(qapp, monke
     monkeypatch.setattr("client.gui.details.shikigami_pixmap", fake_shikigami_pixmap)
     for shiki_id, counter_key, expected in (
         (100117, "dice_six_count", "（本局游戏已投出3次6点）"),
-        (100404, "quest_used", "（本局游戏已完成2次委托）"),
+        (100404, "quest_used", "（本局游戏已使用过2张牌）"),
     ):
         db = F.base_db()
         db.shikigami[shiki_id] = F.shiki(shiki_id)
@@ -311,3 +323,90 @@ def test_mechanisms_badge_enters_render_and_lru(qapp, tmp_path, monkeypatch):
     assert second is not None and not second.isNull()
     assert [mechanism["badge"] for mechanism in seen] == ["blue", "gold"]
     mechanisms._mechanism_pixmap.cache_clear()
+
+
+def test_shikigami_detail_form_uses_main_art_height(qapp):
+    from core.model import CardInstance
+
+    db = F.base_db()
+    game = F.mk_game(db)
+    shiki = game.current.shikigami[0]
+    shiki.form = CardInstance(uid=game.state.next_uid, id=10010102)
+    dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
+    assert dialog.form_art_pixmap.height() == 512
+    assert dialog.form_art_label.size() == dialog.main_art_label.size()
+    dialog.close()
+
+
+def test_player_detail_lists_permanent_card_aura(qapp):
+    from client.gui.details import player_ability_mechanisms
+
+    db = F.base_db()
+    db.cards[10010191] = F.card(10010191, token=True, text="本局测试光环。", steps=[
+        F.Step(op="card_aura", tag="test", damage_boost=1, scope="game")])
+    game = F.mk_game(db)
+    F.play(game, 0, 10010191)
+    entries = player_ability_mechanisms(game.current, 0, 0)
+    assert [(item["name"], item["text"]) for item in entries] == [
+        ("卡10010191", "本局测试光环。")]
+
+
+def test_form_detail_shows_dynamic_combat_aura(qapp):
+    from client.gui.details import form_detail_suffix
+    from core.model import CardInstance
+
+    db = F.base_db()
+    game = F.mk_game(db)
+    shiki = game.current.shikigami[0]
+    shiki.form = CardInstance(uid=game.state.next_uid, id=10011507)
+    game.current.ext["lianmo_used_game"] = 3
+    assert form_detail_suffix(game, Ref(player=0, shikigami=0)) == "（战斗牌额外+3/+3）"
+
+
+def test_shikigami_detail_compact_layout_and_full_columns(qapp, monkeypatch):
+    """主卡/形态同尺寸；长机制栏不被滚动条裁切；弹窗不强制留出底部空白。"""
+    from core.model import CardInstance
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("client.gui.details.shikigami_pixmap",
+                        lambda *_args, **_kwargs: QPixmap(300, 512))
+    monkeypatch.setattr("client.gui.details.card_pixmap",
+                        lambda *_args, **_kwargs: QPixmap(260, 512), raising=False)
+    db = F.base_db()
+    game = F.mk_game(db)
+    shiki = game.current.shikigami[0]
+    shiki.form = CardInstance(uid=game.state.next_uid, id=10010102)
+    for index in range(8):
+        name = f"长灵咒{index}"
+        shiki.invocations.append({"name": name, "source": None, "player": 0})
+        db.invocations[name] = SimpleNamespace(text="完整机制文本。" * 20)
+    dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
+    dialog.show()
+    qapp.processEvents()
+    assert dialog.form_art_pixmap.size() == dialog.main_art_pixmap.size()
+    assert dialog.form_art_label.size() == dialog.main_art_label.size()
+    assert dialog.sizeHint().height() <= 600
+    for panel in (dialog.status_panel, dialog.mechanism_panel):
+        if panel is None:
+            continue
+        for label in panel.widget().findChildren(QLabel):
+            assert label.pixmap().width() <= panel.viewport().width()
+    dialog.close()
+
+
+def test_shikigami_detail_groups_stat_changes_by_source(qapp):
+    """普通力量/生命增减在状态栏按来源合并显示，包含原文和永久/临时口径。"""
+    db = F.base_db()
+    db.cards[10010191] = F.card(10010191, token=True, text="测试身材来源。", steps=[
+        F.Step(op="buff_power", amount=1, perm=True, target=F.T(kind="self")),
+        F.Step(op="buff_health", amount=2, perm=True, target=F.T(kind="self")),
+    ])
+    game = F.mk_game(db)
+    F.play(game, 0, 10010191)
+    dialog = ShikigamiDetailDialog(game, Ref(player=0, shikigami=0), 0)
+    entries = [entry for entry in dialog.status_mechanisms if entry["name"] == "卡10010191"]
+    assert len(entries) == 1
+    assert "永久" in entries[0]["text"]
+    assert "力量 +1" in entries[0]["text"] and "生命上限 +2" in entries[0]["text"]
+    assert "测试身材来源。" in entries[0]["text"]
+    dialog.close()

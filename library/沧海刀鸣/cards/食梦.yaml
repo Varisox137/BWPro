@@ -1,0 +1,13 @@
+type: 法术
+name: 食梦
+level: 3
+rarity: R
+description: 随机使敌方牌库里三张牌结附‘[[梦魇]]’，然后为你恢复等同于其牌库中‘[[梦魇]]’总数量的#sm。
+shikigami: 食梦貘
+version_date: '20200928'
+id: '10040607'
+artwork:
+  images:
+  - path: 10040607.png
+    scale: 0.747
+    offset_y: -68

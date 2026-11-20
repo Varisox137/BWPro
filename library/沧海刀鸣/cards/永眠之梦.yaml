@@ -1,0 +1,14 @@
+type: 幻境
+name: 永眠之梦
+level: 2
+rarity: SR
+description: 己方回合结束时，随机使敌方牌库里一张牌结附‘[[梦魇]]’。当敌方抽到结附‘[[梦魇]]’的牌时，消灭此牌对应的式神。
+shikigami: 食梦貘
+durability: 6
+version_date: '20200928'
+id: '10040606'
+artwork:
+  images:
+  - path: 10040606.png
+    scale: 0.711
+    offset_y: -48

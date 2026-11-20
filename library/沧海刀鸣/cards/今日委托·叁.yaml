@@ -1,0 +1,14 @@
+type: 法术
+name: 今日委托·叁
+level: 1
+description: '[[条件]]：己方还需使用了5张或以上的形态牌（在牌库也有效）。使一个己方式神获得4#ll、4#sm。'
+shikigami: 三目
+token: true
+version_date: '20200928'
+id: '10040457'
+special_type: 委托
+artwork:
+  images:
+  - path: 10040457.png
+    scale: 0.747
+    offset_y: -92

@@ -195,9 +195,8 @@ class _Pending:
     ctx: ExecContext
     temp_grant: TempGrant | None = None  # 来自一次性临时触发的待结算项（结算后 uses-1）
     seq: int = 0  # 能力进场序号（收集排序用；0=未登记，保持原有收集顺序）
-    horizon: int = 0  # 结算单元标记（仅 on_countdown_reduced 延时项在 emit 时记
-    # _horizon_stack 栈顶单元 id；0=无标记。倒计时归零块完成后按单元 drain——
-    # 定案"复制延时界=引起该次减少的结算单元"）
+    horizon: int = 0  # 结算单元标记（on_countdown_reduced 延时项在 emit 时记录；
+    # defer_steps 也复用该通道在当前单元完成后执行。0=无标记，倒计时归零块按单元 drain）
 
 
 class Game:
@@ -370,6 +369,7 @@ class Game:
         turn_power = s.ext.pop("turn_power", 0)
         if turn_power:
             s.temp_power -= turn_power
+        s.stat_mods[:] = [entry for entry in s.stat_mods if entry.get("scope") != "turn"]
 
     @staticmethod
     def _ext_clear_power_zero_turn(s: ShikigamiState) -> None:
@@ -602,8 +602,7 @@ class Game:
         return pl.kill_by.get(int(spec.get("shikigami", 0)), 0)
 
     def _quest_tick(self, pi: int, kind: str, n: int = 1, *, shareable: bool = True) -> None:
-        """委托条件账本记账（三目委托机制；PlayerState.quest_counts，与击杀账本同思路——
-        牌手级、跨区域有效，天然满足"在牌库也有效"）。
+        """委托记账：牌手全局账本供日常委托/能力计数；紧急委托另按手牌实例累计。
 
         shareable=True（行为类：assault/draw/play/damage/effect_damage/attack/
         form_play/offdeck_play）：pi 的行为计入 pi 的账本；多事多忙在场（对方有在场
@@ -612,13 +611,20 @@ class Game:
         shareable=False（归属类：enemy_defeat 按气绝者归属对方记账、revive 按复活者
         归属记账、quest_used 限己方三目）天然与对方行为无关，不吃多事多忙扩域。
         """
-        p = self.state.players[pi]
-        p.quest_counts[kind] = p.quest_counts.get(kind, 0) + n
+        def bump(target_pi: int) -> None:
+            p = self.state.players[target_pi]
+            p.quest_counts[kind] = p.quest_counts.get(kind, 0) + n
+            # 紧急委托按手牌实例计数；多张同名委托同步推进，入手前不追溯。
+            for card in p.hand:
+                if "urgent_quest" in self.db.cards[card.id].tags:
+                    progress = card.mods.setdefault("quest_progress", {})
+                    progress[kind] = progress.get(kind, 0) + n
+
+        bump(pi)
         if shareable:
             other = 1 - pi
             if self._field_form_has_tag(other, "quest_enemy"):
-                q = self.state.players[other]
-                q.quest_counts[kind] = q.quest_counts.get(kind, 0) + n
+                bump(other)
 
     def _account_quest_damage(self, ev: "_DamageEvent") -> None:
         """委托账本伤害记账：伤害实际造成（扣减生命批次锁定 dealt）时，来源归属方
@@ -2362,7 +2368,16 @@ class Game:
             return True
         if cdef.play_condition is None:
             return True
-        return self._match(cdef.play_condition, {}, self.state.players.index(p))
+        condition = cdef.play_condition
+        if card is not None and "urgent_quest" in cdef.tags \
+                and "quest_count_ge" in condition:
+            spec = condition["quest_count_ge"]
+            have = card.mods.get("quest_progress", {}).get(spec["kind"], 0)
+            if have < int(spec["count"]):
+                return False
+            condition = {key: value for key, value in condition.items()
+                         if key != "quest_count_ge"}
+        return self._match(condition, {}, self.state.players.index(p))
 
     def _played_block(self, p: PlayerState, cdef: CardDef, card: CardInstance,
                       method: PlayMethod | None) -> EffectBlock:
@@ -2585,6 +2600,8 @@ class Game:
         for step in block.steps:
             if step.target is not None and step.target.kind != "self":
                 continue
+            if step.condition:
+                continue  # 羁绊等条件加成不是基础角标，满足条件时按普通效果步结算
             if step.op == "buff_power" and (step.model_extra or {}).get("perm"):
                 continue  # 永久力量增益（怪力）是常规效果步，非本次战斗战力
             if (step.model_extra or {}).get("no_extract"):
@@ -2725,6 +2742,7 @@ class Game:
         for st in block.steps:
             if (st.op in ("buff_power", "gain_shield")
                     and (st.target is None or st.target.kind == "self")
+                    and not st.condition
                     and not (st.model_extra or {}).get("no_extract")
                     and not (st.op == "buff_power" and (st.model_extra or {}).get("perm"))):
                 continue  # 战力/护甲已提取（永久力量增益与 no_extract 标记步属常规效果步，不提取）
@@ -2774,6 +2792,7 @@ class Game:
         for step in block.steps:
             if (step.op in ("buff_power", "gain_shield")
                     and (step.target is None or step.target.kind == "self")
+                    and not step.condition
                     and not (step.model_extra or {}).get("no_extract")
                     and not (step.op == "buff_power" and (step.model_extra or {}).get("perm"))):
                 continue  # 战力/护甲已提取，不重复执行（永久力量增益与 no_extract 标记步照常执行）
@@ -3170,7 +3189,11 @@ class Game:
                 "g": group, "r": snapshot}
 
     def _visual_stat(self, ref: Ref, group=None) -> None:
-        """同效果单元内同目标的相邻刷新合并；不同目标共用效果单元动画组。"""
+        """同效果单元内同目标刷新合并；不同目标共用效果单元动画组。
+
+        允许隔着其他目标的同组刷新合并，因此 AoE 力量、生命两步只产生一轮小卡刷新；
+        伤害/嵌套效果会推进 epoch，不会跨结算边界合并。
+        """
         horizon = self._horizon_stack[-1] if self._horizon_stack else None
         epoch = self._visual_stat_epoch
         if group is None and horizon is not None:
@@ -3180,13 +3203,19 @@ class Game:
             block, ctx = self._ctx_stack[-1]
             if block.model_extra.get("visual") == "awaken" and ctx.card is not None:
                 event["awaken"] = ctx.card.uid
-        previous = next((entry for entry in reversed(self.state.timeline)
-                         if entry.get("k") == "v"), None)
-        if (horizon is not None and previous is not None
-                and previous.get("v") == "stat" and previous.get("g") == horizon
-                and previous.get("p") == ref.player
-                and previous.get("s") == ref.shikigami
-                and self._visual_stat_event_epochs.get(id(previous)) == epoch):
+        previous = None
+        for entry in reversed(self.state.timeline):
+            if entry.get("k") != "v":
+                continue
+            if entry.get("v") != "stat" or entry.get("g") != horizon:
+                break  # 移动/伤害/气绝及其他动画组均是合并边界
+            if self._visual_stat_event_epochs.get(id(entry)) != epoch:
+                break
+            if entry.get("p") == ref.player and entry.get("s") == ref.shikigami:
+                previous = entry
+                break
+            # 同组其他目标的刷新不阻断 AoE 合并
+        if horizon is not None and previous is not None:
             previous["r"] = event["r"]
             return
         self.state.timeline.append(event)
@@ -3201,8 +3230,8 @@ class Game:
                                     "s": ev.victim.shikigami, "amount": 0,
                                     "g": ev.visual_group})
 
-    def _visual_countdown(self, ref: Ref, *, revive_pending: bool = False) -> None:
-        event = self._stat_event(ref)
+    def _visual_countdown(self, ref: Ref, *, revive_pending: bool = False, group=None) -> None:
+        event = self._stat_event(ref, group)
         event["v"] = "countdown"
         event["r"]["revive_pending"] = revive_pending
         self.state.timeline.append(event)
@@ -3398,6 +3427,8 @@ class Game:
                 st.temp_power -= pw
             for pl in self.state.players:
                 for st in pl.shikigami:
+                    st.stat_mods[:] = [entry for entry in st.stat_mods
+                                       if entry.get("scope") != "battle"]
                     st.immunities[:] = [e for e in st.immunities if e.get("battle") != bid]
             # 移除本战斗绑定的一次性临时触发（已触发完的已随 uses 归零移除）
             self.state.temp_grants[:] = [g for g in self.state.temp_grants if g.battle != bid]
@@ -3684,12 +3715,12 @@ class Game:
                 self._run_damage_queue(events)
                 if self.state.pending_end:
                     return
-                # 被攻击者气绝：攻击者具有贯通则被攻击者改为对方牌手，否则终止战斗
-                # （定案(6)：连击无贯通第一段击杀同样终止，后续时机不结算）
+                # 被攻击者气绝：贯通改为对方牌手；先攻（非连击）无贯通终止。
+                # 连击仍执行第二段并以原角色为目标，气绝拦截/倒计时转化照常。
                 if vic_idx is not None and d.shikigami[vic_idx].defeated:
                     if piercing:
                         vic_idx = None
-                    else:
+                    elif not combo:
                         self._log("被攻击方气绝，战斗终止")
                         return
                 if attacker.defeated or attacker.despawned:
@@ -3802,6 +3833,8 @@ class Game:
         # 被攻击者按敌方战斗区/直击决定；无追猎不能选择出击目标）
         target: Ref | None = None
         want = cmd.get("target")
+        if want is None and self._has_keyword(s, "assault_any_target"):
+            raise IllegalAction("攻击任一其他角色为强制效果，必须选择出击目标")
         if want is not None:
             want = want if isinstance(want, Ref) else Ref(**want)
             if self._has_keyword(s, "assault_any_target"):
@@ -3877,7 +3910,13 @@ class Game:
         # 结束移除；加成不被消耗时（离殇之舞 no_consume）槽位同样保留、下次出击再授予
         bkw = p.ext.get("boost_keyword")
         if power or bkw:
-            entry: dict = {"power": power, "keywords": []}
+            source_names = list(dict.fromkeys(
+                b["source_name"] for b in p.assault_boosts if b.get("source_name")))
+            source_texts = list(dict.fromkeys(
+                b["text"] for b in p.assault_boosts if b.get("text")))
+            entry: dict = {"power": power, "keywords": [],
+                           "source_name": "、".join(source_names) or "出击加成",
+                           "text": "\n".join(source_texts) or "（无来源文本）"}
             if power:
                 s.temp_power += power
                 self._record_max_power(s)
@@ -4908,7 +4947,8 @@ class Game:
                                                     converted=converted, card=card)])
 
     def _run_damage_queue(self, events: list[_DamageEvent],
-                          defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None) -> int:
+                          defer_defeats: list[tuple[Ref, Ref | None, str]] | None = None,
+                          visual_group=None) -> int:
         """伤害事件队列：并行伤害、贯通溢出、伤害合并都在同一队列结算（rules.md 第五章）。
         返回本队列实际造成的伤害合计（扣减生命口径，巨浪"每造成 1 点伤害"统计用）。
 
@@ -4918,8 +4958,9 @@ class Game:
         由调用方延后统一结算（随机分配伤害：气绝事件按延时时机在效果结束后结算）。
         子优先级批次（0/1/2/3）暂不拆事件名，待首个有优先级需求的监听者出现再拆。
         """
-        self._visual_group_seq += 1
-        visual_group = self._visual_group_seq
+        if visual_group is None:
+            self._visual_group_seq += 1
+            visual_group = self._visual_group_seq
         stat_group = f"{visual_group}:stat"
         visual_stats: list[dict] = []
         for event in events:
@@ -5652,6 +5693,7 @@ class Game:
         self._detach_invocations(s, reason="气绝")  # 灵咒随气绝移除（身材光环层随之失效）
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
         s.temp_health = 0
+        s.stat_mods[:] = [entry for entry in s.stat_mods if entry.get("perm")]
         s.keywords.clear()  # 持续/一次性关键字与免疫条目气绝时清除；永久关键字保留（复活自动重新获得）
         s.one_shot_keywords.clear()
         s.immunities.clear()
@@ -5942,7 +5984,8 @@ class Game:
         """
         self._run_heal_queue([(ref, amount, source, reason)])
 
-    def _run_heal_queue(self, items: list[tuple[Ref, int, Ref | None, str]]) -> None:
+    def _run_heal_queue(self, items: list[tuple[Ref, int, Ref | None, str]],
+                        visual_group=None) -> None:
         """并行治疗队列（heal 动作 parallel=True——佛光"为其操控者的所有角色"，
         裁决 2(1)）：多目标治疗事件同批结算，两阶段——
         阶段 1 逐事件发"治疗前"批次（即时 on_before_heal，可变量 box 收集改写）；
@@ -5950,7 +5993,8 @@ class Game:
         并行中途转化（法界唯心在治疗前把治疗量置 0 + 入队延时伤害）：被转化的
         事件不再产出治疗，其衍生伤害事件经延时队列**依次**结算（不再并行）。
         单目标 heal() 委托本通道（行为与逐项直调一致）。"""
-        visual_group = id(items) if len(items) > 1 else None
+        if visual_group is None and len(items) > 1:
+            visual_group = id(items)
         stat_group = f"{visual_group}:stat" if visual_group is not None else None
         visual_stats: list[dict] = []
         pending: list[tuple[Ref, int, Ref | None, str]] = []

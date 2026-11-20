@@ -1,0 +1,16 @@
+type: 幻境
+name: 梦中低语
+level: 1
+rarity: R
+description: '己方回合结束时，随机使敌方牌库里一张牌结附‘[[梦魇]]’。
+
+  当敌方抽到结附‘[[梦魇]]’的牌时，此牌对应的式神本回合降低2#ll。'
+shikigami: 食梦貘
+durability: 4
+version_date: '20200928'
+id: '10040602'
+artwork:
+  images:
+  - path: 10040602.png
+    scale: 0.72
+    offset_y: -75
