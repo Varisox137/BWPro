@@ -61,6 +61,10 @@ def test_mulligan_flow(db, make_game):
     g.apply({"op": "mulligan", "player": 0, "uid": a.hand[0].uid})
     assert len(a.hand) == 5 and a.mulligans_left == 2   # 返回 1 张再随机抽 1
     assert a.hand[0].hand_seq == old_seq                # 新牌继承原位置顺序编号
+    assert g.state.log[-2:] == [
+        f"{a.name} 调度了一张手牌（剩余 2 次）", f"{a.name} 进行了调度"]
+    assert g.state.log_vis[-2:] == [0, 1]
+    assert [entry.get("o") for entry in g.state.timeline[-2:]] == [0, 1]
     g.apply({"op": "ready", "player": 0})
     assert g.state.phase == "mulligan"                  # B 未确认
     g.apply({"op": "ready", "player": 1})
@@ -426,6 +430,9 @@ def test_battle_mulligan_flow(db, make_game):
     g.apply({"op": "choose", "uid": uid, "player": 0})       # 换 1 张
     assert g.state.pending_choice["remaining"] == 2
     assert uid not in [c.uid for c in pa.hand]
+    assert g.state.log[-2:] == [
+        f"{pa.name} 调度了一张手牌（剩余 2 次）", f"{pa.name} 进行了调度"]
+    assert g.state.log_vis[-2:] == [0, 1]
     g.apply({"op": "choose", "player": 0})                   # 提前结束 → 洗牌续块
     assert g.state.pending_choice is None
     assert len(pa.hand) == hand_before + 1        # 续块的 draw 1 已结算

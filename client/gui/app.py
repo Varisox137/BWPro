@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 import client.update as update
 from client.gui import notices
+from client.gui.portrait import resource_root
 from client.gui.prewarm import prewarm_all
 from client.gui.ui_assets import load_gui_settings, save_gui_settings
 from client.gui.widgets import ask_confirmation, show_warning
@@ -48,7 +49,7 @@ def qss(theme: str) -> str:
     selection_bg = "#cfe5f7" if theme == "light" else "#294c68"
     selection_text = "#17344d" if theme == "light" else t["text"]
     selection_hover = "rgba(207, 229, 247, 128)" if theme == "light" else "rgba(41, 76, 104, 128)"
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    root = resource_root()
     checkmark = (root / "assets" / "icons" / "checkmark.svg").as_posix()
     return f"""
     QMainWindow, QWidget {{ background: {t['bg']}; color: {t['text']}; }}
@@ -133,7 +134,7 @@ def _theme_icon(theme: str) -> QIcon:
 
 
 def _application_icon() -> QIcon:
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    root = resource_root()
     return QIcon(str(root / "assets" / "app_icon.ico"))
 
 
@@ -475,8 +476,8 @@ class MainWindow(QMainWindow):
     def _update_staging_path(self, available) -> Path:
         if getattr(sys, "frozen", False):
             executable = Path(sys.executable).resolve()
-            return executable.with_name(executable.name + ".new")
-        return Path.home() / ".bwpro" / "downloads" / (available.exe_name + ".new")
+            return executable.parent.parent / (available.zip_name + ".new")
+        return Path.home() / ".bwpro" / "downloads" / (available.zip_name + ".new")
 
     def _start_update_download(self, generation: int, available) -> None:
         self._update_downloading = True

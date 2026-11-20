@@ -33,6 +33,8 @@ def test_exe_build_uses_local_application_icon(monkeypatch):
     build._build()
 
     args = calls[0]
+    assert "--onedir" in args
+    assert "--onefile" not in args
     assert "--icon" in args
     icon = Path(args[args.index("--icon") + 1])
     assert icon == build.ROOT / "assets" / "app_icon.ico"
@@ -80,8 +82,8 @@ def test_exe_version_uses_shared_runtime_constant():
     build = importlib.import_module("scripts.build_exe")
     from core.version import VERSION
 
-    assert build.VERSION == VERSION == "0.4.1"
-    assert build.EXE_NAME == "BWPro-v0.4.1"
+    assert build.VERSION == VERSION == "0.5.0"
+    assert build.EXE_NAME == "BWPro-v0.5.0"
 
 
 def test_launcher_dispatches_apply_update_before_gui(monkeypatch):
@@ -121,14 +123,18 @@ def test_launcher_passes_hidden_cleanup_to_normal_gui_startup(monkeypatch, tmp_p
 
 def test_exe_prunes_releases_before_smoke_failure(tmp_path, monkeypatch):
     build = importlib.import_module("scripts.build_exe")
-    built = tmp_path / "dist" / "BWPro-v0.3.5.exe"
-    built.parent.mkdir()
+    built = tmp_path / "dist" / "BWPro-v0.3.5" / "BWPro-v0.3.5.exe"
+    built.parent.mkdir(parents=True)
     built.write_bytes(b"new")
+    internal = built.parent / "_internal" / "assets" / "base.png"
+    internal.parent.mkdir(parents=True)
+    internal.write_bytes(b"asset")
     old = tmp_path / "releases" / "BWPro-v0.3.4.exe"
     old.parent.mkdir()
     old.write_bytes(b"old")
     old.with_name(old.name + ".sha256").write_text("old", encoding="utf-8")
     monkeypatch.setattr(build, "ROOT", tmp_path)
+    monkeypatch.setattr(build, "EXE_NAME", "BWPro-v0.3.5")
     monkeypatch.setattr(build, "_build", lambda: built)
 
     def fail_smoke(_executable):
@@ -140,26 +146,38 @@ def test_exe_prunes_releases_before_smoke_failure(tmp_path, monkeypatch):
 
     assert not old.exists()
     assert not old.with_name(old.name + ".sha256").exists()
-    assert (tmp_path / "releases" / built.name).is_file()
+    import zipfile
+
+    released = tmp_path / "releases" / "BWPro-v0.3.5.zip"
+    assert released.is_file()
+    with zipfile.ZipFile(released) as archive:
+        assert set(archive.namelist()) == {
+            "BWPro-v0.3.5/BWPro-v0.3.5.exe",
+            "BWPro-v0.3.5/_internal/assets/base.png",
+        }
+    assert released.with_name(released.name + ".sha256").is_file()
 
 
 def test_prune_releases_keeps_latest_patch_and_five_minor_series(tmp_path):
     build = importlib.import_module("scripts.build_exe")
     versions = ("0.1.0", "0.2.0", "0.3.0", "0.3.1", "0.4.1", "0.5.0", "0.6.0")
     for version in versions:
-        exe = tmp_path / f"BWPro-v{version}.exe"
-        exe.write_bytes(version.encode())
-        exe.with_name(exe.name + ".sha256").write_text(version, encoding="utf-8")
+        for suffix in ("exe", "zip"):
+            artifact = tmp_path / f"BWPro-v{version}.{suffix}"
+            artifact.write_bytes(version.encode())
+            artifact.with_name(artifact.name + ".sha256").write_text(version, encoding="utf-8")
     unrelated = tmp_path / "notes.txt"
     unrelated.write_text("保留", encoding="utf-8")
 
     build._prune_releases(tmp_path)
 
-    assert {path.name for path in tmp_path.glob("*.exe")} == {
-        "BWPro-v0.2.0.exe", "BWPro-v0.3.1.exe", "BWPro-v0.4.1.exe",
-        "BWPro-v0.5.0.exe", "BWPro-v0.6.0.exe",
-    }
-    assert not (tmp_path / "BWPro-v0.3.0.exe.sha256").exists()
-    assert not (tmp_path / "BWPro-v0.1.0.exe.sha256").exists()
-    assert (tmp_path / "BWPro-v0.3.1.exe.sha256").is_file()
+    for suffix in ("exe", "zip"):
+        assert {path.name for path in tmp_path.glob(f"*.{suffix}")} == {
+            f"BWPro-v0.2.0.{suffix}", f"BWPro-v0.3.1.{suffix}",
+            f"BWPro-v0.4.1.{suffix}", f"BWPro-v0.5.0.{suffix}",
+            f"BWPro-v0.6.0.{suffix}",
+        }
+        assert not (tmp_path / f"BWPro-v0.3.0.{suffix}.sha256").exists()
+        assert not (tmp_path / f"BWPro-v0.1.0.{suffix}.sha256").exists()
+        assert (tmp_path / f"BWPro-v0.3.1.{suffix}.sha256").is_file()
     assert unrelated.read_text(encoding="utf-8") == "保留"

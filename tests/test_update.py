@@ -4,9 +4,11 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import stat
 import threading
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -47,12 +49,12 @@ class FakeResponse(io.BytesIO):
         self.close()
 
 
-def release_payload(tag="v0.4.1", *, exe_url=None, sha_url=None, names=None):
-    exe_name, sha_name = names or (f"BWPro-{tag}.exe", f"BWPro-{tag}.exe.sha256")
+def release_payload(tag="v0.4.1", *, zip_url=None, sha_url=None, names=None):
+    zip_name, sha_name = names or (f"BWPro-{tag}.zip", f"BWPro-{tag}.zip.sha256")
     return {
         "tag_name": tag,
         "assets": [
-            {"name": exe_name, "browser_download_url": exe_url or "https://cdn.example/app.exe"},
+            {"name": zip_name, "browser_download_url": zip_url or "https://cdn.example/app.zip"},
             {"name": sha_name, "browser_download_url": sha_url or "https://cdn.example/app.sha256"},
         ],
     }
@@ -72,21 +74,38 @@ def opening(payload=None, *, error=None):
 def available_update():
     return AvailableUpdate(
         tag="v0.4.1",
-        exe_name="BWPro-v0.4.1.exe",
-        exe_url="https://cdn.example/app.exe",
-        sha256_name="BWPro-v0.4.1.exe.sha256",
+        zip_name="BWPro-v0.4.1.zip",
+        zip_url="https://cdn.example/app.zip",
+        sha256_name="BWPro-v0.4.1.zip.sha256",
         sha256_url="https://cdn.example/app.sha256",
     )
 
 
+def write_update_archive(path, *, root="BWPro-v0.4.1", payload=b"new"):
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(f"{root}/{root}.exe", payload)
+        archive.writestr(f"{root}/_internal/runtime.dll", b"new dependency")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_old_install(tmp_path):
+    target = tmp_path / "BWPro-v0.3.0" / "BWPro-v0.3.0.exe"
+    target.parent.mkdir()
+    target.write_bytes(b"old")
+    dependency = target.parent / "_internal" / "runtime.dll"
+    dependency.parent.mkdir()
+    dependency.write_bytes(b"old dependency")
+    return target
+
+
 def test_version_is_strict_numeric_and_matches_project_metadata():
-    assert VERSION == "0.4.1"
+    assert VERSION == "0.5.0"
     assert parse_version("v0.10.0") > parse_version("v0.9.9")
-    assert verify_update(VERSION, "v0.4.2") == "v0.4.2"
+    assert verify_update(VERSION, "v0.5.1") == "v0.5.1"
     for invalid in ("0.3.1", "v1.2", "v1.2.3.4", "v01.2.3", "v1.2.3-beta"):
         with pytest.raises(ValueError):
             parse_version(invalid)
-    for not_newer in ("v0.4.1", "v0.3.1", "v0.3.0"):
+    for not_newer in ("v0.5.0", "v0.4.1", "v0.3.1"):
         with pytest.raises(ValueError):
             verify_update(VERSION, not_newer)
     import tomllib
@@ -117,9 +136,9 @@ def test_release_assets_must_exactly_match_the_strict_tag():
     assert found == available_update()
 
     bad_payloads = (
-        release_payload(names=("BWPro-v0.3.1.exe.extra", "BWPro-v0.3.1.exe.sha256")),
-        release_payload(names=("BWPro-v0.3.0.exe", "BWPro-v0.3.1.exe.sha256")),
-        release_payload(exe_url="http://cdn.example/app.exe"),
+        release_payload(names=("BWPro-v0.3.1.zip.extra", "BWPro-v0.3.1.zip.sha256")),
+        release_payload(names=("BWPro-v0.3.0.zip", "BWPro-v0.3.1.zip.sha256")),
+        release_payload(zip_url="http://cdn.example/app.zip"),
     )
     for payload in bad_payloads:
         with pytest.raises(UpdateError):
@@ -132,21 +151,21 @@ def test_https_redirects_stay_https_without_downgrade():
     handler = SafeHTTPSRedirectHandler()
     request = urllib.request.Request("https://github.com/start")
     redirected = handler.redirect_request(
-        request, None, 302, "Found", {}, "https://objects.githubusercontent.com/app.exe")
-    assert redirected.full_url == "https://objects.githubusercontent.com/app.exe"
+        request, None, 302, "Found", {}, "https://objects.githubusercontent.com/app.zip")
+    assert redirected.full_url == "https://objects.githubusercontent.com/app.zip"
     with pytest.raises(UpdateError):
-        handler.redirect_request(request, None, 302, "Found", {}, "http://github.com/app.exe")
+        handler.redirect_request(request, None, 302, "Found", {}, "http://github.com/app.zip")
 
 
-def test_download_streams_both_assets_and_stages_verified_exe(tmp_path):
-    payload = b"new executable"
+def test_download_streams_both_assets_and_stages_verified_zip(tmp_path):
+    payload = b"new archive"
     digest = hashlib.sha256(payload).hexdigest()
-    checksum = f"{digest}  BWPro-v0.4.1.exe\n".encode()
+    checksum = f"{digest}  BWPro-v0.4.1.zip\n".encode()
     responses = {
         "https://cdn.example/app.sha256": FakeResponse([checksum[:20], checksum[20:]]),
-        "https://cdn.example/app.exe": FakeResponse([payload[:3], payload[3:]]),
+        "https://cdn.example/app.zip": FakeResponse([payload[:3], payload[3:]]),
     }
-    staged = tmp_path / "BWPro-v0.3.0.exe.new"
+    staged = tmp_path / "BWPro-v0.3.0.zip.new"
 
     download_update(available_update(), staged, opener=lambda request, timeout: responses[request.full_url])
 
@@ -159,7 +178,7 @@ def test_download_streams_both_assets_and_stages_verified_exe(tmp_path):
 
 def test_bad_hash_and_interrupted_download_remove_partial_files(tmp_path):
     payload = b"not the expected executable"
-    checksum = f"{'0' * 64}  BWPro-v0.4.1.exe\n".encode()
+    checksum = f"{'0' * 64}  BWPro-v0.4.1.zip\n".encode()
 
     class Interrupted(FakeResponse):
         def read(self, size=-1):
@@ -168,10 +187,10 @@ def test_bad_hash_and_interrupted_download_remove_partial_files(tmp_path):
             raise OSError("连接中断")
 
     for exe_response in (FakeResponse([payload]), Interrupted([payload])):
-        staged = tmp_path / "BWPro-v0.3.0.exe.new"
+        staged = tmp_path / "BWPro-v0.3.0.zip.new"
         responses = {
             "https://cdn.example/app.sha256": FakeResponse([checksum]),
-            "https://cdn.example/app.exe": exe_response,
+            "https://cdn.example/app.zip": exe_response,
         }
         with pytest.raises((UpdateError, OSError)):
             download_update(
@@ -191,11 +210,11 @@ def test_cancel_and_actual_byte_limit_clean_partial_download(tmp_path, monkeypat
             cancelled.set()
             return chunk
 
-    staged = tmp_path / "BWPro-v0.3.0.exe.new"
+    staged = tmp_path / "BWPro-v0.3.0.zip.new"
     responses = {
         "https://cdn.example/app.sha256": FakeResponse([
-            f"{hashlib.sha256(b'abc').hexdigest()}  BWPro-v0.4.1.exe\n".encode()]),
-        "https://cdn.example/app.exe": CancelAfterFirstChunk([b"abc"]),
+            f"{hashlib.sha256(b'abc').hexdigest()}  BWPro-v0.4.1.zip\n".encode()]),
+        "https://cdn.example/app.zip": CancelAfterFirstChunk([b"abc"]),
     }
     with pytest.raises(UpdateCancelled):
         download_update(
@@ -208,8 +227,8 @@ def test_cancel_and_actual_byte_limit_clean_partial_download(tmp_path, monkeypat
     staged = tmp_path / "too-large.new"
     responses = {
         "https://cdn.example/app.sha256": FakeResponse([
-            f"{hashlib.sha256(b'x' * 17).hexdigest()}  BWPro-v0.4.1.exe\n".encode()]),
-        "https://cdn.example/app.exe": FakeResponse([b"x" * 17], content_length=1),
+            f"{hashlib.sha256(b'x' * 17).hexdigest()}  BWPro-v0.4.1.zip\n".encode()]),
+        "https://cdn.example/app.zip": FakeResponse([b"x" * 17], content_length=1),
     }
     with pytest.raises(UpdateError, match="大小上限"):
         download_update(
@@ -220,16 +239,20 @@ def test_cancel_and_actual_byte_limit_clean_partial_download(tmp_path, monkeypat
 
 
 def test_non_frozen_launch_never_replaces_python_executable(tmp_path):
-    staged = tmp_path / "app.exe.new"
+    staged = tmp_path / "app.zip.new"
     staged.write_bytes(b"new")
     with pytest.raises(UpdateError, match="冻结"):
         launch_update(staged, hashlib.sha256(b"new").hexdigest(), frozen=False)
 
 
-def test_frozen_launch_starts_temporary_copy_with_apply_arguments(tmp_path):
-    current = tmp_path / "BWPro-v0.3.0.exe"
-    staged = tmp_path / "BWPro-v0.3.0.exe.new"
+def test_frozen_launch_starts_complete_temporary_onedir_copy(tmp_path):
+    current = tmp_path / "install" / "BWPro-v0.3.0.exe"
+    current.parent.mkdir()
     current.write_bytes(b"old")
+    dependency = current.parent / "_internal" / "runtime.dll"
+    dependency.parent.mkdir()
+    dependency.write_bytes(b"dependency")
+    staged = tmp_path / "BWPro-v0.3.0.zip.new"
     staged.write_bytes(b"new")
     calls = []
 
@@ -245,8 +268,87 @@ def test_frozen_launch_starts_temporary_copy_with_apply_arguments(tmp_path):
     copied = Path(command[0])
     assert copied != current
     assert copied.read_bytes() == b"old"
+    assert copied.parent / "_internal" / "runtime.dll" != dependency
+    assert (copied.parent / "_internal" / "runtime.dll").read_bytes() == b"dependency"
     assert command[1:] == [
         "--apply-update", "4321", str(current), str(staged), hashlib.sha256(b"new").hexdigest()]
+
+
+@pytest.mark.parametrize("member", [
+    "../escape.txt",
+    "/absolute.txt",
+    "C:/drive.txt",
+    "BWPro-v0.4.1/../../escape.txt",
+    "BWPro-v0.4.1/file.txt:stream",
+    "BWPro-v0.4.1/CON",
+])
+def test_update_zip_rejects_traversal_and_illegal_windows_paths(tmp_path, member):
+    import client.update as update
+
+    staged = tmp_path / "update.zip"
+    with zipfile.ZipFile(staged, "w") as archive:
+        info = zipfile.ZipInfo("placeholder")
+        info.filename = member
+        archive.writestr(info, b"bad")
+    destination = tmp_path / "unpack"
+    destination.mkdir()
+    with pytest.raises(UpdateError, match="路径"):
+        update._extract_update(staged, destination)
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_update_zip_member_rejects_backslash_before_zipfile_normalization():
+    import client.update as update
+
+    info = zipfile.ZipInfo("placeholder")
+    info.filename = "BWPro-v0.4.1\\escape.txt"
+    with pytest.raises(UpdateError, match="路径"):
+        update._archive_member_name(info)
+
+
+def test_update_zip_rejects_links_duplicates_and_excessive_unpacked_size(
+        tmp_path, monkeypatch):
+    import client.update as update
+
+    destination = tmp_path / "unpack"
+    destination.mkdir()
+    linked = tmp_path / "linked.zip"
+    with zipfile.ZipFile(linked, "w") as archive:
+        info = zipfile.ZipInfo("BWPro-v0.4.1/link")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(info, "target")
+    with pytest.raises(UpdateError, match="链接"):
+        update._extract_update(linked, destination)
+
+    duplicate = tmp_path / "duplicate.zip"
+    with zipfile.ZipFile(duplicate, "w") as archive:
+        archive.writestr("BWPro-v0.4.1/FILE", b"one")
+        archive.writestr("BWPro-v0.4.1/file", b"two")
+    with pytest.raises(UpdateError, match="冲突"):
+        update._extract_update(duplicate, destination)
+
+    monkeypatch.setattr(update, "MAX_UNPACKED_BYTES", 3)
+    oversized = tmp_path / "oversized.zip"
+    write_update_archive(oversized)
+    with pytest.raises(UpdateError, match="上限"):
+        update._extract_update(oversized, destination)
+
+
+def test_update_zip_requires_single_named_onedir_payload(tmp_path):
+    import client.update as update
+
+    destination = tmp_path / "unpack"
+    destination.mkdir()
+    for name, members in (
+            ("multiple.zip", {"one/one.exe": b"one", "two/two.exe": b"two"}),
+            ("missing.zip", {"BWPro-v0.4.1/_internal/runtime.dll": b"dependency"})):
+        staged = tmp_path / name
+        with zipfile.ZipFile(staged, "w") as archive:
+            for member, payload in members.items():
+                archive.writestr(member, payload)
+        with pytest.raises(UpdateError):
+            update._extract_update(staged, destination)
 
 
 class FakeCFunction:
@@ -324,56 +426,58 @@ def test_windows_process_wait_accepts_process_that_already_exited(monkeypatch):
     wait_for_process(1234, timeout=0)
 
 
-def test_apply_waits_then_atomically_replaces_and_restarts(tmp_path):
-    target = tmp_path / "BWPro.exe"
-    staged = tmp_path / "BWPro.exe.new"
-    target.write_bytes(b"old")
-    staged.write_bytes(b"new")
+def test_apply_waits_then_replaces_onedir_and_restarts_new_executable(tmp_path):
+    target = write_old_install(tmp_path)
+    staged = tmp_path / "BWPro-v0.4.1.zip.new"
+    digest = write_update_archive(staged)
     calls = []
 
     result = apply_update(
-        123, target, staged, hashlib.sha256(b"new").hexdigest(),
+        123, target, staged, digest,
         wait=lambda pid: calls.append(("wait", pid)),
-        restart=lambda path, **_kwargs: calls.append(("restart", path.read_bytes())))
+        restart=lambda path, **_kwargs: calls.append(("restart", path.read_bytes(), path)))
 
     assert result == 0
-    assert calls == [("wait", 123), ("restart", b"new")]
-    assert target.read_bytes() == b"new"
+    assert calls[:2] == [("wait", 123), ("restart", b"new", target.parent / "BWPro-v0.4.1.exe")]
+    assert (target.parent / "_internal" / "runtime.dll").read_bytes() == b"new dependency"
+    assert not target.exists()
     assert not staged.exists()
-    assert not (tmp_path / "BWPro.exe.bak").exists()
+    assert not (tmp_path / "BWPro-v0.3.0.bak").exists()
+    assert not list(tmp_path.glob("bwpro-unpack-*"))
 
 
 def test_replace_failure_restores_backup_and_restarts_old_version(tmp_path, monkeypatch):
     import client.update as update
 
-    target = tmp_path / "BWPro.exe"
-    staged = tmp_path / "BWPro.exe.new"
-    target.write_bytes(b"old")
-    staged.write_bytes(b"new")
+    target = write_old_install(tmp_path)
+    staged = tmp_path / "BWPro-v0.4.1.zip.new"
+    digest = write_update_archive(staged)
     restarted = []
     real_replace = update.os.replace
 
-    def fail_new_executable(source, destination):
-        if Path(source) == staged and Path(destination) == target:
+    def fail_new_directory(source, destination):
+        if Path(destination) == target.parent and Path(source).parent.name.startswith("bwpro-unpack-"):
             raise OSError("注入替换失败")
         return real_replace(source, destination)
 
-    monkeypatch.setattr(update.os, "replace", fail_new_executable)
+    monkeypatch.setattr(update.os, "replace", fail_new_directory)
     with pytest.raises(UpdateError, match="回滚"):
         apply_update(
-            123, target, staged, hashlib.sha256(b"new").hexdigest(),
-            wait=lambda _pid: None, restart=lambda path, **_kwargs: restarted.append(path.read_bytes()))
+            123, target, staged, digest, wait=lambda _pid: None,
+            restart=lambda path, **_kwargs: restarted.append(path.read_bytes()))
 
     assert target.read_bytes() == b"old"
+    assert (target.parent / "_internal" / "runtime.dll").read_bytes() == b"old dependency"
     assert restarted == [b"old"]
-    assert not (tmp_path / "BWPro.exe.bak").exists()
+    assert staged.exists()
+    assert not (tmp_path / "BWPro-v0.3.0.bak").exists()
+    assert not list(tmp_path.glob("bwpro-unpack-*"))
 
 
 def test_wait_failure_preserves_files_and_never_restarts(tmp_path):
-    target = tmp_path / "BWPro.exe"
-    staged = tmp_path / "BWPro.exe.new"
-    target.write_bytes(b"old")
-    staged.write_bytes(b"new")
+    target = write_old_install(tmp_path)
+    staged = tmp_path / "BWPro-v0.4.1.zip.new"
+    digest = write_update_archive(staged)
     restarted = []
 
     def fail_wait(_pid):
@@ -381,13 +485,13 @@ def test_wait_failure_preserves_files_and_never_restarts(tmp_path):
 
     with pytest.raises(UpdateError, match="等待"):
         apply_update(
-            123, target, staged, hashlib.sha256(b"new").hexdigest(),
+            123, target, staged, digest,
             wait=fail_wait, restart=lambda path, **_kwargs: restarted.append(path))
 
     assert target.read_bytes() == b"old"
-    assert staged.read_bytes() == b"new"
+    assert staged.exists()
     assert restarted == []
-    assert not (tmp_path / "BWPro.exe.bak").exists()
+    assert not (tmp_path / "BWPro-v0.3.0.bak").exists()
 
 
 def test_logging_initialization_failure_does_not_start_update(monkeypatch):
@@ -409,7 +513,7 @@ def test_checksum_asset_has_small_limit_and_strict_format(tmp_path):
 
     assert MAX_SHA256_BYTES == 4096
     for contents, message in ((b"x" * 4097, "大小上限"), (b"not-a-checksum", "格式")):
-        staged = tmp_path / "BWPro.exe.new"
+        staged = tmp_path / "BWPro.zip.new"
         responses = {"https://cdn.example/app.sha256": FakeResponse([contents])}
 
         def open_asset(request, timeout):
@@ -419,21 +523,20 @@ def test_checksum_asset_has_small_limit_and_strict_format(tmp_path):
         with pytest.raises(UpdateError, match=message):
             download_update(available_update(), staged, opener=open_asset)
         assert not staged.exists()
-        assert not (tmp_path / "BWPro.exe.new.part").exists()
-        assert not (tmp_path / "BWPro.exe.new.sha256.part").exists()
+        assert not (tmp_path / "BWPro.zip.new.part").exists()
+        assert not (tmp_path / "BWPro.zip.new.sha256.part").exists()
 
 
 def test_restart_passes_temporary_updater_cleanup_location(tmp_path, monkeypatch):
     import client.update as update
     import os
 
-    target = tmp_path / "BWPro.exe"
-    staged = tmp_path / "BWPro.exe.new"
+    target = write_old_install(tmp_path)
+    staged = tmp_path / "BWPro-v0.4.1.zip.new"
+    digest = write_update_archive(staged)
     updater_dir = tmp_path / "bwpro-update-test"
     updater_dir.mkdir()
     updater = updater_dir / "BWPro.exe"
-    target.write_bytes(b"old")
-    staged.write_bytes(b"new")
     updater.write_bytes(b"updater")
     monkeypatch.setattr(update.sys, "frozen", True, raising=False)
     monkeypatch.setattr(update.sys, "executable", str(updater))
@@ -443,18 +546,16 @@ def test_restart_passes_temporary_updater_cleanup_location(tmp_path, monkeypatch
         restarted.append((path.read_bytes(), cleanup))
 
     assert apply_update(
-        123, target, staged, hashlib.sha256(b"new").hexdigest(),
-        wait=lambda _pid: None, restart=restart) == 0
+        123, target, staged, digest, wait=lambda _pid: None, restart=restart) == 0
     assert restarted == [(b"new", (os.getpid(), updater_dir))]
 
 
 def test_post_wait_cleanup_metadata_failure_restarts_old_version(tmp_path, monkeypatch):
     import client.update as update
 
-    target = tmp_path / "BWPro.exe"
-    staged = tmp_path / "BWPro.exe.new"
-    target.write_bytes(b"old")
-    staged.write_bytes(b"new")
+    target = write_old_install(tmp_path)
+    staged = tmp_path / "BWPro-v0.4.1.zip.new"
+    digest = write_update_archive(staged)
     restarted = []
     monkeypatch.setattr(
         update, "_updater_cleanup_location",
@@ -462,12 +563,11 @@ def test_post_wait_cleanup_metadata_failure_restarts_old_version(tmp_path, monke
 
     with pytest.raises(UpdateError, match="回滚"):
         apply_update(
-            123, target, staged, hashlib.sha256(b"new").hexdigest(),
-            wait=lambda _pid: None,
+            123, target, staged, digest, wait=lambda _pid: None,
             restart=lambda path, **_kwargs: restarted.append(path.read_bytes()))
     assert restarted == [b"old"]
     assert target.read_bytes() == b"old"
-    assert staged.read_bytes() == b"new"
+    assert staged.exists()
 
 
 def test_cleanup_thread_start_failure_is_logged_not_raised(monkeypatch, caplog, tmp_path):

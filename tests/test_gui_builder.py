@@ -1764,6 +1764,21 @@ def test_cardart_artwork_and_layout_change_cache_key(qapp, tmp_path):
     cardart.clear_cardart_caches()
 
 
+def test_cardart_explicit_native_height_reuses_disk_cache(qapp, tmp_path):
+    from client.gui import cardart
+
+    cdef, database, library_dir, cache_dir = _cardart_cache_case(tmp_path)
+    cardart.clear_cardart_caches()
+    native = cardart.card_pixmap(cdef, database, library_dir=library_dir, cache_dir=cache_dir)
+    explicit = cardart.card_pixmap(
+        cdef, database, library_dir=library_dir, cache_dir=cache_dir, height=512)
+    assert native is not None and explicit is not None
+    assert native.size() == explicit.size()
+    paths = list(cache_dir.glob("*.png"))
+    assert len(paths) == 1 and "-hnative-" in paths[0].name
+    cardart.clear_cardart_caches()
+
+
 def test_cardart_semantic_cache_name_replaces_stale_image(qapp, tmp_path):
     import re
     from client.gui import cardart
@@ -2261,6 +2276,19 @@ def test_portrait_snapshot_changes_and_failure_are_not_cached(qapp, tmp_path, mo
     assert third.toImage() != second.toImage()
     assert third.toImage().pixelColor(1, 1).name() == "#229955"
     portrait._portrait_pixmap.cache_clear()
+
+
+def test_frozen_onedir_resources_use_meipass_internal_root(tmp_path, monkeypatch):
+    internal = tmp_path / "BWPro-v0.4.1" / "_internal"
+    (internal / "assets" / "frames").mkdir(parents=True)
+    (internal / "library").mkdir()
+    monkeypatch.setattr(portrait.sys, "_MEIPASS", str(internal), raising=False)
+    monkeypatch.delenv("BWP_DIY_ROOT", raising=False)
+    monkeypatch.delenv("BWP_DIY_LIBRARY", raising=False)
+
+    assert portrait.resource_root() == internal
+    assert portrait.bwpdiy_root() == internal
+    assert portrait.library_root() == internal / "library"
 
 
 def test_bwpdiy_project_assets_precede_sibling_checkout(tmp_path, monkeypatch):

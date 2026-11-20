@@ -54,6 +54,7 @@ class CardAppearanceDialog(QDialog):
         self._clear_choice()
         self.mode_button.setText("异画")
         self.mode_button.setEnabled(False)
+        self.frame_button.show()
         self._fit_dialog()
 
     def show_frame_choices(self) -> None:
@@ -61,11 +62,14 @@ class CardAppearanceDialog(QDialog):
         self._clear_choice()
         self.mode_button.setText("返回")
         self.mode_button.setEnabled(True)
+        self.frame_button.hide()
         self.choice_view = CardChoiceView(
             [(variant, self.cdef, "原画") for variant in FRAME_VARIANTS],
             db=self.db, frame_variants={variant: variant for variant in FRAME_VARIANTS},
             button_text="选择")
-        self.choice_view.setMinimumSize(218, 475)
+        content_width = self.choice_view.widget().sizeHint().width()
+        self.choice_view.setMinimumSize(
+            content_width + 2 * self.choice_view.frameWidth(), 475)
         self.choice_view.chosen.connect(self._save)
         self.choice_slot.addWidget(self.choice_view)
         self._fit_dialog()

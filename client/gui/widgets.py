@@ -228,7 +228,7 @@ class CardChoiceView(QScrollArea):
                 card.setStyleSheet("background: transparent; border: none;")
                 card.detail_clicked.connect(self.detail_clicked.emit)
             button = QPushButton(button_text)
-            button.setObjectName("battleSmall")
+            button.setObjectName("dialogButton")
             button.setFixedSize(96, 28)
             button.hide()
             wrapper = QWidget()

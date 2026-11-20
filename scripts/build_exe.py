@@ -1,4 +1,4 @@
-"""构建 BWPro Windows 独立单文件 GUI，并执行离屏冒烟测试。
+"""构建 BWPro Windows 独立 onedir GUI，打包 ZIP 并执行离屏冒烟测试。
 
 用法（Windows Git Bash）：
     PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/build_exe.py
@@ -12,9 +12,9 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,18 +29,19 @@ EXE_NAME = f"BWPro-v{VERSION}"
 def _prune_releases(releases: Path, keep_minor: int = 5) -> None:
     """每个二级版本只留最新补丁，并且总共只留最近 keep_minor 个二级版本。"""
     candidates = []
-    for path in releases.glob("BWPro-v*.exe"):
-        match = re.fullmatch(r"BWPro-v(\d+)\.(\d+)\.(\d+)\.exe", path.name)
-        if match:
-            candidates.append((tuple(map(int, match.groups())), path))
+    for suffix in ("exe", "zip"):
+        for path in releases.glob(f"BWPro-v*.{suffix}"):
+            match = re.fullmatch(rf"BWPro-v(\d+)\.(\d+)\.(\d+)\.{suffix}", path.name)
+            if match:
+                candidates.append((tuple(map(int, match.groups())), path))
     latest = {}
-    for version, path in candidates:
+    for version, _path in candidates:
         minor = version[:2]
-        if minor not in latest or version > latest[minor][0]:
-            latest[minor] = (version, path)
-    keep = {latest[minor][1] for minor in sorted(latest)[-keep_minor:]}
-    for _version, path in candidates:
-        if path not in keep:
+        if minor not in latest or version > latest[minor]:
+            latest[minor] = version
+    keep = {latest[minor] for minor in sorted(latest)[-keep_minor:]}
+    for version, path in candidates:
+        if version not in keep:
             path.unlink(missing_ok=True)
             path.with_name(path.name + ".sha256").unlink(missing_ok=True)
 
@@ -72,7 +73,7 @@ def _build() -> Path:
     args = [
         str(ROOT / "scripts" / "gui_launcher.py"),
         "--name", EXE_NAME,
-        "--onefile",
+        "--onedir",
         "--windowed",
         "--icon", str(ROOT / "assets" / "app_icon.ico"),
         "--noconfirm",
@@ -86,7 +87,16 @@ def _build() -> Path:
     ]
     args += _datas_args()
     PyInstaller.__main__.run(args)
-    return ROOT / "dist" / f"{EXE_NAME}.exe"
+    return ROOT / "dist" / EXE_NAME / f"{EXE_NAME}.exe"
+
+
+def _archive_release(executable: Path, destination: Path) -> None:
+    """ZIP 保留 onedir 顶层目录，解包后可直接运行其中的主体 EXE。"""
+    with zipfile.ZipFile(
+            destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for path in sorted(executable.parent.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(executable.parent.parent))
 
 
 def _smoke_test(executable: Path) -> None:
@@ -120,14 +130,14 @@ def main(argv: list[str] | None = None) -> int:
     built = _build()
     releases = ROOT / "releases"
     releases.mkdir(exist_ok=True)
-    destination = releases / built.name
-    shutil.copy2(built, destination)
+    destination = releases / f"{EXE_NAME}.zip"
+    _archive_release(built, destination)
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     checksum = destination.with_name(destination.name + ".sha256")
     checksum.write_text(f"{digest}  {destination.name}\n", encoding="utf-8", newline="\n")
     _prune_releases(releases)
     if not options.no_smoke:
-        _smoke_test(destination)
+        _smoke_test(built)
     print(f"已输出：{destination}（{destination.stat().st_size / 1024 / 1024:.1f} MB）")
     print(f"SHA-256：{checksum}")
     if not options.no_smoke:

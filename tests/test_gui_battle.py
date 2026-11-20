@@ -43,17 +43,21 @@ def view(qapp, db, tmp_path):
     qapp.processEvents()
 
 
+def settle_visuals(view):
+    scene = view.battle_scene
+    while scene._visual_queue or scene._visual_animations:
+        for animation in list(scene._visual_animations):
+            animation.setCurrentTime(animation.duration())
+            QApplication.processEvents()
+
+
 def settle(view):
     while view._handoff_pending or view.timeline_queue:
         if view._handoff_pending:
             view.confirm_handoff()
         if view.timeline_queue:
             view.play_next_timeline()
-    scene = view.battle_scene
-    while scene._visual_queue or scene._visual_animations:
-        for animation in list(scene._visual_animations):
-            animation.setCurrentTime(animation.duration())
-            QApplication.processEvents()
+    settle_visuals(view)
 
 
 def log_lines(view):
@@ -354,7 +358,7 @@ def test_hand_layout_spacing_and_half_height(qapp, view):
     view.game.state.phase = "mulligan"
     mulligan_points = [layout_positions(view.game, view.viewer)[("hand", card.uid)]
                        for card in view.game.state.players[0].hand]
-    assert all(point.y() == 280 for point in mulligan_points)
+    assert all(point.y() == 822 for point in mulligan_points)
 
 
 def test_hand_layout_shifts_shikigami_slots_left(qapp, view):
@@ -691,72 +695,62 @@ def test_one_shot_haste_border_returns_yellow_after_assault(qapp, view):
 
 
 @pytest.mark.parametrize("replace_all", [False, True], ids=["ready", "third-replacement"])
-def test_mulligan_handoff_centers_review_for_each_player(qapp, view, replace_all, monkeypatch):
+def test_initial_mulligan_choice_dialog_reuses_window_for_each_player(qapp, view, replace_all):
     start(view)
     game = view.game
-    banner_calls = []
-    messages = []
     for pi in (0, 1):
         player = game.state.players[pi]
-        if pi == 1:
-            monkeypatch.setattr(
-                view.battle_scene, "show_turn_banner", lambda *_args: banner_calls.append(True))
-        if replace_all:
-            replaced_uids = []
-            for replacement in range(3):
-                old_uid = player.hand[0].uid
-                replaced_uids.append(old_uid)
-                assert view.mulligan(old_uid)
-                if replacement < 2:
-                    settle(view)
-            assert all(uid not in {card.uid for card in player.hand} for uid in replaced_uids)
-            remaining = 1
-        else:
-            old_uid = player.hand[0].uid
-            assert view.mulligan(old_uid)
-            settle(view)
-            assert old_uid not in {card.uid for card in player.hand}
-            selected_uid = player.hand[0].uid
-            view.battle_scene.select_mulligan(selected_uid)
-            assert view.battle_scene.cards[("hand", selected_uid)].scale() > 1.0
-            assert view.ready()
-            remaining = 2
-        message = f"玩家{'AB'[pi]} 调度了一张手牌（剩余 {remaining} 次）"
-        messages.append(message)
-        assert message in log_lines(view)
-        assert view._handoff_pending
-        assert view.battle_scene.viewer == pi
-        assert view._handoff_stage == "review"
-        assert view.handoff_dialog is None
-        assert view.battle_scene.handoff_item.isVisible()
-        assert not view.battle_scene.ready_item.isVisible()
-        assert view.battle_scene.handoff_item.pos() == view.battle_scene.ready_item.pos()
-        assert view.handoff_button.text() == "切换玩家"
-        assert view.battle_scene.mulligan_uid is None
-        old_hand_items = scene_items(view, "hand", player=pi)
-        assert old_hand_items and all(item.y() == 280 for item in old_hand_items)
-        assert all(item.scale() == 1.0 for item in old_hand_items)
-        if pi == 1:  # 后手交接预览不重排入手顺序
-            assert [item.uid for item in sorted(old_hand_items, key=lambda item: item.x())] == [
-                card.uid for card in sorted(player.hand, key=lambda card: card.hand_seq)]
-            assert banner_calls == []
-        view.handoff_button.click()
-        assert view._handoff_stage == "transfer"
-        assert view.battle_scene.handoff_item.isVisible()
-        assert all(item.scene() is None for item in old_hand_items)
+        dialog = view.choice_dialog
+        assert dialog is not None and dialog._pending["kind"] == "mulligan"
+        assert set(dialog.option_view.option_buttons) == {card.uid for card in player.hand}
+        replacements = 3 if replace_all else 1
+        for replacement in range(replacements):
+            replaced = player.hand[0].uid
+            QTest.mouseClick(dialog.option_view.option_widgets[0], Qt.LeftButton)
+            QTest.mouseClick(dialog.option_view.option_buttons[replaced], Qt.LeftButton)
+            qapp.processEvents()
+            assert replaced not in {card.uid for card in player.hand}
+            if replacement < replacements - 1:
+                settle(view)
+                assert view.choice_dialog is dialog
+                assert dialog.isEnabled()
+                assert set(dialog.option_view.option_buttons) == {
+                    card.uid for card in player.hand}
+        if not replace_all:
+            done = next(button for button in dialog.findChildren(QPushButton)
+                        if button.text() == "结束调度")
+            done.click()
+            qapp.processEvents()
+        settle_visuals(view)
+        assert player.mulligan_done
+        assert view._handoff_pending, (view.viewer, view._handoff_waiting,
+                                       [p.mulligan_done for p in game.state.players])
+        assert view.choice_dialog is None
         view.handoff_button.click()
         settle(view)
-        assert player.mulligan_done
         assert view.viewer == (pi + 1) % 2
-        assert scene_items(view, "hand", player=view.viewer)
-        assert message not in log_lines(view)
-        assert not view.battle_scene.handoff_item.isVisible()
     assert game.state.phase == "battle"
-    assert len(scene_items(view, "hand", player=0)) == len(game.state.players[0].hand)
-    game.state.timeline.append({"k": "l", "m": messages[1]})
-    view.refresh()
-    settle(view)
-    assert log_lines(view).count(messages[1]) == 1
+
+
+def test_mulligan_log_counts_follow_hotseat_viewer(qapp, view):
+    start(view)
+    for pi in (0, 1):
+        player = view.game.state.players[pi]
+        detail = f"{player.name} 调度了一张手牌（剩余 2 次）"
+        generic = f"{player.name} 进行了调度"
+        assert view.mulligan(player.hand[0].uid)
+        settle(view)
+        assert detail in log_lines(view)
+        assert generic not in log_lines(view)
+        assert view.ready()
+        settle_visuals(view)
+        assert view._handoff_pending
+        view.confirm_handoff()
+        settle(view)
+        assert detail not in log_lines(view)
+        assert generic in log_lines(view)
+        assert all("剩余" not in line or not line.startswith(player.name)
+                   for line in log_lines(view))
 
 
 def test_playable_hand_has_no_blue_frame(qapp, view):
@@ -780,7 +774,7 @@ def test_hand_deck_text_contrast_and_visible_outer_margins(qapp, view):
                   view.order_label, view.upgrade_label):
         assert f"color: {THEMES['light']['text']}" in label.styleSheet()
         assert "font-weight: 600" in label.styleSheet()
-    for button in (view.log_button, view.ready_button, view.result_back):
+    for button in (view.log_button, view.result_back):
         assert button.testAttribute(Qt.WA_TranslucentBackground)
         assert f"color: {THEMES['light']['text']}" in button.styleSheet()
     assert view.end_turn_button.testAttribute(Qt.WA_TranslucentBackground)
@@ -1575,7 +1569,7 @@ def test_scene_native_render_heights(qapp, view, monkeypatch):
     monkeypatch.setattr(battle_scene, "entity_pixmap",
                         lambda _shiki, _db, **kwargs: heights.append(("entity", kwargs.get("height"))))
     start(view)
-    assert ("card", 255) in heights and ("entity", 210) in heights
+    assert ("card", 156) in heights and ("entity", 210) in heights
     heights.clear()
     start(view, mulligan=False)
     assert ("card", 156) in heights and ("entity", 210) in heights
@@ -1731,16 +1725,6 @@ def test_scene_unchanged_render_signature_invalidates_visual_settings(
     assert [call[0][0].id for call in render_calls["card"]] == [card.id] * matching_copies
     assert not render_calls["entity"] and not render_calls["cardback"]
 
-    view._review_mulligan = True
-    clear_render_calls(render_calls)
-    view.refresh()
-    settle(view)
-    assert len(render_calls["card"]) == len(view.game.current.hand)
-    assert not render_calls["entity"] and not render_calls["cardback"]
-
-    view._review_mulligan = False
-    view.refresh()
-    settle(view)
     enemy_card = view.game.state.players[1].hand[0]
     enemy_card.mods["revealed"] = True
     clear_render_calls(render_calls)
@@ -1864,49 +1848,48 @@ def test_drag_visuals_cancel_and_hand_left_click_has_no_detail(qapp, view, monke
     assert shiki.opacity() == 1
 
 
-def test_mulligan_click_selects_then_card_button_replaces(qapp, view):
+def test_mulligan_dialog_width_grows_to_five_cards_then_scrolls(qapp, view):
     start(view)
-    scene = view.battle_scene
-    card = view.game.current.hand[0]
-    item = scene.cards[("hand", card.uid)]
-    assert item.playable
-    drop = item.scenePos() + QPointF(-180, -160)
-    scene.drag_controller.press(item, item.scenePos())
-    scene.drag_controller.move(drop)
-    scene.drag_controller.release(drop)
-    assert card in view.game.state.players[0].hand
-    assert scene.mulligan_uid == card.uid
-    assert item.scale() > 1
-    assert view.mulligan_button.text() == "替换"
-    assert not view.mulligan_button.isHidden()
-    button_rect = scene.mulligan_item.sceneBoundingRect()
-    card_rect = item.sceneBoundingRect()
-    assert abs(button_rect.center().x() - card_rect.center().x()) < 1
-    assert button_rect.top() >= card_rect.bottom()
-    view.mulligan_button.click()
-    settle(view)
-    assert card not in view.game.state.players[0].hand
-    assert scene.mulligan_uid is None
+    dialog = view.choice_dialog
+    player = view.game.current
+    template = player.hand[0]
+    player.hand[:] = [template]
+    view.refresh()
+    qapp.processEvents()
+    assert view.choice_dialog is dialog
+    one_width = dialog.option_view.width()
+
+    player.hand[:] = [template.model_copy(update={"uid": 1000 + index, "hand_seq": index + 1})
+                      for index in range(5)]
+    view.refresh()
+    qapp.processEvents()
+    five_width = dialog.option_view.width()
+    assert view.choice_dialog is dialog
+    assert one_width < five_width
+    assert dialog.option_view.widget().sizeHint().width() <= dialog.option_view.viewport().width()
+
+    player.hand.append(template.model_copy(update={"uid": 1006, "hand_seq": 6}))
+    view.refresh()
+    qapp.processEvents()
+    assert view.choice_dialog is dialog
+    assert dialog.option_view.width() == five_width
+    assert dialog.option_view.widget().sizeHint().width() > dialog.option_view.viewport().width()
+    assert dialog.option_view.horizontalScrollBar().maximum() > 0
+    done = next(button for button in dialog.findChildren(QPushButton)
+                if button.text() == "结束调度")
+    assert done.objectName() == "dialogButton"
+    assert done.width() <= 100
+    assert done.x() > dialog.width() / 2
 
 
-def test_mulligan_centers_large_hand_and_shows_turn_order(qapp, view):
+def test_initial_mulligan_uses_dialog_without_activating_scene_hand(qapp, view):
     start(view)
     scene = view.battle_scene
     items = scene_items(view, "hand", player=0)
-    rects = [item.sceneBoundingRect() for item in items]
-    center_x = (min(rect.left() for rect in rects) + max(rect.right() for rect in rects)) / 2
-    assert abs(center_x - scene.sceneRect().center().x()) < 1
-    assert all(rect.center().y() < 600 for rect in rects)
-    assert all(item.default_size.width() >= 170 for item in items)
-    assert scene.focus_overlay.isVisible()
-    assert scene.focus_overlay.path().elementCount() > 40  # 轮廓而非矩形孔洞
-    hand_edges = [item.sceneBoundingRect() for item in scene_items(view, "hand")]
-    assert scene.focus_overlay.path().boundingRect().top() <= min(
-        rect.top() for rect in hand_edges)
-    assert scene.focus_overlay.path().boundingRect().bottom() >= max(
-        rect.bottom() for rect in hand_edges)
-    assert view.ready_button.width() <= 110
-    assert getattr(view, "order_label", None) is not None
+    assert view.choice_dialog is not None
+    assert all(item.y() == 822 and item.default_size.width() == 110 for item in items)
+    assert all(not item.playable for item in items)
+    assert not scene.focus_overlay.isVisible()
     assert view.order_label.text() == "己方先手"
     assert view.order_label.isHidden()
 
@@ -2173,7 +2156,6 @@ def test_scene_controls_show_public_counts_and_round_end_turn(qapp, view):
     assert outer.itemAt(0).widget() is view.battle_view
     assert scene.end_turn_item.widget() is view.end_turn_button
     assert not scene.menu_item.isVisible()
-    assert scene.ready_item.pos() == QPointF(1328, 435)
     assert view.end_turn_button.minimumWidth() == view.end_turn_button.maximumWidth()
     assert view.end_turn_button.minimumHeight() == view.end_turn_button.maximumHeight()
     assert view.end_turn_button.minimumWidth() == view.end_turn_button.minimumHeight()
@@ -3086,6 +3068,8 @@ def test_battle_mulligan_choice_dialog_lists_and_replaces_hand(qapp, db, view):
     assert game.state.pending_choice["remaining"] == 1
     assert game.state.pending_choice["options"] == [
         owned.uid for owned in game.state.players[0].hand]
+    assert view.choice_dialog is dialog
+    assert dialog.isEnabled()
     done = next(button for button in view.choice_dialog.findChildren(QPushButton)
                 if button.text() == "结束调度")
     done.click()

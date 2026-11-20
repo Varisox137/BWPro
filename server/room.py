@@ -78,20 +78,15 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
         pending["options"] = [0] * len(pending.get("options", []))
     # 非公开日志/明细（改进②）：state 负载内嵌的完整 log/settle_log/timeline 按
     # 可见性对齐过滤（"o" 键/log_vis/settle_vis，见 Game._log/_settle），vis 列表
-    # 本身不下发（否则泄露各行归属）；对方调度行为行一并滤除（与 _hide_mulligan_log
-    # 同口径——负载内嵌 log 原样携带时的既有泄露面随本过滤一并堵上）。
+    # 本身不下发（否则泄露各行归属）。调度详细/通用行也由引擎按所属方分别标记。
     log_vis = payload.pop("log_vis", [])
     settle_vis = payload.pop("settle_vis", [])
-    prefix = f"{payload['players'][1 - viewer].get('name', '')} "
     payload["log"] = [l for l, v in zip(payload.get("log", []), log_vis)
-                      if (v is None or v == viewer)
-                      and not (l.startswith(prefix) and "调度了一张手牌" in l)]
+                      if v is None or v == viewer]
     payload["settle_log"] = [l for l, v in zip(payload.get("settle_log", []), settle_vis)
                              if v is None or v == viewer]
     payload["timeline"] = [e for e in payload.get("timeline", [])
-                           if (e.get("o") is None or e.get("o") == viewer)
-                           and not (e.get("m", "").startswith(prefix)
-                                    and "调度了一张手牌" in e.get("m", ""))]
+                           if e.get("o") is None or e.get("o") == viewer]
     return payload
 
 
@@ -103,24 +98,6 @@ def sanitize_trace(entry, viewer):
         entry = dict(entry)
         entry["message"] = entry.get("summary", entry["kind"])
     return entry
-
-
-def _hide_mulligan_log(lines: list[str], st, viewer: int) -> list[str]:
-    """调度阶段信息隐藏（协议层过滤，引擎/state 不动）：对方的调度行为行
-    （"X 调度了一张手牌（剩余 N 次）"泄露调度次数）不发给 viewer；
-    "X 完成调度"为无信息状态，保留。"""
-    prefix = f"{st.players[1 - viewer].name} "
-    return [l for l in lines
-            if not (l.startswith(prefix) and "调度了一张手牌" in l)]
-
-
-def _hide_mulligan_timeline(entries: list[dict], st, viewer: int) -> list[dict]:
-    """合并时间线的调度信息隐藏：与 _hide_mulligan_log 同一谓词，只过滤叙事行
-    （k="l"），结算行（k="s"）不含调度行为内容、全保留。"""
-    prefix = f"{st.players[1 - viewer].name} "
-    return [e for e in entries
-            if not (e.get("k") == "l" and e.get("m", "").startswith(prefix)
-                    and "调度了一张手牌" in e["m"])]
 
 
 def _visible_entries(entries: list[dict], viewer: int) -> list[dict]:
@@ -822,11 +799,9 @@ class Room:
         timer = self._current_timer()
         for c in self.conns:
             viewer = self.seat_to_player[c.seat]
-            vlog = _hide_mulligan_log(  # 对方调度行为行不发给 viewer
-                _visible_lines(log, log_vis, viewer), st, viewer)
+            vlog = _visible_lines(log, log_vis, viewer)
             vsettle = _visible_lines(settle, settle_vis, viewer)  # 非公开行仅所属方可见
-            vtimeline = _visible_entries(
-                _hide_mulligan_timeline(timeline, st, viewer), viewer)
+            vtimeline = _visible_entries(timeline, viewer)
             vtrace = [v for entry in trace
                       if (v := sanitize_trace(entry, viewer)) is not None]
             payload = sanitize_state(base, viewer)
@@ -858,9 +833,8 @@ class Room:
         opponent = self.conns[1 - conn.seat]
         await conn.send(protocol.state(
             payload,
-            # 全量补发同样隐藏对方调度明细与非公开信息行
-            _hide_mulligan_log(_visible_lines(list(st.log), list(st.log_vis), viewer),
-                               st, viewer),
+            # 全量补发同样隐藏非所属方信息行（含对方调度次数）
+            _visible_lines(list(st.log), list(st.log_vis), viewer),
             timer=self._current_timer(),
             opponent_cardback=opponent.cardback if opponent is not None else None))
 

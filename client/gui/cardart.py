@@ -874,6 +874,8 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 description_suffix: str | None = None,
                 image_only: bool = False) -> QPixmap | QImage | None:
     """按原生高度合成；静态卡面使用磁盘缓存，后台任务可取 QImage。"""
+    # BWPDIY 的原生卡图高度即 512，显式请求该尺寸时复用同一份缓存。
+    height = None if height == 512 else height
     overrides = {"level_color": level_color} if level_color is not None else {}
     if burst is not None:
         overrides["burst"] = burst

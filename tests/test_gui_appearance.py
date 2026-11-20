@@ -165,18 +165,22 @@ def test_appearance_dialog_menu_frame_order_back_and_confirm(qapp, db, monkeypat
     assert dialog.selected_frame == "norm"
     assert dialog.mode_button.text() == "异画"
     assert dialog.frame_button.text() == "牌框"
+    assert not dialog.frame_button.isHidden()
     assert dialog.choice_view is None
     assert not dialog.mode_button.isEnabled()  # 异画仅预留
 
     dialog.frame_button.click()
     assert dialog.mode_button.text() == "返回"
     assert dialog.mode_button.isEnabled()
+    assert dialog.frame_button.isHidden()
+    assert dialog.width() >= dialog.choice_view.widget().sizeHint().width()
     assert list(dialog.choice_view.option_buttons) == ["norm", "black", "blue", "red"]
     assert dialog.choice_view.option_widgets[2]._art_options["frame_variant"] == "blue"
     assert saved == []
     dialog.choice_view.select("blue")
     assert not dialog.choice_view.option_buttons["blue"].isHidden()
     assert dialog.choice_view.option_buttons["blue"].text() == "选择"
+    assert dialog.choice_view.option_buttons["blue"].objectName() == "dialogButton"
     dialog.choice_view.confirm()
     assert saved == [((10010101, "blue"), {})]
     assert dialog.result() == QDialog.Accepted

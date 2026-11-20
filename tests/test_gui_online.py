@@ -346,9 +346,21 @@ def test_online_battle_state_push_and_command_send(qapp, db, make_game):
     battle.set_state(payload, timer={"kind": "mulligan", "deadline": time.time() + 30},
                      log=["开局"], timeline=[])
     uid = game.state.players[1].hand[0].uid
-    assert battle.mulligan(uid)
+    dialog = battle.choice_dialog
+    assert dialog is not None and dialog._pending["kind"] == "mulligan"
+    QTest.mouseClick(dialog.option_view.option_widgets[0], Qt.LeftButton)
+    QTest.mouseClick(dialog.option_view.option_buttons[uid], Qt.LeftButton)
+    qapp.processEvents()
     assert sent[0]["op"] == "mulligan" and sent[0]["player"] == 1
+    assert battle.choice_dialog is dialog and not dialog.isEnabled()
     assert game.state.players[1].hand[0].uid == uid  # 本地 state 不被直接修改
+    game.apply({"op": "mulligan", "player": 1, "uid": uid})
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = json.loads(json.dumps(cli.hand_cards_info(game, 1)))
+    battle.set_state(payload, log=[], timeline=[])
+    assert battle.choice_dialog is dialog and dialog.isEnabled()
+    assert set(dialog.option_view.option_buttons) == {
+        card.uid for card in game.state.players[1].hand}
     battle.close()
 
 

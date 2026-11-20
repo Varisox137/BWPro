@@ -17,11 +17,19 @@ from PySide6.QtGui import QColor, QPainter, QPixmap, QPolygonF
 from client.gui.renderlog import log_render_failure
 
 
+def resource_root() -> Path:
+    """冻结版使用 PyInstaller 数据目录；onedir 中该目录为主程序旁的 _internal。"""
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+
+
 def bwpdiy_root() -> Path:
     """渲染资源根：环境变量优先，默认项目 assets，兼容同级 BWPDIY 开发目录。"""
     configured = os.environ.get("BWP_DIY_ROOT")
     if configured:
         return Path(configured)
+    frozen_root = resource_root()
+    if (frozen_root / "assets" / "frames").is_dir():
+        return frozen_root
     source = Path(__file__).resolve()
     for anchor in source.parents:
         if (anchor / "assets" / "frames").is_dir():
@@ -59,7 +67,7 @@ def load_global_layouts() -> dict:
 def library_root() -> Path:
     """项目卡图配置库：可用 BWP_DIY_LIBRARY 覆盖。"""
     configured = os.environ.get("BWP_DIY_LIBRARY")
-    return Path(configured) if configured else Path(__file__).resolve().parents[2] / "library"
+    return Path(configured) if configured else resource_root() / "library"
 
 
 def _fallback_pixmap(name: str, faction: str, size: int) -> QPixmap:

@@ -14,7 +14,7 @@ uv run python -m server.main         # 联机服务端（默认 127.0.0.1:1037�
 uv run python -m client.log_admin    # 独立服务器日志运维端
 uv run python -m db.validate         # 校验卡牌数据库
 uv run python -m db.scaffold -h      # 式神/卡牌 yaml 脚手架（生成骨架再补效果块）
-uv run python scripts/build_exe.py   # 构建独立 Windows GUI exe 并自动冒烟测试
+uv run python scripts/build_exe.py   # 构建 onedir Windows GUI、打包 ZIP 并自动冒烟测试
 uv run pytest -q tests/              # 运行全部测试
 ```
 
@@ -37,7 +37,7 @@ uv run pytest -q tests/              # 运行全部测试
 - 卡组构筑：GUI 新建/编辑/删除/替换、天梯规则校验（4 式神 / ≤2 派系 / 各恰好 8 张 / 同名 ≤2）、卡组码导出导入、本地卡组文件（`~/.bwpro/decks.json`）槽位管理与战前选卡
 - 联机对战：房间创建/按房码加入、准备流程、随机先手、调度 30s/回合 120s 计时、状态按视角脱敏；开局前以令牌 + 公网 IP + 本机机器码自动重连，正式开局后改发专用识别码（详见 `server/README.md`）
 - 桌面 GUI：卡组构筑、式神录、本地热坐与联机对战；支持浅深主题、拖拽操作、结算回放、卡图合成缓存与启动预热、关键字/灵咒机制详情框；缓存身份由定义、布局、素材与渲染代码内容指纹共同决定；联机卡背在首次入座时固化为开局快照，对局内设置变更与重连均不刷新
-- 自动更新：启动时及设置页可检查 GitHub Release，确认后通过 HTTPS 下载并校验 SHA-256；冻结版再次确认后由外部更新流程替换并重启，开发环境只下载而不替换当前程序
+- 自动更新：启动时及设置页可检查 GitHub Release，确认后通过 HTTPS 下载同名 onedir ZIP 并校验 SHA-256；冻结版再次确认后由外部更新流程安全解包、替换整个安装目录并重启，开发环境只下载而不替换当前程序
 
 ## 主要协议
 

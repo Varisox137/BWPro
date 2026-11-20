@@ -1362,6 +1362,11 @@ class Game:
         self._log(f"{p.name} 检视牌库顶 {len(options)} 张牌（选择一张置入手牌）")
         return True
 
+    def _log_mulligan(self, player: PlayerState, remaining: int) -> None:
+        pi = self.state.players.index(player)
+        self._log(f"{player.name} 调度了一张手牌（剩余 {remaining} 次）", owner=pi)
+        self._log(f"{player.name} 进行了调度", owner=1 - pi)
+
     def _cmd_battle_mulligan_choose(self, cmd: dict, pending: dict) -> None:
         """战中调度（云游）作答：uid 给出 → 换该张手牌（_swap_hand_card 核心）；
         uid 缺省 / 次数用尽 / 无手牌可换 → 结束，按 pending 的 shuffle 洗牌库，
@@ -1378,7 +1383,7 @@ class Game:
             self._swap_hand_card(p, card)
             pending["remaining"] -= 1
             pending["options"] = [owned.uid for owned in p.hand]
-            self._log(f"{p.name} 调度了一张手牌（剩余 {pending['remaining']} 次）")
+            self._log_mulligan(p, pending["remaining"])
         if card is None or pending["remaining"] <= 0 or not p.hand:
             self.state.pending_choice = None
             if pending.get("shuffle"):
@@ -1784,7 +1789,7 @@ class Game:
             raise IllegalAction("手牌中没有这张牌")
         self._swap_hand_card(p, card)
         p.mulligans_left -= 1
-        self._log(f"{p.name} 调度了一张手牌（剩余 {p.mulligans_left} 次）")
+        self._log_mulligan(p, p.mulligans_left)
         if p.mulligans_left == 0:
             p.mulligan_done = True
         if all(p.mulligan_done for p in self.state.players):

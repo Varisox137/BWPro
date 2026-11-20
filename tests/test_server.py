@@ -875,32 +875,54 @@ def test_state_sanitizes_private_quest_clues_per_viewer():
     assert peer["log"] == ["公开行"]
 
 
-def test_mulligan_hidden_from_opponent(db):
-    """调度阶段信息隐藏：对方调度行为行（泄露次数）不广播给另一方，
-    对方 payload 中剩余调度次数抹除为 0；"完成调度"为无信息状态保留；
-    resync 全量补发同样过滤。"""
+def test_mulligan_log_privacy_per_viewer(db):
+    """初始与战中调度均只向所属方显示剩余次数；对方获得不含次数的通用行为行，
+    增量、timeline、完整 state 与 resync 口径一致，引擎底层仍保留详细记录。"""
     async def go():
         room, ws0, ws1 = await _started_room(db)
         g = room.game
         p0 = room.seat_to_player[0]
+        name = g.state.players[p0].name
+
+        async def assert_private_messages(detail):
+            log0 = ws0.messages[-1]["log"]
+            log1 = ws1.messages[-1]["log"]
+            assert detail in log0
+            assert f"{name} 进行了调度" in log1
+            assert all("剩余" not in line and "调度了一张" not in line for line in log1)
+            assert detail in g.state.log
+            tl1 = ws1.messages[-1]["timeline"]
+            assert any(entry.get("m") == f"{name} 进行了调度" for entry in tl1)
+            assert all("剩余" not in entry.get("m", "") for entry in tl1)
+            payload = ws1.messages[-1]["payload"]
+            assert all("剩余" not in line and "调度了一张" not in line
+                       for line in payload["log"])
+            assert any(line == f"{name} 进行了调度" for line in payload["log"])
+
         uid = g.state.players[p0].hand[0].uid
         await room.handle_cmd(0, {"op": "mulligan", "uid": uid})
-        log0 = ws0.messages[-1]["log"]
-        log1 = ws1.messages[-1]["log"]
-        assert any("调度了一张手牌" in l for l in log0)      # 自己可见
-        assert not any("调度了一张手牌" in l for l in log1)  # 对方不可见
-        # 对方 payload 中的剩余调度次数被抹除
+        await assert_private_messages(f"{name} 调度了一张手牌（剩余 2 次）")
         assert ws1.messages[-1]["payload"]["players"][p0]["mulligans_left"] == 0
-        # 完成调度行保留（无信息状态）
+
         await room.handle_cmd(0, {"op": "ready"})
-        assert any("完成调度" in l for l in ws1.messages[-1]["log"])
-        # resync 全量补发同样过滤（仅 p0 调度过）
+        assert any("完成调度" in line for line in ws1.messages[-1]["log"])
         room.disconnect(room.conns[1])
         ws_new = FakeWS()
         await room.reconnect(room.conns[1].token, ws_new)
         await room.resync(room.conns[1])
         full = [m for m in ws_new.messages if m["type"] == "state"][-1]["log"]
-        assert not any("调度了一张手牌" in l for l in full)
+        assert f"{name} 进行了调度" in full
+        assert all("剩余" not in line and "调度了一张" not in line for line in full)
+        ws1 = ws_new
+
+        g.state.phase = "battle"
+        g.state.pending_choice = {
+            "kind": "mulligan_pick", "player": p0, "remaining": 2,
+            "options": [card.uid for card in g.state.players[p0].hand], "shuffle": False,
+        }
+        uid = g.state.players[p0].hand[0].uid
+        await room.handle_cmd(0, {"op": "choose", "uid": uid})
+        await assert_private_messages(f"{name} 调度了一张手牌（剩余 1 次）")
     run(go())
 
 

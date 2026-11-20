@@ -119,15 +119,33 @@ def test_closed_window_ignores_stale_update_callback(qapp, db, tmp_path, monkeyp
     assert win._update_closed is True
 
 
+def test_frozen_update_zip_is_staged_outside_onedir(tmp_path, monkeypatch):
+    import client.update
+
+    available = client.update.AvailableUpdate(
+        tag="v0.3.1", zip_name="BWPro-v0.3.1.zip",
+        zip_url="https://cdn.example/app.zip",
+        sha256_name="BWPro-v0.3.1.zip.sha256",
+        sha256_url="https://cdn.example/app.sha256")
+    executable = tmp_path / "BWPro-v0.3.0" / "BWPro-v0.3.0.exe"
+    monkeypatch.setattr("client.gui.app.sys.frozen", True, raising=False)
+    monkeypatch.setattr("client.gui.app.sys.executable", str(executable))
+
+    staged = MainWindow._update_staging_path(None, available)
+
+    assert staged == tmp_path / "BWPro-v0.3.1.zip.new"
+    assert executable.parent not in staged.parents
+
+
 def test_update_requires_download_and_restart_confirmations_even_in_battle(
         qapp, db, tmp_path, monkeypatch):
     import client.update
     from PySide6.QtWidgets import QMessageBox
 
     available = client.update.AvailableUpdate(
-        tag="v0.3.1", exe_name="BWPro-v0.3.1.exe",
-        exe_url="https://cdn.example/app.exe",
-        sha256_name="BWPro-v0.3.1.exe.sha256",
+        tag="v0.3.1", zip_name="BWPro-v0.3.1.zip",
+        zip_url="https://cdn.example/app.zip",
+        sha256_name="BWPro-v0.3.1.zip.sha256",
         sha256_url="https://cdn.example/app.sha256")
     questions = []
     launched = []
@@ -147,7 +165,8 @@ def test_update_requires_download_and_restart_confirmations_even_in_battle(
     monkeypatch.setattr(QApplication, "quit", lambda: quit_calls.append(True))
     monkeypatch.setattr("client.gui.app.sys.frozen", True, raising=False)
     monkeypatch.setattr(
-        "client.gui.app.sys.executable", str(tmp_path / "BWPro-v0.3.0.exe"))
+        "client.gui.app.sys.executable",
+        str(tmp_path / "install" / "BWPro-v0.3.0.exe"))
 
     def confirm(_parent, title, text):
         questions.append((title, text))
