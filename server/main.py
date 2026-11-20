@@ -110,6 +110,15 @@ def _env_date(msg: dict, key: str) -> int | None:
         raise ValueError("环境日期须为合法的 8 位日期（YYYYMMDD）") from None
 
 
+def _machine_id(msg: dict) -> str | None:
+    value = _text(msg, "machine_id", MAX_TOKEN)
+    if value is None:
+        return None
+    if len(value) != 32 or any(char not in "0123456789abcdef" for char in value):
+        raise ValueError("字段 machine_id 非法")
+    return value
+
+
 def _client_ip(connection: WebSocket | Request) -> str:
     """提取真实来源 IP：穿透/反代边缘做 L7 代理时，TCP 对端永远是本机回环
     （客户端回连 127.0.0.1），真实 IP 只能由边缘透传在 X-Forwarded-For /
@@ -268,7 +277,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         rules_mode = _text(msg, "rules_mode", 10) or "standard"
                         diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
-                        machine_id = _text(msg, "machine_id", MAX_TOKEN)
+                        machine_id = _machine_id(msg)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                         target_room = manager.create(debug=bool(msg.get("debug")),
                                                      room_id=want_id, env_date=env_date,
@@ -304,7 +313,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                         diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
-                        machine_id = _text(msg, "machine_id", MAX_TOKEN)
+                        machine_id = _machine_id(msg)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                     except ValueError as e:
                         await reject(str(e))

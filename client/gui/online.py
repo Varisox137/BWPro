@@ -321,6 +321,7 @@ class OnlineView(QWidget):
         self._connecting = False
         self._connect_thread: threading.Thread | None = None
         self._client_ip = ""
+        self._machine_id = ""
         self._pending_join = False
         self._pending_reconnect = False
         self.server_url = ""
@@ -635,7 +636,7 @@ class OnlineView(QWidget):
         msg = {"type": "create", "name": self.player_name, "deck_code": self.deck_code,
                "debug": False, "mode": mode, "rules_mode": self.rules_combo.currentData(),
                "cardback": load_gui_settings()["own_cardback"],
-               **net.hello_metadata(self._client_ip, getattr(self, "_machine_id", ""))}
+               **net.hello_metadata(self._client_ip, self._machine_id)}
         if room_id:
             msg["room_id"] = room_id
         if env is not None:
@@ -666,7 +667,7 @@ class OnlineView(QWidget):
         msg = {"type": "join", "room_id": room_id, "name": self.player_name,
                "deck_code": None if token else self.deck_code,
                "token": token, "cardback": load_gui_settings()["own_cardback"],
-               **net.hello_metadata(self._client_ip, getattr(self, "_machine_id", ""))}
+               **net.hello_metadata(self._client_ip, self._machine_id)}
         if self.diy_checkbox.isChecked():
             msg["diy"] = True
         self.bridge.send(msg)

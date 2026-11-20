@@ -169,7 +169,7 @@ server/
 
 `deck_code` 首次入座必填，重连时为 null。`client_ip` 由客户端经 ipify（备用
 ifconfig.me）best-effort 查询并校验为公网地址；`machine_id` 是保存在
-`~/.bwpro/machine_id` 的本机随机凭证。二者都是可伪造的自报值，仅与 token/识别码共同
+`~/.bwpro/machine_id` 的本机随机凭证，服务端只接受 32 位小写十六进制格式。二者都是可伪造的自报值，仅与 token/识别码共同
 作为自动重连的辅助校验，不下发给对手，也不单独构成身份认证。仅凭 token 的手动重连
 仍兼容。`cardback` 仅在首次 join 时记录，重连不刷新。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。

@@ -80,8 +80,8 @@ def test_exe_version_uses_shared_runtime_constant():
     build = importlib.import_module("scripts.build_exe")
     from core.version import VERSION
 
-    assert build.VERSION == VERSION == "0.4.0"
-    assert build.EXE_NAME == "BWPro-v0.4.0"
+    assert build.VERSION == VERSION == "0.4.1"
+    assert build.EXE_NAME == "BWPro-v0.4.1"
 
 
 def test_launcher_dispatches_apply_update_before_gui(monkeypatch):
@@ -145,7 +145,7 @@ def test_exe_prunes_releases_before_smoke_failure(tmp_path, monkeypatch):
 
 def test_prune_releases_keeps_latest_patch_and_five_minor_series(tmp_path):
     build = importlib.import_module("scripts.build_exe")
-    versions = ("0.1.0", "0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.5.0", "0.6.0")
+    versions = ("0.1.0", "0.2.0", "0.3.0", "0.3.1", "0.4.1", "0.5.0", "0.6.0")
     for version in versions:
         exe = tmp_path / f"BWPro-v{version}.exe"
         exe.write_bytes(version.encode())
@@ -156,7 +156,7 @@ def test_prune_releases_keeps_latest_patch_and_five_minor_series(tmp_path):
     build._prune_releases(tmp_path)
 
     assert {path.name for path in tmp_path.glob("*.exe")} == {
-        "BWPro-v0.2.0.exe", "BWPro-v0.3.1.exe", "BWPro-v0.4.0.exe",
+        "BWPro-v0.2.0.exe", "BWPro-v0.3.1.exe", "BWPro-v0.4.1.exe",
         "BWPro-v0.5.0.exe", "BWPro-v0.6.0.exe",
     }
     assert not (tmp_path / "BWPro-v0.3.0.exe.sha256").exists()

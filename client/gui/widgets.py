@@ -213,7 +213,6 @@ class CardChoiceView(QScrollArea):
         self.option_widgets = []
         self.option_buttons = {}
         self._wrappers = {}
-        self._values = {}
         self.selected = None
         for value, cdef, label in options:
             if cdef is None:
@@ -245,7 +244,6 @@ class CardChoiceView(QScrollArea):
             self.option_widgets.append(card)
             self.option_buttons[value] = button
             self._wrappers[value] = wrapper
-            self._values[card] = value
             row.addWidget(wrapper)
         row.addStretch(1)
         self.setWidget(content)

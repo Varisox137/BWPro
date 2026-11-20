@@ -2025,3 +2025,13 @@ def test_websocket_rejects_invalid_client_ip(server, db, value):
     reply = client.recv_until("joined", "error")
     assert reply["type"] == "error" and "client_ip" in reply["reason"]
     client.ws.close()
+
+
+@pytest.mark.parametrize("value", ["short", "A" * 32, "g" * 32, 123])
+def test_websocket_rejects_invalid_machine_id(server, db, value):
+    client = WsClient()
+    client.send({"type": "create", "name": "甲", "deck_code": _deck_code(db),
+                 "machine_id": value})
+    reply = client.recv_until("joined", "error")
+    assert reply["type"] == "error" and "machine_id" in reply["reason"]
+    client.ws.close()
