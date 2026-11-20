@@ -22,6 +22,22 @@ ENEMY_PLAYER = T(kind="all", pool="enemy_player")
 # 战斗关键字（原 test_combat_keywords.py）
 # ==========================================================================
 
+def test_negative_power_combat_damage_clamped_to_zero(db, make_game):
+    """有效力量可以为负以保留增减益账本，但攻击与反击的战斗伤害最低按 0 计算。"""
+    g = make_game()
+    move(g, 1, 0)
+    attacker = g.state.players[0].shikigami[0]
+    defender = g.state.players[1].shikigami[0]
+    attacker.temp_power = -attacker.eff_power - 2
+    defender.temp_power = -defender.eff_power - 1
+    attacker_health, defender_health = attacker.health, defender.health
+    assert attacker.eff_power < 0 and defender.eff_power < 0
+    g.apply({"op": "assault", "index": 0})
+    assert attacker.health == attacker_health
+    assert defender.health == defender_health
+    assert attacker.eff_power < 0 and defender.eff_power < 0  # 钳制不回写力量账本
+
+
 # ---------- 连击 / 先攻 ----------
 
 def test_combo_kill_second_strike_still_resolves(db, make_game):

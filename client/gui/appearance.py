@@ -1,10 +1,9 @@
-"""式神录卡牌外观：四牌框预览，异画选择预留。"""
+"""式神录卡牌外观：异画入口预留，牌框按当前异画预览并确认。"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QButtonGroup, QDialog, QDialogButtonBox, QHBoxLayout, QPushButton,
-    QStyle, QVBoxLayout,
+    QDialog, QDialogButtonBox, QHBoxLayout, QPushButton, QStyle, QVBoxLayout,
 )
 
 from client.gui.card_appearance import (
@@ -14,66 +13,70 @@ from client.gui.widgets import CardChoiceView, polish_dialog_buttons, show_warni
 
 
 class CardAppearanceDialog(QDialog):
-    """顶部切牌框，点击原画放大后再确认；确认前不写本机配置。"""
+    """先选外观类别，再预览当前异画的四种牌框；确认前不写本机配置。"""
 
     def __init__(self, cdef, db, parent=None):
         super().__init__(parent)
         self.cdef = cdef
         self.db = db
         self.selected_frame = card_appearance(cdef.id)["frame_variant"]
-        self.setWindowTitle(f"{cdef.name} · 更换牌框")
+        self.choice_view = None
+        self.setWindowTitle(f"{cdef.name} · 更换异画 / 牌框")
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
-        frame_row = QHBoxLayout()
-        self.frame_buttons = {}
-        self.frame_group = QButtonGroup(self)
-        self.frame_group.setExclusive(True)
-        for variant, label in FRAME_VARIANTS.items():
-            button = QPushButton(label)
-            button.setObjectName("small")
-            button.setCheckable(True)
-            button.setFixedSize(76, 30)
-            button.clicked.connect(
-                lambda _checked=False, selected=variant: self.select_frame(selected))
-            self.frame_group.addButton(button)
-            self.frame_buttons[variant] = button
-            frame_row.addWidget(button)
-        layout.addLayout(frame_row)
+        top = QHBoxLayout()
+        self.mode_button = QPushButton("异画")
+        self.mode_button.setObjectName("small")
+        self.mode_button.clicked.connect(self.show_menu)
+        self.frame_button = QPushButton("牌框")
+        self.frame_button.setObjectName("small")
+        self.frame_button.clicked.connect(self.show_frame_choices)
+        top.addWidget(self.mode_button, alignment=Qt.AlignLeft)
+        top.addStretch(1)
+        top.addWidget(self.frame_button, alignment=Qt.AlignRight)
+        layout.addLayout(top)
         self.choice_slot = QVBoxLayout()
         layout.addLayout(self.choice_slot)
-        self.choice_view = None
-        self.select_frame(self.selected_frame)
         buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
         polish_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons, alignment=Qt.AlignRight)
-        self._fit_dialog()
+        self.show_menu()
 
-    def select_frame(self, variant: str) -> None:
-        if variant not in FRAME_VARIANTS:
-            return
-        selected = self.choice_view.selected if self.choice_view is not None else None
-        self.selected_frame = variant
-        self.frame_buttons[variant].setChecked(True)
+    def _clear_choice(self) -> None:
         if self.choice_view is not None:
             self.choice_slot.removeWidget(self.choice_view)
             self.choice_view.deleteLater()
+            self.choice_view = None
+
+    def show_menu(self) -> None:
+        """返回类别菜单；异画功能尚未开放，仅保留入口。"""
+        self._clear_choice()
+        self.mode_button.setText("异画")
+        self.mode_button.setEnabled(False)
+        self._fit_dialog()
+
+    def show_frame_choices(self) -> None:
+        """显示当前异画在常规/墨染/琉璃/百炼牌框下的渲染卡图。"""
+        self._clear_choice()
+        self.mode_button.setText("返回")
+        self.mode_button.setEnabled(True)
         self.choice_view = CardChoiceView(
-            [(0, self.cdef, "原画")], db=self.db,
-            frame_variant=variant, button_text="确认")
+            [(variant, self.cdef, "原画") for variant in FRAME_VARIANTS],
+            db=self.db, frame_variants={variant: variant for variant in FRAME_VARIANTS},
+            button_text="选择")
         self.choice_view.setMinimumSize(218, 475)
         self.choice_view.chosen.connect(self._save)
         self.choice_slot.addWidget(self.choice_view)
-        if selected is not None:
-            self.choice_view.select(selected)
         self._fit_dialog()
 
-    def _save(self, _value) -> None:
+    def _save(self, variant: str) -> None:
         try:
-            save_card_appearance(self.cdef.id, self.selected_frame)
+            save_card_appearance(self.cdef.id, variant)
         except (OSError, ValueError) as error:
             show_warning(self, "无法保存外观", str(error))
             return
+        self.selected_frame = variant
         self.accept()
 
     def _fit_dialog(self) -> None:

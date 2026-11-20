@@ -525,6 +525,47 @@ def test_reconnect_by_token(db):
     run(go())
 
 
+def test_pregame_reconnect_validates_public_ip_and_machine_id(db):
+    """开局前保留座位：令牌配合入座时的公网 IP 与机器码可自动重连。"""
+    async def go():
+        room = mk_room(db)
+        conn = await room.join(0, "甲", FakeWS(), _deck_code(db))
+        conn.client_ip = "8.8.8.8"
+        conn.machine_id = "a" * 32
+        room.disconnect(conn)
+        assert await room.reconnect(
+            conn.token, FakeWS(), client_ip="1.1.1.1", machine_id="a" * 32) is None
+        assert await room.reconnect(
+            conn.token, FakeWS(), client_ip="8.8.8.8", machine_id="b" * 32) is None
+        replacement = FakeWS()
+        assert await room.reconnect(
+            conn.token, replacement, client_ip="8.8.8.8", machine_id="a" * 32) is conn
+        assert conn.ws is replacement
+    run(go())
+
+
+def test_pregame_disconnect_pauses_starting_and_reconnect_resumes(db):
+    """开始倒计时断线只暂停而不错误开局；座位重连后从自动准备倒计时续接。"""
+    async def go():
+        room = mk_room(db, ready_timeout=0.02, starting_timeout=0.01)
+        await room.join(0, "甲", FakeWS(), _deck_code(db))
+        await room.join(1, "乙", FakeWS(), _deck_code(db))
+        await room.on_seat_filled()
+        await room.lobby_ready(0)
+        await room.lobby_ready(1)
+        assert room._lobby_phase == "starting"
+        conn = room.conns[1]
+        room.disconnect(conn)
+        assert room._lobby_phase == "idle" and room.ready_seats == {0}
+        await asyncio.sleep(0.04)
+        assert room.game is None
+        await room.reconnect(conn.token, FakeWS())
+        assert room._lobby_phase == "countdown"
+        await asyncio.sleep(0.06)
+        assert room.game is not None
+    run(go())
+
+
 def test_reconnect_resync_full_log(db):
     """断线期间的日志不被广播游标吞掉：重连后 resync 向重连者全量补发
     state.log（不动广播游标，在线玩家不会收到重复日志）。"""
@@ -976,6 +1017,20 @@ def test_watchdog_dissolves_idle_lobby_room(db):
         for ws in (ws0, ws1):
             assert any(m["type"] == "dissolved" for m in ws.messages)
             assert ws.closed
+    run(go())
+
+
+def test_watchdog_keeps_connected_waiting_creator(db):
+    """房主仍在线等待对手时不因超时断联；只有离线等待房才按 idle 时限回收。"""
+    async def go():
+        mgr = RoomManager(db)
+        room = mgr.create()
+        await room.join(0, "甲", FakeWS(), _deck_code(db))
+        room.last_activity = time.time() - 700
+        assert await mgr.dissolve_idle() == []
+        assert mgr.get(room.id) is room
+        room.disconnect(room.conns[0])
+        assert await mgr.dissolve_idle() == [room.id]
     run(go())
 
 
@@ -1698,10 +1753,9 @@ def test_server_base_dependencies_exclude_gui_and_standard_extras():
     ]
     extras = project["project"]["optional-dependencies"]
     assert extras["gui"] == ["pyside6>=6.12.0", "pillow>=13.0.0"]
-    assert extras["cli"] == ["prompt-toolkit>=3.0.53"]
     dev = project["dependency-groups"]["dev"]
     assert "pyside6>=6.12.0" in dev and "pillow>=13.0.0" in dev
-    assert "prompt-toolkit>=3.0.53" in dev
+    assert "prompt-toolkit" not in " ".join(dev)
 
 
 @pytest.mark.parametrize("remote", ["origin", "main"])

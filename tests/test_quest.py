@@ -486,21 +486,19 @@ def test_revive_on_defeat_form(db, make_game):
 
 
 # ==========================================================================
-# CLI 进度显示
+# 手牌进度展示数据
 # ==========================================================================
 
 def test_quest_progress_label(db, make_game):
-    """CLI 手牌委托条件进度标签（format_hand_lines 数据段）：未达成显示计数，达成带 ✓。"""
-    from client.cli import format_hand_lines
+    """手牌委托条件进度标签：未达成显示计数，达成带 ✓。"""
+    from client.presentation import hand_cards_info
     _quest(db, 10010171, cond={"quest_count_ge": {"kind": "assault", "count": 2}})
     g = make_game()
     pa, _ = battle_setup(g)
     card = give(g, 0, 10010171)
-    line = next(l for l in format_hand_lines(g, pa, pa.hand) if "委托" in l)
-    assert "委托:出击0/2" in line
+    assert hand_cards_info(g, 0)[card.uid]["quest"] == "委托:出击0/2"
     card.mods["quest_progress"] = {"assault": 2}
-    line = next(l for l in format_hand_lines(g, pa, pa.hand) if "委托" in l)
-    assert "委托:出击2/2 ✓" in line
+    assert hand_cards_info(g, 0)[card.uid]["quest"] == "委托:出击2/2 ✓"
 
 
 def test_urgent_quest_progress_is_per_hand_instance(db, make_game):

@@ -19,7 +19,7 @@ import time
 from core.engine import Game, IllegalAction
 from core.model import GameConfig
 from core.setup import new_game
-from client.cli import hand_cards_info
+from client.presentation import hand_cards_info
 from db import deckcode
 from db.deck import STANDARD_RULES
 from server import protocol
@@ -145,6 +145,7 @@ class Connection:
         self.token = token or secrets.token_hex(4)
         self.cardback = cardback
         self.client_ip: str | None = None  # 入座时客户端自报公网 IP
+        self.machine_id: str | None = None  # 入座时客户端机器码（自动重连辅助凭证）
         self.ws = None  # 当前 WebSocket；断线时为 None
 
     @property
@@ -270,13 +271,15 @@ class Room:
         self.last_activity = time.time()  # 人员变动：刷新看门狗计时
         return conn
 
-    async def reconnect(self, token: str, ws,
-                        client_ip: str | None = None) -> Connection | None:
+    async def reconnect(self, token: str, ws, client_ip: str | None = None,
+                        machine_id: str | None = None) -> Connection | None:
         seat = self.seat_of_token(token)
         if seat is None:
             return None
         conn = self.conns[seat]
-        if client_ip is not None and (self.game is None or conn.client_ip != client_ip):
+        if client_ip is not None and conn.client_ip != client_ip:
+            return None
+        if machine_id is not None and conn.machine_id != machine_id:
             return None
         old_ws = conn.ws
         conn.ws = ws
@@ -286,11 +289,21 @@ class Room:
             except Exception:
                 pass
         self.last_activity = time.time()  # 重连回房也算人员变动
+        if self.game is None and self.full and self._lobby_phase == "idle" and self.ready_seats:
+            # 断线暂停的准备/开始倒计时在座位恢复后续接：双方已准备直接重进开始倒计时，
+            # 单方已准备则给另一方重新计算自动准备时限。
+            if len(self.ready_seats) == 2:
+                await self._enter_starting()
+            else:
+                self._start_lobby_timer("countdown", self.ready_timeout)
         return conn
 
     def disconnect(self, conn: Connection) -> None:
         if conn.ws is not None:
-            conn.ws = None  # 仅标记断线；对局与计时器继续
+            conn.ws = None  # 仅标记断线；对局计时继续，准备倒计时暂停
+            if self.game is None and self._lobby_phase in ("countdown", "starting"):
+                self._cancel_lobby_timer()
+                self.ready_seats.discard(conn.seat)
             # 纯断线不算人员变动：不刷新 last_activity（看门狗口径）
 
     @property

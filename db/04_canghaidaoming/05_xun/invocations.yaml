@@ -7,7 +7,7 @@ invocations:
         - date: 20200928  # 发布日期（随 04 沧海刀鸣引入）
           unique: unique  # [唯一]
           abilities:
-            - when: on_damage_start  # 受到伤害时减少1点（伤害时点批次，改伤害数值）
+            - when: on_before_health  # 受到伤害时减少1点（扣减生命前，护甲/破甲计算之后）
               condition: {victim_shikigami: self}
               steps:
                 - op: reduce_damage

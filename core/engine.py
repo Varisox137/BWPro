@@ -1201,7 +1201,7 @@ class Game:
         self.trace_sink(entry)
 
     def apply(self, cmd: dict) -> None:
-        """校验并执行一条指令，然后清空触发队列。CLI 与将来的网络层共用此入口。
+        """校验并执行一条指令，然后清空触发队列。本地 GUI 与联机客户端共用此入口。
 
         流程：指令分发 → 对应 handler 执行状态变更/发出事件 → _drain_queue 结算
         该指令触发的所有延时效果。对局已结束时拒绝任何操作。
@@ -1377,6 +1377,7 @@ class Game:
         if card is not None:
             self._swap_hand_card(p, card)
             pending["remaining"] -= 1
+            pending["options"] = [owned.uid for owned in p.hand]
             self._log(f"{p.name} 调度了一张手牌（剩余 {pending['remaining']} 次）")
         if card is None or pending["remaining"] <= 0 or not p.hand:
             self.state.pending_choice = None
@@ -1851,7 +1852,7 @@ class Game:
 
     def reinforce_sub_option_error(self, pi: int, cdef: CardDef,
                                    choice: int) -> str | None:
-        """协战牌子选项合法性预检（裁决(16) CLI 多择引导：列出全部子选项<含不合法>，
+        """协战牌子选项合法性预检（裁决(16) GUI 多择引导：列出全部子选项<含不合法>，
         选不合法要求重选）：返回不合法原因文本，None = 可选。仅校验子选项本身
         （所属式神出战/气绝/等级、鬼火）；目标合法性在出牌时另行校验。"""
         options = list(cdef.options or [])
@@ -1945,7 +1946,7 @@ class Game:
 
     def usage_options(self, pi: int, card: CardInstance) -> list[dict]:
         """一张手牌当前所有可能的使用方式枚举（裁决(2)，手牌展示统一读取点——
-        CLI 热坐/联机渲染层只管展示）。返回条目列表：
+        GUI 热坐/联机渲染层只管展示）。返回条目列表：
           id     方式 id（常规 = None；协战子选项 = "choice:<i>"）
           label  显示名（"常规" / 方式 text / 子选项卡名）
           cost   当前鬼火消耗（含方式覆盖与实例修饰求值）
@@ -2362,7 +2363,7 @@ class Game:
                             card: CardInstance | None = None) -> bool:
         """[条件] 使用前提（CardDef.play_condition，福满乾坤）：以条件迷你语言对控制者求值
         （事件载荷为空——dice_six_ge 等控制者 ext 算子；主动/响应/自动使用统一校验，
-        CLI 可用性显示同读）。card 给出实例时：mods["quest_done"] 已置位（委托整理
+        GUI 可用性显示同读）。card 给出实例时：mods["quest_done"] 已置位（委托整理
         "视为达成"）则条件视为满足。"""
         if card is not None and card.mods.get("quest_done"):
             return True
@@ -2581,7 +2582,7 @@ class Game:
                           method: PlayMethod | None = None) -> tuple[int, int]:
         """从战斗牌的效果块中提取战力与一次性护甲数值（仅统计目标为 self 的 buff_power / gain_shield）。
 
-        公开方法：引擎内部结算与客户端展示（client/cli.py 手牌数值段）共用。
+        公开方法：引擎内部结算与客户端展示（client/presentation.py 手牌数值段）共用。
 
         amount 支持 {"enhance": true, "base": n} 形式（禁锢之刀/冲撞）：base + 实例已装配的
         enhance 修饰（打出装配快照，见 _materialize）；以及 {"shield_of": "self"}（尘刀：
@@ -3639,7 +3640,7 @@ class Game:
             self._quest_tick(atk_ref.player, "attack")  # 委托账本：攻击次数（每段计 1）
             amount = (attacker.health
                       if self._has_keyword(attacker, "combat_base_health")
-                      else attacker.eff_power)  # 神木庇佑：以自身生命造成战斗伤害
+                      else max(0, attacker.eff_power))  # 神木庇佑：以自身生命造成战斗伤害
             if (victim.player == atk_ref.player
                     and self._has_keyword(attacker, "friendly_combat_heal")):
                 # 飘零之舞：攻击己方角色改为使其恢复等量于伤害的生命（不造成战斗伤害；
@@ -3681,7 +3682,7 @@ class Game:
                     return None
             amount = (vs.health
                       if self._has_keyword(vs, "combat_base_health")
-                      else vs.eff_power)  # 神木庇佑：反击同为战斗伤害
+                      else max(0, vs.eff_power))  # 神木庇佑：反击同为战斗伤害
             return _DamageEvent(source=src_ref, victim=victim,
                                 amount=amount, kind="combat", is_counter=True,
                                 piercing=cp)
@@ -3689,7 +3690,7 @@ class Game:
         if replace_marker["active"]:
             # 攻击替换（烬染不夜）：改为对两个随机敌方角色造成等同于自身当前攻击的
             # 效果伤害（无先攻/交战阶段、不受反击；on_after_assault 照常发出）
-            x = attacker.eff_power
+            x = max(0, attacker.eff_power)
             pool = targets.pool_refs(self, "enemy_character", atk_ref.player)
             for r in self.rng.sample(pool, min(2, len(pool))):
                 if r.shikigami is None:
@@ -5692,6 +5693,8 @@ class Game:
         inv_snapshot = [e["name"] for e in s.invocations]
         self._detach_invocations(s, reason="气绝")  # 灵咒随气绝移除（身材光环层随之失效）
         s.temp_power = 0  # 临时修正气绝时清除（复活只保留永久修正）
+        # 本回合力量挂账同步清除，避免负增益在回合开始核销时反向变成复活后加成。
+        s.ext.pop("turn_power", None)
         s.temp_health = 0
         s.stat_mods[:] = [entry for entry in s.stat_mods if entry.get("perm")]
         s.keywords.clear()  # 持续/一次性关键字与免疫条目气绝时清除；永久关键字保留（复活自动重新获得）
@@ -7113,7 +7116,7 @@ class Game:
 
     def _settle(self, msg: str, *, owner: int | None = None) -> None:
         """结算明细记录（GameState.settle_log）：等级/力量/战力/生命/护甲/破甲变化与
-        各事件开始结束。纯记录不打印——CLI 在空闲点取增量逐条展示（client/cli.py）。
+        各事件开始结束。纯记录不打印——GUI 在空闲点取增量逐条展示（client/presentation.py）。
         数值类事件只记本通道、不再写 _log 孪生行（避免联机端双通道同屏重复）。
         两通道同步记入 timeline 合流（结算播放按真实发生顺序）。
         owner：非公开信息行的所属方下标（仅该方可见，见 _log）。"""

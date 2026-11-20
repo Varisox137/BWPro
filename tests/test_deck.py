@@ -1,6 +1,6 @@
 """卡组主题测试：组卡规则校验（4 式神、派系 ≤2（不计无相）、同源互斥、中立/衍生/
 召唤物禁入、8 种 ×2）+ 卡组码（编码/解码往返、结构校验）（原 test_deckcode.py）
-+ 本地卡组存储 v2 与卡组构筑/战前选卡流程（原 test_deckstore.py）。
++ 本地卡组存储与 GUI 可构筑数据池（原 test_deckstore.py）。
 """
 import pytest
 
@@ -9,7 +9,6 @@ from db import deckcode, deckstore
 from db.deck import validate_deck
 from db.test_data import TEST_IDS, make_test_db, make_test_deck
 from tests import factories as F
-from tests.conftest import feed
 
 
 def test_valid_deck(db):
@@ -348,183 +347,7 @@ def test_non_standard_deck_flag(db, tmp_path):
     assert [d["standard"] for d in decks] == [False, True]
 
 
-# ---------- 战前选卡 ----------
-
-def test_choose_deck_from_slot(db, tmp_path, monkeypatch):
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "我的卡组")], p)
-    feed(monkeypatch, ["1"])
-    ids, cards, got = deckbuilder.choose_deck(db, "玩家A", p)
-    assert got == mk_code(db) and ids == list(F.TEAM) and cards == F.deck_of(*F.TEAM)
-
-
-def test_choose_deck_rejects_non_standard(db, tmp_path, monkeypatch, capsys):
-    """所选卡组不满足对战模式规则：提示并重新选择。"""
-    p = tmp_path / "decks.json"
-    bad = {"name": "三人队", "groups": mk_groups(db, F.TEAM[:3])}
-    deckstore.save_decks(db, [bad, mk_entry(db, "合法")], p)
-    feed(monkeypatch, ["1", "2"])  # 先选不合法者 → 重选
-    ids, cards, got = deckbuilder.choose_deck(db, "玩家A", p)
-    assert "不满足当前对战模式" in capsys.readouterr().out
-    assert got == mk_code(db)
-
-
-def test_choose_deck_custom_rules(db, tmp_path, monkeypatch):
-    """对战模式参数：自定义 DeckRules 下原"不合法"卡组可被接受。"""
-    from db.deck import DeckRules
-    p = tmp_path / "decks.json"
-    deck = F.deck_of(*F.TEAM)
-    for sid in F.TEAM:
-        deck.remove(sid * 100 + 4)  # 每名式神 7 张
-    short = {"name": "少牌队",
-             "groups": deckcode.group_deck(db, list(F.TEAM), deck)}
-    # 每人 7 张：天梯不合法（选择会要求重选），各式神带卡 [7,7,7,7] 模式下合法
-    deckstore.save_decks(db, [short], p)
-    feed(monkeypatch, ["1"])
-    ids, cards, _ = deckbuilder.choose_deck(db, "玩家A", p,
-                                            DeckRules(cards_per_shikigami=[7, 7, 7, 7]))
-    assert len(cards) == 28
-
-
-def test_choose_deck_invalid_slot_reprompt(db, tmp_path, monkeypatch):
-    """序号越界：提示并重新选择（无默认卡组回退）。"""
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db)], p)
-    feed(monkeypatch, ["9", "1"])
-    ids, cards, got = deckbuilder.choose_deck(db, "玩家A", p)
-    assert got == mk_code(db) and ids == list(F.TEAM) and cards == F.deck_of(*F.TEAM)
-
-
-def test_choose_deck_cancel(db, tmp_path, monkeypatch):
-    """回车 = 取消选择：返回 None（不开局）。"""
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db)], p)
-    feed(monkeypatch, [""])
-    assert deckbuilder.choose_deck(db, "玩家A", p) is None
-
-
-def test_choose_deck_empty_store(db, tmp_path, monkeypatch, capsys):
-    """本地无可用卡组（文件为空或全部不满足规则）：打印构筑引导并返回 None。"""
-    p = tmp_path / "decks.json"
-    assert deckbuilder.choose_deck(db, "玩家A", p) is None
-    assert "卡组构筑" in capsys.readouterr().out
-    bad = {"name": "三人队", "groups": mk_groups(db, F.TEAM[:3])}
-    deckstore.save_decks(db, [bad], p)
-    assert deckbuilder.choose_deck(db, "玩家A", p) is None
-    assert "卡组构筑" in capsys.readouterr().out
-
-
-# ---------- 构筑（槽位管理） ----------
-
-def test_deckbuilder_new_via_code(db, tmp_path, monkeypatch):
-    p = tmp_path / "decks.json"
-    code = mk_code(db)
-    feed(monkeypatch, ["", "", "快攻队", code])  # 新建 → 环境回车（最新）→ 命名 → 卡组码导入
-    deckbuilder.run_deckbuilder(db, p)
-    decks = deckstore.load_decks(db, p)
-    assert decks[0]["name"] == "快攻队" and decks[0]["standard"]
-    assert deckstore.entry_code(decks[0]) == code
-
-
-def test_deckbuilder_edit_slot(db, tmp_path, monkeypatch):
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "旧名")], p)
-    new = mk_code(db)
-    feed(monkeypatch, ["1", "新名", new])
-    deckbuilder.run_deckbuilder(db, p)
-    decks = deckstore.load_decks(db, p)
-    assert decks[0]["name"] == "新名" and deckstore.entry_code(decks[0]) == new
-
-
-def test_deckbuilder_edit_keep_name(db, tmp_path, monkeypatch):
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "旧名")], p)
-    feed(monkeypatch, ["1", "", mk_code(db)])  # 名称回车 = 沿用
-    deckbuilder.run_deckbuilder(db, p)
-    assert deckstore.load_decks(db, p)[0]["name"] == "旧名"
-
-
-def test_deckbuilder_new_interactive(db, tmp_path, monkeypatch):
-    """交互式构筑：二级目录选 4 名式神 + 每人恰好 8 个卡牌序号 → 自动保存。"""
-    p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "", "",      # 新建 → 环境回车（最新）→ 名称回车 → 交互式
-                       "1",               # 进入经典包（唯一非空包）
-                       "1", "2", "3", "4",  # 依次选 4 名式神
-                       "1 2 3 4 5 6 7 8",  # 1 号式神 8 张（8 种各 1 张）
-                       "1 1 2 2 3 3 4 4",  # 2 号式神 8 张（4 种各 2 张）
-                       "1 2 3 4 5 6 7 8",
-                       "1 2 3 4 5 6 7 8",
-                       ""])                # 编辑循环：回车完成
-    deckbuilder.run_deckbuilder(db, p)
-    decks = deckstore.load_decks(db, p)
-    assert len(decks) == 1 and decks[0]["standard"]
-    ids, cards = deckstore.entry_deck(decks[0])
-    assert ids == list(F.TEAM) and len(cards) == 32
-
-
-def test_new_build_shikigami_browser_strict(db, tmp_path, monkeypatch, capsys):
-    """二级目录选式神：未知名称/重复选择都会被拒绝并要求重新输入。"""
-    p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "", "",
-                       "不存在者",      # 全名未找到
-                       "1",             # 进入经典包
-                       "1",             # 选第 1 名
-                       "1",             # 重复选择 → 拒绝
-                       "2", "3", "4",   # 补足 4 名
-                       "1 2 3 4 5 6 7 8",
-                       "1 2 3 4 5 6 7 8",
-                       "1 2 3 4 5 6 7 8",
-                       "1 2 3 4 5 6 7 8",
-                       ""])
-    deckbuilder.run_deckbuilder(db, p)
-    out = capsys.readouterr().out
-    assert "未找到式神" in out
-    assert "式神不能重复" in out
-    decks = deckstore.load_decks(db, p)
-    assert len(decks) == 1 and decks[0]["standard"]
-
-
-def test_new_build_shikigami_by_full_name(gdb, tmp_path, monkeypatch):
-    """新建卡组支持直接输入式神全名（可空格分隔多名），跳过目录浏览。"""
-    p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "", "",
-                       "白狼 兵俑 山兔 座敷童子",   # 一行 4 个全名直选
-                       "1 2 3 4 5 6 7 8",  # 白狼 8 种各 1 张
-                       "1 2 3 4 5 6 7 8",  # 兵俑
-                       "1 2 3 4 5 6 7 8",  # 山兔（协战牌列最后，1-8 为本家卡）
-                       "1 2 3 4 5 6 7 8",  # 座敷童子（同上）
-                       ""])
-    deckbuilder.run_deckbuilder(gdb, p)
-    decks = deckstore.load_decks(gdb, p)
-    assert len(decks) == 1 and decks[0]["standard"]
-    ids, cards = deckstore.entry_deck(decks[0])
-    assert ids == [100101, 100102, 100117, 100129]
-    assert len(cards) == 32
-
-
-def test_new_build_cards_strict(db, tmp_path, monkeypatch, capsys):
-    """新建选牌：数量不符/序号不存在被拒并重问；同种卡超 2 张不强制——
-    仅一次性提示标准规则，卡组仍保存但不标记为标准。"""
-    p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "", "", "",
-                       "1",                 # 进入经典包
-                       "1", "2", "3", "4",  # 依次选 4 名式神
-                       "1 2 3",              # 数量不足
-                       "1 2 3 4 5 6 7 99",   # 序号不存在
-                       "1 1 1 2 3 4 5 6",    # 同种卡 3 张 → 接受（仅提示）
-                       "1 2 3 4 5 6 7 8",
-                       "1 2 3 4 5 6 7 8",
-                       "1 2 3 4 5 6 7 8",
-                       ""])
-    deckbuilder.run_deckbuilder(db, p)
-    out = capsys.readouterr().out
-    assert out.count("须恰好输入 8 个序号") == 1
-    assert "序号不存在" in out
-    assert "同名卡在同一式神限 2、在全卡组限 2" in out
-    assert "不满足标准规则" in out
-    decks = deckstore.load_decks(db, p)
-    assert len(decks) == 1 and not decks[0]["standard"]  # 超限卡组可保存、非标准
-
+# ---------- 可构筑数据池 ----------
 
 def test_buildable_cards_reinforce_listed_under_both_owners(gdb):
     """协战牌同时列入两位所属式神的可选卡牌（海国共主 = 铃鹿御前 & 大岳丸）；
@@ -547,78 +370,6 @@ def test_buildable_cards_main_first_reinforce_last(gdb):
     xun = deckbuilder.buildable_cards(gdb, 100405)
     assert [c.id for c in xun[:8]] == [10040500 + n for n in range(1, 9)]
     assert xun[-1].id == 10030721
-
-
-def test_deckbuilder_rename(db, tmp_path, monkeypatch):
-    """槽位重命名：r <序号> <新名称>。"""
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "旧名")], p)
-    feed(monkeypatch, ["r 1 新名字"])
-    deckbuilder.run_deckbuilder(db, p)
-    decks = deckstore.load_decks(db, p)
-    assert decks[0]["name"] == "新名字" and decks[0]["standard"]
-
-
-def test_deckbuilder_bad_code_not_saved(db, tmp_path, monkeypatch):
-    p = tmp_path / "decks.json"
-    feed(monkeypatch, ["", "x", "garbage-code"])
-    deckbuilder.run_deckbuilder(db, p)
-    assert deckstore.load_decks(db, p) == []
-
-
-# ---------- 增量编辑 ----------
-
-def test_edit_single_shikigami_cards(db, tmp_path, monkeypatch):
-    """编辑现有卡组：只改 1 号式神的卡牌（改为 8 种各 1 张），其余不动。"""
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "旧")], p)
-    feed(monkeypatch, ["1", "", "",       # 编辑槽位 1 → 沿用名 → 交互式编辑
-                       "1",               # 编辑 1 号式神卡牌
-                       "1 2 3 4 5 6 7 8",  # 严格选满 8 张（8 种各 1 张）
-                       ""])               # 完成
-    deckbuilder.run_deckbuilder(db, p)
-    ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
-    assert ids == list(F.TEAM)
-    own = sorted(c for c in cards if c // 100 == 100101)
-    assert own == [10010100 + n for n in range(1, 9)]
-    # 其余式神仍是 4 种 ×2
-    assert sorted(c for c in cards if c // 100 == 100102) == F.deck_of(100102)
-
-
-def test_edit_change_shikigami_clears_cards(db, tmp_path, monkeypatch):
-    """更换式神：清空其已选卡牌并立即重新选牌；其余式神不动。"""
-    db.shikigami[100105] = F.shiki(100105)
-    for n in range(1, 9):
-        db.cards[10010500 + n] = F.card(10010500 + n, shikigami=100105)
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "旧")], p)
-    feed(monkeypatch, ["1", "", "",       # 编辑槽位 1
-                       "h 1",            # 更换 1 号式神
-                       "1",              # 进入经典包（备选池只有 100105）
-                       "1",              # 选择 100105
-                       "1 2 3 4 5 6 7 8",  # 新式神严格选满 8 张（8 种各 1 张）
-                       ""])               # 完成
-    deckbuilder.run_deckbuilder(db, p)
-    ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
-    assert 100105 in ids and 100101 not in ids
-    assert sorted(c for c in cards if c // 100 == 100105) == \
-        [10010500 + n for n in range(1, 9)]
-
-
-def test_edit_cards_strict_input(db, tmp_path, monkeypatch, capsys):
-    """编辑单式神卡牌：与新建一致的严格输入——非恰好 8 个序号时重问，直到合法。"""
-    p = tmp_path / "decks.json"
-    deckstore.save_decks(db, [mk_entry(db, "旧")], p)
-    feed(monkeypatch, ["1", "", "",
-                       "1",
-                       "1 2 3",            # 不足 8 个 → 重问
-                       "1 2 3 4 5 6 7 8",  # 8 种各 1 张
-                       ""])
-    deckbuilder.run_deckbuilder(db, p)
-    assert "须恰好输入 8 个序号" in capsys.readouterr().out
-    ids, cards = deckstore.entry_deck(deckstore.load_decks(db, p)[0])
-    assert sorted(c for c in cards if c // 100 == 100101) == \
-        [10010100 + n for n in range(1, 9)]
 
 
 def test_available_shikigami_excludes_wip_and_unreleased(gdb):

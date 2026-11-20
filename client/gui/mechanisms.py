@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from client.cli import KEYWORD_CN
+from client.presentation import KEYWORD_CN
 from client.gui.cardart import _renderer
 from client.gui.portrait import bwpdiy_root, library_root, load_global_layouts
 from client.gui.renderlog import log_render_failure

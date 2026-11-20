@@ -1,6 +1,6 @@
 """测试对局用的数据库与卡组辅助：直接加载正式 YAML（db/<pack>/<式神目录>/）。
 
-正式数据只有一份——YAML 文件经 CardDatabase.load 加载并校验，CLI 热座/联机与
+正式数据只有一份——YAML 文件经 CardDatabase.load 加载并校验，GUI 热坐/联机与
 测试同源；新增/修改卡牌只需改 YAML，不再需要在此手动同步一份构造代码。
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ from db.loader import CardDatabase
 
 
 def make_test_db() -> CardDatabase:
-    """从正式 YAML 加载测试数据库（与 CLI/服务端同源）。"""
+    """从正式 YAML 加载测试数据库（与 GUI/服务端同源）。"""
     return CardDatabase.load()
 
 

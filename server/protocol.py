@@ -123,7 +123,7 @@ def state(payload: dict, log: list[str], timer: dict | None = None,
     settle 非空时附带结算明细增量（旧客户端忽略）。
     timeline 非空时附带合并时间线增量（文字 [{"k": "s"|"l", "m"}]，结算/叙事按真实发生
     顺序合流；动画 {"k": "a", "u": uid, "c": card_id, "p": player} 无 m，仅供 GUI
-    用牌动画，CLI 与文字播放跳过；log/settle 字段保留兼容）。
+    用牌动画；log/settle 字段保留兼容）。
     trace 非空时附带按接收方视角脱敏的运行时追踪增量。
     opponent_cardback 非空时附带接收者对手的卡背名（仅 GUI 展示，旧客户端忽略）。"""
     msg = {"type": "state", "payload": payload, "log": log}

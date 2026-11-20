@@ -4,7 +4,7 @@
 设计目标：
 - 可扩展：新增命令只需用 @debug_command 注册一个函数。
 - 与正常指令协议隔离，便于服务端后续按环境启用/禁用。
-- 本地 CLI/测试默认启用；authoritative 服务器应避免向客户端暴露这些 op。
+- 本地调试/测试默认启用；authoritative 服务器应避免向客户端暴露这些 op。
 
 注意：调试指令会绕过部分游戏规则（费用、等级、合法性检查等），仅用于开发、测试与复现。
 """
@@ -207,3 +207,97 @@ def cmd_skip_upgrade(game, ctx) -> None:
         raise IllegalAction("当前不在升级阶段")
     game.state.phase = "battle"
     game._log("[调试] 跳过升级阶段")
+
+
+# ---------- 运维调试控制台的文本指令解析（不含交互循环） ----------
+
+DEBUG_HELP = """调试指令：give_card / set_stat / grant / ungrant / play_card / assault /
+  draw / set_turn；target 代码 s/e + 0（牌手）或 1 基座次序号。"""
+
+
+def parse_ref(code: str, active: int) -> Ref:
+    """把 s/e 前缀与 1 基座次代码解析为引擎 Ref。"""
+    code = code.strip().lower()
+    if code[0] == "e":
+        player, rest = 1 - active, code[1:]
+    elif code[0] == "s":
+        player, rest = active, code[1:]
+    else:
+        raise ValueError(f"目标代码须以 s（己方）或 e（敌方）开头：{code!r}")
+    if rest == "0":
+        return Ref(player=player)
+    return Ref(player=player, shikigami=int(rest) - 1)
+
+
+def _parse_value(s: str) -> bool | int | str:
+    sl = s.lower()
+    if sl == "true":
+        return True
+    if sl == "false":
+        return False
+    try:
+        return int(s)
+    except ValueError:
+        return s
+
+
+def run_debug(game, args: list[str]) -> dict:
+    """把运维控制台的 debug 文本参数解析为 engine 可执行的 cmd dict。"""
+    if not args or args[0] in ("help", "h"):
+        print(DEBUG_HELP)
+        return {}
+    sub = args[0].lower()
+    rest = args[1:]
+
+    def need(n: int) -> None:
+        if len(rest) < n:
+            raise ValueError(f"{sub} 需要至少 {n} 个参数")
+
+    if sub == "give_card":
+        need(2)
+        return {"op": "debug_give_card", "args": {
+            "player": int(rest[0]), "card_id": int(rest[1]),
+            "zone": rest[2] if len(rest) > 2 else "hand",
+            "count": int(rest[3]) if len(rest) > 3 else 1,
+        }}
+    if sub == "set_stat":
+        need(3)
+        return {"op": "debug_set_stat", "args": {
+            "target": parse_ref(rest[0], game.state.active).model_dump(),
+            "key": rest[1], "value": _parse_value(rest[2]),
+        }}
+    if sub == "play_card":
+        need(2)
+        return {"op": "debug_play_card", "args": {
+            "player": int(rest[0]), "uid": int(rest[1]),
+            "target": parse_ref(rest[2], int(rest[0])).model_dump() if len(rest) > 2 else None,
+            "play_method": rest[3] if len(rest) > 3 else None,
+        }}
+    if sub == "assault":
+        need(2)
+        return {"op": "debug_assault",
+                "args": {"player": int(rest[0]), "index": int(rest[1])}}
+    if sub in ("grant", "ungrant"):
+        need(2)
+        args_out: dict = {
+            "target": parse_ref(rest[0], game.state.active).model_dump(),
+            "keyword": rest[1],
+        }
+        if sub == "grant" and len(rest) > 2:
+            args_out["cls"] = rest[2]
+        if sub == "ungrant":
+            args_out["remove"] = True
+        return {"op": "debug_grant_keyword", "args": args_out}
+    if sub == "draw":
+        need(1)
+        return {"op": "debug_draw", "args": {
+            "player": int(rest[0]), "count": int(rest[1]) if len(rest) > 1 else 1,
+        }}
+    if sub == "set_turn":
+        args_out: dict = {}
+        if len(rest) > 0:
+            args_out["active"] = int(rest[0])
+        if len(rest) > 1:
+            args_out["turn"] = int(rest[1])
+        return {"op": "debug_set_turn", "args": args_out}
+    raise ValueError(f"未知调试子命令: {sub}")

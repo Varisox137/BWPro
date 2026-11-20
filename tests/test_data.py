@@ -2440,7 +2440,7 @@ def test_fragile_conditional_return_preserves_card_instance():
     assert not original.generated
     assert not any(card.generated and card.id == 10011401 for card in pa.hand)
     assert original.mods["damage_boost"] == 1
-    from client.cli import _enhance_description_suffix
+    from client.presentation import _enhance_description_suffix
     assert "伤害+1" in _enhance_description_suffix(g, pa, original)
 
 

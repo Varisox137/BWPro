@@ -799,6 +799,25 @@ def test_entity_negative_health_render(qapp, tmp_path, field, value):
     assert snapshot == original
 
 
+def test_entity_negative_power_render_clamped_to_zero(qapp, tmp_path, monkeypatch):
+    """式神小卡的负力量只钳制渲染值，不回写运行时状态。"""
+    import json
+    from client.gui import cardart
+
+    definition = factories.shiki(100101, power=3, health=4)
+    database = factories.db_of([definition], [])
+    shiki = SimpleNamespace(id=100101, awakened=None, level=1, eff_power=-2,
+                            combat_power=0, health=4, shield=0, ext={})
+    seen = {}
+    monkeypatch.setattr(
+        cardart, "_cached_entity_pixmap",
+        lambda _key, payload, state, _layout, _root: seen.update(
+            payload=json.loads(payload), state=json.loads(state)))
+    cardart.entity_pixmap(shiki, database, library_dir=tmp_path / "empty")
+    assert seen["state"]["power"] == 0
+    assert shiki.eff_power == -2
+
+
 def test_entity_revive_zero_render(qapp, tmp_path):
     from client.gui import cardart
 
@@ -967,7 +986,7 @@ def test_card_config_requires_matching_id_and_name(
 
 
 def test_luck_form_hand_border_stays_paid(qapp, gdb, monkeypatch):
-    from client import cli
+    from client import presentation as cli
     from client.gui.battle_scene import BattleScene
 
     mengji = next(cdef.id for cdef in gdb.cards.values() if cdef.name == "萌即正义")

@@ -4,11 +4,11 @@
       [--turn-timeout 120] [--mulligan-timeout 30] [--debug-console]
       [--allow-debug-rooms] [--no-require-ua]
 
-- 客户端只提交指令（与 client/cli.py 完全相同的 cmd dict 协议），服务端用
-  core.engine.Game 校验、执行并广播新状态（server/room.py、server/manager.py）。
+- 客户端只提交 cmd dict 指令，服务端用 core.engine.Game 校验、执行并广播新状态
+  （server/room.py、server/manager.py）。
 - 心跳使用 WS 协议层 ping/pong（uvicorn ws_ping_interval=10s）。
 - --debug-console：服务端 stdin 接受 `list` 与 `<房间id> <debug 子命令> [参数...]`，
-  直接进入指定对局执行 debug 指令（解析复用 client/cli.py 的 run_debug）。
+  直接进入指定对局执行 debug 指令（解析见 core/debug.py）。
 """
 from __future__ import annotations
 
@@ -250,7 +250,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         await reject("当前连接已加入房间")
                         continue
                     if not client_ok(msg):
-                        await reject("客户端标识无效，请使用 BWPro CLI 联机")
+                        await reject("客户端标识无效，请使用 BWPro 桌面客户端联机")
                         await ws.close(code=1008)
                         log_close(1008, "客户端标识无效")
                         return
@@ -268,6 +268,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         rules_mode = _text(msg, "rules_mode", 10) or "standard"
                         diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
+                        machine_id = _text(msg, "machine_id", MAX_TOKEN)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                         target_room = manager.create(debug=bool(msg.get("debug")),
                                                      room_id=want_id, env_date=env_date,
@@ -281,6 +282,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         continue
                     room, conn = target_room, target_conn
                     conn.client_ip = reported_ip
+                    conn.machine_id = machine_id
                     source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
                     print(f"[房间 {room.id}] {name}（{source}）创建房间"
                           f"{'（自建房码）' if want_id else ''}"
@@ -302,6 +304,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         deck_code = _text(msg, "deck_code", MAX_DECK_CODE)
                         diy = _diy_enabled(msg)
                         reported_ip = _reported_client_ip(msg)
+                        machine_id = _text(msg, "machine_id", MAX_TOKEN)
                         cardback = _text(msg, "cardback", MAX_CARDBACK)
                     except ValueError as e:
                         await reject(str(e))
@@ -318,16 +321,19 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         if target_room.reconnect_throttled():
                             await reject("重连尝试过于频繁，请稍后")
                             continue
-                        if reconnect_code and not reported_ip:
+                        if (reconnect_code or machine_id) and not reported_ip:
                             await reject("自动重连需要公网 IP")
                             continue
                         target_conn = await target_room.reconnect(
                             credential, ws,
-                            client_ip=reported_ip if reconnect_code else None)
+                            client_ip=reported_ip if reconnect_code or machine_id else None,
+                            machine_id=machine_id)
                         if target_conn is None:
                             target_room.record_reconnect_failure()
-                            await reject("重连识别码或公网 IP 无效" if reconnect_code
-                                         else "重连令牌无效")
+                            reason = ("重连识别码或公网 IP 无效" if reconnect_code
+                                      else "重连令牌、机器码或公网 IP 无效" if machine_id
+                                      else "重连令牌无效")
+                            await reject(reason)
                             continue
                         room, conn = target_room, target_conn
                         logger.info("重连成功：房间=%s 座位=%s", room.id, conn.seat)
@@ -360,6 +366,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
                         continue
                     room, conn = target_room, target_conn
                     conn.client_ip = reported_ip
+                    conn.machine_id = machine_id
                     source = client_ip + (f"，自报 {reported_ip}" if reported_ip else "")
                     print(f"[房间 {room.id}] {name}（{source}）加入房间", flush=True)
                     await conn.send(protocol.joined(
@@ -415,16 +422,9 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
             watchdog.cancel()
             if binding_valid():
                 if room.game is None:
-                    waiting_creator = conn.seat == 0 and room.conns[1] is None
-                    if waiting_creator or (room.diy and room._lobby_phase == "diy_syncing"):
-                        # 等待对手的房主、DIY 同步中断者保留座位与令牌；
-                        # 空房不立即删除，由未开局看门狗按时限回收。
-                        room.disconnect(conn)
-                    else:
-                        await room.lobby_leave(conn.seat)
-                        if not any(room.conns):
-                            print(f"[房间 {room.id}] 房间已空，回收", flush=True)
-                            manager.remove(room.id)
+                    # 开局前意外断线一律保留座位与令牌，供公网 IP + 机器码自动重连；
+                    # 主动 leave 仍立即释放座位，离线空房由看门狗按时限回收。
+                    room.disconnect(conn)
                 else:
                     room.disconnect(conn)
                     manager.sweep()
@@ -442,7 +442,7 @@ def create_app(manager: RoomManager, *, rate_limit: int = 10,
 
 def _debug_console(manager: RoomManager, loop: asyncio.AbstractEventLoop) -> None:
     """stdin 线程：list 列出房间；<房间id> <debug 子命令> [参数...] 进入对局 debug。"""
-    from client.cli import run_debug  # 延迟导入：解析复用 CLI 的 debug 指令解析
+    from core.debug import run_debug  # 延迟导入：运维控制台文本指令解析
 
     print("[debug-console] 输入 list 查看房间；<房间id> <debug 子命令> 执行调试")
     while True:

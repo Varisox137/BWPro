@@ -1,6 +1,6 @@
 """对局运行时状态：全部为纯数据（pydantic 模型），可整体 JSON 序列化。
 
-引擎外的代码（CLI、未来的网络层）只通过这些结构与 Game 交互；
+引擎外的代码（GUI 与联机客户端）只通过这些结构与 Game 交互；
 状态可 dump/restore，支撑回放、存档与单元测试。
 命名以 docs/terminology.md 为准：鬼火 orb、出击 assault、升级 upgrade、
 气绝 defeated、护甲 shield、力量 power。
@@ -35,7 +35,7 @@ class GameConfig(BaseModel):
     second_player_shield: int = 5  # 后手补偿：牌手护甲
     extra_upgrade_turns: tuple[int, int] = (7, 3)  # 先手第 7 / 后手第 3 个己方回合各 +1 升级机会
     enable_debug_commands: bool = True  # 是否启用 debug_ 指令（服务端可关闭）
-    auto_skip_upgrade: bool = False  # 测试便利：升级阶段自动跳过（生产/CLI 保持 False）
+    auto_skip_upgrade: bool = False  # 测试便利：升级阶段自动跳过（生产界面保持 False）
     hand_cap: int = 12  # 手牌上限；超出时卡牌先进入目标区域再移至墓地（Phase 5+ 完整流程）
     deck_cap: int = 99  # 牌库上限；预留，Phase 1 不强制
 
@@ -360,17 +360,17 @@ class GameState(BaseModel):
     ability_seq: int = 0  # 能力进场序号：每次能力进场递增（同事件触发排序用）
     config: GameConfig = Field(default_factory=GameConfig)
     log: list[str] = Field(default_factory=list)
-    settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；CLI 空闲点逐条展示用，与 log 指令回显分离）
+    settle_log: list[str] = Field(default_factory=list)  # 结算明细通道（数值变化/事件开始结束；GUI 空闲点逐条展示用，与叙事日志分离）
     timeline: list[dict[str, Any]] = Field(default_factory=list)  # 合并时间线（文字 {"k": "s"|"l", "m": msg}：
     # _settle/_log 双通道按真实发生顺序的合流；联机/热坐的结算播放以此为准，避免
     # "能力触发"类叙事行滞后到插入结算明细之后（维护者定案）。非公开信息行另带
-    # "o": 所属方下标（仅该方可见——联机 server 按 viewer 过滤；热坐单屏不过滤）；
+    # "o": 所属方下标（仅该方可见——联机 server 与热坐 GUI 均按 viewer 过滤）；
     # 动画 {"k": "a", "u": uid, "c": card_id, "p": player} 与视觉事件
     # {"k": "v", "v": "defeated"|"move"|"assault"|"stat"|"luck"|"luck_dice"|
     # "luck_reroll"|"luck_result"|"heal"|"damage"|"immune"|"upgrade"|
     # "countdown"|"countdown_proc"|"revive"|"hand"|"turn_start", ...} 无 m，仅供 GUI；
     # stat/countdown/countdown_proc/revive/defeated 及气绝回位 move 可带结算时点快照 r；
-    # CLI 与文字 timeline 播放跳过）
+    # 文字记录只读取 k=s/l，不消费动画条目）
     log_vis: list[int | None] = Field(default_factory=list)  # 与 log 逐条对齐的可见性（None=双方；int=仅该方）
     settle_vis: list[int | None] = Field(default_factory=list)  # 与 settle_log 逐条对齐（同上）
     temp_grants: list[TempGrant] = Field(default_factory=list)  # 一次性临时触发注册表

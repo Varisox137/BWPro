@@ -149,8 +149,7 @@ def test_card_widget_passes_frame_variant_override(qapp, db, monkeypatch):
     widget.close()
 
 
-def test_appearance_dialog_selects_original_and_saves_only_on_confirm(
-        qapp, db, monkeypatch):
+def test_appearance_dialog_menu_frame_order_back_and_confirm(qapp, db, monkeypatch):
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QDialog
     from client.gui.appearance import CardAppearanceDialog
@@ -164,30 +163,37 @@ def test_appearance_dialog_selects_original_and_saves_only_on_confirm(
                         lambda *args, **kwargs: saved.append((args, kwargs)))
     dialog = CardAppearanceDialog(db.cards[10010101], db)
     assert dialog.selected_frame == "norm"
-    assert dialog.choice_view.option_buttons[0].isHidden()
-    previous = dialog.choice_view
-    dialog.select_frame("blue")
-    assert dialog.selected_frame == "blue"
-    assert dialog.choice_view is not previous
-    assert dialog.choice_view.option_widgets[0]._art_options["frame_variant"] == "blue"
+    assert dialog.mode_button.text() == "异画"
+    assert dialog.frame_button.text() == "牌框"
+    assert dialog.choice_view is None
+    assert not dialog.mode_button.isEnabled()  # 异画仅预留
+
+    dialog.frame_button.click()
+    assert dialog.mode_button.text() == "返回"
+    assert dialog.mode_button.isEnabled()
+    assert list(dialog.choice_view.option_buttons) == ["norm", "black", "blue", "red"]
+    assert dialog.choice_view.option_widgets[2]._art_options["frame_variant"] == "blue"
     assert saved == []
-    dialog.choice_view.select(0)
-    assert not dialog.choice_view.option_buttons[0].isHidden()
-    assert dialog.choice_view.option_buttons[0].text() == "确认"
+    dialog.choice_view.select("blue")
+    assert not dialog.choice_view.option_buttons["blue"].isHidden()
+    assert dialog.choice_view.option_buttons["blue"].text() == "选择"
     dialog.choice_view.confirm()
     assert saved == [((10010101, "blue"), {})]
     assert dialog.result() == QDialog.Accepted
     dialog.close()
 
     cancelled = CardAppearanceDialog(db.cards[10010101], db)
-    cancelled.select_frame("red")
-    cancelled.choice_view.select(0)
+    cancelled.frame_button.click()
+    cancelled.mode_button.click()
+    assert cancelled.choice_view is None and cancelled.mode_button.text() == "异画"
+    cancelled.frame_button.click()
+    cancelled.choice_view.select("red")
     cancelled.reject()
     assert len(saved) == 1
     cancelled.close()
 
 
-def test_codex_left_click_appearance_and_right_click_detail(qapp, db, monkeypatch):
+def test_codex_left_click_detail_and_right_click_appearance(qapp, db, monkeypatch):
     from PySide6.QtWidgets import QDialog
     from client.gui.codex import ShikigamiCodexView
 
@@ -216,7 +222,7 @@ def test_codex_left_click_appearance_and_right_click_detail(qapp, db, monkeypatc
     widget = view.card_widgets[0]
     widget.clicked.emit(widget.cdef)
     widget.detail_clicked.emit(widget.cdef)
-    assert opened == [("appearance", widget.cdef), ("detail", widget.cdef)]
+    assert opened == [("detail", widget.cdef), ("appearance", widget.cdef)]
     view.close()
 
 

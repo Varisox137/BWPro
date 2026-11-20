@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-FRAME_VARIANTS = {"norm": "常规", "blue": "琉璃", "black": "墨染", "red": "百炼"}
+FRAME_VARIANTS = {"norm": "常规", "black": "墨染", "blue": "琉璃", "red": "百炼"}
 _DEFAULT = {"frame_variant": "norm", "art_index": 0}
 
 

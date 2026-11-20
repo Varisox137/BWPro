@@ -2,7 +2,7 @@
 
 流程：各行由调用方组好字段元组（row builder）→ align_rows 按显示宽度逐列对齐
 → 调用方拼接成行（可对个别单元格着色）。静态字段（类型/数值段）由本模块统一
-提供；对局内的动态段（uid/费用修正/增强/动态战力）由 client/cli.py 组装。
+提供；对局内的动态段（uid/费用修正/增强/动态战力）由 client/presentation.py 组装。
 """
 from __future__ import annotations
 

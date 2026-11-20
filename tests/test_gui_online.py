@@ -13,7 +13,7 @@ from PySide6.QtCore import QEvent, QObject, QPointF, Qt, Signal
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QGraphicsSceneMouseEvent
 
-from client import cli
+from client import presentation as cli
 from client.gui.app import MainWindow
 from client.gui.online import NetBridge, OnlineBattleView, OnlineView
 from client.gui.widgets import CardWidget
@@ -953,8 +953,7 @@ def test_disconnected_join_reopens_socket_and_sends_token(qapp, db, view):
     view.token = "令牌"
     view.room_edit.setText(view.room_id)
     view.token_edit.setText(view.token)
-    view.on_disconnected("网络中断")
-    assert view.bridge is None
+    view.bridge = None  # 手动“加入 / 重连”通道；自动重连由独立用例覆盖
     assert view.join_room()
     wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent,
              timeout=2)
@@ -1452,7 +1451,7 @@ def test_online_direct_join_refreshes_new_identity_but_reconnect_preserves_it(
     view.token = "重连令牌"
     view.token_edit.setText(view.token)
     configured["player_name"] = "不应覆盖房间身份"
-    view.on_disconnected("网络中断")
+    view.bridge = None  # 手动重连：保留已入座身份，不刷新设置页玩家名
     assert view.join_room()
     wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent,
              timeout=2)
@@ -1717,6 +1716,7 @@ def test_online_free_rules_include_nonstandard_diy_deck(qapp, db, tmp_path):
 def test_online_disconnect_auto_reconnects_with_public_ip_and_start_code(
         qapp, view, monkeypatch):
     monkeypatch.setattr("client.gui.online.net.public_ip", lambda: "8.8.8.8", raising=False)
+    monkeypatch.setattr("client.gui.online.net.machine_id", lambda: "a" * 32, raising=False)
     view.server_url = "ws://localhost:1037/ws"
     view.opener = lambda _url: FakeWS()
     view._open_bridge(FakeWS())
@@ -1730,12 +1730,22 @@ def test_online_disconnect_auto_reconnects_with_public_ip_and_start_code(
     assert msg["type"] == "join" and msg["room_id"] == "ABC123"
     assert msg["reconnect_code"] == "abcd1234"
     assert msg["client_ip"] == "8.8.8.8"
+    assert msg["machine_id"] == "a" * 32
     assert "token" not in msg
 
 
-def test_online_lobby_disconnect_does_not_auto_reconnect(qapp, view):
+def test_online_lobby_disconnect_auto_reconnects_with_token_and_machine_id(
+        qapp, view, monkeypatch):
+    monkeypatch.setattr("client.gui.online.net.public_ip", lambda: "8.8.8.8", raising=False)
+    monkeypatch.setattr("client.gui.online.net.machine_id", lambda: "a" * 32, raising=False)
+    view.server_url = "ws://localhost:1037/ws"
+    view.opener = lambda _url: FakeWS()
     view._open_bridge(FakeWS())
-    view.room_id = "ABC123"
-    view.opener = lambda _url: pytest.fail("开局前不应自动重连")
+    view.handle_message({"type": "joined", "room_id": "ABC123", "token": "旧令牌", "seat": 0})
     view.on_disconnected("网络中断")
-    assert view.bridge is None
+    wait_for(qapp, lambda: isinstance(view.bridge, FakeBridge) and view.bridge.sent)
+    msg = view.bridge.sent[-1]
+    assert msg["type"] == "join" and msg["token"] == "旧令牌"
+    assert msg["client_ip"] == "8.8.8.8" and msg["machine_id"] == "a" * 32
+    assert "reconnect_code" not in msg
+    assert view.server_edit.text() == "localhost:1037"

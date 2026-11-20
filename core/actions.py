@@ -989,6 +989,7 @@ def mulligan_hand(game, ctx, *, targets: list[Ref], times: int = 3,
         return
     game.state.pending_choice = {
         "kind": "mulligan_pick", "player": ctx.controller,
+        "options": [card.uid for card in p.hand],
         "remaining": int(times), "shuffle": bool(shuffle),
     }
     game._log(f"{p.name} 调度手牌（至多 {times} 次）")

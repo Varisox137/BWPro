@@ -2241,6 +2241,23 @@ def test_invocation_drawn_response_combat(real_game):
     assert pb.health == 23  # 梦魇3伤 + 惊梦4点战斗伤害
 
 
+def test_turn_power_debuff_not_refunded_after_revive(real_game):
+    """梦中低语与永眠之梦同时存在：对应式神气绝后，本回合减力不会在复活时返还。"""
+    g, pa, pb = _rg(real_game, [100406, 100101, 100102, 100125], levels={0: 2})
+    F.play(g, 0, 10040602)  # 梦中低语：抽到梦魇牌时对应式神本回合 -2 力量
+    F.play(g, 0, 10040606)  # 永眠之梦：同事件消灭对应式神
+    marked = pb.deck[0]
+    g.attach_invocation("梦魇", player=0, card=marked)
+    g.move_card(pb, marked, "hand", reason="draw")
+    g._drain_queue()
+    target = pb.shikigami[0]
+    assert target.defeated and target.temp_power == 0
+    target.revive_countdown = 1
+    F.pass_turns(g, 1)  # 对应方回合开始：自然复活，已过期的减力不得变成 +2
+    assert not target.defeated
+    assert target.eff_power == target.base_power
+
+
 # ---------- 支配者（enemy_deck_invocation 光环 + redirect_deck_invocation 替换） ----------
 
 def test_enemy_deck_invocation_aura(db, make_game):
@@ -3033,7 +3050,7 @@ def test_real_invocations_loaded(gdb):
     assert d.abilities[0].countdown == 2 and d.abilities[0].once
     assert d.text == "[唯一]。[眩晕]。[倒计时2]：{使跳跳哥哥发起一次攻击}。生效后移除。"
     x = gdb.invocations["鸮之守护"]
-    assert x.unique == "unique" and x.abilities[0].when == "on_damage_start"
+    assert x.unique == "unique" and x.abilities[0].when == "on_before_health"
     assert x.text == "[唯一]。受到伤害时减少1点。"
     y = gdb.invocations["八尺琼曲玉"]
     assert y.unique == "unique" and y.power == 1
@@ -3075,8 +3092,7 @@ def test_real_invocations_pack04_new_loaded(gdb):
 
 
 def test_real_invocation_damage_reduce(real_game):
-    """鸮之守护"受到伤害时减少1点"：结附式神受伤 -1（on_damage_start 批次
-    reduce_damage，条件 victim_shikigami=self），其他式神不受影响。"""
+    """鸮之守护在扣减生命前减伤：护甲先按原伤害量吸收，破甲先按原伤害量增幅。"""
     g, pa, pb = _rg(real_game, [100405, 100101, 100102, 100125], levels={0: 1, 1: 1})
     s0, s1 = pa.shikigami[0], pa.shikigami[1]
     g.attach_invocation("鸮之守护", player=0, target=Ref(player=0, shikigami=0))
@@ -3085,6 +3101,14 @@ def test_real_invocation_damage_reduce(real_game):
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, None)
     assert s0.health == hp0 - 2  # 减少 1 点
     assert s1.health == hp1 - 3  # 未结附者全额
+
+    s0.shield = 3
+    hp0 = s0.health
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 3, None)
+    assert s0.health == hp0 and s0.shield == 0  # 3 点护甲全部吸收，不减免护甲消耗
+    s0.shield = -2
+    g.deal_to_shikigami(Ref(player=0, shikigami=0), 1, None)
+    assert s0.health == hp0 - 2 and s0.shield == 0  # (1 + 2 破甲) - 1 减伤
 
 
 def test_real_coffin_entity_loaded(gdb):

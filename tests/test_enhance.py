@@ -616,7 +616,7 @@ def test_shikigami_has_form_condition(db, make_game):
 
 def test_dynamic_description_suffix_uses_existing_ledgers(db, make_game):
     """角标外的增强/条件计数进入卡面括号；大合奏按固定能力顺序逐项列出。"""
-    from client.cli import _enhance_description_suffix
+    from client.presentation import _enhance_description_suffix
 
     for cid, kw in (
         (10010408, {}), (10030103, {"steps": [F.dmg(1)]}),

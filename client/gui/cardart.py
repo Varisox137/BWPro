@@ -958,6 +958,7 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
             power = (shiki.eff_power if shiki.ext.get("power_zero")
                      else shiki.eff_power - shiki.combat_power)
             health = shiki.health
+        power = max(0, power)  # 负力量保留在运行时账本中，小卡渲染最低显示 0
         power_color = "red" if power < base_power else "green" if power > base_power else None
         current_max_health = snapshot["max_health"] if snapshot else (
             health if defeated else getattr(shiki, "max_health", health))
@@ -1036,7 +1037,7 @@ def shikigami_pixmap(shiki, db, *, current: bool = False, seat: int | None = Non
     definition = db.shikigami[shiki.id]
     awakened = shiki.awakened is not None
     source = db.cards[shiki.awakened] if awakened else definition
-    power = shiki.eff_power if current else definition.power + (
+    power = max(0, shiki.eff_power) if current else definition.power + (
         shiki.perm_power if awakened else 0)
     health = shiki.health if current else definition.health + (
         shiki.perm_health if awakened else 0)

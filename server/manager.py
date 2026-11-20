@@ -78,12 +78,14 @@ class RoomManager:
     async def dissolve_idle(self) -> list[str]:
         """看门狗扫描：解散超过 lobby_idle_timeout 秒无人员变动的房间，返回被解散的
         房间 id 列表。人员变动 = 玩家进房/重连回房/主动退房（Room.last_activity）。
-        适用范围仅限未开局房间（lobby/starting 等未进入对局的状态）：已开局对局
-        超 10 分钟是常态，不适用本规则，其清理由 abandoned（双方断线）等既有
-        机制负责。"""
+        适用范围仅限未开局房间（lobby/starting 等未进入对局的状态），但房主仍在线
+        等待对手时不解散；已开局对局超 10 分钟是常态，不适用本规则，其清理由
+        abandoned（双方断线）等既有机制负责。"""
         now = time.time()
         doomed = [rid for rid, r in self.rooms.items()
-                  if r.game is None and now - r.last_activity > self.lobby_idle_timeout]
+                  if r.game is None and now - r.last_activity > self.lobby_idle_timeout
+                  and not (r.conns[1] is None and r.conns[0] is not None
+                           and r.conns[0].connected)]
         for rid in doomed:
             await self.rooms[rid].dissolve()
             self.remove(rid)

@@ -525,10 +525,12 @@ class OnlineView(QWidget):
         self._pending_reconnect = reconnect
         url = net.normalize_server_url(self.server_edit.text())
         self.server_url = url
+        self.server_edit.setText(net.display_server_url(url))
         if refresh_identity:
             self.player_name = load_gui_settings()["player_name"]
         self._select_deck(self.deck_combo.currentIndex())
         self._client_ip = ""
+        self._machine_id = ""
         self._expect_close = False
         self._connecting = True
         self.connect_button.setEnabled(False)
@@ -541,6 +543,7 @@ class OnlineView(QWidget):
                 self.connection_failed.emit(url, str(error))
             else:
                 self._client_ip = net.public_ip()
+                self._machine_id = net.machine_id()
                 self.connection_succeeded.emit(ws, url)
 
         self._connect_thread = threading.Thread(target=connect, daemon=True)
@@ -583,15 +586,18 @@ class OnlineView(QWidget):
                 self.join_room()
 
     def _send_auto_reconnect(self) -> None:
-        if not self.room_id or not self.reconnect_code or not self._client_ip:
-            self.battle.error_label.setText("无法获取公网 IP，自动重连未完成")
+        credential = self.reconnect_code or self.token
+        if not self.room_id or not credential or not self._client_ip or not self._machine_id:
+            self.battle.error_label.setText("无法获取公网 IP 或机器码，自动重连未完成")
             return
-        self.bridge.send({
-            "type": "join", "room_id": self.room_id,
-            "reconnect_code": self.reconnect_code,
-            "name": self.player_name, "deck_code": None,
-            **net.hello_metadata(self._client_ip),
-        })
+        message = {"type": "join", "room_id": self.room_id,
+                   "name": self.player_name, "deck_code": None,
+                   **net.hello_metadata(self._client_ip, self._machine_id)}
+        if self.reconnect_code:
+            message["reconnect_code"] = self.reconnect_code
+        else:
+            message["token"] = self.token
+        self.bridge.send(message)
 
     def _open_bridge(self, ws=None) -> bool:
         if ws is None:
@@ -629,7 +635,7 @@ class OnlineView(QWidget):
         msg = {"type": "create", "name": self.player_name, "deck_code": self.deck_code,
                "debug": False, "mode": mode, "rules_mode": self.rules_combo.currentData(),
                "cardback": load_gui_settings()["own_cardback"],
-               **net.hello_metadata(self._client_ip)}
+               **net.hello_metadata(self._client_ip, getattr(self, "_machine_id", ""))}
         if room_id:
             msg["room_id"] = room_id
         if env is not None:
@@ -660,7 +666,7 @@ class OnlineView(QWidget):
         msg = {"type": "join", "room_id": room_id, "name": self.player_name,
                "deck_code": None if token else self.deck_code,
                "token": token, "cardback": load_gui_settings()["own_cardback"],
-               **net.hello_metadata(self._client_ip)}
+               **net.hello_metadata(self._client_ip, getattr(self, "_machine_id", ""))}
         if self.diy_checkbox.isChecked():
             msg["diy"] = True
         self.bridge.send(msg)
@@ -971,9 +977,10 @@ class OnlineView(QWidget):
         if self._expect_close:
             return
         self.in_lobby = False
-        if self.room_id and self.reconnect_code:
+        if self.room_id and (self.reconnect_code or self.token):
             self.battle.error_label.setText(f"连接已断开：{reason}；正在自动重连")
-            self.server_edit.setText(self.server_url)
+            self.lobby_status.setText(f"连接已断开：{reason}；正在自动重连")
+            self.server_edit.setText(net.display_server_url(self.server_url))
             self.connect_server(refresh_identity=False, reconnect=True)
             self.connection_changed.emit()
             return

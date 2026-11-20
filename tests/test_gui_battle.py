@@ -11,7 +11,7 @@ from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QColor, QFontMetrics, QImage, QPainter, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox, QScrollArea,
+    QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox, QPushButton, QScrollArea,
 )
 
 from client.gui.app import THEMES, MainWindow
@@ -1060,7 +1060,7 @@ def test_upgrade_focus_requires_current_legal_action(qapp, view):
     assert not scene.focus_overlay.isVisible()
 
 
-def test_drag_focus_highlights_source_default_player_and_arrow(qapp, view):
+def test_untargeted_assault_drag_highlights_only_source_and_arrow(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     source = scene.cards[("shiki", 0, 0)]
@@ -1072,14 +1072,14 @@ def test_drag_focus_highlights_source_default_player_and_arrow(qapp, view):
     assert source.opacity() == 1
     path = scene.focus_overlay.path()
     assert not path.contains(source.sceneBoundingRect().center())
-    assert not path.contains(enemy_player.sceneBoundingRect().center())
+    assert path.contains(enemy_player.sceneBoundingRect().center())
     assert path.contains(other.sceneBoundingRect().center())
     assert scene.drag_controller.drag_arrow.isVisible()
     scene.drag_controller.cancel()
     assert not scene.focus_overlay.isVisible()
 
 
-def test_direct_assault_focus_targets_player_not_combat_shiki(qapp, view):
+def test_direct_assault_focus_does_not_highlight_default_player(qapp, view):
     start(view, mulligan=False)
     scene = view.battle_scene
     source = scene.cards[("shiki", 0, 0)]
@@ -1087,7 +1087,8 @@ def test_direct_assault_focus_targets_player_not_combat_shiki(qapp, view):
     view.game.state.players[1].combat_index = 0
     scene.focus_for_drag(source)
     path = scene.focus_overlay.path()
-    assert not path.contains(scene.cards[("player", 1)].sceneBoundingRect().center())
+    assert not path.contains(source.sceneBoundingRect().center())
+    assert path.contains(scene.cards[("player", 1)].sceneBoundingRect().center())
     assert path.contains(scene.cards[("shiki", 1, 0)].sceneBoundingRect().center())
     scene.drag_controller.cancel()
 
@@ -1478,6 +1479,9 @@ def test_untargeted_card_drag_plays_without_target(qapp, view, monkeypatch):
     drop = item.scenePos() + QPointF(-180, -160)
     scene.drag_controller.press(item, item.scenePos())
     scene.drag_controller.move(drop)
+    path = scene.focus_overlay.path()
+    assert path.contains(scene.cards[("player", 1)].sceneBoundingRect().center())
+    assert path.contains(scene.cards[("shiki", 1, 0)].sceneBoundingRect().center())
     scene.drag_controller.release(drop)
     assert plays == [(card.uid, None)]
 
@@ -1826,7 +1830,7 @@ def test_scene_failed_render_is_retried_without_redrawing_successes(qapp, view, 
 
 def test_scene_direct_sync_state_viewer_change_invalidates_signatures(
         qapp, view, render_calls):
-    from client import cli
+    from client import presentation as cli
 
     start(view, mulligan=False)
     scene = view.battle_scene
@@ -3051,6 +3055,42 @@ def test_pending_choice_answer(qapp, db, view):
     settle(view)
     assert game.state.pending_choice is None
     assert any(card.uid == uid for card in game.state.players[0].hand)
+
+
+def test_battle_mulligan_choice_dialog_lists_and_replaces_hand(qapp, db, view):
+    """云游与初始调度一致：列出当前手牌，选牌替换后刷新候选，可主动结束。"""
+    cid = 10010151
+    db.cards[cid] = F.card(cid, token=True, steps=[
+        F.Step(op="mulligan_hand", times=2, shuffle=True)])
+    start(view, mulligan=False)
+    game = view.game
+    card = F.give(game, 0, cid)
+    view.refresh()
+    settle(view)
+    view.play_card(card.uid)
+    settle(view)
+    pending = game.state.pending_choice
+    assert pending["kind"] == "mulligan_pick"
+    hand_uids = [owned.uid for owned in game.state.players[0].hand]
+    assert pending["options"] == hand_uids
+    dialog = view.choice_dialog
+    assert set(dialog.option_view.option_buttons) == set(hand_uids)
+    assert len(dialog.findChildren(CardWidget)) == len(hand_uids)
+
+    replaced = hand_uids[0]
+    QTest.mouseClick(dialog.option_view.option_widgets[0], Qt.LeftButton)
+    QTest.mouseClick(dialog.option_view.option_buttons[replaced], Qt.LeftButton)
+    qapp.processEvents()
+    settle(view)
+    assert replaced not in [owned.uid for owned in game.state.players[0].hand]
+    assert game.state.pending_choice["remaining"] == 1
+    assert game.state.pending_choice["options"] == [
+        owned.uid for owned in game.state.players[0].hand]
+    done = next(button for button in view.choice_dialog.findChildren(QPushButton)
+                if button.text() == "结束调度")
+    done.click()
+    qapp.processEvents()
+    assert game.state.pending_choice is None
 
 
 def test_search_deck_choice_dialog_single_option(qapp, db, view):

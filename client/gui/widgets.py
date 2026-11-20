@@ -199,7 +199,8 @@ class CardChoiceView(QScrollArea):
     detail_clicked = Signal(object)
 
     def __init__(self, options, db=None, parent=None, *,
-                 frame_variant: str | None = None, button_text: str = "选择"):
+                 frame_variant: str | None = None, frame_variants: dict | None = None,
+                 button_text: str = "选择"):
         super().__init__(parent)
         self._syncing_height = False
         self.setWidgetResizable(True)
@@ -219,7 +220,9 @@ class CardChoiceView(QScrollArea):
                 card = QPushButton(label)
                 card.setMinimumSize(180, 60)
             else:
-                card = CardWidget(cdef, db=db, frame_variant=frame_variant)
+                card = CardWidget(
+                    cdef, db=db,
+                    frame_variant=(frame_variants or {}).get(value, frame_variant))
                 card.count_label.hide()
                 card.setFixedSize(180, 390)
                 card.setFrameShape(QFrame.NoFrame)

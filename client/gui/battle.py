@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from client import cli
+from client import presentation as cli
 from client.gui.battle_scene import (
     DRAG_Z, END_TURN_SIZE, BattleScene, BattleView, card_owner_seat, usage_target,
 )

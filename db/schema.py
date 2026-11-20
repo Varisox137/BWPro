@@ -328,7 +328,7 @@ class CardDef(BaseModel):
     # 子选项 token 卡 id，有序（[0]=主式神侧子卡，[1]=副式神侧子卡）；打出时 cmd.choice 选择，
     # 生成对应 token 并视作从手牌使用，主牌离手移除（不进墓地）
     play_condition: dict[str, Any] | None = None  # [条件] 使用前提（福满乾坤）：以条件迷你语言
-    # 对控制者求值，不满足则任何方式都不能使用（主动/响应/自动使用统一校验；CLI 可用性显示置灰）
+    # 对控制者求值，不满足则任何方式都不能使用（主动/响应/自动使用统一校验；GUI 可用性显示置灰）
     temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、
     # 绑定该次战斗的一次性触发（uses=1，战斗终止点移除未用者）
     methods: list[PlayMethod] = Field(default_factory=list)  # 使用方式（多择子选项）

@@ -37,11 +37,7 @@ BWP_HOST=127.0.0.1 BWP_PORT=1038 ./scripts/termux_server.sh
 
 真实 aarch64 环境首次运行需联网下载 uv-managed CPython 3.14；脚本不会静默降级 Python 版本。
 
-客户端：`uv run python -m client.net`（或主菜单 [3] 联机对战），
-`--debug` 创建 debug 对局（房间内允许 debug 指令，需服务端 `--allow-debug-rooms`），
-服务器地址可用 `BWP_SERVER` 环境变量作默认；地址输入接受 ws://、wss://、
-http(s)://（穿透/反代给出的网址）及裸 host[:port]，自动规范化为
-ws(s)://.../ws，并在询问玩家名/卡组前先试连，失败则要求重新输入。
+桌面客户端使用 `uv run python -m client.gui`，在主菜单进入联机对战。地址输入接受 ws://、wss://、http(s)://（穿透/反代给出的网址）及裸 host[:port]，自动规范化为 ws(s)://.../ws；输入框始终只显示 host[:port]，不显示协议与默认 `/ws` 路径。
 
 ## DIY 房间与内容同步
 
@@ -104,14 +100,14 @@ uv run python -m client.log_admin
   供客户端区分与排序，`id=0`、`mods={}`，牌库则全部匿名替换；已展示手牌按规则放行
   真实内容，`hand_info` 仅包含己方手牌，私密线索账本 `quest_clues_seen` 仅所属方可见。
   修改客户端也无法窥探未公开卡牌；墓地与各类计数器按规则为公开信息。
-- **身份与权限**：无登录态；入座生成 8 位小写十六进制凭证，正式 `start` 仅向本人
-  下发对应的 `reconnect_code`。GUI 意外断线后以房码、识别码和 `client_ip` 自动重连，
-  服务端要求对局已开始且公网 IP 与入座记录一致；准备/开始倒计时阶段不使用该通道。
-  旧 CLI 的房间代码+token 手动重连暂时保留。指令中的 `player` 由服务端按座位强制
-  改写；每个 WebSocket 仅允许一次成功 create/join，重连会关闭旧 socket，旧连接不能
-  影响新连接。无效重连按房间共享 60 秒滑动窗口限 5 次，成功也不清空失败记录。
-  原始 WebSocket 帧日志固定为 INFO，避免 DEBUG 记录凭证和私密手牌；应用日志不记录
-  完整凭证。名称拒绝控制字符；畸形指令仅返回普通错误，不终止对局。
+- **身份与权限**：无登录态；入座生成 8 位小写十六进制 token，正式 `start` 仅向本人
+  下发对应的 `reconnect_code`。GUI 意外断线后，开局前使用房码 + token + `client_ip` +
+  本机持久 `machine_id` 自动重连，开局后改用 `reconnect_code` + `client_ip` + `machine_id`；
+  服务端核对入座时保存的对应字段。仍兼容仅凭 token 的手动重连协议。指令中的 `player`
+  由服务端按座位强制改写；每个 WebSocket 仅允许一次成功 create/join，重连会关闭旧
+  socket，旧连接不能影响新连接。无效重连按房间共享 60 秒滑动窗口限 5 次，成功也不清空
+  失败记录。原始 WebSocket 帧日志固定为 INFO，避免 DEBUG 记录凭证和私密手牌；应用日志
+  不记录完整凭证或机器码。名称拒绝控制字符；畸形指令仅返回普通错误，不终止对局。
 - **传输加密**：支持 wss（服务端直接配 TLS 证书，或经穿透/反代终止 TLS）。
 - **客户端软门槛**：握手一律放行（穿透/反代等中间代理会改写 HTTP 头，不看
   `User-Agent`）；`create`/`join` 消息必须带 `client` 字段且以 `BWPro-CLI`
@@ -119,7 +115,7 @@ uv run python -m client.log_admin
   连接自动关闭；入房后不再受该时限影响。
   仅过滤浏览器/扫描器等噪声，标识可伪造，
   不构成访问控制。
-- **debug 对局门控**：客户端创建 debug 对局需服务端 `--allow-debug-rooms`
+- **debug 对局门控**：调试客户端创建 debug 对局需服务端 `--allow-debug-rooms`
   （默认拒绝；公网部署勿开）。debug 指令可任意改对局状态，仅本机调试使用。
 - **HTTP 探针面**：非 WebSocket 的 HTTP 请求（含对 `/ws` 的普通 GET）一律
   403 空体，不用框架默认 404；uvicorn 启动关闭 `server` 响应头，不暴露
@@ -142,13 +138,15 @@ server/
 
 - 服务端持有 authoritative 的 `core.engine.Game` 实例；客户端只提交指令，服务端校验、
   执行并广播按视角脱敏的完整 `GameState` JSON 与新增日志。
-- 创建房间可自建 6 位房码；入座生成 8 位凭证，正式开局仅向本人下发识别码。
-  GUI 以房码、识别码和公网 IP 自动重连；旧 CLI 可继续手动使用房码+token。
-  对局与计时器保留，双方断线才回收房间。
+- 创建房间可自建 6 位房码；入座生成 8 位 token，正式开局仅向本人下发识别码。
+  GUI 开局前以 token、开局后以识别码配合公网 IP 和机器码自动重连；对局与计时器保留，
+  已开局房间在双方断线后回收。
 - **准备阶段**：双方都位后等待准备；任一方准备后对未准备方计 15s，双方准备后
-  3s 开局。开始倒计时前可取消准备；入座后即可离开。等待对手的房主断线时保留座位
-  与 token，可用原房码+token 恢复；其他准备阶段断线视同离开并释放座位。
-- **房间看门狗**：未开局房间 10 分钟无人员变动自动解散（含等待中的空房）；已开局房间不适用。
+  3s 开局。开始倒计时前可取消准备；入座后即可离开。开局前意外断线一律保留座位与
+  token，供自动重连；主动 `leave` 仍立即释放座位。准备/开始倒计时随断线暂停且不会
+  在缺席时开局，重连后按剩余准备状态重新计时。
+- **房间看门狗**：在线等待对手的房主不因超时断联；离线且未开局的房间 10 分钟无人员
+  变动自动解散，已开局房间不适用。
 - **数据环境与卡组规则**：`mode` 仅控制平衡性数据（standard=最新，free=可选日期）；
   `rules_mode` 独立控制组卡规则（standard=4 式神、各 8 卡、至多 2 派系等，free=仅校验
   当前环境可用性与卡牌归属）。创建后房主修改数据环境时会按同一卡组规则重新校验。
@@ -159,9 +157,10 @@ server/
 客户端 → 服务端：
 
 ```json
-{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "room_id": "Ab12cd", "mode": "standard", "rules_mode": "standard", "client_ip": "8.8.8.8", "cardback": "月明风清" }
-{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "client_ip": "8.8.4.4", "cardback": "月明风清" }
-{ "type": "join", "room_id": "ABC123", "reconnect_code": "abcd1234", "client_ip": "8.8.8.8" }
+{ "type": "create", "name": "甲", "deck_code": "<卡组码>", "room_id": "Ab12cd", "mode": "standard", "rules_mode": "standard", "client_ip": "8.8.8.8", "machine_id": "<32位十六进制>", "cardback": "月明风清" }
+{ "type": "join", "room_id": "ABC123", "name": "乙", "deck_code": "<卡组码>", "client_ip": "8.8.4.4", "machine_id": "<32位十六进制>", "cardback": "月明风清" }
+{ "type": "join", "room_id": "ABC123", "token": "abcd1234", "client_ip": "8.8.8.8", "machine_id": "<32位十六进制>" }
+{ "type": "join", "room_id": "ABC123", "reconnect_code": "abcd1234", "client_ip": "8.8.8.8", "machine_id": "<32位十六进制>" }
 { "type": "ready" }
 { "type": "leave" }
 { "type": "env", "date": 20250701 }
@@ -169,9 +168,10 @@ server/
 ```
 
 `deck_code` 首次入座必填，重连时为 null。`client_ip` 由客户端经 ipify（备用
-ifconfig.me）best-effort 查询并校验为公网地址；它是可伪造的自报值，仅作为自动
-重连的辅助校验与日志信息，不下发给对手。旧 token 重连仍兼容。`cardback` 仅在首次
-join 时记录，重连不刷新。
+ifconfig.me）best-effort 查询并校验为公网地址；`machine_id` 是保存在
+`~/.bwpro/machine_id` 的本机随机凭证。二者都是可伪造的自报值，仅与 token/识别码共同
+作为自动重连的辅助校验，不下发给对手，也不单独构成身份认证。仅凭 token 的手动重连
+仍兼容。`cardback` 仅在首次 join 时记录，重连不刷新。
 `create.room_id` 可缺省（随机分配）；指定时须为 6 位大小写字母/数字且未被占用。
 `create.mode` 可缺省（`standard`）；标准模式忽略 `env_date`（固定最新数据），自由模式
 `create.env_date` 可缺省（最新数据）；`create.rules_mode` 缺省为 `standard`，与 `mode`
@@ -200,7 +200,7 @@ join 时记录，重连不刷新。
 
 `state.payload` 附带仅己方手牌的 `hand_info`（键为 uid 字符串）：实时费用、关键字、
 数值段、增强/委托进度、使用条件与 `Game.usage_options` 使用方式枚举；由
-`client/cli.py hand_cards_info` 统一求值，在广播/重连补发时注入，客户端不重复实现规则计算。
+`client/presentation.py hand_cards_info` 统一求值，在广播/重连补发时注入，客户端不重复实现规则计算。
 
 心跳使用 WS 协议层 ping/pong（uvicorn `ws_ping_interval=10`，`ws_ping_timeout=5`）。
 
@@ -225,9 +225,9 @@ join 时记录，重连不刷新。
 
 ## debug 能力
 
-- **debug 对局**：客户端 `python -m client.net --debug` 创建，房间以
-  `GameConfig(enable_debug_commands=True)` 开局，客户端可用 `debug <子命令>`
-  （解析复用 client/cli.py）。非 debug 房间引擎层拒绝 debug 指令。
+- **debug 对局**：协议保留 `create.debug` 供调试客户端创建
+  `GameConfig(enable_debug_commands=True)` 对局，需服务端 `--allow-debug-rooms`；
+  文本指令解析见 `core/debug.py`。桌面 GUI 不提供 debug 对局入口，非 debug 房间拒绝调试指令。
 - **服务端控制台**：`--debug-console` 启动后 stdin 接受 `list`（列出房间）与
   `<房间id> <debug 子命令> [参数...]`，直接进入指定对局执行并广播结果。
 

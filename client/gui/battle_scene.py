@@ -1143,11 +1143,8 @@ class BattleScene(QGraphicsScene):
             self.upgrade_badges[index] = badge
 
     def focus_for_drag(self, source: BattleCardItem) -> None:
+        # 只高亮需要选择的合法目标；默认战斗区/牌手不是玩家选择目标，不进入遮罩孔洞。
         refs = list(source.legal_targets)
-        if source.key[0] == "shiki" and "hunt" not in source.keywords:
-            enemy = self.game.state.players[1 - self.viewer]
-            refs = ([Ref(player=1 - self.viewer)] if "direct" in source.keywords
-                    else [Ref(player=1 - self.viewer, shikigami=enemy.combat_index)])
         items = [source]
         for ref in refs:
             key = (("player", ref.player) if ref.shikigami is None
@@ -1935,7 +1932,7 @@ class BattleScene(QGraphicsScene):
                     statuses.append(f"倒计时 {shiki.countdown}")
                 item.shiki_text = (
                     f"{awaken}{definition.name}\n等级 {shiki.level}\n"
-                    f"力量 {shiki.eff_power}　生命 {shiki.health}/{shiki.max_health}\n"
+                    f"力量 {max(0, shiki.eff_power)}　生命 {shiki.health}/{shiki.max_health}\n"
                     f"{'　'.join(statuses)}"
                 )
                 form = self.db.cards[shiki.form.id] if shiki.form is not None else None
