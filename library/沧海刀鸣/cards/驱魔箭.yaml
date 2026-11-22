@@ -1,0 +1,17 @@
+type: 战斗
+name: 驱魔箭
+level: 1
+description: 使一个有形态的敌方式神获得‘本回合受到伤害时使其气绝’，御馔津对其发起攻击。
+shikigami: 御馔津
+power+: 1
+shield+: 1
+token: true
+version_date: '20200928'
+id: '10040752'
+special_type: 符咒
+artwork:
+  images:
+  - path: 10040752.png
+    offset_y: -68
+    scale: 0.747
+rarity: R

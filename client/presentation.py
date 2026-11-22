@@ -213,6 +213,17 @@ def _enhance_description_suffix(game: Game, p, c) -> str | None:
     return suffix or None
 
 
+def deck_invocation_counts(game: Game, pi: int) -> dict[str, int]:
+    """牌库中每种灵咒的公开数量，不暴露具体卡牌身份。"""
+    counts: dict[str, int] = {}
+    for card in game.state.players[pi].deck:
+        for invocation in card.invocations:
+            name = str(invocation.get("name", ""))
+            if name:
+                counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def hand_cards_info(game: Game, pi: int) -> dict[int, dict]:
     """返回己方手牌的实时展示数据，供 GUI 与联机状态负载共用。"""
     p = game.state.players[pi]

@@ -1,0 +1,15 @@
+type: 战斗
+name: 麓鸣·穿
+level: 1
+rarity: R
+description: '[[贯通]]。将‘[[八尺琼曲玉]]’结附于大岳丸。'
+shikigami: 大岳丸
+power+: 0
+shield+: 0
+version_date: '20200928'
+id: '10040801'
+artwork:
+  images:
+  - path: 10040801.png
+    scale: 0.73
+    offset_y: -90

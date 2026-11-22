@@ -7,7 +7,8 @@
 import pytest
 
 from core.engine import IllegalAction
-from core.model import FieldState, Ref
+from core.model import CardInstance, ExecContext, FieldState, Ref
+from core import actions as actions_mod
 from core import targets as targets_mod
 from db.schema import InvocationDef
 from tests import factories as F
@@ -1290,7 +1291,7 @@ def test_has_invocation_filter(db, make_game):
 
 
 def test_invocation_on_field_condition(db, make_game):
-    """条件键 invocation_on_field（麓鸣·穿/麓鸣·袭[增强]"若场上已有己方的
+    """条件键 invocation_on_field（麓鸣·袭[增强]"若场上已有己方的
     '八尺琼曲玉'"）：己方式神在场结附该灵咒才通过（不限结附来源）。"""
     db.invocations["八尺琼曲玉"] = InvocationDef(name="八尺琼曲玉", unique="unique",
                                                  power=1)
@@ -1520,12 +1521,11 @@ def test_response_victim_has_invocation(db, make_game):
     assert any(c.id == 10010151 for c in pa2.hand)  # 未响应：牌仍在手
 
 
-# ---------- 条件瞬发算子（conditional_keywords invocation_on_field，麓鸣·穿） ----------
+# ---------- 条件关键字算子（conditional_keywords invocation_on_field） ----------
 
 def test_conditional_keyword_invocation_on_field(db, make_game):
-    """麓鸣·穿"[增强]：若场上已有己方的'八尺琼曲玉'，此牌获得[瞬发]"：
-    conditional_keywords 通道在付费时点生效——场上无结附者照付鬼火，有则免鬼火
-    占瞬发名额；不限结附来源；灵咒移除后即恢复付费。"""
+    """conditional_keywords 的 invocation_on_field 通用通道：付费时点检查己方
+    场上结附，满足则获得指定关键字；不限结附来源，移除后恢复。"""
     db.invocations["八尺琼曲玉"] = InvocationDef(name="八尺琼曲玉", power=1)
     db.cards[10010151] = F.card(
         10010151, token=True,
@@ -1708,8 +1708,15 @@ def test_not_summon_target_filter(db, make_game):
 
 
 # ==========================================================================
-# 御馔津（符咒/爆能转化/账本）与巫蛊师（蛊蚀）机制
+# 御馔津（真实符咒子牌/爆能/账本）与巫蛊师（蛊蚀）机制
 # ==========================================================================
+
+Y_TEAM = [100407, 100101, 100102, 100103]
+
+
+def _real_talisman_game(gdb, date=None):
+    return F.mk_game(gdb.at_date(date), team=Y_TEAM, check_deck=False)
+
 
 def _talisman(db, cid, amount=1):
     """合成符咒牌（dummy）：法术、subtype=talisman、投射 amount。"""
@@ -1723,6 +1730,273 @@ def _gushi_inv(db):
     """合成'蛊蚀'灵咒：-1/-1、可叠加（unique=none）。"""
     db.invocations["蛊蚀"] = InvocationDef(name="蛊蚀", power=-1, health=-1,
                                            unique="none")
+
+
+def test_subcard_default_spell_hides_burst_choice(gdb):
+    """低能量不展开箭选项，但主牌仍是引导牌：自动使用法术后代，主牌放逐、
+    法术后代入墓并以 origin_id 归账到主牌类型。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 1})
+    pa.shikigami[0].energy = 0
+    target = Ref(player=1, shikigami=1)
+    pb.shikigami[1].form = CardInstance(uid=900001, id=10040703)
+    main = F.give(g, 0, 10040701)
+
+    options = g.usage_options(0, main)
+    assert [(o["id"], o["card_id"], o["is_burst"], o["origin_id"])
+            for o in options] == [("choice:0", 10040751, False, 10040701)]
+    g.apply({"op": "play_card", "uid": main.uid, "target": target})
+
+    assert main in pa.zones["exiled"]
+    assert all(c.id != 10040701 for c in pa.graveyard)
+    spell = next(c for c in pa.graveyard if c.id == 10040751)
+    assert spell.origin_id == 10040701
+    assert spell.appearance_source == 10040701
+    assert pb.shikigami[1].ext["defeat_on_damage"] == 1
+    assert pa.ext["talisman_ledger"] == [10040701]
+
+
+def test_subcard_burst_choice_pays_discounted_arrow(gdb):
+    """爆能实际可支付时展开法术/箭两个真实子选项；狐狩界折扣同时作用于
+    选项展示和支付，选箭后箭牌入墓、主牌仅放逐。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 3})
+    s = pa.shikigami[0]
+    s.energy = 2
+    pa.fields.append(FieldState(
+        card=CardInstance(uid=900002, id=10040707), intensity=8,
+        shikigami=100407, keywords=["burst_discount"]))
+    target = Ref(player=1, shikigami=1)
+    pb.shikigami[1].health = 20
+    main = F.give(g, 0, 10040708)
+
+    options = g.usage_options(0, main)
+    assert [(o["id"], o["card_id"], o["is_burst"], o["origin_id"])
+            for o in options] == [("choice:0", 10040755, False, 10040708),
+                                  ("choice:1", 10040756, True, 10040708)]
+    assert options[1]["energy"] == 2 and options[1]["ok"]
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": main.uid, "target": target})
+    assert main in pa.hand
+    g.apply({"op": "play_card", "uid": main.uid, "choice": 1, "target": target})
+
+    assert s.energy == 0
+    assert main in pa.zones["exiled"]
+    assert all(c.id != 10040708 for c in pa.graveyard)
+    arrow = next(c for c in pa.graveyard if c.id == 10040756)
+    assert arrow.origin_id == 10040708
+    assert pb.shikigami[1].health == 12  # 暴击使基础 3 + 箭牌 1 的伤害翻倍
+    assert pb.shikigami[1].ext["crit_pierce_mark"] == 1
+    assert pa.ext["talisman_ledger"] == [10040708]
+
+
+@pytest.mark.parametrize(("date", "bonus"), [(20200928, 3), (20201015, 1)])
+def test_subcard_arrow_versioned_combat_stats(gdb, date, bonus):
+    """破魔箭是带必选爆能方式的真实战斗牌：@20200928 +3/+1，
+    @20201015 +1/+1；主牌不再承载旧爆能转化效果。"""
+    g = _real_talisman_game(gdb, date)
+    pa, pb = F.battle_setup(g, {0: 3})
+    pa.shikigami[0].energy = 3
+    target = Ref(player=1, shikigami=1)
+    pb.shikigami[1].health = 20
+    arrow = g.db.cards[10040756]
+    assert arrow.card_type == "combat"
+    assert [(m.id, m.energy_cost, m.required) for m in arrow.methods] == [("burst", 3, True)]
+    main = F.give(g, 0, 10040708)
+    g.apply({"op": "play_card", "uid": main.uid, "choice": 1, "target": target})
+    assert pb.shikigami[1].health == 20 - 2 * (3 + bonus)
+    assert pb.shikigami[1].ext["crit_pierce_mark"] == 1
+    assert arrow.id in [c.id for c in pa.graveyard]
+
+
+def test_subcard_awakened_arrow_battle_immunity(gdb):
+    """觉醒免疫合并到箭牌的必选爆能方式，箭牌战斗反击不伤，法术主牌不直接转化。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 2})
+    F.play(g, 0, 10040706)
+    s = pa.shikigami[0]
+    s.energy = 3
+    target = Ref(player=1, shikigami=1)
+    pb.shikigami[1].health = 20
+    pb.shikigami[1].form = CardInstance(uid=900004, id=10040703)
+    main = F.give(g, 0, 10040701)
+    g.apply({"op": "play_card", "uid": main.uid, "choice": 1, "target": target})
+    assert s.health == s.max_health
+    assert pb.shikigami[1].defeated and pb.shikigami[1].health == 0
+    assert pb.shikigami[1].ext["defeat_on_damage"] == 1
+    assert any(c.id == 10040752 for c in pa.graveyard)
+    assert main in pa.zones["exiled"]
+
+
+def test_subcard_arrow_applies_control_effect(gdb):
+    """封魔箭先结算原符咒的眩晕与力量归零，再以真实战斗牌发起攻击。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 2})
+    pa.shikigami[0].energy = 3
+    victim = pb.shikigami[1]
+    victim.health = 20
+    main = F.give(g, 0, 10040705)
+    g.apply({"op": "play_card", "uid": main.uid, "choice": 1,
+             "target": Ref(player=1, shikigami=1)})
+    assert victim.is_stunned
+    assert victim.eff_power == 0
+    assert any(c.id == 10040754 for c in pa.graveyard)
+    assert main in pa.zones["exiled"]
+
+
+def test_subcard_auto_use_from_hand_exiles_main(gdb):
+    """from_hand 自动使用同样把引导主牌放逐，免费使用真实法术后代并归并账本。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 2})
+    main = F.give(g, 0, 10040705)
+    trailing = F.give(g, 0, 10010101)  # 主牌之后的牌用于验证 hand_seq 压缩
+    target = Ref(player=1, shikigami=1)
+    actions_mod.auto_use(g, ExecContext(
+        controller=0, source=Ref(player=0, shikigami=0), chosen=[target]),
+        targets=[], card_id=10040705, from_hand=True, inherit_target=True)
+    assert main in pa.zones["exiled"]
+    assert all(c.id != 10040705 for c in pa.graveyard)
+    spell = next(c for c in pa.graveyard if c.id == 10040753)
+    assert spell.origin_id == 10040705
+    assert pb.shikigami[1].is_stunned
+    assert pa.ext["talisman_ledger"] == [10040705]
+    assert trailing in pa.hand and trailing.hand_seq == len(pa.hand)
+    assert sorted(c.hand_seq for c in pa.hand) == list(range(1, len(pa.hand) + 1))
+
+
+def test_subcard_targeted_prefilter_leaves_no_token(gdb):
+    """帷幕目标在生成子牌前即拒绝：不遗留 token、不消耗主牌或资源。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 2})
+    pa.shikigami[0].energy = 3
+    pb.shikigami[1].keywords.append("veil")
+    main = F.give(g, 0, 10040705)
+    uid_before = g.state.next_uid
+    orb_before = pa.orb
+    with pytest.raises(IllegalAction):
+        g.apply({"op": "play_card", "uid": main.uid, "choice": 1,
+                 "target": Ref(player=1, shikigami=1)})
+    assert g.state.next_uid == uid_before
+    assert main in pa.hand and main not in pa.zones["exiled"]
+    assert not any(c.id == 10040754 for zone in pa.zones.values() for c in zone)
+    assert pa.orb == orb_before and pa.shikigami[0].energy == 3
+
+
+def test_subcard_response_defaults_to_spell(gdb):
+    """响应路径不进行手动多择：封魔主牌放逐，自动使用真实法术后代并归并账本。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    pb.shikigami[0].level = 2
+    pb.shikigami[0].energy = 0
+    pb.orb = 9
+    main = F.give(g, 1, 10040705)
+    F.move(g, 1, 0)
+    F.move(g, 0, 1)
+    g.apply({"op": "assault", "index": 1})
+    assert main in pb.zones["exiled"]
+    assert all(c.id != 10040705 for c in pb.graveyard)
+    spell = next(c for c in pb.graveyard if c.id == 10040753)
+    assert spell.origin_id == 10040705
+    assert pa.shikigami[1].is_stunned
+    assert pb.ext["talisman_ledger"] == [10040705]
+
+
+def test_subcard_full_hand_active_exiles_main_before_generate(gdb):
+    """12 张手牌主动使用：先放逐主牌腾位，子牌正常入手并结算，无爆牌或残留。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 2})
+    main = F.give(g, 0, 10040705)
+    while len(pa.hand) < 12:
+        F.give(g, 0, 10010101)
+    traces = []
+    g.trace_sink = traces.append
+    log_before = len(g.state.log)
+    g.apply({"op": "play_card", "uid": main.uid,
+             "target": Ref(player=1, shikigami=1)})
+    assert len(pa.hand) == 11
+    assert main in pa.zones["exiled"] and main not in pa.hand
+    spell = next(c for c in pa.graveyard if c.id == 10040753)
+    assert spell.origin_id == 10040705
+    assert not any(c.id == 10040753 for c in pa.hand)
+    assert pb.shikigami[1].is_stunned
+    assert not any("爆牌" in message for message in g.state.log[log_before:])
+    assert not any(entry["kind"] == "event" and '"reason": "hand_cap"' in entry["message"]
+                   for entry in traces)
+    assert sorted(c.hand_seq for c in pa.hand) == list(range(1, 12))
+
+
+def test_subcard_full_hand_response_exiles_main_before_generate(gdb):
+    """12 张手牌响应使用同样先放逐主牌：无虚假爆牌，真实子牌正常入墓。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    pb.shikigami[0].level = 2
+    pb.orb = 9
+    main = F.give(g, 1, 10040705)
+    while len(pb.hand) < 12:
+        F.give(g, 1, 10010101)
+    F.move(g, 1, 0)
+    F.move(g, 0, 1)
+    traces = []
+    g.trace_sink = traces.append
+    log_before = len(g.state.log)
+    g.apply({"op": "assault", "index": 1})
+    assert len(pb.hand) == 11
+    assert main in pb.zones["exiled"] and main not in pb.hand
+    spell = next(c for c in pb.graveyard if c.id == 10040753)
+    assert spell.origin_id == 10040705
+    assert not any(c.id == 10040753 for c in pb.hand)
+    assert pa.shikigami[1].is_stunned
+    assert not any("爆牌" in message for message in g.state.log[log_before:])
+    assert not any(entry["kind"] == "event" and '"reason": "hand_cap"' in entry["message"]
+                   for entry in traces)
+    assert sorted(c.hand_seq for c in pb.hand) == list(range(1, 12))
+
+
+def test_talisman_ledger_origin_order_and_auto_cast(gdb):
+    """首次使用顺序为破魔箭→驱魔→封魔时，账本保存主牌 08→01→05；奉祝之愿
+    依次真实自动使用 55→51→53（来自箭也使用法术），不重复记账，并保留无形态
+    驱魔目标的特殊裁决。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 3})
+    pa.shikigami[0].energy = 3
+    for s in pb.shikigami:
+        s.health = 30
+    main_arrow = F.give(g, 0, 10040708)
+    g.apply({"op": "play_card", "uid": main_arrow.uid, "choice": 1,
+             "target": Ref(player=1, shikigami=1)})
+    pb.shikigami[2].form = CardInstance(uid=900003, id=10040703)
+    F.play(g, 0, 10040701, target=Ref(player=1, shikigami=2))
+    F.play(g, 0, 10040705, target=Ref(player=1, shikigami=3))
+    assert pa.ext["talisman_ledger"] == [10040708, 10040701, 10040705]
+
+    F.play(g, 0, 10040703)
+    victim = pb.shikigami[1]
+    victim.form = None
+    F.move(g, 1, 1)
+    pa.graveyard.clear()
+    g.apply({"op": "assault", "index": 0, "target": Ref(player=1, shikigami=1)})
+
+    assert [c.id for c in pa.graveyard] == [10040755, 10040751, 10040753]
+    assert [c.origin_id for c in pa.graveyard] == [10040708, 10040701, 10040705]
+    assert pa.ext["talisman_ledger"] == [10040708, 10040701, 10040705]
+    assert victim.ext["crit_pierce_mark"] == 1
+    assert victim.ext["defeat_on_damage"] == 1
+
+
+def test_cast_ledger_inherited_target_bypasses_veil(gdb):
+    """账本自动使用继承已确定的出击目标：帷幕不过滤，驱魔也不要求目标有形态。"""
+    g = _real_talisman_game(gdb)
+    pa, pb = F.battle_setup(g, {0: 3})
+    pa.ext["talisman_ledger"] = [10040701]
+    victim = pb.shikigami[1]
+    victim.keywords.append("veil")
+    target = Ref(player=1, shikigami=1)
+    actions_mod.cast_ledger(g, ExecContext(
+        controller=0, source=Ref(player=0, shikigami=0)), targets=[target])
+    assert victim.ext["defeat_on_damage"] == 1
+    spell = next(c for c in pa.graveyard if c.id == 10040751)
+    assert spell.origin_id == 10040701
+    assert pa.ext["talisman_ledger"] == [10040701]
 
 
 def test_burst_method_converts_to_combat_card(db, make_game):
@@ -1766,10 +2040,8 @@ def test_burst_method_converts_to_combat_card(db, make_game):
 
 
 def test_burst_method_merge_over_inherent(db, make_game):
-    """光环 grant_method 同 id 命中卡牌自带方式 → 键级合并（御馔津符咒爆能重构，
-    2026-08 裁决：爆能转化为符咒单卡自带，觉醒能力只追加"本次战斗免疫战斗伤害"）：
-    energy_cost/身材/目标沿用卡牌自带方式，effects 由光环覆盖追加、battle_immunity
-    照常提取绑定本次战斗，text 为自带 text + 光环 text 后缀。"""
+    """光环 grant_method 同 id 命中卡牌自带方式 → 键级合并：显式键覆盖、
+    text 追加，其余身材与消耗保留。"""
     db.cards[10010151] = F.card(
         10010151, subtype="talisman", token=True,
         steps=[F.Step(op="damage", amount=1,
@@ -1867,7 +2139,7 @@ def test_talisman_fast_aura_scope_field(db, make_game):
 def test_talisman_ledger_and_cast_ledger(db, make_game):
     """奉祝之愿（talisman_ledger 账本 + cast_ledger op）：账本记本局使用过的符咒
     **类型**（按使用顺序、去重、至多 3 种）；形态能力挂 on_before_assault，
-    出击命中式神时对其凭空依次使用每种记录符咒的基础效果（不耗火、不重复记账）；
+    出击命中式神时对其真实自动使用每种记录符咒的默认法术后代（不耗火、不重复记账）；
     被攻击者为牌手时不触发。"""
     for i, cid in enumerate((10010151, 10010152, 10010153, 10010154)):
         db.cards[cid] = F.card(  # 符咒位：对选择目标造伤 i+1
@@ -1906,14 +2178,8 @@ def test_talisman_ledger_and_cast_ledger(db, make_game):
 
 
 def test_crit_pierce_mark_damage_start(db, make_game):
-    """破魔符（crit_pierce_mark 旗标，裁决(4)）：本回合"对其造成伤害的式神或卡牌
-    获得[暴击][贯通]"——伤害事件"造成/受到伤害开始时"按受伤者标记置位事件属性：
-    攻击事件翻倍+贯通溢出（裁决(3) 翻倍后口径）；被贴标记者的反击伤害
-    （受伤者=攻击方，无标记）天然不生效；效果伤害命中带标记者同样获得[暴击][贯通]
-    并翻倍（2026-08 裁决：[暴击]是伤害事件本身的属性，与伤害类型解耦）；
-    带标记者主动攻击时吃反击（其受伤者=带标记者）亦获得[暴击][贯通]——反击
-    携带暴击同样翻倍（2026-08 裁决，为[暴击]形态铺路）；不可叠加、再贴幂等、
-    半回合清除。"""
+    """破魔标记仅令来源式神的非反击战斗攻击获得[暴击][贯通]：攻击事件翻倍并
+    按翻倍后口径贯通溢出；效果伤害与反击均不触发。标记再贴幂等、半回合清除。"""
     db.cards[10010151] = F.card(  # 破魔符位
         10010151, subtype="talisman", token=True, target=F.CHOOSE_ENEMY,
         steps=[F.Step(op="bump_ext", key="crit_pierce_mark", value=1)])
@@ -1933,9 +2199,9 @@ def test_crit_pierce_mark_damage_start(db, make_game):
     assert es.health == 4   # [暴击]：攻击事件 3→6
     assert s.health == 1    # 防守侧（反击伤害受伤者=攻击方）：不增强，3
     assert pb.health == 30  # 无溢出
-    # 效果伤害命中带标记者：获得[暴击][贯通]——5×2=10，式神段截 4，溢出 6 传导牌手
+    # 效果伤害命中带标记者：不获得暴击/贯通，5 点伤害击杀但不溢出。
     F.play(g, 0, 10010152, target=Ref(player=1, shikigami=0))
-    assert es.defeated and pb.health == 24  # 30 - 6 溢出
+    assert es.defeated and pb.health == 30
     F.pass_turns(g, 2)      # 旗标半回合清除，重新贴（换一个未气绝的敌方式神）
     F.play(g, 0, 10010151, target=Ref(player=1, shikigami=1))
     es2 = pb.shikigami[1]   # 3/4
@@ -1945,17 +2211,16 @@ def test_crit_pierce_mark_damage_start(db, make_game):
     assert es2.defeated
     # 裁决(3)：先额外护甲计算→提前"扣减生命前"系列（[暴击] 3→6）→贯通分配
     # 按翻倍后口径（6-2=4 溢出）；溢出事件从"护甲计算前2"起不再二次翻倍
-    assert pb.health == 20  # 24（前段效果伤害暴击溢出 6 后） - 4
-    # 带标记者主动攻击：吃反击时反击方"对其造成伤害"亦获得[暴击][贯通]（受伤者带标记）
+    assert pb.health == 26  # 攻击 3→6，击杀 2 血目标后贯通溢出 4
+    # 带标记者主动攻击：敌方反击命中标记者也不获得暴击/贯通。
     g2 = make_game()
     pa2, pb2 = F.battle_setup(g2)
     a2 = pa2.shikigami[0]
     a2.ext["crit_pierce_mark"] = 1
-    a2.health = 2
+    a2.health = 10
     F.move(g2, 1, 0)        # 敌方 3/4 守战斗区
     g2.apply({"op": "assault", "index": 0})
-    # 反击 3 获[暴击]翻倍 6：2 击杀 + 4 贯通溢出（2026-08 裁决：反击暴击同享）
-    assert a2.defeated and pa2.health == 26
+    assert a2.health == 7 and pa2.health == 30
 
 
 def test_defeat_on_damage_mark(db, make_game):
@@ -2109,7 +2374,7 @@ def test_redirect_to_invocation_and_power_eq_destroy(db, make_game):
                     when="on_turn_end")])
     g = make_game()
     pa, pb = F.battle_setup(g)
-    pa.fields.append(FieldState(card_id=10010151, intensity=6, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=6, shikigami=100101))
     n = lambda s: sum(1 for e in s.invocations if e["name"] == "蛊蚀")
     es = pb.shikigami[1]  # 1/6
     g.deal_to_shikigami(Ref(player=1, shikigami=1), 3, Ref(player=0, shikigami=0))
@@ -2117,7 +2382,7 @@ def test_redirect_to_invocation_and_power_eq_destroy(db, make_game):
     assert es.max_health == 3 and es.health == 3  # 伤害终止（上限降低钳制）
     g.deal_to_player(1, 2, Ref(player=0, shikigami=0))
     assert pb.health == 28  # 牌手受伤不改结
-    pa.fields.append(FieldState(card_id=10010151, intensity=6, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=6, shikigami=100101))
     g.deal_to_shikigami(Ref(player=1, shikigami=2), 2, Ref(player=0, shikigami=0))
     assert n(pb.shikigami[2]) == 2  # 首个同名生效：不重复改结
     F.pass_turns(g, 1)  # 回合结束：消灭力量为 0 的式神
@@ -3179,6 +3444,66 @@ def test_real_assault_defeated_gate(real_game):
              "target": {"player": 1, "shikigami": 1}})
     assert pb.shikigami[1].revive_countdown == 5  # 连击两段伤害转化各 +1
     assert pa.shikigami[0].health == hp0  # 气绝者不反击
+
+
+def test_real_raw_text_updates(gdb):
+    d = gdb.at_date(20200928)
+    expected = {
+        10040702: "选择一张御馔津的符咒牌置入手牌，御馔津获得3能量。",
+        10040708: "使一个敌方式神本回合获得‘对其攻击的式神获得[暴击]和[贯通]’。",
+        10040755: "使一个敌方式神本回合获得‘对其攻击的式神获得[暴击]和[贯通]’。",
+        10040756: "使一个敌方式神本回合获得‘对其攻击的式神获得[暴击]和[贯通]’。",
+        10040801: "[贯通]。将‘八尺琼曲玉’结附于大岳丸。",
+        10040802: "将‘八尺琼曲玉’结附于一个己方式神，并使其获得[屏障]。[响应]：{当己方式神被攻击时，自动对其使用此牌。}",
+        10040805: "将‘八尺琼曲玉’结附于一个己方式神。[觉醒]：{‘八尺琼曲玉’结附于大岳丸时效果翻倍。当结附‘八尺琼曲玉’的己方式神消灭敌方式神时，‘八尺琼曲玉’效果+1。}",
+    }
+    assert {cid: d.cards[cid].text for cid in expected} == expected
+    assert [s.op for s in d.cards[10040805].effects.steps] == [
+        "attach_invocation", "inv_bonus_on_kill"]
+
+
+def test_real_piercing_invocation_combat_without_conditional_fast(real_game):
+    """麓鸣·穿自带贯通并结附灵咒；已有场上灵咒也不再触发旧增强瞬发。"""
+    team = [100408, 100101, 100102, 100103]
+    g = real_game(team, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    g.attach_invocation("八尺琼曲玉", player=0, target=Ref(player=0, shikigami=1))
+    pb.shikigami[1].health = 4
+    F.move(g, 1, 1)
+    F.play(g, 0, 10040801)
+    assert g.db.cards[10040801].keywords == ["piercing"]
+    assert not g.db.cards[10040801].conditional_keywords
+    assert pa.orb == 8 and not pa.fast_used
+    assert any(e["name"] == "八尺琼曲玉" for e in pa.shikigami[0].invocations)
+    assert pb.health == 29  # 结附后 5 攻，4 血目标段 + 1 贯通溢出
+
+
+def test_real_invocation_barrier_active_and_response(real_game):
+    """覆土之术主动/响应均授予一次性屏障：首次伤害归零并消耗，第二次正常受伤。"""
+    team = [100408, 100101, 100102, 100103]
+    g = real_game(team, check_deck=False)
+    pa, pb = F.battle_setup(g, {0: 1, 1: 1})
+    target = Ref(player=0, shikigami=1)
+    F.play(g, 0, 10040802, target=target)
+    s = pa.shikigami[1]
+    assert "barrier" in s.one_shot_keywords
+    assert not any(e.get("once") for e in s.immunities)
+    hp = s.health
+    g.deal_to_shikigami(target, 3, Ref(player=1, shikigami=0))
+    assert s.health == hp and "barrier" not in s.one_shot_keywords
+    g.deal_to_shikigami(target, 3, Ref(player=1, shikigami=0))
+    assert s.health == hp - 3
+
+    g2 = real_game(team, check_deck=False)
+    pa2, pb2 = F.battle_setup(g2, {0: 1, 1: 1})
+    pb2.orb = 9
+    F.give(g2, 1, 10040802)
+    pa2.shikigami[1].perm_power = -3  # 0 攻：响应授予后不消耗屏障
+    F.move(g2, 1, 0)
+    F.move(g2, 0, 1)
+    g2.apply({"op": "assault", "index": 1})
+    assert "barrier" in pb2.shikigami[0].one_shot_keywords
+    assert not any(e.get("once") for e in pb2.shikigami[0].immunities)
 
 
 def test_real_battle_immunity_requires_preexisting_invocation(real_game):

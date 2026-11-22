@@ -515,14 +515,61 @@ def test_online_state_push_clears_pending_usage(qapp, db, make_game):
     battle.set_state(payload, log=[], timeline=[])
     assert battle.play_card(card.uid)
     assert battle._usage_pending is not None
-    assert battle.battle_scene.usage_items
+    assert battle.usage_dialog is not None
 
     battle.set_state(payload, log=[], timeline=[])
     assert battle._usage_pending is None
-    assert not battle.battle_scene.usage_items
-    assert not battle.battle_scene.usage_labels
+    assert battle.usage_dialog is None
+    assert battle.choice_dialog is None
     assert battle._inputs_open()
     battle.close()
+
+
+def test_online_usage_options_consume_server_hand_info(qapp, db, make_game, monkeypatch):
+    game = make_game(mulligan=False)
+    db.cards[10010153] = F.card(10010153, token=True, cost=0, level=0)
+    db.cards[10010154] = F.card(10010154, token=True, cost=1, level=3)
+    db.cards[10010161] = F.card(
+        10010161, token=True, card_type="reinforce", shikigami2=100102,
+        options=[10010153, 10010154])
+    card = F.give(game, 0, 10010161)
+    payload = game.state.model_dump(mode="json")
+    payload["hand_info"] = cli.hand_cards_info(game, 0)
+    sent = []
+    battle = OnlineBattleView(db, send_command=sent.append)
+    battle.me = 0
+    battle.set_state(payload, log=[], timeline=[])
+
+    def local_calculation_forbidden(*_args):
+        raise AssertionError("联机主动多择不应重新调用本地 usage_options")
+
+    monkeypatch.setattr(battle.game, "usage_options", local_calculation_forbidden)
+    assert battle.play_card(card.uid)
+    options = battle.usage_dialog.option_view.options
+    assert [(option.answer, option.cdef.id, option.enabled) for option in options] == [
+        ("choice:0", 10010153, True), ("choice:1", 10010154, False)]
+    battle.usage_dialog.option_view.select("choice:0")
+    battle.usage_dialog.option_view.confirm()
+    qapp.processEvents()
+    assert sent == [{"op": "play_card", "uid": card.uid, "choice": 0}]
+    battle.close()
+
+
+def test_online_missing_usage_never_falls_back_to_local_rules(db, make_game):
+    from types import MethodType, SimpleNamespace
+    from client.gui.battle import HotseatView
+
+    game = make_game(mulligan=False)
+    card = game.current.hand[0]
+
+    def local_calculation_forbidden(*_args):
+        raise AssertionError("缺少服务器 usage 时联机不得本地推规则")
+
+    game.usage_options = local_calculation_forbidden
+    view = SimpleNamespace(game=game, db=db, _inputs_open=lambda: True,
+                           hand_info=lambda: {card.uid: {}})
+    view._usage_options = MethodType(OnlineBattleView._usage_options, view)
+    assert not HotseatView.play_card(view, card.uid)
 
 
 def test_online_state_push_only_loads_initial_or_reconnect_state(qapp, db, make_game, monkeypatch):
@@ -565,10 +612,10 @@ def test_online_reset_session_clears_pending_usage_before_reconnect(qapp, db, ma
 
     battle.reset_session()
     assert battle._usage_pending is None
-    assert not battle.battle_scene.usage_items
+    assert battle.usage_dialog is None
     battle.set_state(payload, log=[], timeline=[])
     assert battle._usage_pending is None
-    assert not battle.battle_scene.usage_items
+    assert battle.usage_dialog is None
     assert battle._inputs_open()
     battle.close()
 
@@ -1094,7 +1141,7 @@ def test_online_game_over_clears_usage_and_pending_choice(
     battle.set_state(payload, log=[], timeline=[])
     assert battle.play_card(card.uid)
     assert battle._usage_pending is not None
-    assert battle.battle_scene.usage_items
+    assert battle.usage_dialog is not None
     battle.game.state.pending_choice = {
         "kind": "deck_top_pick", "player": 0, "remaining": 1,
         "options": [card.uid for card in battle.game.current.deck[:2]],
@@ -1108,8 +1155,8 @@ def test_online_game_over_clears_usage_and_pending_choice(
     battle.show_game_over(winner, "engine_error")
 
     assert battle._usage_pending is None
-    assert not battle.battle_scene.usage_items
-    assert not battle.battle_scene.usage_labels
+    assert battle.usage_dialog is None
+    assert battle.choice_dialog is None
     assert battle.choice_dialog is None
     assert battle._choice_key is None
     assert dialog.isHidden()
@@ -1290,7 +1337,7 @@ def test_online_scene_card_art_uses_payload_render(qapp, db, make_game, monkeypa
     calls = []
 
     def capture_pixmap(cdef, database, *, display=None, level_color=None, status=None,
-                       cache_context=None, height=None):
+                       cache_context=None, height=None, **_kwargs):
         calls.append((cdef, display, level_color))
         return None
 

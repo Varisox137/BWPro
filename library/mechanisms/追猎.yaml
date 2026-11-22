@@ -1,0 +1,7 @@
+name: 追猎
+frame: skill
+text: 攻击时可以指定攻击任一敌方式神。
+badge: null
+chars_per_line: 12
+global: true
+version_date: '20200928'

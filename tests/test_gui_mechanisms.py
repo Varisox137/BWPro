@@ -90,7 +90,7 @@ def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, mon
     assert dialog.sizeHint().width() <= 640
     assert art_calls and all(call["height"] == 512 for call in art_calls)
     assert mechanism_args and all(args[0] == 12 and 0 < args[1] <= 1.0 for args in mechanism_args)
-    assert dialog.minimumHeight() >= 680
+    assert dialog.minimumHeight() == 0
     dialog.resize(1000, 800)
     dialog.show()
     qapp.processEvents()
@@ -99,13 +99,28 @@ def test_card_detail_uses_native_art_and_aligned_scrollable_mechanisms(qapp, mon
     assert dialog.card_widget.art_width == 263
     displayed = dialog.card_widget.art_label.pixmap()
     assert displayed.width() / displayed.height() == pytest.approx(263 / 512)
-    assert dialog.mechanism_panel.maximumHeight() == 512
-    assert dialog.mechanism_panel.height() == 512  # 与大卡图底部对齐
+    assert dialog.mechanism_panel.maximumHeight() >= dialog.card_widget.height()
+    assert dialog.mechanism_panel.height() == dialog.card_widget.height()  # 上下对齐
     assert dialog.mechanism_panel.alignment() == (Qt.AlignLeft | Qt.AlignTop)
     assert dialog.mechanism_panel.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded
     assert dialog.mechanism_panel.verticalScrollBar().maximum() > 0
     assert dialog.mechanism_panel.verticalScrollBar().value() == 0
     assert dialog.mechanism_panel.y() == dialog.card_widget.y()
+    dialog.close()
+
+
+def test_card_detail_without_mechanisms_has_no_forced_blank_space(qapp, monkeypatch):
+    monkeypatch.setattr("client.gui.widgets.card_pixmap",
+                        lambda *_args, **_kwargs: QPixmap(263, 512))
+    cdef = F.card(10010101, text="普通效果。")
+    db = F.db_of([F.shiki(100101)], [cdef])
+    dialog = CardDetailDialog(cdef, db)
+    dialog.show()
+    qapp.processEvents()
+    assert dialog.mechanism_panel is None
+    margins = dialog.layout().contentsMargins()
+    assert dialog.width() - (dialog.card_widget.x() + dialog.card_widget.width()) == margins.right()
+    assert dialog.detail_top.geometry().height() == dialog.card_widget.height()
     dialog.close()
 
 
@@ -410,3 +425,16 @@ def test_shikigami_detail_groups_stat_changes_by_source(qapp):
     assert "力量 +1" in entries[0]["text"] and "生命上限 +2" in entries[0]["text"]
     assert "测试身材来源。" in entries[0]["text"]
     dialog.close()
+
+
+def test_mechanism_text_uses_library_definitions():
+    """机制说明优先读取 library 配置，而非客户端内置兜底文本。"""
+    from client.gui.mechanisms import card_mechanisms
+
+    cdef = F.card(10010101, text="[唯一][追猎][八尺琼曲玉]")
+    mechanisms = card_mechanisms(cdef)
+    assert [(item["name"], item["text"]) for item in mechanisms] == [
+        ("唯一", "己方将结附具此能力的[[灵咒]]或召唤具此能力的[[幻境]]时，移除当前己方已有的同名[[灵咒]]或[[幻境]]。"),
+        ("追猎", "攻击时可以指定攻击任一敌方式神。"),
+        ("八尺琼曲玉", "[[唯一]]。结附的式神获得1#ll。"),
+    ]

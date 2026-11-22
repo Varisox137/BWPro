@@ -135,8 +135,7 @@ EXT_KEYS: dict[str, tuple[str, str]] = {
     # （牌手级半回合能力：{"victim": [pi, si], "inv": 灵咒名}；消耗点 =
     # check_defeated 气绝事件后一次性等量转移，裁决14）
     "crit_pierce_mark": ("shikigami", CLEAR_ANY_TURN_START),  # 破魔符标记（本回合
-    # "对其造成伤害的式神或卡牌获得[暴击][贯通]"——不可叠加幂等；伤害事件
-    # "造成/受到伤害开始时"按受伤者标记置位事件属性，裁决(4)）
+    # 仅来源式神的非反击战斗攻击命中带标记者时获得[暴击][贯通]；效果伤害与反击不触发）
     "defeat_on_damage": ("shikigami", CLEAR_ANY_TURN_START),  # 驱魔符标记（本回合
     # "受到伤害时使其气绝"；伤害管线扣减生命后入气绝队列，同必杀通道）
     "drew_invocation_turn": ("player", CLEAR_ANY_TURN_START),  # 惊梦账本（本回合

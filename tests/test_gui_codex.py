@@ -120,6 +120,7 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     view.show()
     qapp.processEvents()
     assert len(view.card_widgets) == 5
+    assert len(view._all_card_widgets) == len(view._current_cards())
     assert all(widget.minimumWidth() == 0 for widget in view.card_widgets)
     widths = [widget.width() for widget in view.card_widgets]
     assert max(widths) - min(widths) <= 1
@@ -136,7 +137,11 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     assert view.card_widgets[0].count_label.isHidden()
     assert view.card_widgets[-1].cdef.id != reinforce.id
     assert view.page_count == 2
+    loaded_widgets = list(view._all_card_widgets)
+    loading_events = list(events)
     view.turn_card_page(1)
+    assert events == loading_events
+    assert view._all_card_widgets == loaded_widgets
     assert len(view.card_widgets) == 5
     assert view.card_widgets[-1].cdef.id == reinforce.id
     assert not view.card_next.isEnabled()

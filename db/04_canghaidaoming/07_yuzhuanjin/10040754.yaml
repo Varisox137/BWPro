@@ -1,0 +1,20 @@
+id: 10040754
+name: 封魔箭
+versions:
+  best: 20200928
+  history:
+    - date: 20200928  # 真实战斗子牌，必选爆能方式
+      card_type: combat
+      subtype: talisman
+      token: true
+      level: 2
+      target: {kind: choose, pool: enemy_shikigami, battle: true}
+      methods:
+        - {id: burst, energy_cost: 3, required: true, text: "爆能3"}
+      effects:
+        steps:
+          - {op: buff_power, amount: 1, target: {kind: self}}
+          - {op: gain_shield, amount: 1, target: {kind: self}}
+          - {op: stun}
+          - {op: power_override, "on": true, scope: turn}
+      text: "[眩晕]一个敌方式神并使其本回合力量变为0。[响应]：{当御馔津被攻击时，自动对攻击她的式神使用。}"

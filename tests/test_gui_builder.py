@@ -1535,11 +1535,18 @@ def test_entity_frame_variant_enters_payload(qapp, tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(
         cardart, "_cached_entity_pixmap",
-        lambda _key, payload, _state, _layout, _root, *_args:
-        seen.update(json.loads(payload)))
+        lambda _key, payload, state, _layout, _root, *_args:
+        seen.update(payload=json.loads(payload), state=json.loads(state)))
     cardart.entity_pixmap(shiki, database, form=form,
                           library_dir=library_dir, cache_dir=cache_dir)
-    assert seen["frame_variant"] == "blue"
+    assert seen["payload"]["frame_variant"] == "blue"
+    assert seen["state"]["frame_variant"] == "blue"
+    monkeypatch.setattr(
+        cardart, "definition_appearance",
+        lambda definition: {"frame_variant": "red" if definition.id == 100101 else "blue",
+                            "art_index": 0})
+    cardart.entity_pixmap(shiki, database, library_dir=library_dir, cache_dir=cache_dir)
+    assert seen["state"]["frame_variant"] == "red"
 
 
 def test_cardart_runtime_failure_retry_card(qapp, monkeypatch):

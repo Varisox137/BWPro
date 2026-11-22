@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
 )
 
 from client.gui.card_appearance import (
-    FRAME_VARIANTS, card_appearance, save_card_appearance,
+    FRAME_VARIANTS, definition_appearance, save_card_appearance,
+    save_shikigami_appearance,
 )
 from client.gui.widgets import CardChoiceView, polish_dialog_buttons, show_warning
 
@@ -19,7 +20,7 @@ class CardAppearanceDialog(QDialog):
         super().__init__(parent)
         self.cdef = cdef
         self.db = db
-        self.selected_frame = card_appearance(cdef.id)["frame_variant"]
+        self.selected_frame = definition_appearance(cdef)["frame_variant"]
         self.choice_view = None
         self.setWindowTitle(f"{cdef.name} · 更换异画 / 牌框")
         layout = QVBoxLayout(self)
@@ -76,7 +77,9 @@ class CardAppearanceDialog(QDialog):
 
     def _save(self, variant: str) -> None:
         try:
-            save_card_appearance(self.cdef.id, variant)
+            save = (save_card_appearance if getattr(self.cdef, "card_type", None) is not None
+                    else save_shikigami_appearance)
+            save(self.cdef.id, variant)
         except (OSError, ValueError) as error:
             show_warning(self, "无法保存外观", str(error))
             return

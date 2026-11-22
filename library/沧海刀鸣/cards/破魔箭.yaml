@@ -1,0 +1,16 @@
+type: 战斗
+name: 破魔箭
+level: 3
+description: 使一个敌方式神本回合获得‘对其攻击的式神获得[[暴击]]和[[贯通]]’，御馔津对其发起攻击。
+shikigami: 御馔津
+power+: 3
+shield+: 1
+token: true
+version_date: '20200928'
+id: '10040756'
+rarity: SR
+artwork:
+  images:
+  - path: 10040756.png
+    scale: 0.711
+    offset_y: -70

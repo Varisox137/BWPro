@@ -446,6 +446,7 @@ def test_key_whitelist_typo_keys():
         "id": 10010101, "name": "笔误卡",
         "versions": {"history": [
             {"date": 20260101, "card_type": "spell", "level": 1,
+             "options_when": {"energy_gge": 3},
              "effects": {"when": "on_play", "steps": [
                  {"op": "damage", "amount": {"kill_cnt": 1},
                   "condition": {"victim_knid": "shikigami"},
@@ -457,6 +458,7 @@ def test_key_whitelist_typo_keys():
                       paths={10010101: "db/00_beginner/x.yaml"})
     errors = db.validate()
     assert any("victim_knid" in e and "x.yaml" in e for e in errors)   # 条件键 + 路径
+    assert any("options_when" in e and "energy_gge" in e for e in errors)
     assert any("amount.kill_cnt" in e for e in errors)                 # 动态数值键
     assert any("exclude_shikigam" in e for e in errors)                # 目标过滤键
 

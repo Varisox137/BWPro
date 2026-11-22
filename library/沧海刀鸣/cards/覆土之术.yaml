@@ -1,0 +1,13 @@
+type: 法术
+name: 覆土之术
+level: 1
+rarity: R
+description: 将‘[[八尺琼曲玉]]’结附于一个己方式神，并使其获得[[屏障]]。[[响应]]：当己方式神被攻击时，自动对其使用此牌。
+shikigami: 大岳丸
+version_date: '20200928'
+id: '10040802'
+artwork:
+  images:
+  - path: 10040802.png
+    scale: 0.747
+    offset_y: -72

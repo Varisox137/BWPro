@@ -171,10 +171,8 @@ class _DamageEvent:
     dealt: int = 0  # 实际造成伤害值（走到扣减生命批次即视为造成；巨浪"每造成 1 点伤害"统计）
     card: Any = None  # 来源卡牌实例（卡牌效果伤害；猩红之月"你的法术牌获得[吸血]"
     # ——吸血判定除来源式神关键字外也读来源卡牌实例关键字，见 _queue_lifesteal）
-    crit_pierce: bool = False  # 本事件获得[暴击][贯通]属性（破魔符/破魔箭通道，
-    # 裁决(4)）：受伤者式神带 crit_pierce_mark 时于"造成/受到伤害开始时"置位——
-    # [暴击]按事件属性语义翻倍（伤害类型不限、反击同享——2026-08 裁决）；
-    # [贯通]置 ev.piercing 并放行反击事件的贯通修正批次
+    crit_pierce: bool = False  # 破魔标记使来源式神的非反击战斗攻击获得[暴击][贯通]；
+    # 在伤害开始时装配，贯通修正随后读取。普通效果伤害与反击不装配该属性。
     pre_shield_zero: bool = False  # 森罗之阵①贯通分段保护标记（cap_damage
     # to="zero_pre_shield" 在"造成/受到伤害开始时"置位）：本次伤害在"护甲计算前1"
     # 改为 0——贯通修正已预分配（护甲已扣、溢出已生成），仅保护式神本人
@@ -730,13 +728,10 @@ class Game:
         """一张卡当前可用的使用方式：定义 methods ∪ 命中光环授予的方式（card_aura
         grant_method——scope="ability" 随能力离场/觉醒换绑移除重注册）。读取时求值。
 
-        合并语义（御馔津符咒爆能重构，2026-08 裁决：爆能转化为符咒单卡自带效果，
-        御馔津能力只剩[充能]）：光环方式 id 命中卡牌自带方式时做**键级合并**——
-        光环模板只覆盖其显式给出的键（text 例外：作为后缀追加到自带方式 text 后；
-        觉醒·御馔津只写 effects 追加 battle_immunity + text 后缀，身材/消耗沿用
-        卡牌自带方式，破魔符 @20201015 削弱只改卡牌版本快照、不再传导到御馔津
-        能力快照）；无自带同 id 方式时维持旧的整段定义行为（光环模板须自含完整
-        方式定义）。多个光环依次应用，后者叠在前者合并结果上。"""
+        合并语义：光环方式 id 命中卡牌自带方式时做**键级合并**——光环模板只覆盖
+        其显式给出的键（text 例外：作为后缀追加到自带方式 text 后；觉醒·御馔津
+        只向真实箭牌的爆能方式追加 battle_immunity + text 后缀）。无自带同 id
+        方式时维持整段授予。多个光环依次应用，后者叠在前者合并结果上。"""
         methods = list(cdef.methods)
         for aura in self._match_auras(p, cdef):
             gm = aura.get("grant_method")
@@ -838,9 +833,9 @@ class Game:
         敌方有手牌且全部已展示——读心型条件；enemy_fragile_ge2 = 敌方场上存在
         破甲 ≧2 的角色——铃鹿御前型条件瞬发；player_health_ge = 己方牌手当前生命
         下限——血香型条件[连击]；enemy_deck_le = 敌方牌库张数上限——意外之喜型
-        条件[瞬发]）；invocation_on_field = 场上有己方式神结附指定灵咒——麓鸣·穿型
-        条件[瞬发]，与 targets.match_condition 同名算子同语义）；enemy_drew_invocation =
-        对方牌手本回合抽到过结附指定灵咒的牌——惊梦型条件[瞬发]）；式神未出战时条件不满足。"""
+        条件[瞬发]）；invocation_on_field = 场上有己方式神结附指定灵咒的通用条件关键字；
+        enemy_drew_invocation = 对方牌手本回合抽到过结附指定灵咒的牌——惊梦型条件[瞬发]）；
+        式神未出战时条件不满足。"""
         kws = set(cdef.keywords)
         if card is not None:
             kws |= set(card.mods.get("keywords_add", []))
@@ -881,8 +876,7 @@ class Game:
                 if len(ep.deck) > int(ck["enemy_deck_le"]):
                     continue
             if ck.get("invocation_on_field") is not None:
-                # 场上有己方式神结附指定灵咒（麓鸣·穿型条件[瞬发]；与
-                # targets.match_condition 同名算子同语义：在场、不限结附来源）
+                # 场上有己方式神结附指定灵咒；与 targets.match_condition 同名算子同语义。
                 if not any(s.in_play and any(e["name"] == ck["invocation_on_field"]
                                              for e in s.invocations)
                            for s in p.shikigami):
@@ -1393,7 +1387,8 @@ class Game:
 
     def _open_field_summon_pick(self, pi: int, options: list[int], *,
                                 intensity: int | None = None,
-                                source: Ref | None = None) -> bool:
+                                source: Ref | None = None,
+                                appearance_source: int | None = None) -> bool:
         """开启"选择召唤幻境"交互（残阳无影，kind="field_summon_pick"）：选项 = 可召唤
         幻境牌的数据 id 列表（>1 张才挂起，由 summon_field 保证）；作答键 choice
         （数据 id，同 card_name）。intensity 覆写/来源随 pending 传递（source 序列化
@@ -1401,7 +1396,7 @@ class Game:
         p = self.state.players[pi]
         self.state.pending_choice = {
             "kind": "field_summon_pick", "player": pi, "options": list(options),
-            "intensity": intensity,
+            "intensity": intensity, "appearance_source": appearance_source,
             "source": ([source.player, source.shikigami]
                        if source is not None else None),
         }
@@ -1421,15 +1416,15 @@ class Game:
         cdef = self.db.cards[int(choice)]
         src = pending.get("source")
         source = Ref(player=src[0], shikigami=src[1]) if src else None
-        inst = CardInstance(uid=self.state.next_uid, id=cdef.id)  # 凭空实例（仅载体，不进区域）
-        self.state.next_uid += 1
-        self._summon_field(pi, inst, cdef, source, reason="效果召唤",
-                           intensity_override=pending.get("intensity"))
+        self._summon_field(pi, None, cdef, source, reason="效果召唤",
+                           intensity_override=pending.get("intensity"),
+                           appearance_source=pending.get("appearance_source"))
         self.state.pending_choice = None
         self._resume_suspended()
 
     def _open_pick_generate(self, pi: int, options: list[int],
-                            unique_ext: str | None = None) -> bool:
+                            unique_ext: str | None = None,
+                            appearance_source: int | None = None) -> bool:
         """开启"选择一张生成入手"交互（三目委托线索，kind="pick_generate"）：选项 =
         可生成卡牌的数据 id 列表（>1 张才挂起，由 pick_generate 动作保证）；作答键
         choice（数据 id，同 field_summon_pick）。unique_ext 随 pending 传递（觉醒·三目
@@ -1437,7 +1432,7 @@ class Game:
         p = self.state.players[pi]
         self.state.pending_choice = {
             "kind": "pick_generate", "player": pi, "options": list(options),
-            "unique_ext": unique_ext,
+            "unique_ext": unique_ext, "appearance_source": appearance_source,
         }
         self._log(f"{p.name} 选择一张牌置入手牌")
         return True
@@ -1454,7 +1449,9 @@ class Game:
             raise IllegalAction("不在可生成的牌之列")
         p = self.state.players[pi]
         cdef = self.db.cards[int(choice)]
-        inst = CardInstance(uid=self.state.next_uid, id=cdef.id, generated=True)
+        inst = CardInstance(
+            uid=self.state.next_uid, id=cdef.id, generated=True,
+            appearance_source=pending.get("appearance_source"))
         self.state.next_uid += 1
         self.move_card(p, inst, "hand", reason="generate")
         self._materialize(p, inst, cdef)  # 生成点统一快照（断罪 form_power_delta 等）
@@ -1949,100 +1946,135 @@ class Game:
                     return f"能量不足（爆能需要 {need}，现有 {p.shikigami[si].energy}）"
         return None
 
+    def _method_energy(self, p: PlayerState, method: PlayMethod | None) -> int | str:
+        if method is None or method.energy_cost is None:
+            return 0
+        if method.energy_cost == "all":
+            return "X"
+        discount = sum(1 for f in p.fields if "burst_discount" in f.keywords)
+        return max(0, int(method.energy_cost) - discount)
+
+    @staticmethod
+    def _required_method(methods: list[PlayMethod]) -> PlayMethod | None:
+        return next((m for m in methods if m.required), None)
+
+    def _options_expanded(self, p: PlayerState, cdef: CardDef) -> bool:
+        if cdef.options_when is None:
+            return True
+        condition = dict(cdef.options_when)
+        if "energy_ge" in condition:
+            discount = sum(1 for f in p.fields if "burst_discount" in f.keywords)
+            condition["energy_ge"] = max(0, int(condition["energy_ge"]) - discount)
+        pi = self.state.players.index(p)
+        si = self._find_card_owner(p, cdef.shikigami) if cdef.shikigami is not None else None
+        holder = Ref(player=pi, shikigami=si) if si is not None else None
+        return self._match(condition, {}, pi, holder=holder)
+
     def usage_options(self, pi: int, card: CardInstance) -> list[dict]:
-        """一张手牌当前所有可能的使用方式枚举（裁决(2)，手牌展示统一读取点——
-        GUI 热坐/联机渲染层只管展示）。返回条目列表：
-          id     方式 id（常规 = None；协战子选项 = "choice:<i>"）
-          label  显示名（"常规" / 方式 text / 子选项卡名）
-          cost   当前鬼火消耗（含方式覆盖与实例修饰求值）
-          energy 能量消耗（int 或 "X"；无 = 0；已扣爆能折扣）
-          ok     当前是否合法；reason = 不合法原因（ok 时为 None）
-          effect 转化后效果概要（方式自带 text；无则 ""）
-        扩展点：未来的蓄力/赐能/起源等使用方式在此追加条目即可（PlayMethod
-        通道天然承接——见 schema PlayMethod docstring）。"""
+        """枚举一张手牌的使用方式；真实子牌选项带有子牌预览与主牌归并元数据。"""
         p = self.state.players[pi]
         cdef = self.db.cards[card.id]
         out: list[dict] = []
-        if cdef.card_type == "reinforce":
+        if cdef.card_type == "reinforce" or cdef.options:
+            expanded = self._options_expanded(p, cdef)
             for i, cid in enumerate(cdef.options or []):
+                if not expanded and i > 0:
+                    continue
                 sub = self.db.cards[cid]
-                err = self.reinforce_sub_option_error(pi, cdef, i)
+                inst = CardInstance(uid=0, id=sub.id, origin_id=cdef.id,
+                                   appearance_source=card.appearance_source or card.id)
+                method = self._required_method(self._card_methods(p, sub))
+                if cdef.card_type == "reinforce":
+                    err = self.reinforce_sub_option_error(pi, cdef, i)
+                else:
+                    err = self._usage_method_error(p, inst, sub, method)
                 out.append({"id": f"choice:{i}", "label": sub.name,
-                            "cost": self._effective_cost(p, sub), "energy": 0,
+                            "cost": self._effective_cost(p, sub, card=inst, method=method),
+                            "energy": self._method_energy(p, method),
                             "ok": err is None, "reason": err,
-                            "effect": sub.text or ""})
+                            "effect": (method.text if method is not None else "") or sub.text,
+                            "card_id": sub.id, "is_burst": method is not None
+                            and method.energy_cost is not None,
+                            "origin_id": cdef.id})
             return out
-        err = self._usage_method_error(p, card, cdef, None)
-        out.append({"id": None, "label": "常规",
-                    "cost": self._effective_cost(p, cdef, card=card),
-                    "energy": 0, "ok": err is None, "reason": err, "effect": ""})
-        for m in self._card_methods(p, cdef):
+        methods = self._card_methods(p, cdef)
+        if self._required_method(methods) is None:
+            err = self._usage_method_error(p, card, cdef, None)
+            out.append({"id": None, "label": "常规",
+                        "cost": self._effective_cost(p, cdef, card=card),
+                        "energy": 0, "ok": err is None, "reason": err, "effect": "",
+                        "card_id": cdef.id, "is_burst": False,
+                        "origin_id": card.origin_id})
+        for m in methods:
             err = self._usage_method_error(p, card, cdef, m)
-            if m.energy_cost == "all":
-                energy: int | str = "X"
-            elif m.energy_cost is not None:
-                discount = sum(1 for f in p.fields if "burst_discount" in f.keywords)
-                energy = max(0, int(m.energy_cost) - discount)
-            else:
-                energy = 0
             out.append({"id": m.id, "label": m.text or m.id,
                         "cost": self._effective_cost(p, cdef, card=card, method=m),
-                        "energy": energy, "ok": err is None, "reason": err,
-                        "effect": m.text or ""})
+                        "energy": self._method_energy(p, m), "ok": err is None,
+                        "reason": err, "effect": m.text or "",
+                        "card_id": cdef.id, "is_burst": m.energy_cost is not None,
+                        "origin_id": card.origin_id})
         return out
 
     def _cmd_play_reinforce(self, p: PlayerState, card: CardInstance,
                             cdef: CardDef, cmd: dict) -> None:
-        """协战牌打出（维护者答复 10）：选择子选项 → 生成对应 token 子卡入手并
-        "视作从手牌使用"（正常耗火、等级检测按子选项、完整使用事件流程——递归走
-        _cmd_play_card，含 on_before_card_play/on_card_played）→ 主牌离手移除（不进墓地）。
-
-        合法性前置校验（子选项所属式神出战/未气绝/等级、鬼火、目标、尘缚之阵锁定）失败时
-        主牌仍在手（不产生 token）；通过后的递归使用不应再失败。
-        """
-        owners = [sid for sid in (cdef.shikigami, cdef.shikigami2) if sid is not None]
-        if not any(self._find_shikigami(p, sid) is not None for sid in owners):
-            raise IllegalAction(f"【{cdef.name}】的所属式神（{cdef.shikigami} / "
-                                f"{cdef.shikigami2}）均未出战")
+        """合法性预检后先放逐引导主牌，再生成真实子牌并视作从手牌使用。"""
+        is_reinforce = cdef.card_type == "reinforce"
+        if is_reinforce:
+            owners = [sid for sid in (cdef.shikigami, cdef.shikigami2) if sid is not None]
+            if not any(self._find_shikigami(p, sid) is not None for sid in owners):
+                raise IllegalAction(f"【{cdef.name}】的所属式神（{cdef.shikigami} / "
+                                    f"{cdef.shikigami2}）均未出战")
         options = list(cdef.options)
-        if len(options) != 2:
+        if not options or (is_reinforce and len(options) != 2):
             raise IllegalAction(f"【{cdef.name}】缺少子选项数据")
         choice = cmd.get("choice")
-        if choice not in (0, 1):
+        if choice is None and not is_reinforce and not self._options_expanded(p, cdef):
+            choice = 0
+        if choice not in range(len(options)):
             names = " / ".join(f"[{i}]【{self.db.cards[o].name}】"
                                for i, o in enumerate(options))
-            raise IllegalAction(f"协战牌需要选择子选项（choice 0/1）：{names}")
-        err = self.reinforce_sub_option_error(self.state.active, cdef, choice)
+            raise IllegalAction(f"【{cdef.name}】需要选择子选项：{names}")
+        sub = self.db.cards[options[choice]]
+        preview = CardInstance(uid=0, id=sub.id, origin_id=cdef.id,
+                                   appearance_source=card.appearance_source or card.id)
+        method = self._required_method(self._card_methods(p, sub))
+        if is_reinforce:
+            err = self.reinforce_sub_option_error(self.state.active, cdef, choice)
+        else:
+            err = self._usage_method_error(p, preview, sub, method)
         if err is not None:
             raise IllegalAction(f"【{cdef.name}】的子选项当前不可选：{err}")
-        sub = self.db.cards[options[choice]]
         si: int | None = (self._find_shikigami(p, sub.shikigami)
                           if sub.shikigami is not None else None)
-        if sub.target.kind == "choose":
+        eff_target = method.target if method is not None and method.target is not None else sub.target
+        eff_type = method.card_type if method is not None and method.card_type else sub.card_type
+        if eff_target.kind == "choose":
             want = cmd.get("target")
             if want is None:
                 raise IllegalAction(f"【{sub.name}】需要选择目标"
-                                    f"（{_POOL_DESC.get(sub.target.pool, sub.target.pool)}）")
+                                    f"（{_POOL_DESC.get(eff_target.pool, eff_target.pool)}）")
             want = want if isinstance(want, Ref) else Ref(**want)
-            if want not in targets.spec_pool_refs(self, sub.target, self.state.active):
-                raise IllegalAction(f"【{sub.name}】{self._choose_target_error(want, sub.target)}")
-        if (sub.card_type == "combat" and si is not None
+            if want not in targets.spec_pool_refs(self, eff_target, self.state.active,
+                                                  targeted=True):
+                raise IllegalAction(f"【{sub.name}】{self._choose_target_error(want, eff_target)}")
+        if (eff_type == "combat" and si is not None
                 and p.combat_index != si
                 and not self._has_keyword(p.shikigami[si], "remote")
                 and self._combat_zone_locked(self.state.active)):
             raise IllegalAction("尘缚之阵：准备区式神不能发起不具有远程的战斗")
-        # 生成子选项 token 入手，视作从手牌使用（完整使用事件流程）
-        inst = CardInstance(uid=self.state.next_uid, id=sub.id)
+        self._remove_from_zone(p, card)
+        p.zones["exiled"].append(card)
+        inst = CardInstance(uid=self.state.next_uid, id=sub.id, origin_id=cdef.id,
+                                  appearance_source=card.appearance_source or card.id)
         self.state.next_uid += 1
         self.move_card(p, inst, "hand", reason="generate")
         self._log(f"{p.name} 使用【{cdef.name}】：选择子选项【{sub.name}】")
         sub_cmd: dict = {"op": "play_card", "uid": inst.uid}
+        if method is not None:
+            sub_cmd["play_method"] = method.id
         if cmd.get("target") is not None:
             sub_cmd["target"] = cmd["target"]
         self._cmd_play_card(sub_cmd)
-        # 主牌离手放逐（不进墓地；子选项被无效化等"已使用"情形同样离手）
-        self._remove_from_zone(p, card)
-        p.zones["exiled"].append(card)
 
     def _apply_revive_haste(self, p: PlayerState, card: CardInstance) -> None:
         """使用实例修饰 revive_haste（鎏金幻羽"使用后以津真天和鸩气绝倒计时-1"）：
@@ -2083,8 +2115,8 @@ class Game:
             if not any("deck_top_play" in f.keywords for f in p.fields):
                 raise IllegalAction("需要【彼岸归航】在场才能使用牌库顶的牌")
         cdef = self.db.cards[card.id]
-        # Phase 1 实现法术牌、形态牌、战斗牌、幻境牌；协战牌走子选项流程（_cmd_play_reinforce）。
-        if cdef.card_type == "reinforce":
+        # 协战与符咒引导牌共用真实子牌流程。
+        if cdef.card_type == "reinforce" or cdef.options:
             self._cmd_play_reinforce(p, card, cdef, cmd)
             return
         # [条件] 使用前提（福满乾坤）：不满足则任何方式都不能使用（响应/自动使用同检）
@@ -2092,14 +2124,13 @@ class Game:
             raise IllegalAction(f"【{cdef.name}】的使用条件未满足")
         # 使用方式（多择子选项，仅保留核心方式、参数可变；按 id 匹配，param 为数据预留）
         method: PlayMethod | None = None
+        methods = self._card_methods(p, cdef)
         method_id = cmd.get("play_method")
         if method_id is not None:
-            method = next((m for m in self._card_methods(p, cdef) if m.id == method_id),
-                          None)
+            method = next((m for m in methods if m.id == method_id), None)
             if method is None:
                 raise IllegalAction(f"【{cdef.name}】没有使用方式「{method_id}」")
-        # 生效的等级要求与目标（使用方式可覆盖）；生效类型 = 方式类型覆盖（爆能转化
-        # 战斗牌，御馔津符咒牌[爆能3]）或卡牌主类型
+        # 生效的等级要求与目标（使用方式可覆盖）；生效类型 = 方式类型覆盖或卡牌主类型
         eff_level = method.level if (method and method.level is not None) else cdef.level
         eff_target = method.target if (method and method.target is not None) else cdef.target
         eff_type = method.card_type if (method and method.card_type) else cdef.card_type
@@ -2136,6 +2167,8 @@ class Game:
             if gate is None or not gate.awakened or gate.defeated or gate.despawned:
                 who = sname if si is not None else "所属式神"
                 raise IllegalAction(f"「{method.text or method.id}」需要 {who} 已觉醒且在场上")
+        if method is None and self._required_method(methods) is not None:
+            raise IllegalAction(f"【{cdef.name}】必须选择指定使用方式")
         # 方式替换常规（全卡盘点(1)：觉醒能力在场时黄金羽"使用时改为需要指定目标"）
         if method is None and self._base_method_replaced(p, si, cdef):
             raise IllegalAction(f"【{cdef.name}】需以指定目标的使用方式出牌（觉醒能力在场）")
@@ -2252,17 +2285,14 @@ class Game:
             elif eff_type == "combat":
                 # 战斗牌：以完整战斗事件流程结算（移入战斗区、战力/一次性护甲、
                 # 战斗前/后时机、战斗伤害），结算完后进入墓地。
-                # 爆能转化战斗牌（PlayMethod.card_type="combat"，御馔津符咒牌）
-                # 同走本路径——身材取方式 power/shield 参数（combat_card_stats）
+                # 方式提供 card_type="combat" 的类型转化同走本路径。
                 if si is None:
                     raise IllegalAction("战斗牌必须有所属式神")
                 self._resolve_combat_card(p, si, card, cdef, method, chosen)
             elif eff_type == "field":
                 # 幻境牌（规范第一条）：先以所使用的牌"召唤幻境"（入队 +
                 # on_summon_field），再执行幻境本身的进场效果（effects 块）。
-                # 使用后卡牌本体入墓地（同法术——幻境实体独立存续，消灭时不再做
-                # 卡牌移动；简化口径待维护者确认）
-                self.move_card(p, card, "graveyard")
+                # 原牌由幻境实体持有，离场时才进入墓地。
                 self._summon_field(
                     self.state.active, card, cdef,
                     Ref(player=self.state.active, shikigami=si) if si is not None else None)
@@ -2303,7 +2333,7 @@ class Game:
                 card.mods["keywords_add"] = old_kw_add
         if si is not None:
             self._clear_play_delayed(p.shikigami[si])  # "本次使用期间"延迟能力窗口结束
-        self._account_card_played(p, cdef)  # 出牌统一记账（黄金羽等按 tags 计数）
+        self._account_card_played(p, cdef, card)  # 出牌统一记账（黄金羽等按 tags 计数）
         self._apply_revive_haste(p, card)  # 实例修饰"使用后…气绝倒计时-1"（鎏金幻羽）
         self._emit_card_played(self.state.active, uid, cdef, affected,
                                play_from=play_from, play_method=method_id,
@@ -2389,10 +2419,7 @@ class Game:
                       method: PlayMethod | None) -> EffectBlock:
         """打出时实际结算的效果块：使用方式覆盖优先；"变为"置位后改用 alt_effects。"""
         if method is not None and method.card_type is not None:
-            # 类型转化（爆能转化战斗牌，御馔津符咒）：方式 effects 整体替换基础
-            # effects（缺省 None = 空块——转化后不再结算原法术效果；身材在方式的
-            # power/shield 参数上，觉醒版"免疫战斗伤害"经方式 effects 的
-            # battle_immunity 步由战斗牌流程提取）
+            # 类型转化：方式 effects 整体替换基础 effects（缺省 None = 空块）。
             return method.effects if method.effects is not None else EffectBlock(
                 when=cdef.effects.when, steps=[])
         if method is not None and method.effects is not None:
@@ -2405,7 +2432,8 @@ class Game:
             return cdef.alt_effects
         return cdef.effects
 
-    def _account_card_played(self, p: PlayerState, cdef: CardDef) -> None:
+    def _account_card_played(self, p: PlayerState, cdef: CardDef,
+                             card: CardInstance | None = None) -> None:
         """出牌统一记账（按 tags 计数）：tags 含 golden_feather 时累计本局/本回合使用数
         （黄金羽/金风流羽；turn 级键己方回合开始清除，game 级不清）；tags 含
         snowball 时累计本局使用数（流霰"本局每从手牌使用过一张'雪球'额外重复一次"——
@@ -2418,12 +2446,10 @@ class Game:
         if "snowball" in cdef.tags:
             p.ext["snowball_used_game"] = p.ext.get("snowball_used_game", 0) + 1
         if cdef.subtype == "talisman":
-            # 奉祝之愿账本（裁决10）：本局御馔津使用过的符咒**类型**（数据 id），
-            # 按使用顺序、去重、至多三种；爆能转化使用同样经本记账点（仍是符咒牌，
-            # 裁决9）；奉祝之愿的凭空自动使用不经此处（不重复记录）
+            ledger_id = card.origin_id if card is not None and card.origin_id is not None else cdef.id
             ledger = p.ext.setdefault("talisman_ledger", [])
-            if cdef.id not in ledger and len(ledger) < 3:
-                ledger.append(cdef.id)
+            if ledger_id not in ledger and len(ledger) < 3:
+                ledger.append(ledger_id)
 
     def _emit_before_card_play(self, player: int, card: CardInstance,
                                cdef: CardDef, card_type: str,
@@ -2594,8 +2620,7 @@ class Game:
         按打出瞬间护甲快照战力，本次战斗中不变）；{"enemy_stunned_count": true}（霜天之织：
         场上眩晕的敌方角色数，活局面量——p 给出时与光环数值同通道求值）。
         p 给出时叠加命中该牌的卡牌光环数值通道（card_aura 的 power/shield，可叠加）。
-        method 给出时叠加方式身材参数（PlayMethod.power/shield——爆能转化战斗牌，
-        御馔津符咒牌[爆能3]各卡身材）。
+        method 给出时叠加方式身材参数（PlayMethod.power/shield）。
         """
         power = 0
         shield = 0
@@ -2677,8 +2702,7 @@ class Game:
             hunt_target = chosen[0]
         elif chosen and (tgt.model_extra or {}).get("battle"):
             # 指定战斗目标的非追猎战斗牌（target/方式 target 扩展键 battle=true；
-            # 天翔鹤斩"改为攻击一个敌方准备区式神"、御馔津符咒爆能转化"改为攻击
-            # 任一敌方式神"——同追猎的有目标战斗管线，帷幕不可选）
+            # 天翔鹤斩与御馔津真实箭牌的指定目标战斗——同追猎管线，帷幕不可选）
             hunt_target = chosen[0]
         block = self._played_block(p, cdef, card, method)
         power, shield = self.combat_card_stats(block, card, s, p=p, method=method)
@@ -3153,13 +3177,29 @@ class Game:
         self.emit("on_card_enter_hand", player=self.state.players.index(p),
                   uid=card.uid, card=card)
 
+    def _appearance_source_id(self, ctx: ExecContext, *,
+                              source: CardInstance | None = None) -> int | None:
+        """新生成牌继承来源根；只记录数据 id，具体外观仍由各客户端本机解析。"""
+        source = source or ctx.card or (ctx.field.card if ctx.field is not None else None)
+        if source is not None:
+            return source.appearance_source or source.origin_id or source.id
+        if ctx.source is not None and ctx.source.shikigami is not None:
+            shiki = self.state.players[ctx.source.player].shikigami[ctx.source.shikigami]
+            if shiki.form is not None:
+                return shiki.form.appearance_source or shiki.form.origin_id or shiki.form.id
+            return shiki.awakened or shiki.id
+        return None
+
     def _card_by_uid(self, uid: int) -> CardInstance | None:
-        """按 uid 找局内卡牌实例（双方全区域 + 结附中的形态牌；找不到返回 None）。"""
+        """按 uid 找局内卡牌实例（双方全区域 + 结附形态 + 场上幻境原牌）。"""
         for pl in self.state.players:
             for z in pl.zones.values():
                 for c in z:
                     if c.uid == uid:
                         return c
+            for field in pl.fields:
+                if field.card.uid == uid:
+                    return field.card
             for s in pl.shikigami:
                 if s.form is not None and s.form.uid == uid:
                     return s.form
@@ -3188,6 +3228,8 @@ class Game:
                 "shield": s.shield, "combat_power": 0 if s.defeated else s.combat_power,
                 "base_power": base_power, "base_health": base_health,
                 "form": s.form.id if s.form is not None else None,
+                "appearance_source": ((s.form.appearance_source or s.form.origin_id)
+                                      if s.form is not None else None),
                 "defeated": s.defeated, "revive_countdown": s.revive_countdown,
                 "countdown": s.countdown, "revive_pending": False,
             }
@@ -5020,8 +5062,8 @@ class Game:
     def _damage_double_modifiers(self, ev: _DamageEvent) -> None:
         """"扣减生命前2"伤害翻倍修饰（[暴击] 时机锚点，裁决(3)；terminology.md 登记）。
 
-        [暴击] 关键字本体（critical）与破魔符/破魔箭事件属性（ev.crit_pierce，
-        裁决(4)）：携带暴击属性的伤害事件 ×2，伤害类型不限、反击同享；多来源共存不叠加。
+        [暴击]关键字本体（critical）的伤害类型不限、反击同享；破魔标记装配的
+        ev.crit_pierce 只来自非反击攻击门控。多来源共存不叠加。
 
         贯通路径在贯通修正批次提前执行（贯通分配按翻倍后口径）；限原始事件
         （start="full"——贯通溢出/转移衍生的新事件不再二次翻倍）。
@@ -5124,11 +5166,10 @@ class Game:
                     if holder.shield > 0:
                         self._change_shield(ev.victim, -holder.shield, "穿刺（仅护甲）")
             self._emit_damage_batch("on_damage_start", ev)
-            # 破魔符/破魔箭（裁决(4)）：伤害事件"造成/受到伤害开始时"——受伤者式神
-            # 上有 crit_pierce_mark（半回合旗标）时，本次伤害获得[暴击][贯通]属性。
-            # 天然对防守侧不生效：被贴标记者的反击伤害受伤者是攻击方（无标记）。
-            # 贯通修正批次在其后，置位 ev.piercing 天然生效
-            if s is not None and s.ext.get("crit_pierce_mark"):
+            # 破魔标记：仅来源式神的非反击战斗攻击命中带标记者时获得[暴击][贯通]。
+            if (s is not None and s.ext.get("crit_pierce_mark")
+                    and ev.kind == "combat" and not ev.is_counter
+                    and ev.source is not None and ev.source.shikigami is not None):
                 ev.crit_pierce = True
                 ev.piercing = True
             if ev.amount <= 0 or (s is not None and s.defeated):
@@ -5787,7 +5828,8 @@ class Game:
 
     def _summon_field(self, pi: int, card: CardInstance | None, cdef: CardDef,
                         source: Ref | None, reason: str = "使用",
-                        intensity_override: int | None = None) -> None:
+                        intensity_override: int | None = None,
+                        appearance_source: int | None = None) -> None:
         """"召唤幻境"事件（要素：来源、原因、要召唤的幻境——规范第二条）：来源的所属
         牌手将该幻境添加至自身幻境队列末尾（field_front 标记者置于队首），发
         "召唤幻境后"（延时 on_summon_field）。
@@ -5795,21 +5837,30 @@ class Game:
         "耐久都为1"）> 幻境牌 intensity 标注值（正整数必填；使用事件/不指定耐久的
         效果召唤同取牌面默认）+ 召唤牌实例 mods.intensity_boost（五道难题"使其获得
         5耐久"）。card=None 为凭空直接召唤（summon_field 动作——残阳无影/竹取物语类，
-        不经使用事件）。
+        不经使用事件），此时创建 generated=True 的原牌实例。
         召唤一律新建实体：辉夜姬"同时只能存在一个"的叠加是她基础/觉醒能力的效果
         （"召唤幻境后"延时时机经 field_merge 合并，定案(6)），不在召唤事件内联处理。"""
         if cdef.intensity is None or cdef.intensity <= 0:
             raise ValueError(f"幻境牌【{cdef.name}】缺少正整数耐久（intensity）")
         p = self.state.players[pi]
-        boost = int(card.mods.get("intensity_boost", 0)) if card is not None else 0
+        if card is None:
+            card = CardInstance(uid=self.state.next_uid, id=cdef.id, generated=True,
+                                  appearance_source=appearance_source)
+            self.state.next_uid += 1
+        from_zone = self._remove_from_zone(p, card)  # 原牌离场到幻境队列，不产生卡牌移动事件
+        if from_zone == "deck" and card.invocations:
+            # 与 move_card 的非入手离库口径一致：静默清除牌级灵咒，但不发牌移动事件
+            card.invocations = []
+            self._log(f"【{self.db.cards[card.id].name}】上结附的灵咒移除（离开牌库）",
+                      owner=pi)
+        boost = int(card.mods.get("intensity_boost", 0))
         intensity = (int(intensity_override) if intensity_override is not None
                      else cdef.intensity) + boost
         if cdef.id not in p.ext.setdefault("field_summon_ids", []):
             p.ext["field_summon_ids"].append(cdef.id)  # 本局召唤过的幻境牌 id 记账
             # （觉醒·辉夜姬增强"已召唤五个不同的辉夜姬幻境"读取；叠加召唤同记）
-        ph = FieldState(card_id=cdef.id, intensity=intensity,
+        ph = FieldState(card=card, intensity=intensity,
                         shikigami=cdef.shikigami,
-                        mods=dict(card.mods) if card is not None else {},
                         keywords=list(cdef.field_keywords))
         if cdef.field_front:
             p.fields.insert(0, ph)
@@ -5840,18 +5891,18 @@ class Game:
         kept = p.fields[keep_idx]
         total = sum(p.fields[i].intensity for i in idxs)
         if merge_abilities:
-            have = {kept.card_id, *kept.mods.get("merged_ability_ids", ())}
+            have = {kept.card.id, *kept.card.mods.get("merged_ability_ids", ())}
             for i in idxs[:-1]:
                 other = p.fields[i]
-                origins = ({other.card_id, *other.mods.get("merged_ability_ids", ())}
+                origins = ({other.card.id, *other.card.mods.get("merged_ability_ids", ())}
                            - have)
                 for cid in sorted(origins):
                     kept.extra_abilities.extend(self.db.cards[cid].abilities)
                 have |= origins
-            kept.mods["merged_ability_ids"] = sorted(have - {kept.card_id})
-        names = "、".join(f"【{self.db.cards[p.fields[i].card_id].name}】"
+            kept.card.mods["merged_ability_ids"] = sorted(have - {kept.card.id})
+        names = "、".join(f"【{self.db.cards[p.fields[i].card.id].name}】"
                           for i in idxs[:-1])
-        self._log(f"{p.name} 的幻境【{self.db.cards[kept.card_id].name}】"
+        self._log(f"{p.name} 的幻境【{self.db.cards[kept.card.id].name}】"
                   f"叠加了{names}（耐久设置为 {total}）")
         delta = total - kept.intensity
         if delta:
@@ -5881,7 +5932,7 @@ class Game:
         ph = p.fields[idx]
         change = {"amount": amount}
         self.emit("on_before_field_intensity", player=pi, field=idx,
-                  card_id=ph.card_id, change=change, old=ph.intensity,
+                  card_id=ph.card.id, change=change, old=ph.intensity,
                   source=source, reason=reason)
         amt = int(change["amount"])
         if amt < 0:
@@ -5890,20 +5941,20 @@ class Game:
             return
         old = ph.intensity
         ph.intensity = max(0, ph.intensity + amt)
-        self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card_id].name}】"
+        self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card.id].name}】"
                      f"耐久 {old}→{ph.intensity}")
         if ph.intensity == 0:
             # 生成（延时的）幻境消灭事件："消灭前"监听器先入队（触发/执行时幻境仍在
             # 队列中），移除与"消灭后"由 field_destroy 待结算项执行
             self.emit("on_before_field_destroy", player=pi, field=idx,
-                      card_id=ph.card_id, source=source, reason=reason)
+                      card_id=ph.card.id, source=source, reason=reason)
             self.queue.append(_Pending(
                 EffectBlock(steps=[Step(op="field_destroy")]),
                 ExecContext(controller=pi,
                             event={"field_obj": ph, "source": source,
                                    "reason": reason})))
         self.emit("on_field_intensity_changed", player=pi, field=idx,
-                  card_id=ph.card_id, old=old, new=ph.intensity, amount=amt,
+                  card_id=ph.card.id, old=old, new=ph.intensity, amount=amt,
                   source=source, reason=reason)
 
     def _field_intensity_loss(self, pi: int, amount: int, source: Ref | None) -> None:
@@ -5916,14 +5967,17 @@ class Game:
     def _destroy_field(self, pi: int, ph: FieldState,
                          source: Ref | None, reason: str) -> None:
         """幻境消灭事件流程后半段（规范第四条）：从所属牌手幻境队列移除（其能力
-        同时从牌手移除——收集器按队列实况读取）→ "幻境消灭后"（延时）。"""
+        同时从牌手移除——收集器按队列实况读取）→ 原牌入墓 → "幻境消灭后"（延时）。
+        消灭前已回手的原牌不再次移动。"""
         p = self.state.players[pi]
         if not any(x is ph for x in p.fields):
             return  # 已被移除（同链重复生成/先行消灭）
         idx = next(i for i, x in enumerate(p.fields) if x is ph)
         p.fields.pop(idx)
-        self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card_id].name}】被消灭")
-        self.emit("on_field_destroyed", player=pi, card_id=ph.card_id,
+        if not any(ph.card in zone for zone in p.zones.values()):
+            self.move_card(p, ph.card, "graveyard")
+        self._settle(f"【幻境】{p.name} 的幻境【{self.db.cards[ph.card.id].name}】被消灭")
+        self.emit("on_field_destroyed", player=pi, card_id=ph.card.id,
                   source=source, reason=reason)
 
     def _collect_fields(self, event: dict, pi: int) -> list[_Pending]:
@@ -5939,8 +5993,8 @@ class Game:
         out: list[_Pending] = []
         p = self.state.players[pi]
         for ph_idx, ph in enumerate(p.fields):
-            disabled = set(ph.mods.get("disabled_abilities", ()))
-            blocks = [b for i, b in enumerate(self.db.cards[ph.card_id].abilities)
+            disabled = set(ph.card.mods.get("disabled_abilities", ()))
+            blocks = [b for i, b in enumerate(self.db.cards[ph.card.id].abilities)
                       if i not in disabled]
             blocks = [*blocks, *ph.extra_abilities]
             for ability in blocks:
@@ -6590,6 +6644,18 @@ class Game:
         self._pay_orb(p, ctx.controller, cost, reason="响应使用")
         if self._fast_applies(p, cdef, ctx.card):
             p.fast_used = True
+        if cdef.options and cdef.card_type != "reinforce":
+            main = ctx.card
+            sub = self.db.cards[cdef.options[0]]
+            self._remove_from_zone(p, main)
+            p.zones["exiled"].append(main)
+            inst = CardInstance(uid=self.state.next_uid, id=sub.id, origin_id=cdef.id,
+                                      appearance_source=main.appearance_source or main.id)
+            self.state.next_uid += 1
+            self.move_card(p, inst, "hand", reason="generate")
+            ctx.card = inst
+            cdef = sub
+            resp_blk = self._response_block(cdef)
         # choose 目标的响应牌：自动选择事件中的被攻击者（rules.md 第二章"执行效果时选择目标"；
         # 不在合法池则无目标——自动使用而没有效果，如古尘之盾"对其自动使用"）
         if cdef.target.kind == "choose" and ctx.event is not None:
@@ -6638,7 +6704,7 @@ class Game:
                 #（响应方式使用：不消耗出击加成，不夜之舞全卡盘点）
                 self._resolve_combat_card(p, si, ctx.card, cdef, None, ctx.chosen,
                                           from_response=True)
-            self._account_card_played(p, cdef)
+            self._account_card_played(p, cdef, ctx.card)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
                                    triggered="response", chosen=ctx.chosen)
             return True
@@ -6646,7 +6712,7 @@ class Game:
             # 响应形态牌插入使用：立即结附（风符·瞬）；牌不进墓地，形态离场才进
             # 形态牌的进场时效果镜像主动使用的形态分支（响应形态同样结算）
             self._play_form_card(p, si, ctx.card, cdef, ctx.controller, ctx.chosen)
-            self._account_card_played(p, cdef)
+            self._account_card_played(p, cdef, ctx.card)
             self._emit_card_played(ctx.controller, ctx.card.uid, cdef,
                                    triggered="response", chosen=ctx.chosen)
             return True
@@ -6687,6 +6753,9 @@ class Game:
                 cdef = self.db.cards[ctx.card.id]
                 if self._settle_response_card(p, cdef, ctx):
                     return
+                cdef = self.db.cards[ctx.card.id]
+                block = self._response_block(cdef)
+                self._ctx_stack[-1] = (block, ctx)
                 self._affected_stack.append({"controller": ctx.controller, "refs": []})  # 响应法术：记录该次使用伤害过的敌方式神
             try:
                 if block.luck is not None and start == 0:
@@ -6699,7 +6768,7 @@ class Game:
             # mode == "atomic"：步骤连发，队列留到块外统一结算
             if ctx.triggered and ctx.card is not None:
                 # 响应使用与主动使用生成同样的"卡牌的使用事件"（使用后1，延时时机）
-                self._account_card_played(p, cdef)
+                self._account_card_played(p, cdef, ctx.card)
                 self._emit_card_played(ctx.controller, ctx.card.uid, cdef, affected,
                                        triggered="response", chosen=ctx.chosen)
                 self._rebound_check(p, ctx.card, cdef)  # 弹回：响应使用同样回手

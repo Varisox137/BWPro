@@ -1,0 +1,16 @@
+type: 法术
+name: 封魔符/封魔箭
+level: 2
+rarity: R
+description: '[[眩晕]]一个敌方式神并使其本回合#ll变为0。
+
+  [[响应]]：当御馔津被攻击时，自动对攻击她的式神使用。'
+shikigami: 御馔津
+version_date: '20200928'
+id: '10040705'
+artwork:
+  images:
+  - path: 10040705.png
+    scale: 0.747
+    offset_y: -75
+special_type: 符咒

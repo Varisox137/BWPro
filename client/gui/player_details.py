@@ -35,15 +35,21 @@ class PlayerDetailDialog(QDialog):
         self.field_widgets = []
         art_width = 396
         for field in state.fields:
-            cdef = game.db.cards[field.card_id]
+            cdef = game.db.cards[field.card.id]
             widget = CardWidget(
-                cdef, db=game.db, display={"durability": field.intensity}, art_height=512)
+                cdef, db=game.db, display={"durability": field.intensity}, art_height=512,
+                art_options={"appearance_source": (field.card.appearance_source
+                                                   or field.card.origin_id)}
+            )
             widget.count_label.hide()
             art_width = widget.art_width or art_width
             widget.setFixedWidth(art_width + 24)
             widget.setMinimumHeight(560)
             widget.detail_clicked.connect(
-                lambda selected: CardDetailDialog(selected, game.db, self).exec())
+                lambda selected, card=field.card: CardDetailDialog(
+                    selected, game.db, self,
+                    art_options={"appearance_source": (card.appearance_source
+                                                       or card.origin_id)}).exec())
             self.content_layout.addWidget(widget)
             self.field_widgets.append(widget)
 

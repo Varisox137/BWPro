@@ -1,0 +1,15 @@
+type: 法术
+name: 觉醒·大岳丸
+level: 2
+rarity: SSR
+description: 将‘[[八尺琼曲玉]]’结附于一个己方式神。[[觉醒]]：‘[[八尺琼曲玉]]’结附于大岳丸时效果翻倍。当结附‘[[八尺琼曲玉]]’的己方式神消灭敌方式神时，‘[[八尺琼曲玉]]’效果+1。
+shikigami: 大岳丸
+version_date: '20200928'
+id: '10040805'
+evolve: true
+health+: 1
+artwork:
+  images:
+  - path: 10040805.png
+    scale: 0.747
+    offset_y: -78

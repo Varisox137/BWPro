@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from client import cardfmt
+from client.gui.card_options import CardOption
 from client.gui.cardart import card_pixmap
 from client.gui.mechanisms import card_mechanisms, mechanism_panel
 
@@ -75,7 +76,8 @@ class CardWidget(QFrame):
     def __init__(self, cdef, copies: int = 0, editable: bool = False, parent=None, db=None,
                  display=None, level_color=None, art_context: dict | None = None,
                  art_height: int | None = None, frame_variant: str | None = None,
-                 description_suffix: str | None = None):
+                 description_suffix: str | None = None, burst: int | None = None,
+                 art_options: dict | None = None):
         super().__init__(parent)
         self.cdef = cdef
         self.copies = copies
@@ -108,7 +110,9 @@ class CardWidget(QFrame):
         self.stats_label.setObjectName("cardStats")
         self.stats_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.stats_label)
-        text = (cdef.text or "（无效果文本）") + (description_suffix or "")
+        suffix = (description_suffix if description_suffix is not None
+                  else (art_options or {}).get("description_suffix"))
+        text = (cdef.text or "（无效果文本）") + (suffix or "")
         self.text_label = QLabel(text)
         self.text_label.setObjectName("cardText")
         self.text_label.setWordWrap(True)
@@ -116,7 +120,13 @@ class CardWidget(QFrame):
         layout.addWidget(self.text_label, 1)
         self._art_db = db
         self._art_height = art_height
-        self._art_options = {"display": display, "level_color": level_color}
+        self._art_options = dict(art_options or {})
+        if display is not None:
+            self._art_options["display"] = display
+        if level_color is not None:
+            self._art_options["level_color"] = level_color
+        if burst is not None:
+            self._art_options["burst"] = burst
         if description_suffix is not None:
             self._art_options["description_suffix"] = description_suffix
         if frame_variant is not None:
@@ -192,8 +202,11 @@ class CardWidget(QFrame):
         super().mouseReleaseEvent(event)
 
 
+_NO_SELECTION = object()
+
+
 class CardChoiceView(QScrollArea):
-    """调度式候选列表：选中卡片后，再点其下方“选择”按钮确认。"""
+    """统一消费 CardOption；旧 (answer, cdef, label) 三元组仍可直接传入。"""
 
     chosen = Signal(object)
     detail_clicked = Signal(object)
@@ -210,27 +223,47 @@ class CardChoiceView(QScrollArea):
         content.setObjectName("choiceContent")
         row = QHBoxLayout(content)
         row.setContentsMargins(12, 4, 12, 8)
+        self.options: list[CardOption] = []
         self.option_widgets = []
         self.option_buttons = {}
+        self.reason_labels = {}
         self._wrappers = {}
-        self.selected = None
-        for value, cdef, label in options:
-            if cdef is None:
-                card = QPushButton(label)
-                card.setMinimumSize(180, 60)
+        self._option_by_answer = {}
+        self.selected = _NO_SELECTION
+        for raw in options:
+            if isinstance(raw, CardOption):
+                option = raw
             else:
-                card = CardWidget(
-                    cdef, db=db,
-                    frame_variant=(frame_variants or {}).get(value, frame_variant))
+                value, cdef, label = raw
+                option = CardOption(value, cdef, label=label)
+            variant = (frame_variants or {}).get(option.answer, frame_variant)
+            if variant is not None:
+                option.art_options.setdefault("frame_variant", variant)
+            self.options.append(option)
+            self._option_by_answer[option.answer] = option
+            if option.cdef is None:
+                card = QPushButton(option.label if option.label is not None else str(option.answer))
+                card.setMinimumSize(180, 60)
+                card.setEnabled(option.enabled)
+            else:
+                card = CardWidget(option.cdef, db=db, art_options=option.art_options)
                 card.count_label.hide()
                 card.setFixedSize(180, 390)
                 card.setFrameShape(QFrame.NoFrame)
                 card.setStyleSheet("background: transparent; border: none;")
-                card.detail_clicked.connect(self.detail_clicked.emit)
+                card.detail_clicked.connect(
+                    lambda _cdef, selected=option: self.detail_clicked.emit(selected))
+            if option.reason:
+                card.setToolTip(option.reason)
             button = QPushButton(button_text)
             button.setObjectName("dialogButton")
             button.setFixedSize(96, 28)
             button.hide()
+            reason = QLabel("" if option.enabled else f"不可用：{option.reason or '当前不可用'}")
+            reason.setObjectName("choiceReason")
+            reason.setWordWrap(True)
+            reason.setFixedWidth(180)
+            reason.setVisible(not option.enabled)
             wrapper = QWidget()
             wrapper.setObjectName("choiceContent")
             wrapper.setMinimumWidth(194)
@@ -239,11 +272,17 @@ class CardChoiceView(QScrollArea):
             column.setSpacing(0)
             column.addWidget(card, 0, Qt.AlignCenter)
             column.addWidget(button, alignment=Qt.AlignCenter)
-            card.clicked.connect(lambda _=None, option=value: self.select(option))
-            button.clicked.connect(lambda _checked=False, option=value: self.confirm(option))
+            column.addWidget(reason, alignment=Qt.AlignCenter)
+            if not option.enabled:
+                dim = QGraphicsOpacityEffect(wrapper)
+                dim.setOpacity(0.45)
+                wrapper.setGraphicsEffect(dim)
+            card.clicked.connect(lambda _=None, value=option.answer: self.select(value))
+            button.clicked.connect(lambda _checked=False, value=option.answer: self.confirm(value))
             self.option_widgets.append(card)
-            self.option_buttons[value] = button
-            self._wrappers[value] = wrapper
+            self.option_buttons[option.answer] = button
+            self.reason_labels[option.answer] = reason
+            self._wrappers[option.answer] = wrapper
             row.addWidget(wrapper)
         row.addStretch(1)
         self.setWidget(content)
@@ -253,14 +292,17 @@ class CardChoiceView(QScrollArea):
         if self._syncing_height or self.widget() is None:
             return
         content_height = 0
-        for index, wrapper in enumerate(self._wrappers.values()):
+        for index, option in enumerate(self.options):
+            wrapper = self._wrappers[option.answer]
             column = wrapper.layout()
             margins = column.contentsMargins()
-            button = self.option_buttons[list(self._wrappers)[index]]
+            button = self.option_buttons[option.answer]
+            reason = self.reason_labels[option.answer]
             button_height = 0 if button.isHidden() else button.height() + column.spacing()
+            reason_height = 0 if reason.isHidden() else reason.sizeHint().height() + column.spacing()
             content_height = max(
                 content_height,
-                self.option_widgets[index].height() + button_height
+                self.option_widgets[index].height() + button_height + reason_height
                 + margins.top() + margins.bottom(),
             )
         margins = self.widget().layout().contentsMargins()
@@ -279,27 +321,35 @@ class CardChoiceView(QScrollArea):
         self._sync_minimum_height()
 
     def select(self, value) -> None:
-        if self.selected == value:
+        option = self._option_by_answer.get(value)
+        if option is None or not option.enabled:
+            return
+        if self.selected is not _NO_SELECTION and self.selected == value:
             self.confirm(value)
             return
         self.selected = value
-        for option, wrapper in self._wrappers.items():
-            selected = option == value
+        for current in self.options:
+            answer = current.answer
+            wrapper = self._wrappers[answer]
+            selected = answer == value
             if selected:
                 wrapper.setGraphicsEffect(None)
-            elif option is not None:
+            else:
                 dim = QGraphicsOpacityEffect(wrapper)
                 dim.setOpacity(0.45)
                 wrapper.setGraphicsEffect(dim)
-            card = self.option_widgets[list(self._wrappers).index(option)]
+            card = self.option_widgets[self.options.index(current)]
             if isinstance(card, CardWidget):
                 card.setFixedSize(194 if selected else 180, 421 if selected else 390)
-            self.option_buttons[option].setVisible(selected)
+            self.option_buttons[answer].setVisible(selected)
         self._sync_minimum_height()
 
-    def confirm(self, value=None) -> None:
-        value = self.selected if value is None else value
-        if value is not None and value == self.selected:
+    def confirm(self, value=_NO_SELECTION) -> None:
+        value = self.selected if value is _NO_SELECTION else value
+        if self.selected is _NO_SELECTION or value != self.selected:
+            return
+        option = self._option_by_answer.get(value)
+        if option is not None and option.enabled:
             self.chosen.emit(value)
 
 
@@ -310,31 +360,36 @@ class CardDetailDialog(QDialog):
     """左侧大卡图、右侧独立滚动机制栏的单卡详情。"""
 
     def __init__(self, cdef, db=None, parent=None, runtime: dict | None = None,
-                 level_color=None):
+                 level_color=None, art_options: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle(cdef.name)
-        self.setMinimumSize(480, 680)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
         self.detail_top = QHBoxLayout()
         self.detail_top.setSpacing(DETAIL_COLUMN_SPACING)
+        detail_art_options = dict(art_options or {})
+        if runtime is not None and runtime.get("render") is not None:
+            detail_art_options["display"] = runtime["render"]
+        if runtime is not None and runtime.get("description_suffix") is not None:
+            detail_art_options["description_suffix"] = runtime["description_suffix"]
+        if level_color is not None:
+            detail_art_options["level_color"] = level_color
         self.card_widget = CardWidget(
-            cdef, db=db, display=(runtime or {}).get("render"),
-            level_color=level_color, art_height=512,
-            description_suffix=(runtime or {}).get("description_suffix"))
+            cdef, db=db, art_height=512, art_options=detail_art_options)
         self.card_widget.count_label.hide()
         art_width = self.card_widget.art_width or 396
         panel_width = art_width + 24
         self.card_widget.setFixedWidth(panel_width)
         self.card_widget.setMinimumHeight(560)
-        self.detail_top.addWidget(self.card_widget, 0, Qt.AlignLeft | Qt.AlignTop)
+        self.detail_top.addWidget(self.card_widget)
         self.mechanism_panel, self.mechanism_labels = mechanism_panel(
             card_mechanisms(cdef, runtime), self, chars_per_line=12, font_scale=1.0,
             max_height=512, width=panel_width)
         if self.mechanism_panel is not None:
-            self.detail_top.addWidget(
-                self.mechanism_panel, 0, Qt.AlignLeft | Qt.AlignTop)
+            self.mechanism_panel.setMinimumHeight(self.card_widget.minimumHeight())
+            self.mechanism_panel.setMaximumHeight(16777215)
+            self.detail_top.addWidget(self.mechanism_panel)
         self.detail_top.addStretch(1)
         layout.addLayout(self.detail_top, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
@@ -342,13 +397,3 @@ class CardDetailDialog(QDialog):
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons, alignment=Qt.AlignRight)
-        self._sync_mechanism_height()
-
-    def _sync_mechanism_height(self) -> None:
-        if self.mechanism_panel is not None:
-            self.mechanism_panel.setMaximumHeight(
-                min(512, max(160, round(self.card_widget.height() * 1.1))))
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._sync_mechanism_height()

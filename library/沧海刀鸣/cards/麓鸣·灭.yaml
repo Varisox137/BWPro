@@ -1,0 +1,13 @@
+type: 法术
+name: 麓鸣·灭
+level: 2
+rarity: R
+description: 使结附‘[[八尺琼曲玉]]’的己方式神获得2#hj并攻击一个敌方式神。
+shikigami: 大岳丸
+version_date: '20200928'
+id: '10040804'
+artwork:
+  images:
+  - path: 10040804.png
+    scale: 0.747
+    offset_y: -70

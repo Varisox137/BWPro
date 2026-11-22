@@ -131,7 +131,8 @@ def test_play_choice_full_flow_and_main_exiled(make_game):
     assert not any(c.id == FYZ for c in pa.graveyard)     # 主牌不入墓地
     assert any(c.id == FYZ for c in pa.zones["exiled"])  # 离手放逐
     assert not any(c.id == HYJX for c in pa.hand)         # token 已使用离手
-    assert any(c.id == HYJX for c in pa.graveyard)
+    token = next(c for c in pa.graveyard if c.id == HYJX)
+    assert token.origin_id == FYZ                      # 子牌归并到主牌类型
     assert len(pa.shikigami[YQS].delayed) == 1            # 延迟能力已登记
     forms = {10012501, 10012502, 10012503, 10012504, 10012507, 10012508}
     assert any(c.id in forms for c in pa.hand)            # 羁绊：一目连形态牌入手

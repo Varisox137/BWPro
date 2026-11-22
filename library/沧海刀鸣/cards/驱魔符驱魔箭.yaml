@@ -1,0 +1,14 @@
+type: 法术
+name: 驱魔符/驱魔箭
+level: 1
+rarity: R
+description: 使一个有形态的敌方式神获得‘本回合受到伤害时使其气绝’。
+shikigami: 御馔津
+version_date: '20200928'
+id: '10040701'
+special_type: 符咒
+artwork:
+  images:
+  - path: 10040701.png
+    scale: 0.747
+    offset_y: -96

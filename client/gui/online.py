@@ -148,6 +148,13 @@ class OnlineBattleView(HotseatView):
         info = (self.payload or {}).get("hand_info", {})
         return {int(uid): detail for uid, detail in info.items()}
 
+    def deck_invocation_counts(self, pi: int) -> dict[str, int]:
+        summaries = (self.payload or {}).get("deck_invocations", [])
+        return dict(summaries[pi]) if pi < len(summaries) else {}
+
+    def _usage_options(self, card, runtime: dict):
+        return runtime.get("usage", [])
+
     def refresh(self) -> None:
         if self.game is None:
             return

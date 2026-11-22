@@ -257,6 +257,7 @@ class PlayMethod(BaseModel):
     # 临时授予该牌（装配在瞬发/费用判定之前，结算后移除——engine._cmd_play_card）
     keywords: list[str] = []
     text: str = ""
+    required: bool = False  # 必须显式选择该方式，不枚举常规使用（真实箭牌的爆能方式）
 
 
 class CardDef(BaseModel):
@@ -324,9 +325,9 @@ class CardDef(BaseModel):
     response: EffectBlock | None = None  # 响应牌效果块覆盖：主动使用效果与响应效果结构
     # 不同时（魔音扰心：主动=登记延迟无效化，响应=直接无效化当前用牌），响应收集/复查/
     # 结算改读本块；缺省（None）用 effects
-    options: list[int] = Field(default_factory=list)  # 协战牌（card_type=reinforce）：
-    # 子选项 token 卡 id，有序（[0]=主式神侧子卡，[1]=副式神侧子卡）；打出时 cmd.choice 选择，
-    # 生成对应 token 并视作从手牌使用，主牌离手移除（不进墓地）
+    options: list[int] = Field(default_factory=list)  # 真实子牌 token id，有序；
+    # 协战始终展开选择，其他主牌可凭 options_when 决定展开或默认使用首项
+    options_when: dict[str, Any] | None = None  # 完整多择展开条件；不满足时仅默认首项
     play_condition: dict[str, Any] | None = None  # [条件] 使用前提（福满乾坤）：以条件迷你语言
     # 对控制者求值，不满足则任何方式都不能使用（主动/响应/自动使用统一校验；GUI 可用性显示置灰）
     temp_grants: list[EffectBlock] = Field(default_factory=list)  # 战斗牌专用：发起战斗时注册、

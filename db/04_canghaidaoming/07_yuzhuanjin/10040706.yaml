@@ -13,17 +13,11 @@ versions:
       effects:
         steps: []
       abilities:
-        # [觉醒]：基础能力升级版——[充能]（先天关键字觉醒保留）+ 符咒牌[爆能3]转化
-        # 战斗牌追加"本次战斗获得免疫战斗伤害"（2026-08 裁决：爆能转化为符咒单卡
-        # 自带效果，觉醒能力只经 card_aura grant_method 同 id **键级合并**追加
-        # effects + text 后缀——不再内联身材数值，破魔符 @20201015 削弱只落
-        # 10040708 自带方式快照，原 100407/10040706 同日期传导快照随之删除；
-        # battle_immunity 步由战斗牌流程提取绑定本次战斗，鹿角冲撞 10020307
-        # 爆能档同型；觉醒换绑光环随能力离场移除，引擎已处理）
+        # [觉醒]：[充能]；真实箭牌的自带爆能方式追加"本次战斗获得免疫战斗伤害"。
         - when: on_ability_enter
           condition: {target_shikigami: self}
           steps:
-            - {op: card_aura, shikigami: self, subtype: talisman, scope: ability,
+            - {op: card_aura, shikigami: self, card_type: combat, subtype: talisman, scope: ability,
                grant_method: {id: burst,
                               effects: {steps: [{op: battle_immunity}]},
                               text: "，本次战斗获得免疫战斗伤害"}}

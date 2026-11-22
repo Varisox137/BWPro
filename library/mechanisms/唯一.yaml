@@ -1,0 +1,7 @@
+name: 唯一
+frame: skill
+text: 己方将结附具此能力的[[灵咒]]或召唤具此能力的[[幻境]]时，移除当前己方已有的同名[[灵咒]]或[[幻境]]。
+badge: null
+chars_per_line: 12
+global: true
+version_date: '20200928'

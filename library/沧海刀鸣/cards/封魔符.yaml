@@ -1,0 +1,15 @@
+type: 法术
+name: 封魔符
+level: 2
+description: '[[眩晕]]一个敌方式神并使其本回合#ll变为0。'
+shikigami: 御馔津
+token: true
+version_date: '20200928'
+id: '10040753'
+artwork:
+  images:
+  - path: 10040753.png
+    offset_y: -75
+    scale: 0.747
+special_type: 符咒
+rarity: R

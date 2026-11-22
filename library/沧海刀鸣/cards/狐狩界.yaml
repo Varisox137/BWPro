@@ -1,0 +1,16 @@
+type: 幻境
+name: 狐狩界
+level: 2
+rarity: R
+description: '你的所有[[爆能]]消耗-1。
+
+  你的所有符咒牌都获得[[瞬发]]。'
+shikigami: 御馔津
+durability: 8
+version_date: '20200928'
+id: '10040707'
+artwork:
+  images:
+  - path: 10040707.png
+    scale: 0.711
+    offset_y: -68

@@ -1,0 +1,17 @@
+type: 形态
+name: 奉祝之愿
+level: 1
+rarity: SSR
+description: '[[追猎]]
+
+  出击时对被攻击的式神使用每种本局游戏御馔津使用过的符咒牌。'
+shikigami: 御馔津
+power: 3
+health: 6
+version_date: '20200928'
+id: '10040703'
+artwork:
+  images:
+  - path: 10040703.png
+    scale: 0.711
+    offset_y: -84

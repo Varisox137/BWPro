@@ -1,0 +1,15 @@
+type: 战斗
+name: 麓鸣·轰
+level: 3
+rarity: R
+description: 选择一个己方式神，本次攻击后将‘[[八尺琼曲玉]]’结附于该式神并使其发起攻击。
+shikigami: 大岳丸
+power+: 1
+shield+: 1
+version_date: '20200928'
+id: '10040808'
+artwork:
+  images:
+  - path: 10040808.png
+    scale: 0.747
+    offset_y: -68

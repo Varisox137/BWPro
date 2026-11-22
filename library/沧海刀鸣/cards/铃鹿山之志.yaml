@@ -1,0 +1,15 @@
+type: 形态
+name: 铃鹿山之志
+level: 2
+rarity: SR
+description: 进场和己方回合开始时，将一张‘[[挪移]]’置入手牌。
+shikigami: 大岳丸
+power: 4
+health: 6
+version_date: '20200928'
+id: '10040806'
+artwork:
+  images:
+  - path: 10040806.png
+    scale: 0.747
+    offset_y: -70

@@ -990,17 +990,27 @@ def test_blessing_negates_enemy_spell_damage(db, make_game):
 # ---------- 暴击属性与伤害类型解耦（2026-08 裁决：[暴击]是伤害事件本身的属性） ----------
 
 def test_crit_attribute_effect_damage_doubles(db, make_game):
-    """效果伤害携带暴击属性同样翻倍（破魔符 crit_pierce_mark 场景）：命中带标记的
-    受伤者时扣减生命前2 翻倍；无暴击属性的普通效果伤害不翻倍。"""
+    """来源式神的 critical 关键字仍使普通效果伤害翻倍，与破魔标记新门控无关。"""
+    g, pa, pb = _game(make_game)
+    pa.shikigami[IDX].keywords.append("critical")
+    b = pb.shikigami[0]
+    b.health = 10
+    g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, Ref(player=0, shikigami=IDX))
+    assert b.health == 4            # 3 ×2 = 6
+    b2 = pb.shikigami[1]
+    b2.health = 10
+    g.deal_to_shikigami(Ref(player=1, shikigami=1), 3, Ref(player=0, shikigami=IDX))
+    assert b2.health == 4           # 同源 critical：另一目标同样翻倍
+
+
+def test_crit_pierce_mark_effect_damage_not_double(db, make_game):
+    """破魔标记只增强来源式神的非反击攻击，普通效果伤害不再获得暴击。"""
     g, pa, pb = _game(make_game)
     b = pb.shikigami[0]
     b.health = 10
-    b.ext["crit_pierce_mark"] = 1   # 破魔符标记：对其造成的伤害获得[暴击][贯通]
+    b.ext["crit_pierce_mark"] = 1
     g.deal_to_shikigami(Ref(player=1, shikigami=0), 3, Ref(player=0, shikigami=IDX))
-    assert b.health == 4            # 3 ×2 = 6（贯通无碍：10 > 6 无溢出）
-    b2 = pb.shikigami[1]
-    g.deal_to_shikigami(Ref(player=1, shikigami=1), 3, Ref(player=0, shikigami=IDX))
-    assert b2.health == 3           # 无标记、来源无 critical：不翻倍（6 - 3）
+    assert b.health == 7
 
 
 def test_counter_damage_doubled_by_crit(db, make_game):

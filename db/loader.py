@@ -369,6 +369,9 @@ class CardDatabase:
             pc = snap.get("play_condition")
             if isinstance(pc, dict):
                 errors += self._check_condition_keys(pc, f"{at}的 play_condition")
+            options_when = snap.get("options_when")
+            if isinstance(options_when, dict):
+                errors += self._check_condition_keys(options_when, f"{at}的 options_when")
             for cm in snap.get("conditional_mods") or []:
                 if isinstance(cm, dict):
                     cond = {k: v for k, v in cm.items() if k != "mods"}

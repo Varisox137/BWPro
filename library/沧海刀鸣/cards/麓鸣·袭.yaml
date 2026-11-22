@@ -1,0 +1,18 @@
+type: 战斗
+name: 麓鸣·袭
+level: 2
+rarity: SR
+description: '将‘[[八尺琼曲玉]]’结附于大岳丸。
+
+  [[增强]]：若场上已有己方的‘[[八尺琼曲玉]]’，本次战斗获得免疫战斗伤害。'
+shikigami: 大岳丸
+power+: 0
+shield+: 2
+version_date: '20200928'
+id: '10040803'
+artwork:
+  images:
+  - path: 10040803.png
+    scale: 0.747
+    offset_y: -68
+    offset_x: 2

@@ -1,0 +1,15 @@
+type: 形态
+name: 御狩之愿
+level: 2
+rarity: SR
+description: 攻击敌方式神时获得[[连击]]。
+shikigami: 御馔津
+power: 3
+health: 7
+version_date: '20200928'
+id: '10040704'
+artwork:
+  images:
+  - path: 10040704.png
+    scale: 0.711
+    offset_y: -74

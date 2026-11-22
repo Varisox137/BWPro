@@ -1,0 +1,13 @@
+type: 法术
+name: 无尽剑狱
+level: 3
+rarity: SR
+description: 将‘[[八尺琼曲玉]]’结附于一个敌方式神，并于结附期间使其持续[[眩晕]]。
+shikigami: 大岳丸
+version_date: '20200928'
+id: '10040807'
+artwork:
+  images:
+  - path: 10040807.png
+    scale: 0.784
+    offset_y: -78

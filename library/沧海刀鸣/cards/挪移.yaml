@@ -1,0 +1,13 @@
+type: 法术
+name: 挪移
+level: 1
+description: '[[瞬发]]。将‘[[八尺琼曲玉]]’结附于一个己方式神。'
+shikigami: 大岳丸
+token: true
+version_date: '20200928'
+id: '10040851'
+artwork:
+  images:
+  - path: 10040851.png
+    scale: 0.747
+    offset_y: -70

@@ -8,12 +8,12 @@ versions:
       rarity: R
       level: 1
       effects:
-        # 选择一张御馔津的符咒牌置入手上（pick_generate 三选一挂起交互——觉醒·三目
+        # 选择一张御馔津的符咒牌置入手牌（pick_generate 三选一挂起交互——觉醒·三目
         # 线索同型，无"不可重复"限制），御馔津获得3能量
         steps:
           - {op: pick_generate, pool: [10040701, 10040705, 10040708]}
           - {op: gain_energy, amount: 3, target: {kind: self}}
-      text: "选择一张御馔津的符咒牌置入手上，御馔津获得3能量。"
+      text: "选择一张御馔津的符咒牌置入手牌，御馔津获得3能量。"
     - date: 20201015  # 平衡性调整：改为获得3能量+抽一张牌
       card_type: spell
       rarity: R

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.gui import opening
-from client.gui.card_appearance import card_appearance
+from client.gui.card_appearance import entity_appearance, instance_appearance
 from client.gui.cardart import card_pixmap, entity_pixmap, seat_level_color
 from client.gui.loading import LoadingIndicator
 from client.gui.portrait import bwpdiy_root
@@ -36,7 +36,6 @@ _LOGGER = logging.getLogger("bwpro.animation")
 SCENE_WIDTH = 1600
 SCENE_HEIGHT = 900
 HAND_SIZE = QSizeF(110, 156)
-MULLIGAN_HAND_SIZE = QSizeF(180, 255)
 END_TURN_SIZE = 208
 # 参考点仅保存相对回合按钮中心的偏移；水平偏移可整体调整牌库位置。
 _DECK_REFERENCE_OFFSETS = ((127, -203), (60, -351), (-25, -399), (-71, -423))
@@ -223,7 +222,12 @@ def layout_positions(game=None, viewer: int = 0,
 def usage_target(game, pi: int, cdef, usage_id):
     if isinstance(usage_id, str) and usage_id.startswith("choice:"):
         choice = int(usage_id.split(":", 1)[1])
-        return game.db.cards[cdef.options[choice]].target
+        sub = game.db.cards[cdef.options[choice]]
+        player = game.state.players[pi]
+        method = game._required_method(game._card_methods(player, sub))
+        if method is not None and method.target is not None:
+            return method.target
+        return sub.target
     if usage_id is not None:
         player = game.state.players[pi]
         method = next((method for method in game._card_methods(player, cdef)
@@ -413,13 +417,12 @@ class BattleCardItem(QGraphicsObject):
         painter.restore()
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton and self.key[0] != "usage":
+        if event.button() == Qt.LeftButton:
             self.scene().drag_controller.press(self, event.scenePos())
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        if self.key[0] != "usage":
-            self.scene().drag_controller.move(event.scenePos())
+        self.scene().drag_controller.move(event.scenePos())
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -432,9 +435,6 @@ class BattleCardItem(QGraphicsObject):
                 event.accept()
                 return
             self.scene().read_detail_requested.emit(self.key[0], self.payload)
-        elif self.key[0] == "usage":
-            if self.playable:
-                self.scene().usage_selected.emit(self.payload)
         else:
             self.scene().drag_controller.release(event.scenePos())
         event.accept()
@@ -639,7 +639,6 @@ class BattleScene(QGraphicsScene):
     target_requested = Signal(str, object)
     read_detail_requested = Signal(str, object)
     action_requested = Signal(dict)
-    usage_selected = Signal(object)
     animations_settled = Signal()
 
     def __init__(self, db):
@@ -661,8 +660,6 @@ class BattleScene(QGraphicsScene):
         self._visual_queue: list[dict] = []
         self._visual_trace_seq = 0
         self._defeat_visuals: set[tuple[int, int]] = set()
-        self.usage_items: list[BattleCardItem] = []
-        self.usage_labels: list[QGraphicsTextItem] = []
         self.deck_backs: dict[tuple, BattleCardItem] = {}
         self.upgrade_badges: dict[int, QGraphicsPixmapItem] = {}
         self.phase = None
@@ -747,7 +744,7 @@ class BattleScene(QGraphicsScene):
         for item in self.cards.values():
             item.text_color = QColor(color)
             item.update()
-        for item in (self.banner_item, self.loading_item, *self.usage_labels):
+        for item in (self.banner_item, self.loading_item):
             item.setDefaultTextColor(QColor(color))
 
     def _cardback_name(self, player: int) -> str:
@@ -985,7 +982,7 @@ class BattleScene(QGraphicsScene):
     def _hand_render_signature(self, card, revealed: bool, detail: dict,
                                owner_seat: int | None, own: bool,
                                status: str | None) -> tuple:
-        appearance = card_appearance(card.id) if revealed else None
+        appearance = instance_appearance(card, self.db) if revealed else None
         player = self.viewer if own else 1 - self.viewer
         cardback = None if revealed else self._cardback_name(player)
         return (
@@ -1007,7 +1004,8 @@ class BattleScene(QGraphicsScene):
         player = self.viewer if own else 1 - self.viewer
         pixmap = (card_pixmap(cdef, self.db, display=detail.get("render"),
                               level_color=seat_level_color(owner_seat), status=status,
-                              cache_context=art_context, height=height)
+                              cache_context=art_context, height=height,
+                              appearance_source=card.appearance_source or card.origin_id)
                   if cdef is not None else self._cardback_pixmap(player))
         item.set_art(pixmap)
         item._render_signature = (
@@ -1218,8 +1216,12 @@ class BattleScene(QGraphicsScene):
         animation.setStartValue(0.0)
         animation.setEndValue(1.0)
         big_size = QSizeF(220, 312)
+        instance = self.game._card_by_uid(uid) if self.game is not None else None
+        appearance_source = (instance.appearance_source or instance.origin_id
+                             if instance is not None else None)
         big_pixmap = card_pixmap(
-            cdef, self.db, cache_context={}, height=int(round(big_size.height())))
+            cdef, self.db, cache_context={}, height=int(round(big_size.height())),
+            appearance_source=appearance_source)
         self._card_use_animations.append(animation)
         self._visual_animations.append(animation)
         self._visual_events[animation] = dict(event)
@@ -1617,23 +1619,33 @@ class BattleScene(QGraphicsScene):
         form_id = (snapshot["form"] if snapshot is not None and "form" in snapshot
                    else shiki.form.id if shiki.form is not None else None)
         form = self.db.cards[form_id] if form_id is not None else None
+        appearance_source = (
+            snapshot.get("appearance_source")
+            if snapshot is not None and "appearance_source" in snapshot
+            else (shiki.form.appearance_source or shiki.form.origin_id)
+            if shiki.form is not None else None)
         item.set_art(entity_pixmap(
             shiki, self.db, seat=index, form=form, cache_context={}, height=210,
             show_defeated_countdown=not self.defeat_countdown_hidden(player, index),
-            snapshot=snapshot))
+            snapshot=snapshot, appearance_source=appearance_source))
         item._render_signature = None
         item.update()
 
     def _sync_entity_art(self, item: BattleCardItem, shiki, seat: int, form,
                          art_context: dict) -> None:
         show_defeated_countdown = not self.defeat_countdown_hidden(item.player, seat)
+        appearance = entity_appearance(shiki, self.db)
         signature = _entity_render_signature(
-            shiki, form, seat, show_defeated_countdown, self.theme)
+            shiki, form, seat, show_defeated_countdown, self.theme) + (
+                appearance["frame_variant"], appearance["art_index"])
         if getattr(item, "_render_signature", None) == signature:
             return
+        appearance_source = ((shiki.form.appearance_source or shiki.form.origin_id)
+                             if shiki.form is not None else None)
         pixmap = entity_pixmap(
             shiki, self.db, seat=seat, form=form, cache_context=art_context, height=210,
-            show_defeated_countdown=show_defeated_countdown)
+            show_defeated_countdown=show_defeated_countdown,
+            appearance_source=appearance_source)
         item.set_art(pixmap)
         item._render_signature = (
             signature if pixmap is not None and not pixmap.isNull() else None)
@@ -1670,58 +1682,10 @@ class BattleScene(QGraphicsScene):
         self._sync_focus()
         self.animations_settled.emit()
 
-    def show_usage_options(self, options: list[dict], card_defs: list) -> None:
-        self.clear_usage_options()
-        width = (len(options) * MULLIGAN_HAND_SIZE.width()
-                 + max(0, len(options) - 1) * 16)
-        art_context = {}
-        for index, (option, cdef) in enumerate(zip(options, card_defs)):
-            x = (self.layout_width - width) / 2 + index * (MULLIGAN_HAND_SIZE.width() + 16)
-            item = BattleCardItem(("usage", option["id"]), size=MULLIGAN_HAND_SIZE)
-            item.cdef = cdef
-            item.payload = option["id"]
-            item.playable = option["ok"]
-            item.setOpacity(1 if option["ok"] else 0.6)
-            energy = option["energy"]
-            method = next((method for method in cdef.methods
-                           if method.id == option["id"]), None)
-            if energy == "X" and self.game is not None:
-                seat = card_owner_seat(self.game, self.game.current, cdef)
-                burst = self.game.current.shikigami[seat].energy if seat is not None else 0
-            else:
-                is_burst = method is not None and method.energy_cost is not None
-                burst = (energy if type(energy) is int and (energy > 0 or is_burst)
-                         else None)
-            item.set_art(card_pixmap(cdef, self.db, cache_context=art_context,
-                                     height=MULLIGAN_HAND_SIZE.height(), burst=burst))
-            item.setPos(x, 280)
-            item.setZValue(DRAG_Z + 15)
-            item.text_color = QColor(self.text_color)
-            self.addItem(item)
-            self.usage_items.append(item)
-
-            reason = "" if option["ok"] else f"不可用：{option['reason'] or '当前不可用'}"
-            label = QGraphicsTextItem(reason)
-            label.setFont(QFont("Microsoft YaHei", 12))
-            label.setDefaultTextColor(QColor(self.text_color))
-            label.setTextWidth(MULLIGAN_HAND_SIZE.width())
-            label.setPos(x, 280 + MULLIGAN_HAND_SIZE.height() + 8)
-            label.setZValue(DRAG_Z + 16)
-            self.addItem(label)
-            self.usage_labels.append(label)
-
-    def clear_usage_options(self) -> None:
-        for item in (*self.usage_items, *self.usage_labels):
-            if item.scene() is self:
-                self.removeItem(item)
-        self.usage_items.clear()
-        self.usage_labels.clear()
-
     def reset_animations(self) -> None:
         for event in (*self._visual_events.values(), *self._visual_queue):
             self._trace_visual("cancel", event)
         self.hide_opening()
-        self.clear_usage_options()
         for animation in self._move_animations.values():
             animation.stop()
             animation.deleteLater()
@@ -1838,7 +1802,7 @@ class BattleScene(QGraphicsScene):
                 if back is None:
                     back = BattleCardItem(deck_key, size=DECK_BACK_SIZE)
                     back.revealed = False
-                    back.setAcceptedMouseButtons(Qt.NoButton)
+                    back.setAcceptedMouseButtons(Qt.RightButton)
                     back.setTransformOriginPoint(back.boundingRect().center())
                     self.addItem(back)
                     self.deck_backs[deck_key] = back

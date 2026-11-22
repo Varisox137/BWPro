@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·御馔津
+level: 2
+rarity: SR
+description: '[[觉醒]]：[[充能]]。御馔津的符咒牌都具有‘[[爆能3]]：转化为战斗牌且改为攻击任一敌方式神，本次战斗获得免疫战斗伤害’。'
+shikigami: 御馔津
+version_date: '20200928'
+id: '10040706'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10040706.png
+    scale: 0.747
+    offset_y: -72

@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from client.gui.card_appearance import (
     card_appearance, load_card_appearances, save_card_appearance,
+    save_shikigami_appearance, shikigami_appearance,
 )
 
 
@@ -50,6 +51,17 @@ def test_appearance_store_is_sparse_and_validated(tmp_path):
         save_card_appearance(10010101, "blue", art_index=1, path=path)
 
 
+def test_shikigami_appearance_shares_store_without_overwriting_cards(tmp_path):
+    path = tmp_path / "appearance.json"
+    save_card_appearance(10010101, "blue", path=path)
+    save_shikigami_appearance(100101, "red", path=path)
+    assert shikigami_appearance(100101, path) == {"frame_variant": "red", "art_index": 0}
+    assert card_appearance(10010101, path)["frame_variant"] == "blue"
+    save_shikigami_appearance(100101, "norm", path=path)
+    assert shikigami_appearance(100101, path)["frame_variant"] == "norm"
+    assert card_appearance(10010101, path)["frame_variant"] == "blue"
+
+
 def test_appearance_store_ignores_corrupt_and_invalid_entries(tmp_path):
     path = tmp_path / "appearance.json"
     path.write_text("not json", encoding="utf-8")
@@ -86,8 +98,8 @@ def test_cardart_uses_current_appearance_for_payload_and_layout(
         "id": str(cdef.id), "name": cdef.name, "version_date": str(cdef.version),
         "frame_variant": "norm", "artwork": {"images": [{"path": "art.png"}]},
     }), encoding="utf-8")
-    monkeypatch.setattr(cardart, "card_appearance",
-                        lambda _card_id: {"frame_variant": "black", "art_index": 0})
+    monkeypatch.setattr(cardart, "definition_appearance",
+                        lambda _definition: {"frame_variant": "black", "art_index": 0})
     seen = {}
     monkeypatch.setattr(cardart, "_cached_card_pixmap",
                         lambda _key, payload, layout, *_args, **_kwargs: seen.update(
@@ -99,6 +111,13 @@ def test_cardart_uses_current_appearance_for_payload_and_layout(
     cardart.card_pixmap(cdef, database, library_dir=library_dir,
                         cache_dir=tmp_path / "cache", frame_variant="red")
     assert seen["payload"]["frame_variant"] == "red"
+    monkeypatch.setattr(
+        cardart, "definition_appearance",
+        lambda definition: {"frame_variant": "blue" if definition.id == 100101 else "black",
+                            "art_index": 0})
+    cardart.card_pixmap(cdef, database, library_dir=library_dir,
+                        cache_dir=tmp_path / "cache", appearance_source=100101)
+    assert seen["payload"]["frame_variant"] == "blue"
 
 
 def test_prewarm_tracks_only_selected_appearance(tmp_path, monkeypatch):
@@ -125,8 +144,8 @@ def test_prewarm_tracks_only_selected_appearance(tmp_path, monkeypatch):
                         lambda root: (Path(root), None, None))
     monkeypatch.setattr(prewarm.cardart, "_card_renderer_resources", lambda *_args: "card")
     monkeypatch.setattr(prewarm.cardart, "_entity_renderer_resources", lambda *_args: "entity")
-    monkeypatch.setattr(prewarm, "card_appearance",
-                        lambda _card_id: {"frame_variant": "red", "art_index": 0})
+    monkeypatch.setattr(prewarm, "definition_appearance",
+                        lambda _definition: {"frame_variant": "red", "art_index": 0})
     calls = []
     monkeypatch.setattr(prewarm, "card_pixmap",
                         lambda definition, *_args, **_kwargs: (
@@ -156,8 +175,8 @@ def test_appearance_dialog_menu_frame_order_back_and_confirm(qapp, db, monkeypat
 
     monkeypatch.setattr("client.gui.widgets.card_pixmap",
                         lambda *_args, **_kwargs: QPixmap(263, 512))
-    monkeypatch.setattr("client.gui.appearance.card_appearance",
-                        lambda _card_id: {"frame_variant": "norm", "art_index": 0})
+    monkeypatch.setattr("client.gui.appearance.definition_appearance",
+                        lambda _definition: {"frame_variant": "norm", "art_index": 0})
     saved = []
     monkeypatch.setattr("client.gui.appearance.save_card_appearance",
                         lambda *args, **kwargs: saved.append((args, kwargs)))

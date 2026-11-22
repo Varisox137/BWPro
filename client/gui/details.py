@@ -214,6 +214,7 @@ class ShikigamiDetailDialog(QDialog):
             self.form_art_pixmap = card_pixmap(
                 form_def, game.db, height=512,
                 level_color=seat_level_color(ref.shikigami),
+                appearance_source=(shiki.form.appearance_source or shiki.form.origin_id),
                 description_suffix=form_detail_suffix(game, ref))
             self.form_art_label = QLabel()
             self.form_art_label.setAlignment(Qt.AlignCenter)

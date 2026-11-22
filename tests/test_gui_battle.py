@@ -1006,6 +1006,34 @@ def test_hand_detail_uses_owner_seat_level_color(qapp, view, monkeypatch):
     assert seen["level_color"] == "cyan"
 
 
+@pytest.mark.parametrize("zone", ["form", "field"])
+def test_public_instance_detail_uses_actual_owner_seat(qapp, view, monkeypatch, zone):
+    from client.gui.card_options import CardOption
+    from core.model import FieldState
+
+    start(view, mulligan=False)
+    card = CardInstance(uid=880100, id=10010201)
+    opponent = view.game.state.players[1]
+    if zone == "form":
+        opponent.shikigami[1].form = card
+    else:
+        opponent.fields.append(FieldState(card=card, intensity=3))
+    view.game.current.shikigami[1].home_slot = None
+    seen = {}
+
+    class Detail:
+        def __init__(self, *args, level_color=None, **kwargs):
+            seen["level_color"] = level_color
+
+        def exec(self):
+            return QDialog.Rejected
+
+    monkeypatch.setattr("client.gui.battle.CardDetailDialog", Detail)
+    option = CardOption(card.uid, view.db.cards[card.id], instance=card)
+    view.show_card_option_detail(option)
+    assert seen["level_color"] == "cyan"
+
+
 def test_shiki_detail_uses_seat_level_color(qapp, view, monkeypatch):
     start(view, mulligan=False)
     seen = {}
@@ -1276,7 +1304,7 @@ def test_battle_entities_use_diy_small_card_renderer(qapp, view, monkeypatch):
 
     calls = []
     monkeypatch.setattr(battle_scene, "entity_pixmap",
-                        lambda shiki, db, *, seat, form=None, cache_context=None, height=None, show_defeated_countdown=True:
+                        lambda shiki, db, *, seat, form=None, cache_context=None, height=None, show_defeated_countdown=True, **_kwargs:
                         calls.append((shiki, seat, form)), raising=False)
     start(view, mulligan=False)
     expected = {id(s) for p in view.game.state.players for s in p.shikigami}
@@ -1581,13 +1609,14 @@ def test_scene_card_art_receives_runtime_display(qapp, db, view, monkeypatch):
     calls = []
 
     def capture_pixmap(cdef, database, *, display=None, level_color=None, status=None,
-                       cache_context=None, height=None):
+                       cache_context=None, height=None, **_kwargs):
         calls.append((cdef, display, level_color))
         return None
 
     entity_calls = []
 
-    def capture_entity(shiki, database, *, seat, form=None, cache_context=None, height=None, show_defeated_countdown=True):
+    def capture_entity(shiki, database, *, seat, form=None, cache_context=None, height=None,
+                       show_defeated_countdown=True, **_kwargs):
         entity_calls.append((shiki, seat, form))
         return None
 
@@ -2061,7 +2090,9 @@ def test_drag_method_targets_and_blank_drop_follow_selected_usage(qapp, db, view
     selected[0] = "player"
     enemy_player = scene.cards[("player", 1)]
     drag(hand, enemy_player.scenePos() + QPointF(20, 20))
-    scene.usage_selected.emit(selected[0])
+    view.usage_dialog.option_view.select(selected[0])
+    view.usage_dialog.option_view.confirm()
+    qapp.processEvents()
     settle(view)
     assert commands == [{"op": "play_card", "uid": card.uid,
                          "play_method": "player", "target": Ref(player=1)}]
@@ -2073,11 +2104,41 @@ def test_drag_method_targets_and_blank_drop_follow_selected_usage(qapp, db, view
     view.cancel_targeting()
     selected[0] = "untargeted"
     drag(hand, QPointF(20, 450))
-    scene.usage_selected.emit(selected[0])
+    view.usage_dialog.option_view.select(selected[0])
+    view.usage_dialog.option_view.confirm()
+    qapp.processEvents()
     settle(view)
     assert commands[-1] == {"op": "play_card", "uid": card.uid,
                             "play_method": "untargeted"}
     assert card not in view.game.current.hand
+
+
+@pytest.mark.parametrize("aura_grant", [False, True], ids=["defined", "aura-merged"])
+def test_subcard_method_target_override_gui(qapp, db, view, aura_grant):
+    main_id, sub_id = 10010121, 10010151
+    base_target = F.T(kind="choose", pool="enemy_player")
+    method_target = F.T(kind="choose", pool="enemy_shikigami")
+    db.cards[sub_id] = F.card(
+        sub_id, token=True, cost=0, target=base_target,
+        methods=[F.method("mode", required=True,
+                          target=None if aura_grant else method_target)])
+    db.cards[main_id] = F.card(main_id, token=True, options=[sub_id])
+    start(view, mulligan=False)
+    if aura_grant:
+        view.game.current.card_auras.append({
+            "shikigami": 100101, "card_id": sub_id, "scope": "game",
+            "grant_method": {"id": "mode", "target": method_target.model_dump()},
+        })
+    card = F.give(view.game, 0, main_id)
+    view.refresh()
+    settle(view)
+
+    assert view.play_card(card.uid)
+    assert view.pending_command == {"op": "play_card", "uid": card.uid, "choice": 0}
+    assert view.legal_targets == [Ref(player=1, shikigami=0)]
+    assert view.choose_target(Ref(player=1, shikigami=0))
+    settle(view)
+    assert card in view.game.current.zones["exiled"]
 
 
 def test_drag_reinforce_targets_use_selected_subcard(qapp, db, view, monkeypatch):
@@ -2110,7 +2171,9 @@ def test_drag_reinforce_targets_use_selected_subcard(qapp, db, view, monkeypatch
     scene.drag_controller.press(hand, hand.scenePos())
     scene.drag_controller.move(enemy_player.scenePos() + QPointF(20, 20))
     scene.drag_controller.release(enemy_player.scenePos() + QPointF(20, 20))
-    scene.usage_selected.emit("choice:1")
+    view.usage_dialog.option_view.select("choice:1")
+    view.usage_dialog.option_view.confirm()
+    qapp.processEvents()
     settle(view)
     assert commands == [{"op": "play_card", "uid": card.uid,
                          "choice": 1, "target": Ref(player=1)}]
@@ -2756,7 +2819,7 @@ def test_player_detail_requires_content_and_single_field_is_compact(qapp, view, 
     view.db.cards[10010151] = F.card(
         10010151, name="单幻境", card_type="field", intensity=3, token=True)
     view.game.state.players[0].fields.append(
-        FieldState(card_id=10010151, intensity=3, shikigami=100101))
+        FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
     view.show_player_detail(0)
     assert len(opened) == 1
     dialog = opened[0]
@@ -2778,8 +2841,8 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
                                text=f"{name}原文。", token=True)
     player = view.game.state.players[0]
     player.fields.extend([
-        FieldState(card_id=10010151, intensity=3, shikigami=100101),
-        FieldState(card_id=10010152, intensity=7, shikigami=100101),
+        FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101),
+        FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=7, shikigami=100101),
     ])
     player.auras.append({
         "block": F.block(when="on_draw"), "once_key": None, "scope": "game",
@@ -2809,7 +2872,7 @@ def test_player_detail_fields_abilities_scroll_and_card_click(qapp, view, monkey
     seen = []
 
     class Detail:
-        def __init__(self, cdef, db, parent):
+        def __init__(self, cdef, db, parent, **_kwargs):
             seen.append((cdef, db, parent))
 
         def exec(self):
@@ -3187,7 +3250,7 @@ def test_field_summon_choice_dialog_horizontal_cards_click_closes(qapp, db, view
     dialog.option_view.confirm(chosen_id)
     qapp.processEvents()
     assert answers == [chosen_id]
-    assert [field.card_id for field in game.current.fields] == [chosen_id]
+    assert [field.card.id for field in game.current.fields] == [chosen_id]
     assert game.state.pending_choice is None
     assert dialog.isHidden()
     assert view.choice_dialog is None
@@ -3458,30 +3521,171 @@ def test_play_method_and_second_target(qapp, db, view):
     assert view.pending_command is None
 
 
-def test_burst_usage_options_render_live_values_without_cost_text(qapp, view, monkeypatch):
+def _subcard_choice_definitions(db):
+    normal_id, burst_id = 10010153, 10010154
+    db.cards[normal_id] = F.card(normal_id, token=True, name="法术", cost=0, level=0)
+    db.cards[burst_id] = F.card(
+        burst_id, token=True, name="箭", card_type="combat", cost=0, level=0,
+        methods=[F.method("burst", energy_cost=3, required=True)])
+    db.cards[10010151] = F.card(
+        10010151, token=True, options=[normal_id, burst_id],
+        options_when={"energy_ge": 3})
+    return 10010151, normal_id, burst_id
+
+
+def test_card_option_preserves_hand_identity_and_runtime_art(qapp, view, monkeypatch):
+    from client.gui.battle import ChoiceDialog
+
+    start(view, mulligan=False)
+    card = view.game.current.hand[0]
+    runtime = {"render": {"power+": 7}, "description_suffix": "（动态展示）", "usage": []}
+    monkeypatch.setattr(view, "hand_info", lambda: {card.uid: runtime})
+    pending = {"kind": "mulligan", "player": 0, "options": [card.uid]}
+
+    dialog = ChoiceDialog(view, pending)
+    option = dialog.option_view.options[0]
+    assert option.answer == card.uid
+    assert option.instance is card
+    assert option.cdef is view.db.cards[card.id]
+    assert option.art_options["display"] == {"power+": 7}
+    assert option.art_options["description_suffix"] == "（动态展示）"
+    dialog.hide()
+    dialog.deleteLater()
+
+
+def test_card_option_resolves_field_form_and_virtual_render_overrides(qapp, db, view):
+    from client.gui.card_options import resolve_card_option
+    from core.model import FieldState
+
+    start(view, mulligan=False)
+    form = CardInstance(uid=880001, id=10010101)
+    view.game.current.shikigami[0].form = form
+    field_card = CardInstance(uid=880002, id=10010102)
+    view.game.current.fields.append(FieldState(card=field_card, intensity=3))
+    for instance in (form, field_card):
+        pending = {"kind": "future_instance_pick", "player": 0, "options": [instance.uid]}
+        option = resolve_card_option(view.game, 0, pending, instance.uid)
+        assert option.instance is instance
+        assert option.cdef is db.cards[instance.id]
+
+    db.cards[10010153] = F.card(10010153, token=True)
+    pending = {"kind": "pick_generate", "player": 0, "options": [10010153]}
+    preview = {"card_id": 10010153, "burst": 3, "frame_variant": "black",
+               "level_color": "#abcdef", "display": {"shield+": 2},
+               "description_suffix": "（预览）"}
+    option = resolve_card_option(view.game, 0, pending, 10010153, preview)
+    assert option.instance is None
+    assert option.cdef is db.cards[10010153]
+    assert option.art_options == {"burst": 3, "frame_variant": "black",
+                                  "level_color": "#abcdef", "display": {"shield+": 2},
+                                  "description_suffix": "（预览）"}
+
+
+def test_subcard_single_option_skips_choice_dialog(qapp, db, view):
+    main_id, _normal_id, _burst_id = _subcard_choice_definitions(db)
+    start(view, mulligan=False)
+    view.game.current.shikigami[0].energy = 2
+    card = F.give(view.game, 0, main_id)
+    view.refresh()
+    settle(view)
+
+    assert len(view.hand_info()[card.uid]["usage"]) == 1
+    assert view.play_card(card.uid)
+    settle(view)
+    assert view.usage_dialog is None
+    assert card in view.game.current.zones["exiled"]
+
+
+def test_subcard_choices_use_derived_cards_and_actual_burst(qapp, db, view, monkeypatch):
+    main_id, normal_id, burst_id = _subcard_choice_definitions(db)
     start(view, mulligan=False)
     view.game.current.shikigami[0].energy = 3
+    card = F.give(view.game, 0, main_id)
+    view.refresh()
+    settle(view)
     seen = []
-    monkeypatch.setattr("client.gui.battle_scene.card_pixmap",
-                        lambda *_args, **kwargs: seen.append(kwargs))
-    options = [
-        {"id": "burst", "label": "爆能2", "cost": 1, "energy": 2,
-         "ok": True, "reason": None},
-        {"id": "burst", "label": "爆能X", "cost": 1, "energy": "X",
-         "ok": True, "reason": None},
-        {"id": "burst", "label": "爆能0", "cost": 1, "energy": 0,
-         "ok": True, "reason": None},
-    ]
-    cdef = F.card(10010151, token=True, methods=[F.method("burst", energy_cost=0)])
-    view.battle_scene.show_usage_options(options, [cdef, cdef, cdef])
-    assert [call["burst"] for call in seen] == [2, 3, 0]
-    labels = [label.toPlainText() for label in view.battle_scene.usage_labels]
-    assert all(not text for text in labels)
-    assert all(not any(word in text for word in ("爆能", "鬼火", "能量"))
-               for text in labels)
+
+    def capture(cdef, _db, **kwargs):
+        if cdef.id in (normal_id, burst_id):
+            seen.append((cdef.id, kwargs.get("burst")))
+        return None
+
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", capture)
+    assert view.play_card(card.uid)
+    dialog = view.usage_dialog
+    assert dialog is not None
+    assert [option.answer for option in dialog.option_view.options] == ["choice:0", "choice:1"]
+    assert [option.cdef.id for option in dialog.option_view.options] == [normal_id, burst_id]
+    assert all(option.instance is None for option in dialog.option_view.options)
+    assert seen == [(normal_id, None), (burst_id, 3)]
 
 
-def test_usage_options_show_all_central_cards_and_reasons(qapp, db, view):
+def test_usage_option_keeps_main_instance_and_live_burst(qapp, view):
+    from client.gui.card_options import usage_card_option
+
+    start(view, mulligan=False)
+    game = view.game
+    card = next(card for card in game.current.hand
+                if view.db.cards[card.id].shikigami == 100101)
+    game.current.shikigami[0].energy = 4
+    usage = {"id": "burst", "card_id": card.id, "energy": "X", "is_burst": True,
+             "ok": True, "reason": None}
+    option = usage_card_option(
+        game, 0, card, usage,
+        {"render": {"power+": 5}, "description_suffix": "（动态）"})
+    assert option.instance is card
+    assert option.cdef is view.db.cards[card.id]
+    assert option.art_options["burst"] == 4
+    assert option.art_options["display"] == {"power+": 5}
+
+    usage.update(energy=0)
+    assert usage_card_option(game, 0, card, usage).art_options["burst"] == 0
+
+
+def test_usage_option_burst_x_uses_replacement_owner_energy(qapp, db, view):
+    from client.gui.card_options import usage_card_option
+
+    card_id = 10010151
+    db.cards[card_id] = F.card(
+        card_id, token=True, methods=[F.method("burst", energy_cost="all")])
+    db.shikigami[199901] = F.shiki(199901, kind="replace")
+    start(view, mulligan=False)
+    game = view.game
+    replacement = game.current.shikigami[0]
+    replacement.id = 199901
+    replacement.ext["replace_owner"] = 100101
+    replacement.energy = 4
+    card = F.give(game, 0, card_id)
+    usage = next(option for option in game.usage_options(0, card)
+                 if option["id"] == "burst")
+
+    option = usage_card_option(game, 0, card, usage)
+    assert option.art_options["burst"] == 4
+    assert option.enabled
+    assert view.play_card(card.uid, usage_id="burst")
+    settle(view)
+    assert replacement.energy == 0
+
+
+def test_card_widget_text_fallback_applies_art_description_suffix(qapp):
+    widget = CardWidget(
+        F.card(10010151, token=True, text="基础文本"), db=None,
+        art_options={"description_suffix": "（追加文本）"})
+    assert widget.text_label.text() == "基础文本（追加文本）"
+    widget.deleteLater()
+
+
+def test_card_choice_view_keeps_text_options(qapp):
+    from client.gui.widgets import CardChoiceView
+
+    choice = CardChoiceView([("灵咒", None, "灵咒\n效果文本")])
+    assert choice.options[0].answer == "灵咒"
+    assert choice.options[0].cdef is None
+    assert choice.option_widgets[0].text() == "灵咒\n效果文本"
+    choice.deleteLater()
+
+
+def test_usage_options_show_all_cards_reasons_and_cancel(qapp, db, view):
     free_option, gated_option = 10010153, 10010154
     db.cards[free_option] = F.card(free_option, token=True, cost=0, level=0)
     db.cards[gated_option] = F.card(gated_option, token=True, cost=1, level=3)
@@ -3494,21 +3698,23 @@ def test_usage_options_show_all_central_cards_and_reasons(qapp, db, view):
     settle(view)
     assert view.play_card(card.uid)
 
-    scene = view.battle_scene
-    assert [item.payload for item in scene.usage_items] == ["choice:0", "choice:1"]
-    assert [item.playable for item in scene.usage_items] == [True, False]
-    assert [item.pos() for item in scene.usage_items] == [QPointF(612, 280), QPointF(808, 280)]
+    dialog = view.usage_dialog
+    options = dialog.option_view.options
+    assert [option.answer for option in options] == ["choice:0", "choice:1"]
+    assert [option.enabled for option in options] == [True, False]
     reason = view.game.usage_options(0, card)[1]["reason"]
-    assert any(reason in label.toPlainText() for label in scene.usage_labels)
+    assert reason in dialog.option_view.reason_labels["choice:1"].text()
     assert not view._inputs_open()
 
     view.cancel_targeting()
-    assert not scene.usage_items
+    assert view.usage_dialog is None
     assert card in view.game.current.hand
     assert view.play_card(card.uid)
-    scene.usage_selected.emit("choice:0")
+    view.usage_dialog.option_view.select("choice:0")
+    view.usage_dialog.option_view.confirm()
+    qapp.processEvents()
     settle(view)
-    assert not scene.usage_items
+    assert view.usage_dialog is None
     assert card not in view.game.current.hand
 
 
@@ -5411,3 +5617,27 @@ def test_early_attack_replaces_combat_zone_in_visual_order(qapp, view, monkeypat
     assert [ref.shikigami for ref, _target in moves[:2]] == [1, 0]
     assert moves[0][1] != combat_position(view.battle_scene.layout_width, False)
     assert moves[1][1] == combat_position(view.battle_scene.layout_width, False)
+
+
+def test_deck_invocation_summary_dialog_for_both_players(qapp, view, monkeypatch):
+    from client.gui.battle import DeckInvocationDialog
+
+    start(view, mulligan=False)
+    for pi, count in ((0, 2), (1, 1)):
+        for card in view.game.state.players[pi].deck[:count]:
+            card.invocations.append({"name": "梦魇"})
+    opened = []
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: opened.append(dialog))
+    for pi in (0, 1):
+        view._scene_read_detail("deck_back", ("deck_back", pi, 0))
+        assert view.battle_scene.deck_backs[("deck_back", pi, 0)].acceptedMouseButtons() & Qt.RightButton
+    assert len(opened) == 2
+    assert all(type(dialog) is DeckInvocationDialog for dialog in opened)
+    assert [[label.text() for label in dialog.findChildren(QLabel)]
+            for dialog in opened] == [["梦魇 × 2"], ["梦魇 × 1"]]
+
+    opened.clear()
+    for card in view.game.state.players[0].deck:
+        card.invocations.clear()
+    view._scene_read_detail("deck_back", ("deck_back", 0, 0))
+    assert opened == []

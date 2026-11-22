@@ -771,9 +771,8 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     "你的符咒牌获得[瞬发]"）。
     grant_method：命中牌获得一个使用方式（方式模板 dict：id/energy_cost/card_type/
     target/power/shield/effects/text；读取点 engine._card_methods——同 id 命中卡牌
-    自带方式时键级合并、text 作后缀追加（觉醒·御馔津的符咒爆能免疫追加），无自带
-    方式时整段授予（觉醒·御馔津重构前的御馔津基础能力同型），出牌方式合法性/
-    展示同源）。
+    自带方式时键级合并、text 作后缀追加（觉醒·御馔津向真实箭牌追加爆能免疫），无自带
+    方式时整段授予，出牌方式合法性/展示同源）。
     power/shield 为战斗牌数值通道（combat_card_stats 读取时叠加到战力/一次性护甲）：
     可叠加——多次授予数值累加（与 keywords 的集合语义不同）。
     power_ext/shield_ext：数值改从控制者 PlayerState.ext[key] 读取（心技一体"本局
@@ -832,8 +831,7 @@ def card_aura(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
     if self_damage_on_play:
         aura["self_damage_on_play"] = int(self_damage_on_play)  # 使用时自伤（火照之路）
     if grant_method is not None:
-        # 授予使用方式（御馔津"符咒牌都具有'[爆能3]：转化为战斗牌…'"——方式模板
-        # dict，读取点 engine._card_methods；scope="ability" 随能力离场/觉醒换绑）
+        # 授予使用方式；读取点 engine._card_methods，scope="ability" 随能力离场/觉醒换绑。
         aura["grant_method"] = dict(grant_method)
     if require_holder_form:
         aura["require_holder_form"] = True
@@ -1142,7 +1140,9 @@ def switch_form(game, ctx, *, targets: list[Ref], into: int) -> None:
         s = pl.shikigami[ref.shikigami]
         if not s.in_play or s.form is None:
             continue
-        inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空实例（仅载体）
+        inst = CardInstance(
+            uid=game.state.next_uid, id=cdef.id,
+            appearance_source=game._appearance_source_id(ctx))  # 凭空实例（仅载体）
         game.state.next_uid += 1
         game._attach_form(pl, ref.shikigami, inst, cdef)
         game._settle(f"【形态】{game.db.shikigami[s.id].name} 的形态切换为【{cdef.name}】")
@@ -1330,7 +1330,9 @@ def generate(game, ctx, *, targets: list[Ref], shikigami: int | str = "self",
             inst = ctx.card.model_copy(deep=True, update={
                 "uid": game.state.next_uid, "generated": True, "hand_seq": 0})
         else:
-            inst = CardInstance(uid=game.state.next_uid, id=cid, generated=True)
+            inst = CardInstance(
+            uid=game.state.next_uid, id=cid, generated=True,
+            appearance_source=game._appearance_source_id(ctx))
         game.state.next_uid += 1
         if damage_boost:
             inst.mods["damage_boost"] = (int(inst.mods.get("damage_boost", 0))
@@ -1469,7 +1471,8 @@ def replace_cards(game, ctx, *, targets: list[Ref], shikigami: int | str = "self
             game._log(f"{p.name} 的【{game.db.cards[c.id].name}】被替换")
             game.move_card(p, c, "graveyard")
             cid = game.rng.choice(pool)
-            inst = CardInstance(uid=game.state.next_uid, id=cid)
+            inst = CardInstance(uid=game.state.next_uid, id=cid,
+                                      appearance_source=c.appearance_source or c.id)
             game.state.next_uid += 1
             game.move_card(p, inst, zone)
             game._materialize(p, inst, game.db.cards[cid])
@@ -1498,7 +1501,8 @@ def transform_card(game, ctx, *, targets: list[Ref], card_id: int, into: int,
             break
         if inst.id != int(card_id):
             continue
-        new = CardInstance(uid=game.state.next_uid, id=int(into))
+        new = CardInstance(uid=game.state.next_uid, id=int(into),
+                                   appearance_source=inst.appearance_source or inst.id)
         game.state.next_uid += 1
         hand[idx] = new
         game._materialize(p, new, game.db.cards[int(into)])
@@ -1866,7 +1870,7 @@ def field_op(game, ctx, *, targets: list[Ref], side: str = "self",
         elif action == "grant_keyword":
             if keyword and keyword not in ph.keywords:
                 ph.keywords.append(keyword)
-                game._log(f"{p.name} 的幻境【{game.db.cards[ph.card_id].name}】"
+                game._log(f"{p.name} 的幻境【{game.db.cards[ph.card.id].name}】"
                           f"获得了[{keyword}]")
         else:
             raise ValueError(f"未知 field_op action: {action}")
@@ -1905,7 +1909,6 @@ def summon_field(game, ctx, *, targets: list[Ref], card: int | None = None,
     engine._cmd_choose；候选仅一张时不挂起直接召唤）。shikigami="self" 解析为
     来源式神 id。intensity：覆写召唤耐久（觉醒·辉夜姬增强"耐久都为1"；缺省按牌面）。
     """
-    from core.model import CardInstance
     if card is not None:
         cdefs = [game.db.cards[int(card)]]
     else:
@@ -1925,7 +1928,9 @@ def summon_field(game, ctx, *, targets: list[Ref], card: int | None = None,
         if pick == "choose":
             if len(pool) > 1:
                 game._open_field_summon_pick(
-                    ctx.controller, [c.id for c in pool], intensity=intensity)
+                    ctx.controller, [c.id for c in pool], intensity=intensity,
+                    source=ctx.source,
+                    appearance_source=game._appearance_source_id(ctx))
                 return  # 挂起等 choose 作答（_run_block_steps 续跑后续步骤）
             cdefs = pool  # 候选仅一张：无需选择，直接召唤
         elif pick == "all":
@@ -1935,10 +1940,9 @@ def summon_field(game, ctx, *, targets: list[Ref], card: int | None = None,
     for cdef in cdefs:
         if cdef.card_type != "field":
             raise ValueError(f"summon_field 目标【{cdef.name}】不是幻境牌")
-        inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空实例（仅载体，不进区域）
-        game.state.next_uid += 1
-        game._summon_field(ctx.controller, inst, cdef, ctx.source, reason="效果召唤",
-                           intensity_override=intensity)
+        game._summon_field(ctx.controller, None, cdef, ctx.source, reason="效果召唤",
+                           intensity_override=intensity,
+                           appearance_source=game._appearance_source_id(ctx))
 
 
 @action("redirect_to_field")
@@ -1966,7 +1970,7 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
         for x in p.fields:
             if x is ph:
                 break
-            if x.card_id == ph.card_id:
+            if x.card.id == ph.card.id:
                 return
     if ph is None and field_shikigami is not None:
         if field_shikigami == "self":
@@ -1976,7 +1980,7 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
         else:
             sid = int(field_shikigami)
         ph = next((x for x in p.fields if x.shikigami == sid
-                   and (field_card is None or x.card_id == int(field_card))), None)
+                   and (field_card is None or x.card.id == int(field_card))), None)
         if ph is None:
             return  # 该式神（指定牌）的幻境不在场：无人代承
     ev = (ctx.event or {}).get("damage")
@@ -1999,7 +2003,7 @@ def redirect_to_field(game, ctx, *, targets: list[Ref],
             return
         ev.amount -= amt
     idx = p.fields.index(ph)
-    game._log(f"【{game.db.cards[ph.card_id].name}】代为承受 {amt} 点伤害（耐久降低）")
+    game._log(f"【{game.db.cards[ph.card.id].name}】代为承受 {amt} 点伤害（耐久降低）")
     game._change_field_intensity(ctx.controller, idx, -amt, ev.source, "改降耐久")
 
 
@@ -2049,30 +2053,24 @@ def field_rebound(game, ctx, *, targets: list[Ref],
                   lose_ability: bool = True) -> None:
     """幻境"被消灭时，将此牌回手并失去此能力"（荒海；targets 忽略）：挂
     on_before_field_destroy 的幻境能力块（消灭前触发、幻境仍在队）。
-    同名幻境牌移回手牌——优先墓地最后一张同名牌（使用本体），找不到则凭空生成；
-    lose_ability 时实例 mods.disabled_abilities 登记触发块在 def.abilities 的
-    下标（经 ctx.block 对象身份定位）——下次召唤起该能力不再注册（收集器跳过）。"""
-    from core.model import CardInstance
+    场上原牌移回手牌；lose_ability 时其实例 mods.disabled_abilities 登记触发块在
+    def.abilities 的下标（经 ctx.block 对象身份定位）——下次召唤起该能力不再注册
+    （收集器跳过）。"""
     ph = ctx.field
     if ph is None:
         raise ValueError("field_rebound 须挂幻境能力块（on_before_field_destroy）")
     p = game.state.players[ctx.controller]
     mods: dict = {}
     if lose_ability and ctx.block is not None:
-        disabled = [i for i, b in enumerate(game.db.cards[ph.card_id].abilities)
+        disabled = [i for i, b in enumerate(game.db.cards[ph.card.id].abilities)
                     if b is ctx.block]
         if disabled:
             mods["disabled_abilities"] = disabled
-    inst = next((c for c in reversed(p.graveyard) if c.id == ph.card_id), None)
-    if inst is not None:
-        if mods:
-            inst.mods["disabled_abilities"] = mods["disabled_abilities"]
-        game.move_card(p, inst, "hand")
-    else:
-        inst = CardInstance(uid=game.state.next_uid, id=ph.card_id, mods=mods)
-        game.state.next_uid += 1
-        game.move_card(p, inst, "hand")
-    game._log(f"【{game.db.cards[ph.card_id].name}】回到{p.name}的手牌"
+    inst = ph.card
+    if mods:
+        inst.mods["disabled_abilities"] = mods["disabled_abilities"]
+    game.move_card(p, inst, "hand")
+    game._log(f"【{game.db.cards[ph.card.id].name}】回到{p.name}的手牌"
               + ("（已失去回手能力）" if mods else ""))
 
 
@@ -2512,7 +2510,9 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
     cdef = game.db.cards[cid]
     if not game._play_condition_met(p, cdef):
         return  # [条件] 使用前提：自动使用同检（福满乾坤）
-    inst = CardInstance(uid=game.state.next_uid, id=cid)  # 凭空生成，不进入任何区域
+    inst = CardInstance(
+        uid=game.state.next_uid, id=cid,
+        appearance_source=game._appearance_source_id(ctx))  # 凭空生成，不进入任何区域
     game.state.next_uid += 1
     game._log(f"{game.db.shikigami[s.id].name} 的倒计时自动使用了【{cdef.name}】")
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
@@ -2534,10 +2534,11 @@ def recast_recorded(game, ctx, *, targets: list[Ref]) -> None:
 @action("auto_use")
 def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
              inherit_target: bool = False, from_hand: bool = False,
-             delayed: bool = False) -> None:
+             delayed: bool = False, origin_id: int | None = None) -> None:
     """凭空生成指定卡牌并免费自动使用（流霰"对目标使用一张'雪球'"；targets 忽略）。
 
     不耗鬼火、不视作从手牌使用、用后进墓地、play_from=void、triggered=auto，
+    带 options 的引导主牌自动选择首个法术后代，origin_id 保留主牌 id。
     照常 emit on_card_played（recast_recorded 同管线）。inherit_target=True：
     不另选目标，以本效果的卡牌选择目标（ctx.chosen）作为其使用目标（目标继承
     流霰目标，无视该牌自身目标限制）。目前仅支持法术牌（效果块结算）与战斗牌；
@@ -2550,7 +2551,8 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
     兜底立即执行。
 
     from_hand=True（流霰 20191212"自动对其使用手牌中所有'雪球'"）：改为从手牌
-    移出全部同名牌逐张免费使用——不耗鬼火/不占瞬发位、用后进墓地、
+    移出全部同名牌逐张免费使用；引导主牌先放逐并生成默认法术后代，子牌带 origin_id。
+    不耗鬼火/不占瞬发位、用后进墓地、
     play_from="hand"（计入"从手牌使用"记账 snowball_used_game，定案(1a)）、
     逐张独立结算；手牌无同名牌时空操作（定案(1b)）。
     """
@@ -2565,13 +2567,18 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
     cdef = game.db.cards[int(card_id)]
+    if not from_hand and cdef.options and cdef.card_type != "reinforce":
+        origin_id = int(cdef.id) if origin_id is None else origin_id
+        card_id = cdef.options[0]
+        cdef = game.db.cards[int(card_id)]
     if cdef.card_type == "combat":
         # 战斗牌凭空再次使用（胧月无眠"攻击后随机消灭一个你的幻境并再次使用此牌"）：
         # 不耗鬼火/不占出击次数，以来源式神发起完整战斗牌事件流程；递归深度由
         # 可消灭幻境数天然限制（无幻境时数据侧以 step condition 截断）
         if ctx.source is None or ctx.source.shikigami is None:
             raise ValueError("auto_use 战斗牌需要来源式神")
-        inst = CardInstance(uid=game.state.next_uid, id=int(card_id))
+        inst = CardInstance(uid=game.state.next_uid, id=int(card_id), origin_id=origin_id,
+                                    appearance_source=game._appearance_source_id(ctx))
         game.state.next_uid += 1
         game._resolve_combat_card(game.state.players[ctx.source.player],
                                   ctx.source.shikigami, inst, cdef, None, [])
@@ -2582,18 +2589,31 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
         return  # [条件] 使用前提：自动使用同检
     chosen = list(ctx.chosen or []) if inherit_target else []
     if from_hand:
-        for inst in [c for c in p.hand if c.id == int(card_id)]:
-            p.hand.remove(inst)
-            game._log(f"自动使用了手牌的【{cdef.name}】")
+        for source in [c for c in p.hand if c.id == int(card_id)]:
+            inst = source
+            played_cdef = cdef
+            if cdef.options and cdef.card_type != "reinforce":
+                sub = game.db.cards[cdef.options[0]]
+                sub_origin = int(cdef.id) if origin_id is None else origin_id
+                inst = CardInstance(uid=game.state.next_uid, id=sub.id,
+                                    origin_id=sub_origin,
+                                    appearance_source=source.appearance_source or source.id)
+                game.state.next_uid += 1
+                game._remove_from_zone(p, source)
+                p.zones["exiled"].append(source)
+                game.move_card(p, inst, "hand", reason="generate")
+                played_cdef = sub
+            game._remove_from_zone(p, inst)
+            game._log(f"自动使用了手牌的【{played_cdef.name}】")
             game._affected_stack.append({"controller": ctx.controller, "refs": []})
             try:
-                marker = game._emit_before_card_play(ctx.controller, inst, cdef, "spell",
+                marker = game._emit_before_card_play(ctx.controller, inst, played_cdef, "spell",
                                                      play_from="hand")
                 if marker["nullified"]:  # 被无效化：跳过效果、入墓地、不发使用事件
-                    game._log(f"【{cdef.name}】的使用被无效化")
+                    game._log(f"【{played_cdef.name}】的使用被无效化")
                     game.move_card(p, inst, "graveyard")
                     continue
-                game._resolve_block(game._played_block(p, cdef, inst, None),
+                game._resolve_block(game._played_block(p, played_cdef, inst, None),
                                     ExecContext(controller=ctx.controller,
                                                 source=ctx.source, card=inst,
                                                 chosen=chosen,
@@ -2604,11 +2624,12 @@ def auto_use(game, ctx, *, targets: list[Ref], card_id: int,
                 game._clear_play_delayed(
                     game.state.players[ctx.source.player].shikigami[ctx.source.shikigami])
             game.move_card(p, inst, "graveyard")
-            game._account_card_played(p, cdef)  # 从手牌使用：计入 tags 记账
-            game._emit_card_played(ctx.controller, inst.uid, cdef, affected,
+            game._account_card_played(p, played_cdef, inst)  # 从手牌使用：计入 tags 记账
+            game._emit_card_played(ctx.controller, inst.uid, played_cdef, affected,
                                    play_from="hand", triggered="auto", chosen=chosen)
         return
-    inst = CardInstance(uid=game.state.next_uid, id=int(card_id))  # 凭空生成，不进任何区域
+    inst = CardInstance(uid=game.state.next_uid, id=int(card_id), origin_id=origin_id,
+                                    appearance_source=game._appearance_source_id(ctx))  # 凭空生成，不进任何区域
     game.state.next_uid += 1
     game._materialize(p, inst, cdef)  # 生成点统一快照
     game._log(f"凭空自动使用了【{cdef.name}】")
@@ -2662,7 +2683,7 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
                     inherit_chosen: list[Ref] | None = None,
                     emit_extra: dict | None = None,
                     method=None,
-                    inherit_inst=None) -> bool:
+                    inherit_inst=None, appearance_source=None) -> bool:
     """凭空生成 cdef 的复制并自动结算（不耗鬼火/瞬发/替代方式），用后入墓地、
     发 on_card_played（play_from="void"，triggered="auto"）。
 
@@ -2682,7 +2703,13 @@ def _auto_cast_copy(game, controller: int, cdef, source: Ref | None, *,
     p = game.state.players[controller]
     if cdef.play_condition and not game._play_condition_met(p, cdef):  # 投影校验，拒绝不结算
         return False
-    inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空生成，不进入任何区
+    if inherit_inst is not None:
+        appearance_source = inherit_inst.appearance_source or inherit_inst.id
+    elif appearance_source is None:
+        appearance_source = game._appearance_source_id(
+            ExecContext(controller=controller, source=source))
+    inst = CardInstance(  # 凭空生成，不进入任何区
+        uid=game.state.next_uid, id=cdef.id, appearance_source=appearance_source)
     game.state.next_uid += 1
     if inherit_inst is not None:
         inst.mods = dict(inherit_inst.mods)  # 实例修饰照搬（已展示/失去弹回等）
@@ -2778,7 +2805,8 @@ def use_card_copy(game, ctx, *, targets: list[Ref], card_id: int) -> None:
     """
     cdef = game.db.cards[card_id]
     if cdef.card_type != "combat":
-        _auto_cast_copy(game, ctx.controller, cdef, ctx.source)
+        _auto_cast_copy(game, ctx.controller, cdef, ctx.source,
+                        appearance_source=game._appearance_source_id(ctx))
         return
     if ctx.source is None or ctx.source.shikigami is None:
         return
@@ -2787,7 +2815,9 @@ def use_card_copy(game, ctx, *, targets: list[Ref], card_id: int) -> None:
     if not p.shikigami[si].in_play:
         return  # 来源式神不在场无法使用战斗牌复制
     from core.model import CardInstance
-    inst = CardInstance(uid=game.state.next_uid, id=card_id)  # 凭空生成，不进入任何区
+    inst = CardInstance(
+        uid=game.state.next_uid, id=card_id,
+        appearance_source=game._appearance_source_id(ctx))  # 凭空生成，不进入任何区
     game.state.next_uid += 1
     game._affected_stack.append({"controller": ctx.controller, "refs": []})
     try:
@@ -2825,7 +2855,8 @@ def spell_echo_recast(game, ctx, *, targets: list[Ref]) -> None:
     if cdef.play_condition and not game._play_condition_met(p, cdef):  # 投影校验过不了就跳过
         return
     game._log(f"{game.db.shikigami[s.id].name} 的法术回响自动使用了「{cdef.name}」")
-    if _auto_cast_copy(game, ctx.controller, cdef, ctx.source):
+    if _auto_cast_copy(game, ctx.controller, cdef, ctx.source,
+                        appearance_source=game._appearance_source_id(ctx)):
         game._clear_play_delayed(s)  # "本次使用期间"延迟能力的窗口随自动使用结束
 
 
@@ -3887,7 +3918,8 @@ def echo_event_card(game, ctx, *, targets: list[Ref]) -> None:
             caster = Ref(player=ep, shikigami=ci)
     from core.model import CardInstance
     p = game.state.players[ctx.controller]
-    inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空生成，不进任何区域
+    inst = CardInstance(uid=game.state.next_uid, id=cdef.id,
+                                  appearance_source=src_inst.appearance_source or src_inst.id)  # 凭空生成，不进任何区域
     game.state.next_uid += 1
     game._materialize(p, inst, cdef)  # 生成点统一快照
     chosen = [caster] if (caster is not None and cdef.target.kind == "choose") else []
@@ -4023,7 +4055,9 @@ def random_play_form(game, ctx, *, targets: list[Ref]) -> None:
         cdef = game.db.cards[game.rng.choice(pool)]
         if not game._play_condition_met(p, cdef):
             continue  # [条件] 使用前提：自动使用同检
-        inst = CardInstance(uid=game.state.next_uid, id=cdef.id)  # 凭空生成，不进入任何区域
+        inst = CardInstance(
+            uid=game.state.next_uid, id=cdef.id,
+            appearance_source=game._appearance_source_id(ctx))  # 凭空生成，不进入任何区域
         game.state.next_uid += 1
         game._materialize(p, inst, cdef)  # 生成点统一快照
         game._log(f"{game.db.shikigami[s.id].name} 随机使用了【{cdef.name}】")
@@ -4434,7 +4468,8 @@ def transform_hand_card(game, ctx, *, targets: list[Ref], from_id: int,
     for c in [c for c in p.hand if c.id == int(from_id)]:
         mods = {k: v for k, v in c.mods.items() if k != "_mat"}
         game.move_card(p, c, "exiled")
-        inst = CardInstance(uid=game.state.next_uid, id=int(into_id))
+        inst = CardInstance(uid=game.state.next_uid, id=int(into_id),
+                                  appearance_source=c.appearance_source or c.id)
         game.state.next_uid += 1
         game.move_card(p, inst, "hand")
         game._materialize(p, inst, game.db.cards[inst.id])  # 生成点统一快照
@@ -4600,22 +4635,13 @@ def inv_transfer_on_defeat(game, ctx, *, targets: list[Ref], name: str) -> None:
 
 @action("cast_ledger")
 def cast_ledger(game, ctx, *, targets: list[Ref], ext: str = "talisman_ledger") -> None:
-    """按牌手 ext 账本依次对目标凭空使用每种记录卡牌的基础效果块（奉祝之愿
-    "出击时对被攻击的式神使用每种本局游戏御馔津使用过的符咒牌"；targets =
-    出击目标式神）。
-
-    非真实出牌：不耗鬼火/不发出牌事件/不入墓不计账（_account_card_played 不覆盖
-    凭空使用）；逐 id 结算该卡 effects 块，chosen=targets——选择目标合法性不再
-    校验（裁决10：驱魔符对无形态目标也能用并使其获得'受伤即气绝'）；按能力
-    来源结算（is_ability=True：目标帷幕不取消本次效果）。
-    """
+    """按账本首次记录顺序，对目标真实自动使用各主牌默认的法术后代。"""
     ledger = game.state.players[ctx.controller].ext.get(ext) or []
-    for cid in ledger:
-        cdef = game.db.cards[int(cid)]
-        game._log(f"对被攻击的式神使用【{cdef.name}】（账本凭空使用）")
-        sub = ExecContext(controller=ctx.controller, source=ctx.source,
-                          chosen=list(targets), is_ability=True)
-        game._resolve_block(cdef.effects, sub)
+    cast_ctx = ExecContext(controller=ctx.controller, source=ctx.source,
+                           chosen=list(targets))
+    for cid in list(ledger):
+        auto_use(game, cast_ctx, targets=targets, card_id=int(cid),
+                 inherit_target=True, origin_id=int(cid))
 
 
 @action("redirect_to_invocation")
@@ -4639,7 +4665,7 @@ def redirect_to_invocation(game, ctx, *, targets: list[Ref], name: str) -> None:
     for x in p.fields:
         if x is ph:
             break
-        if x.card_id == ph.card_id:
+        if x.card.id == ph.card.id:
             return  # 首个同名生效：靠后的不改结
     if not any(x is ph for x in p.fields):
         return  # 来源幻境已离场
@@ -4651,7 +4677,7 @@ def redirect_to_invocation(game, ctx, *, targets: list[Ref], name: str) -> None:
         return
     ev.amount = 0  # 终止伤害（裁决15）
     vs = game.state.players[vic.player].shikigami[vic.shikigami]
-    game._log(f"【{game.db.cards[ph.card_id].name}】：{amt} 点伤害改为结附 "
+    game._log(f"【{game.db.cards[ph.card.id].name}】：{amt} 点伤害改为结附 "
               f"{amt} 个灵咒【{name}】（{game.db.shikigami[vs.id].name}）")
     game.attach_invocation(str(name), player=ctx.controller, source=ctx.source,
                            target=vic, count=amt)
@@ -4824,11 +4850,15 @@ def pick_generate(game, ctx, *, targets: list[Ref], pool: list[int],
         game._log("没有可生成的牌（线索已全部获得过）")
         return
     if len(options) > 1 and zone == "hand":
-        game._open_pick_generate(ctx.controller, options, unique_ext)
+        game._open_pick_generate(
+            ctx.controller, options, unique_ext,
+            appearance_source=game._appearance_source_id(ctx))
         return
     cid = options[0]
     cdef = game.db.cards[cid]
-    inst = CardInstance(uid=game.state.next_uid, id=cid, generated=True)
+    inst = CardInstance(
+            uid=game.state.next_uid, id=cid, generated=True,
+            appearance_source=game._appearance_source_id(ctx))
     game.state.next_uid += 1
     game._materialize(p, inst, cdef)  # 生成点统一快照
     game.move_card(p, inst, zone, reason="generate")

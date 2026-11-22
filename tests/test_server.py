@@ -736,7 +736,7 @@ def test_turn_timeout_field_summon_pick_random_choose(db):
         room._cancel_timer()  # 防 0.05s 计时器二次超时循环换手干扰断言
         assert g.state.pending_choice is None
         assert len(p0.fields) == 1  # 随机选择：对应幻境已直接召唤
-        assert p0.fields[0].card_id in (10010161, 10010162)
+        assert p0.fields[0].card.id in (10010161, 10010162)
         assert g.state.active == 1 and g.state.turn > turn  # 常规超时收尾完成
         assert any(m.get("type") == "notice" and "随机选择" in m.get("text", "")
                    for m in ws0.messages)
@@ -986,13 +986,18 @@ def test_hand_privacy_visual_event_has_no_card_identity_for_opponent(db):
 
 
 def test_pending_choice_sanitized_for_opponent():
-    """联机信息隐藏：pending_choice 的可检视牌仅选择方可见，其余视角抹除为占位。"""
+    """联机信息隐藏：pending_choice 的可检视牌与展示覆写仅选择方可见。"""
     from server.room import sanitize_state
     payload = {"players": [{"zones": {}}, {"zones": {}}],
                "pending_choice": {"kind": "deck_top_pick", "player": 0,
-                                  "options": [11, 12, 13]}}
-    assert sanitize_state(payload, 0)["pending_choice"]["options"] == [11, 12, 13]
-    assert sanitize_state(payload, 1)["pending_choice"]["options"] == [0, 0, 0]
+                                  "options": [11, 12, 13],
+                                  "previews": [{"card_id": 10010101, "burst": 3}]}}
+    owner = sanitize_state(payload, 0)["pending_choice"]
+    opponent = sanitize_state(payload, 1)["pending_choice"]
+    assert owner["options"] == [11, 12, 13]
+    assert owner["previews"] == [{"card_id": 10010101, "burst": 3}]
+    assert opponent["options"] == [0, 0, 0]
+    assert "previews" not in opponent
 
 
 def test_sanitize_hides_secret_delayed_chosen():
@@ -2057,3 +2062,21 @@ def test_websocket_rejects_invalid_machine_id(server, db, value):
     reply = client.recv_until("joined", "error")
     assert reply["type"] == "error" and "machine_id" in reply["reason"]
     client.ws.close()
+
+
+def test_deck_invocation_summary_is_public_without_revealing_cards(db):
+    async def go():
+        room, ws0, ws1 = await _started_room(db)
+        for pi, count in ((0, 2), (1, 1)):
+            for card in room.game.state.players[pi].deck[:count]:
+                card.invocations.append({"name": "梦魇"})
+        await room.broadcast_state()
+        for ws in (ws0, ws1):
+            payload = [m for m in ws.messages if m["type"] == "state"][-1]["payload"]
+            assert payload["deck_invocations"] == [{"梦魇": 2}, {"梦魇": 1}]
+            assert any(all(card["id"] == 0 for card in player["zones"]["deck"])
+                       for player in payload["players"])
+        await room.resync(room.conns[0])
+        payload = [m for m in ws0.messages if m["type"] == "state"][-1]["payload"]
+        assert payload["deck_invocations"] == [{"梦魇": 2}, {"梦魇": 1}]
+    run(go())

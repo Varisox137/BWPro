@@ -19,7 +19,7 @@ import time
 from core.engine import Game, IllegalAction
 from core.model import GameConfig
 from core.setup import new_game
-from client.presentation import hand_cards_info
+from client.presentation import deck_invocation_counts, hand_cards_info
 from db import deckcode
 from db.deck import STANDARD_RULES
 from server import protocol
@@ -76,6 +76,7 @@ def sanitize_state(payload: dict, viewer: int) -> dict:
     if pending is not None and pending.get("player") != viewer:
         # 结算中交互选择（青灯夜谈）：可检视牌内容仅选择方可见，其余视角以占位 uid 抹除
         pending["options"] = [0] * len(pending.get("options", []))
+        pending.pop("previews", None)
     # 非公开日志/明细（改进②）：state 负载内嵌的完整 log/settle_log/timeline 按
     # 可见性对齐过滤（"o" 键/log_vis/settle_vis，见 Game._log/_settle），vis 列表
     # 本身不下发（否则泄露各行归属）。调度详细/通用行也由引擎按所属方分别标记。
@@ -808,6 +809,8 @@ class Room:
             # 己方手牌实时信息（使用方式枚举/数值段等，引擎求值结果随状态下发，
             # 远程客户端不重复实现规则计算；仅含己方手牌，键为 uid）
             payload["hand_info"] = hand_cards_info(self.game, viewer)
+            payload["deck_invocations"] = [deck_invocation_counts(self.game, pi)
+                                           for pi in (0, 1)]
             opponent = self.conns[1 - c.seat]
             await c.send(protocol.state(
                 payload, vlog, timer=timer, settle=vsettle,
@@ -830,6 +833,8 @@ class Room:
         viewer = self.seat_to_player[conn.seat]
         payload = sanitize_state(base, viewer)
         payload["hand_info"] = hand_cards_info(self.game, viewer)  # 同 broadcast_state
+        payload["deck_invocations"] = [deck_invocation_counts(self.game, pi)
+                                       for pi in (0, 1)]
         opponent = self.conns[1 - conn.seat]
         await conn.send(protocol.state(
             payload,

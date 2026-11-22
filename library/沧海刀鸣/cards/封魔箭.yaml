@@ -1,0 +1,16 @@
+type: 战斗
+name: 封魔箭
+level: 2
+description: '[[眩晕]]一个敌方式神并使其本回合#ll变为0，御馔津对其发起攻击。'
+shikigami: 御馔津
+power+: 1
+shield+: 1
+token: true
+version_date: '20200928'
+id: '10040754'
+artwork:
+  images:
+  - path: 10040754.png
+    scale: 0.711
+    offset_y: -96
+rarity: R

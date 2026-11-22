@@ -1,0 +1,13 @@
+type: 法术
+name: 丰穗
+level: 1
+rarity: R
+description: 选择一张御馔津的符咒牌置入手牌，御馔津获得3#nl。
+shikigami: 御馔津
+version_date: '20200928'
+id: '10040702'
+artwork:
+  images:
+  - path: 10040702.png
+    scale: 0.747
+    offset_y: -84

@@ -1,0 +1,17 @@
+type: 式神
+name: 御馔津
+faction: 青岚
+power: 3
+health: 4
+description: '[[充能]]。御馔津的符咒牌都具有‘[[爆能3]]：转化为战斗牌且改为攻击任一敌方式神’。'
+id: '100407'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100407.png
+    scale: 0.711
+    offset_y: -76
+portrait:
+  scale: 4.54
+  offset_x: -27
+  offset_y: 37

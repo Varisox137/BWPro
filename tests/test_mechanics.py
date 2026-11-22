@@ -6,7 +6,7 @@ import pytest
 
 from core import targets as targets_mod
 from core.engine import IllegalAction
-from core.model import FieldState, Ref, TempGrant
+from core.model import CardInstance, FieldState, Ref, TempGrant
 from tests import factories as F
 from tests.factories import CHOOSE_ENEMY, give, move, pass_turns, play
 
@@ -2892,7 +2892,7 @@ def _field(db, cid, *, intensity=3, sid=100101, abilities=None, steps=None,
 
 
 def test_field_play_summons_field(db, make_game):
-    """规范第一条：幻境牌使用后本体入墓地并"召唤幻境"入队——缺省队尾、
+    """规范第一条：幻境牌使用后原牌由场上幻境持有、不入墓地——缺省队尾、
     field_front 标记者队首。"""
     _field(db, 10010151, intensity=3)
     _field(db, 10010152, intensity=2)
@@ -2901,13 +2901,13 @@ def test_field_play_summons_field(db, make_game):
     pa = g.state.players[0]
     pa.orb = 9
     play(g, 0, 10010151)
-    assert [ph.card_id for ph in pa.fields] == [10010151]
+    assert [ph.card.id for ph in pa.fields] == [10010151]
     assert pa.fields[0].intensity == 3
     play(g, 0, 10010152)
-    assert [ph.card_id for ph in pa.fields] == [10010151, 10010152]   # 队尾
+    assert [ph.card.id for ph in pa.fields] == [10010151, 10010152]   # 队尾
     play(g, 0, 10010153)
-    assert [ph.card_id for ph in pa.fields] == [10010153, 10010151, 10010152]  # 队首
-    assert len(pa.graveyard) == 3                                       # 本体入墓地
+    assert [ph.card.id for ph in pa.fields] == [10010153, 10010151, 10010152]  # 队首
+    assert not pa.graveyard                                            # 原牌仍在场上
 
 
 def test_field_enter_effects_after_summon(db, make_game):
@@ -2929,8 +2929,8 @@ def test_field_intensity_loss_on_player_damage(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=5, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=5, shikigami=100101))
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))
     assert pa.fields[0].intensity == 1                # 3 - 2（只扣队首）
     assert pa.fields[1].intensity == 5
@@ -2938,7 +2938,7 @@ def test_field_intensity_loss_on_player_damage(db, make_game):
         < g.history.index("on_player_damaged")
     g.deal_to_player(0, 4, Ref(player=1, shikigami=0))   # 超过剩余耐久：修正为 -1
     g._drain_queue()
-    assert [ph.card_id for ph in pa.fields] == [10010152]   # 归零消灭
+    assert [ph.card.id for ph in pa.fields] == [10010152]   # 归零消灭
     assert pa.fields[0].intensity == 5
     assert "on_field_destroyed" in g.history
 
@@ -2949,7 +2949,7 @@ def test_field_destroy_flow(db, make_game):
     _field(db, 10010151, intensity=2, abilities=[F.block(when="on_draw")])
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=2, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=2, shikigami=100101))
     g.state.temp_grants.append(TempGrant(
         block=F.block(F.Step(op="gain_shield", amount=2,
                              target=T(kind="all", pool="self_player")),
@@ -2974,11 +2974,11 @@ def test_field_queue_order_after_destroy(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=2, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=2, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=3, shikigami=100101))
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))
     g._drain_queue()
-    assert [ph.card_id for ph in pa.fields] == [10010152]
+    assert [ph.card.id for ph in pa.fields] == [10010152]
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))
     assert pa.fields[0].intensity == 1   # 新队首承担（3 - 2）
 
@@ -2995,7 +2995,7 @@ def test_field_damage_source_attribution(db, make_game):
     s0 = pa.shikigami[0]
     s0.keywords.append("lifesteal")
     pa.health = 20
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
     g.emit("on_draw", player=0, count=1)
     g._drain_queue()
     assert pb.health == 28
@@ -3058,7 +3058,7 @@ def test_field_merge_base_keeps_last(db, make_game):
     assert len(pa.fields) == 1                      # 仅一个：不合并
     play(g, 0, 10010152)                            # 第二个：新建实体后延时合并
     assert len(pa.fields) == 1
-    assert pa.fields[0].card_id == 10010152         # 保留队列最后一个
+    assert pa.fields[0].card.id == 10010152         # 保留队列最后一个
     assert pa.fields[0].intensity == 5              # 耐久设置为总和（3 + 2）
     assert not pa.fields[0].extra_abilities         # 未觉醒：不合并能力块
     assert pa.ext["field_summon_ids"] == [10010151, 10010152]
@@ -3076,7 +3076,7 @@ def test_field_intensity_boost_on_summon(db, make_game):
     inst.mods["intensity_boost"] = 5
     g.apply({"op": "play_card", "uid": inst.uid})
     assert pa.fields[0].intensity == 8              # 3 + 5
-    assert pa.fields[0].mods["intensity_boost"] == 5  # mods 快照随实体
+    assert pa.fields[0].card.mods["intensity_boost"] == 5  # 原牌 mods 随场上实体
 
 
 def test_field_op_intensity_all_friendly(db, make_game):
@@ -3086,8 +3086,8 @@ def test_field_op_intensity_all_friendly(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=2, shikigami=100101))
     cid = 10010153
     db.cards[cid] = F.card(cid, token=True, steps=[
         F.Step(op="field_op", side="self", pick="all", action="intensity", amount=3)])
@@ -3103,18 +3103,18 @@ def test_field_op_destroy_max_intensity_and_random(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa, pb = g.state.players
-    pb.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pb.fields.append(FieldState(card_id=10010152, intensity=6, shikigami=100101))
+    pb.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pb.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=6, shikigami=100101))
     cid = 10010153
     db.cards[cid] = F.card(cid, token=True, steps=[
         F.Step(op="field_op", side="enemy", pick="max_intensity", action="destroy")])
     pa.orb = 9
     play(g, 0, cid)
     g._drain_queue()
-    assert [ph.card_id for ph in pb.fields] == [10010151]   # 最大者（6）被消灭
+    assert [ph.card.id for ph in pb.fields] == [10010151]   # 最大者（6）被消灭
     assert "on_field_destroyed" in g.history
-    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=1, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=1, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=1, shikigami=100101))
     cid2 = 10010154
     db.cards[cid2] = F.card(cid2, token=True, steps=[
         F.Step(op="field_op", side="self", pick="random", action="destroy")])
@@ -3163,18 +3163,18 @@ def test_redirect_to_field(db, make_game):
     pa = g.state.players[0]
     s0 = pa.shikigami[0]                            # 3/4
     # 耐久足够：4 伤全改降
-    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=10, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 4, Ref(player=1, shikigami=0))
     assert s0.health == 4 and pa.fields[0].intensity == 6
     # 耐久不足：幻境承受完整 5 伤并消灭，溢出 2 不再由式神承受
     pa.fields.clear()
-    pa.fields.append(FieldState(card_id=10010152, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=3, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 5, Ref(player=1, shikigami=0))
     g._drain_queue()
     assert pa.fields == [] and s0.health == 4
     # max_amount 封顶：8 伤只改降 5
     s0.health = 4
-    pa.fields.append(FieldState(card_id=10010153, intensity=20, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010153, id=10010153), intensity=20, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 8, Ref(player=1, shikigami=0))
     assert pa.fields[0].intensity == 15 and s0.health == 1  # 4 - 3
 
@@ -3187,8 +3187,8 @@ def test_field_redirect_within_parallel_aoe(real_game):
     for shiki in pb.shikigami:
         shiki.level = 3
     play(g, 0, 10030308)
-    pa.fields.append(FieldState(card_id=10030301, intensity=20, shikigami=100303))
-    pb.fields.append(FieldState(card_id=10030407, intensity=30, shikigami=100304))
+    pa.fields.append(FieldState(card=CardInstance(uid=10030301, id=10030301), intensity=20, shikigami=100303))
+    pb.fields.append(FieldState(card=CardInstance(uid=10030407, id=10030407), intensity=30, shikigami=100304))
     g.state.active = 1
     g.emit("on_turn_start", player=1)
     g._drain_queue()
@@ -3228,8 +3228,8 @@ def test_boost_change_positive_only(db, make_game):
     _field(db, 10010152, intensity=5)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=15, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=5, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=15, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=5, shikigami=100101))
     g._change_field_intensity(0, 0, 3, None, "效果")     # 自身获得 3 → +2 = 5
     assert pa.fields[0].intensity == 20
     g._change_field_intensity(0, 1, 3, None, "效果")     # 其他幻境获得：不触发
@@ -3241,25 +3241,30 @@ def test_boost_change_positive_only(db, make_game):
 
 def test_field_rebound_loses_ability(db, make_game):
     """荒海"被消灭时，将此牌回手并失去此能力"（field_rebound 挂
-    on_before_field_destroy）：同名牌回手且实例登记 disabled_abilities——
+    on_before_field_destroy）：场上原牌回手且实例登记 disabled_abilities——
     再次召唤后该能力不再注册（不再回手）。"""
     _field(db, 10010151, intensity=2, abilities=[
         F.block(F.Step(op="field_rebound"), when="on_before_field_destroy")])
     g = make_game()
     pa = g.state.players[0]
     pa.orb = 9
-    play(g, 0, 10010151)
+    original = give(g, 0, 10010151)
+    g.apply({"op": "play_card", "uid": original.uid})
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))   # 归零消灭
     g._drain_queue()
     assert pa.fields == []
-    back = next(c for c in pa.hand if c.id == 10010151)  # 本体（墓地）回手
+    back = next(c for c in pa.hand if c.id == 10010151)  # 场上原牌回手
+    assert back is original
     assert back.mods["disabled_abilities"] == [0]
+    assert not any(c.id == 10010151 for c in pa.graveyard)
     g.apply({"op": "play_card", "uid": back.uid})        # 再次使用召唤
     assert len(pa.fields) == 1
     g.deal_to_player(0, 2, Ref(player=1, shikigami=0))   # 再次归零
     g._drain_queue()
     assert pa.fields == []
     assert not any(c.id == 10010151 for c in pa.hand)    # 已失去回手能力
+    assert sum(c.id == 10010151 for c in pa.graveyard) == 1
+    assert pa.graveyard[-1] is original
 
 
 def test_draw_until_level_sum(db, make_game):
@@ -3327,8 +3332,8 @@ def test_conditional_power_pseudo_keywords(db, make_game):
     g._refresh_stat_auras()
     assert s0.eff_power == 3                    # 无幻境不加
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=1, shikigami=100101))
     g._refresh_stat_auras()
     assert s0.eff_power == 4                    # 有幻境 +1
     s0.keywords.remove("power_if_field")
@@ -3359,7 +3364,7 @@ def test_friendly_field_condition(db, make_game):
     g.emit("on_draw", player=0, count=1)
     assert not g.queue                          # 无幻境不触发
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
     g.emit("on_draw", player=0, count=1)
     assert len(g.queue) == 1
     g._drain_queue()
@@ -3372,7 +3377,7 @@ def test_health_floor_one(db, make_game):
     g = make_game()
     pa = g.state.players[0]
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=20, shikigami=100101,
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=20, shikigami=100101,
                                 keywords=["health_floor_one"]))
     pa.health = 5
     g.deal_to_player(0, 10, Ref(player=1, shikigami=0))
@@ -3461,7 +3466,7 @@ def test_summon_field_direct_and_random(db, make_game):
     pa = g.state.players[0]
     pa.orb = 9
     play(g, 0, cid)
-    assert [ph.card_id for ph in pa.fields] == [10010161]
+    assert [ph.card.id for ph in pa.fields] == [10010161]
     assert pa.fields[0].intensity == 4
     assert "on_summon_field" in g.history
     # pick=random 候选池 = db 中该式神全部非 token 幻境牌（token dummy 不入池）
@@ -3472,7 +3477,7 @@ def test_summon_field_direct_and_random(db, make_game):
         F.Step(op="summon_field", shikigami=100101, pick="random")])
     play(g, 0, cid2)
     assert len(pa.fields) == 2
-    assert pa.fields[-1].card_id == 10010162        # 候选只有它（10010161 为 token）
+    assert pa.fields[-1].card.id == 10010162        # 候选只有它（10010161 为 token）
 
 
 def test_deck_top_play(db, make_game):
@@ -3490,7 +3495,7 @@ def test_deck_top_play(db, make_game):
     with pytest.raises(IllegalAction):          # 无彼岸归航：不可用牌库顶
         g.apply({"op": "play_card", "uid": top.uid, "play_from": "deck"})
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101,
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=10, shikigami=100101,
                                 keywords=["deck_top_play"]))
     second = pa.deck[1]
     with pytest.raises(IllegalAction):          # 非牌库顶：不可用
@@ -3511,8 +3516,8 @@ def test_field_grant_keyword_veil(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=2, shikigami=100101))
     cid = 10010153
     db.cards[cid] = F.card(cid, token=True, steps=[
         F.Step(op="field_op", side="self", pick="all", action="grant_keyword",
@@ -3582,8 +3587,8 @@ def test_awaken_swaps_ability_pseudo_keywords(db, make_game):
     s0 = pa.shikigami[0]
     assert "power_if_field" in s0.perm_keywords       # 先天关键字按永久类别入列
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=1, shikigami=100101))
     g._refresh_stat_auras()
     assert s0.eff_power == 4                          # 基础：有幻境 +1
     play(g, 0, cid)                                   # 觉醒
@@ -3613,9 +3618,9 @@ def test_field_merge_awakened_merges_abilities_dedup(db, make_game):
     play(g, 0, 10010152)                            # 不同名：合并其能力块
     assert len(pa.fields) == 1
     ph = pa.fields[0]
-    assert ph.card_id == 10010152                   # 保留最后一个
+    assert ph.card.id == 10010152                   # 保留最后一个
     assert ph.intensity == 8                        # 6 + 2
-    assert ph.mods["merged_ability_ids"] == [10010151]
+    assert ph.card.mods["merged_ability_ids"] == [10010151]
     assert len(ph.extra_abilities) == 1             # 10010151 的能力块并入
     g._drain_queue()
     hand_before = len(pa.hand)
@@ -3637,7 +3642,7 @@ def test_conditional_keywords_friendly_field(db, make_game):
     cdef = db.cards[cid]
     assert "fast" not in g._card_keywords(pa, cdef, inst)   # 无幻境：不授予
     _field(db, 10010151)
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
     assert "fast" in g._card_keywords(pa, cdef, inst)       # 有幻境：授予
 
 
@@ -3674,7 +3679,7 @@ def test_field_intensity_dynamic_amount(db, make_game):
         when="on_turn_start", condition={"active": "self"})])
     g = make_game()
     pa, pb = F.battle_setup(g)
-    pa.fields.append(FieldState(card_id=10010151, intensity=8, shikigami=100101,
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=8, shikigami=100101,
                                 keywords=["piercing"]))
     move(g, 1, 0)                                   # 敌方战斗区有人
     pb.shikigami[0].shield = 2
@@ -3689,7 +3694,7 @@ def test_field_intensity_dynamic_amount(db, make_game):
             {"op": "damage", "amount": 2,
              "target": {"kind": "all", "pool": "enemy_player"}}]),
         when="on_turn_start", condition={"active": "self"})])
-    pa.fields.append(FieldState(card_id=10010152, intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=3, shikigami=100101))
     g.emit("on_turn_start", player=0)
     g._drain_queue()
     assert pb.health == 22                          # 28 - 3×2
@@ -3751,7 +3756,7 @@ def test_real_combat_player_damage_gains_field_intensity(real_game, awakened):
     pa, pb = F.battle_setup(g, {0: 2})
     if awakened:
         play(g, 0, 10030406)
-    pa.fields.append(FieldState(card_id=10030401, intensity=2, shikigami=100304))
+    pa.fields.append(FieldState(card=CardInstance(uid=10030401, id=10030401), intensity=2, shikigami=100304))
     g.deal_to_player(1, 1, Ref(player=0, shikigami=0), kind="combat")
     g._drain_queue()
     assert pa.fields[0].intensity == 3
@@ -3842,7 +3847,7 @@ def test_summon_field_all_and_intensity_override(db, make_game):
     g = make_game()
     pa, _ = F.battle_setup(g, {0: 1})
     play(g, 0, cid)
-    assert sorted(ph.card_id for ph in pa.fields) == [10010161, 10010162]
+    assert sorted(ph.card.id for ph in pa.fields) == [10010161, 10010162]
     assert all(ph.intensity == 1 for ph in pa.fields)   # 耐久覆写
     cond = {"field_summon_distinct_ge": {"count": 2, "shikigami": "self"}}
     holder = Ref(player=0, shikigami=0)
@@ -3865,7 +3870,7 @@ def test_redirect_to_field_by_shikigami(db, make_game):
     g = make_game()
     pa, pb = F.battle_setup(g)
     _field(db, 10010151, intensity=10)
-    pa.fields.append(FieldState(card_id=10010151, intensity=10, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=10, shikigami=100101))
     s1 = pa.shikigami[1]
     hp0 = s1.health
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 7, Ref(player=1, shikigami=0))
@@ -3889,8 +3894,8 @@ def test_field_op_pick_others(db, make_game):
     _field(db, 10010152, intensity=2)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=2, shikigami=100101))
     g.emit("on_draw", player=0, count=1)
     g._drain_queue()
     assert pa.fields[0].intensity == 3              # 来源自身不加
@@ -3909,8 +3914,8 @@ def test_stat_aura_field_count_stats(db, make_game):
     play(g, 0, cid)
     s0 = pa.shikigami[0]
     assert s0.eff_power == 3                        # 无幻境
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010151, intensity=1, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=1, shikigami=100101))
     g._refresh_stat_auras()
     assert s0.eff_power == 5                        # 2 幻境 +2
     assert s0.max_health == 6
@@ -3943,12 +3948,12 @@ def test_field_merge_trigger_on_ability_enter(db, make_game):
     _field(db, 10010152, intensity=2)
     g = make_game()
     pa = g.state.players[0]
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=2, shikigami=100101))
     g._register_ability_countdown(0, 0)     # 能力进场（发 on_ability_enter）
     g._drain_queue()
     assert len(pa.fields) == 1
-    assert pa.fields[0].card_id == 10010152
+    assert pa.fields[0].card.id == 10010152
     assert pa.fields[0].intensity == 5
 
 
@@ -3970,9 +3975,9 @@ def test_field_merge_awaken_pick_all(db, make_game):
     play(g, 0, cid)
     assert len(pa.fields) == 1                      # 合并为单实体
     ph = pa.fields[0]
-    assert ph.card_id == 10010165                   # 保留最后召唤（id 升序最大者）
+    assert ph.card.id == 10010165                   # 保留最后召唤（id 升序最大者）
     assert ph.intensity == 5                        # 五次各 1 耐久
-    assert ph.mods["merged_ability_ids"] == [10010161, 10010162, 10010163, 10010164]
+    assert ph.card.mods["merged_ability_ids"] == [10010161, 10010162, 10010163, 10010164]
     assert len(ph.extra_abilities) == 4             # 其余四种能力块全部并入
     assert pa.ext["field_summon_ids"] == list(range(10010161, 10010166))
 
@@ -3989,7 +3994,7 @@ def test_after_shield_priority_redirect_beats_transfer(db, make_game):
     pa, pb = g.state.players
     s0 = pa.shikigami[0]
     pb.shield = 0
-    pa.fields.append(FieldState(card_id=10010151, intensity=4, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=4, shikigami=100101))
     s0.ext["damage_redirects"] = [{"to": "player"}]     # 血蝠之盾挂账（优先级 2 段）
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 3, Ref(player=1, shikigami=0))
     assert pa.fields[0].intensity == 1              # 3 点全额改降幻境耐久
@@ -4014,8 +4019,8 @@ def test_redirect_first_same_name_only(db, make_game):
     pa, pb = g.state.players
     s0 = pa.shikigami[0]
     pb.shield = 0
-    pa.fields.append(FieldState(card_id=10010151, intensity=3, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010151, intensity=5, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=3, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=5, shikigami=100101))
     g.deal_to_shikigami(Ref(player=0, shikigami=0), 2, Ref(player=1, shikigami=0))
     assert [ph.intensity for ph in pa.fields] == [1, 5]     # 仅首个同名代受
     assert s0.health == 4
@@ -4046,8 +4051,8 @@ def test_redirect_split_by_damage_category(db, make_game):
     g = make_game()
     pa, pb = g.state.players
     pb.shield = 0
-    pa.fields.append(FieldState(card_id=10010161, intensity=5, shikigami=100101))
-    pa.fields.append(FieldState(card_id=10010162, intensity=5, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010161, id=10010161), intensity=5, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010162, id=10010162), intensity=5, shikigami=100101))
     # 己方其他式神受非战斗伤害 → 新月之哀代受
     g.deal_to_shikigami(Ref(player=0, shikigami=1), 3, Ref(player=1, shikigami=0))
     assert [ph.intensity for ph in pa.fields] == [2, 5]
@@ -4065,9 +4070,9 @@ def test_field_op_enemy_targeted_excludes_veil(db, make_game):
     _field(db, 10010152)
     g = make_game()
     pa, pb = g.state.players
-    pb.fields.append(FieldState(card_id=10010151, intensity=9, shikigami=100101,
+    pb.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=9, shikigami=100101,
                                 keywords=["veil"]))
-    pb.fields.append(FieldState(card_id=10010152, intensity=2, shikigami=100101))
+    pb.fields.append(FieldState(card=CardInstance(uid=10010152, id=10010152), intensity=2, shikigami=100101))
     cid = 10010153
     db.cards[cid] = F.card(cid, token=True, steps=[
         F.Step(op="field_op", side="enemy", pick="max_intensity", action="destroy")])
@@ -4075,7 +4080,7 @@ def test_field_op_enemy_targeted_excludes_veil(db, make_game):
     play(g, 0, cid)
     g._drain_queue()
     # 帷幕者（耐久 9 最大）免被指：消灭的是耐久 2 的
-    assert [ph.card_id for ph in pb.fields] == [10010151]
+    assert [ph.card.id for ph in pb.fields] == [10010151]
     cid2 = 10010154
     db.cards[cid2] = F.card(cid2, token=True, steps=[
         F.Step(op="field_op", side="enemy", pick="all", action="intensity",
@@ -4124,7 +4129,7 @@ def test_field_threshold_within_turn_start_block(db, make_game):
     g = make_game()
     pa, pb = g.state.players
     pb.shield = 0
-    pa.fields.append(FieldState(card_id=10010151, intensity=26, shikigami=100101))
+    pa.fields.append(FieldState(card=CardInstance(uid=10010151, id=10010151), intensity=26, shikigami=100101))
     # 其他途径获得耐久（26 + 10 + 2 = 38 达阈值）：不自毁、不造成伤害
     g._change_field_intensity(0, 0, 10, None, "效果")
     g._drain_queue()
@@ -4195,7 +4200,7 @@ def test_field_summon_pick_choice(db, make_game):
     orb_now, hand_before = pa.orb, len(pa.hand)
     g.apply({"op": "choose", "player": 0, "choice": 10010162})
     assert g.state.pending_choice is None
-    assert [ph.card_id for ph in pa.fields] == [10010162]
+    assert [ph.card.id for ph in pa.fields] == [10010162]
     assert pa.fields[0].intensity == 5              # 卡牌标注值
     assert pa.orb == orb_now                        # 直接召唤不耗火
     assert len(pa.hand) == hand_before + 1          # 挂起块的抽牌步续跑
@@ -4206,7 +4211,7 @@ def test_field_summon_pick_choice(db, make_game):
     pa2.orb = 9
     play(g2, 0, cid)
     assert g2.state.pending_choice is None
-    assert [ph.card_id for ph in pa2.fields] == [10010161]
+    assert [ph.card.id for ph in pa2.fields] == [10010161]
 
 
 def _redirect_block(exclude_sid: int):

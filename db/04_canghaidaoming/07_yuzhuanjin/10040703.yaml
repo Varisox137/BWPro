@@ -21,4 +21,4 @@ versions:
           condition: {attacker_shikigami: self, victim_kind: shikigami}
           steps:
             - {op: cast_ledger, target: {kind: context, key: victim}}
-      text: "出击时可以指定攻击任一敌方式神。出击时对被攻击的式神使用每种本局游戏御馔津使用过的符咒牌。"
+      text: "[追猎]。出击时对被攻击的式神使用每种本局游戏御馔津使用过的符咒牌。"

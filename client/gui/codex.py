@@ -30,6 +30,7 @@ class ShikigamiCodexView(QWidget):
         self.page_index = 0
         self.page_count = 0
         self.card_widgets: list[CardWidget] = []
+        self._all_card_widgets: list[CardWidget] = []
         self.overview_card = None
         self.loading_label = QLabel(self)
         self.loading_label.setObjectName("loadingLabel")
@@ -277,6 +278,7 @@ class ShikigamiCodexView(QWidget):
         self.overview_card.setMinimumSize(420, 560)
         self.overview_card.count_label.hide()
         self.overview_card.clicked.connect(lambda _cdef: self.show_shikigami_cards())
+        self.overview_card.detail_clicked.connect(self.show_card_appearance)
         self.overview_card_layout.addWidget(self.overview_card, 1, Qt.AlignCenter)
 
     def _current_cards(self) -> list:
@@ -287,45 +289,56 @@ class ShikigamiCodexView(QWidget):
 
     def _clear_cards(self) -> None:
         while self.card_layout.count():
-            item = self.card_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+            self.card_layout.takeAt(0)
+        for widget in self._all_card_widgets:
+            widget.deleteLater()
+        self._all_card_widgets = []
+        self.card_widgets = []
 
     def _render_cards(self) -> None:
         try:
             self._clear_cards()
-            self.card_widgets = []
             cards = self._current_cards()
             self.page_count = max(1, (len(cards) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE)
             self.page_index = max(0, min(self.page_index, self.page_count - 1))
-            shown = cards[self.page_index * CARD_PAGE_SIZE:
-                          (self.page_index + 1) * CARD_PAGE_SIZE]
-            self._start_loading(len(shown))
+            self._start_loading(len(cards))
             art_context = {}
-            for cdef in shown:
+            for cdef in cards:
                 widget = CardWidget(cdef, editable=False, db=self.edb, art_context=art_context)
                 widget.count_label.hide()
                 widget.clicked.connect(self.show_card_detail)
                 widget.detail_clicked.connect(self.show_card_appearance)
-                self.card_widgets.append(widget)
+                self._all_card_widgets.append(widget)
                 self._loading_tick()
-            fill_card_row(self.card_layout, self.card_widgets)
-            self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
-            self.card_previous.setEnabled(self.page_index > 0)
-            self.card_next.setEnabled(self.page_index < self.page_count - 1)
+            self._show_card_page()
         finally:
             self._finish_loading()
+
+    def _show_card_page(self) -> None:
+        while self.card_layout.count():
+            self.card_layout.takeAt(0)
+        for widget in self._all_card_widgets:
+            widget.hide()
+        start = self.page_index * CARD_PAGE_SIZE
+        self.card_widgets = self._all_card_widgets[start:start + CARD_PAGE_SIZE]
+        fill_card_row(self.card_layout, self.card_widgets)
+        for widget in self.card_widgets:
+            widget.show()
+        self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
+        self.card_previous.setEnabled(self.page_index > 0)
+        self.card_next.setEnabled(self.page_index < self.page_count - 1)
 
     def turn_card_page(self, direction: int) -> None:
         page = max(0, min(self.page_index + direction, self.page_count - 1))
         if page != self.page_index:
             self.page_index = page
-            self._render_cards()
+            self._show_card_page()
 
     def show_card_appearance(self, cdef) -> None:
         if CardAppearanceDialog(cdef, self.edb, self).exec():
-            self._render_cards()
+            self.select_shikigami(self.selected_sid)
+            if self.stack.currentWidget() is self.home_page:
+                self._render_cards()
 
     def show_card_detail(self, cdef) -> None:
         CardDetailDialog(cdef, self.edb, self).exec()

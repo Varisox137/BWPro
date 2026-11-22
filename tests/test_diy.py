@@ -380,7 +380,7 @@ def test_field_moves_and_leave_combat_grants_natural_one_shots(diy_db):
     g = _game(diy_db)
     pa, yan = g.state.players[0], g.state.players[0].shikigami[0]
     F.play(g, 0, 11010108)
-    assert pa.fields[0].card_id == 11010108
+    assert pa.fields[0].card.id == 11010108
     assert pa.fields[0].intensity == 9
     assert pa.combat_index == 0
     g._retreat(pa, 0)

@@ -9,42 +9,22 @@ versions:
       rarity: SR
       level: 3
       target: {kind: choose, pool: enemy_shikigami}
-      methods:
-        # 符咒自带[爆能3]转化战斗牌（同 10040701 注释——单卡自带；本卡身材
-        # +3/+1，@20201015 快照削弱为 +1/+1）
-        - id: burst
-          energy_cost: 3
-          card_type: combat
-          target: {kind: choose, pool: enemy_shikigami, battle: true}
-          power: 3
-          shield: 1
-          text: "爆能使用时变为战斗牌『破魔箭』：+3/+1"
+      options: [10040755, 10040756]
+      options_when: {energy_ge: 3}
       effects:
-        # 使一个敌方式神本回合获得'对其造成伤害的式神或卡牌获得[暴击]和[贯通]'
-        # （crit_pierce_mark 旗标，式神宿主半回合清除、再贴幂等：伤害事件
-        # "造成/受到伤害开始时"按受伤者标记置位事件[暴击][贯通]属性——反击伤害
-        # 受伤者是攻击方而天然不生效；效果伤害命中带标记者同样获得——裁决(4)；
-        # tests/test_pack04_mech.py test_crit_pierce_mark_damage_start 同型）
+        # crit_pierce_mark：仅来源式神的非反击战斗攻击命中带标记者时获得[暴击][贯通]。
         steps:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}
-      text: "使一个敌方式神本回合获得‘对其造成伤害的式神或卡牌获得[暴击]和[贯通]’。"
-    - date: 20201015  # 平衡性调整：爆能转化战斗牌加成 +3/+1→+1/+1（raw 该条无
-      # 引号文本行，仅调整说明；重构后转化身材数据在本卡自带 methods 中，本快照
-      # 只改方式 power——100407/10040706 能力侧同日期快照已随重构删除；text 沿用）
+      text: "使一个敌方式神本回合获得‘对其攻击的式神获得[暴击]和[贯通]’。"
+    - date: 20201015  # 平衡性调整：破魔箭加成 +3/+1→+1/+1，数据落在真实子牌 10040756。
       card_type: spell
       subtype: talisman
       rarity: SR
       level: 3
       target: {kind: choose, pool: enemy_shikigami}
-      methods:
-        - id: burst
-          energy_cost: 3
-          card_type: combat
-          target: {kind: choose, pool: enemy_shikigami, battle: true}
-          power: 1
-          shield: 1
-          text: "爆能使用时变为战斗牌『破魔箭』：+1/+1"
+      options: [10040755, 10040756]
+      options_when: {energy_ge: 3}
       effects:
         steps:
           - {op: bump_ext, key: crit_pierce_mark, value: 1}
-      text: "使一个敌方式神本回合获得‘对其造成伤害的式神或卡牌获得[暴击]和[贯通]’。"
+      text: "使一个敌方式神本回合获得‘对其攻击的式神获得[暴击]和[贯通]’。"

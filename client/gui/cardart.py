@@ -21,7 +21,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from client.gui import portrait
-from client.gui.card_appearance import card_appearance
+from client.gui.card_appearance import definition_appearance
 from client.gui.portrait import library_root
 from client.gui.renderlog import (
     clear_render_log_dedup, log_cache_failure, log_render_failure)
@@ -781,7 +781,8 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
                       cache_context: dict | None = None,
                       height: int | None = None,
                       description_suffix: str | None = None,
-                      image_only: bool = False) -> QPixmap | QImage | None:
+                      image_only: bool = False,
+                      appearance_source: int | None = None) -> QPixmap | QImage | None:
     path = None
     try:
         if cache_context is None:
@@ -801,8 +802,12 @@ def _card_pixmap_impl(cdef, db, library_dir: Path, cache_dir: Path,
         if config:
             selected["frame_variant"] = config.get("frame_variant", "norm")
             selected["description"] = config.get("description")
-        preference = card_appearance(cdef.id)
-        if preference["frame_variant"] != "norm":
+        appearance_def = cdef
+        if appearance_source is not None:
+            appearance_def = (db.cards.get(appearance_source)
+                              or db.shikigami.get(appearance_source) or cdef)
+        preference = definition_appearance(appearance_def)
+        if appearance_source is not None or preference["frame_variant"] != "norm":
             selected["frame_variant"] = preference["frame_variant"]
         if faction_style is not None:
             selected["faction_style"] = faction_style
@@ -872,7 +877,8 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
                 status: str | None = None, cache_context: dict | None = None,
                 height: int | None = None, frame_variant: str | None = None,
                 description_suffix: str | None = None,
-                image_only: bool = False) -> QPixmap | QImage | None:
+                image_only: bool = False,
+                appearance_source: int | None = None) -> QPixmap | QImage | None:
     """按原生高度合成；静态卡面使用磁盘缓存，后台任务可取 QImage。"""
     # BWPDIY 的原生卡图高度即 512，显式请求该尺寸时复用同一份缓存。
     height = None if height == 512 else height
@@ -887,7 +893,7 @@ def card_pixmap(cdef, db, *, library_dir: Path | None = None,
         cdef, db, library_dir or library_root(),
         cache_dir or Path.home() / ".bwpro" / "cardart", display, overrides,
         cache_context=cache_context, height=height, description_suffix=description_suffix,
-        image_only=image_only)
+        image_only=image_only, appearance_source=appearance_source)
 
 
 def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
@@ -895,7 +901,8 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
                   cache_context: dict | None = None, height: int | None = None,
                   disk_cache: bool = False, show_defeated_countdown: bool = True,
                   snapshot: dict | None = None,
-                  image_only: bool = False) -> QPixmap | QImage | None:
+                  image_only: bool = False,
+                  appearance_source: int | None = None) -> QPixmap | QImage | None:
     """以 BWPDIY render_entity 绘制对局小卡；snapshot 固定动画时点的数值。"""
     snapshot = dict(snapshot or {})
     for key in ("power", "health"):
@@ -930,6 +937,13 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         selected = {"artwork": {"images": [art]}}
         if config:
             selected["frame_variant"] = config.get("frame_variant", "norm")
+        appearance_def = source
+        if appearance_source is not None:
+            appearance_def = (db.cards.get(appearance_source)
+                              or db.shikigami.get(appearance_source) or source)
+        preference = definition_appearance(appearance_def)
+        if appearance_source is not None or preference["frame_variant"] != "norm":
+            selected["frame_variant"] = preference["frame_variant"]
         if faction_style is not None:
             selected["faction_style"] = faction_style
         payload = _card_data(source, db, selected)
@@ -981,6 +995,7 @@ def entity_pixmap(shiki, db, *, seat: int | None = None, form=None,
         state = {
             "level": shiki.level,
             "level_color": seat_level_color(seat),
+            "frame_variant": payload.get("frame_variant", "norm"),
             "power": power,
             "health": health,
             "combat_power": snapshot["combat_power"] if snapshot else (

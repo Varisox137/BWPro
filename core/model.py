@@ -192,6 +192,8 @@ class CardInstance(BaseModel):
 
     uid: int
     id: int  # 数据 id
+    origin_id: int | None = None  # 真实子牌对应的主牌数据 id；普通牌为 None
+    appearance_source: int | None = None  # 生成/复制牌的外观来源根 id；由客户端解析本机牌框
     mods: dict[str, Any] = Field(default_factory=dict)  # 如 {"cost_delta": -1}
     hand_seq: int = 0  # 手牌顺序编号（加入手牌时分配；0 表示未分配）
     generated: bool = False  # 对局中生成标记（generate/pick_generate 等生成通道置 True；
@@ -237,18 +239,17 @@ class ExecContext:
 class FieldState(BaseModel):
     """在场幻境实体（幻境机制；幻境牌 card_type="field" 使用后"召唤幻境"入队）。
 
-    所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，跳过 mods.disabled_abilities
+    所属牌手拥有其能力（能力块 = 幻境牌 def 的 abilities，跳过 card.mods.disabled_abilities
     登记的下标——荒海"失去此能力"；外加 extra_abilities 叠加块——辉夜姬觉醒"能力和
     耐久会叠加"合并持多块；在场期间随队列存续生效）；耐久 0 被消灭（耐久变化/消灭
     事件流程见 engine._change_field_intensity）。
     """
 
-    card_id: int  # 幻境牌数据 id（名称/能力块读 db.cards[card_id]）
+    card: CardInstance  # 在场原牌实例；id/mods/uid 均由其持有，离场时同一实例入墓
     intensity: int  # 当前耐久（正整数；牌手受伤时队列首个幻境减少等量耐久，0 = 消灭）
     shikigami: int | None = None  # 所属式神数据 id（= 幻境牌的所属式神；伤害来源归属用：
     # 该式神在场时幻境伤害来源为该式神，否则为无来源伤害——规范"零"条）
-    mods: dict[str, Any] = Field(default_factory=dict)  # 召唤牌实例 mods 快照
-    # （intensity_boost 已于召唤时结算入耐久；disabled_abilities = 被移除的能力块下标）
+    # card.mods.intensity_boost 已于召唤时结算入耐久；disabled_abilities = 被移除的能力块下标
     keywords: list[str] = []  # 幻境实体关键字（召唤时拷贝 CardDef.field_keywords——
     # 帷幕/health_floor_one/deck_top_play 等幻境语义；方圆之备类效果可后续授予入列）
     extra_abilities: list = []  # 叠加合并获得的能力块（EffectBlock 列表，免循环引用不注解）
