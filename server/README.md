@@ -76,7 +76,42 @@ uv run python -m client.log_admin
 
 ## 内网穿透 / 公网联机
 
-可以。服务端以 `--host 0.0.0.0` 监听（默认端口 1037）后：
+### 与 BWPDIY 同机双服务（推荐）
+
+在同一台 Termux Debian 主机上部署联机服务与 BWPDIY Pyodide 在线本地版时，使用两个独立干净仓库副本、两个回环端口和两条 HTTPS 映射，不经过 Nginx 或应用间代理：
+
+```text
+https://bwpro.varisox137.top → HTTPS 隧道 A → 127.0.0.1:1037  BWPro
+https://diy.varisox137.top   → HTTPS 隧道 B → 127.0.0.1:8640  BWPDIY
+```
+
+其中 DIY 子域名仅为示例，实际以花生壳配置为准。分别在两个仓库副本中启动：
+
+```bash
+# BWPro
+BWP_HOST=127.0.0.1 BWP_PORT=1037 ./scripts/termux_server.sh
+
+# BWPDIY（另一仓库副本）
+BWPDIY_PORT=8640 ./scripts/termux_server.sh
+```
+
+隧道 A 必须支持 WebSocket Upgrade，隧道 B 只需支持普通 HTTPS 静态资源访问；两者 TLS 均在映射边缘终止，本机服务不重复配置证书。桌面客户端仍输入 `bwpro.varisox137.top`，浏览器通过 DIY 子域名访问在线本地版；其根地址会跳转至 `/prototype/pyodide/`，BWPro 不配置 `/diy/` 路由。
+
+公网只映射 BWPDIY 的 8640 静态服务，不得暴露正式编辑器 8630/8631、项目目录或读写 API。两个服务独立更新和停止，不共享进程、日志提取码或数据目录。日志运维端仍连接 `https://bwpro.varisox137.top`，不能使用 DIY 子域名。DIY 草稿、卡图与布局仍只存浏览器；BWPro 房间内 DIY 内容同步仍走现有联机协议，不经过在线编辑器服务。
+
+部署后分别进行本机和公网验收（将示例 DIY 域名替换为实际域名）：
+
+```bash
+curl -i http://127.0.0.1:8640/          # 302 到在线本地版
+curl -i http://127.0.0.1:1037/ws        # 普通 GET 返回空体 403
+curl -i https://diy.varisox137.top/     # 公网映射可访问
+```
+
+随后用两个客户端通过 BWPro 子域名完成建房、加入、开局、一个完整回合和断线重连，并验证日志提取码鉴权；用浏览器在 DIY 子域名导出 PNG 并刷新恢复草稿。分别停止任一服务，确认另一服务不受影响。以上命令是验收清单，未实际执行时不得视为公网部署已通过。
+
+### 仅部署 BWPro
+
+服务端也可以 `--host 0.0.0.0` 监听（默认端口 1037）后单独配置穿透：
 
 - **HTTPS 映射（推荐）**：穿透服务"网站应用类型"HTTPS 映射
   （外网 `https://<域名>` → 内网 `127.0.0.1:1037`），支持 WebSocket 透传，
