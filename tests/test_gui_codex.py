@@ -34,6 +34,16 @@ def view(qapp, db):
     qapp.processEvents()
 
 
+@pytest.fixture
+def real_view(qapp, gdb):
+    widget = ShikigamiCodexView(gdb)
+    yield widget
+    widget.close()
+    widget.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    qapp.processEvents()
+
+
 def test_overview_filters_and_shikigami_home(qapp, db, view):
     assert "标准(最新)" in [view.env_combo.itemText(i) for i in range(view.env_combo.count())]
     assert view.pack_combo.itemText(view.pack_combo.findData("001")) == "经典包"
@@ -102,6 +112,8 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     reinforce = F.card(10010221, shikigami=100102, shikigami2=100101,
                        name="协战", card_type="reinforce")
     db.cards[reinforce.id] = reinforce
+    token = F.card(10010151, shikigami=100101, name="衍生", token=True)
+    db.cards[token.id] = token
     events = []
     original_start = view._start_loading
     original_tick = view._loading_tick
@@ -136,7 +148,7 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     assert view.card_widgets[0].cdef.id == 100101
     assert view.card_widgets[0].count_label.isHidden()
     assert view.card_widgets[-1].cdef.id != reinforce.id
-    assert view.page_count == 2
+    assert view.page_count == 3
     loaded_widgets = list(view._all_card_widgets)
     loading_events = list(events)
     view.turn_card_page(1)
@@ -144,8 +156,12 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     assert view._all_card_widgets == loaded_widgets
     assert len(view.card_widgets) == 5
     assert view.card_widgets[-1].cdef.id == reinforce.id
-    assert not view.card_next.isEnabled()
-    view.turn_card_page(-1)
+    assert view.card_next.isEnabled()
+    view.turn_card_page(1)
+    assert [widget.cdef.id for widget in view.card_widgets] == [10010151]
+    assert events == loading_events
+    assert view._all_card_widgets == loaded_widgets
+    view.jump_to_card_group("primary")
     assert view.page_index == 0
 
     seen = []
@@ -154,6 +170,78 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
                         SimpleNamespace(exec=lambda: seen.append(cdef)))
     view.show_card_detail(view.card_widgets[1].cdef)
     assert seen == [view.card_widgets[1].cdef]
+
+
+def test_derived_card_pages_and_group_navigation(qapp, real_view, monkeypatch):
+    view = real_view
+    view.select_shikigami(100121)
+    view.show_shikigami_cards()
+    view.resize(1200, 800)
+    view.show()
+    qapp.processEvents()
+    assert [card.id for card in view._current_card_groups()[1]] == [10012151, 10012199]
+    assert view.page_count == 3
+    assert len(view._all_card_widgets) == 11
+    assert view.card_primary.isVisible() and view.card_derived.isVisible()
+    assert not view.card_primary.isEnabled()
+    assert view.card_derived.isEnabled()
+    view.jump_to_card_group("derived")
+    assert view.page_index == 2
+    assert [card.cdef.id for card in view.card_widgets] == [10012151, 10012199]
+    assert view.card_primary.isEnabled()
+    assert not view.card_derived.isEnabled()
+
+    seen = []
+    monkeypatch.setattr("client.gui.codex.CardDetailDialog",
+                        lambda cdef, *args, **kwargs:
+                        SimpleNamespace(exec=lambda: seen.append(cdef)))
+    view.card_widgets[0].clicked.emit(view.card_widgets[0].cdef)
+    assert seen == [view.edb.cards[10012151]]
+    monkeypatch.setattr("client.gui.codex.CardAppearanceDialog",
+                        lambda *args, **kwargs: SimpleNamespace(exec=lambda: 0))
+    view.card_widgets[1].detail_clicked.emit(view.card_widgets[1].cdef)
+
+    view.jump_to_card_group("primary")
+    assert view.page_index == 0
+    view.select_shikigami(100404)
+    view.show_shikigami_cards()
+    assert len(view._current_card_groups()[1]) == 16
+    assert view.page_count == 6
+    view.jump_to_card_group("derived")
+    assert view.page_index == 2
+
+    for definition in view.pool:
+        view.select_shikigami(definition.id)
+        if not view._current_card_groups()[1]:
+            break
+    else:
+        raise AssertionError("测试数据库应至少有一个无衍生内容的式神")
+    view.show_shikigami_cards()
+    assert view.card_primary.isHidden() and view.card_derived.isHidden()
+
+
+def test_card_page_placeholders_do_not_cover_returning_page(qapp, view):
+    from PySide6.QtWidgets import QWidget
+
+    view.select_shikigami(100101)
+    view.show_shikigami_cards()
+    view.resize(1200, 800)
+    view.show()
+    qapp.processEvents()
+    first_page = list(view.card_widgets)
+    assert len(first_page) == 5
+    view.turn_card_page(1)
+    qapp.processEvents()
+    assert len(view.card_widgets) == 4
+    view.turn_card_page(-1)
+    qapp.processEvents()
+    assert view.card_widgets == first_page
+    assert first_page[4].isVisible()
+    assert not first_page[4].art_label.pixmap().isNull()
+    stray_widgets = [child for child in view.card_area.children()
+                     if isinstance(child, QWidget) and child not in view._all_card_widgets
+                     and child.isVisible()]
+    assert not stray_widgets
 
 
 def test_theme_and_empty_filter(qapp, view):

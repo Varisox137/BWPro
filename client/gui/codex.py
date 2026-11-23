@@ -31,6 +31,8 @@ class ShikigamiCodexView(QWidget):
         self.page_count = 0
         self.card_widgets: list[CardWidget] = []
         self._all_card_widgets: list[CardWidget] = []
+        self._card_pages: list[list[CardWidget]] = []
+        self._derived_start = 0
         self.overview_card = None
         self.loading_label = QLabel(self)
         self.loading_label.setObjectName("loadingLabel")
@@ -118,18 +120,28 @@ class ShikigamiCodexView(QWidget):
         self.card_layout.setSpacing(4)
         home.addWidget(self.card_area, 1)
         pager = QHBoxLayout()
+        self.card_primary = QPushButton("查看主要卡牌")
         self.card_previous = QPushButton("‹")
         self.card_next = QPushButton("›")
-        for button in (self.card_previous, self.card_next):
+        self.card_derived = QPushButton("查看衍生卡牌")
+        for button in (self.card_primary, self.card_previous, self.card_next, self.card_derived):
             button.setObjectName("small")
+        for button in (self.card_previous, self.card_next):
             button.setFixedWidth(52)
+        for button in (self.card_primary, self.card_derived):
+            button.setFixedWidth(112)
+            button.hide()
+        self.card_primary.clicked.connect(lambda: self.jump_to_card_group("primary"))
         self.card_previous.clicked.connect(lambda: self.turn_card_page(-1))
         self.card_next.clicked.connect(lambda: self.turn_card_page(1))
+        self.card_derived.clicked.connect(lambda: self.jump_to_card_group("derived"))
         self.card_page_label = QLabel()
         pager.addStretch(1)
+        pager.addWidget(self.card_primary)
         pager.addWidget(self.card_previous)
         pager.addWidget(self.card_page_label)
         pager.addWidget(self.card_next)
+        pager.addWidget(self.card_derived)
         pager.addStretch(1)
         home.addLayout(pager)
 
@@ -281,57 +293,96 @@ class ShikigamiCodexView(QWidget):
         self.overview_card.detail_clicked.connect(self.show_card_appearance)
         self.overview_card_layout.addWidget(self.overview_card, 1, Qt.AlignCenter)
 
+    def _current_card_groups(self) -> tuple[list, list]:
+        if self.selected_sid not in self.edb.shikigami:
+            return [], []
+        sid = self.selected_sid
+        primary = [self.edb.shikigami[sid]] + buildable_cards(self.edb, sid)
+        derived = sorted([
+            *[card for card in self.edb.cards.values()
+              if card.token and not card.unreleased and card.shikigami == sid],
+            *[entity for entity in self.edb.shikigami.values()
+              if entity.kind != "shikigami" and not entity.unreleased
+              and entity.id // 100 == sid],
+        ], key=lambda definition: definition.id)
+        return primary, derived
+
     def _current_cards(self) -> list:
-        if self.selected_sid is None:
-            return []
-        return [self.edb.shikigami[self.selected_sid]] + buildable_cards(
-            self.edb, self.selected_sid)
+        return [card for group in self._current_card_groups() for card in group]
 
     def _clear_cards(self) -> None:
         while self.card_layout.count():
-            self.card_layout.takeAt(0)
+            item = self.card_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None and widget not in self._all_card_widgets:
+                widget.hide()
+                widget.deleteLater()
         for widget in self._all_card_widgets:
             widget.deleteLater()
         self._all_card_widgets = []
+        self._card_pages = []
+        self._derived_start = 0
         self.card_widgets = []
 
     def _render_cards(self) -> None:
         try:
             self._clear_cards()
-            cards = self._current_cards()
-            self.page_count = max(1, (len(cards) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE)
-            self.page_index = max(0, min(self.page_index, self.page_count - 1))
-            self._start_loading(len(cards))
+            primary, derived = self._current_card_groups()
+            self._derived_start = (len(primary) + CARD_PAGE_SIZE - 1) // CARD_PAGE_SIZE
+            self._start_loading(len(primary) + len(derived))
             art_context = {}
-            for cdef in cards:
-                widget = CardWidget(cdef, editable=False, db=self.edb, art_context=art_context)
-                widget.count_label.hide()
-                widget.clicked.connect(self.show_card_detail)
-                widget.detail_clicked.connect(self.show_card_appearance)
-                self._all_card_widgets.append(widget)
-                self._loading_tick()
+            for group in (primary, derived):
+                group_widgets = []
+                for cdef in group:
+                    widget = CardWidget(
+                        cdef, editable=False, db=self.edb, art_context=art_context)
+                    widget.count_label.hide()
+                    widget.clicked.connect(self.show_card_detail)
+                    widget.detail_clicked.connect(self.show_card_appearance)
+                    group_widgets.append(widget)
+                    self._all_card_widgets.append(widget)
+                    self._loading_tick()
+                for start in range(0, len(group_widgets), CARD_PAGE_SIZE):
+                    self._card_pages.append(group_widgets[start:start + CARD_PAGE_SIZE])
+            self.page_count = len(self._card_pages)
+            self.page_index = max(0, min(self.page_index, self.page_count - 1))
             self._show_card_page()
         finally:
             self._finish_loading()
 
     def _show_card_page(self) -> None:
         while self.card_layout.count():
-            self.card_layout.takeAt(0)
+            item = self.card_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None and widget not in self._all_card_widgets:
+                widget.hide()
+                widget.deleteLater()
         for widget in self._all_card_widgets:
             widget.hide()
-        start = self.page_index * CARD_PAGE_SIZE
-        self.card_widgets = self._all_card_widgets[start:start + CARD_PAGE_SIZE]
+        self.card_widgets = (self._card_pages[self.page_index]
+                             if self._card_pages else [])
         fill_card_row(self.card_layout, self.card_widgets)
         for widget in self.card_widgets:
             widget.show()
         self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
         self.card_previous.setEnabled(self.page_index > 0)
         self.card_next.setEnabled(self.page_index < self.page_count - 1)
+        has_derived = self._derived_start < self.page_count
+        self.card_primary.setVisible(has_derived)
+        self.card_derived.setVisible(has_derived)
+        self.card_primary.setEnabled(has_derived and self.page_index >= self._derived_start)
+        self.card_derived.setEnabled(has_derived and self.page_index < self._derived_start)
 
     def turn_card_page(self, direction: int) -> None:
         page = max(0, min(self.page_index + direction, self.page_count - 1))
         if page != self.page_index:
             self.page_index = page
+            self._show_card_page()
+
+    def jump_to_card_group(self, group: str) -> None:
+        target = 0 if group == "primary" else self._derived_start
+        if 0 <= target < self.page_count:
+            self.page_index = target
             self._show_card_page()
 
     def show_card_appearance(self, cdef) -> None:
