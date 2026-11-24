@@ -1,7 +1,7 @@
 """式神录：可筛选总览、单式主页、五卡浏览与单卡详情。"""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QStackedWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from client.deckbuilder import available_shikigami, buildable_cards
 from client.gui.appearance import CardAppearanceDialog
 from client.gui.loading import LoadingIndicator
-from client.gui.widgets import CardDetailDialog, CardWidget, fill_card_row
+from client.gui.widgets import CardDetailDialog, CardWidget
 from db.envs import available_env_dates, env_label, parse_env_input
 from db.packs import pack_names_for
 
@@ -115,9 +115,7 @@ class ShikigamiCodexView(QWidget):
         top.addWidget(self.name_label, 1)
         home.addLayout(top)
         self.card_area = QWidget()
-        self.card_layout = QHBoxLayout(self.card_area)
-        self.card_layout.setContentsMargins(0, 0, 0, 0)
-        self.card_layout.setSpacing(4)
+        self.card_area.installEventFilter(self)
         home.addWidget(self.card_area, 1)
         pager = QHBoxLayout()
         self.card_primary = QPushButton("查看主要卡牌")
@@ -311,12 +309,6 @@ class ShikigamiCodexView(QWidget):
         return [card for group in self._current_card_groups() for card in group]
 
     def _clear_cards(self) -> None:
-        while self.card_layout.count():
-            item = self.card_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None and widget not in self._all_card_widgets:
-                widget.hide()
-                widget.deleteLater()
         for widget in self._all_card_widgets:
             widget.deleteLater()
         self._all_card_widgets = []
@@ -336,6 +328,7 @@ class ShikigamiCodexView(QWidget):
                 for cdef in group:
                     widget = CardWidget(
                         cdef, editable=False, db=self.edb, art_context=art_context)
+                    widget.setMinimumSize(0, 0)
                     widget.count_label.hide()
                     widget.clicked.connect(self.show_card_detail)
                     widget.detail_clicked.connect(self.show_card_appearance)
@@ -351,19 +344,14 @@ class ShikigamiCodexView(QWidget):
             self._finish_loading()
 
     def _show_card_page(self) -> None:
-        while self.card_layout.count():
-            item = self.card_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None and widget not in self._all_card_widgets:
-                widget.hide()
-                widget.deleteLater()
         for widget in self._all_card_widgets:
             widget.hide()
         self.card_widgets = (self._card_pages[self.page_index]
                              if self._card_pages else [])
-        fill_card_row(self.card_layout, self.card_widgets)
         for widget in self.card_widgets:
+            widget.setParent(self.card_area)
             widget.show()
+        self._layout_card_page()
         self.card_page_label.setText(f"第 {self.page_index + 1}/{self.page_count} 页")
         self.card_previous.setEnabled(self.page_index > 0)
         self.card_next.setEnabled(self.page_index < self.page_count - 1)
@@ -372,6 +360,41 @@ class ShikigamiCodexView(QWidget):
         self.card_derived.setVisible(has_derived)
         self.card_primary.setEnabled(has_derived and self.page_index >= self._derived_start)
         self.card_derived.setEnabled(has_derived and self.page_index < self._derived_start)
+
+    def _layout_card_page(self) -> None:
+        """卡图等高，卡框中线对齐五个等距槽位；末页保持相同位置。"""
+        if not self.card_widgets:
+            return
+        width, height = self.card_area.width(), self.card_area.height()
+        if width <= 0 or height <= 0:
+            return
+        slot_width = width / CARD_PAGE_SIZE
+        specs = []
+        target_height = float(height)
+        for widget in self.card_widgets:
+            source = widget._display_art
+            aspect = (source.width() / source.height()
+                      if source is not None and source.height() else 5 / 7)
+            axis = widget.frame_axis_ratio
+            margins = widget.layout().contentsMargins()
+            target_height = min(target_height, height - margins.top() - margins.bottom())
+            horizontal_extent = max(axis, 1 - axis)
+            if aspect > 0 and horizontal_extent > 0:
+                side_room = slot_width / 2 - max(margins.left(), margins.right())
+                target_height = min(target_height, side_room / (aspect * horizontal_extent))
+            specs.append((widget, aspect, axis, margins))
+        target_height = int(target_height)
+        if target_height < 1:
+            return
+        for index, (widget, aspect, axis, margins) in enumerate(specs):
+            art_width = max(1, round(target_height * aspect))
+            widget_width = art_width + margins.left() + margins.right()
+            widget_height = target_height + margins.top() + margins.bottom()
+            axis_x = (index + 0.5) * slot_width
+            x = round(axis_x - margins.left() - art_width * axis)
+            y = (height - widget_height) // 2
+            widget.setFixedSize(widget_width, widget_height)
+            widget.move(x, y)
 
     def turn_card_page(self, direction: int) -> None:
         page = max(0, min(self.page_index + direction, self.page_count - 1))
@@ -415,7 +438,13 @@ class ShikigamiCodexView(QWidget):
         self.loading.stop()
         self.loading_label.hide()
 
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.card_area and event.type() == QEvent.Resize:
+            self._layout_card_page()
+        return super().eventFilter(watched, event)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._layout_card_page()
         if self.loading_label.isVisible():
             self._set_loading_text(self.loading_label.text())

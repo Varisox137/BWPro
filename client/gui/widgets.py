@@ -172,6 +172,29 @@ class CardWidget(QFrame):
     def art_width(self) -> int | None:
         return self._display_art.width() if self._display_art is not None else None
 
+    @property
+    def frame_axis_ratio(self) -> float:
+        """卡框中线的水平位置；中部最长不透明段可排除顶部等级角标。"""
+        if self._display_art is None:
+            return 0.5
+        image = self._display_art.toImage()
+        if image.isNull() or image.width() <= 0 or image.height() <= 0:
+            return 0.5
+        y = image.height() // 2
+        runs = []
+        start = None
+        for x in range(image.width() + 1):
+            opaque = x < image.width() and image.pixelColor(x, y).alpha() > 0
+            if opaque and start is None:
+                start = x
+            elif not opaque and start is not None:
+                runs.append((start, x))
+                start = None
+        if not runs:
+            return 0.5
+        left, right = max(runs, key=lambda run: run[1] - run[0])
+        return (left + right) / (2 * image.width())
+
     def _request_art(self):
         if self._art_db is None:
             return None

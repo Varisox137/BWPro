@@ -7,7 +7,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication
 
 from client.gui.app import THEMES, MainWindow
@@ -133,13 +133,7 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
     qapp.processEvents()
     assert len(view.card_widgets) == 5
     assert len(view._all_card_widgets) == len(view._current_cards())
-    assert all(widget.minimumWidth() == 0 for widget in view.card_widgets)
-    widths = [widget.width() for widget in view.card_widgets]
-    assert max(widths) - min(widths) <= 1
-    margins = view.card_area.layout().contentsMargins()
-    assert view.card_widgets[0].x() == margins.left()
-    assert view.card_widgets[-1].x() + view.card_widgets[-1].width() == (
-        view.card_area.width() - margins.right())
+    assert len({widget.height() for widget in view.card_widgets}) == 1
     for widget in view.card_widgets:
         pixmap = widget.art_label.pixmap()
         assert not pixmap.isNull()
@@ -170,6 +164,48 @@ def test_five_card_pages_detail_and_loading(qapp, db, view, monkeypatch):
                         SimpleNamespace(exec=lambda: seen.append(cdef)))
     view.show_card_detail(view.card_widgets[1].cdef)
     assert seen == [view.card_widgets[1].cdef]
+
+
+def test_codex_cards_share_height_and_frame_axis_spacing(qapp, view, monkeypatch):
+    from PySide6.QtCore import QRect
+    from PySide6.QtGui import QImage, QPainter, QPixmap
+
+    widths = [100, 120, 80, 110, 90]
+    axis_ratios = [0.40, 0.55, 0.45, 0.60, 0.50]
+    ids = [100101] + [10010100 + n for n in range(1, 5)]
+
+    def fake_card_pixmap(cdef, *_args, **_kwargs):
+        index = ids.index(cdef.id) if cdef.id in ids else cdef.id % len(ids)
+        width = widths[index]
+        image = QImage(width, 100, QImage.Format_ARGB32)
+        image.fill(0)
+        axis = round(width * axis_ratios[index])
+        frame_width = round(width * 0.7)
+        painter = QPainter(image)
+        painter.fillRect(QRect(axis - frame_width // 2, 0, frame_width, 100), Qt.white)
+        painter.fillRect(QRect(0, 5, 12, 20), Qt.white)  # 等级角标不参与卡框中线
+        painter.end()
+        return QPixmap.fromImage(image)
+
+    monkeypatch.setattr("client.gui.widgets.card_pixmap", fake_card_pixmap)
+    view.select_shikigami(100101)
+    view.show_shikigami_cards()
+    view.resize(1200, 800)
+    view.show()
+    qapp.processEvents()
+
+    pixmaps = [widget.art_label.pixmap() for widget in view.card_widgets]
+    assert len({pixmap.height() for pixmap in pixmaps}) == 1
+    axes = []
+    actual_ratios = [
+        (round(width * ratio) + (round(width * 0.7) % 2) / 2) / width
+        for width, ratio in zip(widths, axis_ratios)
+    ]
+    for widget, pixmap, ratio in zip(view.card_widgets, pixmaps, actual_ratios):
+        art_x = widget.art_label.x() + (widget.art_label.width() - pixmap.width()) / 2
+        axes.append(widget.x() + art_x + pixmap.width() * ratio)
+    spacings = [right - left for left, right in zip(axes, axes[1:])]
+    assert max(spacings) - min(spacings) <= 1
 
 
 def test_derived_card_pages_and_group_navigation(qapp, real_view, monkeypatch):

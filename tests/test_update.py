@@ -99,9 +99,9 @@ def write_old_install(tmp_path):
 
 
 def test_version_is_strict_numeric_and_matches_project_metadata():
-    assert VERSION == "0.5.0"
+    assert VERSION == "0.5.1"
     assert parse_version("v0.10.0") > parse_version("v0.9.9")
-    assert verify_update(VERSION, "v0.5.1") == "v0.5.1"
+    assert verify_update(VERSION, "v0.5.2") == "v0.5.2"
     for invalid in ("0.3.1", "v1.2", "v1.2.3.4", "v01.2.3", "v1.2.3-beta"):
         with pytest.raises(ValueError):
             parse_version(invalid)
