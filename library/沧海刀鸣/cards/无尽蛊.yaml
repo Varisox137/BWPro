@@ -1,0 +1,15 @@
+type: 形态
+name: 无尽蛊
+level: 1
+rarity: R
+description: 当一个结附「[[蛊蚀]]」的敌方式神气绝时，你抽一张牌。
+shikigami: 巫蛊师
+power: 1
+health: 6
+version_date: '20200928'
+id: '10041002'
+artwork:
+  images:
+  - path: 10041002.png
+    scale: 0.711
+    offset_y: -70

@@ -1,0 +1,15 @@
+type: 战斗
+name: 鬼刃·罗城门
+level: 2
+rarity: R
+description: '[[响应]]：当鬼切触发「[[友切]]」时，自动使用且本次攻击若消灭式神，反制他使用的法术牌。'
+shikigami: 鬼切
+power+: 2
+shield+: 1
+version_date: '20200928'
+id: '10040905'
+artwork:
+  images:
+  - path: 10040905.png
+    scale: 0.72
+    offset_y: -73

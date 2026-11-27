@@ -19,4 +19,4 @@ versions:
           condition: {player: opponent}
           steps:
             - {op: detach_invocation, names: [髭切, 友切, 狮子之子]}
-      text: "己方回合开始时，选择一个未结附的鬼斩结附于鬼切上。敌方回合结束时，移除所有的鬼斩。"
+      text: "己方回合开始时，选择一个未结附的鬼斩结附于鬼切上。敌方回合结束时，移除所有鬼斩。"

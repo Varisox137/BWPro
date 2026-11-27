@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·鬼切
+level: 3
+rarity: SSR
+description: 选择一张鬼切的战斗牌置入手牌。[[觉醒]]：己方回合开始时，选择一个未结附的鬼斩结附于鬼切上。鬼切的战斗牌获得[[瞬发]]。
+shikigami: 鬼切
+version_date: '20200928'
+id: '10040907'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10040907.png
+    scale: 0.747
+    offset_y: -84

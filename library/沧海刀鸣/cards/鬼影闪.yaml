@@ -1,0 +1,13 @@
+type: 法术
+name: 鬼影闪
+level: 1
+rarity: SR
+description: '[[瞬发]]。将鬼切移入战斗区，选择一个未结附的鬼斩结附于鬼切上。抽一张牌。'
+shikigami: 鬼切
+version_date: '20200928'
+id: '10040902'
+artwork:
+  images:
+  - path: 10040902.png
+    scale: 0.747
+    offset_y: -70

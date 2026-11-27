@@ -1,0 +1,14 @@
+type: 幻境
+name: 缚蝶蛊狱
+level: 3
+rarity: SSR
+description: 进场时对敌方所有结附「[[蛊蚀]]」的式神造成1点伤害。所有式神受到的伤害都改为使其结附等量的「[[蛊蚀]]」。每个回合结束时，消灭所有#ll为0的式神。
+shikigami: 巫蛊师
+durability: 10
+version_date: '20200928'
+id: '10041008'
+artwork:
+  images:
+  - path: 10041008.png
+    scale: 0.72
+    offset_y: -67

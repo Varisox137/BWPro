@@ -2628,7 +2628,7 @@ def _guizhan_invs(db):
         name="髭切", unique="shikigami_unique",
         abilities=[F.block(
             F.Step(op="announce_invocation", name="髭切", target_from="shikigami"),
-            F.Step(op="grant_immunity", scope="next_battle", target=T(kind="self")),
+            F.Step(op="grant_immunity", kind="all", scope="next_battle", target=T(kind="self")),
             F.Step(op="launch_attack", at="event"),
             when="on_enter_combat", timing="insert",
             condition={"player": "opponent", "holder_in_combat": True})])
@@ -2636,7 +2636,7 @@ def _guizhan_invs(db):
         name="友切", unique="shikigami_unique",
         abilities=[F.block(
             F.Step(op="announce_invocation", name="友切"),
-            F.Step(op="grant_immunity", scope="next_battle", target=T(kind="self")),
+            F.Step(op="grant_immunity", kind="all", scope="next_battle", target=T(kind="self")),
             F.Step(op="launch_attack", at="targets", ignore_veil=True,
                    target=T(kind="context", key="card_shikigami")),
             when="on_before_card_play",
@@ -2698,8 +2698,8 @@ def test_detach_invocation(db, make_game):
 
 
 def test_onimusha_trigger_combat_enter(db, make_game):
-    """髭切：敌方式神进入战斗区时（insert 时机）鬼切先攻击该式神且本次战斗
-    免疫战斗伤害——嵌套攻击在敌方交战阶段前结算，反击被免疫。"""
+    """髭切：敌方式神进入战斗区时（insert 时机）鬼切先攻击该式神且本次攻击
+    免疫所有伤害——嵌套攻击在敌方交战阶段前结算，反击被免疫。"""
     _guizhan_invs(db)
     g = make_game()
     pa, pb = F.battle_setup(g)
@@ -2716,7 +2716,7 @@ def test_onimusha_trigger_combat_enter(db, make_game):
 
 def test_onimusha_trigger_spell_play(db, make_game):
     """友切：敌方式神使用法术牌时鬼切攻击该式神（context 键 card_shikigami
-    解析被使用牌所属式神的在场座次）且本次战斗免疫战斗伤害。"""
+    解析被使用牌所属式神的在场座次）且本次攻击免疫所有伤害。"""
     _guizhan_invs(db)
     g = make_game()
     pa, pb = F.battle_setup(g)
@@ -3344,7 +3344,6 @@ def test_real_invocations_pack04_new_loaded(gdb):
     assert ab.condition["active"] == "opponent"
     assert [s.op for s in ab.steps] == ["announce_invocation", "grant_immunity",
                                         "launch_attack"]
-    # 免疫所有伤害（kind=all；20200928 版为缺省战斗伤害）
     assert (ab.steps[1].model_extra or {}).get("kind") == "all"
     y = gdb.invocations["友切"]
     assert y.abilities[0].when == "on_before_card_play"
@@ -3354,6 +3353,12 @@ def test_real_invocations_pack04_new_loaded(gdb):
     assert sh.abilities[0].when == "on_turn_end"
     assert sh.abilities[0].condition.get("combat_empty") == "enemy"
     assert (sh.abilities[0].steps[1].model_extra or {}).get("power") == 2
+    old = gdb.at_date(20200928)
+    for name in ("髭切", "友切"):
+        invocation = old.invocations[name]
+        grant = next(step for step in invocation.abilities[0].steps
+                     if step.op == "grant_immunity")
+        assert (grant.model_extra or {}).get("kind") == "all"
 
 
 def test_real_invocation_damage_reduce(real_game):

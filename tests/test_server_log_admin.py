@@ -27,6 +27,7 @@ def test_token_rotation_and_log_listing(tmp_path, monkeypatch):
     monkeypatch.setattr("server.log_admin.write_terminal_secret",
                         lambda text: messages.append(text) or True)
     service = LogAdminService(tmp_path, current)
+    assert service.rotate_seconds == 600.0
     first = service.token
     assert re.fullmatch(r"[0-9a-f]{16}", first)
     assert re.fullmatch(

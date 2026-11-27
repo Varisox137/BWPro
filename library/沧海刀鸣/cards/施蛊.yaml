@@ -1,0 +1,8 @@
+type: 法术
+name: 施蛊
+level: 1
+rarity: R
+description: '[[弹回]]。使一个敌方式神结附一个「[[蛊蚀]]」。'
+shikigami: 巫蛊师
+version_date: '20200928'
+id: '10041001'

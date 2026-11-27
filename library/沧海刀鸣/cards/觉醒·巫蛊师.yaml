@@ -1,0 +1,16 @@
+type: 法术
+name: 觉醒·巫蛊师
+level: 2
+rarity: SR
+description: '[[觉醒]]：当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个「[[蛊蚀]]」。巫蛊师结附「[[蛊蚀]]」时数量额外+1。'
+shikigami: 巫蛊师
+version_date: '20200928'
+id: '10041006'
+evolve: true
+power+: 1
+health+: 1
+artwork:
+  images:
+  - path: 10041006.png
+    scale: 0.747
+    offset_y: -72

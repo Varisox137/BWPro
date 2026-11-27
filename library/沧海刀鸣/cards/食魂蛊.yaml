@@ -1,0 +1,15 @@
+type: 形态
+name: 食魂蛊
+level: 2
+rarity: R
+description: 当一个结附「[[蛊蚀]]」的敌方式神气绝时，其上每有一个「[[蛊蚀]]」，为你恢复2点#sm。
+shikigami: 巫蛊师
+power: 3
+health: 7
+version_date: '20200928'
+id: '10041005'
+artwork:
+  images:
+  - path: 10041005.png
+    scale: 0.711
+    offset_y: -80

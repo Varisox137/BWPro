@@ -1,0 +1,13 @@
+type: 法术
+name: 魔蛊毒爆
+level: 3
+rarity: SR
+description: 使一个敌方式神结附三个「[[蛊蚀]]」，若本回合该式神气绝，将其上所有「[[蛊蚀]]」随机转移到另一个敌方式神上。
+shikigami: 巫蛊师
+version_date: '20200928'
+id: '10041007'
+artwork:
+  images:
+  - path: 10041007.png
+    scale: 0.747
+    offset_y: -75

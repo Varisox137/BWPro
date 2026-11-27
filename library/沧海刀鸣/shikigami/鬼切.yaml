@@ -1,0 +1,17 @@
+type: 式神
+name: 鬼切
+faction: 青岚
+power: 2
+health: 4
+description: 己方回合开始时，选择一个未结附的鬼斩结附于鬼切上。敌方回合结束时，移除所有鬼斩。
+id: '100409'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100409.png
+    scale: 0.711
+    offset_y: -100
+portrait:
+  scale: 2.294
+  offset_x: -2
+  offset_y: 30

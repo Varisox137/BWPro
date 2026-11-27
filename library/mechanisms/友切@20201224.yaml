@@ -1,0 +1,9 @@
+name: 友切
+frame: invocation
+text: 敌方回合当敌方式神使用法术牌时若鬼切在战斗区，对该式神发起一次攻击，本次攻击免疫所有伤害
+badge: null
+chars_per_line: 12
+global: false
+project: 沧海刀鸣
+shikigami: 鬼切
+version_date: '20201224'

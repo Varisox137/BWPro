@@ -1,0 +1,15 @@
+type: 形态
+name: 复仇之刃
+level: 1
+rarity: SR
+description: 鬼切在准备区时视同在战斗区一样触发鬼斩。
+shikigami: 鬼切
+power: 2
+health: 6
+version_date: '20200928'
+id: '10040903'
+artwork:
+  images:
+  - path: 10040903.png
+    scale: 0.711
+    offset_y: -100

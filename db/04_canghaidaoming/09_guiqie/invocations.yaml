@@ -12,15 +12,15 @@ invocations:
           unique: shikigami_unique
           abilities:
             - when: on_enter_combat  # 当敌方式神进入战斗区时
-              timing: insert  # "额外先攻击一次"：即时时机——在敌方战斗交战阶段前插入
+              timing: insert  # 即时时机——在敌方战斗交战阶段前插入
               condition: {player: opponent, holder_in_combat: true}  # 若鬼切在战斗区
               steps:
                 - {op: announce_invocation, name: 髭切, target_from: shikigami}
-                # 本次战斗获得免疫（战斗伤害）
-                - {op: grant_immunity, scope: next_battle, target: {kind: self}}
+                # 本次攻击免疫所有伤害
+                - {op: grant_immunity, kind: all, scope: next_battle, target: {kind: self}}
                 - {op: launch_attack, at: event}  # 攻击进入战斗区的该式神
-          text: "当敌方式神进入战斗区时若鬼切在战斗区，额外先攻击一次该式神且本次战斗获得免疫。"
-        - date: 20201224  # 平衡性调整：加"敌方回合"限定；免疫战斗伤害→免疫所有伤害
+          text: "当敌方式神进入战斗区时若鬼切在战斗区，对该式神发起一次攻击，本次攻击免疫所有伤害。"
+        - date: 20201224  # 平衡性调整：加"敌方回合"限定
           unique: shikigami_unique
           abilities:
             - when: on_enter_combat
@@ -28,7 +28,6 @@ invocations:
               condition: {player: opponent, holder_in_combat: true, active: opponent}
               steps:
                 - {op: announce_invocation, name: 髭切, target_from: shikigami}
-                # 本次战斗免疫所有伤害（kind=all；20200928 版为缺省 combat_damage）
                 - {op: grant_immunity, kind: all, scope: next_battle, target: {kind: self}}
                 - {op: launch_attack, at: event}
           text: "敌方回合当敌方式神进入战斗区时若鬼切在战斗区，额外先攻击一次该式神且本次战斗免疫所有伤害。"
@@ -45,14 +44,14 @@ invocations:
               condition: {player: opponent, card_type: spell, holder_in_combat: true}
               steps:
                 - {op: announce_invocation, name: 友切}
-                - {op: grant_immunity, scope: next_battle, target: {kind: self}}
+                - {op: grant_immunity, kind: all, scope: next_battle, target: {kind: self}}
                 # 攻击使用法术牌的该式神（context 键 card_shikigami：被使用牌所属式神
                 # 在事件 player 方的在场座次；未出战/气绝/中立牌为空操作）；
                 # ignore_veil：灵咒效果不受帷幕限制（定案(4)），可对帷幕式神发起战斗
                 - {op: launch_attack, at: targets, ignore_veil: true,
                    target: {kind: context, key: card_shikigami}}
-          text: "当敌方式神使用法术牌时若鬼切在战斗区，额外先攻击一次该式神且本次战斗获得免疫。"
-        - date: 20201224  # 平衡性调整：加"敌方回合"限定；免疫战斗伤害→免疫所有伤害
+          text: "当敌方式神使用法术牌时若鬼切在战斗区，对该式神发起一次攻击，本次攻击免疫所有伤害。"
+        - date: 20201224  # 平衡性调整：加"敌方回合"限定
           unique: shikigami_unique
           abilities:
             - when: on_before_card_play
@@ -60,11 +59,10 @@ invocations:
                           active: opponent}
               steps:
                 - {op: announce_invocation, name: 友切}
-                # 本次战斗免疫所有伤害（kind=all；20200928 版为缺省 combat_damage）
                 - {op: grant_immunity, kind: all, scope: next_battle, target: {kind: self}}
                 - {op: launch_attack, at: targets, ignore_veil: true,
                    target: {kind: context, key: card_shikigami}}
-          text: "敌方回合当敌方式神使用法术牌时若鬼切在战斗区，额外先攻击一次该式神且本次战斗免疫所有伤害。"
+          text: "敌方回合当敌方式神使用法术牌时若鬼切在战斗区，对该式神发起一次攻击，本次攻击免疫所有伤害。"
   - name: 狮子之子
     versions:
       best: 20200928
@@ -76,7 +74,6 @@ invocations:
               condition: {player: opponent, holder_in_combat: true, combat_empty: enemy}
               steps:
                 - {op: announce_invocation, name: 狮子之子}
-                # 本次战斗得+2力量（攻击后到期，attack_buff 通道）
                 - {op: attack_buff, power: 2, target: {kind: self}}
                 - {op: launch_attack}  # 无目标：敌方战斗区空，直击敌方牌手
-          text: "当敌方回合结束时若鬼切在战斗区且敌方战斗区没有式神，额外先攻击一次敌方牌手，本次战斗得+2力量。"
+          text: "当敌方回合结束时若鬼切在战斗区且敌方战斗区没有式神，额外先攻击一次敌方牌手，本次战斗获得2力量。"

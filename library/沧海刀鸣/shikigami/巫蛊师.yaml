@@ -1,0 +1,17 @@
+type: 式神
+name: 巫蛊师
+faction: 紫岩
+power: 1
+health: 4
+description: 当巫蛊师对一个式神造成战斗伤害时，使该式神结附一个「[[蛊蚀]]」。
+id: '100410'
+version_date: '20200928'
+artwork:
+  images:
+  - path: 100410.png
+    scale: 0.711
+    offset_y: -72
+portrait:
+  scale: 3.922
+  offset_x: 10
+  offset_y: 63

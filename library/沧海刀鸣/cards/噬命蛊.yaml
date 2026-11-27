@@ -1,0 +1,13 @@
+type: 法术
+name: 噬命蛊
+level: 1
+rarity: SR
+description: 消灭一个结附「[[蛊蚀]]」的式神。
+shikigami: 巫蛊师
+version_date: '20200928'
+id: '10041003'
+artwork:
+  images:
+  - path: 10041003.png
+    scale: 0.747
+    offset_y: -77

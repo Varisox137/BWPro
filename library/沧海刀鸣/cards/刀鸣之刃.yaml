@@ -1,0 +1,15 @@
+type: 形态
+name: 刀鸣之刃
+level: 3
+rarity: SR
+description: 当触发鬼斩时，额外复制一次鬼斩的效果。
+shikigami: 鬼切
+power: 3
+health: 8
+version_date: '20200928'
+id: '10040906'
+artwork:
+  images:
+  - path: 10040906.png
+    scale: 0.711
+    offset_y: -82

@@ -3,7 +3,9 @@ name: 紧急委托·肆
 level: 1
 description: '[[瞬发]]
 
-  [[条件]]：累计造成10点伤害。使三目永久获得1#ll和1#sm。'
+  [[条件]]：累计造成10点伤害。
+
+  使三目永久获得1#ll和1#sm。'
 shikigami: 三目
 token: true
 version_date: '20200928'

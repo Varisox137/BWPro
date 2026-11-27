@@ -1,0 +1,13 @@
+type: 法术
+name: 增殖
+level: 2
+rarity: R
+description: 使一个敌方式神结附两个「[[蛊蚀]]」，然后使其他结附「[[蛊蚀]]」敌方式神上的「[[蛊蚀]]」数量+1。
+shikigami: 巫蛊师
+version_date: '20200928'
+id: '10041004'
+artwork:
+  images:
+  - path: 10041004.png
+    scale: 0.747
+    offset_y: -100

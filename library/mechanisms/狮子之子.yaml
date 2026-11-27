@@ -1,0 +1,9 @@
+name: 狮子之子
+frame: invocation
+text: 当敌方回合结束时若鬼切在战斗区且敌方战斗区没有式神，额外先攻击一次敌方牌手，本次战斗获得2#ll。
+badge: null
+chars_per_line: 12
+global: false
+project: 沧海刀鸣
+shikigami: 鬼切
+version_date: '20200928'

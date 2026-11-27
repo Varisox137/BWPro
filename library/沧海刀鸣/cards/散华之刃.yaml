@@ -1,0 +1,15 @@
+type: 形态
+name: 散华之刃
+level: 2
+rarity: R
+description: 敌方回合鬼切获得3#ll。
+shikigami: 鬼切
+power: 2
+health: 6
+version_date: '20200928'
+id: '10040904'
+artwork:
+  images:
+  - path: 10040904.png
+    scale: 0.711
+    offset_y: -94
